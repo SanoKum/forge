@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.18)
+project(nagare CXX)
+
+set(CMAKE_CXX_COMPILER /usr/bin/g++ )
+
+#add_definitions( -std=c++11 -Wall )
+add_definitions( -std=c++2a )
+
+set(CMAKE_CXX_FLAGS "-O3")
+
+include_directories(./ /home/kumpei/src/HighFive/include /home/kumpei/src/hdf/HDF5-1.14.1-Linux/HDF_Group/HDF5/1.14.1/include /usr/local/cuda/include /home/kumpei/src/AMGX/include )
+link_directories(./ /home/kumpei/src/hdf/HDF5-1.14.1-Linux/HDF_Group/HDF5/1.14.1/lib /usr/local/cuda/lib64 /home/kumpei/src/AMGX/build)
+
+add_executable(nagare main.cpp gradient.cpp mesh/mesh.cpp output/output.cpp update.cpp 
+                variables.cpp boundaryCond.cpp solveNavierStokes.cpp input/solverConfig.cpp 
+                calcCFL.cpp setStructualVariables.cpp  solvePoisson_amgx.cpp)
+
+add_executable(convertGmshToNagare mesh/convertGmshToNagare.cpp mesh/mesh.cpp variables.cpp boundaryCond.cpp input/solverConfig.cpp )
+
+target_link_libraries(nagare hdf5 yaml-cpp)
+target_link_libraries(convertGmshToNagare hdf5 yaml-cpp)
+
+add_subdirectory(cuda_nagare)
+target_include_directories(nagare PUBLIC cuda_nagare)
+target_link_libraries(nagare cuda_nagare)
+
+#cuda
+target_link_libraries(nagare cudart cusolver libcusparse_static.a amgx)
+
+
+target_link_libraries(convertGmshToNagare cuda_nagare)
+

@@ -1,0 +1,9 @@
+*.xmf
+*.hdf5
+*.h5
+*.msh
+*.o
+*.png
+*.mp4
+*.o.d
+*/build/*
