@@ -1,0 +1,16 @@
+#pragma once
+
+#include "input/solverConfig.hpp"
+#include "mesh/mesh.hpp"
+#include "variables.hpp"
+#include <cmath>
+
+#include <amgx_c.h>
+
+void setMatrixPoisson(solverConfig& , mesh& , variables& , matrix& );
+
+void solvePoisson(solverConfig& , mesh& , variables& , matrix& );
+
+void correctPresVel(solverConfig& , mesh& , variables& );
+
+void correctPresVel_BF(solverConfig& , mesh& , variables& );

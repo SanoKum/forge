@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/kumpei/app/HighFive/include",
+                "/home/kumpei/app/hdf/HDF5-1.14.3-Linux/HDF_Group/HDF5/1.14.3/include",
+                "/usr/local/cuda/include",
+                "/usr/include/eigen3",
+                "/home/kumpei/app/AMGX/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
