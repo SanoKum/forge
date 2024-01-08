@@ -1,0 +1,5719 @@
+Read Solver Config 
+Mesh Name : 1D_shock_tube.h5
+Mesh Name size : 16
+Solver Name : smac
+End Step : 400
+CFL : 0.3
+convection method : 2
+Read Mesh 
+in mesh.cpp  physID=1
+in mesh.cpp  bcondKind=slip
+in mesh.cpp  physID=2
+in mesh.cpp  bcondKind=slip
+in mesh.cpp  physID=3
+in mesh.cpp  bcondKind=slip
+in mesh.cpp  physID=4
+in mesh.cpp  bcondKind=slip
+in mesh.cpp  physID=5
+in mesh.cpp  bcondKind=slip
+Init Matrix (but not used now) 
+Read Boundary Conditions 
+bname = bottom
+physID=1
+kind=slip
+bname = upper
+physID=2
+kind=slip
+bname = slip
+physID=3
+kind=slip
+bname = inlet
+physID=4
+kind=slip
+bname = outlet
+physID=5
+kind=slip
+bc.physID=1
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+bc.physID=2
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+bc.physID=3
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+bc.physID=4
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+bc.physID=5
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+Set Initial Values 
+Set mesh connection map for cuda 
+ros total : -11.5407
+rok total : 0
+  DT              : 1e-06
+  Max CFL         : 0.000117139
+  Total Time      : 1e-06
+Start Calculation 
+----------------------------
+Step : 0
+  Inner loop : 1
+ros total : -11.5407
+rok total : 0
+  Inner loop : 2
+ros total : -11.5409
+rok total : 9.07708e-07
+  Inner loop : 3
+ros total : -11.5407
+rok total : 2.49567e-07
+  DT              : 0.00256107
+  Max CFL         : 0.34436
+  Total Time      : 0.00256207
+----------------------------
+Step : 1
+  Inner loop : 1
+ros total : -11.5409
+rok total : 9.68752e-07
+  Inner loop : 2
+ros total : -11.5414
+rok total : 2.60563e-06
+  Inner loop : 3
+ros total : -11.5411
+rok total : 1.61141e-06
+  DT              : 0.00223116
+  Max CFL         : 0.35648
+  Total Time      : 0.00479323
+----------------------------
+Step : 2
+  Inner loop : 1
+ros total : -11.5413
+rok total : 2.40949e-06
+  Inner loop : 2
+ros total : -11.5417
+rok total : 3.84295e-06
+  Inner loop : 3
+ros total : -11.5415
+rok total : 3.0296e-06
+  DT              : 0.00187766
+  Max CFL         : 0.329844
+  Total Time      : 0.00667089
+----------------------------
+Step : 3
+  Inner loop : 1
+ros total : -11.5417
+rok total : 3.7236e-06
+  Inner loop : 2
+ros total : -11.5421
+rok total : 5.04462e-06
+  Inner loop : 3
+ros total : -11.5419
+rok total : 4.31421e-06
+  DT              : 0.00170777
+  Max CFL         : 0.318799
+  Total Time      : 0.00837866
+----------------------------
+Step : 4
+  Inner loop : 1
+ros total : -11.5421
+rok total : 4.956e-06
+  Inner loop : 2
+ros total : -11.5424
+rok total : 6.20892e-06
+  Inner loop : 3
+ros total : -11.5422
+rok total : 5.52563e-06
+  DT              : 0.00160706
+  Max CFL         : 0.311214
+  Total Time      : 0.00998572
+----------------------------
+Step : 5
+  Inner loop : 1
+ros total : -11.5424
+rok total : 6.1366e-06
+  Inner loop : 2
+ros total : -11.5428
+rok total : 7.35327e-06
+  Inner loop : 3
+ros total : -11.5426
+rok total : 6.69539e-06
+  DT              : 0.00154916
+  Max CFL         : 0.306416
+  Total Time      : 0.0115349
+----------------------------
+Step : 6
+  Inner loop : 1
+ros total : -11.5428
+rok total : 7.29012e-06
+  Inner loop : 2
+ros total : -11.5431
+rok total : 8.48974e-06
+  Inner loop : 3
+ros total : -11.5429
+rok total : 7.84494e-06
+  DT              : 0.00151672
+  Max CFL         : 0.30352
+  Total Time      : 0.0130516
+----------------------------
+Step : 7
+  Inner loop : 1
+ros total : -11.5431
+rok total : 8.43242e-06
+  Inner loop : 2
+ros total : -11.5435
+rok total : 9.62663e-06
+  Inner loop : 3
+ros total : -11.5433
+rok total : 8.98764e-06
+  DT              : 0.00149912
+  Max CFL         : 0.301666
+  Total Time      : 0.0145507
+----------------------------
+Step : 8
+  Inner loop : 1
+ros total : -11.5434
+rok total : 9.57331e-06
+  Inner loop : 2
+ros total : -11.5438
+rok total : 1.07695e-05
+  Inner loop : 3
+ros total : -11.5436
+rok total : 1.01318e-05
+  DT              : 0.00149084
+  Max CFL         : 0.300435
+  Total Time      : 0.0160416
+----------------------------
+Step : 9
+  Inner loop : 1
+ros total : -11.5438
+rok total : 1.0719e-05
+  Inner loop : 2
+ros total : -11.5442
+rok total : 1.19219e-05
+  Inner loop : 3
+ros total : -11.544
+rok total : 1.12825e-05
+  DT              : 0.00148869
+  Max CFL         : 0.299604
+  Total Time      : 0.0175303
+----------------------------
+Step : 10
+  Inner loop : 1
+ros total : -11.5442
+rok total : 1.18735e-05
+  Inner loop : 2
+ros total : -11.5445
+rok total : 1.30862e-05
+  Inner loop : 3
+ros total : -11.5443
+rok total : 1.24431e-05
+  DT              : 0.00149066
+  Max CFL         : 0.30385
+  Total Time      : 0.0190209
+----------------------------
+Step : 11
+  Inner loop : 1
+ros total : -11.5445
+rok total : 1.30394e-05
+  Inner loop : 2
+ros total : -11.5449
+rok total : 1.42437e-05
+  Inner loop : 3
+ros total : -11.5447
+rok total : 1.36069e-05
+  DT              : 0.00147177
+  Max CFL         : 0.302703
+  Total Time      : 0.0204927
+----------------------------
+Step : 12
+  Inner loop : 1
+ros total : -11.5449
+rok total : 1.41995e-05
+  Inner loop : 2
+ros total : -11.5453
+rok total : 1.53996e-05
+  Inner loop : 3
+ros total : -11.5451
+rok total : 1.47667e-05
+  DT              : 0.00145863
+  Max CFL         : 0.301528
+  Total Time      : 0.0219513
+----------------------------
+Step : 13
+  Inner loop : 1
+ros total : -11.5452
+rok total : 1.53575e-05
+  Inner loop : 2
+ros total : -11.5456
+rok total : 1.65577e-05
+  Inner loop : 3
+ros total : -11.5454
+rok total : 1.5926e-05
+  DT              : 0.00145124
+  Max CFL         : 0.300659
+  Total Time      : 0.0234025
+----------------------------
+Step : 14
+  Inner loop : 1
+ros total : -11.5456
+rok total : 1.65171e-05
+  Inner loop : 2
+ros total : -11.546
+rok total : 1.77205e-05
+  Inner loop : 3
+ros total : -11.5458
+rok total : 1.70882e-05
+  DT              : 0.00144806
+  Max CFL         : 0.300019
+  Total Time      : 0.0248506
+----------------------------
+Step : 15
+  Inner loop : 1
+ros total : -11.546
+rok total : 1.76811e-05
+  Inner loop : 2
+ros total : -11.5464
+rok total : 1.88897e-05
+  Inner loop : 3
+ros total : -11.5462
+rok total : 1.82556e-05
+  DT              : 0.00144797
+  Max CFL         : 0.299548
+  Total Time      : 0.0262986
+----------------------------
+Step : 16
+  Inner loop : 1
+ros total : -11.5463
+rok total : 1.88513e-05
+  Inner loop : 2
+ros total : -11.5467
+rok total : 2.00668e-05
+  Inner loop : 3
+ros total : -11.5465
+rok total : 1.94298e-05
+  DT              : 0.00145015
+  Max CFL         : 0.301652
+  Total Time      : 0.0277487
+----------------------------
+Step : 17
+  Inner loop : 1
+ros total : -11.5467
+rok total : 2.00291e-05
+  Inner loop : 2
+ros total : -11.5471
+rok total : 2.12423e-05
+  Inner loop : 3
+ros total : -11.5469
+rok total : 2.06075e-05
+  DT              : 0.00144221
+  Max CFL         : 0.301241
+  Total Time      : 0.0291909
+----------------------------
+Step : 18
+  Inner loop : 1
+ros total : -11.5471
+rok total : 2.12059e-05
+  Inner loop : 2
+ros total : -11.5475
+rok total : 2.24181e-05
+  Inner loop : 3
+ros total : -11.5473
+rok total : 2.17845e-05
+  DT              : 0.00143627
+  Max CFL         : 0.300604
+  Total Time      : 0.0306272
+----------------------------
+Step : 19
+  Inner loop : 1
+ros total : -11.5475
+rok total : 2.23826e-05
+  Inner loop : 2
+ros total : -11.5479
+rok total : 2.35962e-05
+  Inner loop : 3
+ros total : -11.5476
+rok total : 2.29626e-05
+  DT              : 0.00143338
+  Max CFL         : 0.300114
+  Total Time      : 0.0320606
+----------------------------
+Step : 20
+  Inner loop : 1
+ros total : -11.5478
+rok total : 2.35615e-05
+  Inner loop : 2
+ros total : -11.5482
+rok total : 2.47782e-05
+  Inner loop : 3
+ros total : -11.548
+rok total : 2.41436e-05
+  DT              : 0.00143284
+  Max CFL         : 0.299739
+  Total Time      : 0.0334934
+----------------------------
+Step : 21
+  Inner loop : 1
+ros total : -11.5482
+rok total : 2.47442e-05
+  Inner loop : 2
+ros total : -11.5486
+rok total : 2.59653e-05
+  Inner loop : 3
+ros total : -11.5484
+rok total : 2.53289e-05
+  DT              : 0.00143408
+  Max CFL         : 0.300344
+  Total Time      : 0.0349275
+----------------------------
+Step : 22
+  Inner loop : 1
+ros total : -11.5486
+rok total : 2.59318e-05
+  Inner loop : 2
+ros total : -11.549
+rok total : 2.71545e-05
+  Inner loop : 3
+ros total : -11.5488
+rok total : 2.65179e-05
+  DT              : 0.00143244
+  Max CFL         : 0.300988
+  Total Time      : 0.0363599
+----------------------------
+Step : 23
+  Inner loop : 1
+ros total : -11.549
+rok total : 2.71217e-05
+  Inner loop : 2
+ros total : -11.5494
+rok total : 2.83432e-05
+  Inner loop : 3
+ros total : -11.5492
+rok total : 2.77077e-05
+  DT              : 0.00142774
+  Max CFL         : 0.3005
+  Total Time      : 0.0377877
+----------------------------
+Step : 24
+  Inner loop : 1
+ros total : -11.5494
+rok total : 2.83111e-05
+  Inner loop : 2
+ros total : -11.5498
+rok total : 2.95332e-05
+  Inner loop : 3
+ros total : -11.5496
+rok total : 2.88979e-05
+  DT              : 0.00142537
+  Max CFL         : 0.300112
+  Total Time      : 0.039213
+----------------------------
+Step : 25
+  Inner loop : 1
+ros total : -11.5498
+rok total : 2.95017e-05
+  Inner loop : 2
+ros total : -11.5502
+rok total : 3.07258e-05
+  Inner loop : 3
+ros total : -11.5499
+rok total : 3.00899e-05
+  DT              : 0.00142483
+  Max CFL         : 0.299807
+  Total Time      : 0.0406379
+----------------------------
+Step : 26
+  Inner loop : 1
+ros total : -11.5501
+rok total : 3.06948e-05
+  Inner loop : 2
+ros total : -11.5505
+rok total : 3.19222e-05
+  Inner loop : 3
+ros total : -11.5503
+rok total : 3.12849e-05
+  DT              : 0.00142575
+  Max CFL         : 0.300127
+  Total Time      : 0.0420636
+----------------------------
+Step : 27
+  Inner loop : 1
+ros total : -11.5505
+rok total : 3.18915e-05
+  Inner loop : 2
+ros total : -11.5509
+rok total : 3.31206e-05
+  Inner loop : 3
+ros total : -11.5507
+rok total : 3.24828e-05
+  DT              : 0.00142515
+  Max CFL         : 0.300793
+  Total Time      : 0.0434888
+----------------------------
+Step : 28
+  Inner loop : 1
+ros total : -11.5509
+rok total : 3.30903e-05
+  Inner loop : 2
+ros total : -11.5513
+rok total : 3.43182e-05
+  Inner loop : 3
+ros total : -11.5511
+rok total : 3.36815e-05
+  DT              : 0.00142139
+  Max CFL         : 0.300403
+  Total Time      : 0.0449102
+----------------------------
+Step : 29
+  Inner loop : 1
+ros total : -11.5513
+rok total : 3.42885e-05
+  Inner loop : 2
+ros total : -11.5517
+rok total : 3.55168e-05
+  Inner loop : 3
+ros total : -11.5515
+rok total : 3.48802e-05
+  DT              : 0.00141948
+  Max CFL         : 0.300088
+  Total Time      : 0.0463297
+----------------------------
+Step : 30
+  Inner loop : 1
+ros total : -11.5517
+rok total : 3.54875e-05
+  Inner loop : 2
+ros total : -11.5521
+rok total : 3.67172e-05
+  Inner loop : 3
+ros total : -11.5519
+rok total : 3.60802e-05
+  DT              : 0.00141907
+  Max CFL         : 0.299837
+  Total Time      : 0.0477487
+----------------------------
+Step : 31
+  Inner loop : 1
+ros total : -11.5521
+rok total : 3.66883e-05
+  Inner loop : 2
+ros total : -11.5525
+rok total : 3.79206e-05
+  Inner loop : 3
+ros total : -11.5523
+rok total : 3.72825e-05
+  DT              : 0.00141984
+  Max CFL         : 0.300143
+  Total Time      : 0.0491686
+----------------------------
+Step : 32
+  Inner loop : 1
+ros total : -11.5525
+rok total : 3.7892e-05
+  Inner loop : 2
+ros total : -11.5529
+rok total : 3.91253e-05
+  Inner loop : 3
+ros total : -11.5527
+rok total : 3.8487e-05
+  DT              : 0.00141916
+  Max CFL         : 0.300644
+  Total Time      : 0.0505877
+----------------------------
+Step : 33
+  Inner loop : 1
+ros total : -11.5529
+rok total : 3.9097e-05
+  Inner loop : 2
+ros total : -11.5533
+rok total : 4.03293e-05
+  Inner loop : 3
+ros total : -11.5531
+rok total : 3.96919e-05
+  DT              : 0.00141612
+  Max CFL         : 0.300326
+  Total Time      : 0.0520038
+----------------------------
+Step : 34
+  Inner loop : 1
+ros total : -11.5533
+rok total : 4.03015e-05
+  Inner loop : 2
+ros total : -11.5537
+rok total : 4.1534e-05
+  Inner loop : 3
+ros total : -11.5535
+rok total : 4.08967e-05
+  DT              : 0.00141459
+  Max CFL         : 0.300065
+  Total Time      : 0.0534184
+----------------------------
+Step : 35
+  Inner loop : 1
+ros total : -11.5537
+rok total : 4.15064e-05
+  Inner loop : 2
+ros total : -11.5541
+rok total : 4.27401e-05
+  Inner loop : 3
+ros total : -11.5539
+rok total : 4.21025e-05
+  DT              : 0.00141428
+  Max CFL         : 0.299854
+  Total Time      : 0.0548327
+----------------------------
+Step : 36
+  Inner loop : 1
+ros total : -11.5541
+rok total : 4.27129e-05
+  Inner loop : 2
+ros total : -11.5545
+rok total : 4.39486e-05
+  Inner loop : 3
+ros total : -11.5542
+rok total : 4.33101e-05
+  DT              : 0.00141497
+  Max CFL         : 0.30018
+  Total Time      : 0.0562477
+----------------------------
+Step : 37
+  Inner loop : 1
+ros total : -11.5544
+rok total : 4.39216e-05
+  Inner loop : 2
+ros total : -11.5549
+rok total : 4.51579e-05
+  Inner loop : 3
+ros total : -11.5546
+rok total : 4.45193e-05
+  DT              : 0.00141412
+  Max CFL         : 0.300529
+  Total Time      : 0.0576618
+----------------------------
+Step : 38
+  Inner loop : 1
+ros total : -11.5548
+rok total : 4.51312e-05
+  Inner loop : 2
+ros total : -11.5553
+rok total : 4.63666e-05
+  Inner loop : 3
+ros total : -11.555
+rok total : 4.57287e-05
+  DT              : 0.00141163
+  Max CFL         : 0.300266
+  Total Time      : 0.0590734
+----------------------------
+Step : 39
+  Inner loop : 1
+ros total : -11.5552
+rok total : 4.63402e-05
+  Inner loop : 2
+ros total : -11.5556
+rok total : 4.75757e-05
+  Inner loop : 3
+ros total : -11.5554
+rok total : 4.6938e-05
+  DT              : 0.00141038
+  Max CFL         : 0.300048
+  Total Time      : 0.0604838
+----------------------------
+Step : 40
+  Inner loop : 1
+ros total : -11.5556
+rok total : 4.75496e-05
+  Inner loop : 2
+ros total : -11.556
+rok total : 4.87861e-05
+  Inner loop : 3
+ros total : -11.5558
+rok total : 4.81481e-05
+  DT              : 0.00141015
+  Max CFL         : 0.299869
+  Total Time      : 0.0618939
+----------------------------
+Step : 41
+  Inner loop : 1
+ros total : -11.556
+rok total : 4.87602e-05
+  Inner loop : 2
+ros total : -11.5564
+rok total : 4.99984e-05
+  Inner loop : 3
+ros total : -11.5562
+rok total : 4.93597e-05
+  DT              : 0.00141077
+  Max CFL         : 0.300207
+  Total Time      : 0.0633047
+----------------------------
+Step : 42
+  Inner loop : 1
+ros total : -11.5564
+rok total : 4.99727e-05
+  Inner loop : 2
+ros total : -11.5568
+rok total : 5.12112e-05
+  Inner loop : 3
+ros total : -11.5566
+rok total : 5.05725e-05
+  DT              : 0.0014098
+  Max CFL         : 0.30044
+  Total Time      : 0.0647145
+----------------------------
+Step : 43
+  Inner loop : 1
+ros total : -11.5568
+rok total : 5.11856e-05
+  Inner loop : 2
+ros total : -11.5572
+rok total : 5.24233e-05
+  Inner loop : 3
+ros total : -11.557
+rok total : 5.17852e-05
+  DT              : 0.00140773
+  Max CFL         : 0.300219
+  Total Time      : 0.0661223
+----------------------------
+Step : 44
+  Inner loop : 1
+ros total : -11.5572
+rok total : 5.23981e-05
+  Inner loop : 2
+ros total : -11.5576
+rok total : 5.36359e-05
+  Inner loop : 3
+ros total : -11.5574
+rok total : 5.29979e-05
+  DT              : 0.00140671
+  Max CFL         : 0.300035
+  Total Time      : 0.067529
+----------------------------
+Step : 45
+  Inner loop : 1
+ros total : -11.5576
+rok total : 5.36108e-05
+  Inner loop : 2
+ros total : -11.558
+rok total : 5.48495e-05
+  Inner loop : 3
+ros total : -11.5578
+rok total : 5.42112e-05
+  DT              : 0.00140655
+  Max CFL         : 0.299882
+  Total Time      : 0.0689355
+----------------------------
+Step : 46
+  Inner loop : 1
+ros total : -11.558
+rok total : 5.48246e-05
+  Inner loop : 2
+ros total : -11.5584
+rok total : 5.60647e-05
+  Inner loop : 3
+ros total : -11.5582
+rok total : 5.54258e-05
+  DT              : 0.0014071
+  Max CFL         : 0.300216
+  Total Time      : 0.0703426
+----------------------------
+Step : 47
+  Inner loop : 1
+ros total : -11.5584
+rok total : 5.604e-05
+  Inner loop : 2
+ros total : -11.5588
+rok total : 5.72801e-05
+  Inner loop : 3
+ros total : -11.5586
+rok total : 5.66414e-05
+  DT              : 0.00140609
+  Max CFL         : 0.300369
+  Total Time      : 0.0717487
+----------------------------
+Step : 48
+  Inner loop : 1
+ros total : -11.5588
+rok total : 5.72556e-05
+  Inner loop : 2
+ros total : -11.5592
+rok total : 5.8495e-05
+  Inner loop : 3
+ros total : -11.559
+rok total : 5.78568e-05
+  DT              : 0.00140436
+  Max CFL         : 0.300182
+  Total Time      : 0.0731531
+----------------------------
+Step : 49
+  Inner loop : 1
+ros total : -11.5592
+rok total : 5.84707e-05
+  Inner loop : 2
+ros total : -11.5597
+rok total : 5.97102e-05
+  Inner loop : 3
+ros total : -11.5594
+rok total : 5.90721e-05
+  DT              : 0.00140351
+  Max CFL         : 0.300025
+  Total Time      : 0.0745566
+----------------------------
+Step : 50
+  Inner loop : 1
+ros total : -11.5596
+rok total : 5.96861e-05
+  Inner loop : 2
+ros total : -11.5601
+rok total : 6.09263e-05
+  Inner loop : 3
+ros total : -11.5598
+rok total : 6.02879e-05
+  DT              : 0.00140339
+  Max CFL         : 0.299894
+  Total Time      : 0.07596
+----------------------------
+Step : 51
+  Inner loop : 1
+ros total : -11.56
+rok total : 6.09023e-05
+  Inner loop : 2
+ros total : -11.5605
+rok total : 6.21438e-05
+  Inner loop : 3
+ros total : -11.5602
+rok total : 6.15049e-05
+  DT              : 0.00140389
+  Max CFL         : 0.300213
+  Total Time      : 0.0773639
+----------------------------
+Step : 52
+  Inner loop : 1
+ros total : -11.5604
+rok total : 6.212e-05
+  Inner loop : 2
+ros total : -11.5609
+rok total : 6.33613e-05
+  Inner loop : 3
+ros total : -11.5606
+rok total : 6.27226e-05
+  DT              : 0.00140289
+  Max CFL         : 0.300312
+  Total Time      : 0.0787667
+----------------------------
+Step : 53
+  Inner loop : 1
+ros total : -11.5608
+rok total : 6.33376e-05
+  Inner loop : 2
+ros total : -11.5613
+rok total : 6.45784e-05
+  Inner loop : 3
+ros total : -11.561
+rok total : 6.39402e-05
+  DT              : 0.00140144
+  Max CFL         : 0.300153
+  Total Time      : 0.0801682
+----------------------------
+Step : 54
+  Inner loop : 1
+ros total : -11.5613
+rok total : 6.45549e-05
+  Inner loop : 2
+ros total : -11.5617
+rok total : 6.57958e-05
+  Inner loop : 3
+ros total : -11.5615
+rok total : 6.51576e-05
+  DT              : 0.00140072
+  Max CFL         : 0.300018
+  Total Time      : 0.0815689
+----------------------------
+Step : 55
+  Inner loop : 1
+ros total : -11.5617
+rok total : 6.57724e-05
+  Inner loop : 2
+ros total : -11.5621
+rok total : 6.70139e-05
+  Inner loop : 3
+ros total : -11.5619
+rok total : 6.63755e-05
+  DT              : 0.00140064
+  Max CFL         : 0.299905
+  Total Time      : 0.0829695
+----------------------------
+Step : 56
+  Inner loop : 1
+ros total : -11.5621
+rok total : 6.69907e-05
+  Inner loop : 2
+ros total : -11.5625
+rok total : 6.82333e-05
+  Inner loop : 3
+ros total : -11.5623
+rok total : 6.75944e-05
+  DT              : 0.00140108
+  Max CFL         : 0.300203
+  Total Time      : 0.0843706
+----------------------------
+Step : 57
+  Inner loop : 1
+ros total : -11.5625
+rok total : 6.82102e-05
+  Inner loop : 2
+ros total : -11.5629
+rok total : 6.94525e-05
+  Inner loop : 3
+ros total : -11.5627
+rok total : 6.88139e-05
+  DT              : 0.00140014
+  Max CFL         : 0.300265
+  Total Time      : 0.0857708
+----------------------------
+Step : 58
+  Inner loop : 1
+ros total : -11.5629
+rok total : 6.94296e-05
+  Inner loop : 2
+ros total : -11.5633
+rok total : 7.06715e-05
+  Inner loop : 3
+ros total : -11.5631
+rok total : 7.00332e-05
+  DT              : 0.0013989
+  Max CFL         : 0.300129
+  Total Time      : 0.0871697
+----------------------------
+Step : 59
+  Inner loop : 1
+ros total : -11.5633
+rok total : 7.06487e-05
+  Inner loop : 2
+ros total : -11.5637
+rok total : 7.18906e-05
+  Inner loop : 3
+ros total : -11.5635
+rok total : 7.12524e-05
+  DT              : 0.0013983
+  Max CFL         : 0.300014
+  Total Time      : 0.088568
+----------------------------
+Step : 60
+  Inner loop : 1
+ros total : -11.5637
+rok total : 7.1868e-05
+  Inner loop : 2
+ros total : -11.5641
+rok total : 7.31105e-05
+  Inner loop : 3
+ros total : -11.5639
+rok total : 7.24721e-05
+  DT              : 0.00139823
+  Max CFL         : 0.299915
+  Total Time      : 0.0899662
+----------------------------
+Step : 61
+  Inner loop : 1
+ros total : -11.5641
+rok total : 7.30879e-05
+  Inner loop : 2
+ros total : -11.5645
+rok total : 7.43314e-05
+  Inner loop : 3
+ros total : -11.5643
+rok total : 7.36926e-05
+  DT              : 0.00139863
+  Max CFL         : 0.300191
+  Total Time      : 0.0913648
+----------------------------
+Step : 62
+  Inner loop : 1
+ros total : -11.5645
+rok total : 7.43089e-05
+  Inner loop : 2
+ros total : -11.5649
+rok total : 7.55521e-05
+  Inner loop : 3
+ros total : -11.5647
+rok total : 7.49135e-05
+  DT              : 0.00139774
+  Max CFL         : 0.300227
+  Total Time      : 0.0927626
+----------------------------
+Step : 63
+  Inner loop : 1
+ros total : -11.5649
+rok total : 7.55298e-05
+  Inner loop : 2
+ros total : -11.5653
+rok total : 7.67726e-05
+  Inner loop : 3
+ros total : -11.5651
+rok total : 7.61343e-05
+  DT              : 0.00139669
+  Max CFL         : 0.30011
+  Total Time      : 0.0941593
+----------------------------
+Step : 64
+  Inner loop : 1
+ros total : -11.5653
+rok total : 7.67504e-05
+  Inner loop : 2
+ros total : -11.5657
+rok total : 7.79933e-05
+  Inner loop : 3
+ros total : -11.5655
+rok total : 7.73551e-05
+  DT              : 0.00139618
+  Max CFL         : 0.30001
+  Total Time      : 0.0955554
+----------------------------
+Step : 65
+  Inner loop : 1
+ros total : -11.5657
+rok total : 7.79712e-05
+  Inner loop : 2
+ros total : -11.5661
+rok total : 7.92146e-05
+  Inner loop : 3
+ros total : -11.5659
+rok total : 7.85762e-05
+  DT              : 0.00139613
+  Max CFL         : 0.299925
+  Total Time      : 0.0969516
+----------------------------
+Step : 66
+  Inner loop : 1
+ros total : -11.5661
+rok total : 7.91926e-05
+  Inner loop : 2
+ros total : -11.5665
+rok total : 8.04368e-05
+  Inner loop : 3
+ros total : -11.5663
+rok total : 7.97981e-05
+  DT              : 0.00139648
+  Max CFL         : 0.300172
+  Total Time      : 0.098348
+----------------------------
+Step : 67
+  Inner loop : 1
+ros total : -11.5665
+rok total : 8.04149e-05
+  Inner loop : 2
+ros total : -11.5669
+rok total : 8.16589e-05
+  Inner loop : 3
+ros total : -11.5667
+rok total : 8.10203e-05
+  DT              : 0.00139568
+  Max CFL         : 0.300194
+  Total Time      : 0.0997437
+----------------------------
+Step : 68
+  Inner loop : 1
+ros total : -11.5669
+rok total : 8.16371e-05
+  Inner loop : 2
+ros total : -11.5673
+rok total : 8.28808e-05
+  Inner loop : 3
+ros total : -11.5671
+rok total : 8.22425e-05
+  DT              : 0.00139478
+  Max CFL         : 0.300094
+  Total Time      : 0.101139
+----------------------------
+Step : 69
+  Inner loop : 1
+ros total : -11.5673
+rok total : 8.28591e-05
+  Inner loop : 2
+ros total : -11.5678
+rok total : 8.41028e-05
+  Inner loop : 3
+ros total : -11.5675
+rok total : 8.34645e-05
+  DT              : 0.00139434
+  Max CFL         : 0.300007
+  Total Time      : 0.102533
+----------------------------
+Step : 70
+  Inner loop : 1
+ros total : -11.5677
+rok total : 8.40812e-05
+  Inner loop : 2
+ros total : -11.5682
+rok total : 8.53254e-05
+  Inner loop : 3
+ros total : -11.5679
+rok total : 8.4687e-05
+  DT              : 0.00139431
+  Max CFL         : 0.299933
+  Total Time      : 0.103927
+----------------------------
+Step : 71
+  Inner loop : 1
+ros total : -11.5682
+rok total : 8.53039e-05
+  Inner loop : 2
+ros total : -11.5686
+rok total : 8.65488e-05
+  Inner loop : 3
+ros total : -11.5684
+rok total : 8.591e-05
+  DT              : 0.00139462
+  Max CFL         : 0.300158
+  Total Time      : 0.105322
+----------------------------
+Step : 72
+  Inner loop : 1
+ros total : -11.5686
+rok total : 8.65273e-05
+  Inner loop : 2
+ros total : -11.569
+rok total : 8.7772e-05
+  Inner loop : 3
+ros total : -11.5688
+rok total : 8.71335e-05
+  DT              : 0.00139389
+  Max CFL         : 0.300167
+  Total Time      : 0.106716
+----------------------------
+Step : 73
+  Inner loop : 1
+ros total : -11.569
+rok total : 8.77507e-05
+  Inner loop : 2
+ros total : -11.5694
+rok total : 8.89951e-05
+  Inner loop : 3
+ros total : -11.5692
+rok total : 8.83567e-05
+  DT              : 0.00139311
+  Max CFL         : 0.30008
+  Total Time      : 0.108109
+----------------------------
+Step : 74
+  Inner loop : 1
+ros total : -11.5694
+rok total : 8.89738e-05
+  Inner loop : 2
+ros total : -11.5698
+rok total : 9.02183e-05
+  Inner loop : 3
+ros total : -11.5696
+rok total : 8.958e-05
+  DT              : 0.00139274
+  Max CFL         : 0.300005
+  Total Time      : 0.109502
+----------------------------
+Step : 75
+  Inner loop : 1
+ros total : -11.5698
+rok total : 9.01972e-05
+  Inner loop : 2
+ros total : -11.5702
+rok total : 9.1442e-05
+  Inner loop : 3
+ros total : -11.57
+rok total : 9.08036e-05
+  DT              : 0.00139271
+  Max CFL         : 0.29994
+  Total Time      : 0.110894
+----------------------------
+Step : 76
+  Inner loop : 1
+ros total : -11.5702
+rok total : 9.1421e-05
+  Inner loop : 2
+ros total : -11.5706
+rok total : 9.26665e-05
+  Inner loop : 3
+ros total : -11.5704
+rok total : 9.20278e-05
+  DT              : 0.00139299
+  Max CFL         : 0.300142
+  Total Time      : 0.112287
+----------------------------
+Step : 77
+  Inner loop : 1
+ros total : -11.5706
+rok total : 9.26455e-05
+  Inner loop : 2
+ros total : -11.571
+rok total : 9.38908e-05
+  Inner loop : 3
+ros total : -11.5708
+rok total : 9.32522e-05
+  DT              : 0.00139233
+  Max CFL         : 0.300145
+  Total Time      : 0.11368
+----------------------------
+Step : 78
+  Inner loop : 1
+ros total : -11.571
+rok total : 9.38698e-05
+  Inner loop : 2
+ros total : -11.5714
+rok total : 9.51149e-05
+  Inner loop : 3
+ros total : -11.5712
+rok total : 9.44766e-05
+  DT              : 0.00139166
+  Max CFL         : 0.300069
+  Total Time      : 0.115071
+----------------------------
+Step : 79
+  Inner loop : 1
+ros total : -11.5714
+rok total : 9.50941e-05
+  Inner loop : 2
+ros total : -11.5718
+rok total : 9.63393e-05
+  Inner loop : 3
+ros total : -11.5716
+rok total : 9.57009e-05
+  DT              : 0.00139134
+  Max CFL         : 0.300004
+  Total Time      : 0.116463
+----------------------------
+Step : 80
+  Inner loop : 1
+ros total : -11.5718
+rok total : 9.63185e-05
+  Inner loop : 2
+ros total : -11.5723
+rok total : 9.7564e-05
+  Inner loop : 3
+ros total : -11.572
+rok total : 9.69256e-05
+  DT              : 0.00139132
+  Max CFL         : 0.299947
+  Total Time      : 0.117854
+----------------------------
+Step : 81
+  Inner loop : 1
+ros total : -11.5722
+rok total : 9.75433e-05
+  Inner loop : 2
+ros total : -11.5727
+rok total : 9.87894e-05
+  Inner loop : 3
+ros total : -11.5724
+rok total : 9.81507e-05
+  DT              : 0.00139157
+  Max CFL         : 0.300128
+  Total Time      : 0.119245
+----------------------------
+Step : 82
+  Inner loop : 1
+ros total : -11.5727
+rok total : 9.87688e-05
+  Inner loop : 2
+ros total : -11.5731
+rok total : 0.000100015
+  Inner loop : 3
+ros total : -11.5729
+rok total : 9.93761e-05
+  DT              : 0.00139098
+  Max CFL         : 0.300125
+  Total Time      : 0.120636
+----------------------------
+Step : 83
+  Inner loop : 1
+ros total : -11.5731
+rok total : 9.99941e-05
+  Inner loop : 2
+ros total : -11.5735
+rok total : 0.00010124
+  Inner loop : 3
+ros total : -11.5733
+rok total : 0.000100601
+  DT              : 0.0013904
+  Max CFL         : 0.300059
+  Total Time      : 0.122027
+----------------------------
+Step : 84
+  Inner loop : 1
+ros total : -11.5735
+rok total : 0.000101219
+  Inner loop : 2
+ros total : -11.5739
+rok total : 0.000102465
+  Inner loop : 3
+ros total : -11.5737
+rok total : 0.000101827
+  DT              : 0.00139012
+  Max CFL         : 0.300002
+  Total Time      : 0.123417
+----------------------------
+Step : 85
+  Inner loop : 1
+ros total : -11.5739
+rok total : 0.000102445
+  Inner loop : 2
+ros total : -11.5743
+rok total : 0.000103691
+  Inner loop : 3
+ros total : -11.5741
+rok total : 0.000103052
+  DT              : 0.00139011
+  Max CFL         : 0.299953
+  Total Time      : 0.124807
+----------------------------
+Step : 86
+  Inner loop : 1
+ros total : -11.5743
+rok total : 0.000103671
+  Inner loop : 2
+ros total : -11.5747
+rok total : 0.000104917
+  Inner loop : 3
+ros total : -11.5745
+rok total : 0.000104278
+  DT              : 0.00139033
+  Max CFL         : 0.300116
+  Total Time      : 0.126197
+----------------------------
+Step : 87
+  Inner loop : 1
+ros total : -11.5747
+rok total : 0.000104897
+  Inner loop : 2
+ros total : -11.5751
+rok total : 0.000106143
+  Inner loop : 3
+ros total : -11.5749
+rok total : 0.000105505
+  DT              : 0.00138979
+  Max CFL         : 0.300108
+  Total Time      : 0.127587
+----------------------------
+Step : 88
+  Inner loop : 1
+ros total : -11.5751
+rok total : 0.000106123
+  Inner loop : 2
+ros total : -11.5755
+rok total : 0.000107369
+  Inner loop : 3
+ros total : -11.5753
+rok total : 0.000106731
+  DT              : 0.00138929
+  Max CFL         : 0.300051
+  Total Time      : 0.128976
+----------------------------
+Step : 89
+  Inner loop : 1
+ros total : -11.5755
+rok total : 0.000107349
+  Inner loop : 2
+ros total : -11.5759
+rok total : 0.000108596
+  Inner loop : 3
+ros total : -11.5757
+rok total : 0.000107957
+  DT              : 0.00138905
+  Max CFL         : 0.300001
+  Total Time      : 0.130366
+----------------------------
+Step : 90
+  Inner loop : 1
+ros total : -11.5759
+rok total : 0.000108576
+  Inner loop : 2
+ros total : -11.5764
+rok total : 0.000109822
+  Inner loop : 3
+ros total : -11.5761
+rok total : 0.000109184
+  DT              : 0.00138905
+  Max CFL         : 0.299958
+  Total Time      : 0.131755
+----------------------------
+Step : 91
+  Inner loop : 1
+ros total : -11.5763
+rok total : 0.000109802
+  Inner loop : 2
+ros total : -11.5768
+rok total : 0.000111049
+  Inner loop : 3
+ros total : -11.5765
+rok total : 0.000110411
+  DT              : 0.00138924
+  Max CFL         : 0.3001
+  Total Time      : 0.133144
+----------------------------
+Step : 92
+  Inner loop : 1
+ros total : -11.5768
+rok total : 0.000111029
+  Inner loop : 2
+ros total : -11.5772
+rok total : 0.000112276
+  Inner loop : 3
+ros total : -11.577
+rok total : 0.000111638
+  DT              : 0.00138878
+  Max CFL         : 0.300094
+  Total Time      : 0.134533
+----------------------------
+Step : 93
+  Inner loop : 1
+ros total : -11.5772
+rok total : 0.000112257
+  Inner loop : 2
+ros total : -11.5776
+rok total : 0.000113503
+  Inner loop : 3
+ros total : -11.5774
+rok total : 0.000112865
+  DT              : 0.00138834
+  Max CFL         : 0.300044
+  Total Time      : 0.135921
+----------------------------
+Step : 94
+  Inner loop : 1
+ros total : -11.5776
+rok total : 0.000113484
+  Inner loop : 2
+ros total : -11.578
+rok total : 0.000114731
+  Inner loop : 3
+ros total : -11.5778
+rok total : 0.000114092
+  DT              : 0.00138814
+  Max CFL         : 0.300001
+  Total Time      : 0.137309
+----------------------------
+Step : 95
+  Inner loop : 1
+ros total : -11.578
+rok total : 0.000114711
+  Inner loop : 2
+ros total : -11.5784
+rok total : 0.000115958
+  Inner loop : 3
+ros total : -11.5782
+rok total : 0.000115319
+  DT              : 0.00138813
+  Max CFL         : 0.299963
+  Total Time      : 0.138697
+----------------------------
+Step : 96
+  Inner loop : 1
+ros total : -11.5784
+rok total : 0.000115938
+  Inner loop : 2
+ros total : -11.5788
+rok total : 0.000117186
+  Inner loop : 3
+ros total : -11.5786
+rok total : 0.000116547
+  DT              : 0.00138831
+  Max CFL         : 0.300091
+  Total Time      : 0.140085
+----------------------------
+Step : 97
+  Inner loop : 1
+ros total : -11.5788
+rok total : 0.000117166
+  Inner loop : 2
+ros total : -11.5792
+rok total : 0.000118414
+  Inner loop : 3
+ros total : -11.579
+rok total : 0.000117775
+  DT              : 0.00138789
+  Max CFL         : 0.300082
+  Total Time      : 0.141473
+----------------------------
+Step : 98
+  Inner loop : 1
+ros total : -11.5792
+rok total : 0.000118394
+  Inner loop : 2
+ros total : -11.5796
+rok total : 0.000119642
+  Inner loop : 3
+ros total : -11.5794
+rok total : 0.000119003
+  DT              : 0.00138751
+  Max CFL         : 0.300038
+  Total Time      : 0.142861
+----------------------------
+Step : 99
+  Inner loop : 1
+ros total : -11.5796
+rok total : 0.000119622
+  Inner loop : 2
+ros total : -11.5801
+rok total : 0.00012087
+  Inner loop : 3
+ros total : -11.5798
+rok total : 0.000120231
+  DT              : 0.00138733
+  Max CFL         : 0.3
+  Total Time      : 0.144248
+----------------------------
+Step : 100
+  Inner loop : 1
+ros total : -11.5801
+rok total : 0.00012085
+  Inner loop : 2
+ros total : -11.5805
+rok total : 0.000122098
+  Inner loop : 3
+ros total : -11.5803
+rok total : 0.000121459
+  DT              : 0.00138733
+  Max CFL         : 0.299967
+  Total Time      : 0.145636
+----------------------------
+Step : 101
+  Inner loop : 1
+ros total : -11.5805
+rok total : 0.000122078
+  Inner loop : 2
+ros total : -11.5809
+rok total : 0.000123326
+  Inner loop : 3
+ros total : -11.5807
+rok total : 0.000122688
+  DT              : 0.00138748
+  Max CFL         : 0.300081
+  Total Time      : 0.147023
+----------------------------
+Step : 102
+  Inner loop : 1
+ros total : -11.5809
+rok total : 0.000123307
+  Inner loop : 2
+ros total : -11.5813
+rok total : 0.000124555
+  Inner loop : 3
+ros total : -11.5811
+rok total : 0.000123916
+  DT              : 0.00138711
+  Max CFL         : 0.300071
+  Total Time      : 0.14841
+----------------------------
+Step : 103
+  Inner loop : 1
+ros total : -11.5813
+rok total : 0.000124536
+  Inner loop : 2
+ros total : -11.5817
+rok total : 0.000125784
+  Inner loop : 3
+ros total : -11.5815
+rok total : 0.000125145
+  DT              : 0.00138678
+  Max CFL         : 0.300033
+  Total Time      : 0.149797
+----------------------------
+Step : 104
+  Inner loop : 1
+ros total : -11.5817
+rok total : 0.000125764
+  Inner loop : 2
+ros total : -11.5821
+rok total : 0.000127012
+  Inner loop : 3
+ros total : -11.5819
+rok total : 0.000126374
+  DT              : 0.00138663
+  Max CFL         : 0.3
+  Total Time      : 0.151184
+----------------------------
+Step : 105
+  Inner loop : 1
+ros total : -11.5821
+rok total : 0.000126993
+  Inner loop : 2
+ros total : -11.5825
+rok total : 0.000128241
+  Inner loop : 3
+ros total : -11.5823
+rok total : 0.000127602
+  DT              : 0.00138663
+  Max CFL         : 0.29997
+  Total Time      : 0.15257
+----------------------------
+Step : 106
+  Inner loop : 1
+ros total : -11.5825
+rok total : 0.000128222
+  Inner loop : 2
+ros total : -11.5829
+rok total : 0.000129471
+  Inner loop : 3
+ros total : -11.5827
+rok total : 0.000128832
+  DT              : 0.00138677
+  Max CFL         : 0.300072
+  Total Time      : 0.153957
+----------------------------
+Step : 107
+  Inner loop : 1
+ros total : -11.5829
+rok total : 0.000129451
+  Inner loop : 2
+ros total : -11.5834
+rok total : 0.0001307
+  Inner loop : 3
+ros total : -11.5831
+rok total : 0.000130061
+  DT              : 0.00138644
+  Max CFL         : 0.300062
+  Total Time      : 0.155343
+----------------------------
+Step : 108
+  Inner loop : 1
+ros total : -11.5834
+rok total : 0.000130681
+  Inner loop : 2
+ros total : -11.5838
+rok total : 0.000131929
+  Inner loop : 3
+ros total : -11.5836
+rok total : 0.000131291
+  DT              : 0.00138615
+  Max CFL         : 0.300029
+  Total Time      : 0.15673
+----------------------------
+Step : 109
+  Inner loop : 1
+ros total : -11.5838
+rok total : 0.00013191
+  Inner loop : 2
+ros total : -11.5842
+rok total : 0.000133159
+  Inner loop : 3
+ros total : -11.584
+rok total : 0.00013252
+  DT              : 0.00138602
+  Max CFL         : 0.299999
+  Total Time      : 0.158116
+----------------------------
+Step : 110
+  Inner loop : 1
+ros total : -11.5842
+rok total : 0.00013314
+  Inner loop : 2
+ros total : -11.5846
+rok total : 0.000134389
+  Inner loop : 3
+ros total : -11.5844
+rok total : 0.00013375
+  DT              : 0.00138602
+  Max CFL         : 0.299973
+  Total Time      : 0.159502
+----------------------------
+Step : 111
+  Inner loop : 1
+ros total : -11.5846
+rok total : 0.000134369
+  Inner loop : 2
+ros total : -11.585
+rok total : 0.000135619
+  Inner loop : 3
+ros total : -11.5848
+rok total : 0.00013498
+  DT              : 0.00138614
+  Max CFL         : 0.300064
+  Total Time      : 0.160888
+----------------------------
+Step : 112
+  Inner loop : 1
+ros total : -11.585
+rok total : 0.0001356
+  Inner loop : 2
+ros total : -11.5854
+rok total : 0.000136849
+  Inner loop : 3
+ros total : -11.5852
+rok total : 0.00013621
+  DT              : 0.00138585
+  Max CFL         : 0.300054
+  Total Time      : 0.162274
+----------------------------
+Step : 113
+  Inner loop : 1
+ros total : -11.5854
+rok total : 0.00013683
+  Inner loop : 2
+ros total : -11.5858
+rok total : 0.000138079
+  Inner loop : 3
+ros total : -11.5856
+rok total : 0.00013744
+  DT              : 0.0013856
+  Max CFL         : 0.300025
+  Total Time      : 0.163659
+----------------------------
+Step : 114
+  Inner loop : 1
+ros total : -11.5858
+rok total : 0.00013806
+  Inner loop : 2
+ros total : -11.5863
+rok total : 0.000139309
+  Inner loop : 3
+ros total : -11.586
+rok total : 0.00013867
+  DT              : 0.00138548
+  Max CFL         : 0.299999
+  Total Time      : 0.165045
+----------------------------
+Step : 115
+  Inner loop : 1
+ros total : -11.5862
+rok total : 0.00013929
+  Inner loop : 2
+ros total : -11.5867
+rok total : 0.000140539
+  Inner loop : 3
+ros total : -11.5865
+rok total : 0.0001399
+  DT              : 0.00138549
+  Max CFL         : 0.299976
+  Total Time      : 0.16643
+----------------------------
+Step : 116
+  Inner loop : 1
+ros total : -11.5867
+rok total : 0.00014052
+  Inner loop : 2
+ros total : -11.5871
+rok total : 0.00014177
+  Inner loop : 3
+ros total : -11.5869
+rok total : 0.000141131
+  DT              : 0.0013856
+  Max CFL         : 0.300058
+  Total Time      : 0.167816
+----------------------------
+Step : 117
+  Inner loop : 1
+ros total : -11.5871
+rok total : 0.000141751
+  Inner loop : 2
+ros total : -11.5875
+rok total : 0.000143001
+  Inner loop : 3
+ros total : -11.5873
+rok total : 0.000142362
+  DT              : 0.00138533
+  Max CFL         : 0.300047
+  Total Time      : 0.169201
+----------------------------
+Step : 118
+  Inner loop : 1
+ros total : -11.5875
+rok total : 0.000142982
+  Inner loop : 2
+ros total : -11.5879
+rok total : 0.000144231
+  Inner loop : 3
+ros total : -11.5877
+rok total : 0.000143592
+  DT              : 0.00138511
+  Max CFL         : 0.300021
+  Total Time      : 0.170586
+----------------------------
+Step : 119
+  Inner loop : 1
+ros total : -11.5879
+rok total : 0.000144213
+  Inner loop : 2
+ros total : -11.5883
+rok total : 0.000145462
+  Inner loop : 3
+ros total : -11.5881
+rok total : 0.000144823
+  DT              : 0.00138501
+  Max CFL         : 0.299999
+  Total Time      : 0.171971
+----------------------------
+Step : 120
+  Inner loop : 1
+ros total : -11.5883
+rok total : 0.000145443
+  Inner loop : 2
+ros total : -11.5887
+rok total : 0.000146693
+  Inner loop : 3
+ros total : -11.5885
+rok total : 0.000146054
+  DT              : 0.00138502
+  Max CFL         : 0.299979
+  Total Time      : 0.173356
+----------------------------
+Step : 121
+  Inner loop : 1
+ros total : -11.5887
+rok total : 0.000146675
+  Inner loop : 2
+ros total : -11.5892
+rok total : 0.000147925
+  Inner loop : 3
+ros total : -11.5889
+rok total : 0.000147285
+  DT              : 0.00138512
+  Max CFL         : 0.300048
+  Total Time      : 0.174741
+----------------------------
+Step : 122
+  Inner loop : 1
+ros total : -11.5891
+rok total : 0.000147906
+  Inner loop : 2
+ros total : -11.5896
+rok total : 0.000149156
+  Inner loop : 3
+ros total : -11.5894
+rok total : 0.000148517
+  DT              : 0.0013849
+  Max CFL         : 0.300041
+  Total Time      : 0.176126
+----------------------------
+Step : 123
+  Inner loop : 1
+ros total : -11.5896
+rok total : 0.000149137
+  Inner loop : 2
+ros total : -11.59
+rok total : 0.000150387
+  Inner loop : 3
+ros total : -11.5898
+rok total : 0.000149748
+  DT              : 0.00138471
+  Max CFL         : 0.300019
+  Total Time      : 0.177511
+----------------------------
+Step : 124
+  Inner loop : 1
+ros total : -11.59
+rok total : 0.000150369
+  Inner loop : 2
+ros total : -11.5904
+rok total : 0.000151619
+  Inner loop : 3
+ros total : -11.5902
+rok total : 0.00015098
+  DT              : 0.00138462
+  Max CFL         : 0.299999
+  Total Time      : 0.178896
+----------------------------
+Step : 125
+  Inner loop : 1
+ros total : -11.5904
+rok total : 0.0001516
+  Inner loop : 2
+ros total : -11.5908
+rok total : 0.000152851
+  Inner loop : 3
+ros total : -11.5906
+rok total : 0.000152211
+  DT              : 0.00138463
+  Max CFL         : 0.299981
+  Total Time      : 0.18028
+----------------------------
+Step : 126
+  Inner loop : 1
+ros total : -11.5908
+rok total : 0.000152832
+  Inner loop : 2
+ros total : -11.5912
+rok total : 0.000154083
+  Inner loop : 3
+ros total : -11.591
+rok total : 0.000153443
+  DT              : 0.00138471
+  Max CFL         : 0.300044
+  Total Time      : 0.181665
+----------------------------
+Step : 127
+  Inner loop : 1
+ros total : -11.5912
+rok total : 0.000154064
+  Inner loop : 2
+ros total : -11.5916
+rok total : 0.000155315
+  Inner loop : 3
+ros total : -11.5914
+rok total : 0.000154675
+  DT              : 0.00138451
+  Max CFL         : 0.300036
+  Total Time      : 0.183049
+----------------------------
+Step : 128
+  Inner loop : 1
+ros total : -11.5916
+rok total : 0.000155296
+  Inner loop : 2
+ros total : -11.5921
+rok total : 0.000156547
+  Inner loop : 3
+ros total : -11.5918
+rok total : 0.000155907
+  DT              : 0.00138435
+  Max CFL         : 0.300016
+  Total Time      : 0.184434
+----------------------------
+Step : 129
+  Inner loop : 1
+ros total : -11.5921
+rok total : 0.000156528
+  Inner loop : 2
+ros total : -11.5925
+rok total : 0.000157779
+  Inner loop : 3
+ros total : -11.5923
+rok total : 0.000157139
+  DT              : 0.00138427
+  Max CFL         : 0.299999
+  Total Time      : 0.185818
+----------------------------
+Step : 130
+  Inner loop : 1
+ros total : -11.5925
+rok total : 0.00015776
+  Inner loop : 2
+ros total : -11.5929
+rok total : 0.000159011
+  Inner loop : 3
+ros total : -11.5927
+rok total : 0.000158372
+  DT              : 0.00138428
+  Max CFL         : 0.299983
+  Total Time      : 0.187202
+----------------------------
+Step : 131
+  Inner loop : 1
+ros total : -11.5929
+rok total : 0.000158993
+  Inner loop : 2
+ros total : -11.5933
+rok total : 0.000160244
+  Inner loop : 3
+ros total : -11.5931
+rok total : 0.000159604
+  DT              : 0.00138436
+  Max CFL         : 0.300039
+  Total Time      : 0.188587
+----------------------------
+Step : 132
+  Inner loop : 1
+ros total : -11.5933
+rok total : 0.000160225
+  Inner loop : 2
+ros total : -11.5937
+rok total : 0.000161476
+  Inner loop : 3
+ros total : -11.5935
+rok total : 0.000160837
+  DT              : 0.00138418
+  Max CFL         : 0.300031
+  Total Time      : 0.189971
+----------------------------
+Step : 133
+  Inner loop : 1
+ros total : -11.5937
+rok total : 0.000161458
+  Inner loop : 2
+ros total : -11.5941
+rok total : 0.000162709
+  Inner loop : 3
+ros total : -11.5939
+rok total : 0.000162069
+  DT              : 0.00138403
+  Max CFL         : 0.300014
+  Total Time      : 0.191355
+----------------------------
+Step : 134
+  Inner loop : 1
+ros total : -11.5941
+rok total : 0.00016269
+  Inner loop : 2
+ros total : -11.5946
+rok total : 0.000163942
+  Inner loop : 3
+ros total : -11.5943
+rok total : 0.000163302
+  DT              : 0.00138397
+  Max CFL         : 0.299999
+  Total Time      : 0.192739
+----------------------------
+Step : 135
+  Inner loop : 1
+ros total : -11.5945
+rok total : 0.000163923
+  Inner loop : 2
+ros total : -11.595
+rok total : 0.000165175
+  Inner loop : 3
+ros total : -11.5948
+rok total : 0.000164535
+  DT              : 0.00138398
+  Max CFL         : 0.299985
+  Total Time      : 0.194123
+----------------------------
+Step : 136
+  Inner loop : 1
+ros total : -11.595
+rok total : 0.000165156
+  Inner loop : 2
+ros total : -11.5954
+rok total : 0.000166408
+  Inner loop : 3
+ros total : -11.5952
+rok total : 0.000165768
+  DT              : 0.00138405
+  Max CFL         : 0.300034
+  Total Time      : 0.195507
+----------------------------
+Step : 137
+  Inner loop : 1
+ros total : -11.5954
+rok total : 0.000166389
+  Inner loop : 2
+ros total : -11.5958
+rok total : 0.000167641
+  Inner loop : 3
+ros total : -11.5956
+rok total : 0.000167001
+  DT              : 0.00138389
+  Max CFL         : 0.300027
+  Total Time      : 0.196891
+----------------------------
+Step : 138
+  Inner loop : 1
+ros total : -11.5958
+rok total : 0.000167623
+  Inner loop : 2
+ros total : -11.5962
+rok total : 0.000168874
+  Inner loop : 3
+ros total : -11.596
+rok total : 0.000168234
+  DT              : 0.00138376
+  Max CFL         : 0.300012
+  Total Time      : 0.198274
+----------------------------
+Step : 139
+  Inner loop : 1
+ros total : -11.5962
+rok total : 0.000168856
+  Inner loop : 2
+ros total : -11.5966
+rok total : 0.000170107
+  Inner loop : 3
+ros total : -11.5964
+rok total : 0.000169468
+  DT              : 0.00138371
+  Max CFL         : 0.299998
+  Total Time      : 0.199658
+----------------------------
+Step : 140
+  Inner loop : 1
+ros total : -11.5966
+rok total : 0.000170089
+  Inner loop : 2
+ros total : -11.5971
+rok total : 0.000171341
+  Inner loop : 3
+ros total : -11.5968
+rok total : 0.000170701
+  DT              : 0.00138371
+  Max CFL         : 0.299986
+  Total Time      : 0.201042
+----------------------------
+Step : 141
+  Inner loop : 1
+ros total : -11.597
+rok total : 0.000171323
+  Inner loop : 2
+ros total : -11.5975
+rok total : 0.000172575
+  Inner loop : 3
+ros total : -11.5972
+rok total : 0.000171935
+  DT              : 0.00138378
+  Max CFL         : 0.30003
+  Total Time      : 0.202426
+----------------------------
+Step : 142
+  Inner loop : 1
+ros total : -11.5975
+rok total : 0.000172556
+  Inner loop : 2
+ros total : -11.5979
+rok total : 0.000173808
+  Inner loop : 3
+ros total : -11.5977
+rok total : 0.000173169
+  DT              : 0.00138364
+  Max CFL         : 0.300024
+  Total Time      : 0.203809
+----------------------------
+Step : 143
+  Inner loop : 1
+ros total : -11.5979
+rok total : 0.00017379
+  Inner loop : 2
+ros total : -11.5983
+rok total : 0.000175042
+  Inner loop : 3
+ros total : -11.5981
+rok total : 0.000174402
+  DT              : 0.00138353
+  Max CFL         : 0.30001
+  Total Time      : 0.205193
+----------------------------
+Step : 144
+  Inner loop : 1
+ros total : -11.5983
+rok total : 0.000175024
+  Inner loop : 2
+ros total : -11.5987
+rok total : 0.000176276
+  Inner loop : 3
+ros total : -11.5985
+rok total : 0.000175636
+  DT              : 0.00138348
+  Max CFL         : 0.299998
+  Total Time      : 0.206576
+----------------------------
+Step : 145
+  Inner loop : 1
+ros total : -11.5987
+rok total : 0.000176258
+  Inner loop : 2
+ros total : -11.5991
+rok total : 0.00017751
+  Inner loop : 3
+ros total : -11.5989
+rok total : 0.00017687
+  DT              : 0.00138349
+  Max CFL         : 0.299988
+  Total Time      : 0.20796
+----------------------------
+Step : 146
+  Inner loop : 1
+ros total : -11.5991
+rok total : 0.000177492
+  Inner loop : 2
+ros total : -11.5995
+rok total : 0.000178744
+  Inner loop : 3
+ros total : -11.5993
+rok total : 0.000178104
+  DT              : 0.00138354
+  Max CFL         : 0.300028
+  Total Time      : 0.209343
+----------------------------
+Step : 147
+  Inner loop : 1
+ros total : -11.5995
+rok total : 0.000178726
+  Inner loop : 2
+ros total : -11.6
+rok total : 0.000179978
+  Inner loop : 3
+ros total : -11.5997
+rok total : 0.000179339
+  DT              : 0.00138342
+  Max CFL         : 0.300021
+  Total Time      : 0.210727
+----------------------------
+Step : 148
+  Inner loop : 1
+ros total : -11.6
+rok total : 0.00017996
+  Inner loop : 2
+ros total : -11.6004
+rok total : 0.000181213
+  Inner loop : 3
+ros total : -11.6002
+rok total : 0.000180573
+  DT              : 0.00138332
+  Max CFL         : 0.300009
+  Total Time      : 0.21211
+----------------------------
+Step : 149
+  Inner loop : 1
+ros total : -11.6004
+rok total : 0.000181195
+  Inner loop : 2
+ros total : -11.6008
+rok total : 0.000182447
+  Inner loop : 3
+ros total : -11.6006
+rok total : 0.000181807
+  DT              : 0.00138328
+  Max CFL         : 0.299998
+  Total Time      : 0.213493
+----------------------------
+Step : 150
+  Inner loop : 1
+ros total : -11.6008
+rok total : 0.000182429
+  Inner loop : 2
+ros total : -11.6012
+rok total : 0.000183682
+  Inner loop : 3
+ros total : -11.601
+rok total : 0.000183042
+  DT              : 0.00138328
+  Max CFL         : 0.299989
+  Total Time      : 0.214877
+----------------------------
+Step : 151
+  Inner loop : 1
+ros total : -11.6012
+rok total : 0.000183664
+  Inner loop : 2
+ros total : -11.6016
+rok total : 0.000184917
+  Inner loop : 3
+ros total : -11.6014
+rok total : 0.000184276
+  DT              : 0.00138333
+  Max CFL         : 0.300021
+  Total Time      : 0.21626
+----------------------------
+Step : 152
+  Inner loop : 1
+ros total : -11.6016
+rok total : 0.000184898
+  Inner loop : 2
+ros total : -11.6021
+rok total : 0.000186151
+  Inner loop : 3
+ros total : -11.6018
+rok total : 0.000185511
+  DT              : 0.00138324
+  Max CFL         : 0.300018
+  Total Time      : 0.217643
+----------------------------
+Step : 153
+  Inner loop : 1
+ros total : -11.602
+rok total : 0.000186133
+  Inner loop : 2
+ros total : -11.6025
+rok total : 0.000187386
+  Inner loop : 3
+ros total : -11.6022
+rok total : 0.000186746
+  DT              : 0.00138315
+  Max CFL         : 0.300008
+  Total Time      : 0.219026
+----------------------------
+Step : 154
+  Inner loop : 1
+ros total : -11.6025
+rok total : 0.000187368
+  Inner loop : 2
+ros total : -11.6029
+rok total : 0.000188621
+  Inner loop : 3
+ros total : -11.6027
+rok total : 0.000187981
+  DT              : 0.00138312
+  Max CFL         : 0.299999
+  Total Time      : 0.22041
+----------------------------
+Step : 155
+  Inner loop : 1
+ros total : -11.6029
+rok total : 0.000188603
+  Inner loop : 2
+ros total : -11.6033
+rok total : 0.000189856
+  Inner loop : 3
+ros total : -11.6031
+rok total : 0.000189216
+  DT              : 0.00138312
+  Max CFL         : 0.29999
+  Total Time      : 0.221793
+----------------------------
+Step : 156
+  Inner loop : 1
+ros total : -11.6033
+rok total : 0.000189838
+  Inner loop : 2
+ros total : -11.6037
+rok total : 0.000191091
+  Inner loop : 3
+ros total : -11.6035
+rok total : 0.000190451
+  DT              : 0.00138317
+  Max CFL         : 0.30002
+  Total Time      : 0.223176
+----------------------------
+Step : 157
+  Inner loop : 1
+ros total : -11.6037
+rok total : 0.000191073
+  Inner loop : 2
+ros total : -11.6041
+rok total : 0.000192327
+  Inner loop : 3
+ros total : -11.6039
+rok total : 0.000191687
+  DT              : 0.00138308
+  Max CFL         : 0.300016
+  Total Time      : 0.224559
+----------------------------
+Step : 158
+  Inner loop : 1
+ros total : -11.6041
+rok total : 0.000192309
+  Inner loop : 2
+ros total : -11.6046
+rok total : 0.000193562
+  Inner loop : 3
+ros total : -11.6043
+rok total : 0.000192922
+  DT              : 0.00138301
+  Max CFL         : 0.300007
+  Total Time      : 0.225942
+----------------------------
+Step : 159
+  Inner loop : 1
+ros total : -11.6045
+rok total : 0.000193544
+  Inner loop : 2
+ros total : -11.605
+rok total : 0.000194798
+  Inner loop : 3
+ros total : -11.6048
+rok total : 0.000194157
+  DT              : 0.00138297
+  Max CFL         : 0.299999
+  Total Time      : 0.227325
+----------------------------
+Step : 160
+  Inner loop : 1
+ros total : -11.605
+rok total : 0.00019478
+  Inner loop : 2
+ros total : -11.6054
+rok total : 0.000196033
+  Inner loop : 3
+ros total : -11.6052
+rok total : 0.000195393
+  DT              : 0.00138298
+  Max CFL         : 0.299991
+  Total Time      : 0.228708
+----------------------------
+Step : 161
+  Inner loop : 1
+ros total : -11.6054
+rok total : 0.000196015
+  Inner loop : 2
+ros total : -11.6058
+rok total : 0.000197269
+  Inner loop : 3
+ros total : -11.6056
+rok total : 0.000196629
+  DT              : 0.00138302
+  Max CFL         : 0.300017
+  Total Time      : 0.230091
+----------------------------
+Step : 162
+  Inner loop : 1
+ros total : -11.6058
+rok total : 0.000197251
+  Inner loop : 2
+ros total : -11.6062
+rok total : 0.000198505
+  Inner loop : 3
+ros total : -11.606
+rok total : 0.000197864
+  DT              : 0.00138294
+  Max CFL         : 0.300014
+  Total Time      : 0.231474
+----------------------------
+Step : 163
+  Inner loop : 1
+ros total : -11.6062
+rok total : 0.000198487
+  Inner loop : 2
+ros total : -11.6066
+rok total : 0.00019974
+  Inner loop : 3
+ros total : -11.6064
+rok total : 0.0001991
+  DT              : 0.00138288
+  Max CFL         : 0.300006
+  Total Time      : 0.232857
+----------------------------
+Step : 164
+  Inner loop : 1
+ros total : -11.6066
+rok total : 0.000199723
+  Inner loop : 2
+ros total : -11.6071
+rok total : 0.000200976
+  Inner loop : 3
+ros total : -11.6068
+rok total : 0.000200336
+  DT              : 0.00138285
+  Max CFL         : 0.299999
+  Total Time      : 0.23424
+----------------------------
+Step : 165
+  Inner loop : 1
+ros total : -11.6071
+rok total : 0.000200959
+  Inner loop : 2
+ros total : -11.6075
+rok total : 0.000202212
+  Inner loop : 3
+ros total : -11.6073
+rok total : 0.000201572
+  DT              : 0.00138286
+  Max CFL         : 0.299992
+  Total Time      : 0.235622
+----------------------------
+Step : 166
+  Inner loop : 1
+ros total : -11.6075
+rok total : 0.000202195
+  Inner loop : 2
+ros total : -11.6079
+rok total : 0.000203449
+  Inner loop : 3
+ros total : -11.6077
+rok total : 0.000202808
+  DT              : 0.00138289
+  Max CFL         : 0.300015
+  Total Time      : 0.237005
+----------------------------
+Step : 167
+  Inner loop : 1
+ros total : -11.6079
+rok total : 0.000203431
+  Inner loop : 2
+ros total : -11.6083
+rok total : 0.000204685
+  Inner loop : 3
+ros total : -11.6081
+rok total : 0.000204044
+  DT              : 0.00138283
+  Max CFL         : 0.300012
+  Total Time      : 0.238388
+----------------------------
+Step : 168
+  Inner loop : 1
+ros total : -11.6083
+rok total : 0.000204667
+  Inner loop : 2
+ros total : -11.6087
+rok total : 0.000205921
+  Inner loop : 3
+ros total : -11.6085
+rok total : 0.000205281
+  DT              : 0.00138277
+  Max CFL         : 0.300005
+  Total Time      : 0.239771
+----------------------------
+Step : 169
+  Inner loop : 1
+ros total : -11.6087
+rok total : 0.000205903
+  Inner loop : 2
+ros total : -11.6091
+rok total : 0.000207158
+  Inner loop : 3
+ros total : -11.6089
+rok total : 0.000206517
+  DT              : 0.00138275
+  Max CFL         : 0.299999
+  Total Time      : 0.241154
+----------------------------
+Step : 170
+  Inner loop : 1
+ros total : -11.6091
+rok total : 0.00020714
+  Inner loop : 2
+ros total : -11.6096
+rok total : 0.000208394
+  Inner loop : 3
+ros total : -11.6093
+rok total : 0.000207754
+  DT              : 0.00138275
+  Max CFL         : 0.299993
+  Total Time      : 0.242536
+----------------------------
+Step : 171
+  Inner loop : 1
+ros total : -11.6096
+rok total : 0.000208376
+  Inner loop : 2
+ros total : -11.61
+rok total : 0.000209631
+  Inner loop : 3
+ros total : -11.6098
+rok total : 0.00020899
+  DT              : 0.00138278
+  Max CFL         : 0.300012
+  Total Time      : 0.243919
+----------------------------
+Step : 172
+  Inner loop : 1
+ros total : -11.61
+rok total : 0.000209613
+  Inner loop : 2
+ros total : -11.6104
+rok total : 0.000210867
+  Inner loop : 3
+ros total : -11.6102
+rok total : 0.000210227
+  DT              : 0.00138273
+  Max CFL         : 0.300011
+  Total Time      : 0.245302
+----------------------------
+Step : 173
+  Inner loop : 1
+ros total : -11.6104
+rok total : 0.00021085
+  Inner loop : 2
+ros total : -11.6108
+rok total : 0.000212104
+  Inner loop : 3
+ros total : -11.6106
+rok total : 0.000211463
+  DT              : 0.00138268
+  Max CFL         : 0.300004
+  Total Time      : 0.246685
+----------------------------
+Step : 174
+  Inner loop : 1
+ros total : -11.6108
+rok total : 0.000212086
+  Inner loop : 2
+ros total : -11.6112
+rok total : 0.000213341
+  Inner loop : 3
+ros total : -11.611
+rok total : 0.0002127
+  DT              : 0.00138266
+  Max CFL         : 0.299999
+  Total Time      : 0.248067
+----------------------------
+Step : 175
+  Inner loop : 1
+ros total : -11.6112
+rok total : 0.000213323
+  Inner loop : 2
+ros total : -11.6117
+rok total : 0.000214577
+  Inner loop : 3
+ros total : -11.6114
+rok total : 0.000213937
+  DT              : 0.00138266
+  Max CFL         : 0.299994
+  Total Time      : 0.24945
+----------------------------
+Step : 176
+  Inner loop : 1
+ros total : -11.6117
+rok total : 0.00021456
+  Inner loop : 2
+ros total : -11.6121
+rok total : 0.000215814
+  Inner loop : 3
+ros total : -11.6119
+rok total : 0.000215174
+  DT              : 0.00138269
+  Max CFL         : 0.300012
+  Total Time      : 0.250833
+----------------------------
+Step : 177
+  Inner loop : 1
+ros total : -11.6121
+rok total : 0.000215796
+  Inner loop : 2
+ros total : -11.6125
+rok total : 0.00021705
+  Inner loop : 3
+ros total : -11.6123
+rok total : 0.00021641
+  DT              : 0.00138264
+  Max CFL         : 0.300009
+  Total Time      : 0.252215
+----------------------------
+Step : 178
+  Inner loop : 1
+ros total : -11.6125
+rok total : 0.000217033
+  Inner loop : 2
+ros total : -11.6129
+rok total : 0.000218286
+  Inner loop : 3
+ros total : -11.6127
+rok total : 0.000217646
+  DT              : 0.00138259
+  Max CFL         : 0.300004
+  Total Time      : 0.253598
+----------------------------
+Step : 179
+  Inner loop : 1
+ros total : -11.6129
+rok total : 0.000218268
+  Inner loop : 2
+ros total : -11.6133
+rok total : 0.000219521
+  Inner loop : 3
+ros total : -11.6131
+rok total : 0.000218882
+  DT              : 0.00138257
+  Max CFL         : 0.299999
+  Total Time      : 0.25498
+----------------------------
+Step : 180
+  Inner loop : 1
+ros total : -11.6133
+rok total : 0.000219504
+  Inner loop : 2
+ros total : -11.6138
+rok total : 0.000220755
+  Inner loop : 3
+ros total : -11.6135
+rok total : 0.000220116
+  DT              : 0.00138258
+  Max CFL         : 0.299994
+  Total Time      : 0.256363
+----------------------------
+Step : 181
+  Inner loop : 1
+ros total : -11.6137
+rok total : 0.000220737
+  Inner loop : 2
+ros total : -11.6142
+rok total : 0.000221987
+  Inner loop : 3
+ros total : -11.614
+rok total : 0.000221349
+  DT              : 0.00138261
+  Max CFL         : 0.300007
+  Total Time      : 0.257746
+----------------------------
+Step : 182
+  Inner loop : 1
+ros total : -11.6142
+rok total : 0.000221969
+  Inner loop : 2
+ros total : -11.6146
+rok total : 0.000223216
+  Inner loop : 3
+ros total : -11.6144
+rok total : 0.000222579
+  DT              : 0.00138257
+  Max CFL         : 0.300008
+  Total Time      : 0.259128
+----------------------------
+Step : 183
+  Inner loop : 1
+ros total : -11.6146
+rok total : 0.000223197
+  Inner loop : 2
+ros total : -11.615
+rok total : 0.00022444
+  Inner loop : 3
+ros total : -11.6148
+rok total : 0.000223805
+  DT              : 0.00138254
+  Max CFL         : 0.300003
+  Total Time      : 0.260511
+----------------------------
+Step : 184
+  Inner loop : 1
+ros total : -11.615
+rok total : 0.000224421
+  Inner loop : 2
+ros total : -11.6154
+rok total : 0.000225656
+  Inner loop : 3
+ros total : -11.6152
+rok total : 0.000225025
+  DT              : 0.00138252
+  Max CFL         : 0.299999
+  Total Time      : 0.261893
+----------------------------
+Step : 185
+  Inner loop : 1
+ros total : -11.6154
+rok total : 0.000225637
+  Inner loop : 2
+ros total : -11.6158
+rok total : 0.000226863
+  Inner loop : 3
+ros total : -11.6156
+rok total : 0.000226236
+  DT              : 0.00138252
+  Max CFL         : 0.299995
+  Total Time      : 0.263276
+----------------------------
+Step : 186
+  Inner loop : 1
+ros total : -11.6158
+rok total : 0.000226842
+  Inner loop : 2
+ros total : -11.6162
+rok total : 0.000228055
+  Inner loop : 3
+ros total : -11.616
+rok total : 0.000227435
+  DT              : 0.00138255
+  Max CFL         : 0.300007
+  Total Time      : 0.264658
+----------------------------
+Step : 187
+  Inner loop : 1
+ros total : -11.6162
+rok total : 0.000228034
+  Inner loop : 2
+ros total : -11.6166
+rok total : 0.000229229
+  Inner loop : 3
+ros total : -11.6164
+rok total : 0.000228617
+  DT              : 0.00138252
+  Max CFL         : 0.300007
+  Total Time      : 0.266041
+----------------------------
+Step : 188
+  Inner loop : 1
+ros total : -11.6166
+rok total : 0.000229206
+  Inner loop : 2
+ros total : -11.617
+rok total : 0.000230378
+  Inner loop : 3
+ros total : -11.6168
+rok total : 0.000229777
+  DT              : 0.00138248
+  Max CFL         : 0.300003
+  Total Time      : 0.267423
+----------------------------
+Step : 189
+  Inner loop : 1
+ros total : -11.617
+rok total : 0.000230353
+  Inner loop : 2
+ros total : -11.6174
+rok total : 0.000231496
+  Inner loop : 3
+ros total : -11.6172
+rok total : 0.000230909
+  DT              : 0.00138247
+  Max CFL         : 0.299999
+  Total Time      : 0.268806
+----------------------------
+Step : 190
+  Inner loop : 1
+ros total : -11.6174
+rok total : 0.00023147
+  Inner loop : 2
+ros total : -11.6178
+rok total : 0.000232577
+  Inner loop : 3
+ros total : -11.6176
+rok total : 0.000232008
+  DT              : 0.00138247
+  Max CFL         : 0.299996
+  Total Time      : 0.270188
+----------------------------
+Step : 191
+  Inner loop : 1
+ros total : -11.6178
+rok total : 0.000232549
+  Inner loop : 2
+ros total : -11.6182
+rok total : 0.000233615
+  Inner loop : 3
+ros total : -11.618
+rok total : 0.000233066
+  DT              : 0.00138249
+  Max CFL         : 0.300006
+  Total Time      : 0.271571
+----------------------------
+Step : 192
+  Inner loop : 1
+ros total : -11.6182
+rok total : 0.000233586
+  Inner loop : 2
+ros total : -11.6186
+rok total : 0.000234604
+  Inner loop : 3
+ros total : -11.6184
+rok total : 0.000234079
+  DT              : 0.00138247
+  Max CFL         : 0.300006
+  Total Time      : 0.272953
+----------------------------
+Step : 193
+  Inner loop : 1
+ros total : -11.6186
+rok total : 0.000234574
+  Inner loop : 2
+ros total : -11.6189
+rok total : 0.00023554
+  Inner loop : 3
+ros total : -11.6188
+rok total : 0.000235041
+  DT              : 0.00138244
+  Max CFL         : 0.300003
+  Total Time      : 0.274336
+----------------------------
+Step : 194
+  Inner loop : 1
+ros total : -11.6189
+rok total : 0.000235509
+  Inner loop : 2
+ros total : -11.6193
+rok total : 0.00023642
+  Inner loop : 3
+ros total : -11.6191
+rok total : 0.000235948
+  DT              : 0.00138242
+  Max CFL         : 0.299999
+  Total Time      : 0.275718
+----------------------------
+Step : 195
+  Inner loop : 1
+ros total : -11.6193
+rok total : 0.000236389
+  Inner loop : 2
+ros total : -11.6196
+rok total : 0.000237242
+  Inner loop : 3
+ros total : -11.6195
+rok total : 0.000236799
+  DT              : 0.00138243
+  Max CFL         : 0.299996
+  Total Time      : 0.2771
+----------------------------
+Step : 196
+  Inner loop : 1
+ros total : -11.6196
+rok total : 0.00023721
+  Inner loop : 2
+ros total : -11.62
+rok total : 0.000238005
+  Inner loop : 3
+ros total : -11.6198
+rok total : 0.000237591
+  DT              : 0.00138245
+  Max CFL         : 0.300004
+  Total Time      : 0.278483
+----------------------------
+Step : 197
+  Inner loop : 1
+ros total : -11.62
+rok total : 0.000237973
+  Inner loop : 2
+ros total : -11.6203
+rok total : 0.000238709
+  Inner loop : 3
+ros total : -11.6201
+rok total : 0.000238325
+  DT              : 0.00138243
+  Max CFL         : 0.300006
+  Total Time      : 0.279865
+----------------------------
+Step : 198
+  Inner loop : 1
+ros total : -11.6203
+rok total : 0.000238678
+  Inner loop : 2
+ros total : -11.6206
+rok total : 0.000239356
+  Inner loop : 3
+ros total : -11.6204
+rok total : 0.000239001
+  DT              : 0.0013824
+  Max CFL         : 0.300002
+  Total Time      : 0.281248
+----------------------------
+Step : 199
+  Inner loop : 1
+ros total : -11.6206
+rok total : 0.000239326
+  Inner loop : 2
+ros total : -11.6209
+rok total : 0.000239949
+  Inner loop : 3
+ros total : -11.6207
+rok total : 0.000239622
+  DT              : 0.00138239
+  Max CFL         : 0.299999
+  Total Time      : 0.28263
+----------------------------
+Step : 200
+  Inner loop : 1
+ros total : -11.6209
+rok total : 0.00023992
+  Inner loop : 2
+ros total : -11.6212
+rok total : 0.000240491
+  Inner loop : 3
+ros total : -11.621
+rok total : 0.00024019
+  DT              : 0.00138239
+  Max CFL         : 0.299996
+  Total Time      : 0.284013
+----------------------------
+Step : 201
+  Inner loop : 1
+ros total : -11.6212
+rok total : 0.000240462
+  Inner loop : 2
+ros total : -11.6215
+rok total : 0.000240984
+  Inner loop : 3
+ros total : -11.6213
+rok total : 0.000240708
+  DT              : 0.00138241
+  Max CFL         : 0.300003
+  Total Time      : 0.285395
+----------------------------
+Step : 202
+  Inner loop : 1
+ros total : -11.6215
+rok total : 0.000240957
+  Inner loop : 2
+ros total : -11.6218
+rok total : 0.000241434
+  Inner loop : 3
+ros total : -11.6216
+rok total : 0.000241181
+  DT              : 0.0013824
+  Max CFL         : 0.300005
+  Total Time      : 0.286777
+----------------------------
+Step : 203
+  Inner loop : 1
+ros total : -11.6218
+rok total : 0.000241407
+  Inner loop : 2
+ros total : -11.622
+rok total : 0.000241843
+  Inner loop : 3
+ros total : -11.6219
+rok total : 0.000241611
+  DT              : 0.00138238
+  Max CFL         : 0.300002
+  Total Time      : 0.28816
+----------------------------
+Step : 204
+  Inner loop : 1
+ros total : -11.622
+rok total : 0.000241818
+  Inner loop : 2
+ros total : -11.6223
+rok total : 0.000242216
+  Inner loop : 3
+ros total : -11.6222
+rok total : 0.000242003
+  DT              : 0.00138237
+  Max CFL         : 0.299999
+  Total Time      : 0.289542
+----------------------------
+Step : 205
+  Inner loop : 1
+ros total : -11.6223
+rok total : 0.000242192
+  Inner loop : 2
+ros total : -11.6226
+rok total : 0.000242557
+  Inner loop : 3
+ros total : -11.6224
+rok total : 0.000242361
+  DT              : 0.00138237
+  Max CFL         : 0.299997
+  Total Time      : 0.290924
+----------------------------
+Step : 206
+  Inner loop : 1
+ros total : -11.6226
+rok total : 0.000242534
+  Inner loop : 2
+ros total : -11.6228
+rok total : 0.00024287
+  Inner loop : 3
+ros total : -11.6227
+rok total : 0.000242689
+  DT              : 0.00138239
+  Max CFL         : 0.299995
+  Total Time      : 0.292307
+----------------------------
+Step : 207
+  Inner loop : 1
+ros total : -11.6228
+rok total : 0.000242848
+  Inner loop : 2
+ros total : -11.6231
+rok total : 0.000243158
+  Inner loop : 3
+ros total : -11.623
+rok total : 0.00024299
+  DT              : 0.00138241
+  Max CFL         : 0.300002
+  Total Time      : 0.293689
+----------------------------
+Step : 208
+  Inner loop : 1
+ros total : -11.6231
+rok total : 0.000243136
+  Inner loop : 2
+ros total : -11.6234
+rok total : 0.000243424
+  Inner loop : 3
+ros total : -11.6232
+rok total : 0.000243267
+  DT              : 0.0013824
+  Max CFL         : 0.299999
+  Total Time      : 0.295072
+----------------------------
+Step : 209
+  Inner loop : 1
+ros total : -11.6233
+rok total : 0.000243404
+  Inner loop : 2
+ros total : -11.6236
+rok total : 0.000243672
+  Inner loop : 3
+ros total : -11.6235
+rok total : 0.000243525
+  DT              : 0.00138241
+  Max CFL         : 0.299995
+  Total Time      : 0.296454
+----------------------------
+Step : 210
+  Inner loop : 1
+ros total : -11.6236
+rok total : 0.000243652
+  Inner loop : 2
+ros total : -11.6239
+rok total : 0.000243904
+  Inner loop : 3
+ros total : -11.6237
+rok total : 0.000243765
+  DT              : 0.00138243
+  Max CFL         : 0.299992
+  Total Time      : 0.297836
+----------------------------
+Step : 211
+  Inner loop : 1
+ros total : -11.6239
+rok total : 0.000243885
+  Inner loop : 2
+ros total : -11.6241
+rok total : 0.000244123
+  Inner loop : 3
+ros total : -11.624
+rok total : 0.000243991
+  DT              : 0.00138247
+  Max CFL         : 0.299989
+  Total Time      : 0.299219
+----------------------------
+Step : 212
+  Inner loop : 1
+ros total : -11.6241
+rok total : 0.000244104
+  Inner loop : 2
+ros total : -11.6244
+rok total : 0.000244331
+  Inner loop : 3
+ros total : -11.6242
+rok total : 0.000244205
+  DT              : 0.00138251
+  Max CFL         : 0.299986
+  Total Time      : 0.300601
+----------------------------
+Step : 213
+  Inner loop : 1
+ros total : -11.6243
+rok total : 0.000244313
+  Inner loop : 2
+ros total : -11.6246
+rok total : 0.00024453
+  Inner loop : 3
+ros total : -11.6245
+rok total : 0.000244409
+  DT              : 0.00138258
+  Max CFL         : 0.299983
+  Total Time      : 0.301984
+----------------------------
+Step : 214
+  Inner loop : 1
+ros total : -11.6246
+rok total : 0.000244512
+  Inner loop : 2
+ros total : -11.6248
+rok total : 0.000244722
+  Inner loop : 3
+ros total : -11.6247
+rok total : 0.000244605
+  DT              : 0.00138266
+  Max CFL         : 0.299979
+  Total Time      : 0.303367
+----------------------------
+Step : 215
+  Inner loop : 1
+ros total : -11.6248
+rok total : 0.000244704
+  Inner loop : 2
+ros total : -11.6251
+rok total : 0.000244907
+  Inner loop : 3
+ros total : -11.625
+rok total : 0.000244794
+  DT              : 0.00138275
+  Max CFL         : 0.299975
+  Total Time      : 0.304749
+----------------------------
+Step : 216
+  Inner loop : 1
+ros total : -11.6251
+rok total : 0.00024489
+  Inner loop : 2
+ros total : -11.6253
+rok total : 0.000245088
+  Inner loop : 3
+ros total : -11.6252
+rok total : 0.000244977
+  DT              : 0.00138287
+  Max CFL         : 0.299971
+  Total Time      : 0.306132
+----------------------------
+Step : 217
+  Inner loop : 1
+ros total : -11.6253
+rok total : 0.000245071
+  Inner loop : 2
+ros total : -11.6256
+rok total : 0.000245265
+  Inner loop : 3
+ros total : -11.6254
+rok total : 0.000245156
+  DT              : 0.00138301
+  Max CFL         : 0.299966
+  Total Time      : 0.307515
+----------------------------
+Step : 218
+  Inner loop : 1
+ros total : -11.6256
+rok total : 0.000245249
+  Inner loop : 2
+ros total : -11.6258
+rok total : 0.000245439
+  Inner loop : 3
+ros total : -11.6257
+rok total : 0.000245332
+  DT              : 0.00138316
+  Max CFL         : 0.29996
+  Total Time      : 0.308899
+----------------------------
+Step : 219
+  Inner loop : 1
+ros total : -11.6258
+rok total : 0.000245423
+  Inner loop : 2
+ros total : -11.6261
+rok total : 0.00024561
+  Inner loop : 3
+ros total : -11.6259
+rok total : 0.000245505
+  DT              : 0.00138335
+  Max CFL         : 0.299953
+  Total Time      : 0.310282
+----------------------------
+Step : 220
+  Inner loop : 1
+ros total : -11.6261
+rok total : 0.000245594
+  Inner loop : 2
+ros total : -11.6263
+rok total : 0.00024578
+  Inner loop : 3
+ros total : -11.6262
+rok total : 0.000245675
+  DT              : 0.00138357
+  Max CFL         : 0.299945
+  Total Time      : 0.311665
+----------------------------
+Step : 221
+  Inner loop : 1
+ros total : -11.6263
+rok total : 0.000245764
+  Inner loop : 2
+ros total : -11.6265
+rok total : 0.000245948
+  Inner loop : 3
+ros total : -11.6264
+rok total : 0.000245844
+  DT              : 0.00138382
+  Max CFL         : 0.299942
+  Total Time      : 0.313049
+----------------------------
+Step : 222
+  Inner loop : 1
+ros total : -11.6265
+rok total : 0.000245932
+  Inner loop : 2
+ros total : -11.6268
+rok total : 0.000246114
+  Inner loop : 3
+ros total : -11.6267
+rok total : 0.000246011
+  DT              : 0.00138408
+  Max CFL         : 0.299951
+  Total Time      : 0.314433
+----------------------------
+Step : 223
+  Inner loop : 1
+ros total : -11.6268
+rok total : 0.000246098
+  Inner loop : 2
+ros total : -11.627
+rok total : 0.00024628
+  Inner loop : 3
+ros total : -11.6269
+rok total : 0.000246177
+  DT              : 0.00138431
+  Max CFL         : 0.299946
+  Total Time      : 0.315818
+----------------------------
+Step : 224
+  Inner loop : 1
+ros total : -11.627
+rok total : 0.000246264
+  Inner loop : 2
+ros total : -11.6273
+rok total : 0.000246445
+  Inner loop : 3
+ros total : -11.6271
+rok total : 0.000246342
+  DT              : 0.00138456
+  Max CFL         : 0.299941
+  Total Time      : 0.317202
+----------------------------
+Step : 225
+  Inner loop : 1
+ros total : -11.6273
+rok total : 0.000246429
+  Inner loop : 2
+ros total : -11.6275
+rok total : 0.000246609
+  Inner loop : 3
+ros total : -11.6274
+rok total : 0.000246507
+  DT              : 0.00138483
+  Max CFL         : 0.299934
+  Total Time      : 0.318587
+----------------------------
+Step : 226
+  Inner loop : 1
+ros total : -11.6275
+rok total : 0.000246593
+  Inner loop : 2
+ros total : -11.6278
+rok total : 0.000246772
+  Inner loop : 3
+ros total : -11.6276
+rok total : 0.00024667
+  DT              : 0.00138513
+  Max CFL         : 0.299927
+  Total Time      : 0.319972
+----------------------------
+Step : 227
+  Inner loop : 1
+ros total : -11.6277
+rok total : 0.000246756
+  Inner loop : 2
+ros total : -11.628
+rok total : 0.000246935
+  Inner loop : 3
+ros total : -11.6279
+rok total : 0.000246833
+  DT              : 0.00138547
+  Max CFL         : 0.299919
+  Total Time      : 0.321358
+----------------------------
+Step : 228
+  Inner loop : 1
+ros total : -11.628
+rok total : 0.000246919
+  Inner loop : 2
+ros total : -11.6282
+rok total : 0.000247097
+  Inner loop : 3
+ros total : -11.6281
+rok total : 0.000246996
+  DT              : 0.00138585
+  Max CFL         : 0.29991
+  Total Time      : 0.322743
+----------------------------
+Step : 229
+  Inner loop : 1
+ros total : -11.6282
+rok total : 0.000247081
+  Inner loop : 2
+ros total : -11.6285
+rok total : 0.000247259
+  Inner loop : 3
+ros total : -11.6284
+rok total : 0.000247158
+  DT              : 0.00138626
+  Max CFL         : 0.299899
+  Total Time      : 0.32413
+----------------------------
+Step : 230
+  Inner loop : 1
+ros total : -11.6285
+rok total : 0.000247243
+  Inner loop : 2
+ros total : -11.6287
+rok total : 0.000247421
+  Inner loop : 3
+ros total : -11.6286
+rok total : 0.00024732
+  DT              : 0.00138673
+  Max CFL         : 0.299886
+  Total Time      : 0.325516
+----------------------------
+Step : 231
+  Inner loop : 1
+ros total : -11.6287
+rok total : 0.000247405
+  Inner loop : 2
+ros total : -11.629
+rok total : 0.000247582
+  Inner loop : 3
+ros total : -11.6288
+rok total : 0.000247481
+  DT              : 0.00138726
+  Max CFL         : 0.299872
+  Total Time      : 0.326904
+----------------------------
+Step : 232
+  Inner loop : 1
+ros total : -11.629
+rok total : 0.000247566
+  Inner loop : 2
+ros total : -11.6292
+rok total : 0.000247743
+  Inner loop : 3
+ros total : -11.6291
+rok total : 0.000247642
+  DT              : 0.00138785
+  Max CFL         : 0.299855
+  Total Time      : 0.328292
+----------------------------
+Step : 233
+  Inner loop : 1
+ros total : -11.6292
+rok total : 0.000247727
+  Inner loop : 2
+ros total : -11.6294
+rok total : 0.000247904
+  Inner loop : 3
+ros total : -11.6293
+rok total : 0.000247803
+  DT              : 0.00138852
+  Max CFL         : 0.299836
+  Total Time      : 0.32968
+----------------------------
+Step : 234
+  Inner loop : 1
+ros total : -11.6294
+rok total : 0.000247888
+  Inner loop : 2
+ros total : -11.6297
+rok total : 0.000248065
+  Inner loop : 3
+ros total : -11.6296
+rok total : 0.000247964
+  DT              : 0.00138928
+  Max CFL         : 0.299813
+  Total Time      : 0.331069
+----------------------------
+Step : 235
+  Inner loop : 1
+ros total : -11.6297
+rok total : 0.000248049
+  Inner loop : 2
+ros total : -11.6299
+rok total : 0.000248226
+  Inner loop : 3
+ros total : -11.6298
+rok total : 0.000248125
+  DT              : 0.00139015
+  Max CFL         : 0.299823
+  Total Time      : 0.33246
+----------------------------
+Step : 236
+  Inner loop : 1
+ros total : -11.6299
+rok total : 0.000248209
+  Inner loop : 2
+ros total : -11.6302
+rok total : 0.000248386
+  Inner loop : 3
+ros total : -11.63
+rok total : 0.000248285
+  DT              : 0.00139097
+  Max CFL         : 0.299853
+  Total Time      : 0.33385
+----------------------------
+Step : 237
+  Inner loop : 1
+ros total : -11.6302
+rok total : 0.00024837
+  Inner loop : 2
+ros total : -11.6304
+rok total : 0.000248546
+  Inner loop : 3
+ros total : -11.6303
+rok total : 0.000248445
+  DT              : 0.00139165
+  Max CFL         : 0.29984
+  Total Time      : 0.335242
+----------------------------
+Step : 238
+  Inner loop : 1
+ros total : -11.6304
+rok total : 0.00024853
+  Inner loop : 2
+ros total : -11.6307
+rok total : 0.000248706
+  Inner loop : 3
+ros total : -11.6305
+rok total : 0.000248605
+  DT              : 0.00139239
+  Max CFL         : 0.299826
+  Total Time      : 0.336635
+----------------------------
+Step : 239
+  Inner loop : 1
+ros total : -11.6306
+rok total : 0.000248689
+  Inner loop : 2
+ros total : -11.6309
+rok total : 0.000248865
+  Inner loop : 3
+ros total : -11.6308
+rok total : 0.000248765
+  DT              : 0.0013932
+  Max CFL         : 0.299809
+  Total Time      : 0.338028
+----------------------------
+Step : 240
+  Inner loop : 1
+ros total : -11.6309
+rok total : 0.000248849
+  Inner loop : 2
+ros total : -11.6311
+rok total : 0.000249024
+  Inner loop : 3
+ros total : -11.631
+rok total : 0.000248924
+  DT              : 0.00139409
+  Max CFL         : 0.29979
+  Total Time      : 0.339422
+----------------------------
+Step : 241
+  Inner loop : 1
+ros total : -11.6311
+rok total : 0.000249008
+  Inner loop : 2
+ros total : -11.6314
+rok total : 0.000249183
+  Inner loop : 3
+ros total : -11.6312
+rok total : 0.000249083
+  DT              : 0.00139506
+  Max CFL         : 0.299768
+  Total Time      : 0.340817
+----------------------------
+Step : 242
+  Inner loop : 1
+ros total : -11.6314
+rok total : 0.000249166
+  Inner loop : 2
+ros total : -11.6316
+rok total : 0.000249341
+  Inner loop : 3
+ros total : -11.6315
+rok total : 0.000249241
+  DT              : 0.00139614
+  Max CFL         : 0.299743
+  Total Time      : 0.342213
+----------------------------
+Step : 243
+  Inner loop : 1
+ros total : -11.6316
+rok total : 0.000249325
+  Inner loop : 2
+ros total : -11.6319
+rok total : 0.000249499
+  Inner loop : 3
+ros total : -11.6317
+rok total : 0.000249399
+  DT              : 0.00139734
+  Max CFL         : 0.299714
+  Total Time      : 0.34361
+----------------------------
+Step : 244
+  Inner loop : 1
+ros total : -11.6318
+rok total : 0.000249482
+  Inner loop : 2
+ros total : -11.6321
+rok total : 0.000249656
+  Inner loop : 3
+ros total : -11.632
+rok total : 0.000249557
+  DT              : 0.00139867
+  Max CFL         : 0.29968
+  Total Time      : 0.345009
+----------------------------
+Step : 245
+  Inner loop : 1
+ros total : -11.6321
+rok total : 0.000249639
+  Inner loop : 2
+ros total : -11.6323
+rok total : 0.000249813
+  Inner loop : 3
+ros total : -11.6322
+rok total : 0.000249713
+  DT              : 0.00140016
+  Max CFL         : 0.299641
+  Total Time      : 0.346409
+----------------------------
+Step : 246
+  Inner loop : 1
+ros total : -11.6323
+rok total : 0.000249796
+  Inner loop : 2
+ros total : -11.6326
+rok total : 0.000249969
+  Inner loop : 3
+ros total : -11.6324
+rok total : 0.000249869
+  DT              : 0.00140184
+  Max CFL         : 0.299595
+  Total Time      : 0.347811
+----------------------------
+Step : 247
+  Inner loop : 1
+ros total : -11.6326
+rok total : 0.000249952
+  Inner loop : 2
+ros total : -11.6328
+rok total : 0.000250124
+  Inner loop : 3
+ros total : -11.6327
+rok total : 0.000250025
+  DT              : 0.00140373
+  Max CFL         : 0.2997
+  Total Time      : 0.349215
+----------------------------
+Step : 248
+  Inner loop : 1
+ros total : -11.6328
+rok total : 0.000250107
+  Inner loop : 2
+ros total : -11.633
+rok total : 0.000250278
+  Inner loop : 3
+ros total : -11.6329
+rok total : 0.00025018
+  DT              : 0.00140514
+  Max CFL         : 0.29971
+  Total Time      : 0.35062
+----------------------------
+Step : 249
+  Inner loop : 1
+ros total : -11.633
+rok total : 0.000250261
+  Inner loop : 2
+ros total : -11.6333
+rok total : 0.000250432
+  Inner loop : 3
+ros total : -11.6332
+rok total : 0.000250333
+  DT              : 0.0014065
+  Max CFL         : 0.299687
+  Total Time      : 0.352026
+----------------------------
+Step : 250
+  Inner loop : 1
+ros total : -11.6333
+rok total : 0.000250414
+  Inner loop : 2
+ros total : -11.6335
+rok total : 0.000250584
+  Inner loop : 3
+ros total : -11.6334
+rok total : 0.000250486
+  DT              : 0.00140797
+  Max CFL         : 0.299661
+  Total Time      : 0.353434
+----------------------------
+Step : 251
+  Inner loop : 1
+ros total : -11.6335
+rok total : 0.000250567
+  Inner loop : 2
+ros total : -11.6337
+rok total : 0.000250735
+  Inner loop : 3
+ros total : -11.6336
+rok total : 0.000250638
+  DT              : 0.00140956
+  Max CFL         : 0.29963
+  Total Time      : 0.354844
+----------------------------
+Step : 252
+  Inner loop : 1
+ros total : -11.6337
+rok total : 0.000250718
+  Inner loop : 2
+ros total : -11.634
+rok total : 0.000250885
+  Inner loop : 3
+ros total : -11.6339
+rok total : 0.000250789
+  DT              : 0.0014113
+  Max CFL         : 0.299595
+  Total Time      : 0.356255
+----------------------------
+Step : 253
+  Inner loop : 1
+ros total : -11.634
+rok total : 0.000250868
+  Inner loop : 2
+ros total : -11.6342
+rok total : 0.000251034
+  Inner loop : 3
+ros total : -11.6341
+rok total : 0.000250938
+  DT              : 0.00141321
+  Max CFL         : 0.299555
+  Total Time      : 0.357668
+----------------------------
+Step : 254
+  Inner loop : 1
+ros total : -11.6342
+rok total : 0.000251017
+  Inner loop : 2
+ros total : -11.6344
+rok total : 0.000251182
+  Inner loop : 3
+ros total : -11.6343
+rok total : 0.000251086
+  DT              : 0.00141531
+  Max CFL         : 0.299508
+  Total Time      : 0.359084
+----------------------------
+Step : 255
+  Inner loop : 1
+ros total : -11.6344
+rok total : 0.000251164
+  Inner loop : 2
+ros total : -11.6347
+rok total : 0.000251328
+  Inner loop : 3
+ros total : -11.6345
+rok total : 0.000251233
+  DT              : 0.00141763
+  Max CFL         : 0.299453
+  Total Time      : 0.360501
+----------------------------
+Step : 256
+  Inner loop : 1
+ros total : -11.6347
+rok total : 0.00025131
+  Inner loop : 2
+ros total : -11.6349
+rok total : 0.000251472
+  Inner loop : 3
+ros total : -11.6348
+rok total : 0.000251378
+  DT              : 0.00142022
+  Max CFL         : 0.29939
+  Total Time      : 0.361922
+----------------------------
+Step : 257
+  Inner loop : 1
+ros total : -11.6349
+rok total : 0.000251454
+  Inner loop : 2
+ros total : -11.6351
+rok total : 0.000251615
+  Inner loop : 3
+ros total : -11.635
+rok total : 0.000251521
+  DT              : 0.00142312
+  Max CFL         : 0.299496
+  Total Time      : 0.363345
+----------------------------
+Step : 258
+  Inner loop : 1
+ros total : -11.6351
+rok total : 0.000251597
+  Inner loop : 2
+ros total : -11.6354
+rok total : 0.000251756
+  Inner loop : 3
+ros total : -11.6352
+rok total : 0.000251663
+  DT              : 0.00142552
+  Max CFL         : 0.299586
+  Total Time      : 0.36477
+----------------------------
+Step : 259
+  Inner loop : 1
+ros total : -11.6353
+rok total : 0.000251738
+  Inner loop : 2
+ros total : -11.6356
+rok total : 0.000251894
+  Inner loop : 3
+ros total : -11.6355
+rok total : 0.000251803
+  DT              : 0.00142749
+  Max CFL         : 0.299556
+  Total Time      : 0.366198
+----------------------------
+Step : 260
+  Inner loop : 1
+ros total : -11.6356
+rok total : 0.000251876
+  Inner loop : 2
+ros total : -11.6358
+rok total : 0.000252031
+  Inner loop : 3
+ros total : -11.6357
+rok total : 0.00025194
+  DT              : 0.0014296
+  Max CFL         : 0.299522
+  Total Time      : 0.367627
+----------------------------
+Step : 261
+  Inner loop : 1
+ros total : -11.6358
+rok total : 0.000252013
+  Inner loop : 2
+ros total : -11.636
+rok total : 0.000252165
+  Inner loop : 3
+ros total : -11.6359
+rok total : 0.000252076
+  DT              : 0.00143188
+  Max CFL         : 0.299483
+  Total Time      : 0.369059
+----------------------------
+Step : 262
+  Inner loop : 1
+ros total : -11.636
+rok total : 0.000252147
+  Inner loop : 2
+ros total : -11.6362
+rok total : 0.000252297
+  Inner loop : 3
+ros total : -11.6361
+rok total : 0.000252209
+  DT              : 0.00143435
+  Max CFL         : 0.299437
+  Total Time      : 0.370494
+----------------------------
+Step : 263
+  Inner loop : 1
+ros total : -11.6362
+rok total : 0.000252279
+  Inner loop : 2
+ros total : -11.6364
+rok total : 0.000252427
+  Inner loop : 3
+ros total : -11.6363
+rok total : 0.000252339
+  DT              : 0.00143705
+  Max CFL         : 0.299383
+  Total Time      : 0.371931
+----------------------------
+Step : 264
+  Inner loop : 1
+ros total : -11.6364
+rok total : 0.000252408
+  Inner loop : 2
+ros total : -11.6367
+rok total : 0.000252553
+  Inner loop : 3
+ros total : -11.6365
+rok total : 0.000252467
+  DT              : 0.00144002
+  Max CFL         : 0.29932
+  Total Time      : 0.373371
+----------------------------
+Step : 265
+  Inner loop : 1
+ros total : -11.6367
+rok total : 0.000252535
+  Inner loop : 2
+ros total : -11.6369
+rok total : 0.000252677
+  Inner loop : 3
+ros total : -11.6368
+rok total : 0.000252592
+  DT              : 0.00144329
+  Max CFL         : 0.299248
+  Total Time      : 0.374814
+----------------------------
+Step : 266
+  Inner loop : 1
+ros total : -11.6369
+rok total : 0.000252659
+  Inner loop : 2
+ros total : -11.6371
+rok total : 0.000252798
+  Inner loop : 3
+ros total : -11.637
+rok total : 0.000252715
+  DT              : 0.00144691
+  Max CFL         : 0.299299
+  Total Time      : 0.376261
+----------------------------
+Step : 267
+  Inner loop : 1
+ros total : -11.6371
+rok total : 0.000252779
+  Inner loop : 2
+ros total : -11.6373
+rok total : 0.000252916
+  Inner loop : 3
+ros total : -11.6372
+rok total : 0.000252834
+  DT              : 0.0014503
+  Max CFL         : 0.299516
+  Total Time      : 0.377711
+----------------------------
+Step : 268
+  Inner loop : 1
+ros total : -11.6373
+rok total : 0.000252897
+  Inner loop : 2
+ros total : -11.6375
+rok total : 0.00025303
+  Inner loop : 3
+ros total : -11.6374
+rok total : 0.00025295
+  DT              : 0.00145265
+  Max CFL         : 0.299485
+  Total Time      : 0.379164
+----------------------------
+Step : 269
+  Inner loop : 1
+ros total : -11.6375
+rok total : 0.000253011
+  Inner loop : 2
+ros total : -11.6377
+rok total : 0.000253141
+  Inner loop : 3
+ros total : -11.6376
+rok total : 0.000253062
+  DT              : 0.00145515
+  Max CFL         : 0.299449
+  Total Time      : 0.380619
+----------------------------
+Step : 270
+  Inner loop : 1
+ros total : -11.6377
+rok total : 0.000253122
+  Inner loop : 2
+ros total : -11.6379
+rok total : 0.000253248
+  Inner loop : 3
+ros total : -11.6378
+rok total : 0.000253171
+  DT              : 0.00145782
+  Max CFL         : 0.299406
+  Total Time      : 0.382077
+----------------------------
+Step : 271
+  Inner loop : 1
+ros total : -11.6379
+rok total : 0.000253229
+  Inner loop : 2
+ros total : -11.6381
+rok total : 0.000253351
+  Inner loop : 3
+ros total : -11.638
+rok total : 0.000253276
+  DT              : 0.00146071
+  Max CFL         : 0.299356
+  Total Time      : 0.383537
+----------------------------
+Step : 272
+  Inner loop : 1
+ros total : -11.6381
+rok total : 0.000253332
+  Inner loop : 2
+ros total : -11.6383
+rok total : 0.000253451
+  Inner loop : 3
+ros total : -11.6382
+rok total : 0.000253377
+  DT              : 0.00146386
+  Max CFL         : 0.299297
+  Total Time      : 0.385001
+----------------------------
+Step : 273
+  Inner loop : 1
+ros total : -11.6383
+rok total : 0.000253431
+  Inner loop : 2
+ros total : -11.6385
+rok total : 0.000253546
+  Inner loop : 3
+ros total : -11.6384
+rok total : 0.000253475
+  DT              : 0.0014673
+  Max CFL         : 0.299228
+  Total Time      : 0.386469
+----------------------------
+Step : 274
+  Inner loop : 1
+ros total : -11.6385
+rok total : 0.000253527
+  Inner loop : 2
+ros total : -11.6386
+rok total : 0.000253637
+  Inner loop : 3
+ros total : -11.6385
+rok total : 0.000253568
+  DT              : 0.00147108
+  Max CFL         : 0.299148
+  Total Time      : 0.38794
+----------------------------
+Step : 275
+  Inner loop : 1
+ros total : -11.6386
+rok total : 0.000253617
+  Inner loop : 2
+ros total : -11.6388
+rok total : 0.000253723
+  Inner loop : 3
+ros total : -11.6387
+rok total : 0.000253656
+  DT              : 0.00147527
+  Max CFL         : 0.299437
+  Total Time      : 0.389415
+----------------------------
+Step : 276
+  Inner loop : 1
+ros total : -11.6388
+rok total : 0.000253704
+  Inner loop : 2
+ros total : -11.639
+rok total : 0.000253805
+  Inner loop : 3
+ros total : -11.6389
+rok total : 0.000253741
+  DT              : 0.00147805
+  Max CFL         : 0.299497
+  Total Time      : 0.390893
+----------------------------
+Step : 277
+  Inner loop : 1
+ros total : -11.639
+rok total : 0.000253786
+  Inner loop : 2
+ros total : -11.6392
+rok total : 0.000253883
+  Inner loop : 3
+ros total : -11.6391
+rok total : 0.00025382
+  DT              : 0.00148053
+  Max CFL         : 0.299466
+  Total Time      : 0.392374
+----------------------------
+Step : 278
+  Inner loop : 1
+ros total : -11.6392
+rok total : 0.000253863
+  Inner loop : 2
+ros total : -11.6393
+rok total : 0.000253955
+  Inner loop : 3
+ros total : -11.6392
+rok total : 0.000253895
+  DT              : 0.00148317
+  Max CFL         : 0.299428
+  Total Time      : 0.393857
+----------------------------
+Step : 279
+  Inner loop : 1
+ros total : -11.6393
+rok total : 0.000253936
+  Inner loop : 2
+ros total : -11.6395
+rok total : 0.000254023
+  Inner loop : 3
+ros total : -11.6394
+rok total : 0.000253965
+  DT              : 0.001486
+  Max CFL         : 0.299383
+  Total Time      : 0.395343
+----------------------------
+Step : 280
+  Inner loop : 1
+ros total : -11.6395
+rok total : 0.000254003
+  Inner loop : 2
+ros total : -11.6397
+rok total : 0.000254085
+  Inner loop : 3
+ros total : -11.6396
+rok total : 0.00025403
+  DT              : 0.00148906
+  Max CFL         : 0.29933
+  Total Time      : 0.396832
+----------------------------
+Step : 281
+  Inner loop : 1
+ros total : -11.6397
+rok total : 0.000254065
+  Inner loop : 2
+ros total : -11.6398
+rok total : 0.000254142
+  Inner loop : 3
+ros total : -11.6397
+rok total : 0.00025409
+  DT              : 0.0014924
+  Max CFL         : 0.299266
+  Total Time      : 0.398324
+----------------------------
+Step : 282
+  Inner loop : 1
+ros total : -11.6398
+rok total : 0.000254123
+  Inner loop : 2
+ros total : -11.64
+rok total : 0.000254194
+  Inner loop : 3
+ros total : -11.6399
+rok total : 0.000254144
+  DT              : 0.00149606
+  Max CFL         : 0.299191
+  Total Time      : 0.39982
+----------------------------
+Step : 283
+  Inner loop : 1
+ros total : -11.64
+rok total : 0.000254174
+  Inner loop : 2
+ros total : -11.6401
+rok total : 0.000254241
+  Inner loop : 3
+ros total : -11.64
+rok total : 0.000254193
+  DT              : 0.0015001
+  Max CFL         : 0.299462
+  Total Time      : 0.40132
+----------------------------
+Step : 284
+  Inner loop : 1
+ros total : -11.6401
+rok total : 0.000254221
+  Inner loop : 2
+ros total : -11.6403
+rok total : 0.000254282
+  Inner loop : 3
+ros total : -11.6402
+rok total : 0.000254237
+  DT              : 0.0015028
+  Max CFL         : 0.299554
+  Total Time      : 0.402823
+----------------------------
+Step : 285
+  Inner loop : 1
+ros total : -11.6403
+rok total : 0.000254262
+  Inner loop : 2
+ros total : -11.6404
+rok total : 0.000254317
+  Inner loop : 3
+ros total : -11.6403
+rok total : 0.000254275
+  DT              : 0.00150503
+  Max CFL         : 0.299528
+  Total Time      : 0.404328
+----------------------------
+Step : 286
+  Inner loop : 1
+ros total : -11.6404
+rok total : 0.000254297
+  Inner loop : 2
+ros total : -11.6405
+rok total : 0.000254347
+  Inner loop : 3
+ros total : -11.6405
+rok total : 0.000254308
+  DT              : 0.0015074
+  Max CFL         : 0.299497
+  Total Time      : 0.405836
+----------------------------
+Step : 287
+  Inner loop : 1
+ros total : -11.6405
+rok total : 0.000254327
+  Inner loop : 2
+ros total : -11.6407
+rok total : 0.00025437
+  Inner loop : 3
+ros total : -11.6406
+rok total : 0.000254334
+  DT              : 0.00150993
+  Max CFL         : 0.299458
+  Total Time      : 0.407345
+----------------------------
+Step : 288
+  Inner loop : 1
+ros total : -11.6407
+rok total : 0.000254351
+  Inner loop : 2
+ros total : -11.6408
+rok total : 0.000254388
+  Inner loop : 3
+ros total : -11.6407
+rok total : 0.000254355
+  DT              : 0.00151267
+  Max CFL         : 0.299411
+  Total Time      : 0.408858
+----------------------------
+Step : 289
+  Inner loop : 1
+ros total : -11.6408
+rok total : 0.000254369
+  Inner loop : 2
+ros total : -11.6409
+rok total : 0.0002544
+  Inner loop : 3
+ros total : -11.6408
+rok total : 0.00025437
+  DT              : 0.00151564
+  Max CFL         : 0.299354
+  Total Time      : 0.410374
+----------------------------
+Step : 290
+  Inner loop : 1
+ros total : -11.6409
+rok total : 0.000254381
+  Inner loop : 2
+ros total : -11.641
+rok total : 0.000254406
+  Inner loop : 3
+ros total : -11.641
+rok total : 0.000254379
+  DT              : 0.00151891
+  Max CFL         : 0.299288
+  Total Time      : 0.411893
+----------------------------
+Step : 291
+  Inner loop : 1
+ros total : -11.641
+rok total : 0.000254387
+  Inner loop : 2
+ros total : -11.6411
+rok total : 0.000254407
+  Inner loop : 3
+ros total : -11.6411
+rok total : 0.000254382
+  DT              : 0.00152253
+  Max CFL         : 0.299655
+  Total Time      : 0.413415
+----------------------------
+Step : 292
+  Inner loop : 1
+ros total : -11.6411
+rok total : 0.000254387
+  Inner loop : 2
+ros total : -11.6412
+rok total : 0.000254401
+  Inner loop : 3
+ros total : -11.6412
+rok total : 0.000254379
+  DT              : 0.00152428
+  Max CFL         : 0.29964
+  Total Time      : 0.41494
+----------------------------
+Step : 293
+  Inner loop : 1
+ros total : -11.6412
+rok total : 0.000254381
+  Inner loop : 2
+ros total : -11.6413
+rok total : 0.000254388
+  Inner loop : 3
+ros total : -11.6413
+rok total : 0.00025437
+  DT              : 0.00152611
+  Max CFL         : 0.299619
+  Total Time      : 0.416466
+----------------------------
+Step : 294
+  Inner loop : 1
+ros total : -11.6413
+rok total : 0.000254369
+  Inner loop : 2
+ros total : -11.6414
+rok total : 0.00025437
+  Inner loop : 3
+ros total : -11.6414
+rok total : 0.000254355
+  DT              : 0.00152805
+  Max CFL         : 0.299593
+  Total Time      : 0.417994
+----------------------------
+Step : 295
+  Inner loop : 1
+ros total : -11.6414
+rok total : 0.00025435
+  Inner loop : 2
+ros total : -11.6415
+rok total : 0.000254346
+  Inner loop : 3
+ros total : -11.6415
+rok total : 0.000254334
+  DT              : 0.00153013
+  Max CFL         : 0.299561
+  Total Time      : 0.419524
+----------------------------
+Step : 296
+  Inner loop : 1
+ros total : -11.6415
+rok total : 0.000254326
+  Inner loop : 2
+ros total : -11.6416
+rok total : 0.000254315
+  Inner loop : 3
+ros total : -11.6416
+rok total : 0.000254306
+  DT              : 0.00153237
+  Max CFL         : 0.29952
+  Total Time      : 0.421056
+----------------------------
+Step : 297
+  Inner loop : 1
+ros total : -11.6416
+rok total : 0.000254295
+  Inner loop : 2
+ros total : -11.6417
+rok total : 0.000254278
+  Inner loop : 3
+ros total : -11.6417
+rok total : 0.000254273
+  DT              : 0.00153482
+  Max CFL         : 0.29947
+  Total Time      : 0.422591
+----------------------------
+Step : 298
+  Inner loop : 1
+ros total : -11.6417
+rok total : 0.000254258
+  Inner loop : 2
+ros total : -11.6418
+rok total : 0.000254235
+  Inner loop : 3
+ros total : -11.6417
+rok total : 0.000254233
+  DT              : 0.00153754
+  Max CFL         : 0.299572
+  Total Time      : 0.424129
+----------------------------
+Step : 299
+  Inner loop : 1
+ros total : -11.6418
+rok total : 0.000254215
+  Inner loop : 2
+ros total : -11.6419
+rok total : 0.000254186
+  Inner loop : 3
+ros total : -11.6418
+rok total : 0.000254186
+  DT              : 0.00153973
+  Max CFL         : 0.299744
+  Total Time      : 0.425668
+----------------------------
+Step : 300
+  Inner loop : 1
+ros total : -11.6419
+rok total : 0.000254166
+  Inner loop : 2
+ros total : -11.6419
+rok total : 0.00025413
+  Inner loop : 3
+ros total : -11.6419
+rok total : 0.000254134
+  DT              : 0.00154105
+  Max CFL         : 0.299732
+  Total Time      : 0.427209
+----------------------------
+Step : 301
+  Inner loop : 1
+ros total : -11.6419
+rok total : 0.000254111
+  Inner loop : 2
+ros total : -11.642
+rok total : 0.000254068
+  Inner loop : 3
+ros total : -11.642
+rok total : 0.000254075
+  DT              : 0.00154242
+  Max CFL         : 0.299716
+  Total Time      : 0.428752
+----------------------------
+Step : 302
+  Inner loop : 1
+ros total : -11.642
+rok total : 0.000254049
+  Inner loop : 2
+ros total : -11.6421
+rok total : 0.000254
+  Inner loop : 3
+ros total : -11.642
+rok total : 0.00025401
+  DT              : 0.00154388
+  Max CFL         : 0.299696
+  Total Time      : 0.430296
+----------------------------
+Step : 303
+  Inner loop : 1
+ros total : -11.6421
+rok total : 0.000253981
+  Inner loop : 2
+ros total : -11.6421
+rok total : 0.000253926
+  Inner loop : 3
+ros total : -11.6421
+rok total : 0.000253939
+  DT              : 0.00154545
+  Max CFL         : 0.299669
+  Total Time      : 0.431841
+----------------------------
+Step : 304
+  Inner loop : 1
+ros total : -11.6421
+rok total : 0.000253907
+  Inner loop : 2
+ros total : -11.6422
+rok total : 0.000253846
+  Inner loop : 3
+ros total : -11.6421
+rok total : 0.000253862
+  DT              : 0.00154716
+  Max CFL         : 0.299635
+  Total Time      : 0.433388
+----------------------------
+Step : 305
+  Inner loop : 1
+ros total : -11.6422
+rok total : 0.000253826
+  Inner loop : 2
+ros total : -11.6422
+rok total : 0.000253759
+  Inner loop : 3
+ros total : -11.6422
+rok total : 0.000253778
+  DT              : 0.00154905
+  Max CFL         : 0.299599
+  Total Time      : 0.434937
+----------------------------
+Step : 306
+  Inner loop : 1
+ros total : -11.6422
+rok total : 0.000253739
+  Inner loop : 2
+ros total : -11.6423
+rok total : 0.000253666
+  Inner loop : 3
+ros total : -11.6422
+rok total : 0.000253689
+  DT              : 0.00155112
+  Max CFL         : 0.299831
+  Total Time      : 0.436488
+----------------------------
+Step : 307
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000253646
+  Inner loop : 2
+ros total : -11.6423
+rok total : 0.000253567
+  Inner loop : 3
+ros total : -11.6423
+rok total : 0.000253593
+  DT              : 0.001552
+  Max CFL         : 0.299825
+  Total Time      : 0.43804
+----------------------------
+Step : 308
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000253547
+  Inner loop : 2
+ros total : -11.6423
+rok total : 0.000253461
+  Inner loop : 3
+ros total : -11.6423
+rok total : 0.00025349
+  DT              : 0.00155291
+  Max CFL         : 0.299816
+  Total Time      : 0.439593
+----------------------------
+Step : 309
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000253442
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.00025335
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.000253382
+  DT              : 0.00155386
+  Max CFL         : 0.299803
+  Total Time      : 0.441147
+----------------------------
+Step : 310
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.000253331
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.000253232
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.000253268
+  DT              : 0.00155488
+  Max CFL         : 0.299786
+  Total Time      : 0.442702
+----------------------------
+Step : 311
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.000253213
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.000253109
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.000253147
+  DT              : 0.00155599
+  Max CFL         : 0.299765
+  Total Time      : 0.444258
+----------------------------
+Step : 312
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.000253089
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000252979
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.00025302
+  DT              : 0.00155721
+  Max CFL         : 0.299737
+  Total Time      : 0.445815
+----------------------------
+Step : 313
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252959
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000252843
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000252887
+  DT              : 0.00155858
+  Max CFL         : 0.29984
+  Total Time      : 0.447374
+----------------------------
+Step : 314
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252823
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.0002527
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000252748
+  DT              : 0.00155941
+  Max CFL         : 0.299892
+  Total Time      : 0.448933
+----------------------------
+Step : 315
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252681
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000252552
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000252603
+  DT              : 0.00155997
+  Max CFL         : 0.299887
+  Total Time      : 0.450493
+----------------------------
+Step : 316
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252533
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000252398
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000252452
+  DT              : 0.00156056
+  Max CFL         : 0.29988
+  Total Time      : 0.452054
+----------------------------
+Step : 317
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252379
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000252238
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000252295
+  DT              : 0.00156118
+  Max CFL         : 0.299871
+  Total Time      : 0.453615
+----------------------------
+Step : 318
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252219
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000252071
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000252132
+  DT              : 0.00156186
+  Max CFL         : 0.299858
+  Total Time      : 0.455177
+----------------------------
+Step : 319
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000252053
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000251899
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000251962
+  DT              : 0.0015626
+  Max CFL         : 0.29984
+  Total Time      : 0.456739
+----------------------------
+Step : 320
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.00025188
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000251721
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000251787
+  DT              : 0.00156343
+  Max CFL         : 0.299879
+  Total Time      : 0.458303
+----------------------------
+Step : 321
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000251702
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000251536
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000251606
+  DT              : 0.00156406
+  Max CFL         : 0.299936
+  Total Time      : 0.459867
+----------------------------
+Step : 322
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000251518
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000251346
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000251418
+  DT              : 0.00156439
+  Max CFL         : 0.299934
+  Total Time      : 0.461431
+----------------------------
+Step : 323
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000251327
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.00025115
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000251225
+  DT              : 0.00156474
+  Max CFL         : 0.29993
+  Total Time      : 0.462996
+----------------------------
+Step : 324
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000251131
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000250947
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000251026
+  DT              : 0.0015651
+  Max CFL         : 0.299925
+  Total Time      : 0.464561
+----------------------------
+Step : 325
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000250929
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000250739
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.00025082
+  DT              : 0.00156549
+  Max CFL         : 0.299918
+  Total Time      : 0.466127
+----------------------------
+Step : 326
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.00025072
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000250525
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000250609
+  DT              : 0.00156592
+  Max CFL         : 0.299908
+  Total Time      : 0.467693
+----------------------------
+Step : 327
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000250506
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000250304
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000250392
+  DT              : 0.0015664
+  Max CFL         : 0.299917
+  Total Time      : 0.469259
+----------------------------
+Step : 328
+  Inner loop : 1
+ros total : -11.6425
+rok total : 0.000250286
+  Inner loop : 2
+ros total : -11.6425
+rok total : 0.000250078
+  Inner loop : 3
+ros total : -11.6425
+rok total : 0.000250169
+  DT              : 0.00156684
+  Max CFL         : 0.299964
+  Total Time      : 0.470826
+----------------------------
+Step : 329
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.00025006
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.000249846
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.00024994
+  DT              : 0.00156703
+  Max CFL         : 0.299963
+  Total Time      : 0.472393
+----------------------------
+Step : 330
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.000249828
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.000249608
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.000249704
+  DT              : 0.00156722
+  Max CFL         : 0.299961
+  Total Time      : 0.47396
+----------------------------
+Step : 331
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.000249589
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.000249364
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.000249463
+  DT              : 0.00156743
+  Max CFL         : 0.299958
+  Total Time      : 0.475527
+----------------------------
+Step : 332
+  Inner loop : 1
+ros total : -11.6424
+rok total : 0.000249345
+  Inner loop : 2
+ros total : -11.6424
+rok total : 0.000249114
+  Inner loop : 3
+ros total : -11.6424
+rok total : 0.000249216
+  DT              : 0.00156765
+  Max CFL         : 0.299954
+  Total Time      : 0.477095
+----------------------------
+Step : 333
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000249095
+  Inner loop : 2
+ros total : -11.6423
+rok total : 0.000248858
+  Inner loop : 3
+ros total : -11.6423
+rok total : 0.000248963
+  DT              : 0.00156789
+  Max CFL         : 0.299948
+  Total Time      : 0.478663
+----------------------------
+Step : 334
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000248839
+  Inner loop : 2
+ros total : -11.6423
+rok total : 0.000248596
+  Inner loop : 3
+ros total : -11.6423
+rok total : 0.000248704
+  DT              : 0.00156817
+  Max CFL         : 0.29995
+  Total Time      : 0.480231
+----------------------------
+Step : 335
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000248577
+  Inner loop : 2
+ros total : -11.6423
+rok total : 0.000248328
+  Inner loop : 3
+ros total : -11.6423
+rok total : 0.000248439
+  DT              : 0.00156843
+  Max CFL         : 0.299979
+  Total Time      : 0.4818
+----------------------------
+Step : 336
+  Inner loop : 1
+ros total : -11.6423
+rok total : 0.000248309
+  Inner loop : 2
+ros total : -11.6422
+rok total : 0.000248054
+  Inner loop : 3
+ros total : -11.6422
+rok total : 0.000248168
+  DT              : 0.00156854
+  Max CFL         : 0.299979
+  Total Time      : 0.483368
+----------------------------
+Step : 337
+  Inner loop : 1
+ros total : -11.6422
+rok total : 0.000248035
+  Inner loop : 2
+ros total : -11.6422
+rok total : 0.000247774
+  Inner loop : 3
+ros total : -11.6422
+rok total : 0.000247891
+  DT              : 0.00156865
+  Max CFL         : 0.299978
+  Total Time      : 0.484937
+----------------------------
+Step : 338
+  Inner loop : 1
+ros total : -11.6422
+rok total : 0.000247755
+  Inner loop : 2
+ros total : -11.6421
+rok total : 0.000247488
+  Inner loop : 3
+ros total : -11.6422
+rok total : 0.000247608
+  DT              : 0.00156876
+  Max CFL         : 0.299976
+  Total Time      : 0.486506
+----------------------------
+Step : 339
+  Inner loop : 1
+ros total : -11.6421
+rok total : 0.000247469
+  Inner loop : 2
+ros total : -11.6421
+rok total : 0.000247196
+  Inner loop : 3
+ros total : -11.6421
+rok total : 0.000247319
+  DT              : 0.00156889
+  Max CFL         : 0.299974
+  Total Time      : 0.488074
+----------------------------
+Step : 340
+  Inner loop : 1
+ros total : -11.6421
+rok total : 0.000247177
+  Inner loop : 2
+ros total : -11.6421
+rok total : 0.000246898
+  Inner loop : 3
+ros total : -11.6421
+rok total : 0.000247025
+  DT              : 0.00156903
+  Max CFL         : 0.299971
+  Total Time      : 0.489643
+----------------------------
+Step : 341
+  Inner loop : 1
+ros total : -11.6421
+rok total : 0.000246879
+  Inner loop : 2
+ros total : -11.642
+rok total : 0.000246594
+  Inner loop : 3
+ros total : -11.642
+rok total : 0.000246724
+  DT              : 0.00156918
+  Max CFL         : 0.299969
+  Total Time      : 0.491213
+----------------------------
+Step : 342
+  Inner loop : 1
+ros total : -11.642
+rok total : 0.000246576
+  Inner loop : 2
+ros total : -11.642
+rok total : 0.000246284
+  Inner loop : 3
+ros total : -11.642
+rok total : 0.000246417
+  DT              : 0.00156934
+  Max CFL         : 0.299988
+  Total Time      : 0.492782
+----------------------------
+Step : 343
+  Inner loop : 1
+ros total : -11.642
+rok total : 0.000246265
+  Inner loop : 2
+ros total : -11.6419
+rok total : 0.000245968
+  Inner loop : 3
+ros total : -11.6419
+rok total : 0.000246104
+  DT              : 0.0015694
+  Max CFL         : 0.299987
+  Total Time      : 0.494351
+----------------------------
+Step : 344
+  Inner loop : 1
+ros total : -11.6419
+rok total : 0.000245949
+  Inner loop : 2
+ros total : -11.6419
+rok total : 0.000245645
+  Inner loop : 3
+ros total : -11.6419
+rok total : 0.000245785
+  DT              : 0.00156947
+  Max CFL         : 0.299987
+  Total Time      : 0.495921
+----------------------------
+Step : 345
+  Inner loop : 1
+ros total : -11.6419
+rok total : 0.000245627
+  Inner loop : 2
+ros total : -11.6418
+rok total : 0.000245317
+  Inner loop : 3
+ros total : -11.6418
+rok total : 0.000245459
+  DT              : 0.00156954
+  Max CFL         : 0.299986
+  Total Time      : 0.49749
+----------------------------
+Step : 346
+  Inner loop : 1
+ros total : -11.6418
+rok total : 0.000245299
+  Inner loop : 2
+ros total : -11.6418
+rok total : 0.000244983
+  Inner loop : 3
+ros total : -11.6418
+rok total : 0.000245128
+  DT              : 0.00156961
+  Max CFL         : 0.299985
+  Total Time      : 0.49906
+----------------------------
+Step : 347
+  Inner loop : 1
+ros total : -11.6418
+rok total : 0.000244965
+  Inner loop : 2
+ros total : -11.6417
+rok total : 0.000244643
+  Inner loop : 3
+ros total : -11.6417
+rok total : 0.000244791
+  DT              : 0.00156969
+  Max CFL         : 0.299983
+  Total Time      : 0.50063
+----------------------------
+Step : 348
+  Inner loop : 1
+ros total : -11.6417
+rok total : 0.000244625
+  Inner loop : 2
+ros total : -11.6416
+rok total : 0.000244297
+  Inner loop : 3
+ros total : -11.6417
+rok total : 0.000244448
+  DT              : 0.00156978
+  Max CFL         : 0.299981
+  Total Time      : 0.502199
+----------------------------
+Step : 349
+  Inner loop : 1
+ros total : -11.6416
+rok total : 0.000244279
+  Inner loop : 2
+ros total : -11.6416
+rok total : 0.000243944
+  Inner loop : 3
+ros total : -11.6416
+rok total : 0.000244099
+  DT              : 0.00156988
+  Max CFL         : 0.29999
+  Total Time      : 0.503769
+----------------------------
+Step : 350
+  Inner loop : 1
+ros total : -11.6416
+rok total : 0.000243926
+  Inner loop : 2
+ros total : -11.6415
+rok total : 0.000243586
+  Inner loop : 3
+ros total : -11.6415
+rok total : 0.000243743
+  DT              : 0.00156993
+  Max CFL         : 0.299992
+  Total Time      : 0.505339
+----------------------------
+Step : 351
+  Inner loop : 1
+ros total : -11.6415
+rok total : 0.000243568
+  Inner loop : 2
+ros total : -11.6415
+rok total : 0.000243222
+  Inner loop : 3
+ros total : -11.6415
+rok total : 0.000243382
+  DT              : 0.00156998
+  Max CFL         : 0.299992
+  Total Time      : 0.506909
+----------------------------
+Step : 352
+  Inner loop : 1
+ros total : -11.6415
+rok total : 0.000243204
+  Inner loop : 2
+ros total : -11.6414
+rok total : 0.000242851
+  Inner loop : 3
+ros total : -11.6414
+rok total : 0.000243014
+  DT              : 0.00157002
+  Max CFL         : 0.299991
+  Total Time      : 0.508479
+----------------------------
+Step : 353
+  Inner loop : 1
+ros total : -11.6414
+rok total : 0.000242833
+  Inner loop : 2
+ros total : -11.6413
+rok total : 0.000242474
+  Inner loop : 3
+ros total : -11.6414
+rok total : 0.000242641
+  DT              : 0.00157007
+  Max CFL         : 0.299991
+  Total Time      : 0.510049
+----------------------------
+Step : 354
+  Inner loop : 1
+ros total : -11.6413
+rok total : 0.000242456
+  Inner loop : 2
+ros total : -11.6413
+rok total : 0.000242091
+  Inner loop : 3
+ros total : -11.6413
+rok total : 0.000242261
+  DT              : 0.00157011
+  Max CFL         : 0.29999
+  Total Time      : 0.511619
+----------------------------
+Step : 355
+  Inner loop : 1
+ros total : -11.6413
+rok total : 0.000242074
+  Inner loop : 2
+ros total : -11.6412
+rok total : 0.000241703
+  Inner loop : 3
+ros total : -11.6412
+rok total : 0.000241875
+  DT              : 0.00157017
+  Max CFL         : 0.299988
+  Total Time      : 0.51319
+----------------------------
+Step : 356
+  Inner loop : 1
+ros total : -11.6412
+rok total : 0.000241685
+  Inner loop : 2
+ros total : -11.6411
+rok total : 0.000241308
+  Inner loop : 3
+ros total : -11.6412
+rok total : 0.000241483
+  DT              : 0.00157023
+  Max CFL         : 0.299989
+  Total Time      : 0.51476
+----------------------------
+Step : 357
+  Inner loop : 1
+ros total : -11.6411
+rok total : 0.00024129
+  Inner loop : 2
+ros total : -11.6411
+rok total : 0.000240906
+  Inner loop : 3
+ros total : -11.6411
+rok total : 0.000241085
+  DT              : 0.00157029
+  Max CFL         : 0.299995
+  Total Time      : 0.51633
+----------------------------
+Step : 358
+  Inner loop : 1
+ros total : -11.641
+rok total : 0.000240889
+  Inner loop : 2
+ros total : -11.641
+rok total : 0.000240499
+  Inner loop : 3
+ros total : -11.641
+rok total : 0.000240681
+  DT              : 0.00157032
+  Max CFL         : 0.299994
+  Total Time      : 0.5179
+----------------------------
+Step : 359
+  Inner loop : 1
+ros total : -11.641
+rok total : 0.000240481
+  Inner loop : 2
+ros total : -11.6409
+rok total : 0.000240086
+  Inner loop : 3
+ros total : -11.6409
+rok total : 0.000240271
+  DT              : 0.00157034
+  Max CFL         : 0.299994
+  Total Time      : 0.519471
+----------------------------
+Step : 360
+  Inner loop : 1
+ros total : -11.6409
+rok total : 0.000240068
+  Inner loop : 2
+ros total : -11.6408
+rok total : 0.000239666
+  Inner loop : 3
+ros total : -11.6409
+rok total : 0.000239854
+  DT              : 0.00157038
+  Max CFL         : 0.299994
+  Total Time      : 0.521041
+----------------------------
+Step : 361
+  Inner loop : 1
+ros total : -11.6408
+rok total : 0.000239649
+  Inner loop : 2
+ros total : -11.6407
+rok total : 0.000239241
+  Inner loop : 3
+ros total : -11.6408
+rok total : 0.000239432
+  DT              : 0.00157041
+  Max CFL         : 0.299993
+  Total Time      : 0.522612
+----------------------------
+Step : 362
+  Inner loop : 1
+ros total : -11.6407
+rok total : 0.000239223
+  Inner loop : 2
+ros total : -11.6407
+rok total : 0.000238809
+  Inner loop : 3
+ros total : -11.6407
+rok total : 0.000239003
+  DT              : 0.00157044
+  Max CFL         : 0.299993
+  Total Time      : 0.524182
+----------------------------
+Step : 363
+  Inner loop : 1
+ros total : -11.6407
+rok total : 0.000238791
+  Inner loop : 2
+ros total : -11.6406
+rok total : 0.000238371
+  Inner loop : 3
+ros total : -11.6406
+rok total : 0.000238568
+  DT              : 0.00157048
+  Max CFL         : 0.299992
+  Total Time      : 0.525753
+----------------------------
+Step : 364
+  Inner loop : 1
+ros total : -11.6406
+rok total : 0.000238353
+  Inner loop : 2
+ros total : -11.6405
+rok total : 0.000237927
+  Inner loop : 3
+ros total : -11.6405
+rok total : 0.000238127
+  DT              : 0.00157053
+  Max CFL         : 0.299995
+  Total Time      : 0.527323
+----------------------------
+Step : 365
+  Inner loop : 1
+ros total : -11.6405
+rok total : 0.000237909
+  Inner loop : 2
+ros total : -11.6404
+rok total : 0.000237477
+  Inner loop : 3
+ros total : -11.6404
+rok total : 0.00023768
+  DT              : 0.00157055
+  Max CFL         : 0.299996
+  Total Time      : 0.528894
+----------------------------
+Step : 366
+  Inner loop : 1
+ros total : -11.6404
+rok total : 0.000237459
+  Inner loop : 2
+ros total : -11.6403
+rok total : 0.000237021
+  Inner loop : 3
+ros total : -11.6404
+rok total : 0.000237227
+  DT              : 0.00157058
+  Max CFL         : 0.299996
+  Total Time      : 0.530464
+----------------------------
+Step : 367
+  Inner loop : 1
+ros total : -11.6403
+rok total : 0.000237003
+  Inner loop : 2
+ros total : -11.6402
+rok total : 0.000236558
+  Inner loop : 3
+ros total : -11.6403
+rok total : 0.000236768
+  DT              : 0.0015706
+  Max CFL         : 0.299995
+  Total Time      : 0.532035
+----------------------------
+Step : 368
+  Inner loop : 1
+ros total : -11.6402
+rok total : 0.000236541
+  Inner loop : 2
+ros total : -11.6401
+rok total : 0.00023609
+  Inner loop : 3
+ros total : -11.6402
+rok total : 0.000236302
+  DT              : 0.00157062
+  Max CFL         : 0.299995
+  Total Time      : 0.533605
+----------------------------
+Step : 369
+  Inner loop : 1
+ros total : -11.6401
+rok total : 0.000236072
+  Inner loop : 2
+ros total : -11.64
+rok total : 0.000235615
+  Inner loop : 3
+ros total : -11.6401
+rok total : 0.000235831
+  DT              : 0.00157065
+  Max CFL         : 0.299995
+  Total Time      : 0.535176
+----------------------------
+Step : 370
+  Inner loop : 1
+ros total : -11.64
+rok total : 0.000235597
+  Inner loop : 2
+ros total : -11.6399
+rok total : 0.000235134
+  Inner loop : 3
+ros total : -11.64
+rok total : 0.000235353
+  DT              : 0.00157067
+  Max CFL         : 0.299994
+  Total Time      : 0.536747
+----------------------------
+Step : 371
+  Inner loop : 1
+ros total : -11.6399
+rok total : 0.000235116
+  Inner loop : 2
+ros total : -11.6398
+rok total : 0.000234647
+  Inner loop : 3
+ros total : -11.6399
+rok total : 0.000234869
+  DT              : 0.0015707
+  Max CFL         : 0.299994
+  Total Time      : 0.538317
+----------------------------
+Step : 372
+  Inner loop : 1
+ros total : -11.6398
+rok total : 0.000234629
+  Inner loop : 2
+ros total : -11.6397
+rok total : 0.000234154
+  Inner loop : 3
+ros total : -11.6398
+rok total : 0.000234379
+  DT              : 0.00157074
+  Max CFL         : 0.299993
+  Total Time      : 0.539888
+----------------------------
+Step : 373
+  Inner loop : 1
+ros total : -11.6397
+rok total : 0.000234136
+  Inner loop : 2
+ros total : -11.6396
+rok total : 0.000233655
+  Inner loop : 3
+ros total : -11.6397
+rok total : 0.000233883
+  DT              : 0.00157078
+  Max CFL         : 0.299997
+  Total Time      : 0.541459
+----------------------------
+Step : 374
+  Inner loop : 1
+ros total : -11.6396
+rok total : 0.000233637
+  Inner loop : 2
+ros total : -11.6395
+rok total : 0.000233149
+  Inner loop : 3
+ros total : -11.6396
+rok total : 0.000233381
+  DT              : 0.00157079
+  Max CFL         : 0.299997
+  Total Time      : 0.54303
+----------------------------
+Step : 375
+  Inner loop : 1
+ros total : -11.6395
+rok total : 0.000233132
+  Inner loop : 2
+ros total : -11.6394
+rok total : 0.000232638
+  Inner loop : 3
+ros total : -11.6395
+rok total : 0.000232872
+  DT              : 0.00157081
+  Max CFL         : 0.299996
+  Total Time      : 0.544601
+----------------------------
+Step : 376
+  Inner loop : 1
+ros total : -11.6394
+rok total : 0.00023262
+  Inner loop : 2
+ros total : -11.6393
+rok total : 0.00023212
+  Inner loop : 3
+ros total : -11.6394
+rok total : 0.000232358
+  DT              : 0.00157083
+  Max CFL         : 0.299996
+  Total Time      : 0.546171
+----------------------------
+Step : 377
+  Inner loop : 1
+ros total : -11.6393
+rok total : 0.000232103
+  Inner loop : 2
+ros total : -11.6392
+rok total : 0.000231597
+  Inner loop : 3
+ros total : -11.6393
+rok total : 0.000231837
+  DT              : 0.00157085
+  Max CFL         : 0.299996
+  Total Time      : 0.547742
+----------------------------
+Step : 378
+  Inner loop : 1
+ros total : -11.6392
+rok total : 0.000231579
+  Inner loop : 2
+ros total : -11.6391
+rok total : 0.000231067
+  Inner loop : 3
+ros total : -11.6392
+rok total : 0.00023131
+  DT              : 0.00157087
+  Max CFL         : 0.299996
+  Total Time      : 0.549313
+----------------------------
+Step : 379
+  Inner loop : 1
+ros total : -11.6391
+rok total : 0.000231049
+  Inner loop : 2
+ros total : -11.639
+rok total : 0.000230531
+  Inner loop : 3
+ros total : -11.6391
+rok total : 0.000230777
+  DT              : 0.00157089
+  Max CFL         : 0.299995
+  Total Time      : 0.550884
+----------------------------
+Step : 380
+  Inner loop : 1
+ros total : -11.639
+rok total : 0.000230513
+  Inner loop : 2
+ros total : -11.6389
+rok total : 0.000229988
+  Inner loop : 3
+ros total : -11.6389
+rok total : 0.000230238
+  DT              : 0.00157092
+  Max CFL         : 0.299995
+  Total Time      : 0.552455
+----------------------------
+Step : 381
+  Inner loop : 1
+ros total : -11.6389
+rok total : 0.000229971
+  Inner loop : 2
+ros total : -11.6388
+rok total : 0.00022944
+  Inner loop : 3
+ros total : -11.6388
+rok total : 0.000229693
+  DT              : 0.00157095
+  Max CFL         : 0.299997
+  Total Time      : 0.554026
+----------------------------
+Step : 382
+  Inner loop : 1
+ros total : -11.6388
+rok total : 0.000229422
+  Inner loop : 2
+ros total : -11.6387
+rok total : 0.000228886
+  Inner loop : 3
+ros total : -11.6387
+rok total : 0.000229141
+  DT              : 0.00157096
+  Max CFL         : 0.299997
+  Total Time      : 0.555597
+----------------------------
+Step : 383
+  Inner loop : 1
+ros total : -11.6387
+rok total : 0.000228868
+  Inner loop : 2
+ros total : -11.6385
+rok total : 0.000228325
+  Inner loop : 3
+ros total : -11.6386
+rok total : 0.000228584
+  DT              : 0.00157097
+  Max CFL         : 0.299997
+  Total Time      : 0.557168
+----------------------------
+Step : 384
+  Inner loop : 1
+ros total : -11.6385
+rok total : 0.000228308
+  Inner loop : 2
+ros total : -11.6384
+rok total : 0.000227759
+  Inner loop : 3
+ros total : -11.6385
+rok total : 0.000228021
+  DT              : 0.00157099
+  Max CFL         : 0.299997
+  Total Time      : 0.558739
+----------------------------
+Step : 385
+  Inner loop : 1
+ros total : -11.6384
+rok total : 0.000227741
+  Inner loop : 2
+ros total : -11.6383
+rok total : 0.000227186
+  Inner loop : 3
+ros total : -11.6383
+rok total : 0.000227451
+  DT              : 0.00157101
+  Max CFL         : 0.299997
+  Total Time      : 0.56031
+----------------------------
+Step : 386
+  Inner loop : 1
+ros total : -11.6383
+rok total : 0.000227169
+  Inner loop : 2
+ros total : -11.6382
+rok total : 0.000226608
+  Inner loop : 3
+ros total : -11.6382
+rok total : 0.000226875
+  DT              : 0.00157102
+  Max CFL         : 0.299996
+  Total Time      : 0.561881
+----------------------------
+Step : 387
+  Inner loop : 1
+ros total : -11.6382
+rok total : 0.00022659
+  Inner loop : 2
+ros total : -11.638
+rok total : 0.000226023
+  Inner loop : 3
+ros total : -11.6381
+rok total : 0.000226294
+  DT              : 0.00157104
+  Max CFL         : 0.299996
+  Total Time      : 0.563452
+----------------------------
+Step : 388
+  Inner loop : 1
+ros total : -11.638
+rok total : 0.000226005
+  Inner loop : 2
+ros total : -11.6379
+rok total : 0.000225432
+  Inner loop : 3
+ros total : -11.638
+rok total : 0.000225706
+  DT              : 0.00157106
+  Max CFL         : 0.299996
+  Total Time      : 0.565023
+----------------------------
+Step : 389
+  Inner loop : 1
+ros total : -11.6379
+rok total : 0.000225414
+  Inner loop : 2
+ros total : -11.6378
+rok total : 0.000224835
+  Inner loop : 3
+ros total : -11.6378
+rok total : 0.000225112
+  DT              : 0.00157108
+  Max CFL         : 0.299998
+  Total Time      : 0.566594
+----------------------------
+Step : 390
+  Inner loop : 1
+ros total : -11.6378
+rok total : 0.000224817
+  Inner loop : 2
+ros total : -11.6377
+rok total : 0.000224232
+  Inner loop : 3
+ros total : -11.6377
+rok total : 0.000224512
+  DT              : 0.0015711
+  Max CFL         : 0.299998
+  Total Time      : 0.568165
+----------------------------
+Step : 391
+  Inner loop : 1
+ros total : -11.6376
+rok total : 0.000224214
+  Inner loop : 2
+ros total : -11.6375
+rok total : 0.000223623
+  Inner loop : 3
+ros total : -11.6376
+rok total : 0.000223906
+  DT              : 0.00157111
+  Max CFL         : 0.299998
+  Total Time      : 0.569736
+----------------------------
+Step : 392
+  Inner loop : 1
+ros total : -11.6375
+rok total : 0.000223605
+  Inner loop : 2
+ros total : -11.6374
+rok total : 0.000223008
+  Inner loop : 3
+ros total : -11.6374
+rok total : 0.000223294
+  DT              : 0.00157112
+  Max CFL         : 0.299997
+  Total Time      : 0.571307
+----------------------------
+Step : 393
+  Inner loop : 1
+ros total : -11.6374
+rok total : 0.00022299
+  Inner loop : 2
+ros total : -11.6373
+rok total : 0.000222387
+  Inner loop : 3
+ros total : -11.6373
+rok total : 0.000222676
+  DT              : 0.00157114
+  Max CFL         : 0.299997
+  Total Time      : 0.572878
+----------------------------
+Step : 394
+  Inner loop : 1
+ros total : -11.6372
+rok total : 0.000222369
+  Inner loop : 2
+ros total : -11.6371
+rok total : 0.00022176
+  Inner loop : 3
+ros total : -11.6372
+rok total : 0.000222052
+  DT              : 0.00157115
+  Max CFL         : 0.299997
+  Total Time      : 0.57445
+----------------------------
+Step : 395
+  Inner loop : 1
+ros total : -11.6371
+rok total : 0.000221742
+  Inner loop : 2
+ros total : -11.637
+rok total : 0.000221127
+  Inner loop : 3
+ros total : -11.637
+rok total : 0.000221421
+  DT              : 0.00157117
+  Max CFL         : 0.299997
+  Total Time      : 0.576021
+----------------------------
+Step : 396
+  Inner loop : 1
+ros total : -11.637
+rok total : 0.000221109
+  Inner loop : 2
+ros total : -11.6368
+rok total : 0.000220487
+  Inner loop : 3
+ros total : -11.6369
+rok total : 0.000220785
+  DT              : 0.00157118
+  Max CFL         : 0.299997
+  Total Time      : 0.577592
+----------------------------
+Step : 397
+  Inner loop : 1
+ros total : -11.6368
+rok total : 0.00022047
+  Inner loop : 2
+ros total : -11.6367
+rok total : 0.000219842
+  Inner loop : 3
+ros total : -11.6367
+rok total : 0.000220143
+  DT              : 0.0015712
+  Max CFL         : 0.299998
+  Total Time      : 0.579163
+----------------------------
+Step : 398
+  Inner loop : 1
+ros total : -11.6367
+rok total : 0.000219824
+  Inner loop : 2
+ros total : -11.6365
+rok total : 0.000219191
+  Inner loop : 3
+ros total : -11.6366
+rok total : 0.000219495
+  DT              : 0.00157121
+  Max CFL         : 0.299998
+  Total Time      : 0.580734
+----------------------------
+Step : 399
+  Inner loop : 1
+ros total : -11.6365
+rok total : 0.000219173
+  Inner loop : 2
+ros total : -11.6364
+rok total : 0.000218534
+  Inner loop : 3
+ros total : -11.6365
+rok total : 0.000218841
+  DT              : 0.00157122
+  Max CFL         : 0.299998
+  Total Time      : 0.582306
+Time = 0.515 s

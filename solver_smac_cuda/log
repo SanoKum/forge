@@ -1,0 +1,133 @@
+grep: ./build/nagare: binary file matches
+grep: ./build/CMakeFiles/convertGmshToNagare.dir/variables.cpp.o: binary file matches
+grep: ./build/CMakeFiles/convertGmshToNagare.dir/mesh/mesh.cpp.o: binary file matches
+grep: ./build/CMakeFiles/convertGmshToNagare.dir/mesh/convertGmshToNagare.cpp.o: binary file matches
+grep: ./build/CMakeFiles/nagare.dir/main.cpp.o: binary file matches
+grep: ./build/CMakeFiles/nagare.dir/variables.cpp.o: binary file matches
+grep: ./build/CMakeFiles/nagare.dir/mesh/mesh.cpp.o: binary file matches
+grep: ./build/cuda_nagare/CMakeFiles/cuda_nagare.dir/cuda_nagare_generated_boundaryCond_d.cu.o: binary file matches
+grep: ./build/cuda_nagare/CMakeFiles/cuda_nagare.dir/cuda_nagare_generated_interpVelocity_c2p_d.cu.o: binary file matches
+grep: ./build/cuda_nagare/CMakeFiles/cuda_nagare.dir/cuda_nagare_generated_calcStructualVariables_d.cu.o: binary file matches
+grep: ./build/cuda_nagare/CMakeFiles/cuda_nagare.dir/cuda_nagare_generated_calcConvDiff_d.cu.o: binary file matches
+grep: ./build/cuda_nagare/CMakeFiles/cuda_nagare.dir/cuda_nagare_generated_updateCenterVelocity_d.cu.o: binary file matches
+grep: ./build/cuda_nagare/CMakeFiles/cuda_nagare.dir/cuda_nagare_generated_calcGradient_d.cu.o: binary file matches
+grep: ./build/cuda_nagare/libcuda_nagare.a: binary file matches
+grep: ./build/convertGmshToNagare: binary file matches
+./variables.cpp:    geom_float* volume;
+./variables.cpp:    volume = (geom_float*)malloc(sizeof(geom_float)*msh.nCells);
+./variables.cpp:        volume[ic] = msh.cells[ic].volume;
+./variables.cpp:    cudaMemcpy(this->c_d["volume"] , ccz , msh.nCells*sizeof(geom_float) , cudaMemcpyHostToDevice);
+./variables.cpp:    free(volume); 
+grep: ./log: input file is also the output
+./gradient.cpp:    geom_float volume;
+./gradient.cpp:        volume = msh.cells[ie].volume;
+./gradient.cpp:        dUxdx[ie] = dUxdx[ie]/volume;
+./gradient.cpp:        dUxdy[ie] = dUxdy[ie]/volume;
+./gradient.cpp:        dUxdz[ie] = dUxdz[ie]/volume;
+./gradient.cpp:        dUydx[ie] = dUydx[ie]/volume;
+./gradient.cpp:        dUydy[ie] = dUydy[ie]/volume;
+./gradient.cpp:        dUydz[ie] = dUydz[ie]/volume;
+./gradient.cpp:        dUzdx[ie] = dUzdx[ie]/volume;
+./gradient.cpp:        dUzdy[ie] = dUzdy[ie]/volume;
+./gradient.cpp:        dUzdz[ie] = dUzdz[ie]/volume;
+./gradient.cpp:        dPdx[ie] = dPdx[ie]/volume;
+./gradient.cpp:        dPdy[ie] = dPdy[ie]/volume;
+./gradient.cpp:        dPdz[ie] = dPdz[ie]/volume;
+./gradient.cpp:        dTdx[ie] = dTdx[ie]/volume;
+./gradient.cpp:        dTdy[ie] = dTdy[ie]/volume;
+./gradient.cpp:        dTdz[ie] = dTdz[ie]/volume;
+./mesh/mesh.hpp:    geom_float volume;
+./mesh/mesh.cpp:    std::vector<geom_float> volume;
+./mesh/mesh.cpp:    file.getDataSet("/CELLS/volume").read(volume);
+./mesh/mesh.cpp:        this->cells[ic].volume = volume[ic];
+./mesh/gmshReader.hpp:    class volumeEnt
+./mesh/gmshReader.hpp:        volumeEnt(){};
+./mesh/gmshReader.hpp:        volumeEnt(geom_int tag, geom_float minX, geom_float minY, geom_float minZ,
+./mesh/gmshReader.hpp:    map<geom_int,volumeEnt> volumeEntMap;
+./mesh/gmshReader.hpp:            volumeEnt volumeEnt_temp = volumeEnt(stoi(l_str[0]), stof(l_str[1]), stof(l_str[2]), stof(l_str[3]),
+./mesh/gmshReader.hpp:            if (volumeEnt_temp.nPhysTag != 1)
+./mesh/gmshReader.hpp:            //volumeEntList.push_back(volumeEnt_temp);
+./mesh/gmshReader.hpp:            volumeEntMap.insert(std::make_pair(volumeEnt_temp.entTag, volumeEnt_temp));
+./mesh/gmshReader.hpp:            if (itEnt.dimension != 3) continue; // skip surface. only volume
+./mesh/gmshReader.hpp:            geom_int physTag = volumeEntMap[itEnt.entTag].physTag; // physical tag (fluid, inlet, etc.)
+./mesh/gmshReader.hpp:            if (eleOfEnt.dimension != 2) continue; // skip volume. only surface
+./mesh/gmshReader.hpp:        cout << "calculate volume" << endl;
+./mesh/gmshReader.hpp:        // *** calculate volume ***
+./mesh/gmshReader.hpp:            geom_float volume = 0.0 ;
+./mesh/gmshReader.hpp:                icell.volume = tetraVolume(icell);
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp1));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp2));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp3));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp4));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp5));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp6));
+./mesh/gmshReader.hpp:                icell.volume = volume;
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp1));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp2));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp3));
+./mesh/gmshReader.hpp:                icell.volume = volume;
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp1));
+./mesh/gmshReader.hpp:                volume += tetraVolume(cell(iNodes_temp2));
+./mesh/gmshReader.hpp:                icell.volume = volume;
+./mesh/gmshReader.hpp:            // set volume center
+./mesh/gmshReader.hpp:        geom_float volume = ((ay*bz -az*by)*cx +(az*bx -ax*bz)*cy +(ax*by -ay*bx)*cz)/6.0;
+./mesh/gmshReader.hpp:        volume = abs(volume);
+./mesh/gmshReader.hpp:        if (volume < 1.0e-20) cout << "WARNING : Too small volume\n" ;
+./mesh/gmshReader.hpp:        return volume;
+./mesh/gmshReader.hpp:        vector<geom_float> volume;
+./mesh/gmshReader.hpp:            volume.push_back(cel.volume);
+./mesh/gmshReader.hpp:        file.createDataSet("/CELLS/volume",volume);
+./solveNavierStokes.cpp:        geom_float vol = msh.cells[ic].volume;
+./solveNavierStokes.cpp:        vol0 = msh.cells[ic0].volume;
+./solveNavierStokes.cpp:        vol1 = msh.cells[ic1].volume;
+./solveNavierStokes.cpp:        geom_float vol = msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        dPPdx[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        dPPdy[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        dPPdz[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        divU[ic] = divU_vol[ic]/msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        dPPdx[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        dPPdy[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        dPPdz[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgcl.cpp:        divU[ic] = divU_vol[ic]/msh.cells[ic].volume;
+./calcCFL.cpp:        geom_float vol0 = msh.cells[ic0].volume;
+./calcCFL.cpp:        geom_float vol1 = msh.cells[ic1].volume;
+./calcCFL.cpp:        geom_float vol0 = msh.cells[ic0].volume;
+./solvePoisson_amgx.cpp:        dPPdx[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        dPPdy[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        dPPdz[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        divU[ic] = divU_vol[ic]/msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        dPPdx[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        dPPdy[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        dPPdz[ic] /= msh.cells[ic].volume;
+./solvePoisson_amgx.cpp:        divU[ic] = divU_vol[ic]/msh.cells[ic].volume;
+./cuda_nagare/calcConvDiff_d.cu:        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/calcConvDiff_d.cu:            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/updateCenterVelocity_d.cu:        geom_float volume = vol[ic];
+./cuda_nagare/updateCenterVelocity_d.cu:        Ux[ic] = UxN[ic] -dPdx[ic]/ro[ic]*dt + (-convx[ic]+diffx[ic])*dt/volume/ro[ic];
+./cuda_nagare/updateCenterVelocity_d.cu:        Uy[ic] = UyN[ic] -dPdy[ic]/ro[ic]*dt + (-convy[ic]+diffy[ic])*dt/volume/ro[ic];
+./cuda_nagare/updateCenterVelocity_d.cu:        Uz[ic] = UzN[ic] -dPdz[ic]/ro[ic]*dt + (-convz[ic]+diffz[ic])*dt/volume/ro[ic];
+./cuda_nagare/updateCenterVelocity_d.cu:        //printf("%d UxN=%f, dt=%f, vol=%f, ro=%f, convx=%f, diffx=%f\n", ic, UxN[ic], dt, volume, ro[ic], convx[ic], diffx[ic]);
+./cuda_nagare/updateCenterVelocity_d.cu:        var.c_d["volume"], 
+./cuda_nagare/calcGradient_d.cu:        geom_float volume = vol[ic];
+./cuda_nagare/calcGradient_d.cu:        dUxdx[ic] = dUxdx[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUxdy[ic] = dUxdy[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUxdz[ic] = dUxdz[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUydx[ic] = dUydx[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUydy[ic] = dUydy[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUydz[ic] = dUydz[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUzdx[ic] = dUzdx[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUzdy[ic] = dUzdy[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dUzdz[ic] = dUzdz[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dPdx[ic] = dPdx[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dPdy[ic] = dPdy[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dPdz[ic] = dPdz[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dTdx[ic] = dTdx[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dTdy[ic] = dTdy[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        dTdz[ic] = dTdz[ic]/volume;
+./cuda_nagare/calcGradient_d.cu:        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/calcGradient_d.cu:            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/calcGradient_d.cu:        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/interpVelocity_c2p_d.cu:        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/interpVelocity_c2p_d.cu:                var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./cuda_nagare/interpVelocity_c2p_d.cu:                var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+./variables.hpp:        "volume" , "ccx" , "ccy" , "ccz"
