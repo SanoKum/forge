@@ -3,6 +3,7 @@
 
 #include <cmath>
 
+
 void gradientGauss(solverConfig& cfg , mesh& msh , variables& v)
 {
     //geom_float ss;
