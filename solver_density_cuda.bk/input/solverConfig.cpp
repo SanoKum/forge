@@ -126,7 +126,7 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
             coef_M[0]   = 0.0;
             coef_Res[0] = 1.0;
             break;
-        case 3: // 3rd TVD Runge-Kutta Explicit
+        case 3: // 3rd Runge-Kutta Explicit
             ns = 3;
             this->isImplicit = 0;
             this->nLoop = ns;
@@ -137,25 +137,6 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
             coef_N[0]   = 1.0 ; coef_N[1]   = 0.75 ; coef_N[2]   = 1.0/3.0;
             coef_M[0]   = 0.0 ; coef_M[1]   = 0.25 ; coef_M[2]   = 2.0/3.0;
             coef_Res[0] = 1.0 ; coef_Res[1] = 0.25 ; coef_Res[2] = 2.0/3.0;
-            break;
-
-        case 4: // 4th Runge-Kutta Explicit
-            ns = 4;
-            this->isImplicit = 0;
-            this->nLoop = ns;
-            this->coef_DT_4thRunge.resize(ns);
-            this->coef_Res_4thRunge.resize(ns);
-
-            this->coef_DT_4thRunge[0] = 0.5;
-            this->coef_DT_4thRunge[1] = 0.5;
-            this->coef_DT_4thRunge[2] = 1.0;
-            this->coef_DT_4thRunge[3] = -1e+30;
-
-            this->coef_Res_4thRunge[0] = 1.0/6.0;
-            this->coef_Res_4thRunge[1] = 1.0/3.0;
-            this->coef_Res_4thRunge[2] = 1.0/3.0;
-            this->coef_Res_4thRunge[3] = 1.0/6.0;
-
             break;
 
         case 10: // dual time stepping by explicit scheme

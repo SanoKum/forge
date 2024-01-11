@@ -28,18 +28,55 @@ void timeIntegration(int loop , solverConfig &cfg , mesh &msh , variables &v , m
     vector<flow_float>& res_roUz = v.c["res_roUz"];
     vector<flow_float>& res_roe  = v.c["res_roe"];
 
-    vector<flow_float>& res_ro_dual   = v.c["res_ro_dual"];
-    vector<flow_float>& res_roUx_dual = v.c["res_roUx_dual"];
-    vector<flow_float>& res_roUy_dual = v.c["res_roUy_dual"];
-    vector<flow_float>& res_roUz_dual = v.c["res_roUz_dual"];
-    vector<flow_float>& res_roe_dual  = v.c["res_roe_dual"];
+    vector<flow_float>& res_ro_m   = v.c["res_ro_m"];
+    vector<flow_float>& res_roUx_m = v.c["res_roUx_m"];
+    vector<flow_float>& res_roUy_m = v.c["res_roUy_m"];
+    vector<flow_float>& res_roUz_m = v.c["res_roUz_m"];
+    vector<flow_float>& res_roe_m  = v.c["res_roe_m"];
 
     // time integration
     for (geom_int ic=0 ; ic<msh.nCells; ic++)
     {
         geom_float vol = msh.cells[ic].volume;
 
-        if (cfg.isImplicit == 0) { // explicit
+        if (cfg.timeIntegration == 4) { // 4th order
+            if (loop==0) { // first
+                res_ro_m[ic]   = 0.0;
+                res_roUx_m[ic] = 0.0;
+                res_roUy_m[ic] = 0.0;
+                res_roUz_m[ic] = 0.0;
+                res_roe_m[ic]  = 0.0;
+            }
+
+            res_ro_m[ic]   += cfg.coef_Res_4thRunge[loop]*res_ro[ic]*cfg.dt/vol;
+            res_roUx_m[ic] += cfg.coef_Res_4thRunge[loop]*res_roUx[ic]*cfg.dt/vol;
+            res_roUy_m[ic] += cfg.coef_Res_4thRunge[loop]*res_roUy[ic]*cfg.dt/vol;
+            res_roUz_m[ic] += cfg.coef_Res_4thRunge[loop]*res_roUz[ic]*cfg.dt/vol;
+            res_roe_m[ic]  += cfg.coef_Res_4thRunge[loop]*res_roe[ic]*cfg.dt/vol;
+
+
+            if (loop<3) { 
+                ro[ic]   = roN[ic]   + cfg.coef_DT_4thRunge[loop]*res_ro[ic]*cfg.dt/vol;
+                roUx[ic] = roUxN[ic] + cfg.coef_DT_4thRunge[loop]*res_roUx[ic]*cfg.dt/vol;
+                roUy[ic] = roUyN[ic] + cfg.coef_DT_4thRunge[loop]*res_roUy[ic]*cfg.dt/vol;
+                roUz[ic] = roUzN[ic] + cfg.coef_DT_4thRunge[loop]*res_roUz[ic]*cfg.dt/vol;
+                roe[ic]  = roeN[ic]  + cfg.coef_DT_4thRunge[loop]*res_roe[ic]*cfg.dt/vol;
+            } else {
+                res_ro[ic]   = res_ro_m[ic]*vol/cfg.dt ;
+                res_roUx[ic] = res_roUx_m[ic]*vol/cfg.dt ;
+                res_roUy[ic] = res_roUy_m[ic]*vol/cfg.dt ;
+                res_roUz[ic] = res_roUz_m[ic]*vol/cfg.dt ;
+                res_roe[ic]  = res_roe_m[ic]*vol/cfg.dt ;
+
+                ro[ic]   = roN[ic]  + res_ro_m[ic] ;
+                roUx[ic] = roUxN[ic]+ res_roUx_m[ic] ;
+                roUy[ic] = roUyN[ic]+ res_roUy_m[ic] ;
+                roUz[ic] = roUzN[ic]+ res_roUz_m[ic] ;
+                roe[ic]  = roeN[ic] + res_roe_m[ic] ;
+
+            }
+
+        } else if (cfg.isImplicit == 0) { // explicit
             // N: previous outer step , M: previous inner loop
             ro[ic]   = cfg.coef_N[loop]*roN[ic]   + cfg.coef_M[loop]*roM[ic]   + cfg.coef_Res[loop]*res_ro[ic]*cfg.dt/vol;
             roUx[ic] = cfg.coef_N[loop]*roUxN[ic] + cfg.coef_M[loop]*roUxM[ic] + cfg.coef_Res[loop]*res_roUx[ic]*cfg.dt/vol;
@@ -47,12 +84,12 @@ void timeIntegration(int loop , solverConfig &cfg , mesh &msh , variables &v , m
             roUz[ic] = cfg.coef_N[loop]*roUzN[ic] + cfg.coef_M[loop]*roUzM[ic] + cfg.coef_Res[loop]*res_roUz[ic]*cfg.dt/vol;
             roe[ic]  = cfg.coef_N[loop]*roeN[ic]  + cfg.coef_M[loop]*roeM[ic]  + cfg.coef_Res[loop]*res_roe[ic]*cfg.dt/vol;
 
-        } else if (cfg.timeIntegration == 10) { // implicit (dual-time stepping & explicit scheme)
-            ro[ic]   = cfg.coef_N[loop]*roN[ic]   + cfg.coef_Res[loop]*res_ro_dual[ic]*cfg.dt/vol;        
-            roUx[ic] = cfg.coef_N[loop]*roUxN[ic] + cfg.coef_Res[loop]*res_roUx_dual[ic]*cfg.dt/vol;        
-            roUy[ic] = cfg.coef_N[loop]*roUyN[ic] + cfg.coef_Res[loop]*res_roUy_dual[ic]*cfg.dt/vol;    
-            roUz[ic] = cfg.coef_N[loop]*roUzN[ic] + cfg.coef_Res[loop]*res_roUz_dual[ic]*cfg.dt/vol;
-            roe[ic]  = cfg.coef_N[loop]*roeN[ic]  + cfg.coef_Res[loop]*res_roe_dual[ic]*cfg.dt/vol;
+        } else if (cfg.timeIntegration == 10) { // implicit (m-time stepping & explicit scheme)
+            ro[ic]   = cfg.coef_N[loop]*roN[ic]   + cfg.coef_Res[loop]*res_ro_m[ic]*cfg.dt/vol;        
+            roUx[ic] = cfg.coef_N[loop]*roUxN[ic] + cfg.coef_Res[loop]*res_roUx_m[ic]*cfg.dt/vol;        
+            roUy[ic] = cfg.coef_N[loop]*roUyN[ic] + cfg.coef_Res[loop]*res_roUy_m[ic]*cfg.dt/vol;    
+            roUz[ic] = cfg.coef_N[loop]*roUzN[ic] + cfg.coef_Res[loop]*res_roUz_m[ic]*cfg.dt/vol;
+            roe[ic]  = cfg.coef_N[loop]*roeN[ic]  + cfg.coef_Res[loop]*res_roe_m[ic]*cfg.dt/vol;
         }
     }
 }
