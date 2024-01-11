@@ -4,7 +4,5 @@
 #include "mesh/mesh.hpp"
 #include "variables.hpp"
 
-#include "bits/stdc++.h"
-
 //void calcGradient(solverConfig& , mesh& , variables& ); 
 void setStructualVariables(solverConfig& , mesh& , variables& );

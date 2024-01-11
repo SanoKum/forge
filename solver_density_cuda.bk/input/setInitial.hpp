@@ -100,7 +100,7 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roe"][i] =  pow(1.0+0.5*(gam-1.0)*M*M,-gam/(gam-1.0))*Pt/(gam-1.0) + 0.5*ro*pow((M*a),2.0);
         }
 
-        if (cfg.initial == "Taylor-Green" or cfg.initial == "Taylor-Green_M0.1")
+        if (cfg.initial == "Taylor-Green")
         {
             flow_float gam = 1.4;
             flow_float cp  = gam-1.0;
@@ -110,58 +110,29 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
 
             flow_float ro0 = 1.0;
             flow_float P0  = 1.0/gam;
+            //flow_float T0  = 1.0; // P0/(ro0*R);
             flow_float M0  = 0.4;
+            flow_float c0  = 1.0;//sqrt(gam*P0/ro0);
 
-            if (cfg.initial == "Taylor-Green_M0.1") M0 = 0.1;
+            flow_float V0  = M0*c0;
 
             flow_float x = msh.cells[i].centCoords[0];
             flow_float y = msh.cells[i].centCoords[1];
             flow_float z = msh.cells[i].centCoords[2];
 
-            flow_float u0 = M0*sin(x/L)*cos(y/L)*cos(z/L);
-            flow_float v0 =-M0*cos(x/L)*sin(y/L)*cos(z/L);
+            flow_float u0 = V0*sin(x/L)*cos(y/L)*cos(z/L);
+            flow_float v0 =-V0*cos(x/L)*sin(y/L)*cos(z/L);
             flow_float w0 = 0.0;
 
-            flow_float P1 = P0 +ro0*M0*M0/16.0*(cos(2*x/L)+cos(2*y/L))*(cos(2*z/L)+2.0);
+           flow_float P1 = P0 +ro0*V0*V0/16.0*(cos(2*x/L)+cos(2*y/L))*(cos(2*z/L)+2.0);
 
             //flow_float ro1 = P1/(R*T0);
 
             v.c["ro"][i]   = ro0;
             v.c["roUx"][i] = ro0*u0;
-            v.c["roUy"][i] = ro0*v0;
+            v.c["roUy"][i] = -ro0*v0;
             v.c["roUz"][i] = 0.0;
             v.c["roe"][i]  = P1/(gam-1.0) + 0.5*ro0*(u0*u0+v0*v0+w0*w0);
-
-//            flow_float L   = 1.0; // length
-//            flow_float u0  = 1.0; // length
-//            flow_float ro0 = 1.0;
-//            flow_float p0 = 1.0;
-//
-//            flow_float M0  = 0.08;
-//            flow_float T0  = 300.0;
-//
-//            flow_float gam = 1.4;
-//            flow_float cp  = 1005.0;
-//            flow_float R   = cp*(gam-1.0)/gam;
-//
-//            flow_float x = msh.cells[i].centCoords[0];
-//            flow_float y = msh.cells[i].centCoords[1];
-//            flow_float z = msh.cells[i].centCoords[2];
-//
-//            flow_float uuu = u0*sin(x/L)*cos(y/L)*cos(z/L);
-//            flow_float vvv =-u0*cos(x/L)*sin(y/L)*cos(z/L);
-//            flow_float www = 0.0;
-//
-//            flow_float P1 = p0 +ro0*u0*u0/16.0*(cos(2*x/L) +cos(2*y/L))*(cos(2*z/L)+2.0);
-//
-//            flow_float ro1 = P1/(R*T0);
-//
-//            v.c["ro"][i]   = ro1;
-//            v.c["roUx"][i] = ro1*uuu;
-//            v.c["roUy"][i] = ro1*vvv;
-//            v.c["roUz"][i] = www;
-//            v.c["roe"][i]  = p0 + 0.5*ro0*(uuu*u0+vvv*vvv+www*www);
-
         }
 
         if (cfg.initial == "half_sphere")

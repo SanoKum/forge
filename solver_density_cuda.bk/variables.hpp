@@ -32,8 +32,8 @@ public:
 //        "diffx" , "diffy" , "diffz" , "diffT",
 //        "dP"    , "dPPdx", "dPPdy", "dPPdz",
         "cfl"   , "cfl_pseudo",
-        "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe",
-        "res_ro_m"  , "res_roUx_m" , "res_roUy_m" , "res_roUz_m" , "res_roe_m",
+        "res_ro"       , "res_roUx"      , "res_roUy"      , "res_roUz"      , "res_roe",
+        "res_ro_dual"  , "res_roUx_dual" , "res_roUy_dual" , "res_roUz_dual" , "res_roe_dual",
         "sonic"   , "Ht" , "ros", // s: entropy
 
         "roM"  , "roUxM", "roUyM", "roUzM", "roeM" , 

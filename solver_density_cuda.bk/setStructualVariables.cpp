@@ -27,7 +27,9 @@ void setStructualVariables(solverConfig& cfg , mesh& msh , variables& v)
     geom_int ic2;
 
     geom_float f;
-std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["dcc"];
+
+    std::vector<flow_float>& fxp = v.p["fx"];
+    std::vector<flow_float>& dccp = v.p["dcc"];
     std::vector<flow_float>& vvol = v.c["volume"];
     std::vector<flow_float>& vccx = v.c["ccx"];
     std::vector<flow_float>& vccy = v.c["ccy"];
@@ -42,32 +44,6 @@ std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["d
         ic1     = msh.planes[ip].iCells[0];
         ic2     = msh.planes[ip].iCells[1];
         sv      = msh.planes[ip].surfVect;
-
-        //if (cfg.initial == "Taylor") {
-        //    if (msh.planes[ip].surfVect[0]>0.03) {
-        //        msh.planes[ip].surfVect[0] = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[1]>0.03) {
-        //        msh.planes[ip].surfVect[1] = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[2]>0.03) {
-        //        msh.planes[ip].surfVect[2] = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-
-        //    if (msh.planes[ip].surfVect[0]<-0.03) {
-        //        msh.planes[ip].surfVect[0] = -(2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[1]<-0.03) {
-        //        msh.planes[ip].surfVect[1] = -(2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[2]<-0.03) {
-        //        msh.planes[ip].surfVect[2] = -(2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfArea>0.03) {
-        //        msh.planes[ip].surfArea = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //}
-
         //ss      = msh.planes[ip].surfArea;
         pcent   = msh.planes[ip].centCoords;
 
@@ -97,9 +73,6 @@ std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["d
     // cell
     for (geom_int ic=0 ; ic<msh.nCells ; ic++)
     {
-        //if (cfg.initial == "Taylor") {
-        //    msh.cells[ic].volume = (2*M_PI)*(2*M_PI)*(2*M_PI)/(pow(32.0,3));
-        //}
         c1cent   = msh.cells[ic].centCoords;
         vvol[ic] = msh.cells[ic].volume;
         vccx[ic] = c1cent[0];

@@ -30,11 +30,11 @@ void implicitCorrection(int loop , solverConfig &cfg , mesh &msh , variables &v 
     vector<flow_float>& res_roUz = v.c["res_roUz"];
     vector<flow_float>& res_roe  = v.c["res_roe"];
 
-    vector<flow_float>& res_ro_dual   = v.c["res_ro_m"];
-    vector<flow_float>& res_roUx_dual = v.c["res_roUx_m"];
-    vector<flow_float>& res_roUy_dual = v.c["res_roUy_m"];
-    vector<flow_float>& res_roUz_dual = v.c["res_roUz_m"];
-    vector<flow_float>& res_roe_dual  = v.c["res_roe_m"];
+    vector<flow_float>& res_ro_dual   = v.c["res_ro_dual"];
+    vector<flow_float>& res_roUx_dual = v.c["res_roUx_dual"];
+    vector<flow_float>& res_roUy_dual = v.c["res_roUy_dual"];
+    vector<flow_float>& res_roUz_dual = v.c["res_roUz_dual"];
+    vector<flow_float>& res_roe_dual  = v.c["res_roe_dual"];
 
     // time integration
     for (geom_int ic=0 ; ic<msh.nCells; ic++)

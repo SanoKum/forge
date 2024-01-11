@@ -102,8 +102,6 @@ int main(void) {
 
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
 
-    gradientGauss(cfg , msh , var);
-
     updateVariablesOuter(cfg , msh , var , mat_ns);
 
     setDT(cfg , msh , var);

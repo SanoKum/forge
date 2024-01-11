@@ -47,9 +47,6 @@ public:
     std::vector<flow_float> coef_M; 
     std::vector<flow_float> coef_Res;
 
-    std::vector<flow_float> coef_DT_4thRunge;
-    std::vector<flow_float> coef_Res_4thRunge;
-
     int convMethod; // 0: 1st Up
 
     int isCompressible;
@@ -66,8 +63,8 @@ public:
 
     std::string initial;
 
-    flow_float Pref = 1.0/1.4;
-    flow_float Tref = 1.0;
+    flow_float Pref = 101325.0;
+    flow_float Tref = 288.15;
 
     solverConfig();
 
