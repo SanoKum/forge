@@ -86,7 +86,21 @@ struct bcondConfFormat{
               {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,0},
+          }},
 
+          {"inlet_Pressure_dir", { 
+              {"ro"  ,0},
+              {"roUx",0},
+              {"roUy",0},
+              {"roUz",0},
+              {"roe" ,0},
+              {"Ux"  ,1},
+              {"Uy"  ,1},
+              {"Uz"  ,1},
+              {"Tt"  ,1},
+              {"Pt"  ,1},
+              {"Ts"  ,0},
+              {"Ps"  ,0},
           }},
 
           {"outlet_statPress", { 

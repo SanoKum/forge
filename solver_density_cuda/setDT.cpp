@@ -1,7 +1,11 @@
 #include "setDT.hpp"
 
-void setDT(solverConfig& cfg, mesh& msh, variables& v)
+void setDT(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v)
 {
+    if (cfg.gpu==1) {
+        setDT_d_wrapper(cfg , cuda_cfg , msh , v);
+        return;
+    }
     std::vector<flow_float>& cfl        = v.c["cfl"];
     std::vector<flow_float>& cfl_pseudo = v.c["cfl_pseudo"];
     std::vector<flow_float>& sonic = v.c["sonic"];

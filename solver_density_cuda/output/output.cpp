@@ -14,9 +14,13 @@
 
 using HighFive::File;
 
-void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , const variables& var , const int& iStep)
+void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep)
 {
     if (iStep%cfg.outStepInterval != 0) return;
+
+    if (cfg.gpu == 1) {
+        var.copyVariables_cell_D2H(var.output_cellValNames);
+    }
 
     elementTypeMap eleTypeMap;
     

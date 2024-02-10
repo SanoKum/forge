@@ -1,0 +1,35 @@
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  ints:
+  floats:
+    Pt: 2000000.3987
+    Tt: 353.0
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  ints:
+  floats:
+    Ps: 600000.0
+
+wall:
+  physID: 3
+  kind: slip
+  ints:
+  floats:
+
+bot:
+  physID: 4
+  kind: slip
+  ints:
+  floats:
+
+
+slip:
+  physID: 5  
+  kind: slip
+  ints:
+  floats:
+
+

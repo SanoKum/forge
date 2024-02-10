@@ -1,10 +1,15 @@
 #include "dependentVariables.hpp"
-#include <cmath>
 
 using namespace std;
 
-void dependentVariables(solverConfig &cfg , mesh &msh , variables &v , matrix& mat_ns)
+void dependentVariables(solverConfig &cfg , cudaConfig &cuda_cfg , mesh &msh , variables &v , matrix& mat_ns)
 {
+    if (cfg.gpu==1) {
+        dependentVariables_d_wrapper(cfg , cuda_cfg , msh , v);
+        return;
+    }
+
+
     vector<flow_float>& Ux = v.c["Ux"];
     vector<flow_float>& Uy = v.c["Uy"];
     vector<flow_float>& Uz = v.c["Uz"];
@@ -46,14 +51,10 @@ void dependentVariables(solverConfig &cfg , mesh &msh , variables &v , matrix& m
 
         sonic[ic] = sqrt(cfg.gamma*P[ic]/ro[ic]);
 
-        ds = (cfg.cp/cfg.gamma)*log(T[ic]/cfg.Tref) - ((ga-1.0)/ga)*log(P[ic]/cfg.Pref);
-        ros[ic] = ro[ic]*ds;
-
-        ros_sum += ros[ic]*msh.cells[ic].volume;
-        rok_sum += ro[ic]*ek*msh.cells[ic].volume;
+        //ds = (cfg.cp/cfg.gamma)*log(T[ic]/cfg.Tref) - ((ga-1.0)/ga)*log(P[ic]/cfg.Pref);
+        //ros[ic] = ro[ic]*ds;
+        //ros_sum += ros[ic]*msh.cells[ic].volume;
+        //rok_sum += ro[ic]*ek*msh.cells[ic].volume;
     }
-
-    std::cout << "ros total : " << ros_sum << std::endl;
-    std::cout << "rok total : " << rok_sum << std::endl;
     
 }

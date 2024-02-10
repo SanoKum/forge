@@ -7,4 +7,4 @@
 #include "bits/stdc++.h"
 
 //void calcGradient(solverConfig& , mesh& , variables& ); 
-void setStructualVariables(solverConfig& , mesh& , variables& );
+void setStructualVariables(solverConfig& , cudaConfig& , mesh& , variables& );

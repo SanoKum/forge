@@ -56,8 +56,13 @@ void calcFluxJacobianMatrix (flow_float ga, flow_float nx, flow_float ny, flow_f
 
 };
 
-void convectiveFlux(int iloop , solverConfig &cfg , mesh &msh , variables &v , matrix& mat_ns)
+void convectiveFlux(int iloop , solverConfig &cfg , cudaConfig &cuda_cfg , mesh &msh , variables &v , matrix& mat_ns)
 {
+    if (cfg.gpu == 1) {
+        convectiveFlux_d_wrapper(cfg , cuda_cfg , msh , v , mat_ns);
+        return;
+    }
+
     geom_float ss;
     vector<geom_float> sv(3);
     vector<geom_float> nv(3); // normal

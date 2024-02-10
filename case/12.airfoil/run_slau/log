@@ -1,0 +1,101 @@
+Read Solver Config 
+i
+r
+q
+p
+z
+y
+x
+a
+b
+Mesh Name : supercritical.h5
+Mesh Name size : 16
+Solver Name : smac
+End Step : 1
+delta Time : 5e-07
+convection method : 2
+Read Mesh 
+in mesh.cpp  physID=129
+in mesh.cpp  bcondKind=inlet_uniformVelcity
+in mesh.cpp  physID=130
+in mesh.cpp  bcondKind=outflow
+in mesh.cpp  physID=131
+in mesh.cpp  bcondKind=slip
+in mesh.cpp  physID=132
+in mesh.cpp  bcondKind=slip
+Init Matrix (but not used now) 
+Read Boundary Conditions 
+bname = Inlet
+physID=129
+kind=inlet_uniformVelocity
+bname = Outlet
+physID=130
+kind=outflow
+bname = Airfoil
+physID=131
+kind=slip
+bname = Side
+physID=132
+kind=slip
+bc.physID=129
+bcf.kind=inlet_uniformVelocity
+bValName = ro type=1
+read ro of inlet_uniformVelocity from configbValName = roUx type=0
+bValName = roUy type=0
+bValName = roUz type=0
+bValName = roUz type=0
+bValName = roe type=0
+bValName = Ux type=1
+read Ux of inlet_uniformVelocity from configbValName = Uy type=1
+read Uy of inlet_uniformVelocity from configbValName = Uz type=1
+read Uz of inlet_uniformVelocity from configbValName = Tt type=0
+bValName = Pt type=0
+bValName = Ts type=0
+bValName = Ps type=1
+read Ps of inlet_uniformVelocity from configbc.physID=130
+bcf.kind=outflow
+bc.physID=131
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+bc.physID=132
+bcf.kind=slip
+bValName = ro type=-1
+bValName = roUx type=-1
+bValName = roUy type=-1
+bValName = roUz type=-1
+bValName = roUz type=-1
+bValName = roe type=-1
+bValName = Ux type=-1
+bValName = Uy type=-1
+bValName = Uz type=-1
+bValName = Tt type=-1
+bValName = Pt type=-1
+bValName = Ts type=-1
+bValName = Ps type=-1
+Set Initial Values 
+Set mesh connection map for cuda 
+  DT              : 5e-07
+  Max CFL         : 0
+  Total Time      : 5e-07
+Start Calculation 
+----------------------------
+Step : 0
+  Inner loop : 1
+  Inner loop : 2
+  Inner loop : 3
+  DT              : 5e-07
+  Max CFL         : 0.347882
+  Total Time      : 1e-06
+Time = 5.486 s

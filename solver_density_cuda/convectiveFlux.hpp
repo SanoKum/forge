@@ -3,6 +3,8 @@
 #include "mesh/mesh.hpp"
 #include "variables.hpp"
 #include "input/solverConfig.hpp"
+#include "cuda_forge/convectiveFlux_d.cuh"
+
 #include <algorithm>
 #include <vector>
 #include <Eigen/Dense>
@@ -23,6 +25,6 @@ void calcRoeAverage (flow_float ga, flow_float roL, flow_float roR, flow_float u
                      flow_float HL, flow_float HR, flow_float cL, flow_float cR,
                      flow_float& ro_a, flow_float& Ux_a, flow_float& Uy_a, flow_float& Uz_a, flow_float& H_a, flow_float& c_a);
 
-void convectiveFlux(int, solverConfig& , mesh& , variables& , matrix& );
+void convectiveFlux(int, solverConfig& , cudaConfig & , mesh& , variables& , matrix& );
 
 

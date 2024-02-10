@@ -1,5 +1,5 @@
 #include "mesh.hpp"
-#include "cuda_nagare/cudaWrapper.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
 
 using namespace std;
 using namespace HighFive;
@@ -123,7 +123,7 @@ void bcond::bcondInitVariables(const int &useGPU)
 mesh::mesh(){}
 mesh::~mesh()
 {
-    cudaWrapper::cudaFree_wrapper(this->map_nplane_cells_d);
+    cudaWrapper::cudaFree_wrapper(this->map_plane_cells_d);
 }
 
 mesh::mesh(geom_int& nNodes,geom_int& nPlanes,geom_int& nCells, geom_int& nNormalPlanes, 
@@ -455,21 +455,22 @@ void mesh::setPeriodicPartner()
 
 void mesh::setMeshMap_d()
 {
-    gpuErrchk(cudaMalloc((void **)&(this->map_nplane_cells_d), sizeof(geom_int)*this->nNormalPlanes*2));
+    gpuErrchk(cudaMalloc((void **)&(this->map_plane_cells_d), sizeof(geom_int)*this->nPlanes*2));
 
     geom_int* pc_h;
     geom_int* bp_h;
     geom_int* bc_h;
-    pc_h = (geom_int *)malloc(sizeof(geom_int)*this->nNormalPlanes*2);
+    geom_int* bcg_h;
+    pc_h = (geom_int *)malloc(sizeof(geom_int)*this->nPlanes*2);
 
-    for (geom_int ip=0; ip<this->nNormalPlanes; ip++)
+    for (geom_int ip=0; ip<this->nPlanes; ip++)
     {
         pc_h[2*ip + 0] = this->planes[ip].iCells[0]; 
         pc_h[2*ip + 1] = this->planes[ip].iCells[1]; 
     }
 
-    gpuErrchk(cudaMemcpy(this->map_nplane_cells_d  , pc_h , 
-                     sizeof(geom_int)*(this->nNormalPlanes*2) , cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(this->map_plane_cells_d  , pc_h , 
+                     sizeof(geom_int)*(this->nPlanes*2) , cudaMemcpyHostToDevice));
 
     free(pc_h); 
 
@@ -478,13 +479,16 @@ void mesh::setMeshMap_d()
     {
         bp_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size());
         bc_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size());
+        bcg_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size()); // ghost cell
         gpuErrchk(cudaMalloc((void **)&(bc.map_bplane_plane_d), sizeof(geom_int)*bc.iPlanes.size()));
         gpuErrchk(cudaMalloc((void **)&(bc.map_bplane_cell_d) , sizeof(geom_int)*bc.iPlanes.size()));
+        gpuErrchk(cudaMalloc((void **)&(bc.map_bplane_cell_ghst_d) , sizeof(geom_int)*bc.iPlanes.size()));
 
         for (geom_int ibl=0 ; ibl<bc.iPlanes.size() ; ibl++)
         {
-            bp_h[ibl] = bc.iPlanes[ibl];
-            bc_h[ibl] = bc.iCells[ibl];
+            bp_h[ibl]  = bc.iPlanes[ibl];
+            bc_h[ibl]  = bc.iCells[ibl];
+            bcg_h[ibl] = bc.iCells_ghst[ibl];
         }
 
         gpuErrchk(cudaMemcpy(bc.map_bplane_plane_d , bp_h , 
@@ -492,8 +496,13 @@ void mesh::setMeshMap_d()
 
         gpuErrchk(cudaMemcpy(bc.map_bplane_cell_d , bc_h , 
                              sizeof(geom_int)*(bc.iPlanes.size()) , cudaMemcpyHostToDevice));
+
+        gpuErrchk(cudaMemcpy(bc.map_bplane_cell_ghst_d , bcg_h , 
+                             sizeof(geom_int)*(bc.iPlanes.size()) , cudaMemcpyHostToDevice));
+ 
         free(bp_h); 
         free(bc_h);
+        free(bcg_h);
     }
 };
 

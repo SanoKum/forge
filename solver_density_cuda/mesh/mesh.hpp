@@ -91,6 +91,7 @@ public:
     //cuda
     geom_int* map_bplane_plane_d;
     geom_int* map_bplane_cell_d;
+    geom_int* map_bplane_cell_ghst_d;
 
     bcond();
     bcond(const geom_int& , const std::vector<geom_int>& , 
@@ -112,7 +113,8 @@ public:
     std::vector<bcond> bconds;
 
     // cuda
-    geom_int* map_nplane_cells_d; // normal plane
+    //geom_int* map_nplane_cells_d; // normal plane
+    geom_int* map_plane_cells_d; // 
 
     mesh();
     ~mesh();

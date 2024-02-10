@@ -6,19 +6,27 @@ solverConfig::solverConfig(){};
 void solverConfig::read(std::string fname)
 {
     try {
+
+        std::cout << "i" << std::endl;
+
         this->solConfigFileName = fname;
         YAML::Node config = YAML::LoadFile(this->solConfigFileName);
 
+        std::cout << "r" << std::endl;
+        
         std::string meshFormat   = config["mesh"]["meshFormat"].as<std::string>();
         std::string meshFileName = config["mesh"]["meshFileName"].as<std::string>();
         std::string solver = config["solver"].as<std::string>();
+        std::cout << "q" << std::endl;
 
         this->gpu = config["gpu"].as<int>();
+        std::cout << "p" << std::endl;
 
         auto last = config["time"]["last"];
             int endTimeControl = last["control"].as<int>();
             int nStep = last["nStep"].as<int>();
             int endTime = last["time"].as<flow_float>();
+        std::cout << "z" << std::endl;
 
         auto deltaT = config["time"]["deltaT"];
             int dtControl = deltaT["control"].as<int>();
@@ -26,16 +34,21 @@ void solverConfig::read(std::string fname)
             flow_float cfl = deltaT["cfl"].as<flow_float>();
             flow_float dt_max= deltaT["dt_max"].as<flow_float>();
             flow_float dt_min= deltaT["dt_min"].as<flow_float>();
+        std::cout << "y" << std::endl;
 
         int outStepInterval = config["time"]["outStepInterval"].as<int>();
         int timeIntegration = config["time"]["timeIntegration"].as<int>();
+        std::cout << "x" << std::endl;
 
         auto implicit = config["time"]["implicit"];
             int nLoop      = implicit["nLoop"].as<int>();
             flow_float cfl_pseudo = implicit["cfl_pseudo"].as<flow_float>();
+        std::cout << "a" << std::endl;
 
         auto space = config["space"];
             int convMethod = space["convMethod"].as<int>();
+
+        std::cout << "b" << std::endl;
 
 
         auto physProp = config["physProp"];

@@ -5,8 +5,9 @@
 #include <list>
 
 #include "flowFormat.hpp"
+#include "input/solverConfig.hpp"
 #include "mesh/mesh.hpp"
-#include "cuda_nagare/cudaConfig.cuh"
+#include "cuda_forge/cudaConfig.cuh"
 
 class variables {
 public:
@@ -57,7 +58,7 @@ public:
     const std::list<std::string> output_cellValNames = 
     {
         "ro"    , "Ux"    , "Uy"    , "Uz"  , "T" , "P" , 
-        "roUx"  , "roUy"  , "roUz"  , "roe"  , 
+        "roUx"  , "roUy"  , "roUz"  , "roe" , 
         "cfl"   , "volume", "sonic" , 
         "dUxdx" , "dUxdy" , "dUxdz" , 
         "dUydx" , "dUydy" , "dUydz" , 
@@ -78,12 +79,13 @@ public:
     void allocVariables(const int &useGPU , mesh& msh);
 
     void copyVariables_cell_plane_H2D_all();
-    void copyVariables_cell_H2D (std::string );
-    void copyVariables_plane_H2D(std::string );
+    void copyVariables_cell_H2D (std::list<std::string>);
+    void copyVariables_plane_H2D(std::list<std::string>);
 
     void copyVariables_cell_plane_D2H_all();
-    void copyVariables_cell_D2H (std::string );
-    void copyVariables_plane_D2H(std::string );
+    void copyVariables_cell_D2H (std::list<std::string>);
+    void copyVariables_plane_D2H(std::list<std::string>);
 
-    void setStructualVariables_d(cudaConfig& cuda_cfg , mesh& msh);
+    void setStructuralVariables(solverConfig& cfg, cudaConfig& cuda_cfg , mesh& msh);
+    void setStructuralVariables_d(cudaConfig& cuda_cfg , mesh& msh);
 };
