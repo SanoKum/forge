@@ -1,0 +1,25 @@
+wall: 
+  physID: 1
+  kind: wall
+  ints:
+    wallFunc: 0 # 0:noslip , 1:use wallfuncion
+  floats:
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0
+
+slip:
+  physID: 2
+  kind: slip
+  ints:
+  floats:
+
+upper:
+  physID: 3
+  kind: inlet_uniformVelocity
+  ints:
+  floats:
+    Ux: 1.0
+    Uy: 0.0
+    Uz: 0.0
+    T: 288.15
