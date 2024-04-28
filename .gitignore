@@ -1,0 +1,15 @@
+*.xmf
+*.hdf5
+*.vtk
+*.h5
+*.msh
+*.o
+*.png
+*.cgns
+*.mp4
+*.o.d
+*/build/*
+log
+solver_heat/*
+solver_smac/*
+solver_smac_cuda/*

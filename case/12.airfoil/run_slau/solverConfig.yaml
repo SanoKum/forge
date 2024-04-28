@@ -1,0 +1,38 @@
+mesh:
+  meshFormat: "hdf5" 
+  meshFileName: "supercritical.h5"
+
+
+gpu: 1 # 0:off , 1:on
+
+solver: "smac" # smac , simple , simplec , fractionalStep
+
+physProp:
+  isCompressible: 1 # 0:incomp, 1:compressible
+  ro : 1.2 # [kg/m3] ignored for compressible flow
+  visc : 0.0025 #[Pa*s]
+  thermCond: 0.0241 # [W/(mK)]
+  cp : 1004.5 # [J/(kgK)]
+  gamma : 1.4 # [J/(kgK)]
+
+time: 
+  last: 
+    control: 0 # 0:nStep , 1:time base
+    nStep: 100000
+    time: 1.00 # [second]
+  deltaT:  
+    control: 0 # 0:use dt , 1:use cfl
+    dt: 0.000001
+    cfl: 0.1
+    dt_min: 0.00000001
+    dt_max: 1.0 
+  outStepInterval: 1000
+  timeIntegration: 3  #1:Euler explicit, 3:3rd TVD Runge Explicit, 4:4th runge exp, 10:dual-exp
+  implicit:
+    nLoop: 10
+    cfl_pseudo: 0.5
+
+space: 
+  convMethod: 2 # 1:roe, 2:SLAU , 3:keep , 4:AUSM
+
+initial: "supercritical"

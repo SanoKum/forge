@@ -1,0 +1,22 @@
+wall: 
+  physID: 1
+  kind: wall_isothermal
+  ints:
+    wallFunc: 0 # 0:noslip , 1:use wallfuncion
+  floats:
+    T: 280.0 # [K]
+
+slip:
+  physID: 2
+  kind: slip
+  ints:
+  floats:
+
+upper:
+  physID: 3
+  #kind: inlet_uniformVelocity
+  kind: wall_isothermal
+  ints:
+    wallFunc: 0 # 0:noslip , 1:use wallfuncion
+  floats:
+    T: 320.0
