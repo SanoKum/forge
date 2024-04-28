@@ -4,7 +4,7 @@
 #include <vector>
 #include <list>
 #include <string>
-#include <Eigen/Dense>
+//#include <Eigen/Dense>
 #include "flowFormat.hpp"
 #include "elementType.hpp"
 
@@ -56,8 +56,9 @@ struct bcond
 public:
     std::list<std::string> bplaneValNames =  
     {
-        "ro" , "roUx" , "roUy" , "roUz" , "roUz" , "roe",
-        "Ux" , "Uy"   , "Uz"   , "Tt"   , "Pt"   , "Ts" , "Ps" 
+        "ro"   , "roUx" , "roUy" , "roUz" , "roUz" , "roe",
+        "Ux"   , "Uy"   , "Uz"   , "Tt"   , "Pt"   , "Ts" , "Ps",
+        "ypls" , "twall_x" , "twall_y" , "twall_z" 
     };
 
     std::list<std::string> bplaneIntNames =  
@@ -73,6 +74,12 @@ public:
     std::vector<geom_int> iBPlanes;
     std::vector<geom_int> iCells; //chk
     std::vector<geom_int> iCells_ghst; //ghost cell
+
+    int output_preparation_flg = 0;
+    std::vector<node> nodes_local;
+    std::vector<plane> planes_local;
+    std::vector<geom_int> inodes_l2g; 
+    std::vector<geom_int> inodes_g2l; 
 
     std::map<std::string, int> inputInts;
     std::map<std::string, flow_float> inputFloats;
@@ -91,6 +98,7 @@ public:
     //cuda
     geom_int* map_bplane_plane_d;
     geom_int* map_bplane_cell_d;
+    geom_int* map_bplane_cell_ghst_d;
 
     bcond();
     bcond(const geom_int& , const std::vector<geom_int>& , 
@@ -98,6 +106,9 @@ public:
     ~bcond();
 
     void bcondInitVariables(const int &useGPU);
+    void copyVariables_bplane_D2H();
+    //void set_nodes_local(mesh& msh);
+    void output_preparation(std::vector<node>& nodes, std::vector<plane>& planes);
 };
 
 struct mesh 
@@ -112,7 +123,8 @@ public:
     std::vector<bcond> bconds;
 
     // cuda
-    geom_int* map_nplane_cells_d; // normal plane
+    //geom_int* map_nplane_cells_d; // normal plane
+    geom_int* map_plane_cells_d; // 
 
     mesh();
     ~mesh();
@@ -121,6 +133,7 @@ public:
          std::vector<node>& , std::vector<plane>& , std::vector<cell>& , std::vector<bcond>& );
 
     void readMesh(std::string); 
+
     void setPeriodicPartner();
     void setMeshMap_d();
 };

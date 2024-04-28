@@ -1,5 +1,5 @@
 #include "mesh.hpp"
-#include "cuda_nagare/cudaWrapper.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
 
 using namespace std;
 using namespace HighFive;
@@ -46,8 +46,6 @@ void bcond::bcondInitVariables(const int &useGPU)
     // *** allocate and init variables for boundary cells ***
     // ------------------------------------------------------
     // float
-
-
     for (auto& bValName : this->bplaneValNames)
     {
         if (valueTypes.find(bValName) == valueTypes.end()) { // not neccesally variable for this bc
@@ -57,10 +55,9 @@ void bcond::bcondInitVariables(const int &useGPU)
             this->bvar[bValName].resize(this->iPlanes.size());
 
             int type = valueTypes[bValName];
-            cout  << "bValName = " <<  bValName <<  " type=" << type << endl;
 
             if (type == 1) { // read uniform float from yaml
-                cout << "read " << bValName << " of " << bcondKind  << " from config";
+                cout << "read " << bValName << " of " << bcondKind  << " from config\n";
                 for (flow_float& var : this->bvar[bValName])
                 {
                     var = this->inputFloats[bValName];
@@ -119,11 +116,62 @@ void bcond::bcondInitVariables(const int &useGPU)
     }
 }
 
+void bcond::copyVariables_bplane_D2H()
+{
+    // float
+    for (auto& bValName : this->bplaneValNames)
+    {
+        if (valueTypes.find(bValName) == valueTypes.end()) { // not neccesally variable for this bc
+            continue;
+
+        } else { // needed
+            cudaWrapper::cudaMemcpy_D2H_wrapper(this->bvar_d[bValName], this->bvar[bValName].data(), this->bvar[bValName].size());
+        }
+    }
+}
+
+void bcond::output_preparation(std::vector<node>& nodes, std::vector<plane>& planes)
+{
+    if (this->output_preparation_flg == 1) return;
+
+    vector<geom_int> nodes_bc_flg;
+
+    nodes_bc_flg.resize(nodes.size());
+    this->inodes_g2l.resize(nodes.size());
+    std::fill(nodes_bc_flg.begin(), nodes_bc_flg.end(), 0);
+    std::fill(inodes_g2l.begin(), inodes_g2l.end(), -1);
+
+    geom_int ipl = 0;
+    for (auto& ip : this->iPlanes) {
+        this->planes_local.push_back(planes[ip]);
+
+        for (auto& in : planes[ip].iNodes) {
+            //cout << "inl=" << inl << endl;
+            nodes_bc_flg[in] = 1;
+            //this->inodes_g2l[in] = inl;
+            //this->inodes_l2g.push_back(in);
+            //inl++;
+        }
+        ipl++;
+    }
+
+    geom_int inl = -1;
+    for (geom_int ing=0 ; ing<nodes.size(); ing++) {
+        if (nodes_bc_flg[ing] == 1){
+            inl++;
+            this->inodes_g2l[ing] = inl;
+            this->inodes_l2g.push_back(ing);
+        }
+    }
+
+    this->output_preparation_flg = 1;
+
+}
 
 mesh::mesh(){}
 mesh::~mesh()
 {
-    cudaWrapper::cudaFree_wrapper(this->map_nplane_cells_d);
+    cudaWrapper::cudaFree_wrapper(this->map_plane_cells_d);
 }
 
 mesh::mesh(geom_int& nNodes,geom_int& nPlanes,geom_int& nCells, geom_int& nNormalPlanes, 
@@ -154,18 +202,23 @@ void mesh::readMesh(string fname)
 
     a = group.getAttribute("nCells");
     this->nCells = a.read<geom_int>();
+    cout << "Number of Cells: " << this->nCells << endl;
 
     a = group.getAttribute("nPlanes");
     this->nPlanes = a.read<geom_int>();
+    cout << "Number of Planes: " << this->nPlanes << endl;
 
     a = group.getAttribute("nNormalPlanes");
     this->nNormalPlanes = a.read<geom_int>();
+    cout << "Number of Normal Planes: " << this->nNormalPlanes << endl;
 
     a = group.getAttribute("nBPlanes");
     this->nBPlanes= a.read<geom_int>();
+    cout << "Number of Boundary Planes: " << this->nBPlanes << endl;
 
     a = group.getAttribute("nBconds");
     this->nBconds = a.read<geom_int>();
+    cout << "Number of Boundary Conditions: " << this->nBconds << endl;
 
 //ghst>
     this->nCells_ghst = this->nBPlanes;
@@ -374,16 +427,26 @@ void mesh::readMesh(string fname)
             geom_float dx = xp - xc;
             geom_float dy = yp - yc;
             geom_float dz = zp - zc;
+
+            geom_float ss = this->planes[ip].surfArea;
+            geom_float nx = this->planes[ip].surfVect[0]/ss;
+            geom_float ny = this->planes[ip].surfVect[1]/ss;
+            geom_float nz = this->planes[ip].surfVect[2]/ss;
+
+            geom_float dnx = (dx*nx +dy*ny + dz*nz)*nx;
+            geom_float dny = (dx*nx +dy*ny + dz*nz)*ny;
+            geom_float dnz = (dx*nx +dy*ny + dz*nz)*nz;
             
-            this->cells[nCells+nGhost].centCoords[0] = xp + dx;
-            this->cells[nCells+nGhost].centCoords[1] = yp + dy;
-            this->cells[nCells+nGhost].centCoords[2] = zp + dz;
+            this->cells[nCells+nGhost].centCoords[0] = xc + 2*dnx;
+            this->cells[nCells+nGhost].centCoords[1] = yc + 2*dny;
+            this->cells[nCells+nGhost].centCoords[2] = zc + 2*dnz;
             nGhost++;
         }
 //ghst<
         ib++;
     }
 }
+
 
 void mesh::setPeriodicPartner()
 {
@@ -404,19 +467,33 @@ void mesh::setPeriodicPartner()
                 for (auto& bc1 : this->bconds) {
                     if (bc1.physID != bcID_partner) continue;
 
-                    Eigen::VectorXd XYZ(3);
-                    Eigen::MatrixXd partnerXYZ(3, bc1.iPlanes.size());
-                    Eigen::MatrixXd::Index index;
+                    //Eigen::VectorXd XYZ(3);
+                    //Eigen::MatrixXd partnerXYZ(3, bc1.iPlanes.size());
+                    //Eigen::MatrixXd::Index index;
+                    std::size_t three = 3;
+
+                    vector<geom_float> XYZ(3);
+                    vector<vector<geom_float>> partnerXYZ;
+                    geom_float index;
+
+                    partnerXYZ.resize(3);
+                    partnerXYZ[0].resize(bc1.iPlanes.size());
+                    partnerXYZ[1].resize(bc1.iPlanes.size());
+                    partnerXYZ[2].resize(bc1.iPlanes.size());
+
+                    geom_float x1;
+                    geom_float y1;
+                    geom_float z1;
 
                     geom_int ib1_local = 0;
                     for (geom_int& ip1 : bc1.iPlanes) {
-                        geom_float x1 = this->planes[ip1].centCoords[0];
-                        geom_float y1 = this->planes[ip1].centCoords[1];
-                        geom_float z1 = this->planes[ip1].centCoords[2];
+                        x1 = this->planes[ip1].centCoords[0];
+                        y1 = this->planes[ip1].centCoords[1];
+                        z1 = this->planes[ip1].centCoords[2];
 
-                        partnerXYZ(0, ib1_local) = x1;
-                        partnerXYZ(1, ib1_local) = y1;
-                        partnerXYZ(2, ib1_local) = z1;
+                        partnerXYZ[0][ib1_local] = x1;
+                        partnerXYZ[1][ib1_local] = y1;
+                        partnerXYZ[2][ib1_local] = z1;
 
                         map_ib1_iplane.push_back(ip1);
 
@@ -429,13 +506,30 @@ void mesh::setPeriodicPartner()
                         geom_float y0 = this->planes[ip0].centCoords[1];
                         geom_float z0 = this->planes[ip0].centCoords[2];
 
-                        XYZ(0) = x0;
-                        XYZ(1) = y0;
-                        XYZ(2) = z0;
+                        XYZ[0] = x0;
+                        XYZ[1] = y0;
+                        XYZ[2] = z0;
 
-                        (partnerXYZ.colwise() - XYZ).colwise().squaredNorm().minCoeff(&index);
-                        //cout << "Nearest neibour is column " << index << ":" << endl;
-                        //cout << partnerXYZ.col(index) << endl;
+                        geom_float dist2 = 1e+30;
+                        geom_float dist2_temp;
+                        geom_int ib1_local = 0;
+                        for (geom_int& ip1 : bc1.iPlanes) {
+                            x1 = partnerXYZ[0][ib1_local] ;
+                            y1 = partnerXYZ[1][ib1_local] ;
+                            z1 = partnerXYZ[2][ib1_local] ;
+
+                            dist2_temp = pow((x1-x0),2) +pow((y1-y0),2) +pow((z1-z0),2);
+
+                            if (dist2>dist2_temp) {
+                                dist2 = dist2_temp;
+                                index = ib1_local;
+                            }
+
+                            ib1_local++;
+                        }
+
+                        // don't use eigen because too many warnings
+                        //(partnerXYZ.colwise() - XYZ).colwise().squaredNorm().minCoeff(&index);
 
                         geom_int ip1 = map_ib1_iplane[index];
 
@@ -455,21 +549,22 @@ void mesh::setPeriodicPartner()
 
 void mesh::setMeshMap_d()
 {
-    gpuErrchk(cudaMalloc((void **)&(this->map_nplane_cells_d), sizeof(geom_int)*this->nNormalPlanes*2));
+    gpuErrchk(cudaMalloc((void **)&(this->map_plane_cells_d), sizeof(geom_int)*this->nPlanes*2));
 
     geom_int* pc_h;
     geom_int* bp_h;
     geom_int* bc_h;
-    pc_h = (geom_int *)malloc(sizeof(geom_int)*this->nNormalPlanes*2);
+    geom_int* bcg_h;
+    pc_h = (geom_int *)malloc(sizeof(geom_int)*this->nPlanes*2);
 
-    for (geom_int ip=0; ip<this->nNormalPlanes; ip++)
+    for (geom_int ip=0; ip<this->nPlanes; ip++)
     {
         pc_h[2*ip + 0] = this->planes[ip].iCells[0]; 
         pc_h[2*ip + 1] = this->planes[ip].iCells[1]; 
     }
 
-    gpuErrchk(cudaMemcpy(this->map_nplane_cells_d  , pc_h , 
-                     sizeof(geom_int)*(this->nNormalPlanes*2) , cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(this->map_plane_cells_d  , pc_h , 
+                     sizeof(geom_int)*(this->nPlanes*2) , cudaMemcpyHostToDevice));
 
     free(pc_h); 
 
@@ -478,13 +573,16 @@ void mesh::setMeshMap_d()
     {
         bp_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size());
         bc_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size());
+        bcg_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size()); // ghost cell
         gpuErrchk(cudaMalloc((void **)&(bc.map_bplane_plane_d), sizeof(geom_int)*bc.iPlanes.size()));
         gpuErrchk(cudaMalloc((void **)&(bc.map_bplane_cell_d) , sizeof(geom_int)*bc.iPlanes.size()));
+        gpuErrchk(cudaMalloc((void **)&(bc.map_bplane_cell_ghst_d) , sizeof(geom_int)*bc.iPlanes.size()));
 
         for (geom_int ibl=0 ; ibl<bc.iPlanes.size() ; ibl++)
         {
-            bp_h[ibl] = bc.iPlanes[ibl];
-            bc_h[ibl] = bc.iCells[ibl];
+            bp_h[ibl]  = bc.iPlanes[ibl];
+            bc_h[ibl]  = bc.iCells[ibl];
+            bcg_h[ibl] = bc.iCells_ghst[ibl];
         }
 
         gpuErrchk(cudaMemcpy(bc.map_bplane_plane_d , bp_h , 
@@ -492,8 +590,13 @@ void mesh::setMeshMap_d()
 
         gpuErrchk(cudaMemcpy(bc.map_bplane_cell_d , bc_h , 
                              sizeof(geom_int)*(bc.iPlanes.size()) , cudaMemcpyHostToDevice));
+
+        gpuErrchk(cudaMemcpy(bc.map_bplane_cell_ghst_d , bcg_h , 
+                             sizeof(geom_int)*(bc.iPlanes.size()) , cudaMemcpyHostToDevice));
+ 
         free(bp_h); 
         free(bc_h);
+        free(bcg_h);
     }
 };
 

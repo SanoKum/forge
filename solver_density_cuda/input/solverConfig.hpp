@@ -18,6 +18,7 @@ private:
 public:
     std::string meshFormat; 
     std::string meshFileName; 
+    std::string valueFileName; 
 
     int gpu;
 

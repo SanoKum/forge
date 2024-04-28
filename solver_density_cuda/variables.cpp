@@ -5,34 +5,12 @@
 #include "flowFormat.hpp"
 #include "mesh/mesh.hpp"
 #include "variables.hpp"
-#include "cuda_nagare/cudaWrapper.cuh"
-#include "cuda_nagare/calcStructualVariables_d.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/calcStructualVariables_d.cuh"
+
+
 
 variables::variables() {};
-
-//tempvariables::variables(const int &useGPU , mesh& msh)
-//temp{
-//temp    for (auto& cellValName : cellValNames)
-//temp    {
-//temp        //this->c[cellValName].resize(msh.nCells);
-//temp        this->c[cellValName].resize(msh.nCells_all); // including ghost cells
-//temp
-//temp        if (useGPU == 1) 
-//temp        {
-//temp            gpuErrchk( cudaMalloc((void**) &(this->c_d[cellValName]), (msh.nCells_all)*sizeof(flow_float)) );
-//temp        }
-//temp
-//temp    }
-//temp    for (auto& planeValName : planeValNames)
-//temp    {
-//temp        this->p[planeValName].resize(msh.nPlanes);
-//temp
-//temp        if (useGPU == 1) 
-//temp        {
-//temp            gpuErrchk( cudaMalloc((void**) &(this->p_d[planeValName]), msh.nPlanes*sizeof(flow_float)) );
-//temp        }
-//temp    }
-//temp}
 
 variables::~variables() {
     for (auto& cellValName : cellValNames)
@@ -82,13 +60,18 @@ void variables::copyVariables_cell_plane_H2D_all()
     }
 }
 
-void variables::copyVariables_cell_H2D(std::string name)
+//void variables::copyVariables_cell_H2D(std::string name)
+void variables::copyVariables_cell_H2D(std::list<std::string> names)
 {
-    cudaWrapper::cudaMemcpy_H2D_wrapper(this->c[name].data() , this->c_d[name], this->c[name].size());
+    for (auto& name : names) {
+        cudaWrapper::cudaMemcpy_H2D_wrapper(this->c[name].data() , this->c_d[name], this->c[name].size());
+    }
 }
-void variables::copyVariables_plane_H2D(std::string name)
+void variables::copyVariables_plane_H2D(std::list<std::string> names)
 {
-    cudaWrapper::cudaMemcpy_H2D_wrapper(this->p[name].data() , this->p_d[name], this->c[name].size());
+    for (auto& name : names) {
+        cudaWrapper::cudaMemcpy_H2D_wrapper(this->p[name].data() , this->p_d[name], this->c[name].size());
+    }
 }
 
 void variables::copyVariables_cell_plane_D2H_all()
@@ -103,17 +86,94 @@ void variables::copyVariables_cell_plane_D2H_all()
     }
 }
 
-void variables::copyVariables_cell_D2H(std::string name)
+void variables::copyVariables_cell_D2H(std::list<std::string> names)
 {
-    cudaWrapper::cudaMemcpy_D2H_wrapper(this->c_d[name], this->c[name].data(), this->c[name].size());
+    for (auto& name : names) {
+        cudaWrapper::cudaMemcpy_D2H_wrapper(this->c_d[name], this->c[name].data(), this->c[name].size());
+    }
 }
 
-void variables::copyVariables_plane_D2H(std::string name)
+void variables::copyVariables_plane_D2H(std::list<std::string> names)
 {
-    cudaWrapper::cudaMemcpy_D2H_wrapper(this->p_d[name], this->p[name].data(), this->p[name].size());
+    for (auto& name : names) {
+        cudaWrapper::cudaMemcpy_D2H_wrapper(this->p_d[name], this->p[name].data(), this->p[name].size());
+    }
 }
 
-void variables::setStructualVariables_d(cudaConfig& cuda_cfg , mesh& msh )
+void variables::setStructuralVariables(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh)
+{
+    if (cfg.gpu==1) {
+        variables::setStructuralVariables_d(cuda_cfg, msh);
+        return;
+    }
+
+    //geom_float ss;
+    std::vector<geom_float> sv(3);
+
+    std::vector<geom_float> dccv(3);
+    geom_float dcc;
+
+    std::vector<geom_float> dc1pv(3);
+    geom_float dc1p;
+
+    std::vector<geom_float> dc2pv(3);
+    geom_float dc2p;
+
+    std::vector<geom_float> pcent(3);
+    std::vector<geom_float> c1cent(3);
+    std::vector<geom_float> c2cent(3);
+
+    geom_float volume;
+
+    geom_int ic1;
+    geom_int ic2;
+
+    geom_float f;
+    std::vector<flow_float>& fxp  = this->p["fx"]; 
+    std::vector<flow_float>& dccp = this->p["dcc"];
+    std::vector<flow_float>& vvol = this->c["volume"];
+    std::vector<flow_float>& vccx = this->c["ccx"];
+    std::vector<flow_float>& vccy = this->c["ccy"];
+    std::vector<flow_float>& vccz = this->c["ccz"];
+
+    for (geom_int ip=0 ; ip<msh.nPlanes ; ip++)
+    {
+        ic1     = msh.planes[ip].iCells[0];
+        ic2     = msh.planes[ip].iCells[1];
+        sv      = msh.planes[ip].surfVect;
+
+        pcent   = msh.planes[ip].centCoords;
+
+        c1cent  = msh.cells[ic1].centCoords;
+        c2cent  = msh.cells[ic2].centCoords;
+
+        dccv[0] = c2cent[0] - c1cent[0];
+        dccv[1] = c2cent[1] - c1cent[1];
+        dccv[2] = c2cent[2] - c1cent[2];
+        dcc     = sqrt( pow(dccv[0], 2.0) + pow(dccv[1], 2.0) + pow(dccv[2], 2.0));
+
+        dc2pv[0] = pcent[0] - c2cent[0];
+        dc2pv[1] = pcent[1] - c2cent[1];
+        dc2pv[2] = pcent[2] - c2cent[2];
+        dc2p     = sqrt( pow(dc2pv[0], 2.0) + pow(dc2pv[1], 2.0) + pow(dc2pv[2], 2.0));
+
+        fxp[ip]  = dc2p/dcc;
+        dccp[ip] = dcc;
+    }
+
+    // cell
+    for (geom_int ic=0 ; ic<msh.nCells ; ic++)
+    {
+        c1cent   = msh.cells[ic].centCoords;
+        vvol[ic] = msh.cells[ic].volume;
+        vccx[ic] = c1cent[0];
+        vccy[ic] = c1cent[1];
+        vccz[ic] = c1cent[2];
+    }
+
+}
+
+void variables::setStructuralVariables_d(cudaConfig& cuda_cfg , mesh& msh )
 {
     geom_float* sx;
     geom_float* sy;
@@ -176,15 +236,41 @@ void variables::setStructualVariables_d(cudaConfig& cuda_cfg , mesh& msh )
 
     calcStructualVariables_d_wrapper(cuda_cfg , msh , *this);
 
-    //for (geom_int ip=0; ip<msh.nPlanes; ip++)
-    //{
-    //    printf("ip=%d , sx=%f , sy=%f , sz=%f\n", ip, sx[ip], sy[ip], sz[ip]);
-    //}
-
-
     free(sx) ; free(sy) ; free(sz) ; free(ss);
     free(pcx); free(pcy); free(pcz);
     free(ccx); free(ccy); free(ccz);
     free(volume); 
 
+}
+
+void variables::readValueHDF5(std::string fname , mesh& msh)
+{
+    HighFive::File file(fname, HighFive::File::ReadOnly);
+
+    // read basic 
+    HighFive::Group group = file.getGroup("/VALUE");
+
+    // nodes
+    std::vector<geom_float> ro;
+    file.getDataSet("/VALUE/ro").read(ro);
+    std::vector<geom_float> roUx;
+    file.getDataSet("/VALUE/roUx").read(roUx);
+     std::vector<geom_float> roUy;
+    file.getDataSet("/VALUE/roUy").read(roUy);
+      std::vector<geom_float> roUz;
+    file.getDataSet("/VALUE/roUz").read(roUz);
+     std::vector<geom_float> roe;
+    file.getDataSet("/VALUE/roe").read(roe);
+   
+    for (geom_int i=0; i<msh.nCells; i++)
+    {
+        this->c["ro"][i] = ro[i];
+        this->c["roUx"][i] = roUx[i];
+        this->c["roUy"][i] = roUy[i];
+        this->c["roUz"][i] = roUz[i];
+        this->c["roe"][i] = roe[i];
+    }
+
+    std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe"};
+    this->copyVariables_cell_H2D(names);
 }

@@ -2,8 +2,12 @@
 
 using namespace std;
 
-void timeIntegration(int loop , solverConfig &cfg , mesh &msh , variables &v , matrix& mat_ns)
+void timeIntegration(int loop , solverConfig &cfg , cudaConfig &cuda_cfg , mesh &msh , variables &v , matrix& mat_ns)
 {
+    if (cfg.gpu==1) {
+        timeIntegration_d_wrapper(loop , cfg , cuda_cfg , msh , v);
+        return;
+    }
     vector<flow_float>& ro = v.c["ro"];
     vector<flow_float>& roUx = v.c["roUx"];
     vector<flow_float>& roUy = v.c["roUy"];
