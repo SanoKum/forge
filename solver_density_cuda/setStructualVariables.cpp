@@ -3,7 +3,7 @@
 
 #include <cmath>
 
-void setStructualVariables(solverConfig& cfg , mesh& msh , variables& v)
+void setStructualVariables(solverConfig& cfg , cudaConfig& cuda , mesh& msh , variables& v)
 {
     //geom_float ss;
     std::vector<geom_float> sv(3);
@@ -27,48 +27,18 @@ void setStructualVariables(solverConfig& cfg , mesh& msh , variables& v)
     geom_int ic2;
 
     geom_float f;
-std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["dcc"];
+    std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["dcc"];
     std::vector<flow_float>& vvol = v.c["volume"];
     std::vector<flow_float>& vccx = v.c["ccx"];
     std::vector<flow_float>& vccy = v.c["ccy"];
     std::vector<flow_float>& vccz = v.c["ccz"];
 
-    // normal plane
-//ghost>
-    //for (geom_int ip=0 ; ip<msh.nNormalPlanes ; ip++)
     for (geom_int ip=0 ; ip<msh.nPlanes ; ip++)
-//ghost<
     {
         ic1     = msh.planes[ip].iCells[0];
         ic2     = msh.planes[ip].iCells[1];
         sv      = msh.planes[ip].surfVect;
 
-        //if (cfg.initial == "Taylor") {
-        //    if (msh.planes[ip].surfVect[0]>0.03) {
-        //        msh.planes[ip].surfVect[0] = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[1]>0.03) {
-        //        msh.planes[ip].surfVect[1] = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[2]>0.03) {
-        //        msh.planes[ip].surfVect[2] = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-
-        //    if (msh.planes[ip].surfVect[0]<-0.03) {
-        //        msh.planes[ip].surfVect[0] = -(2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[1]<-0.03) {
-        //        msh.planes[ip].surfVect[1] = -(2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfVect[2]<-0.03) {
-        //        msh.planes[ip].surfVect[2] = -(2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //    if (msh.planes[ip].surfArea>0.03) {
-        //        msh.planes[ip].surfArea = (2*M_PI)*(2*M_PI)/32.0/32.0;
-        //    }
-        //}
-
-        //ss      = msh.planes[ip].surfArea;
         pcent   = msh.planes[ip].centCoords;
 
         c1cent  = msh.cells[ic1].centCoords;
@@ -78,11 +48,6 @@ std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["d
         dccv[1] = c2cent[1] - c1cent[1];
         dccv[2] = c2cent[2] - c1cent[2];
         dcc     = sqrt( pow(dccv[0], 2.0) + pow(dccv[1], 2.0) + pow(dccv[2], 2.0));
-
-        //dc1pv[0] = pcent[0] - c1cent[0];
-        //dc1pv[1] = pcent[1] - c1cent[1];
-        //dc1pv[2] = pcent[2] - c1cent[2];
-        //dc1p    = sqrt( pow(dc1pv[0], 2.0) + pow(dc1pv[1], 2.0) + pow(dc1pv[2], 2.0));
 
         dc2pv[0] = pcent[0] - c2cent[0];
         dc2pv[1] = pcent[1] - c2cent[1];

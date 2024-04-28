@@ -5,6 +5,7 @@
 #include "variables.hpp"
 
 //void outputH5_XDMF(const mesh &msh , const variables &var)
-void outputH5_XDMF(const solverConfig& , const mesh& , const variables& , const int& );
+void outputH5_XDMF(const solverConfig& , const mesh& , variables& , const int& );
 
 
+void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var , const int& iStep);

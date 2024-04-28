@@ -5,8 +5,17 @@
 #include <list>
 
 #include "flowFormat.hpp"
+#include "input/solverConfig.hpp"
 #include "mesh/mesh.hpp"
-#include "cuda_nagare/cudaConfig.cuh"
+#include "cuda_forge/cudaConfig.cuh"
+
+#include <highfive/H5File.hpp>
+#include <highfive/H5Group.hpp>
+#include <highfive/H5DataSet.hpp>
+#include <highfive/H5DataSpace.hpp>
+#include <highfive/H5Attribute.hpp>
+
+
 
 class variables {
 public:
@@ -27,10 +36,9 @@ public:
         "dUydx", "dUydy" , "dUydz",
         "dUzdx", "dUzdy" , "dUzdz",
         "dPdx" , "dPdy"  , "dPdz",
+        "drodx", "drody" , "drodz",
+        "dHtdx", "dHtdy" , "dHtdz",
         "divU*vol" , "divU" , "divU_star",
-//        "convx" , "convy" , "convz" , "convT",
-//        "diffx" , "diffy" , "diffz" , "diffT",
-//        "dP"    , "dPPdx", "dPPdy", "dPPdz",
         "cfl"   , "cfl_pseudo",
         "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe",
         "res_ro_m"  , "res_roUx_m" , "res_roUy_m" , "res_roUz_m" , "res_roe_m",
@@ -57,7 +65,7 @@ public:
     const std::list<std::string> output_cellValNames = 
     {
         "ro"    , "Ux"    , "Uy"    , "Uz"  , "T" , "P" , 
-        "roUx"  , "roUy"  , "roUz"  , "roe"  , 
+        "roUx"  , "roUy"  , "roUz"  , "roe" , 
         "cfl"   , "volume", "sonic" , 
         "dUxdx" , "dUxdy" , "dUxdz" , 
         "dUydx" , "dUydy" , "dUydz" , 
@@ -78,12 +86,15 @@ public:
     void allocVariables(const int &useGPU , mesh& msh);
 
     void copyVariables_cell_plane_H2D_all();
-    void copyVariables_cell_H2D (std::string );
-    void copyVariables_plane_H2D(std::string );
+    void copyVariables_cell_H2D (std::list<std::string>);
+    void copyVariables_plane_H2D(std::list<std::string>);
 
     void copyVariables_cell_plane_D2H_all();
-    void copyVariables_cell_D2H (std::string );
-    void copyVariables_plane_D2H(std::string );
+    void copyVariables_cell_D2H (std::list<std::string>);
+    void copyVariables_plane_D2H(std::list<std::string>);
 
-    void setStructualVariables_d(cudaConfig& cuda_cfg , mesh& msh);
+    void setStructuralVariables(solverConfig& cfg, cudaConfig& cuda_cfg , mesh& msh);
+    void setStructuralVariables_d(cudaConfig& cuda_cfg , mesh& msh);
+
+    void readValueHDF5(std::string fname , mesh& msh);
 };
