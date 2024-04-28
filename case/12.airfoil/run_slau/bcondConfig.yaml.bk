@@ -1,0 +1,30 @@
+Inlet:
+  physID: 129
+  kind: inlet_uniformVelocity
+  ints:
+  floats:
+    ro: 1.2
+    Ux: 340.0
+    Uy: 0.0
+    Uz: 0.0
+    Ps: 101325.0
+
+Outlet:
+  physID: 130
+  kind: outflow
+  ints:
+  floats:
+
+Airfoil:
+  physID: 131
+  kind: slip
+  ints:
+  floats:
+
+Side:
+  physID: 132
+  kind: slip
+  ints:
+  floats:
+
+

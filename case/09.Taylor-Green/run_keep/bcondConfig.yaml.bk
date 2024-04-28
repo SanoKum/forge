@@ -1,0 +1,49 @@
+bottom:
+  physID: 1 
+  kind: periodic
+  ints:
+    type: 0 #0:cartesian , 1:rotation
+    partnerID: 2 #0:cartesian , 1:rotation
+  floats:
+
+upper:
+  physID: 2
+  kind: periodic
+  ints:
+    type: 0 #0:cartesian , 1:rotation
+    partnerID: 1 #0:cartesian , 1:rotation
+  floats:
+
+left:
+  physID: 3
+  kind: periodic
+  ints:
+    type: 0 #0:cartesian , 1:rotation
+    partnerID: 4 #0:cartesian , 1:rotation
+  floats:
+
+right:
+  physID: 4
+  kind: periodic
+  ints:
+    type: 0 #0:cartesian , 1:rotation
+    partnerID: 3 #0:cartesian , 1:rotation
+  floats:
+
+inlet:
+  physID: 5
+  kind: periodic
+  ints:
+    type: 0 #0:cartesian , 1:rotation
+    partnerID: 6 #0:cartesian , 1:rotation
+  floats:
+
+outlet:
+  physID: 6
+  kind: periodic
+  ints:
+    type: 0 #0:cartesian , 1:rotation
+    partnerID: 5 #0:cartesian , 1:rotation
+  floats:
+
+
