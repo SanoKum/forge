@@ -6,11 +6,15 @@ solverConfig::solverConfig(){};
 void solverConfig::read(std::string fname)
 {
     try {
+
+
         this->solConfigFileName = fname;
         YAML::Node config = YAML::LoadFile(this->solConfigFileName);
 
-        std::string meshFormat   = config["mesh"]["meshFormat"].as<std::string>();
-        std::string meshFileName = config["mesh"]["meshFileName"].as<std::string>();
+        
+        std::string meshFormat    = config["mesh"]["meshFormat"].as<std::string>();
+        std::string meshFileName  = config["mesh"]["meshFileName"].as<std::string>();
+        std::string valueFileName = config["mesh"]["valueFileName"].as<std::string>();
         std::string solver = config["solver"].as<std::string>();
 
         this->gpu = config["gpu"].as<int>();
@@ -38,6 +42,7 @@ void solverConfig::read(std::string fname)
             int convMethod = space["convMethod"].as<int>();
 
 
+
         auto physProp = config["physProp"];
             int isCompressible = physProp["isCompressible"].as<int>();
             flow_float ro = physProp["ro"].as<flow_float>();
@@ -51,6 +56,7 @@ void solverConfig::read(std::string fname)
 
         std::cout << "Mesh Name : " << meshFileName << '\n';
         std::cout << "Mesh Name size : " << meshFileName.size() << '\n';
+        std::cout << "Value File Name : " << valueFileName << '\n';
 
         std::cout << "Solver Name : " << solver << '\n';
         if        (endTimeControl == 0) { std::cout << "End Step : " << nStep << '\n';
@@ -71,6 +77,7 @@ void solverConfig::read(std::string fname)
 
         this->meshFormat   = meshFormat;
         this->meshFileName = meshFileName;
+        this->valueFileName = valueFileName;
         this->solver = solver;
 
         this->endTimeControl = endTimeControl;

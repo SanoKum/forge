@@ -39,6 +39,10 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,0},
               {"Ps"  ,0},
+              {"ypls",0},
+              {"twall_x",0},
+              {"twall_y",0},
+              {"twall_z",0},
           }},
 
           {"wall_isothermal", { 
@@ -86,7 +90,21 @@ struct bcondConfFormat{
               {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,0},
+          }},
 
+          {"inlet_Pressure_dir", { 
+              {"ro"  ,0},
+              {"roUx",0},
+              {"roUy",0},
+              {"roUz",0},
+              {"roe" ,0},
+              {"Ux"  ,1},
+              {"Uy"  ,1},
+              {"Uz"  ,1},
+              {"Tt"  ,1},
+              {"Pt"  ,1},
+              {"Ts"  ,0},
+              {"Ps"  ,0},
           }},
 
           {"outlet_statPress", { 
@@ -98,8 +116,8 @@ struct bcondConfFormat{
               {"Ux"  ,0},
               {"Uy"  ,0},
               {"Uz"  ,0},
-              {"Tt"  ,0},
-              {"Pt"  ,0},
+              {"Tt"  ,1},
+              {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,1},
           }},
@@ -113,8 +131,8 @@ struct bcondConfFormat{
               {"Ux"  ,0},
               {"Uy"  ,0},
               {"Uz"  ,0},
-              {"Tt"  ,0},
-              {"Pt"  ,0},
+              {"Tt"  ,1},
+              {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,0},
 
@@ -159,6 +177,8 @@ struct bcondConfFormat{
 
 //void setBcondsValue(solverConfig& cfg , mesh& msh , variables& var , matrix& mat_p);
 void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p);
+
+void copyBcondsGradient(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p);
 
 void readBcondConfig(solverConfig& , vector<bcond>& );
 

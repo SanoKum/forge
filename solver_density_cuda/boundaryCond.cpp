@@ -1,7 +1,7 @@
 #include "boundaryCond.hpp"
 
-#include "cuda_nagare/cudaWrapper.cuh"
-#include "cuda_nagare/boundaryCond_d.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/boundaryCond_d.cuh"
 
 using namespace std;
 
@@ -490,41 +490,38 @@ void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variable
     } else if (cfg.gpu ==1) { // gpu
         for (auto& bc : msh.bconds)
         {
-//temp            //if      (bc.bcondKind == "wall_isothermal") { wall_isothermal_d(cfg , bc , msh , var , mat_p); } 
-//temp            if      (bc.bcondKind == "slip") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-//temp            else if (bc.bcondKind == "wall") wall_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-//temp            else if (bc.bcondKind == "inlet_uniformVelocity") { inlet_uniformVelocity_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
-//temp            else if (bc.bcondKind == "outlet_statPress") { outlet_statPress_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
-//temp            //else {
+            //if      (bc.bcondKind == "wall_isothermal") { wall_isothermal_d(cfg , bc , msh , var , mat_p); } 
+            if      (bc.bcondKind == "slip") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
+            else if (bc.bcondKind == "wall") wall_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
+            else if (bc.bcondKind == "inlet_uniformVelocity") { inlet_uniformVelocity_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
+            else if (bc.bcondKind == "outlet_statPress") { outlet_statPress_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
+            else if (bc.bcondKind == "inlet_Pressure") { inlet_Pressure_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
+            else if (bc.bcondKind == "inlet_Pressure_dir") { inlet_Pressure_dir_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
+            else if (bc.bcondKind == "outflow") { outflow_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
+            //else {
             //    cerr << "Error: unknown bcondKind " << bc.bcondKind << endl;
             //    exit(EXIT_FAILURE);
             //};
-            cudaThreadSynchronize();
         }
-//    } else if (cfg.gpu ==-1) { // gpu check
-//        for (auto& bc : msh.bconds)
-//        {
-////            //if      (bc.bcondKind == "wall_isothermal") { wall_isothermal_d(cfg , bc , msh , var , mat_p); } 
-////            if      (bc.bcondKind == "slip") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-////            else if (bc.bcondKind == "wall") wall_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-////            else if (bc.bcondKind == "inlet_uniformVelocity") { inlet_uniformVelocity_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
-////            else if (bc.bcondKind == "outlet_statPress") { outlet_statPress_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
-////            //else {
-////            //    cerr << "Error: unknown bcondKind " << bc.bcondKind << endl;
-////            //    exit(EXIT_FAILURE);
-////            //};
-////            cudaThreadSynchronize();
-//            if      (bc.bcondKind == "wall_isothermal") { wall_isothermal(cfg , bc , msh , var , mat_p); } 
-//            else if (bc.bcondKind == "slip") { slip(cfg , bc , msh , var , mat_p); }
-//            else if (bc.bcondKind == "wall") { wall(cfg , bc , msh , var , mat_p); }
-//            else if (bc.bcondKind == "inlet_uniformVelocity") { inlet_uniformVelocity(cfg , bc , msh , var , mat_p); }
-//            else if (bc.bcondKind == "outlet_statPress") { outlet_statPress(cfg , bc , msh , var , mat_p); }
-//            else {
-//                cerr << "Error: unknown bcondKind " << bc.bcondKind << endl;
-//                exit(EXIT_FAILURE);
-//            };
-//
-//        }
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+
     }
 }
 
+void copyBcondsGradient(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p)
+{
+    if (cfg.gpu == 0) { // cpu
+        cerr << "Error: can't use with cpu" << endl;
+        exit(EXIT_FAILURE);
+
+    } else if (cfg.gpu ==1) { // gpu
+        for (auto& bc : msh.bconds)
+        {
+            copyBcondsGradient_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
+        }
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+
+    }
+}

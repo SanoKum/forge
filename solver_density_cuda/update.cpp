@@ -1,13 +1,16 @@
-#pragma once
-
 #include "update.hpp"
 #include <vector>
 
 using namespace std;
 
-void updateVariablesOuter(solverConfig& cfg , mesh& msh , variables& v , matrix& mat_p)
+void updateVariablesOuter(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& v , matrix& mat_p)
 //void updateVariablesForNextLoop(solverConfig& cfg , mesh& msh , variables& v)
 {
+    if (cfg.gpu == 1) {
+        updateVariablesOuter_d_wrapper(cfg , cuda_cfg , msh , v);
+        return;
+    }
+
     vector<flow_float>& ro   = v.c["ro"];
     vector<flow_float>& roUx = v.c["roUx"];
     vector<flow_float>& roUy = v.c["roUy"];
@@ -56,9 +59,15 @@ void updateVariablesOuter(solverConfig& cfg , mesh& msh , variables& v , matrix&
 
 }
 
-void updateVariablesInner(solverConfig& cfg , mesh& msh , variables& v , matrix& mat_p)
+void updateVariablesInner(solverConfig& cfg , cudaConfig& cuda_cfg ,mesh& msh , variables& v , matrix& mat_p)
 //void updateVariablesForNextLoop(solverConfig& cfg , mesh& msh , variables& v)
 {
+    if (cfg.gpu==1) {
+        updateVariablesInner_d_wrapper(cfg , cuda_cfg , msh , v);
+        return;
+    }
+
+
     vector<flow_float>& ro   = v.c["ro"];
     vector<flow_float>& roUx = v.c["roUx"];
     vector<flow_float>& roUy = v.c["roUy"];

@@ -3,8 +3,14 @@
 
 #include <cmath>
 
-void gradientGauss(solverConfig& cfg , mesh& msh , variables& v)
+
+void gradientGauss(solverConfig& cfg , cudaConfig& cuda_cfg ,mesh& msh , variables& v)
 {
+    if (cfg.gpu==1) {
+        calcGradient_d_wrapper(cfg , cuda_cfg , msh , v);
+        return;
+    }
+
     //geom_float ss;
     std::vector<geom_float> sv(3);
 

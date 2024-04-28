@@ -35,13 +35,18 @@
 #include "setDT.hpp"
 
 // cuda
-#include "cuda_nagare/cudaWrapper.cuh"
-#include "cuda_nagare/cudaConfig.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/cudaConfig.cuh"
 
-#include "cuda_nagare/calcGradient_d.cuh"
-#include "cuda_nagare/calcConvDiff_d.cuh"
-#include "cuda_nagare/updateCenterVelocity_d.cuh"
-#include "cuda_nagare/interpVelocity_c2p_d.cuh"
+#include "cuda_forge/calcGradient_d.cuh"
+#include "cuda_forge/convectiveFlux_d.cuh"
+#include "cuda_forge/viscousFlux_d.cuh"
+#include "cuda_forge/updateCenterVelocity_d.cuh"
+#include "cuda_forge/interpVelocity_c2p_d.cuh"
+#include "cuda_forge/timeIntegration_d.cuh"
+
+#include <cuda_runtime.h>
+
 
 #define CHECK_LAST_CUDA_ERROR() checkLast(__FILE__, __LINE__)
 void checkLast(const char* const file, const int line)
@@ -68,9 +73,6 @@ int main(void) {
     mesh msh;
     if (cfg.meshFormat == "hdf5") {
         msh.readMesh(cfg.meshFileName);
-    } else if (cfg.meshFormat == "gmsh") {
-        gmshReader gmsh = gmshReader(cfg.meshFileName);
-        msh = gmsh.getMesh();
     } else {
         cerr << "Error unknown mesh format: " << cfg.meshFormat << endl;
         return 1;
@@ -87,26 +89,30 @@ int main(void) {
     variables var = variables();
     var.allocVariables(cfg.gpu , msh);
 
-    cout << "Set Initial Values \n";
-    setInitial(cfg , msh , var);
+    cout << "Read Initial Values \n";
+    var.readValueHDF5(cfg.valueFileName , msh);
 
     cout << "Set mesh connection map for cuda \n";
     cudaConfig cuda_cfg = cudaConfig(msh);
     msh.setMeshMap_d();
 
-    msh.setPeriodicPartner();
+// TODO: cuda>
+    msh.setPeriodicPartner(); 
+// TODO: cuda<
 
-    setStructualVariables(cfg , msh , var);
+    var.setStructuralVariables(cfg , cuda_cfg , msh);
 
-    dependentVariables(cfg , msh , var, mat_ns);
+    dependentVariables(cfg , cuda_cfg , msh , var, mat_ns); 
 
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
 
-    gradientGauss(cfg , msh , var);
+    calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
 
-    updateVariablesOuter(cfg , msh , var , mat_ns);
+    copyBcondsGradient(cfg , cuda_cfg , msh , var, mat_ns);
 
-    setDT(cfg , msh , var);
+    updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
+
+    setDT_d_wrapper(cfg , cuda_cfg , msh , var);
 
     outputH5_XDMF(cfg , msh, var, 0);
 
@@ -117,27 +123,32 @@ int main(void) {
         cout << "Step : " << iStep << "\n";
 
         for (int iloop = 0 ; iloop <cfg.nLoop ; iloop++) {
-            updateVariablesInner(cfg , msh , var , mat_ns);
+            updateVariablesInner(cfg , cuda_cfg ,msh , var , mat_ns);
 
             cout << "  Inner loop : " << iloop+1 << "\n" ;
-            dependentVariables(cfg , msh , var, mat_ns);
+            dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
 
             applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
             
-            gradientGauss(cfg , msh , var);
+            calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
 
-            convectiveFlux(iloop, cfg , msh , var, mat_ns);
+            copyBcondsGradient(cfg , cuda_cfg , msh , var, mat_ns);
+
+            convectiveFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
+
+            viscousFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
             
             implicitCorrection(iloop, cfg , msh , var, mat_ns);
 
-            timeIntegration(iloop, cfg , msh , var, mat_ns);
+            timeIntegration_d_wrapper(iloop, cfg , cuda_cfg , msh , var);
         }
 
-        updateVariablesOuter(cfg , msh , var , mat_ns);
+        updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
 
         outputH5_XDMF(cfg , msh, var, iStep+1);
+        outputBconds_H5_XDMF(cfg , msh, var, iStep+1);
 
-        setDT(cfg , msh , var);
+        setDT_d_wrapper(cfg , cuda_cfg, msh , var);
     }
 
     clock_t end = clock();

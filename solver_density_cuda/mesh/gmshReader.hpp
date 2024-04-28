@@ -654,57 +654,52 @@ public:
         
         cout << "bcellMap Made" << endl;
 
+        cout << "Change planes order. move boundary planes to last." << endl;
+
         // change planes order. move bplanes to last.
         // Firstly, prepare for making order of plane indices for reference.
-        vector<geom_int> planeIndex(this->nPlanes);
-        for (geom_int i=0; i<this->nPlanes; i++)
-        {
-            planeIndex[i] = i;
-        }
+        vector<geom_int> planeIndex;
+        vector<geom_int> planeBCflg(this->nPlanes);
+        vector<geom_int> bplaneIndex;
+
+        fill(planeBCflg.begin(), planeBCflg.end(), 0);
 
         for (const auto &item : bcellMap_physTag_planes) 
         {
             for (const auto &pln : item.second) 
             {
-                vector<geom_int>::iterator itr;
-                itr = std::find(planeIndex.begin(), planeIndex.end(), pln);
-
-                if (itr == planeIndex.end()) 
-                {
-                    cerr << "search failed" << endl;
-                    exit(EXIT_FAILURE);
-                }
-                int wantedIndex = distance(planeIndex.begin(), itr);
-
-                if (planeIndex[wantedIndex] != pln) 
-                {
-                    cerr << "Error: search failed. Something wrong" << endl;
-                    exit(EXIT_FAILURE);
-                }
-
-                planeIndex.push_back(pln);
-                planeIndex.erase(planeIndex.begin() + wantedIndex);
+                planeBCflg[pln] = 1;
+                bplaneIndex.push_back(pln);
             }
         }
 
+        geom_int ip = 0;
+        for (const auto &bcflg : planeBCflg) 
+        {
+            if(bcflg == 0) {
+                planeIndex.push_back(ip);
+            }
+            ip++;
+        }
+
+        planeIndex.insert(planeIndex.end(), bplaneIndex.begin(), bplaneIndex.end());
+
         cout << "plane index Made" << endl;
 
-        //cout << "planeIndex" << endl;
-        //print1Dvector(planeIndex);
-
+        vector<geom_int> planeIndex_old_to_new(this->nPlanes);
 
         vector<plane> planes_new(this->nPlanes);
         planes_new = planes;
 
-        geom_int ip = 0;
+        ip = 0;
         for (auto &i : planeIndex)
         {
             planes_new[ip].iNodes = this->planes[i].iNodes;
             planes_new[ip].iCells = this->planes[i].iCells;
+            planeIndex_old_to_new[i] = ip;
             ip += 1;
         }
         this->planes = planes_new;
-        cout << "before planes_new.clear\n"; 
         planes_new.clear();
 
         vector<cell> cells_new(this->nCells);
@@ -717,23 +712,11 @@ public:
             int j = 0;
             for (auto &pln : cell.iPlanes)
             {
-                vector<geom_int>::iterator itr;
-                itr = std::find(planeIndex.begin(), planeIndex.end(), pln);
-
-                if (itr == planeIndex.end()) 
-                {
-                    cerr << "search failed" << endl;
-                    exit(EXIT_FAILURE);
-                }
-                int wantedIndex = distance(planeIndex.begin(), itr);
-                cells_new[i].iPlanes[j] = wantedIndex;
+                cells_new[i].iPlanes[j] = planeIndex_old_to_new[pln];
                 j += 1;
             }
             i += 1;
         }
-
-
-        cout << "before cells_new.clear\n"; 
 
         this->cells = cells_new;
         cells_new.clear();
@@ -748,24 +731,11 @@ public:
             geom_int j = 0;
             for (auto &pln : node.iPlanes)
             {
-                vector<geom_int>::iterator itr;
-                itr = std::find(planeIndex.begin(), planeIndex.end(), pln);
-
-                if (itr == planeIndex.end()) 
-                {
-                    cerr << "search failed" << endl;
-                    exit(EXIT_FAILURE);
-                }
-                int wantedIndex = distance(planeIndex.begin(), itr);
-                //plnPot.push_back(wantedIndex);
-                //planesOfNodes_new[i][j] = wantedIndex;
-                nodes_new[i].iPlanes[j] = wantedIndex;
+                nodes_new[i].iPlanes[j] = planeIndex_old_to_new[pln];
                 j += 1;
             }
             i += 1;
         }
-
-        cout << "before nodes_new.clear\n"; 
 
         this->nodes = nodes_new;
         nodes_new.clear();
@@ -779,27 +749,14 @@ public:
             geom_int j = 0;
             for (const auto &pln : item.second) 
             {
-                vector<geom_int>::iterator itr;
-                itr = std::find(planeIndex.begin(), planeIndex.end(), pln);
-
-                if (itr == planeIndex.end()) 
-                {
-                    cerr << "search failed" << endl;
-                    exit(EXIT_FAILURE);
-                }
-                int wantedIndex = distance(planeIndex.begin(), itr);
-                bcellMap_physTag_planes_new[item.first][j] = wantedIndex;
+                bcellMap_physTag_planes_new[item.first][j] = planeIndex_old_to_new[pln];
                 j += 1;
             }
         }
 
 
-        cout << "before bcellMap_physTag_palnes_new.clear\n"; 
-
         bcellMap_physTag_planes = bcellMap_physTag_planes_new;
         bcellMap_physTag_planes_new.clear();
-
-        cout << "after bcellMap_physTag_palnes_new.clear\n"; 
 
         for (auto &item : bcellMap_physTag_planes)
         {
@@ -814,11 +771,8 @@ public:
 
             bcond bcond_temp = bcond(item.first, item.second, iCells_temp, iBPlanes_temp);
 
-            cout << "before bconds.push_back\n"; 
             bconds.push_back(bcond_temp);
         }
-
-        cout << "after bconds.push_back\n"; 
 
         // iPlane direction for surface of cells
         i = 0;

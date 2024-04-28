@@ -5,5 +5,6 @@
 #include "mesh/mesh.hpp"
 #include "variables.hpp"
 #include "input/solverConfig.hpp"
+#include "cuda_forge/setDT_d.cuh"
 
-void setDT(solverConfig& , mesh& , variables& );
+void setDT(solverConfig&, cudaConfig&, mesh& , variables& );
