@@ -8,6 +8,7 @@
 *.cgns
 *.mp4
 *.o.d
+*.bk
 */build/*
 log
 solver_heat/*

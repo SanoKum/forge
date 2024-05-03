@@ -99,7 +99,7 @@ Spline(l4) =  pList4[]; Transfinite Line {l4} = nx_4;
 // ----------------------
 // *** outlet section ***
 // ----------------------
-nx_5 = 80;
+nx_5 = 120;
 pList5[0] = pList4[1];
 pList5[1] = newp;
 x = x4;
@@ -222,7 +222,8 @@ Transfinite Surface {4};
 Recombine Surface(4);
 
 Extrude {0, 0, 1.259} {
-  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {11}; Recombine;
+//Extrude {0, 0, 0.01} {
+  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {50}; Recombine;
 }
 
 Physical Surface("inlet", 1) = {22};
