@@ -35,6 +35,7 @@ time:
     cfl_pseudo: 0.5
 
 space: 
-  convMethod: 1 # 1:roe, 2:SLAU , 3:keep , 4:AUSM
+  convMethod: 2
+  limiter: 1
 
 initial: "mach3"

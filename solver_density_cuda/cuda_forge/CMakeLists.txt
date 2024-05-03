@@ -36,7 +36,6 @@ add_library(cuda_forge STATIC
 target_include_directories(cuda_forge PRIVATE .. )
 
 set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 86)
-
 target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86>)
 
 #set_target_properties(cuda_forge PROPERTIES CUDA_ARCHITECTURES "86")

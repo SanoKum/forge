@@ -1,6 +1,7 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "1D_shock_tube.h5"
+  valueFileName: "1D_shock_tube.h5"
   #meshFormat: "hdf5" 
   #meshFileName: "mach3.h5"
 
@@ -35,6 +36,7 @@ time:
     cfl_pseudo: 1.0
 
 space: 
-  convMethod: 2 # 1:roe 2:SLAU 3:keep 4:AUSM+ 5:AUSM+UP
+  convMethod: 2 # 0:1st 1:2nd 2:MUSCL
+  limiter: 1 # venkata
 
 initial: "sod"

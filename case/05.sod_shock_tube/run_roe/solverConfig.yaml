@@ -1,30 +1,42 @@
-bottom:
-  physID: 1
-  kind: slip
-  ints:
-  floats:
+mesh:
+  meshFormat: "hdf5" 
+  meshFileName: "1D_shock_tube.h5"
+  valueFileName: "1D_shock_tube.h5"
+  #meshFormat: "hdf5" 
+  #meshFileName: "mach3.h5"
 
-upper:
-  physID: 2
-  kind: slip
-  ints:
-  floats:
 
-slip:
-  physID: 3
-  kind: slip
-  ints:
-  floats:
+gpu: 1 # 0:off , 1:on
 
-inlet:
-  physID: 4 
-  kind: slip 
-  ints:
-  floats:
+solver: "ROE" # 
 
-outlet:
-  physID: 5 
-  kind: slip
-  ints:
-  floats:
+physProp:
+  isCompressible: 1 # 0:incomp, 1:compressible
+  ro : 1.4 # [kg/m3] ignored for compressible flow
+  visc : 0.0025 #[Pa*s]
+  thermCond: 0.0241 # [W/(mK)]
+  cp : 1005.0 # [J/(kgK)]
+  gamma : 1.4 # [J/(kgK)]
 
+time: 
+  last: 
+    control: 0 # 0:nStep , 1:time base
+    nStep: 400 
+    time: 1.00 # [second]
+  deltaT:  
+    control: 1 # 0:use dt , 1:use cfl
+    dt: 0.001
+    cfl: 0.5
+    dt_min: 0.00000001
+    dt_max: 1.0 
+  outStepInterval: 1
+  timeIntegration: 3   # 1:Euler explicit , 3:3rd Runge Explicit , 10: dualtime+explicit
+  implicit:
+    nLoop: 20
+    cfl_pseudo: 1.0
+
+space: 
+  convMethod: 2 # 0:"1st", 1:"MINMOD" , 2:"TVD_MUSCL" 
+  limiter: 1 # 0:"1st", 1:"MINMOD" , 2:"TVD_MUSCL" 
+
+initial: "sod"
