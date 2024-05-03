@@ -126,6 +126,9 @@ public:
     //geom_int* map_nplane_cells_d; // normal plane
     geom_int* map_plane_cells_d; // 
 
+    geom_int* map_cell_planes_index_d; 
+    geom_int* map_cell_planes_d; 
+
     mesh();
     ~mesh();
     mesh(geom_int& , geom_int& ,geom_int& , geom_int& , 

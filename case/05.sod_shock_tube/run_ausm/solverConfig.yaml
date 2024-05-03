@@ -1,6 +1,7 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "1D_shock_tube.h5"
+  valueFileName: "1D_shock_tube.h5"
   #meshFormat: "hdf5" 
   #meshFileName: "mach3.h5"
 
@@ -23,7 +24,7 @@ time:
     nStep: 400 
     time: 1.00 # [second]
   deltaT:  
-    control: 0 # 0:use dt , 1:use cfl
+    control: 1 # 0:use dt , 1:use cfl
     dt: 0.001
     cfl: 0.5
     dt_min: 0.00000001
@@ -35,6 +36,7 @@ time:
     cfl_pseudo: 1.0
 
 space: 
-  convMethod: 0 # 0:"1st", 1:"MINMOD" , 2:"TVD_MUSCL" 
+  convMethod: 2 # 0:"1st", 1:"2nd" , 2:"U_MUSCL" 
+  limiter: 1 # 0:off 1:venkata
 
 initial: "sod"

@@ -222,7 +222,7 @@ Transfinite Surface {4};
 Recombine Surface(4);
 
 Extrude {0, 0, 1.259} {
-  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {8}; Recombine;
+  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {11}; Recombine;
 }
 
 Physical Surface("inlet", 1) = {22};

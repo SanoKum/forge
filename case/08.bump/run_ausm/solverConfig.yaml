@@ -1,6 +1,7 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "bump.h5"
+  valueFileName: "bump.h5"
   #meshFormat: "hdf5" 
   #meshFileName: "mach3.h5"
 
@@ -37,6 +38,7 @@ time:
     cfl_pseudo: 0.5
 
 space: 
-  convMethod: 1 # 0:1st, 1:MINMOD, 2:TVD_MUSCL
+  convMethod: 1 
+  limiter: 1 #
 
 initial: "bump"

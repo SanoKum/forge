@@ -52,8 +52,9 @@ public:
 
     const std::list<std::string> planeValNames = 
     {
-        "US" , "T" ,  
-        "USN", "Ux" , "Uy" , "Uz", "ro" , "P",
+        "cfl_pln" , "cfl_pseudo_pln",
+        //"US" , "T" ,  
+        //"USN", "Ux" , "Uy" , "Uz", "ro" , "P",
 
         // Mesh Structure
         "sx"  , "sy" , "sz" , "ss" ,
@@ -67,9 +68,12 @@ public:
         "ro"    , "Ux"    , "Uy"    , "Uz"  , "T" , "P" , 
         "roUx"  , "roUy"  , "roUz"  , "roe" , 
         "cfl"   , "volume", "sonic" , 
-        "dUxdx" , "dUxdy" , "dUxdz" , 
-        "dUydx" , "dUydy" , "dUydz" , 
-        "dUzdx" , "dUzdy" , "dUzdz" 
+        //"dUxdx" , "dUxdy" , "dUxdz" , 
+        //"dUydx" , "dUydy" , "dUydz" , 
+        //"dUzdx" , "dUzdy" , "dUzdz" ,
+        //"drodx" , "drody" , "drodz" ,
+        //"dPdx"  , "dPdy"  , "dPdz" ,
+        //"dHtdx" , "dHtdy" , "dHtdz" 
     };
 
     //not yet implemented

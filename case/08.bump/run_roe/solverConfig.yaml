@@ -1,13 +1,14 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "bump.h5"
+  valueFileName: "bump.h5"
   #meshFormat: "hdf5" 
   #meshFileName: "mach3.h5"
 
 
-gpu: 0 # 0:off , 1:on
+gpu: 1 # 0:off , 1:on
 
-solver: "smac" # smac , simple , simplec , fractionalStep
+solver: "ROE" # smac , simple , simplec , fractionalStep
 
 physProp:
   isCompressible: 1 # 0:incomp, 1:compressible
@@ -24,9 +25,9 @@ time:
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
-    dt: 0.0000001
+    dt: 0.00000001
     cfl: 0.30
-    dt_min: 0.00000001
+    dt_min: 0.000000001
     dt_max: 1.0 
   outStepInterval: 100
   timeIntegration: 3  # 1:Euler explicit , 3:3rd Runge Explicit , 10:dual-exp
@@ -35,6 +36,7 @@ time:
     cfl_pseudo: 0.5
 
 space: 
-  convMethod: 1 # 1:roe, 2:SLAU , 3:keep , 4:AUSM
+  convMethod: 0
+  limiter: 0
 
 initial: "bump"

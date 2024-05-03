@@ -569,6 +569,41 @@ void mesh::setMeshMap_d()
     free(pc_h); 
 
 
+    // cell -> planes
+    gpuErrchk(cudaMalloc((void **)&(this->map_cell_planes_index_d), sizeof(geom_int)*(this->nCells+1)));
+
+    geom_int* cpi_h;
+    cpi_h = (geom_int *)malloc(sizeof(geom_int)*(this->nCells+1));
+
+    cpi_h[0] = 0; 
+    for (geom_int ic=0; ic<this->nCells; ic++)
+    {
+        geom_int nplane_local = this->cells[ic].iPlanes.size();
+        cpi_h[ic+1] = cpi_h[ic] + nplane_local; 
+    }
+
+    gpuErrchk(cudaMalloc((void **)&(this->map_cell_planes_d), sizeof(geom_int)*cpi_h[this->nCells]));
+    geom_int* cp_h;
+    cp_h = (geom_int *)malloc(sizeof(geom_int)*cpi_h[this->nCells]);
+
+    geom_int ipln = 0;
+    for (geom_int ic=0; ic<this->nCells; ic++)
+    {
+        for (auto ip :this->cells[ic].iPlanes) {
+            cp_h[ipln] = ip; 
+            ipln += 1;
+        }
+    }
+
+    gpuErrchk(cudaMemcpy(this->map_cell_planes_index_d  , cpi_h , 
+                         sizeof(geom_int)*(this->nCells+1) , cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(this->map_cell_planes_d  , cp_h , 
+                     sizeof(geom_int)*cpi_h[this->nCells] , cudaMemcpyHostToDevice));
+
+    free(cpi_h); 
+    free(cp_h); 
+
+
     for (bcond& bc : this->bconds)
     {
         bp_h = (geom_int *)malloc(sizeof(geom_int)*bc.iPlanes.size());

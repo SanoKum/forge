@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(forge LANGUAGES CXX CUDA)
-
-set(CMAKE_CXX_COMPILER /usr/bin/g++ )
-add_definitions( -std=c++11 -Wall )
-#add_definitions( -std=c++2a )
-##set(CMAKE_CXX_FLAGS "-O3 -fopenmp")
+project(forge LANGUAGES CUDA)
+##project(forge LANGUAGES CXX CUDA)
+##
+##set(CMAKE_CXX_COMPILER /usr/bin/g++ )
+##add_definitions( -std=c++11 -Wall )
+###add_definitions( -std=c++2a )
+####set(CMAKE_CXX_FLAGS "-O3 -fopenmp")
 
 #cuda
 set(dyn_libs_cuda cuda rt dl cudart_static cublas)
@@ -19,11 +20,26 @@ link_directories(./ ${hdf5_libdir} ${CUDA_LIB_DIR})
 # --------------
 # *** forge ***
 # --------------
-add_executable(forge main.cpp gradient.cpp mesh/mesh.cpp output/output.cpp update.cpp 
-               variables.cpp boundaryCond.cpp implicitCorrection.cpp
-               convectiveFlux.cpp input/solverConfig.cpp 
-               setDT.cpp setStructualVariables.cpp  #solvePoisson_amgx.cpp 
-               dependentVariables.cpp)
+file( GLOB forge_cppfiles 
+    main.cpp ,
+    gradient.cpp ,
+    mesh/mesh.cpp ,
+    output/output.cpp ,
+    update.cpp ,
+    variables.cpp ,
+    boundaryCond.cpp ,
+    implicitCorrection.cpp ,
+    convectiveFlux.cpp ,
+    input/solverConfig.cpp ,
+    setDT.cpp ,
+    setStructualVariables.cpp ,
+    dependentVariables.cpp 
+)
+
+set_source_files_properties(${forge_cppfiles} PROPERTIES LANGUAGE CUDA)
+
+add_executable(forge ${forge_cppfiles})
+
 
 add_subdirectory(cuda_forge )
 
@@ -38,6 +54,16 @@ target_link_libraries(forge PRIVATE hdf5 yaml-cpp ${dyn_libs_cuda})
 # ----------------------
 # *** mesh conversion***
 # ----------------------
-add_executable(convertGmshToForge  mesh/convertGmshToForge.cpp mesh/mesh.cpp variables.cpp boundaryCond.cpp input/solverConfig.cpp )
+file( GLOB mesh_cppfiles 
+    mesh/convertGmshToForge.cpp 
+    mesh/mesh.cpp 
+    variables.cpp 
+    boundaryCond.cpp 
+    input/solverConfig.cpp 
+)
+
+set_source_files_properties(${mesh_cppfiles} PROPERTIES LANGUAGE CUDA)
+
+add_executable(convertGmshToForge  ${mesh_cppfiles})
 target_link_libraries(convertGmshToForge hdf5 yaml-cpp)
 target_link_libraries(convertGmshToForge cuda_forge )

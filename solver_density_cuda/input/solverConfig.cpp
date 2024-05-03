@@ -40,6 +40,7 @@ void solverConfig::read(std::string fname)
 
         auto space = config["space"];
             int convMethod = space["convMethod"].as<int>();
+            int limiter    = space["limiter"].as<int>();
 
 
 
@@ -74,6 +75,7 @@ void solverConfig::read(std::string fname)
         }
 
         std::cout << "convection method : " << convMethod<< '\n';
+        std::cout << "limiter : " << limiter<< '\n';
 
         this->meshFormat   = meshFormat;
         this->meshFileName = meshFileName;
@@ -97,6 +99,7 @@ void solverConfig::read(std::string fname)
         initTimeIntegrationScheme(timeIntegration);
 
         this->convMethod = convMethod;
+        this->limiter = limiter;
 
         this->isCompressible = isCompressible ;
         this->ro = ro;
