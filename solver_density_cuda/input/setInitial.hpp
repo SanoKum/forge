@@ -77,9 +77,10 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
         } else if (cfg.initial == "bump") {
             // bump
             flow_float gam  = 1.4;
-            flow_float Pt = 120193.0;
-            flow_float Tt = 302.557;
-            flow_float M  = 0.5;
+            flow_float Pt = 100000.0;
+            flow_float Tt = 293.15 ;
+            //flow_float M  = 0.675;
+            flow_float M  = 1.65;
 
             flow_float Ps = Pt*pow((1.0+0.5*(gam-1.0)*M*M), -gam/(gam-1.0));
             flow_float Ts = Tt*pow((1.0+0.5*(gam-1.0)*M*M), -1.0);
@@ -93,6 +94,7 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roUy"][i] = 0.0*ro;
             v.c["roUz"][i] = 0.0*ro;
             v.c["roe"][i] =  pow(1.0+0.5*(gam-1.0)*M*M,-gam/(gam-1.0))*Pt/(gam-1.0) + 0.5*ro*pow((M*a),2.0);
+
         } else if (cfg.initial == "Taylor-Green" or cfg.initial == "Taylor-Green_M0.1") {
             flow_float gam = 1.4;
             flow_float cp  = gam-1.0;
@@ -197,6 +199,23 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roUy"][i] = 0.0;
             v.c["roUz"][i] = 0.0;
             v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
+        } else if (cfg.initial == "poiseuille") {
+            flow_float cp  = cfg.cp;
+            flow_float gam = cfg.gamma;
+            flow_float R   = cp*(gam-1.0)/gam;
+
+            flow_float P = 100000.0;
+            flow_float T = 288.15;
+
+            flow_float ro= P/(R*T);
+            flow_float u = 10;
+
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = ro*u;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
+
 
 
         } else {

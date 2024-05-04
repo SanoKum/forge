@@ -1,0 +1,41 @@
+bottom:
+  physID: 1
+  kind: wall
+  #kind: slip
+  ints:
+  floats:
+
+upper:
+  physID: 2
+  kind: wall
+  #kind: slip
+  ints:
+  floats:
+
+
+slip:
+  physID: 3
+  kind: slip
+  ints:
+  floats:
+
+
+inlet:
+  physID: 4
+  kind: inlet_Pressure
+  ints:
+  floats:
+    Pt: 100240.0
+    Tt: 288.15
+
+outlet:
+  physID: 5
+  kind: outlet_statPress
+  #kind: outflow
+  ints:
+  floats:
+    Ps: 100000.0
+    Pt: 100000.0
+    Tt: 288.15
+
+

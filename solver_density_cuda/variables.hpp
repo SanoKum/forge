@@ -68,12 +68,12 @@ public:
         "ro"    , "Ux"    , "Uy"    , "Uz"  , "T" , "P" , 
         "roUx"  , "roUy"  , "roUz"  , "roe" , 
         "cfl"   , "volume", "sonic" , 
-        //"dUxdx" , "dUxdy" , "dUxdz" , 
-        //"dUydx" , "dUydy" , "dUydz" , 
-        //"dUzdx" , "dUzdy" , "dUzdz" ,
-        //"drodx" , "drody" , "drodz" ,
-        //"dPdx"  , "dPdy"  , "dPdz" ,
-        //"dHtdx" , "dHtdy" , "dHtdz" 
+        "dUxdx" , "dUxdy" , "dUxdz" , 
+        "dUydx" , "dUydy" , "dUydz" , 
+        "dUzdx" , "dUzdy" , "dUzdz" ,
+        "drodx" , "drody" , "drodz" ,
+        "dPdx"  , "dPdy"  , "dPdz" ,
+        "dHtdx" , "dHtdy" , "dHtdz" 
     };
 
     //not yet implemented

@@ -28,7 +28,7 @@ add_library(cuda_forge STATIC
     setDT_d.cu
     setDT_d.cuh
     #derived_atomic_functions.cu
-    derived_atomic_functions.cuh
+    #derived_atomic_functions.cuh
 
 )
 

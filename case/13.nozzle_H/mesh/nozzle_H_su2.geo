@@ -15,7 +15,7 @@ lc=0.1; //characteristic mesh size (optional make smaller to refine mesh)
 // -------------------
 x0 = -6.363;
 x1 = -4.277;
-nx_1 = 50;
+nx_1 = 70;
 dx = (x1-x0);
 
 For i1 In {0 : 1}
@@ -35,7 +35,7 @@ Spline(l1) =  pList1[]; Transfinite Line {l1} = nx_1;
 // *** (2) section ***
 // -------------------
 x2 = -2.399;
-nx_2 = 50;
+nx_2 = 70;
 dx = (x2-x1);
 
 pList2[0] = pList1[1];
@@ -57,7 +57,7 @@ Spline(l2) =  pList2[]; Transfinite Line {l2} = nx_2;
 // *** (3) section ***
 // -------------------
 x3 = 0.595;
-nx_3 = 50;
+nx_3 = 70;
 dx = (x3-x2)/nx_3;
 
 pList3[0] = pList2[1];
@@ -79,7 +79,7 @@ Spline(l3) =  pList3[]; Transfinite Line {l3} = nx_3;
 // *** (4) section ***
 // -------------------
 x4 = 9.45;
-nx_4 = 200;
+nx_4 = 250;
 dx = (x4-x3);
 
 pList4[0] = pList3[nx_3];
@@ -99,7 +99,7 @@ Spline(l4) =  pList4[]; Transfinite Line {l4} = nx_4;
 // ----------------------
 // *** outlet section ***
 // ----------------------
-nx_5 = 50;
+nx_5 = 80;
 pList5[0] = pList4[1];
 pList5[1] = newp;
 x = x4;
@@ -222,7 +222,7 @@ Transfinite Surface {4};
 Recombine Surface(4);
 
 Extrude {0, 0, 1.259} {
-  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {5}; Recombine;
+  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {3}; Recombine;
 }
 
 Physical Surface("inlet", 1) = {22};

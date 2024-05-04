@@ -1,0 +1,43 @@
+inlet:
+  physID: 1 
+  kind: inlet_Pressure
+  #kind: periodic
+  ints:
+    type: 0
+    partnerBCID: 4
+  floats:
+    Pt: 100000.0
+    Tt: 293.15   
+
+top:
+  physID: 2
+  kind: slip
+  ints:
+  floats:
+
+bottom:
+  physID: 3
+  kind: slip
+  ints:
+  floats:
+
+outlet:
+  physID: 4
+  kind: outlet_statPress
+  #kind: periodic
+  ints:
+    type: 0
+    partnerBCID: 1
+  ints:
+  floats:
+    Ps: 21839.4806
+    Pt: 21839.4806
+    Tt: 293.15
+
+slip:
+  physID: 5
+  kind: slip
+  ints:
+  floats:
+
+

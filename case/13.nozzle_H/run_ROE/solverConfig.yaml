@@ -20,15 +20,15 @@ physProp:
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 10000
+    nStep: 100000
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
     dt: 0.000000005
-    cfl: 1.0
+    cfl: 0.05
     dt_min: 0.000000001
     dt_max: 1.0 
-  outStepInterval: 100
+  outStepInterval: 500
   timeIntegration: 3  #1:Euler explicit, 3:3rd TVD Runge Explicit, 4:4th runge exp, 10:dual-exp
   implicit:
     nLoop: 10
@@ -36,6 +36,6 @@ time:
 
 space: 
   convMethod: 1 # 0:1st 1:2nd 2:MUSCL
-  limiter: 1 # 0:off , 1:venkata
+  limiter: 0 # 0:off , 1:venkata
 
 initial: "laval"

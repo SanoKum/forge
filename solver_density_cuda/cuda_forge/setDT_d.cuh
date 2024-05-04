@@ -3,11 +3,11 @@
 #include "cuda_forge/cudaConfig.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
 
-#include <cuda_runtime.h>
-#include <cublas_v2.h>
+//#include <cuda_runtime.h>
+//#include <cublas_v2.h>
 
-//#include <thrust/extream.h>
-//#include <thrust/device_ptr.h>
+#include <thrust/extrema.h>
+#include <thrust/device_ptr.h>
 
 #include "flowFormat.hpp"
 #include "mesh/mesh.hpp"

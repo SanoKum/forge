@@ -33,6 +33,7 @@ __global__ void viscousFlux_d
  flow_float* Ps  ,
  flow_float* Ht  ,
  flow_float* sonic,
+ flow_float* Ts,
  
  flow_float* res_ro   ,
  flow_float* res_roUx  ,

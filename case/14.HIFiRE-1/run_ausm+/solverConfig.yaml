@@ -1,11 +1,12 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName:  "hifire-1.h5"
-  valueFileName: "init1.h5"
+  valueFileName: "input2.h5"
 
 gpu: 1 # 0:off , 1:on
 
-solver: "AUSM+" # SLAU, ROE, AUSM+, AUSM+UP
+#solver: "AUSM+" # SLAU, ROE, AUSM+, AUSM+UP
+solver: "SLAU" # SLAU, ROE, AUSM+, AUSM+UP
 
 physProp:
   isCompressible: 1 # 0:incomp, 1:compressible
@@ -18,16 +19,17 @@ physProp:
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 10000
-    #nStep: 500
+    nStep: 500000
+    #nStep: 120
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
     dt: 0.000000001
-    cfl: 1.0
+    cfl: 0.5
     dt_min: 0.0000000001
     dt_max: 1.0 
-  outStepInterval: 200
+  outStepInterval: 1000
+  #outStepInterval: 1
   timeIntegration: 3  #1:Euler explicit, 3:3rd TVD Runge Explicit, 4:4th runge exp, 10:dual-exp
   implicit:
     nLoop: 10
@@ -35,6 +37,6 @@ time:
 
 space: 
   convMethod: 0
-  limiter: 1 
+  limiter: 0
 
 initial: "hifire"
