@@ -189,7 +189,6 @@ __global__ void limiter_d
 
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
- geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
  // variables
  flow_float* ro  ,
@@ -206,8 +205,8 @@ __global__ void limiter_d
  flow_float* drodx  , flow_float* drody , flow_float* drodz,
  flow_float* dPdx   , flow_float* dPdy  , flow_float* dPdz,
  flow_float* dTdx   , flow_float* dTdy  , flow_float* dTdz,
- flow_float* dHtdx  , flow_float* dHtdy , flow_float* dHtdz,
- flow_float* divU   ) 
+ flow_float* dHtdx  , flow_float* dHtdy , flow_float* dHtdz
+ ) 
  {
     geom_int ic0 = blockDim.x*blockIdx.x + threadIdx.x;
 
@@ -216,8 +215,6 @@ __global__ void limiter_d
     if (ic0 < nCells) {
         geom_int ip; 
         geom_int ic1; 
-        geom_int ic0_temp; 
-        geom_int ic1_temp; 
         geom_float dcp_x; 
         geom_float dcp_y; 
         geom_float dcp_z; 
@@ -243,14 +240,24 @@ __global__ void limiter_d
 
         flow_float denomi;
 
+        flow_float limiter_Ux ;
+        flow_float limiter_Uy ;
+        flow_float limiter_Uz ;
+        flow_float limiter_ro ;
+        flow_float limiter_P  ;
+        flow_float limiter_T  ;
+        flow_float limiter_Ht ;
+        flow_float delta;
+        flow_float limiter_temp;
+        flow_float volume = vol[ic0];
+
+
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             ip  = cell_planes[ilp];
 
             if (ip >= nNormalPlanes) continue;
 
-            ic0_temp = plane_cells[2*ip+0];
-            ic1_temp = plane_cells[2*ip+1];
-            ic1 = ic0_temp + ic1_temp -ic0;
+            ic1 = plane_cells[2*ip+0] + plane_cells[2*ip+1] -ic0;
 
             dUx_max = max(dUx_max, Ux[ic1]-Ux[ic0]);
             dUy_max = max(dUy_max, Uy[ic1]-Uy[ic0]);
@@ -285,16 +292,14 @@ __global__ void limiter_d
         dT_min  = min(dT_min , 0.0 );
         dHt_min = min(dHt_min, 0.0 );
 
+        limiter_Ux = 1e+30;
+        limiter_Uy = 1e+30;
+        limiter_Uz = 1e+30;
+        limiter_ro = 1e+30;
+        limiter_P  = 1e+30;
+        limiter_T  = 1e+30;
+        limiter_Ht = 1e+30;
 
-        flow_float limiter_Ux = 1e+30;
-        flow_float limiter_Uy = 1e+30;
-        flow_float limiter_Uz = 1e+30;
-        flow_float limiter_ro = 1e+30;
-        flow_float limiter_P  = 1e+30;
-        flow_float limiter_T  = 1e+30;
-        flow_float limiter_Ht = 1e+30;
-        flow_float delta;
-        flow_float limiter_temp;
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             ip  = cell_planes[ilp];
 
@@ -306,67 +311,60 @@ __global__ void limiter_d
 
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dUx_max , dUx_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_Ux = min(limiter_Ux, limiter_temp);
+            limiter_Ux = min(limiter_Ux, venkata_limiter(delta, volume  ));
             
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 dUydx[ic0], dUydy[ic0], dUydz[ic0], dUy_max , dUy_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_Uy = min(limiter_Uy, limiter_temp);
+            limiter_Uy = min(limiter_Uy, venkata_limiter(delta, volume  ));
  
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dUz_max , dUz_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_Uz = min(limiter_Uz, limiter_temp);
+            limiter_Uz = min(limiter_Uz, venkata_limiter(delta, volume  ));
  
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 drodx[ic0], drody[ic0], drodz[ic0], dro_max , dro_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_ro = min(limiter_ro, limiter_temp);
+            limiter_ro = min(limiter_ro, venkata_limiter(delta, volume  ));
  
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 dPdx[ic0], dPdy[ic0], dPdz[ic0], dP_max , dP_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_P = min(limiter_P, limiter_temp);
+            limiter_P = min(limiter_P, venkata_limiter(delta, volume  ));
  
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 dTdx[ic0], dTdy[ic0], dTdz[ic0], dT_max , dT_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_T = min(limiter_T, limiter_temp);
+            limiter_T = min(limiter_T, venkata_limiter(delta, volume  ));
   
             delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
                                 dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dHt_max , dHt_min);
-            limiter_temp = venkata_limiter(delta, vol[ic0]);
-            limiter_Ht = min(limiter_Ht, limiter_temp);
+            limiter_Ht = min(limiter_Ht, venkata_limiter(delta, volume  ));
         }
 
-        dUxdx[ic0] = dUxdx[ic0]*limiter_Ux;
-        dUxdy[ic0] = dUxdy[ic0]*limiter_Ux;
-        dUxdz[ic0] = dUxdz[ic0]*limiter_Ux;
+        dUxdx[ic0] *= limiter_Ux;
+        dUxdy[ic0] *= limiter_Ux;
+        dUxdz[ic0] *= limiter_Ux;
 
-        dUydx[ic0] = dUydx[ic0]*limiter_Uy;
-        dUydy[ic0] = dUydy[ic0]*limiter_Uy;
-        dUydz[ic0] = dUydz[ic0]*limiter_Uy;
+        dUydx[ic0] *= limiter_Uy;
+        dUydy[ic0] *= limiter_Uy;
+        dUydz[ic0] *= limiter_Uy;
 
-        dUzdx[ic0] = dUzdx[ic0]*limiter_Uz;
-        dUzdy[ic0] = dUzdy[ic0]*limiter_Uz;
-        dUzdz[ic0] = dUzdz[ic0]*limiter_Uz;
+        dUzdx[ic0] *= limiter_Uz;
+        dUzdy[ic0] *= limiter_Uz;
+        dUzdz[ic0] *= limiter_Uz;
 
-        drodx[ic0] = drodx[ic0]*limiter_ro;
-        drody[ic0] = drody[ic0]*limiter_ro;
-        drodz[ic0] = drodz[ic0]*limiter_ro;
+        drodx[ic0] *= limiter_ro;
+        drody[ic0] *= limiter_ro;
+        drodz[ic0] *= limiter_ro;
 
-        dPdx[ic0] = dPdx[ic0]*limiter_P;
-        dPdy[ic0] = dPdy[ic0]*limiter_P;
-        dPdz[ic0] = dPdz[ic0]*limiter_P;
+        dPdx[ic0] *= limiter_P;
+        dPdy[ic0] *= limiter_P;
+        dPdz[ic0] *= limiter_P;
 
-        dTdx[ic0] = dTdx[ic0]*limiter_T;
-        dTdy[ic0] = dTdy[ic0]*limiter_T;
-        dTdz[ic0] = dTdz[ic0]*limiter_T;
+        dTdx[ic0] *= limiter_T;
+        dTdy[ic0] *= limiter_T;
+        dTdz[ic0] *= limiter_T;
 
-        dHtdx[ic0] = dHtdx[ic0]*limiter_Ht;
-        dHtdy[ic0] = dHtdy[ic0]*limiter_Ht;
-        dHtdz[ic0] = dHtdz[ic0]*limiter_Ht;
+        dHtdx[ic0] *= limiter_Ht;
+        dHtdy[ic0] *= limiter_Ht;
+        dHtdz[ic0] *= limiter_Ht;
     }
     __syncthreads();
 }
@@ -482,14 +480,13 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
 
     // sum over planes
     if (cfg.limiter == 1) {
-        limiter_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
+        limiter_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
             // mesh structure
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
             msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
             // basic variables
             var.c_d["ro"] ,
@@ -507,8 +504,7 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
             var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
             var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
             var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
-            var.c_d["dHtdx"] , var.c_d["dHtdy"] , var.c_d["dHtdz"],
-            var.c_d["divU"]  
+            var.c_d["dHtdx"] , var.c_d["dHtdy"] , var.c_d["dHtdz"]
         ) ;
     }
 

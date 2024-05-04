@@ -58,7 +58,8 @@ public:
     {
         "ro"   , "roUx" , "roUy" , "roUz" , "roUz" , "roe",
         "Ux"   , "Uy"   , "Uz"   , "Tt"   , "Pt"   , "Ts" , "Ps",
-        "ypls" , "twall_x" , "twall_y" , "twall_z" 
+        "ypls" , "twall_x" , "twall_y" , "twall_z" ,
+        "sx"   , "sy"   , "sz"   , "ss"
     };
 
     std::list<std::string> bplaneIntNames =  

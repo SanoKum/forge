@@ -135,9 +135,9 @@ void wall_d
         roUx[ig] = -roUx[ic];
         roUy[ig] = -roUy[ic];
         roUz[ig] = -roUz[ic];
-        roe[ig]  = ro[ic]/ro[ig]*roe[ic];
+        roe[ig]  = roe[ic];
 
-        flow_float ek = 0.5*(Ux[ic]*Ux[ic] +Uy[ic]*Uy[ic] +Uz[ic]*Uz[ic]);
+        flow_float ek = 0.5*(Ux[ig]*Ux[ig] +Uy[ig]*Uy[ig] +Uz[ig]*Uz[ig]);
         P[ig] =(ga-1.0)*(roe[ig]-ro[ig]*ek);
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);

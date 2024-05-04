@@ -77,8 +77,6 @@ cone_lines[0] = newl;
 Circle(cone_lines[0]) = {pList1[0], pNoseCent, pList1[1]}; Transfinite Line {cone_lines[0]} = nx_0;
 cone_lines[1] = newl;
 Bezier(cone_lines[1]) = {pList1[1], pList1[2], pList1[3]}; Transfinite Line {cone_lines[1]} = nx_1;
-//cone_lines[2] = newl;
-//Line(cone_lines[2]) = {pList1[2], pList1[3]}; Transfinite Line {cone_lines[2]} = nx_2;
 cone_lines[2] = newl;
 Line(cone_lines[2]) = {pList1[3], pList1[4]}; Transfinite Line {cone_lines[2]} = nx_2 Using Progression 1.0025;
 cone_lines[3] = newl;
@@ -161,9 +159,9 @@ Line(inlet_lines[5]) = {pList_in1[6], pList_in1[7]}; Transfinite Line {inlet_lin
 
 ////span lines
 span_lines[0] = newl;
-Line(span_lines[0]) = {pList1[0], pList_in1[0]}; Transfinite Line {span_lines[0]} = ny Using Progression 1.05;
+Line(span_lines[0]) = {pList1[0], pList_in1[0]}; Transfinite Line {span_lines[0]} = ny Using Progression 1.02;
 span_lines[1] = newl;
-Line(span_lines[1]) = {pList1[1], pList_in1[1]}; Transfinite Line {span_lines[1]} = ny Using Progression 1.05;
+Line(span_lines[1]) = {pList1[1], pList_in1[1]}; Transfinite Line {span_lines[1]} = ny Using Progression 1.02;
 //span_lines[2] = newl;
 //Line(span_lines[2]) = {pList1[2], pList_in1[2]}; Transfinite Line {span_lines[2]} = ny Using Progression 1.1;
 span_lines[2] = newl;

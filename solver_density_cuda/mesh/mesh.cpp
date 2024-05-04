@@ -377,6 +377,7 @@ void mesh::readMesh(string fname)
         {
             this->bconds[ib].iPlanes[ip] = iPlanes[ip];
         }
+        cout << "               ip min=" << iPlanes[0] << ", ip max=" << iPlanes[iPlanes.size()-1]<< endl;
 
         // iBPlanes
         std::vector<geom_int> iBPlanes;
