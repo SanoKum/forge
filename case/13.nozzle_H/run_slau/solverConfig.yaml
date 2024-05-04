@@ -1,7 +1,7 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "nozzle_H.h5"
-  valueFileName: "nozzle_H.h5"
+  valueFileName: "input2.h5"
   #meshFileName: "laval_nozzle3.h5"
 
 
@@ -21,20 +21,24 @@ time:
   last: 
     control: 0 # 0:nStep , 1:time base
     nStep: 200000
+    #nStep: 1000
+    #nStep: 10
     time: 1.00 # [second]
   deltaT:  
-    control: 0 # 0:use dt , 1:use cfl
-    dt: 0.00000002
-    cfl: 0.1
-    dt_min: 0.00000001
+    control: 1 # 0:use dt , 1:use cfl
+    dt: 0.0000000005
+    cfl: 0.5
+    dt_min: 0.000000001
     dt_max: 1.0 
   outStepInterval: 1000
+  #outStepInterval: 1
   timeIntegration: 3  #1:Euler explicit, 3:3rd TVD Runge Explicit, 4:4th runge exp, 10:dual-exp
   implicit:
     nLoop: 10
     cfl_pseudo: 0.5
 
 space: 
-  convMethod: 1 # 0:1stUp 1:MINMOD
+  convMethod: 0 # 0:1stUp 1:MINMOD
+  limiter: 0 # 0:1stUp 1:MINMOD
 
 initial: "laval"

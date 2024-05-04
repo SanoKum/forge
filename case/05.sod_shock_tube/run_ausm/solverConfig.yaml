@@ -36,7 +36,7 @@ time:
     cfl_pseudo: 1.0
 
 space: 
-  convMethod: 2 # 0:"1st", 1:"2nd" , 2:"U_MUSCL" 
+  convMethod: 0 # 0:"1st", 1:"2nd" , 2:"U_MUSCL" 
   limiter: 1 # 0:off 1:venkata
 
 initial: "sod"

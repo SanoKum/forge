@@ -107,7 +107,7 @@ y = -0.2224 + -0.01689*x;
 Point(pList5[1]) = {x , y, 0.0 , lc};
 
 l5 = newl;
-Line(l5) = {pList5[0], pList5[1]}; Transfinite Line {l5} = nx_5 Using Bump 0.1;
+Line(l5) = {pList5[0], pList5[1]}; Transfinite Line {l5} = nx_5 Using Bump 0.02;
 
 
 // -------------------
@@ -188,16 +188,16 @@ l_m1= newl;
 Spline(l_m1) =  pList_m1[]; Transfinite Line {l_m1} = nx_1;
 
 l_in = newl;
-Line(l_in) = {pList_m1[1], pList1[0]}; Transfinite Line {l_in} = nx_5 Using Bump 0.1;
+Line(l_in) = {pList_m1[1], pList1[0]}; Transfinite Line {l_in} = nx_5 Using Bump 0.02;
 
 l_mid1 = newl;
-Line(l_mid1) = {pList1[1], pList_m1[0]}; Transfinite Line {l_mid1} = nx_5 Using Bump 0.1;
+Line(l_mid1) = {pList1[1], pList_m1[0]}; Transfinite Line {l_mid1} = nx_5 Using Bump 0.02;
 
 l_mid2 = newl;
-Line(l_mid2) = {pList2[1], pList_m2[0]}; Transfinite Line {l_mid2} = nx_5 Using Bump 0.1;
+Line(l_mid2) = {pList2[1], pList_m2[0]}; Transfinite Line {l_mid2} = nx_5 Using Bump 0.02;
 
 l_mid3 = newl;
-Line(l_mid3) = {pList3[nx_3], pList_m3[0]}; Transfinite Line {l_mid3} = nx_5 Using Bump 0.1;
+Line(l_mid3) = {pList3[nx_3], pList_m3[0]}; Transfinite Line {l_mid3} = nx_5 Using Bump 0.02;
 
 Curve Loop(1) = {10, 1, 11, 9};
 Plane Surface(1) = {1};
@@ -222,7 +222,7 @@ Transfinite Surface {4};
 Recombine Surface(4);
 
 Extrude {0, 0, 1.259} {
-  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {11}; Recombine;
+  Surface{1}; Surface{2}; Surface{3}; Surface{4}; Layers {5}; Recombine;
 }
 
 Physical Surface("inlet", 1) = {22};

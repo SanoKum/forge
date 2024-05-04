@@ -1,0 +1,98 @@
+Read Solver Config 
+Mesh Name : nozzle_H.h5
+Mesh Name size : 11
+Value File Name : input2.h5
+Solver Name : SLAU
+End Step : 1
+delta Time : 2e-08
+convection method : 1
+limiter : 1
+Read Mesh 
+Number of Cells: 180120
+Number of Planes: 579059
+Number of Normal Planes: 501661
+Number of Boundary Planes: 77398
+Number of Boundary Conditions: 3
+in mesh.cpp  physID=1
+in mesh.cpp  bcondKind=inlet_Pressure
+               ip min=501661, ip max=502055
+in mesh.cpp  physID=2
+in mesh.cpp  bcondKind=outflow
+               ip min=502056, ip max=502450
+in mesh.cpp  physID=3
+in mesh.cpp  bcondKind=wall
+               ip min=502451, ip max=579058
+Init Matrix (but not used now) 
+Read Boundary Conditions 
+bname = inlet
+physID=1
+kind=inlet_Pressure
+bname = outlet
+physID=2
+kind=outflow
+bname = wall
+physID=3
+kind=wall
+bc.physID=1
+bcf.kind=inlet_Pressure
+read Tt of inlet_Pressure from config
+read Pt of inlet_Pressure from config
+bc.physID=2
+bcf.kind=outflow
+bc.physID=3
+bcf.kind=wall
+read Ux of wall from config
+read Uy of wall from config
+read Uz of wall from config
+Read Initial Values 
+Set mesh connection map for cuda 
+  max cfl : 0.749430    
+  dt      : 2.000000e-08 [s]
+Start Calculation 
+----------------------------
+Step : 0
+  Inner loop : 1
+ip=558580, sx=-1.512746e-08, sy=8.954509e-07, sz=-0.000000e+00
+  mu  =1.800000e-05
+  divu  =2.022185e-05
+  cc0x=3.706697e-02, cc0y=2.842656e-03, cc0z=6.295000e-03
+  cc1x=3.706672e-02, cc1y=2.857103e-03, cc1z=6.295000e-03
+  pcx =3.706697e-02, pcy =2.849882e-03, pcz =6.295000e-03
+  Uxf=0.000000e+00, Uyf=0.000000e+00, Uzf=0.000000e+00
+  Ux0=1.217189e+02, Uy0=2.033981e+00, Uz0=1.961189e-08
+  Ux1=-1.217189e+02, Uy1=-2.033981e+00, Uz1=-1.961189e-08
+  dUxdx0=1.549760e-03, dUxdy0=-9.221861e-02, dUxdz0=1.681895e-14
+  dUydx0=2.570370e-05, dUydy0=-1.529529e-03, dUydz0=2.578405e-17
+  dUzdx0=1.181470e-13, dUzdy0=-6.816757e-12, dUzdz0=-9.566925e-09
+  tau_x=-2.716016e-04, tau_y=-4.538592e-06, tau_z=-4.376165e-14
+  Inner loop : 2
+ip=558580, sx=-1.512746e-08, sy=8.954509e-07, sz=-0.000000e+00
+  mu  =1.800000e-05
+  divu  =2.022188e-05
+  cc0x=3.706697e-02, cc0y=2.842656e-03, cc0z=6.295000e-03
+  cc1x=3.706672e-02, cc1y=2.857103e-03, cc1z=6.295000e-03
+  pcx =3.706697e-02, pcy =2.849882e-03, pcz =6.295000e-03
+  Uxf=0.000000e+00, Uyf=0.000000e+00, Uzf=0.000000e+00
+  Ux0=1.217190e+02, Uy0=2.033982e+00, Uz0=1.961189e-08
+  Ux1=-1.217190e+02, Uy1=-2.033982e+00, Uz1=-1.961189e-08
+  dUxdx0=1.549761e-03, dUxdy0=-9.221866e-02, dUxdz0=1.681937e-14
+  dUydx0=2.570371e-05, dUydy0=-1.529530e-03, dUydz0=2.571208e-17
+  dUzdx0=1.181470e-13, dUzdy0=-6.816736e-12, dUzdz0=-9.567152e-09
+  tau_x=-2.716017e-04, tau_y=-4.538594e-06, tau_z=-4.376165e-14
+  Inner loop : 3
+ip=558580, sx=-1.512746e-08, sy=8.954509e-07, sz=-0.000000e+00
+  mu  =1.800000e-05
+  divu  =2.022186e-05
+  cc0x=3.706697e-02, cc0y=2.842656e-03, cc0z=6.295000e-03
+  cc1x=3.706672e-02, cc1y=2.857103e-03, cc1z=6.295000e-03
+  pcx =3.706697e-02, pcy =2.849882e-03, pcz =6.295000e-03
+  Uxf=0.000000e+00, Uyf=0.000000e+00, Uzf=0.000000e+00
+  Ux0=1.217189e+02, Uy0=2.033981e+00, Uz0=1.961189e-08
+  Ux1=-1.217189e+02, Uy1=-2.033981e+00, Uz1=-1.961189e-08
+  dUxdx0=1.549761e-03, dUxdy0=-9.221864e-02, dUxdz0=1.681916e-14
+  dUydx0=2.570370e-05, dUydy0=-1.529529e-03, dUydz0=2.578487e-17
+  dUzdx0=1.181470e-13, dUzdy0=-6.816747e-12, dUzdz0=-9.567039e-09
+  tau_x=-2.716017e-04, tau_y=-4.538593e-06, tau_z=-4.376165e-14
+  max cfl : 0.749430    
+  dt      : 2.000000e-08 [s]
+Time = 1.467 s

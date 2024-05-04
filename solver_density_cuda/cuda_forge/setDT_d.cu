@@ -210,17 +210,19 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
-    cublasHandle_t handle;
-    cublasStatus_t stat;
-    cublasCreate(&handle);
-    int max_ic;
-    stat = cublasIsamax(handle, msh.nCells, var.c_d["cfl"], 1, &max_ic);
-    if (stat != CUBLAS_STATUS_SUCCESS) {
-        printf("Max failed\n");
-    }
+    //cublasHandle_t handle;
+    //cublasStatus_t stat;
+    //cublasCreate(&handle);
+    //int max_ic;
+    //stat = cublasIsamax(handle, msh.nCells, var.c_d["cfl"], 1, &max_ic);
+    //if (stat != CUBLAS_STATUS_SUCCESS) {
+    //    printf("Max failed\n");
+    //}
 
     flow_float cfl_max;
-    gpuErrchk(cudaMemcpy(&cfl_max, var.c_d["cfl"]+max_ic-1, sizeof(flow_float), cudaMemcpyDeviceToHost));
+
+    thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(var.c_d["cfl"]);
+    cfl_max = *(thrust::max_element(d_ptr, d_ptr + msh.nCells));
 
     if (cfg.dtControl == 1) { // cfl based time control
         flow_float cfl_target = cfg.cfl;
@@ -232,7 +234,5 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
 
     printf("  max cfl : %f    \n", cfl_max);
     printf("  dt      : %e [s]\n", cfg.dt);
-
-    cublasDestroy(handle);
 
 }

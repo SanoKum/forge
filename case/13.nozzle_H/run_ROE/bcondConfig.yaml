@@ -17,6 +17,7 @@ outlet:
 wall:
   physID: 3
   kind: wall
+  #kind: slip
   ints:
   floats:
 

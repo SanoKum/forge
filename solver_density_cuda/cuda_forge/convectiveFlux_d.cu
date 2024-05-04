@@ -4,7 +4,8 @@ __device__ flow_float MUSCL(int scheme,
                             flow_float phiC, flow_float phiD, 
                             flow_float dphidx, flow_float dphidy, flow_float dphidz,
                             flow_float dx , flow_float dy , flow_float dz,
-                            flow_float cpdx, flow_float cpdy, flow_float cpdz
+                            flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                            flow_float f
                            )
 {
     flow_float phif;
@@ -16,6 +17,8 @@ __device__ flow_float MUSCL(int scheme,
     } else if (scheme == 2) {// 3rd order
         k = 1.0/3.0;
         phif = phiC +k*(phiD-phiC) +k*(dphidx*cpdx +dphidy*cpdy +dphidz*cpdz);
+    } else if (scheme == -1) {// ghost
+        phif = phiC;
     }
 
     return phif;
@@ -120,21 +123,21 @@ __global__ void SLAU_d
         flow_float dc1p_y = pcy[ip] - ccy_1;
         flow_float dc1p_z = pcz[ip] - ccz_1;
 
-        if (ip >= nNormalPlanes) conv_scheme = 0;
+        if (ip >= nNormalPlanes) conv_scheme = -1; // ghost
 
-        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
+        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
 
-        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z); 
-        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
+        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f); 
+        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
 
         flow_float ro_p= ro_L;
         flow_float ro_m= ro_R;
@@ -356,21 +359,21 @@ __global__ void AUSMp_d
         flow_float dc1p_y = pcy[ip] - ccy_1;
         flow_float dc1p_z = pcz[ip] - ccz_1;
 
-        if (ip >= nNormalPlanes) conv_scheme = 0;
+        if (ip >= nNormalPlanes) conv_scheme = -1; // ghost
 
-        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
+        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
 
-        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z); 
-        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
+        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f); 
+        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
 
         flow_float U_L = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
         flow_float U_R = ((Ux_R)*sxx +(Uy_R)*syy +(Uz_R)*szz)/sss;
@@ -511,21 +514,21 @@ __global__ void AUSMp_UP_d
         flow_float dc1p_y = pcy[ip] - ccy_1;
         flow_float dc1p_z = pcz[ip] - ccz_1;
 
-        if (ip >= nNormalPlanes) conv_scheme = 0;
+        if (ip >= nNormalPlanes) conv_scheme = -1; // ghost
 
-        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
+        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
 
-        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z); 
-        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
+        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f); 
+        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
 
 
         flow_float U_L = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
@@ -708,21 +711,21 @@ __global__ void ROE_d
         flow_float dc1p_y = pcy[ip] - ccy_1;
         flow_float dc1p_z = pcz[ip] - ccz_1;
 
-        if (ip >= nNormalPlanes) conv_scheme = 0;
+        if (ip >= nNormalPlanes) conv_scheme = -1; // ghost
 
-        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
-        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z);
+        flow_float ro_L= MUSCL(conv_scheme, ro[ic0], ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ux_L= MUSCL(conv_scheme, Ux[ic0], Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uy_L= MUSCL(conv_scheme, Uy[ic0], Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Uz_L= MUSCL(conv_scheme, Uz[ic0], Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float P_L = MUSCL(conv_scheme, Ps[ic0], Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
+        flow_float Ht_L= MUSCL(conv_scheme, Ht[ic0], Ht[ic1], dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f);
 
-        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z); 
-        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
-        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z);
+        flow_float ro_R= MUSCL(conv_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f); 
+        flow_float Ux_R= MUSCL(conv_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uy_R= MUSCL(conv_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Uz_R= MUSCL(conv_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float P_R = MUSCL(conv_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
+        flow_float Ht_R= MUSCL(conv_scheme, Ht[ic1], Ht[ic0], dHtdx[ic1], dHtdy[ic1], dHtdz[ic1], -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, f);
 
         // calc delta value
         dro = ro_R - ro_L;
@@ -758,8 +761,6 @@ __global__ void ROE_d
         R[4][0] = wa-ca*nz; R[4][1] = wa*nx-ny;         R[4][2] = wa*ny+nx        ;R[4][3] = wa*nz;           R[4][4] = wa+ca*nz;
 
         // left eigen matrix
-        //flow_float kap = ga-1.0;
-        //flow_float b1 = 1.0 + kap/(ca*ca)*(ua*ua+va*va+wa*wa - Ha);
         L[0][0] = 0.5*(P_ro+ca*Ua);            L[0][1] = P_roe*0.5; L[0][2] = (P_rou-ca*nx)*0.5 ; L[0][3] = (P_rov-ca*ny)*0.5 ; L[0][4] =  (P_row-ca*nz)*0.5;
         L[1][0] = -fai*nx-ca*ca*(va*nz-wa*ny); L[1][1] = -P_roe*nx; L[1][2] = -P_rou*nx         ; L[1][3] = -P_rov*nx+ca*ca*nz; L[1][4] = -P_row*nx-ca*ca*ny;
         L[2][0] = -fai*ny-ca*ca*(wa*nx-ua*nz); L[2][1] = -P_roe*ny; L[2][2] = -P_rou*ny-ca*ca*nz; L[2][3] = -P_rov*ny         ; L[2][4] = -P_row*ny+ca*ca*nx;
@@ -782,7 +783,6 @@ __global__ void ROE_d
             }
         }
 
-
         // diagonal matrix;
         for (int i=0; i<5; i++) {
             for (int j=0; j<5; j++) {
@@ -790,27 +790,11 @@ __global__ void ROE_d
             }
         }
 
-        flow_float delta_bar = 0.05;
-        flow_float delta = delta_bar*max(abs(Ua-ca), abs(Ua+ca));
-
         lam[0][0] = abs(Ua - ca);
         lam[1][1] = abs(Ua     );
         lam[2][2] = abs(Ua     );
         lam[3][3] = abs(Ua     );
         lam[4][4] = abs(Ua + ca);
-
-        //// Harten entropy fix
-        //for (int i=0; i<5; i++) {
-        //    if (lam[i][i] < delta){
-        //        lam[i][i] = (lam[i][i]*lam[i][i] + delta*delta)/(2.0*delta);
-        //    }
-        //}
-
-        //dW[0] = 0.5*(dP/ca -roa*dU)/ca;
-        //dW[1] = (dro-dP/(ca*ca))*nx + roa*(nz*dUy-ny*dUz);
-        //dW[2] = (dro-dP/(ca*ca))*ny + roa*(nx*dUz-nz*dUx);
-        //dW[3] = (dro-dP/(ca*ca))*ny + roa*(ny*dUx-nx*dUy);
-        //dW[4] = 0.5*(dP/ca +roa*dU)/ca;
 
         dW[0] = 0.0; 
         dW[1] = 0.0; 
@@ -847,12 +831,26 @@ __global__ void ROE_d
                 difQ2[i] += R[i][j]*difQ1[j];
             }
         }
+
+
         flow_float mdot = 0.5*(ro_L*(Ux_L*nx+Uy_L*ny+Uz_L*nz) + ro_R*(Ux_R*nx+Uy_R*ny+Uz_R*nz))*sss ;
+
+        //if (ip>=502451) { // wall
+        //    mdot = 0.0;
+        //    difQ2[0] = 0.0;
+        //    difQ2[1] = 0.0;
+        //    difQ2[2] = 0.0;
+        //    difQ2[3] = 0.0;
+        //    difQ2[4] = 0.0;
+        //}
+
         flow_float res_ro_temp   = mdot                                        -0.5*difQ2[0]*sss;
         flow_float res_roe_temp  = mdot*0.5*(Ht_L + Ht_R)                      -0.5*difQ2[1]*sss;
         flow_float res_roUx_temp = mdot*0.5*(Ux_L + Ux_R) +0.5*(P_L + P_R)*sxx -0.5*difQ2[2]*sss;
         flow_float res_roUy_temp = mdot*0.5*(Uy_L + Uy_R) +0.5*(P_L + P_R)*syy -0.5*difQ2[3]*sss;
         flow_float res_roUz_temp = mdot*0.5*(Uz_L + Uz_R) +0.5*(P_L + P_R)*szz -0.5*difQ2[4]*sss;
+
+
 
         atomicAdd(&res_ro[ic0]  , -res_ro_temp);
         atomicAdd(&res_roUx[ic0], -res_roUx_temp);
