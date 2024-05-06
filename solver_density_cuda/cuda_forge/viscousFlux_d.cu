@@ -92,7 +92,6 @@ __global__ void viscousFlux_d
         flow_float dTdyf = f*dTdy[ic0] + (1.0-f)*dTdy[ic1];
         flow_float dTdzf = f*dTdz[ic0] + (1.0-f)*dTdz[ic1];
 
-        //flow_float alpha = sss*sss/(dcc_x*sxx +dcc_y*syy +dcc_z*szz); // over relaxed
         flow_float delta   = dcc*sss*sss/(dcc_x*sxx +dcc_y*syy +dcc_z*szz); // over relaxed
         flow_float delta_x = dcc_x*sss*sss/(dcc_x*sxx +dcc_y*syy +dcc_z*szz); 
         flow_float delta_y = dcc_y*sss*sss/(dcc_x*sxx +dcc_y*syy +dcc_z*szz); 
@@ -101,11 +100,6 @@ __global__ void viscousFlux_d
         flow_float k_y = syy - delta_y; 
         flow_float k_z = szz - delta_z; 
         flow_float divu = dUxdxf+dUydyf+dUzdzf;
-
-        //if (ip >= nNormalPlanes) {
-        //    alpha = sss/dcc;
-        //}
-
 
         flow_float tau_x = mu*((Ux[ic1] -Ux[ic0])/dcc)*delta;
         tau_x += mu*(dUxdxf*k_x +dUydxf*k_y +dUzdxf*k_z);
@@ -121,28 +115,6 @@ __global__ void viscousFlux_d
         tau_z += mu*(dUxdzf*k_x +dUydzf*k_y +dUzdzf*k_z);
         tau_z += mu*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
         tau_z += -mu*2.0/3.0*(divu)*szz;
-
-        //if (ip==558580) { // wall
-        //    printf("ip=%d, sx=%e, sy=%e, sz=%e\n", ip, sxx, syy, szz);
-        //    //printf("  mu  =%e\n", mu);
-        //    //printf("  divu  =%e\n", divu);
-        //    printf("  cc0x=%e, cc0y=%e, cc0z=%e\n", ccx_0, ccy_0, ccz_0);
-        //    printf("  cc1x=%e, cc1y=%e, cc1z=%e\n", ccx_1, ccy_1, ccz_1);
-        //    printf("  pcx =%e, pcy =%e, pcz =%e\n", pcx[ip], pcy[ip], pcz[ip]);
-        //    printf("  Uxf=%e, Uyf=%e, Uzf=%e\n", Uxf, Uyf, Uzf);
-        //    printf("  Ux0=%e, Uy0=%e, Uz0=%e\n", Ux[ic0], Uy[ic0], Uz[ic0]);
-        //    printf("  Ux1=%e, Uy1=%e, Uz1=%e\n", Ux[ic1], Uy[ic1], Uz[ic1]);
-
-        //    printf("  dUxdx0=%e, dUxdy0=%e, dUxdz0=%e\n", dUxdx[ic0], dUxdy[ic0], dUxdz[ic0]);
-        //    printf("  dUydx0=%e, dUydy0=%e, dUydz0=%e\n", dUydx[ic0], dUydy[ic0], dUydz[ic0]);
-        //    printf("  dUzdx0=%e, dUzdy0=%e, dUzdz0=%e\n", dUzdx[ic0], dUzdy[ic0], dUzdz[ic0]);
-
-        //    printf("  dUxdx1=%e, dUxdy1=%e, dUxdz1=%e\n", dUxdx[ic1], dUxdy[ic1], dUxdz[ic1]);
-        //    printf("  dUydx1=%e, dUydy1=%e, dUydz1=%e\n", dUydx[ic1], dUydy[ic1], dUydz[ic1]);
-        //    printf("  dUzdx1=%e, dUzdy1=%e, dUzdz1=%e\n", dUzdx[ic1], dUzdy[ic1], dUzdz[ic1]);
-
-        //    printf("  tau_x=%e, tau_y=%e, tau_z=%e\n", tau_x, tau_y, tau_z);
-        //}
 
         flow_float heatflux = thermCond*((Ts[ic1] -Ts[ic0])/dcc)*delta;
         heatflux += thermCond*(dTdyf*k_x +dTdyf*k_y +dTdyf*k_z);
@@ -210,7 +182,16 @@ __global__ void viscousFlux_wall_d
  flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
  flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
  flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
- flow_float* dTdx   , flow_float* dTdy  , flow_float* dTdz
+ flow_float* dTdx   , flow_float* dTdy  , flow_float* dTdz,
+
+ // bvar
+ flow_float* ypls_b ,
+ flow_float* twall_x_b ,
+ flow_float* twall_y_b ,
+ flow_float* twall_z_b 
+ //flow_float* sx_b ,
+ //flow_float* sy_b ,
+ //flow_float* sz_b 
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -259,35 +240,10 @@ __global__ void viscousFlux_wall_d
 
         flow_float tau_y = mu*((0.0 - Uy[ic])/dcc)*sss;
         tau_y += mu*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
-        //tau_y += -mu*2.0/3.0*(divu)*syy;
 
         flow_float tau_z = mu*((0.0 - Uz[ic])/dcc)*sss;
         tau_z += mu*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
-        //tau_z += -mu*2.0/3.0*(divu)*szz;
 
-        //if (ip==558580) { // wall
-        //    printf("ip=%d, sx=%e, sy=%e, sz=%e\n", ip, sxx, syy, szz);
-        //    //printf("  mu  =%e\n", mu);
-        //    //printf("  divu  =%e\n", divu);
-        //    printf("  cc0x=%e, cc0y=%e, cc0z=%e\n", ccx_0, ccy_0, ccz_0);
-        //    printf("  cc1x=%e, cc1y=%e, cc1z=%e\n", ccx_1, ccy_1, ccz_1);
-        //    printf("  pcx =%e, pcy =%e, pcz =%e\n", pcx[ip], pcy[ip], pcz[ip]);
-        //    printf("  Uxf=%e, Uyf=%e, Uzf=%e\n", Uxf, Uyf, Uzf);
-        //    printf("  Ux0=%e, Uy0=%e, Uz0=%e\n", Ux[ic0], Uy[ic0], Uz[ic0]);
-        //    printf("  Ux1=%e, Uy1=%e, Uz1=%e\n", Ux[ic1], Uy[ic1], Uz[ic1]);
-
-        //    printf("  dUxdx0=%e, dUxdy0=%e, dUxdz0=%e\n", dUxdx[ic0], dUxdy[ic0], dUxdz[ic0]);
-        //    printf("  dUydx0=%e, dUydy0=%e, dUydz0=%e\n", dUydx[ic0], dUydy[ic0], dUydz[ic0]);
-        //    printf("  dUzdx0=%e, dUzdy0=%e, dUzdz0=%e\n", dUzdx[ic0], dUzdy[ic0], dUzdz[ic0]);
-
-        //    printf("  dUxdx1=%e, dUxdy1=%e, dUxdz1=%e\n", dUxdx[ic1], dUxdy[ic1], dUxdz[ic1]);
-        //    printf("  dUydx1=%e, dUydy1=%e, dUydz1=%e\n", dUydx[ic1], dUydy[ic1], dUydz[ic1]);
-        //    printf("  dUzdx1=%e, dUzdy1=%e, dUzdz1=%e\n", dUzdx[ic1], dUzdy[ic1], dUzdz[ic1]);
-
-        //    printf("  tau_x=%e, tau_y=%e, tau_z=%e\n", tau_x, tau_y, tau_z);
-        //}
-
-        //flow_float heatflux = thermCond*((Ts[ic1] -Ts[ic])/dcc);
         flow_float heatflux = 0.0;
 
         flow_float res_ro_temp   = 0.0;
@@ -302,6 +258,17 @@ __global__ void viscousFlux_wall_d
         atomicAdd(&res_roUy[ic], res_roUy_temp);
         atomicAdd(&res_roUz[ic], res_roUz_temp);
         atomicAdd(&res_roe[ic] , res_roe_temp);
+
+
+        twall_x_b[ib] = tau_x/sss;
+        twall_y_b[ib] = tau_y/sss;
+        twall_z_b[ib] = tau_z/sss;
+
+        flow_float twall = sqrt(tau_x*tau_x + tau_y*tau_y + tau_z*tau_z)/sss;
+        flow_float utau = sqrt(twall/ro[ic]);
+
+        ypls_b[ib] = ro[ic]*utau*dcc/mu;
+
     }
 
     __syncthreads();
@@ -395,7 +362,15 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
                 var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
                 var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-                var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"]
+                var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
+
+                bc.bvar_d["ypls"],
+                bc.bvar_d["twall_x"],
+                bc.bvar_d["twall_y"],
+                bc.bvar_d["twall_z"]
+                //bc.bvar_d["sx"],
+                //bc.bvar_d["sy"],
+                //bc.bvar_d["sz"]
             ) ;
         }
     }

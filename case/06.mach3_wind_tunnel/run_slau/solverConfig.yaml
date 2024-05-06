@@ -21,6 +21,7 @@ time:
   last: 
     control: 0 # 0:nStep , 1:time base
     nStep: 20000
+    #nStep: 1
     time: 1.00 # [second]
   deltaT:  
     control: 0 # 0:use dt , 1:use cfl
@@ -35,7 +36,7 @@ time:
     cfl_pseudo: 0.5
 
 space: 
-  convMethod: 2
+  convMethod: 1
   limiter: 1
 
 initial: "mach3"
