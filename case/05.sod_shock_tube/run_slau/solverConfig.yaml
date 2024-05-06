@@ -22,11 +22,12 @@ time:
   last: 
     control: 0 # 0:nStep , 1:time base
     nStep: 400
+    #nStep: 2
     time: 1.00 # [second]
   deltaT:  
-    control: 0 # 0:use dt , 1:use cfl
+    control: 1 # 0:use dt , 1:use cfl
     dt: 0.001
-    cfl: 0.3
+    cfl: 0.5
     dt_min: 0.00000001
     dt_max: 1.0 
   outStepInterval: 1
@@ -36,7 +37,7 @@ time:
     cfl_pseudo: 1.0
 
 space: 
-  convMethod: 2 # 0:1st 1:2nd 2:MUSCL
+  convMethod: 1 # 0:1st 1:2nd 2:MUSCL
   limiter: 1 # venkata
 
 initial: "sod"
