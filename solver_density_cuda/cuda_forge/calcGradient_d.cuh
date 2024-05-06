@@ -61,11 +61,12 @@ __global__ void calcGradient_2_d
  flow_float* divU   
 );
 
-__device__ flow_float calcDeltaIJ(geom_float pcx , geom_float pcy, geom_float pcz, 
-                                  flow_float dudx, flow_float dudy,flow_float dudz,
-                                  flow_float delu_max, flow_float delu_min );
+__device__ void calcDeltaIJ(geom_float pcx , geom_float pcy, geom_float pcz, 
+                            flow_float dudx, flow_float dudy,flow_float dudz,
+                            flow_float delu_max, flow_float delu_min ,
+                            flow_float& delta, flow_float& deltap, flow_float& deltam);
 
-__device__ flow_float venkata_limiter(flow_float x , flow_float volume);
+__device__ flow_float venkata_limiter(flow_float delp, flow_float delm , flow_float volume);
 
 
 void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

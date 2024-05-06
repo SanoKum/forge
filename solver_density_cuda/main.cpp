@@ -45,6 +45,7 @@
 #include "cuda_forge/interpVelocity_c2p_d.cuh"
 #include "cuda_forge/timeIntegration_d.cuh"
 #include "cuda_forge/calcLimiter_d.cuh"
+#include "cuda_forge/ducrosSensor_d.cuh"
 
 #include <cuda_runtime.h>
 
@@ -135,7 +136,7 @@ int main(void) {
 
             copyBcondsGradient(cfg , cuda_cfg , msh , var, mat_ns);
 
-            //calcLimiter_d(cfg , cuda_cfg , msh , var, mat_ns);
+            ducrosSensor_d_wrapper(cfg , cuda_cfg , msh , var);
 
             convectiveFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
 

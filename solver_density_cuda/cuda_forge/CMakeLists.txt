@@ -16,6 +16,9 @@ add_library(cuda_forge STATIC
     calcGradient_d.cuh
     convectiveFlux_d.cu
     convectiveFlux_d.cuh
+    ducrosSensor_d.cu
+    ducrosSensor_d.cuh
+ 
     #AUSM_d.cu
     #AUSM_d.cuh
     viscousFlux_d.cu

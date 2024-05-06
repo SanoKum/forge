@@ -39,6 +39,10 @@ public:
         "drodx", "drody" , "drodz",
         "dHtdx", "dHtdy" , "dHtdz",
         "divU*vol" , "divU" , "divU_star",
+
+        "ducros" , 
+        "limiter" , 
+
         "cfl"   , "cfl_pseudo",
         "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe",
         "res_ro_m"  , "res_roUx_m" , "res_roUy_m" , "res_roUz_m" , "res_roe_m",
@@ -73,7 +77,8 @@ public:
         "dUzdx" , "dUzdy" , "dUzdz" ,
         "drodx" , "drody" , "drodz" ,
         "dPdx"  , "dPdy"  , "dPdz" ,
-        "dHtdx" , "dHtdy" , "dHtdz" 
+        "dHtdx" , "dHtdy" , "dHtdz" ,
+        "ducros" , "limiter"
     };
 
     //not yet implemented
