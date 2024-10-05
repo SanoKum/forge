@@ -30,7 +30,22 @@ __global__ void slip_d
  flow_float* Uz  ,
  flow_float* P   ,
  flow_float* Ht  ,
- flow_float* sonic  
+ flow_float* sonic  ,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
 
 );
 
@@ -61,10 +76,74 @@ __global__ void wall_d
  flow_float* Uz  ,
  flow_float* P   ,
  flow_float* Ht  ,
- flow_float* sonic  
+ flow_float* sonic  ,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 );
 
 void wall_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
+
+__global__ void wall_isothermal_d 
+( 
+ // gas properties
+ flow_float ga,
+ flow_float cp,
+
+ // mesh structure
+ geom_int nb,
+ geom_int* bplane_plane,  
+ geom_int* bplane_cell,  
+ geom_int* bplane_cell_ghst,  
+ geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+ geom_float* fx  , 
+
+ // variables
+ flow_float* ro   ,
+ flow_float* roUx ,
+ flow_float* roUy ,
+ flow_float* roUz ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* P   ,
+ flow_float* Ht  ,
+ flow_float* sonic  ,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
+);
+
+void wall_isothermal_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
+
+
 
 __global__ void outlet_statPress_d 
 ( 
@@ -92,9 +171,20 @@ __global__ void outlet_statPress_d
  flow_float* sonic  ,
 
  // bvar
- flow_float* Psb ,
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
  flow_float* Ptb ,
- flow_float* Ttb 
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 );
 
 void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
@@ -125,14 +215,24 @@ __global__ void inlet_uniformVelocity_statPress_d
  flow_float* sonic,
 
  // bvar
- flow_float* rob ,  
- flow_float* Uxb ,  
- flow_float* Uyb ,  
- flow_float* Uzb , 
- flow_float* Psb  
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 );
 
 void inlet_uniformVelocity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
+
 
 
 __global__ void inlet_Pressure_d 
@@ -162,8 +262,20 @@ __global__ void inlet_Pressure_d
  flow_float* T   ,
 
  // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
  flow_float* Ptb ,
- flow_float* Ttb 
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 );
 
 void inlet_Pressure_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
@@ -196,12 +308,21 @@ __global__ void inlet_Pressure_dir_d
  flow_float* sonic,
  flow_float* T   ,
 
- // bvar
- flow_float* Ptb ,
- flow_float* Ttb ,
+// bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
  flow_float* Uxb ,
  flow_float* Uyb ,
- flow_float* Uzb 
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 );
 
 void inlet_Pressure_dir_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
@@ -233,9 +354,20 @@ __global__ void outflow_d
  flow_float* Ht  ,
  flow_float* sonic,
 
- // bvar
+// bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
  flow_float* Ptb ,
- flow_float* Ttb 
+ flow_float* Tsb ,
+ flow_float* Psb 
+
 
 );
 

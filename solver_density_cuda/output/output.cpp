@@ -102,8 +102,9 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
     ofs << "<!DOCTYPE Xdmf SYSTEM 'Xdmf.dtd' []>\n";
     ofs << "<Xdmf>\n";
     ofs << "  <Domain>\n";
-    ofs << "    <Grid  GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
-    ofs << "      <Grid Name='aaa'>\n";
+    ofs << "    <Grid GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
+    ofs << "    <Time TimeType='Single' Value='" << cfg.totalTime <<"'/> \n";
+    ofs << "      <Grid Name='gridooo'>\n";
     ofs << "        <Topology Type='Mixed' NumberOfElements='" << msh.nCells << "'>\n";
     ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
     ofs << "            res_" << oss.str() <<".h5:MESH/CONNE\n";
@@ -138,12 +139,14 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
     if (iStep%cfg.outStepInterval != 0) return;
 
     for (auto& bc : msh.bconds) {
-        if (bc.bcondKind  != "wall") continue;
+        //if (bc.bcondKind  != "wall") continue;
+        if (bc.outputHDFflg != 1) continue;
 
         bc.copyVariables_bplane_D2H();
 
         elementTypeMap eleTypeMap;
         ostringstream oss;
+        ostringstream oss_id;
 
         // ------------
         // *** HDF5 *** 
@@ -151,7 +154,8 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         bc.output_preparation(msh.nodes, msh.planes);
 
         oss << iStep;
-        string fnameH5 = "res_wall_"+oss.str()+".h5";
+        oss_id << bc.physID;
+        string fnameH5 = "res_"+bc.physName+"_"+oss_id.str()+"_"+oss.str()+".h5";
         ofstream ofsH5(fnameH5);
 
         File file(fnameH5, File::ReadWrite | File::Truncate);
@@ -196,86 +200,102 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         file.createDataSet("/MESH/CONNE",CONNE);
 
         // write variables
-        for (auto& v : bc.bvar)
+        for (auto& vt : bc.valueTypes)
         {
-            string name = v.first;
-
-            //auto itr = std::find(var.output_cellValNames.begin(), var.output_cellValNames.end(), name);
-            //if (itr == var.output_cellValNames.end()) {
-            //    continue; // notfound
-            //}
+            string name = vt.first;
 
             std::vector<flow_float> vtemp;
             vtemp.resize(bc.planes_local.size());
-            copy(v.second.begin(), v.second.begin()+bc.planes_local.size(), vtemp.begin());
+
+            copy(bc.bvar[name].begin(), bc.bvar[name].begin()+bc.planes_local.size(), vtemp.begin());
 
             file.createDataSet("/VALUE/"+name , vtemp);
         }
 
-        // ------------------
-        // *** Ghost cell ***
-        // ------------------
+//
+//        for (auto& v : bc.bvar)
+//        {
+//            string name = v.first;
+//
+//
+//            //auto itr = std::find(var.output_cellValNames.begin(), var.output_cellValNames.end(), name);
+//            //if (itr == var.output_cellValNames.end()) {
+//            //    continue; // notfound
+//            //}
+//
+//            std::vector<flow_float> vtemp;
+//            vtemp.resize(bc.planes_local.size());
+//            copy(v.second.begin(), v.second.begin()+bc.planes_local.size(), vtemp.begin());
+//
+//            file.createDataSet("/VALUE/"+name , vtemp);
+//        }
+//
+        //ghost // ------------------
+        //ghost // *** Ghost cell ***
+        //ghost // ------------------
 
-        vector<geom_float> COORD_ghst;
+        //ghost vector<geom_float> COORD_ghst;
 
-        // out ghost cell 
-        for (auto& ighst : bc.iCells_ghst) {
-            // write boundary
-            COORD_ghst.push_back(msh.cells[ighst].centCoords[0]);
-            COORD_ghst.push_back(msh.cells[ighst].centCoords[1]);
-            COORD_ghst.push_back(msh.cells[ighst].centCoords[2]);
-        }
+        //ghost // out ghost cell 
+        //ghost for (auto& ighst : bc.iCells_ghst) {
+        //ghost     // write boundary
+        //ghost     COORD_ghst.push_back(msh.cells[ighst].centCoords[0]);
+        //ghost     COORD_ghst.push_back(msh.cells[ighst].centCoords[1]);
+        //ghost     COORD_ghst.push_back(msh.cells[ighst].centCoords[2]);
+        //ghost }
 
-        file.createDataSet("/MESH_ghst/COORD",COORD_ghst);
+        //ghost file.createDataSet("/MESH_ghst/COORD",COORD_ghst);
 
-        vector<geom_int> CONNE_ghst;
-        vector<geom_int> Indexes_ghst;
-        geom_int CONNE_dim_ghst = 0;
-        geom_int CONNE0_ghst;    
+        //ghost vector<geom_int> CONNE_ghst;
+        //ghost vector<geom_int> Indexes_ghst;
+        //ghost geom_int CONNE_dim_ghst = 0;
+        //ghost geom_int CONNE0_ghst;    
 
-        geom_int ighst_l = 0;
-        for (auto& ighst : bc.iCells_ghst) {
-            geom_int nn = 1;
-            string name = "point";
-            CONNE0_ghst = 1;
+        //ghost geom_int ighst_l = 0;
+        //ghost for (auto& ighst : bc.iCells_ghst) {
+        //ghost     geom_int nn = 1;
+        //ghost     string name = "point";
+        //ghost     CONNE0_ghst = 1;
 
-            CONNE_ghst.push_back(CONNE0_ghst);
-            CONNE_dim_ghst += nn + 1;
+        //ghost     CONNE_ghst.push_back(CONNE0_ghst);
+        //ghost     CONNE_dim_ghst += nn + 1;
 
-            CONNE_ghst.push_back(ighst_l);
-            Indexes_ghst.push_back(ighst_l);
-            ighst_l++;
-        }
-        file.createDataSet("/MESH_ghst/CONNE",CONNE_ghst);
-        file.createDataSet("/MESH_ghst/Indexes",Indexes_ghst);
+        //ghost     CONNE_ghst.push_back(ighst_l);
+        //ghost     Indexes_ghst.push_back(ighst_l);
+        //ghost     ighst_l++;
+        //ghost }
+        //ghost file.createDataSet("/MESH_ghst/CONNE",CONNE_ghst);
+        //ghost file.createDataSet("/MESH_ghst/Indexes",Indexes_ghst);
 
-        // write variables
-        //for (string name : var.output_cellValNames)
-        //TODO: ややこしくしているのでシンプルにoutput_cellValNamesで回したい。が、なぜかエラーになる
-        for (auto& v : var.c)
-        {
-            string name = v.first;
+        //ghost // write variables
+        //ghost //for (string name : var.output_cellValNames)
+        //ghost //TODO: ややこしくしているのでシンプルにoutput_cellValNamesで回したい。が、なぜかエラーになる
+        //ghost for (auto& v : var.c)
+        //ghost {
+        //ghost     string name = v.first;
     
-            auto itr = std::find(var.output_cellValNames.begin(), var.output_cellValNames.end(), name);
-            if (itr == var.output_cellValNames.end()) {
-                continue; // notfound
-            }
+        //ghost     auto itr = std::find(var.output_cellValNames.begin(), var.output_cellValNames.end(), name);
+        //ghost     if (itr == var.output_cellValNames.end()) {
+        //ghost         continue; // notfound
+        //ghost     }
     
-            std::vector<flow_float> vtemp;
-            vtemp.resize(bc.iCells_ghst.size());
-            for (geom_int igl = 0 ; igl<bc.iCells_ghst.size() ; igl++) {
-                geom_int ig = bc.iCells_ghst[igl];
-                vtemp[igl] = v.second[ig];
-            }
+        //ghost     std::vector<flow_float> vtemp;
+        //ghost     vtemp.resize(bc.iCells_ghst.size());
+        //ghost     for (geom_int igl = 0 ; igl<bc.iCells_ghst.size() ; igl++) {
+        //ghost         geom_int ig = bc.iCells_ghst[igl];
+        //ghost         vtemp[igl] = v.second[ig];
+        //ghost     }
     
-            //file.createDataSet("/VALUE/"+name , v.second);
-            file.createDataSet("/VALUE_ghst/"+name , vtemp);
-        }
+        //ghost     //file.createDataSet("/VALUE/"+name , v.second);
+        //ghost     file.createDataSet("/VALUE_ghst/"+name , vtemp);
+        //ghost }
 
         // ------------
         // *** XDMF ***
         // ------------
-        string fnameXDMF = "res_wall_"+oss.str()+".xmf";
+        //string fnameXDMF = "res_wall_"+oss.str()+".xmf";
+
+        string fnameXDMF = "res_"+bc.physName+"_"+oss_id.str()+"_"+oss.str()+".xmf";
         ofstream ofs(fnameXDMF);
 
         ofs << "<?xml version='1.0' ?>\n";
@@ -283,57 +303,59 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         ofs << "<Xdmf>\n";
         ofs << "  <Domain>\n";
         ofs << "    <Grid  GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
+        ofs << "    <Time TimeType='Single' Value='" << cfg.totalTime << "'/> \n";
         ofs << "      <Grid Name='wall'>\n";
         ofs << "        <Topology Type='Mixed' NumberOfElements='" << bc.iPlanes.size() << "'>\n";
         ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
-        ofs << "            res_wall_" << oss.str() <<".h5:MESH/CONNE\n";
+        ofs << "            res_" << bc.physName << "_" << oss_id.str() <<"_" << oss.str() <<".h5:MESH/CONNE\n";
         ofs << "          </DataItem>\n";
         ofs << "        </Topology>\n";
 
         ofs << "        <Geometry Type='XYZ'>\n";
         ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.inodes_l2g.size()*3 << "'>\n";
-        ofs << "            res_wall_"<< oss.str() <<".h5:MESH/COORD\n";
+        //ofs << "            res_wall_"<< oss.str() <<".h5:MESH/COORD\n";
+        ofs << "            res_" << bc.physName << "_" << oss_id.str() <<"_" << oss.str() <<".h5:MESH/COORD\n";
         ofs << "          </DataItem>\n";
         ofs << "        </Geometry>\n";
 
-        for (string name : bc.bplaneValNames)
+
+        for (auto& vt : bc.valueTypes)
         {
-        //for (auto& v : var.c) {
-            //string name = v.first;
+            string name = vt.first;
             ofs << "        <Attribute Name='"  << name << "' Center='Cell' >\n";
             ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.iPlanes.size() << "'>\n";
-            ofs << "            res_wall_"<< oss.str() << ".h5:VALUE/" << name << "\n";
+            ofs << "            res_" << bc.physName << "_" << oss_id.str() <<"_" << oss.str() <<".h5:VALUE/" << name << "\n";
             ofs << "          </DataItem>\n";
             ofs << "        </Attribute>\n";
         }
 
         ofs << "      </Grid>\n";
 
-        // ghost cell
-        ofs << "      <Grid Name='wall_ghst'>\n";
-        ofs << "        <Topology Type='Polyvertex' Dimensions='" << bc.iCells_ghst.size() <<"' NodesPerElement='1'>\n";
-        //ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim_ghst << "'>\n";
-        ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << bc.iCells_ghst.size() << "'>\n";
-        //ofs << "            res_wall_" << oss.str() <<".h5:MESH_ghst/CONNE\n";
-        ofs << "            res_wall_" << oss.str() <<".h5:MESH_ghst/Indexes\n";
-        ofs << "          </DataItem>\n";
-        ofs << "        </Topology>\n";
+        //ghost // ghost cell
+        //ghost ofs << "      <Grid Name='wall_ghst'>\n";
+        //ghost ofs << "        <Topology Type='Polyvertex' Dimensions='" << bc.iCells_ghst.size() <<"' NodesPerElement='1'>\n";
+        //ghost //ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim_ghst << "'>\n";
+        //ghost ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << bc.iCells_ghst.size() << "'>\n";
+        //ghost //ofs << "            res_wall_" << oss.str() <<".h5:MESH_ghst/CONNE\n";
+        //ghost ofs << "            res_wall_" << oss.str() <<".h5:MESH_ghst/Indexes\n";
+        //ghost ofs << "          </DataItem>\n";
+        //ghost ofs << "        </Topology>\n";
 
-        ofs << "        <Geometry Type='XYZ'>\n";
-        ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.iCells_ghst.size()*3 << "'>\n";
-        ofs << "            res_wall_"<< oss.str() <<".h5:MESH_ghst/COORD\n";
-        ofs << "          </DataItem>\n";
-        ofs << "        </Geometry>\n";
+        //ghost ofs << "        <Geometry Type='XYZ'>\n";
+        //ghost ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.iCells_ghst.size()*3 << "'>\n";
+        //ghost ofs << "            res_wall_"<< oss.str() <<".h5:MESH_ghst/COORD\n";
+        //ghost ofs << "          </DataItem>\n";
+        //ghost ofs << "        </Geometry>\n";
 
-        for (string name : var.output_cellValNames)
-        {
-            ofs << "        <Attribute Name='"  << name << "' Center='Node' >\n";
-            ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.iCells_ghst.size() << "'>\n";
-            ofs << "            res_wall_"<< oss.str() << ".h5:VALUE_ghst/" << name << "\n";
-            ofs << "          </DataItem>\n";
-            ofs << "        </Attribute>\n";
-        }
-        ofs << "      </Grid>\n";
+        //ghost for (string name : var.output_cellValNames)
+        //ghost {
+        //ghost     ofs << "        <Attribute Name='"  << name << "' Center='Node' >\n";
+        //ghost     ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.iCells_ghst.size() << "'>\n";
+        //ghost     ofs << "            res_wall_"<< oss.str() << ".h5:VALUE_ghst/" << name << "\n";
+        //ghost     ofs << "          </DataItem>\n";
+        //ghost     ofs << "        </Attribute>\n";
+        //ghost }
+        //ghost ofs << "      </Grid>\n";
 
         ofs << "    </Grid>\n";
         ofs << "  </Domain>\n";

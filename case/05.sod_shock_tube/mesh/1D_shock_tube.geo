@@ -9,7 +9,7 @@ Mesh.ScalingFactor = 1.0;
 
 lc=0.1; //characteristic mesh size (optional make smaller to refine mesh)
 
-nx=100; ny=2;
+nx=500; ny=2;
 
 // Place points
 Point(1) = {0,0,0,lc};

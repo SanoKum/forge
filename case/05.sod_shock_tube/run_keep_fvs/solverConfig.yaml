@@ -1,0 +1,52 @@
+mesh:
+  meshFormat: "hdf5" 
+  meshFileName: "1D_shock_tube.h5"
+  valueFileName: "1D_shock_tube.h5"
+  #meshFormat: "hdf5" 
+  #meshFileName: "mach3.h5"
+
+
+gpu: 1 # 0:off , 1:on
+
+#solver: "AUSM+" # smac , simple , simplec , fractionalStep
+#solver: "AUSM+" # smac , simple , simplec , fractionalStep
+#solver: "ROE" # smac , simple , simplec , fractionalStep
+#solver: "SLAU" # smac , simple , simplec , fractionalStep
+solver: "KEEP_FVS" # smac , simple , simplec , fractionalStep
+
+physProp:
+  isCompressible: 1 # 0:incomp, 1:compressible
+  ro : 1.4 # [kg/m3] ignored for compressible flow
+  visc : 0.0 #[Pa*s]
+  thermCond: 0.0 # [W/(mK)]
+  cp : 1005.0 # [J/(kgK)]
+  gamma : 1.4 # [J/(kgK)]
+
+time: 
+  last: 
+    control: 0 # 0:nStep , 1:time base
+    nStep: 100
+    #nStep: 1
+    #nStep: 2
+    time: 1.00 # [second]
+  deltaT:  
+    control: 1 # 0:use dt , 1:use cfl
+    dt: 0.001
+    cfl: 1.2
+    dt_min: 0.00000001
+    dt_max: 1.0 
+  outStepInterval: 1
+  timeIntegration: 3   # 1:Euler explicit , 3:3rd Runge Explicit , 10: dualtime+explicit
+  implicit:
+    nLoop: 20
+    cfl_pseudo: 1.0
+
+space:
+  convMethod: 0 # 0:1st 1:2nd 2:MUSCL
+  limiter: 2
+
+turbulence:
+  LESorRANS: 0 # 0:no 1:LES 2:RANS
+  LESmodel: 1 # 1:WALE
+
+initial: "sod"

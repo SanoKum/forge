@@ -58,6 +58,7 @@ public:
     {
         "ro"   , "roUx" , "roUy" , "roUz" , "roUz" , "roe",
         "Ux"   , "Uy"   , "Uz"   , "Tt"   , "Pt"   , "Ts" , "Ps",
+        "Ux0"  , "Uy0"  , "Uz0"  , 
         "ypls" , "twall_x" , "twall_y" , "twall_z"
     };
 
@@ -65,7 +66,6 @@ public:
     {
         "partnerPlnID" // for periodic 
     };
-
 
     geom_int physID; 
     std::string physName; 
@@ -75,6 +75,7 @@ public:
     std::vector<geom_int> iCells; //chk
     std::vector<geom_int> iCells_ghst; //ghost cell
 
+    int outputHDFflg; 
     int output_preparation_flg = 0;
     std::vector<node> nodes_local;
     std::vector<plane> planes_local;

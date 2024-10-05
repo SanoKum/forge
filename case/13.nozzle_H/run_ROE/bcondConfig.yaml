@@ -12,7 +12,9 @@ outlet:
   kind: outflow
   ints:
   floats:
-    Ps: 600000.0
+    #Ps: 600000.0
+    Tt: 350.0
+    Pt: 600000.0
 
 wall:
   physID: 3
