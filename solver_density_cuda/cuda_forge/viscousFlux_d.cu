@@ -10,6 +10,7 @@ __global__ void viscousFlux_d
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
  flow_float mu ,  flow_float thermCond,
+ flow_float* vis_lam   , flow_float* vis_turb  ,
 
  // variables
 //flow_float* convx , flow_float* convy , flow_float* convz,
@@ -49,10 +50,6 @@ __global__ void viscousFlux_d
         geom_int  ic1 = plane_cells[2*ip+1];
 
         geom_float f = fx[ip];
-        
-        //if (ip >= nNormalPlanes) {
-        //    f = 0.5;
-        //}
         
         geom_float sxx = sx[ip];
         geom_float syy = sy[ip];
@@ -101,20 +98,23 @@ __global__ void viscousFlux_d
         flow_float k_z = szz - delta_z; 
         flow_float divu = dUxdxf+dUydyf+dUzdzf;
 
-        flow_float tau_x = mu*((Ux[ic1] -Ux[ic0])/dcc)*delta;
-        tau_x += mu*(dUxdxf*k_x +dUydxf*k_y +dUzdxf*k_z);
-        tau_x += mu*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
-        tau_x += -mu*2.0/3.0*(divu)*sxx;
+        flow_float v_turb = f*vis_turb[ic0] + (1.0-f)*vis_turb[ic1] ;
+        flow_float mu_total = mu + v_turb;
 
-        flow_float tau_y = mu*((Uy[ic1] -Uy[ic0])/dcc)*delta;
-        tau_y += mu*(dUxdyf*k_x +dUydyf*k_y +dUzdyf*k_z);
-        tau_y += mu*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
-        tau_y += -mu*2.0/3.0*(divu)*syy;
+        flow_float tau_x = mu_total*((Ux[ic1] -Ux[ic0])/dcc)*delta;
+        tau_x += mu_total*(dUxdxf*k_x +dUydxf*k_y +dUzdxf*k_z);
+        tau_x += mu_total*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
+        tau_x += -mu_total*2.0/3.0*(divu)*sxx;
 
-        flow_float tau_z = mu*((Uz[ic1] -Uz[ic0])/dcc)*delta;
-        tau_z += mu*(dUxdzf*k_x +dUydzf*k_y +dUzdzf*k_z);
-        tau_z += mu*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
-        tau_z += -mu*2.0/3.0*(divu)*szz;
+        flow_float tau_y = mu_total*((Uy[ic1] -Uy[ic0])/dcc)*delta;
+        tau_y += mu_total*(dUxdyf*k_x +dUydyf*k_y +dUzdyf*k_z);
+        tau_y += mu_total*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
+        tau_y += -mu_total*2.0/3.0*(divu)*syy;
+
+        flow_float tau_z = mu_total*((Uz[ic1] -Uz[ic0])/dcc)*delta;
+        tau_z += mu_total*(dUxdzf*k_x +dUydzf*k_y +dUzdzf*k_z);
+        tau_z += mu_total*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
+        tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
         flow_float heatflux = thermCond*((Ts[ic1] -Ts[ic0])/dcc)*delta;
         heatflux += thermCond*(dTdyf*k_x +dTdyf*k_y +dTdyf*k_z);
@@ -156,6 +156,7 @@ __global__ void viscousFlux_wall_d
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
  flow_float mu ,  flow_float thermCond,
+ flow_float* vis_lam   , flow_float* vis_turb  ,
 
  // variables
 //flow_float* convx , flow_float* convy , flow_float* convz,
@@ -188,10 +189,15 @@ __global__ void viscousFlux_wall_d
  flow_float* ypls_b ,
  flow_float* twall_x_b ,
  flow_float* twall_y_b ,
- flow_float* twall_z_b 
- //flow_float* sx_b ,
+ flow_float* twall_z_b ,
+ flow_float* Ux_b ,
+ flow_float* Uy_b ,
+ flow_float* Uz_b ,
+ flow_float* Ts_b 
+//flow_float* sx_b ,
  //flow_float* sy_b ,
  //flow_float* sz_b 
+
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -232,25 +238,34 @@ __global__ void viscousFlux_wall_d
         flow_float dUzdyf = dUzdy[ic] ;
         flow_float dUzdzf = dUzdz[ic] ;
 
+        flow_float v_turb = vis_turb[ic] ;
+        flow_float mu_total = mu + v_turb;
+
         flow_float divu = dUxdxf+dUydyf+dUzdzf;
 
-        flow_float tau_x = mu*((0.0 - Ux[ic])/dcc)*sss;
-        tau_x += mu*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
-        //tau_x += -mu*2.0/3.0*(divu)*sxx;
+        flow_float tau_x = mu_total*((Ux_b[ib] - Ux[ic])/dcc)*sss;
+        tau_x += mu_total*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
+        //tau_x += -mu_total*2.0/3.0*(divu)*sxx;
 
-        flow_float tau_y = mu*((0.0 - Uy[ic])/dcc)*sss;
-        tau_y += mu*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
+        flow_float tau_y = mu_total*((Uy_b[ib] - Uy[ic])/dcc)*sss;
+        tau_y += mu_total*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
 
-        flow_float tau_z = mu*((0.0 - Uz[ic])/dcc)*sss;
-        tau_z += mu*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
+        flow_float tau_z = mu_total*((Uz_b[ib]- Uz[ic])/dcc)*sss;
+        tau_z += mu_total*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
 
-        flow_float heatflux = 0.0;
+        flow_float heatflux = thermCond*((Ts_b[ib]- Ts[ic])/dcc)*sss;
 
         flow_float res_ro_temp   = 0.0;
         flow_float res_roUx_temp = tau_x;
         flow_float res_roUy_temp = tau_y;
         flow_float res_roUz_temp = tau_z;
-        flow_float res_roe_temp  = tau_x*0.0 +tau_y*0.0 +tau_z*0.0; 
+        flow_float res_roe_temp  = tau_x*Ux_b[ib] +tau_y*Uy_b[ib] +tau_z*Uz_b[ib]; 
+
+        //printf("res_roe_temp=%e\n", res_roe_temp);
+        //printf("Uyb[ib]=%e\n", Uy_b[ib]);
+        //printf("Uzb[ib]=%e\n", Uz_b[ib]);
+
+
         res_roe_temp += heatflux;
 
         atomicAdd(&res_ro[ic]  , res_ro_temp);
@@ -259,7 +274,6 @@ __global__ void viscousFlux_wall_d
         atomicAdd(&res_roUz[ic], res_roUz_temp);
         atomicAdd(&res_roe[ic] , res_roe_temp);
 
-
         twall_x_b[ib] = tau_x/sss;
         twall_y_b[ib] = tau_y/sss;
         twall_z_b[ib] = tau_z/sss;
@@ -267,8 +281,7 @@ __global__ void viscousFlux_wall_d
         flow_float twall = sqrt(tau_x*tau_x + tau_y*tau_y + tau_z*tau_z)/sss;
         flow_float utau = sqrt(twall/ro[ic]);
 
-        ypls_b[ib] = ro[ic]*utau*dcc/mu;
-
+        ypls_b[ib] = ro[ic]*utau*dcc/mu_total;
     }
 
     __syncthreads();
@@ -288,6 +301,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
         cfg.visc , cfg.thermCond,
+        var.c_d["vis_lam"], var.c_d["vis_turb"],
 
         // basic variables
         //var.c_d["convx"] , var.c_d["convy"] , var.c_d["convz"] ,
@@ -322,7 +336,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
 
     for (auto& bc : msh.bconds)
     {
-        if (bc.bcondKind == "wall") {
+        if (bc.bcondKind == "wall" or bc.bcondKind == "wall_isothermal") {
             viscousFlux_wall_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
                 // mesh structure
                 bc.iPlanes.size(),
@@ -335,6 +349,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
                 cfg.visc , cfg.thermCond,
+                var.c_d["vis_lam"], var.c_d["vis_turb"],
 
                 // basic variables
                 //var.c_d["convx"] , var.c_d["convy"] , var.c_d["convz"] ,
@@ -367,7 +382,12 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 bc.bvar_d["ypls"],
                 bc.bvar_d["twall_x"],
                 bc.bvar_d["twall_y"],
-                bc.bvar_d["twall_z"]
+                bc.bvar_d["twall_z"],
+                bc.bvar_d["Ux"],
+                bc.bvar_d["Uy"],
+                bc.bvar_d["Uz"],
+                bc.bvar_d["Ts"]
+ 
                 //bc.bvar_d["sx"],
                 //bc.bvar_d["sy"],
                 //bc.bvar_d["sz"]

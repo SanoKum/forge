@@ -1,6 +1,7 @@
 Inlet:
   physID: 129
   kind: inlet_Pressure_dir
+  outputHDFflg: 0
   ints:
   floats:
     Ux: 1.0
@@ -12,6 +13,7 @@ Inlet:
 Outlet:
   physID: 130
   kind: outlet_statPress
+  outputHDFflg: 0
   ints:
   floats:
     Ps: 101325.0
@@ -19,12 +21,14 @@ Outlet:
 Airfoil:
   physID: 131
   kind: wall
+  outputHDFflg: 0
   ints:
   floats:
 
 Side:
   physID: 132
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 

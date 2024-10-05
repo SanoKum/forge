@@ -1,4 +1,5 @@
 #include "cuda_forge/calcStructualVariables_d.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
 
 #include "flowFormat.hpp"
 #include "iostream"
@@ -46,54 +47,8 @@ void calcStructualVariables_d
 
         fx [ip] = dc1p/(dc0p + dc1p);
         dcc[ip] = dc;
-        //printf("gpu ip=%d, ic0=%d, ic1=%d, fx=%f, dcc=%f\n", ip, ic0, ic1, fx[ip], dcc[ip]);
-        __syncthreads();
-
     }
 };
-
-//__global__ 
-//void calcStructualVariables_bp_d 
-//( 
-// // mesh structure
-// geom_int nb, 
-// geom_int* bplane_plane,  
-// geom_int* bplane_cell,  
-//
-// geom_float* sx  ,  geom_float* sy  ,  geom_float* sz ,  geom_float* ss,
-// geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz ,  
-// geom_float* ccx ,  geom_float* ccy ,  geom_float* ccz ,  
-// geom_float* fx  ,  geom_float* dcc 
-//)
-//{
-//    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
-//
-//    if (ib < nb) {
-//        geom_int  ip  = bplane_plane[ib];
-//        geom_int  ic0 = bplane_cell[ib];
-//
-//        geom_float ccx0 = ccx[ic0];
-//        geom_float ccy0 = ccy[ic0];
-//        geom_float ccz0 = ccz[ic0];
-//
-//        geom_float pcx0 = pcx[ip];
-//        geom_float pcy0 = pcy[ip];
-//        geom_float pcz0 = pcz[ip];
-//
-//        geom_float sx0  = sx[ip];
-//        geom_float sy0  = sy[ip];
-//        geom_float sz0  = sz[ip];
-//        geom_float ss0  = sz[ip];
-//
-//        geom_float dn   = (  (pcx0 - ccx0)*sx0 
-//                           + (pcy0 - ccy0)*sy0 
-//                           + (pcz0 - ccz0)*sz0 )/ss0;
-//
-//        fx [ip] = 0.0;
-//        dcc[ip] = dn;
-//        __syncthreads();
-//    }
-//};
 
 void calcStructualVariables_d_wrapper(cudaConfig& cuda_cfg , mesh& msh,  variables& v)
 {
@@ -117,6 +72,9 @@ void calcStructualVariables_d_wrapper(cudaConfig& cuda_cfg , mesh& msh,  variabl
     //        v.p_d["fx"] , v.p_d["dcc"]
     //    );
     //}
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 
 };
 

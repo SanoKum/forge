@@ -24,6 +24,7 @@ __global__ void setCFL_pln_d
  flow_float dt,
  flow_float dt_pseudo,
  flow_float visc,
+ flow_float* vis_turb  ,
 
  // mesh structure
  geom_int nCells,

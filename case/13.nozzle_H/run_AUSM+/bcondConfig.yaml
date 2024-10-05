@@ -3,18 +3,17 @@ inlet:
   kind: inlet_Pressure
   ints:
   floats:
-    Pt: 2000000.3987
-    Tt: 353.0
+    Pt: 59100
+    Tt: 286.65
 
 outlet:
   physID: 2
-  kind: outlet_statPress
-  #kind: outflow
+  #kind: outlet_statPress
+  kind: outflow
   ints:
   floats:
-    Ps: 600000.0
-    Pt: 600000.0 # backflow
-    Tt: 353.0    # backflow
+    Pt: 55100.0  # backflow
+    Tt: 286.65   # backflow
 
 wall:
   physID: 3

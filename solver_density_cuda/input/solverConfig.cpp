@@ -39,10 +39,12 @@ void solverConfig::read(std::string fname)
             flow_float cfl_pseudo = implicit["cfl_pseudo"].as<flow_float>();
 
         auto space = config["space"];
-            int convMethod = space["convMethod"].as<int>();
+            int convMethod = space["convMethod"].as<flow_float>();
             int limiter    = space["limiter"].as<int>();
 
-
+        auto turb = config["turbulence"];
+            int LESorRANS = turb["LESorRANS"].as<int>();
+            int LESmodel  = turb["LESmodel"].as<int>();
 
         auto physProp = config["physProp"];
             int isCompressible = physProp["isCompressible"].as<int>();
@@ -100,6 +102,11 @@ void solverConfig::read(std::string fname)
 
         this->convMethod = convMethod;
         this->limiter = limiter;
+
+
+        this->LESorRANS = LESorRANS;
+        this->LESmodel  = LESmodel;
+
 
         this->isCompressible = isCompressible ;
         this->ro = ro;

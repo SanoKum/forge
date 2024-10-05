@@ -26,18 +26,32 @@ __global__ void ducrosSensor_d
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
 
+    //https://doi.org/10.2514/6.2018-3710
     if (ic < nCells ) {
+        flow_float Ux_0 = Ux[ic];
+        flow_float Uy_0 = Uy[ic];
+        flow_float Uz_0 = Uz[ic];
+
+        flow_float dUxdx_0 = dUxdx[ic];
+        flow_float dUxdy_0 = dUxdy[ic];
+        flow_float dUxdz_0 = dUxdz[ic];
+        flow_float dUydx_0 = dUydx[ic];
+        flow_float dUydy_0 = dUydy[ic];
+        flow_float dUydz_0 = dUydz[ic];
+        flow_float dUzdx_0 = dUzdx[ic];
+        flow_float dUzdy_0 = dUzdy[ic];
+        flow_float dUzdz_0 = dUzdz[ic];
 
         geom_float volume = vol[ic];
 
-        flow_float divu = dUxdx[ic] + dUydy[ic] + dUzdz[ic];
+        flow_float divu = dUxdx_0 + dUydy_0 + dUzdz_0;
         flow_float divu2 = divu*divu;
-        flow_float Umag = sqrt(pow(Ux[ic],2.0) + pow(Uy[ic],2.0) + pow(Uz[ic],2.0));
+        flow_float Umag = sqrt(pow(Ux_0,2.0) + pow(Uy_0,2.0) + pow(Uz_0,2.0));
         flow_float eps = 1e-12;
         flow_float nu = 0.1;
-        flow_float omega = nu*Umag/pow(volume, 1.0/3.0);
+        flow_float omega2 = pow(nu*Umag/pow(volume, 1.0/3.0),2.0);
 
-        flow_float theta = divu2/(divu2 + omega + eps);
+        flow_float theta = divu2/(divu2 + omega2 + eps);
 
         flow_float vort = pow(dUzdy[ic]-dUydz[ic],2.0)
                         + pow(dUxdz[ic]-dUzdx[ic],2.0)
@@ -45,10 +59,9 @@ __global__ void ducrosSensor_d
 
         flow_float D = min((4.0/3.0)*divu2/(divu2+vort+eps), 1.0);
 
-        flow_float fai = 0.0;
+        flow_float fai = 0.01;
 
         ducros[ic] = (max((D-fai),0.0))*theta+fai;
-        //ducros[ic] = D;
     }
 }
 
