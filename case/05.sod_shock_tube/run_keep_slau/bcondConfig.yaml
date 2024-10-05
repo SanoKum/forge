@@ -1,0 +1,35 @@
+bottom:
+  physID: 1
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+upper:
+  physID: 2
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+slip:
+  physID: 3
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+inlet:
+  physID: 4 
+  kind: slip 
+  outputHDFflg: 0
+  ints:
+  floats:
+
+outlet:
+  physID: 5 
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+

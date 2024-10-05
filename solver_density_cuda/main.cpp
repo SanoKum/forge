@@ -44,8 +44,11 @@
 #include "cuda_forge/updateCenterVelocity_d.cuh"
 #include "cuda_forge/interpVelocity_c2p_d.cuh"
 #include "cuda_forge/timeIntegration_d.cuh"
-#include "cuda_forge/calcLimiter_d.cuh"
+#include "cuda_forge/limiter_d.cuh"
 #include "cuda_forge/ducrosSensor_d.cuh"
+#include "cuda_forge/turbulent_viscosity_d.cuh"
+
+#include "cuda_forge/fluct_variables_d.cuh"
 
 #include <cuda_runtime.h>
 
@@ -98,19 +101,24 @@ int main(void) {
     cudaConfig cuda_cfg = cudaConfig(msh);
     msh.setMeshMap_d();
 
-// TODO: cuda>
     msh.setPeriodicPartner(); 
-// TODO: cuda<
 
     var.setStructuralVariables(cfg , cuda_cfg , msh);
 
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns); 
 
-    applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
+
+    // fluctuating velocity inlet
+    fluct_variables fluct = fluct_variables();
+    fluct.allocVariables();
+    fluct.set_fluctVelocity(cfg , cuda_cfg , msh , var );
+
+
+    applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
 
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
 
-    copyBcondsGradient(cfg , cuda_cfg , msh , var, mat_ns);
+    //copyBcondsGradient(cfg , cuda_cfg , msh , var, mat_ns);
 
     updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
 
@@ -122,7 +130,7 @@ int main(void) {
     for (int iStep = 0 ; iStep <cfg.nStep ; iStep++) {
 
         cout << "----------------------------\n";
-        cout << "Step : " << iStep << "\n";
+        cout << "Step : " << iStep << "  Time : " << cfg.totalTime << "\n";
 
         for (int iloop = 0 ; iloop <cfg.nLoop ; iloop++) {
             updateVariablesInner(cfg , cuda_cfg ,msh , var , mat_ns);
@@ -130,13 +138,16 @@ int main(void) {
             cout << "  Inner loop : " << iloop+1 << "\n" ;
             dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
 
-            applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
+            //applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
+            applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
             
             calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
 
-            copyBcondsGradient(cfg , cuda_cfg , msh , var, mat_ns);
+            limiter_d_wrapper(cfg , cuda_cfg , msh , var);
 
             ducrosSensor_d_wrapper(cfg , cuda_cfg , msh , var);
+
+            turbulent_viscosity_d_wrapper(cfg , cuda_cfg , msh , var);
 
             convectiveFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
 
@@ -153,6 +164,8 @@ int main(void) {
         outputBconds_H5_XDMF(cfg , msh, var, iStep+1);
 
         setDT_d_wrapper(cfg , cuda_cfg, msh , var);
+
+        cfg.totalTime += cfg.dt;
     }
 
     clock_t end = clock();

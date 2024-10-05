@@ -10,6 +10,7 @@ __global__ void setCFL_pln_d
  flow_float dt,
  flow_float dt_pseudo,
  flow_float visc,
+ flow_float* vis_turb  ,
 
  // mesh structure
  geom_int nCells,
@@ -76,7 +77,8 @@ __global__ void setCFL_pln_d
                         +(f*Uz0 + (1.0-f)*Uz1)*szz;
 
         flow_float rof = f*ro[ic0] + (1.0-f)*ro[ic1];
-        flow_float lambda = abs(US)/sss + sonic[ic0] + 2.0*visc/(rof*dx_min);
+        flow_float v_turb = f*vis_turb[ic0] + (1.0-f)*vis_turb[ic1];
+        flow_float lambda = abs(US)/sss + sonic[ic0] + 2.0*(visc+v_turb)/(rof*dx_min);
 
         cfl_pln[ip] = dt*lambda/dx_min;
 
@@ -148,6 +150,7 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         cfg.dt,
         cfg.dt_pseudo,
         cfg.visc,
+        var.c_d["vis_turb"] ,
 
         // mesh structure
         msh.nCells,

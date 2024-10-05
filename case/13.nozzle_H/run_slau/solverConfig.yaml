@@ -1,13 +1,15 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "nozzle_H.h5"
-  valueFileName: "input2.h5"
+  #valueFileName: "nozzle_H.h5"
+  valueFileName: "input.h5"
   #meshFileName: "laval_nozzle3.h5"
 
 
 gpu: 1 # 0:off , 1:on
 
-solver: "SLAU" # SLAU, ROE, AUSM+, AUSM+UP
+#solver: "SLAU" # SLAU, ROE, AUSM+, AUSM+UP
+solver: "KEEP_SLAU" # SLAU, ROE, AUSM+, AUSM+UP
 
 physProp:
   isCompressible: 1 # 0:incomp, 1:compressible
@@ -20,14 +22,14 @@ physProp:
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 200000
+    nStep: 800000
     #nStep: 1000
     #nStep: 10
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
     dt: 0.0000000005
-    cfl: 0.5
+    cfl: 0.9
     dt_min: 0.000000001
     dt_max: 1.0 
   outStepInterval: 1000
@@ -38,7 +40,11 @@ time:
     cfl_pseudo: 0.5
 
 space: 
-  convMethod: 0 # 0:1stUp 1:MINMOD
-  limiter: 0 # 0:1stUp 1:MINMOD
+  convMethod: 2 # 0:1stUp 1:MINMOD
+  limiter: 2 # 0:1stUp 1:MINMOD
+
+turbulence:
+  LESorRANS: 1 # 0:no 1:LES 2:RANS
+  LESmodel: 1 # 1:WALE
 
 initial: "laval"

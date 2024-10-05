@@ -1,6 +1,7 @@
 mesh:
   meshFormat: "hdf5" 
   meshFileName: "bump.h5"
+  valueFileName: "bump.h5"
   #meshFormat: "hdf5" 
   #meshFileName: "mach3.h5"
 
@@ -38,5 +39,10 @@ time:
 
 space: 
   convMethod: 2 # 0:1st, 1:MINMOD, 2:TVD_MUSCL
+  limiter: 1 # 0:1st, 1:MINMOD, 2:TVD_MUSCL
+
+turbulence:
+  LESorRANS: 0 # 0:no 1:LES 2:RANS
+  LESmodel: 1 # 1:WALE
 
 initial: "bump"

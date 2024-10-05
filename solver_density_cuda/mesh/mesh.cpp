@@ -65,6 +65,7 @@ void bcond::bcondInitVariables(const int &useGPU)
             }
 
             if (useGPU == 1){
+                cout << "alloc " << bValName << " of " << bcondKind  << " from config\n";
                 gpuErrchk( cudaMalloc(&(this->bvar_d[bValName]) , this->iPlanes.size()*sizeof(flow_float)) );
                 int type = valueTypes[bValName];
 

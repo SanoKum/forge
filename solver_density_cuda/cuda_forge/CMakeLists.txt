@@ -14,10 +14,14 @@ add_library(cuda_forge STATIC
     boundaryCond_d.cuh
     calcGradient_d.cu
     calcGradient_d.cuh
+    limiter_d.cu
+    limiter_d.cuh
     convectiveFlux_d.cu
     convectiveFlux_d.cuh
     ducrosSensor_d.cu
     ducrosSensor_d.cuh
+    turbulent_viscosity_d.cu
+    turbulent_viscosity_d.cuh
  
     #AUSM_d.cu
     #AUSM_d.cuh
@@ -32,6 +36,9 @@ add_library(cuda_forge STATIC
     setDT_d.cuh
     #derived_atomic_functions.cu
     #derived_atomic_functions.cuh
+    fluct_variables_d.cu
+    fluct_variables_d.cuh
+ 
 
 )
 
@@ -39,7 +46,7 @@ add_library(cuda_forge STATIC
 target_include_directories(cuda_forge PRIVATE .. )
 
 set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 86)
-target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86>)
+target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -lineinfo)
 
 #set_target_properties(cuda_forge PROPERTIES CUDA_ARCHITECTURES "86")
 #target_compile_options(cuda_forge PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -dc -w)

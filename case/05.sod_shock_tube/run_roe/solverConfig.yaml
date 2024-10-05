@@ -8,20 +8,25 @@ mesh:
 
 gpu: 1 # 0:off , 1:on
 
-solver: "ROE" # 
+#solver: "AUSM+" # smac , simple , simplec , fractionalStep
+#solver: "AUSM+" # smac , simple , simplec , fractionalStep
+solver: "ROE" # smac , simple , simplec , fractionalStep
+#solver: "SLAU" # smac , simple , simplec , fractionalStep
 
 physProp:
   isCompressible: 1 # 0:incomp, 1:compressible
   ro : 1.4 # [kg/m3] ignored for compressible flow
-  visc : 0.0025 #[Pa*s]
-  thermCond: 0.0241 # [W/(mK)]
+  visc : 0.0000 #[Pa*s]
+  thermCond: 0.0000 # [W/(mK)]
   cp : 1005.0 # [J/(kgK)]
   gamma : 1.4 # [J/(kgK)]
 
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 400 
+    nStep: 1000 
+    #nStep: 1
+    #nStep: 2
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
@@ -29,14 +34,18 @@ time:
     cfl: 0.5
     dt_min: 0.00000001
     dt_max: 1.0 
-  outStepInterval: 1
+  outStepInterval: 10
   timeIntegration: 3   # 1:Euler explicit , 3:3rd Runge Explicit , 10: dualtime+explicit
   implicit:
     nLoop: 20
     cfl_pseudo: 1.0
 
-space: 
-  convMethod: 2 # 0:"1st", 1:"MINMOD" , 2:"TVD_MUSCL" 
-  limiter: 1 # 0:"1st", 1:"MINMOD" , 2:"TVD_MUSCL" 
+space:
+  convMethod: 2 # 0:1st 1:2nd 2:MUSCL
+  limiter: 2 # 1:berth, 2:venkata, 3:nishikawa r1, 4:nishikawa r2, -1:minmod
+
+turbulence:
+  LESorRANS: 0 # 0:no 1:LES 2:RANS
+  LESmodel: 1 # 1:WALE
 
 initial: "sod"

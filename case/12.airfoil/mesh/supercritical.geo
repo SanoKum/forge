@@ -4,17 +4,18 @@ Include "airfoil.geo";
 
 ymax = 10;
 xmax = 15;
-n_inlet = 100;
+n_inlet = 130;
 n_vertical = 90;
 r_vertical = 1/0.92;
-n_airfoil = 50;
-n_wake = 100;
-r_wake = 1/0.96;
+n_airfoil = 80;
+n_wake = 200;
+r_wake1 = 1/0.985;
+r_wake2 = 1.0;
 
 //+
-Point(129) = {-2.0, ymax, 0, 1.0};
+Point(129) = {-3.0, ymax, 0, 1.0};
 //+
-Point(130) = {-2.0, -ymax, 0, 1.0};
+Point(130) = {-3.0, -ymax, 0, 1.0};
 //+
 Point(131) = {2.0, ymax, 0, 1.0};
 //+
@@ -62,9 +63,9 @@ Transfinite Curve {17, 16} = n_airfoil Using Bump 0.1;
 //+
 Transfinite Curve {5, 6} = n_airfoil Using Bump 2;
 //+
-Transfinite Curve {13} = n_wake Using Progression r_wake;
+Transfinite Curve {13} = n_wake Using Progression r_wake1;
 //+
-Transfinite Curve {7, 8} = n_wake Using Progression r_wake;
+Transfinite Curve {7, 8} = n_wake Using Progression r_wake2;
 //+
 Curve Loop(1) = {2, -3, 14, 4};
 //+

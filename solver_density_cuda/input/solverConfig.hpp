@@ -51,8 +51,12 @@ public:
     std::vector<flow_float> coef_DT_4thRunge;
     std::vector<flow_float> coef_Res_4thRunge;
 
-    int convMethod; // 0: 1st Up
+    flow_float  convMethod; 
     int limiter;    // 0: off 1:venkata
+
+
+    int LESorRANS; // 0:no 1:LES 2:RANS
+    int LESmodel; // 1:WALE
 
     int isCompressible;
     flow_float ro;

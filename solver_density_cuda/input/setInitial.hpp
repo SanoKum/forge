@@ -3,6 +3,7 @@
 #include "mesh/mesh.hpp"
 #include "variables.hpp"
 #include "solverConfig.hpp"
+#include "calcWallDistance_kdtree.hpp"
 
 #include <cmath>
 
@@ -11,29 +12,7 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
     // *** set initial value ***
     for (geom_int i = 0 ; i<msh.nCells ; i++)
     {
-//        flow_float x = msh.cells[i].centCoords[0];
-//
-//        flow_float ro = 1.2;
-//        flow_float T  = 270;
-//        flow_float Ux = 80.0;
-//        flow_float Uy = 0.0;
-//        flow_float Uz = 0.0;
-//        flow_float P  = ro*T*(cfg.gamma-1.0)/cfg.gamma*cfg.cp;
-//        flow_float roe  = ro*(0.5*(Ux*Ux+Uy*Uy+Uz*Uz) +cfg.cp/cfg.gamma*T);
-//
-//        v.c["T"][i] = T;
-//        v.c["Ux"][i] = Ux;
-//        v.c["Uy"][i] = Uy;
-//        v.c["Uz"][i] = Uz;
-//        v.c["P"][i] = P;
-//        v.c["ro"][i] = ro;
-//        v.c["roUx"][i] = ro*Ux;
-//        v.c["roUy"][i] = ro*Uy;
-//        v.c["roUz"][i] = ro*Uz;
-//        v.c["roe"][i]  = roe;
-        
         // 1D_shock_tube
-
         if (cfg.initial == "sod") 
         {
             flow_float gam  = 1.4;
@@ -75,6 +54,28 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roe"][i] = prsL/(gam-1.0) + 0.5*roL*velL*velL;
 
         } else if (cfg.initial == "bump") {
+            // bump
+            flow_float gam  = 1.4;
+            flow_float Pt = 100000.0;
+            flow_float Tt = 293.15 ;
+            flow_float M  = 0.675;
+            //flow_float M  = 1.65;
+
+            flow_float Ps = Pt*pow((1.0+0.5*(gam-1.0)*M*M), -gam/(gam-1.0));
+            flow_float Ts = Tt*pow((1.0+0.5*(gam-1.0)*M*M), -1.0);
+            flow_float ro = gam*Ps/(cfg.cp*(gam-1.0)*Ts);
+            flow_float a = sqrt(gam*Ps/ro);
+
+            flow_float x = msh.cells[i].centCoords[0];
+
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = M*a*ro;
+            v.c["roUy"][i] = 0.0*ro;
+            v.c["roUz"][i] = 0.0*ro;
+            v.c["roe"][i] =  pow(1.0+0.5*(gam-1.0)*M*M,-gam/(gam-1.0))*Pt/(gam-1.0) + 0.5*ro*pow((M*a),2.0);
+
+
+        } else if (cfg.initial == "bump_M1.65") {
             // bump
             flow_float gam  = 1.4;
             flow_float Pt = 100000.0;
@@ -168,18 +169,21 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             flow_float R   = cp*(gam-1.0)/gam;
 
             flow_float M = 0.80;
-            flow_float P = 2000000.0;
-            flow_float T = 353.0;
+            flow_float P0 = 59100.0;
+            flow_float T0 = 286.65;
 
-            flow_float ro= P/(R*T);
-            flow_float c = sqrt(gam*R*T);
+            flow_float Ps = P0/(pow(1.0+0.5*(gam-1.0)*M*M, gam/(gam-1.0)));
+            flow_float Ts = T0/(1.0+0.5*(gam-1.0)*M*M);
+
+            flow_float ro= Ps/(R*Ts);
+            flow_float c = sqrt(gam*R*Ts);
             flow_float u = c*M;
 
             v.c["ro"][i]   = ro;
             v.c["roUx"][i] = ro*u;
             v.c["roUy"][i] = 0.0;
             v.c["roUz"][i] = 0.0;
-            v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
+            v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
 
         } else if (cfg.initial == "hifire") {
             flow_float cp  = cfg.cp;
@@ -199,6 +203,28 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roUy"][i] = 0.0;
             v.c["roUz"][i] = 0.0;
             v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
+
+        } else if (cfg.initial == "flare") {
+            flow_float cp  = cfg.cp;
+            flow_float gam = cfg.gamma;
+            flow_float R   = cp*(gam-1.0)/gam;
+
+            flow_float M = 6.0;
+            //flow_float P = 930.9*1000;
+            //flow_float T = 433.0;
+            flow_float T = 52.805;
+
+            flow_float ro= 0.03888;
+            flow_float P= ro*R*T;
+            flow_float c = sqrt(gam*R*T);
+            flow_float u = c*M;
+
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = ro*u;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
+
         } else if (cfg.initial == "poiseuille") {
             flow_float cp  = cfg.cp;
             flow_float gam = cfg.gamma;
@@ -224,8 +250,10 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
         }
     }
 
-    if (cfg.gpu == 1){ // use GPU
-        std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe"};
-        v.copyVariables_cell_H2D(names);
-    }
+    std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe"};
+    v.copyVariables_cell_H2D(names);
+
+    calcWallDistance_kdtree(cfg , msh , v);
 };
+
+

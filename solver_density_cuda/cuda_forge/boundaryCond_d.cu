@@ -25,7 +25,21 @@ void slip_d
  flow_float* Uz  ,
  flow_float* P   ,
  flow_float* Ht  ,
- flow_float* sonic  
+ flow_float* sonic  ,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -53,6 +67,19 @@ void slip_d
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
 
+
+        rob[ib]   = ro[ic];
+        Psb[ib]   = P[ic];
+        Uxb[ib]   = Ux[ic]- Un*sx[ip]/ss[ip];
+        Uyb[ib]   = Uy[ic]- Un*sy[ip]/ss[ip];
+        Uzb[ib]   = Uz[ic]- Un*sz[ip]/ss[ip];
+
+        roUxb[ib] = ro[ic]*(Ux[ic]- Un*sx[ip]/ss[ip]);
+        roUyb[ib] = ro[ic]*(Uy[ic]- Un*sy[ip]/ss[ip]);
+        roUzb[ib] = ro[ic]*(Uz[ic]- Un*sz[ip]/ss[ip]);
+
+        roeb[ib]  = P[ic]/(ga-1.0) + 0.5*ro[ic]*(Ux[ic]*Ux[ic]+Uy[ic]*Uy[ic]+Uz[ic]*Uz[ic]);
+        Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
     }
 };
 
@@ -82,7 +109,21 @@ void slip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         var.c_d["Uz"] ,
         var.c_d["P"], 
         var.c_d["Ht"], 
-        var.c_d["sonic"]
+        var.c_d["sonic"],
+
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
+
     );
 }
 
@@ -113,7 +154,22 @@ void wall_d
  flow_float* Uz  ,
  flow_float* P   ,
  flow_float* Ht  ,
- flow_float* sonic  
+ flow_float* sonic,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
 )
 {
     geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
@@ -123,12 +179,8 @@ void wall_d
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
-        //printf("ib=%d, ic=%d, ig=%d, ip=%d, fx=%f, ro=%f\n", ib, ic, ig, ip, fx[ip], ro[ic]);
 
         ro[ig]   = ro[ic];
-        //Ux[ig]   = -roUx[ic]/ro[ig]*fx[ip]/(1.0-fx[ip]);
-        //Uy[ig]   = -roUy[ic]/ro[ig]*fx[ip]/(1.0-fx[ip]);
-        //Uz[ig]   = -roUz[ic]/ro[ig]*fx[ip]/(1.0-fx[ip]);
         Ux[ig]   = -roUx[ic]/ro[ic];
         Uy[ig]   = -roUy[ic]/ro[ic];
         Uz[ig]   = -roUz[ic]/ro[ic];
@@ -142,6 +194,20 @@ void wall_d
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
 
+        flow_float Ux_b = Uxb[ib];
+        flow_float Uy_b = Uyb[ib];
+        flow_float Uz_b = Uzb[ib];
+        ek = 0.5*(Ux_b*Ux_b +Uy_b*Uy_b +Uz_b*Uz_b);
+
+        roUxb[ib] = rob[ib]*Ux_b;
+        roUyb[ib] = rob[ib]*Uy_b;
+        roUzb[ib] = rob[ib]*Uz_b;
+        Psb[ib]   = P[ic];
+        flow_float R = (ga-1.0)/ga*cp;
+        flow_float Tc = P[ic]/(ro[ic]*R);
+        Tsb[ib]   = Tc;
+        rob[ib]   = Psb[ib]/(R*Tc);
+        roeb[ib]  = Psb[ib]/(ga-1.0) + rob[ib]*ek;
     }
 };
 
@@ -172,10 +238,173 @@ void wall_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         var.c_d["Uz"] ,
         var.c_d["P"], 
         var.c_d["Ht"], 
-        var.c_d["sonic"]
+        var.c_d["sonic"],
+
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
 
     ) ;
 }
+
+
+__global__ 
+void wall_isothermal_d 
+( 
+
+ // gas properties
+ flow_float ga,
+ flow_float cp,
+
+ // mesh structure
+ geom_int nb,
+ geom_int* bplane_plane,  
+ geom_int* bplane_cell,  
+ geom_int* bplane_cell_ghst,  
+ geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+ geom_float* fx  , 
+
+ // variables
+ flow_float* ro   ,
+ flow_float* roUx ,
+ flow_float* roUy ,
+ flow_float* roUz ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* P   ,
+ flow_float* Ht  ,
+ flow_float* sonic,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+)
+{
+    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ib < nb) {
+        geom_int  ip = bplane_plane[ib];
+        geom_int  ic = bplane_cell[ib];
+        geom_int  ig = bplane_cell_ghst[ib];
+
+        flow_float cv = cp/ga;
+        flow_float R = cp-cv;
+        flow_float inE = cv*Tsb[ib];
+
+        Psb[ib] = P[ic];
+        rob[ib] = Psb[ib]/(R*Tsb[ib]);
+
+        ro[ig]   = rob[ib];
+        Ux[ig]   = -roUx[ic]/ro[ic];
+        Uy[ig]   = -roUy[ic]/ro[ic];
+        Uz[ig]   = -roUz[ic]/ro[ic];
+        roUx[ig] = -rob[ib]*Ux[ig];
+        roUy[ig] = -rob[ib]*Uy[ig];
+        roUz[ig] = -rob[ib]*Uz[ig];
+        roe[ig]  = roe[ic];
+//
+//        flow_float ek = 0.5*(Ux[ig]*Ux[ig] +Uy[ig]*Uy[ig] +Uz[ig]*Uz[ig]);
+//        P[ig] =(ga-1.0)*(roe[ig]-ro[ig]*ek);
+//        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
+//        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+//
+//        rob[ib]   = ro[ic];
+//        //Uxb[ib]   = roUx[ic]/ro[ic];
+//        //Uyb[ib]   = roUy[ic]/ro[ic];
+//        //Uzb[ib]   = roUz[ic]/ro[ic];
+//        Uxb[ib]   = 0.0;
+//        Uyb[ib]   = 0.0;
+//        Uzb[ib]   = 0.0;
+//        roUxb[ib] = 0.0;
+//        roUyb[ib] = 0.0;
+//        roUzb[ib] = 0.0;
+//        roeb[ib]  = roe[ic];
+//
+//        //flow_float ek = 0.5*(Uxb[ib]*Uxb[ib] +Uyb[ib]*Uyb[ib] +Uzb[ib]*Uzb[ib]);
+//        Psb[ib] =(ga-1.0)*(roeb[ib]-rob[ib]*ek);
+//        //Tsb[ib] =Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+//
+        flow_float Ux_b = Uxb[ib];
+        flow_float Uy_b = Uyb[ib];
+        flow_float Uz_b = Uzb[ib];
+        flow_float ek = 0.5*(Ux_b*Ux_b +Uy_b*Uy_b +Uz_b*Uz_b);
+
+        roUxb[ib] = rob[ib]*Ux_b;
+        roUyb[ib] = rob[ib]*Uy_b;
+        roUzb[ib] = rob[ib]*Uz_b;
+        Psb[ib]   = P[ic];
+        rob[ib]   = Psb[ib]/(R*Tsb[ib]);
+        roeb[ib]  = Psb[ib]/(ga-1.0) + rob[ib]*ek;
+    }
+};
+
+void wall_isothermal_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
+{
+    wall_isothermal_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
+        cfg.gamma,
+        cfg.cp,
+
+        bc.iPlanes.size(),
+        bc.map_bplane_plane_d,  
+        bc.map_bplane_cell_d,  
+        bc.map_bplane_cell_ghst_d,
+
+        var.p_d["sx"],  
+        var.p_d["sy"],  
+        var.p_d["sz"],  
+        var.p_d["ss"],  
+        var.p_d["fx"],  
+
+        var.c_d["ro"] ,
+        var.c_d["roUx"] ,
+        var.c_d["roUy"] ,
+        var.c_d["roUz"] ,
+        var.c_d["roe"] ,
+        var.c_d["Ux"] ,
+        var.c_d["Uy"] ,
+        var.c_d["Uz"] ,
+        var.c_d["P"], 
+        var.c_d["Ht"], 
+        var.c_d["sonic"],
+
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
+
+    ) ;
+}
+
 
 
 __global__ 
@@ -206,9 +435,20 @@ void outlet_statPress_d
  flow_float* sonic ,
 
  // bvar
- flow_float* Psb ,
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
  flow_float* Ptb ,
- flow_float* Ttb 
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -266,6 +506,17 @@ void outlet_statPress_d
         roe[ig]   = roec;
         Ht[ig]    = roe[ig]/ronew + Pnew/ronew;
         sonic[ig] = sqrt(ga*Pnew/ronew);
+
+        rob[ib]    = ronew;
+        //Psb[ib]    = Pnew;
+        Uxb[ib]    = Uxnew*Umag_new/Umagc;
+        Uyb[ib]    = Uynew*Umag_new/Umagc;
+        Uzb[ib]    = Uznew*Umag_new/Umagc;
+        roUxb[ib]  = ronew*Uxnew*Umag_new/Umagc;
+        roUyb[ib]  = ronew*Uynew*Umag_new/Umagc;
+        roUzb[ib]  = ronew*Uznew*Umag_new/Umagc;
+        roeb[ib]   = roec;
+        Tsb[ib]    = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
     }
 };
 
@@ -297,9 +548,19 @@ void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond
         var.c_d["Ht"], 
         var.c_d["sonic"],
 
-        bc.bvar_d["Ps"],
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
         bc.bvar_d["Pt"],
-        bc.bvar_d["Tt"]
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
+
     ) ;
 }
 
@@ -330,11 +591,20 @@ void inlet_uniformVelocity_d
  flow_float* sonic,
 
  // bvar
- flow_float* rob ,  
- flow_float* Uxb ,  
- flow_float* Uyb ,  
- flow_float* Uzb , 
- flow_float* Psb  
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
+
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -355,6 +625,18 @@ void inlet_uniformVelocity_d
         Uz[ig]    = Uzb[ib];
         Ht[ig]    = roe[ig]/rob[ib] + Psb[ib]/rob[ib];
         sonic[ig] = sqrt(ga*Psb[ib]/rob[ib]);
+
+        //rob[ib]    = rob[ib];
+        roUxb[ib]  = rob[ib]*Uxb[ib];
+        roUyb[ib]  = rob[ib]*Uyb[ib];
+        roUzb[ib]  = rob[ib]*Uzb[ib];
+        roeb[ib]   = Psb[ib]/(ga-1.0) + 0.5*rob[ib]*(Uxb[ib]*Uxb[ib] +Uyb[ib]*Uyb[ib] +Uzb[ib]*Uzb[ib]);
+        //Psb[ib]    = Psb[ib];
+        Tsb[ib]    = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+        //Uxb[ib]    = Uxb[ib];
+        //Uyb[ib]    = Uyb[ib];
+        //Uzb[ib]    = Uzb[ib];
+ 
     }
 };
 
@@ -384,9 +666,16 @@ void inlet_uniformVelocity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["sonic"]  , 
 
         bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
         bc.bvar_d["Ux"],
         bc.bvar_d["Uy"],
         bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
         bc.bvar_d["Ps"]
     ) ;
 }
@@ -420,8 +709,18 @@ void inlet_Pressure_d
  flow_float* T   ,
 
  // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
  flow_float* Ptb ,
- flow_float* Ttb 
+ flow_float* Tsb ,
+ flow_float* Psb 
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -497,9 +796,9 @@ void inlet_Pressure_d
             //Uy_new = -mach_new*sonic_new*syy/sss;
             //Uz_new = -mach_new*sonic_new*szz/sss;
 
-            Ux_new = -Ux_c*sxx/sss;
-            Uy_new = -Uy_c*syy/sss;
-            Uz_new = -Uz_c*szz/sss;
+            Ux_new = Un_c*sxx/sss;
+            Uy_new = Un_c*syy/sss;
+            Uz_new = Un_c*szz/sss;
 
             Ps_new = Pt_b/pow(1.0+0.5*(ga-1.0)*mach_c*mach_c, ga/(ga-1.0));
             Ts_new = Tt_b/(1.0+0.5*(ga-1.0)*mach_c*mach_c);
@@ -513,12 +812,12 @@ void inlet_Pressure_d
 
 
         } else { // reverse
-            Ux_new = +Ux_c*sxx/sss;
-            Uy_new = +Uy_c*syy/sss;
-            Uz_new = +Uz_c*szz/sss;
+            Ux_new = Un_c*sxx/sss;
+            Uy_new = Un_c*syy/sss;
+            Uz_new = Un_c*szz/sss;
 
-            Ps_new = Pt_b;
-            Ts_new = Tt_b;
+            Ps_new = Pt_b/(pow(1.0+0.5*(ga-1.0)*mach_c*mach_c, ga/(ga-1.0)));
+            Ts_new = Tt_b/(1.0+0.5*(ga-1.0)*mach_c*mach_c);
             sonic_new = sqrt((ga-1.0)*cp*Ts_new);
             ro_new = ga*Ps_new/((ga-1.0)*cp*Ts_new);
         }
@@ -534,6 +833,22 @@ void inlet_Pressure_d
         P[ig]     = Ps_new;
         Ht[ig]    = roe[ig]/ro_new + Ps_new/ro_new;
         sonic[ig] = sqrt(ga*Ps_new/ro_new);
+
+        rob[ib]    = ro_new;
+        Uxb[ib]    = Ux_new;
+        Uyb[ib]    = Uy_new;
+        Uzb[ib]    = Uz_new;
+        roUxb[ib]  = ro_new*Ux_new;
+        roUyb[ib]  = ro_new*Uy_new;
+        roUzb[ib]  = ro_new*Uz_new;
+        flow_float ek = 0.5*(Ux_new*Ux_new +Uy_new*Uy_new +Uz_new*Uz_new);
+        roeb[ib]   = Ps_new/(ga-1.0) + ro_new*ek;
+        Psb[ib]    = Ps_new;
+        Tsb[ib]    = Ts_new;
+
+        //Htb[ib]    = roeb[ib]/ro_new + Ps_new/ro_new;
+        //sonicb[ib] = sqrt(ga*Ps_new/ro_new);
+ 
     }
 };
 
@@ -563,8 +878,18 @@ void inlet_Pressure_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& 
         var.c_d["sonic"]  , 
         var.c_d["T"]  , 
 
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
         bc.bvar_d["Pt"],
-        bc.bvar_d["Tt"]
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
     ) ;
 }
 
@@ -596,11 +921,19 @@ void inlet_Pressure_dir_d
  flow_float* T   ,
 
  // bvar
- flow_float* Ptb ,
- flow_float* Ttb ,
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
  flow_float* Uxb ,
  flow_float* Uyb ,
- flow_float* Uzb 
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -675,6 +1008,17 @@ void inlet_Pressure_dir_d
         P[ig]     = Ps_new;
         Ht[ig]    = roe[ig]/ro_new + Ps_new/ro_new;
         sonic[ig] = sqrt(ga*Ps_new/ro_new);
+
+        rob[ib]    = ro_new;
+        Uxb[ib]    = Ux_new;
+        Uyb[ib]    = Uy_new;
+        Uzb[ib]    = Uz_new;
+        roUxb[ib]  = ro_new*Ux_new;
+        roUyb[ib]  = ro_new*Uy_new;
+        roUzb[ib]  = ro_new*Uz_new;
+        roeb[ib]   = Ps_new/(ga-1.0) + 0.5*ro_new*(Ux_new*Ux_new +Uy_new*Uy_new +Uz_new*Uz_new);
+        Psb[ib]    = Ps_new;
+        Tsb[ib]    = Ps_new*ga/(ro_new*(ga-1.0)*cp);
     }
 };
 
@@ -704,14 +1048,21 @@ void inlet_Pressure_dir_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bco
         var.c_d["sonic"]  , 
         var.c_d["T"]  , 
 
-        bc.bvar_d["Pt"],
-        bc.bvar_d["Tt"],
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
         bc.bvar_d["Ux"],
         bc.bvar_d["Uy"],
-        bc.bvar_d["Uz"]
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
+
     ) ;
 }
-
 
 
 __global__ 
@@ -742,9 +1093,18 @@ void outflow_d
  flow_float* sonic, 
 
  // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
  flow_float* Ptb ,
- flow_float* Ttb 
-
+ flow_float* Tsb ,
+ flow_float* Psb 
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -799,6 +1159,17 @@ void outflow_d
 
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+
+        rob[ib]   = ro[ic];
+        Psb[ib]   = P[ic];
+        Uxb[ib]   = Ux[ic];
+        Uyb[ib]   = Uy[ic];
+        Uzb[ib]   = Uz[ic];
+        roUxb[ib] = roUx[ic];
+        roUyb[ib] = roUy[ic];
+        roUzb[ib] = roUz[ic];
+        roeb[ib]  = roe[ic];
+        Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
     }
 };
 
@@ -830,9 +1201,18 @@ void outflow_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , me
         var.c_d["Ht"], 
         var.c_d["sonic"],
 
-        bc.bvar_d["Pt"], 
-        bc.bvar_d["Tt"]
-
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
     );
 }
 

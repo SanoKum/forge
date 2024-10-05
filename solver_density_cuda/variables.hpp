@@ -24,6 +24,7 @@ public:
     std::map<std::string, flow_float*> c_d; // device cell variables
     std::map<std::string, flow_float*> p_d; // device plane variables
 
+
     const std::list<std::string> cellValNames = 
     {
         "Ux"   , "Uy"    , "Uz"    , "T"      , "P" , "deltaP" ,
@@ -37,11 +38,31 @@ public:
         "dUzdx", "dUzdy" , "dUzdz",
         "dPdx" , "dPdy"  , "dPdz",
         "drodx", "drody" , "drodz",
-        "dHtdx", "dHtdy" , "dHtdz",
+
+        //"droUxdx" , "droUxdy" , "droUxdz" , 
+        //"droUydx" , "droUydy" , "droUydz" , 
+        //"droUzdx" , "droUzdy" , "droUzdz" ,
+        //"droedx"  , "droedy"  , "droedz" ,
+
+        //"dHtdx"  , "dHtdy"  , "dHtdz" ,
         "divU*vol" , "divU" , "divU_star",
 
         "ducros" , 
-        "limiter" , 
+
+        "limiter_Ux" , 
+        "limiter_Uy" , 
+        "limiter_Uz" , 
+        "limiter_ro" , 
+        "limiter_P" , 
+        //"limiter_Ht" , 
+        "limiter_T" , 
+        //"limiter_roUx" , 
+        //"limiter_roUy" , 
+        //"limiter_roUz" , 
+        //"limiter_roe" , 
+
+        "vis_lam" , 
+        "vis_turb" , "wall_dist" , 
 
         "cfl"   , "cfl_pseudo",
         "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe",
@@ -77,14 +98,28 @@ public:
         "dUzdx" , "dUzdy" , "dUzdz" ,
         "drodx" , "drody" , "drodz" ,
         "dPdx"  , "dPdy"  , "dPdz" ,
-        "dHtdx" , "dHtdy" , "dHtdz" ,
-        "ducros" , "limiter"
+
+        //"droUxdx" , "droUxdy" , "droUxdz" , 
+        //"droUydx" , "droUydy" , "droUydz" , 
+        //"droUzdx" , "droUzdy" , "droUzdz" ,
+        //"droedx"  , "droedy"  , "droedz" ,
+
+        "ducros",
+
+        "limiter_ro" , 
+        "limiter_Ux" , 
+        "limiter_Uy" , 
+        "limiter_Uz" , 
+        "limiter_P" , 
+        //"limiter_Ht" , 
+
+        "vis_turb" , "wall_dist"  
     };
 
     //not yet implemented
     const std::list<std::string> read_cellValNames = 
     {
-        "ro"  , "roUx"  , "roUy"  , "roUz"  , "roe" 
+        "ro"  , "roUx"  , "roUy"  , "roUz"  , "roe" , "wall_dist"
     };
 
     variables();
@@ -93,6 +128,7 @@ public:
     ~variables();
 
     void allocVariables(const int &useGPU , mesh& msh);
+
 
     void copyVariables_cell_plane_H2D_all();
     void copyVariables_cell_H2D (std::list<std::string>);

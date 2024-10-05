@@ -48,6 +48,8 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
     }
 }
 
+
+
 void variables::copyVariables_cell_plane_H2D_all()
 {
     for (auto& name : this->cellValNames)
@@ -220,7 +222,7 @@ void variables::setStructuralVariables_d(cudaConfig& cuda_cfg , mesh& msh )
         volume[ic] = msh.cells[ic].volume;
     }
 
-    gpuErrchk(cudaMemcpy(this->p_d["sx"] , sx , msh.nPlanes*sizeof(geom_float) , cudaMemcpyHostToDevice));
+    cudaMemcpy(this->p_d["sx"] , sx , msh.nPlanes*sizeof(geom_float) , cudaMemcpyHostToDevice);
     cudaMemcpy(this->p_d["sy"] , sy , msh.nPlanes*sizeof(geom_float) , cudaMemcpyHostToDevice);
     cudaMemcpy(this->p_d["sz"] , sz , msh.nPlanes*sizeof(geom_float) , cudaMemcpyHostToDevice);
     cudaMemcpy(this->p_d["ss"] , ss , msh.nPlanes*sizeof(geom_float) , cudaMemcpyHostToDevice);
@@ -255,12 +257,15 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
     file.getDataSet("/VALUE/ro").read(ro);
     std::vector<geom_float> roUx;
     file.getDataSet("/VALUE/roUx").read(roUx);
-     std::vector<geom_float> roUy;
+    std::vector<geom_float> roUy;
     file.getDataSet("/VALUE/roUy").read(roUy);
-      std::vector<geom_float> roUz;
+    std::vector<geom_float> roUz;
     file.getDataSet("/VALUE/roUz").read(roUz);
-     std::vector<geom_float> roe;
+    std::vector<geom_float> roe;
     file.getDataSet("/VALUE/roe").read(roe);
+    std::vector<geom_float> wall_dist;
+    file.getDataSet("/VALUE/wall_dist").read(wall_dist);
+ 
    
     for (geom_int i=0; i<msh.nCells; i++)
     {
@@ -269,8 +274,9 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
         this->c["roUy"][i] = roUy[i];
         this->c["roUz"][i] = roUz[i];
         this->c["roe"][i] = roe[i];
+        this->c["wall_dist"][i] = wall_dist[i];
     }
 
-    std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe"};
+    std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "wall_dist"};
     this->copyVariables_cell_H2D(names);
 }

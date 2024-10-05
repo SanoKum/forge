@@ -1,0 +1,25 @@
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  ints:
+  floats:
+    Pt: 2000000.0
+    Tt: 353.0
+
+outlet:
+  physID: 2
+  #kind: outlet_statPress
+  kind: outflow
+  ints:
+  floats:
+    Ps: 600000.0
+    Pt: 600000.0 # backflow
+    Tt: 353.0    # backflow
+
+wall:
+  physID: 3
+  kind: wall
+  ints:
+  floats:
+
+

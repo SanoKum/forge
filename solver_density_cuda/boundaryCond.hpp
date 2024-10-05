@@ -13,11 +13,16 @@
 
 #include "yaml-cpp/yaml.h"
 
+#include "cuda_forge/fluct_variables_d.cuh"
+
+
 using namespace std;
 
 struct bcondConfFormat{
     int physID;
+    std::string physName;
     std::string kind;
+    int outputHDFflg;
     std::map<std::string, int> inputInts ;
     std::map<std::string, flow_float> inputFloats;
     std::map<std::string, int> neuDirFlag ;
@@ -58,6 +63,10 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,1},
               {"Ps"  ,0},
+              {"ypls",0},
+              {"twall_x",0},
+              {"twall_y",0},
+              {"twall_z",0},
 
           }},
 
@@ -76,6 +85,26 @@ struct bcondConfFormat{
               {"Ps"  ,1},
 
           }},
+
+          {"inlet_fluctVelocity", { 
+              {"ro"  ,1},
+              {"roUx",0},
+              {"roUy",0},
+              {"roUz",0},
+              {"roe" ,0},
+              {"Ux"  ,0},
+              {"Uy"  ,0},
+              {"Uz"  ,0},
+              {"Ux0" ,1},
+              {"Uy0" ,1},
+              {"Uz0" ,1},
+              {"Tt"  ,0},
+              {"Pt"  ,0},
+              {"Ts"  ,0},
+              {"Ps"  ,1},
+
+          }},
+
 
           {"inlet_Pressure", { 
               {"ro"  ,0},
@@ -122,7 +151,7 @@ struct bcondConfFormat{
               {"Ps"  ,1},
           }},
 
-          {"ouflow", { 
+          {"outflow", { 
               {"ro"  ,0},
               {"roUx",0},
               {"roUy",0},
@@ -176,7 +205,7 @@ struct bcondConfFormat{
 };
 
 //void setBcondsValue(solverConfig& cfg , mesh& msh , variables& var , matrix& mat_p);
-void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p);
+void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p , fluct_variables& fluct);
 
 void copyBcondsGradient(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p);
 

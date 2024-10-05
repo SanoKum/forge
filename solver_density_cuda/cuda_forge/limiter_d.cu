@@ -1,8 +1,71 @@
-#include "calcGradient_d.cuh"
+#include "limiter_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
 
-__global__ void limiter_d
+// Limiters for Unstructured Higher-Order Accurate Solutions of the Euler Equations
+// Krzysztof Michalak
+
+__device__ flow_float venkata_limiter(flow_float delta_p_max, flow_float delta_p_min, 
+                                      flow_float delta_m, flow_float volume) {
+
+    flow_float K = 1.;
+    flow_float eps2 = K*K*K*volume;
+    //return (x*x + 2.0*x + eps*eps)/(x*x + x + 2.0 + eps*eps);
+    flow_float res;
+
+    if (delta_m > 1e-20) {
+        flow_float delta_p = delta_p_max;
+        res = (((delta_p*delta_p+eps2)*delta_m +2*delta_m*delta_m*delta_p)
+              /(delta_p*delta_p +2.0*delta_m*delta_m +delta_p*delta_m +eps2))/delta_m;
+    } else if (delta_m < -1e-20) {
+        flow_float delta_p = delta_p_min;
+        res = (((delta_p*delta_p+eps2)*delta_m +2*delta_m*delta_m*delta_p)
+              /(delta_p*delta_p +2.0*delta_m*delta_m +delta_p*delta_m +eps2))/delta_m;
+    } else {
+        res = 1.0;
+    }
+
+    return res;
+}
+
+__device__ flow_float barth_Jespersen_limiter(flow_float delta_p_max, flow_float delta_p_min, 
+                                              flow_float delta_m, flow_float volume) {
+
+    flow_float res;
+
+    if (delta_m > 1e-20) {
+        res = min(1.0, delta_p_max/delta_m);
+    } else if (delta_m < -1e-20) {
+        res = min(1.0, delta_p_min/delta_m);
+    } else {
+        res = 1.0;
+    }
+
+    return min(res, 1.0);
+}
+
+
+//__device__ flow_float nishikawa_r1_limiter(deltas delta_dash) {
+//    flow_float res;
+//    flow_float del = delta_dash.del;
+//    flow_float rik = delta_dash.rik;
+//
+//    if (del < 0.0) {
+//        res = 0.0;
+//    } else if (del >= 0.0 && del < 1.0/rik) {
+//        res = rik*del*(1.0+0.5*(1.0-rik)*del);
+//    } else if (del < 1.0 && del >= 1.0/rik) {
+//        res = 1.0 + rik*0.5/(1.0-rik)*(1.0-del)*(1.0-del);
+//    } else if (del >= 1.0) {
+//        res = 1.0;
+//    }
+//
+//    return res;
+//}
+
+// Modified multi-dimensional limiting process with enhanced shock stability on unstructured grids
+__global__ void limiter_r1_d
 ( 
+ int limiter_scheme,
  // mesh structure
  geom_int nCells,
  geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells, 
@@ -12,27 +75,14 @@ __global__ void limiter_d
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
 
  // variables
- flow_float* ro  ,
- flow_float* Ux  ,
- flow_float* Uy  ,
- flow_float* Uz  ,
- flow_float* P   ,
- flow_float* T   ,
- flow_float* Ht  ,
- flow_float* limiter  ,
+ flow_float* Q  ,
 
- flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
- flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
- flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
- flow_float* drodx  , flow_float* drody , flow_float* drodz,
- flow_float* dPdx   , flow_float* dPdy  , flow_float* dPdz,
- flow_float* dTdx   , flow_float* dTdy  , flow_float* dTdz,
- flow_float* dHtdx  , flow_float* dHtdy , flow_float* dHtdz
- ) 
- {
+ flow_float* limiter_Q  ,
+
+ flow_float* dQdx  , flow_float* dQdy , flow_float* dQdz
+) 
+{
     geom_int ic0 = blockDim.x*blockIdx.x + threadIdx.x;
-
-    __syncthreads();
 
     if (ic0 < nCells) {
         geom_int ip; 
@@ -41,39 +91,41 @@ __global__ void limiter_d
         geom_float dcp_y; 
         geom_float dcp_z; 
 
+        geom_float dcp2_x; 
+        geom_float dcp2_y; 
+        geom_float dcp2_z; 
+
         geom_int index_st = cell_planes_index[ic0];
         geom_int index_en = cell_planes_index[ic0+1];
         geom_int np = index_en - index_st;
 
-        //flow_float dUx_max=-1e+30;
-        //flow_float dUx_min=1e+30;
-        //flow_float dUy_max=-1e+30;
-        //flow_float dUy_min=1e+30;
-        //flow_float dUz_max=-1e+30;
-        //flow_float dUz_min=1e+30;
-        flow_float dro_max=-1e+30;
-        flow_float dro_min=1e+30;
-        //flow_float dP_max =-1e+30;
-        //flow_float dP_min =1e+30;
-        //flow_float dT_max =-1e+30;
-        //flow_float dT_min =1e+30;
-        //flow_float dHt_max=-1e+30;
-        //flow_float dHt_min=1e+30;
+        flow_float Q_max =Q[ic0];
+        flow_float Q_min =Q[ic0];
 
         flow_float denomi;
 
-        //flow_float limiter_Ux ;
-        //flow_float limiter_Uy ;
-        //flow_float limiter_Uz ;
-        flow_float limiter_ro ;
-        //flow_float limiter_P  ;
-        //flow_float limiter_T  ;
-        //flow_float limiter_Ht ;
-        flow_float delta;
-        flow_float deltap;
-        flow_float deltam;
+        flow_float limiter_Q_temp  = 1.0;
+        flow_float limiter_Q_temp2 = 1.0;
+
+        deltas delta;
+        deltas delta_dash;
         flow_float volume = vol[ic0];
 
+        int int_one=1;
+        int int_two=2;
+        int int_three=3;
+
+        flow_float (*limiter_function)(flow_float, flow_float, flow_float, flow_float);
+
+        if (limiter_scheme == int_one) { //barth
+            limiter_function = barth_Jespersen_limiter;
+        } else if (limiter_scheme == int_two or limiter_scheme == -1) { //venkata
+            limiter_function = venkata_limiter;
+        //} else if (limiter_scheme == int_three or limiter_scheme == -1) { //
+        //    limiter_function = nishikawa_r1_limiter;
+        } else {
+            printf("Error: something wrong");
+        }
 
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             ip  = cell_planes[ilp];
@@ -82,225 +134,170 @@ __global__ void limiter_d
 
             ic1 = plane_cells[2*ip+0] + plane_cells[2*ip+1] -ic0;
 
-            //dUx_max = max(dUx_max, Ux[ic1]-Ux[ic0]);
-            //dUy_max = max(dUy_max, Uy[ic1]-Uy[ic0]);
-            //dUz_max = max(dUz_max, Uz[ic1]-Uz[ic0]);
-            dro_max = max(dro_max, ro[ic1]-ro[ic0]);
-            //dP_max  = max(dP_max , P[ic1] -P[ic0]);
-            //dT_max  = max(dT_max , T[ic1] -T[ic0]);
-            //dHt_max = max(dHt_max, Ht[ic1]-Ht[ic0]);
-
-            //dUx_min = min(dUx_min, Ux[ic1]-Ux[ic0]);
-            //dUy_min = min(dUy_min, Uy[ic1]-Uy[ic0]);
-            //dUz_min = min(dUz_min, Uz[ic1]-Uz[ic0]);
-            dro_min = min(dro_min, ro[ic1]-ro[ic0]);
-            //dP_min  = min(dP_min , P[ic1] -P[ic0]);
-            //dT_min  = min(dT_min , T[ic1] -T[ic0]);
-            //dHt_min = min(dHt_min, Ht[ic1]-Ht[ic0]);
+            Q_max = max(Q_max, Q[ic1]);
+            Q_min = min(Q_min, Q[ic1]);
         }
-
-        //dUx_max = max(dUx_max, 0.0 );
-        //dUy_max = max(dUy_max, 0.0 );
-        //dUz_max = max(dUz_max, 0.0 );
-        dro_max = max(dro_max, 0.0 );
-        //dP_max  = max(dP_max , 0.0 );
-        //dT_max  = max(dT_max , 0.0 );
-        //dHt_max = max(dHt_max, 0.0 );
-
-        //dUx_min = min(dUx_min, 0.0 );
-        //dUy_min = min(dUy_min, 0.0 );
-        //dUz_min = min(dUz_min, 0.0 );
-        dro_min = min(dro_min, 0.0 );
-        //dP_min  = min(dP_min , 0.0 );
-        //dT_min  = min(dT_min , 0.0 );
-        //dHt_min = min(dHt_min, 0.0 );
-
-
-        //limiter_Ux = 1e+30;
-        //limiter_Uy = 1e+30;
-        //limiter_Uz = 1e+30;
-        limiter_ro = 1e+30;
-        //limiter_P  = 1e+30;
-        //limiter_T  = 1e+30;
-        //limiter_Ht = 1e+30;
 
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             ip  = cell_planes[ilp];
 
             if (ip >= nNormalPlanes) continue;
 
+            ic1 = plane_cells[2*ip+0] + plane_cells[2*ip+1] -ic0;
+
             dcp_x = pcx[ip] - ccx[ic0];
             dcp_y = pcy[ip] - ccy[ic0];
             dcp_z = pcz[ip] - ccz[ic0];
 
-            //delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //                    dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dUx_max , dUx_min);
-            //limiter_Ux = min(limiter_Ux, venkata_limiter(delta, volume  ));
-            
-            //delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //                    dUydx[ic0], dUydy[ic0], dUydz[ic0], dUy_max , dUy_min);
-            //limiter_Uy = min(limiter_Uy, venkata_limiter(delta, volume  ));
+            dcp2_x = pcx[ip] - ccx[ic1];
+            dcp2_y = pcy[ip] - ccy[ic1];
+            dcp2_z = pcz[ip] - ccz[ic1];
+
+            flow_float ri = sqrt(dcp_x*dcp_x + dcp_y*dcp_y + dcp_z*dcp_z);
+            flow_float rk = sqrt(dcp2_x*dcp2_x + dcp2_y*dcp2_y + dcp2_z*dcp2_z);
+            flow_float rik = (ri + rk)/ri;
  
-            //delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //                    dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dUz_max , dUz_min);
-            //limiter_Uz = min(limiter_Uz, venkata_limiter(delta, volume  ));
- 
-            //calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //            drodx[ic0], drody[ic0], drodz[ic0], dro_max , dro_min,
-            //            &delta, &deltap, &deltam);
 
-            flow_float denomi = drodx[ic0]*dcp_x + drody[ic0]*dcp_y + drodz[ic0]*dcp_z;
+            flow_float delta_p_max;
+            flow_float delta_p_min;
+            flow_float delta_m;
 
-            if (denomi > 1e-12) {
-                delta = dro_max/denomi;
-            } else if (denomi < -1e-12) {
-                delta = dro_min/denomi;
-            } else {
-                delta = 1.0;
-            }
+            flow_float Qt = Q[ic0] + dQdx[ic0]*dcp_x + dQdy[ic0]*dcp_y + dQdz[ic0]*dcp_z;
 
-            //barth&Jespersen
-            limiter_ro = min(limiter_ro, min(1.0,delta));
+            delta_p_max = Q_max - Q[ic0];
+            delta_p_min = Q_min - Q[ic0];
+            delta_m     = Qt    - Q[ic0];
 
-            //venkata
-            //deltap = dro_max;
-            //deltam = dro_min;
+            limiter_Q_temp = limiter_function(delta_p_max, delta_p_min, delta_m, volume);
 
-            //limiter_ro = min(limiter_ro, venkata_limiter(deltap, deltam, volume));
-
-            //printf("ip=%d, ic0=%d\n", ip, ic0);
-            //printf("dx=%e, dy=%e, ez=%e\n", dcp_x, dcp_y, dcp_z);
-            //printf("drodx=%e, drody=%e, drodz=%e\n", drodx[ic0], drodx[ic0], drodx[ic0]);
-            //printf("delta=%e, deltap=%e, deltam=%e\n", delta, deltap, deltam);
-            //printf("limiter_ro=%e\n", limiter_ro);
-
- 
-            //delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //                    dPdx[ic0], dPdy[ic0], dPdz[ic0], dP_max , dP_min);
-            //limiter_P = min(limiter_P, venkata_limiter(delta, volume  ));
- 
-            //delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //                    dTdx[ic0], dTdy[ic0], dTdz[ic0], dT_max , dT_min);
-            //limiter_T = min(limiter_T, venkata_limiter(delta, volume  ));
-  
-            //delta = calcDeltaIJ(dcp_x, dcp_y, dcp_z, 
-            //                    dHtdx[ic0], dHtdy[ic0], dHtdz[ic0], dHt_max , dHt_min);
-            //limiter_Ht = min(limiter_Ht, venkata_limiter(delta, volume  ));
+            limiter_Q_temp2 = min(limiter_Q_temp2, limiter_Q_temp);
         }
 
-        limiter[ic0] = limiter_ro;
-        
-        //printf("limiter=%e\n", limiter_ro);
+        limiter_Q[ic0] = min(max(limiter_Q_temp2, 0.0),1.0);
 
-        //dUxdx[ic0] *= limiter_Ux;
-        //dUxdy[ic0] *= limiter_Ux;
-        //dUxdz[ic0] *= limiter_Ux;
-
-        //dUydx[ic0] *= limiter_Uy;
-        //dUydy[ic0] *= limiter_Uy;
-        //dUydz[ic0] *= limiter_Uy;
-
-        //dUzdx[ic0] *= limiter_Uz;
-        //dUzdy[ic0] *= limiter_Uz;
-        //dUzdz[ic0] *= limiter_Uz;
-
-        //drodx[ic0] *= limiter_ro;
-        //drody[ic0] *= limiter_ro;
-        //drodz[ic0] *= limiter_ro;
-
-        //dPdx[ic0] *= limiter_P;
-        //dPdy[ic0] *= limiter_P;
-        //dPdz[ic0] *= limiter_P;
-
-        //dTdx[ic0] *= limiter_T;
-        //dTdy[ic0] *= limiter_T;
-        //dTdz[ic0] *= limiter_T;
-
-        //dHtdx[ic0] *= limiter_Ht;
-        //dHtdy[ic0] *= limiter_Ht;
-        //dHtdz[ic0] *= limiter_Ht;
+            //ic1 = plane_cells[2*ip+0] + plane_cells[2*ip+1] -ic0;
+        //limiter_Q[ic1] = dQdx[ic0];
     }
-    __syncthreads();
-}
-
-//__device__ void calcDeltaIJ(geom_float pcx , geom_float pcy, geom_float pcz, 
-//                            flow_float dudx, flow_float dudy,flow_float dudz,
-//                            flow_float delu_max, flow_float delu_min ,
-//                            flow_float* delta, flow_float* deltap, flow_float* deltam
-//                            ) {
-//    flow_float denomi = dudx*pcx + dudy*pcy + dudz*pcz;
-//    flow_float zero=0.0;
-//    flow_float res1;
-//    flow_float res2;
-//    flow_float res3;
-//
-//    if (denomi > 1e-12) {
-//        res1 = delu_max/denomi;
-//    } else if (denomi < -1e-12) {
-//        res1 = delu_min/denomi;
-//    } else {
-//        res1 = zero;
-//    }
-//
-//    res2 = delu_max/denomi;
-//    res3 = delu_min/denomi;
-//
-//    *delta = res1;
-//    *deltap= res2;
-//    *deltam= res3;
-//
-//}
-//
-// Limiters for Unstructured Higher-Order Accurate Solutions of the Euler Equations
-// Krzysztof Michalak
-__device__ flow_float venkata_limiter(flow_float delp, flow_float delm , flow_float volume) {
-    flow_float K = 10.0;
-    flow_float eps2 = K*K*K*volume;
-    //return (x*x + 2.0*x + eps*eps)/(x*x + x + 2.0 + eps*eps);
-    flow_float res;
-    if (abs(delm)>1e-12) {
-        res = ((delp*delp+eps2)*delm + 2.0*delm*delm*delp)/(delp*delp+2.0*delm*delm+delm*delp+eps2)/delm;
-    } else {
-        res = 0.0;
-    }
-    return res;
 }
 
 
 void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
-    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_ro"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Ux"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Uy"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Uz"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_P"] , 1.0, msh.nCells_all*sizeof(flow_float)));
 
-    // sum over planes
-    if (cfg.limiter == 1) {
-        limiter_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
-            // mesh structure
-            msh.nCells,
-            msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-            msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
-            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+    // ro
+    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+        cfg.limiter,
+        // mesh structure
+        msh.nCells,
+        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
 
-            // basic variables
-            var.c_d["ro"] ,
-            var.c_d["Ux"] ,
-            var.c_d["Uy"] ,
-            var.c_d["Uz"] ,
-            var.c_d["P"]  , 
-            var.c_d["T"] ,
-            var.c_d["Ht"] ,
-            var.c_d["limiter"] ,
+        // basic variables
+        var.c_d["ro"] ,
+        var.c_d["limiter_ro"] ,
 
-            // gradient
-            var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
-            var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
-            var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-            var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
-            var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
-            var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
-            var.c_d["dHtdx"] , var.c_d["dHtdy"] , var.c_d["dHtdz"]
-        ) ;
-    }
+        // gradient
+        var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"]
+    ) ;
+
+    // Ux
+    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+        cfg.limiter,
+        // mesh structure
+        msh.nCells,
+        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+
+        // basic variables
+        var.c_d["Ux"] ,
+        var.c_d["limiter_Ux"] ,
+
+        // gradient
+        var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"]
+    ) ;
+
+    // Uy
+    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+        cfg.limiter,
+        // mesh structure
+        msh.nCells,
+        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+
+        // basic variables
+        var.c_d["Uy"] ,
+        var.c_d["limiter_Uy"] ,
+
+        // gradient
+        var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"]
+    ) ;
+
+    // Uz
+    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+        cfg.limiter,
+        // mesh structure
+        msh.nCells,
+        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+
+        // basic variables
+        var.c_d["Uz"] ,
+        var.c_d["limiter_Uz"] ,
+
+        // gradient
+        var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"]
+    ) ;
+
+
+    // Ht
+    //CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Ht"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    //limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+    //    cfg.limiter,
+    //    // mesh structure
+    //    msh.nCells,
+    //    msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+    //    msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+    //    var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+    //    var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+
+    //    // basic variables
+    //    var.c_d["Ht"] ,
+    //    var.c_d["limiter_Ht"] ,
+
+    //    // gradient
+    //    var.c_d["dHtdx"] , var.c_d["dHtdy"] , var.c_d["dHtdz"]
+    //) ;
+
+    // P
+    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+        cfg.limiter,
+        // mesh structure
+        msh.nCells,
+        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+
+        // basic variables
+        var.c_d["P"] ,
+        var.c_d["limiter_P"] ,
+
+        // gradient
+        var.c_d["dPdx"] , var.c_d["dPdy"] , var.c_d["dPdz"]
+    ) ;
 
 
     gpuErrchk( cudaPeekAtLastError() );
