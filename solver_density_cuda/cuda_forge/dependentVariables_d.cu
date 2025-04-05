@@ -29,23 +29,33 @@ __global__ void dependentVariables_d
     flow_float ek;
     flow_float intE;
 
-    if (ic < nCells_all) {
+    flow_float ro_temp;
+    flow_float T_temp;
+    flow_float P_temp;
 
-        Ux[ic] = roUx[ic]/ro[ic];
-        Uy[ic] = roUy[ic]/ro[ic];
-        Uz[ic] = roUz[ic]/ro[ic];
+    if (ic < nCells_all) {
+        ro_temp = max(ro[ic], 1e-6f);
+
+        Ux[ic] = roUx[ic]/ro_temp;
+        Uy[ic] = roUy[ic]/ro_temp;
+        Uz[ic] = roUz[ic]/ro_temp;
 
         ek = 0.5*(Ux[ic]*Ux[ic] +Uy[ic]*Uy[ic] +Uz[ic]*Uz[ic]);
-        intE =(roe[ic]/ro[ic] -ek);
-        T[ic] =intE/(cp/gamma);
+        intE =(roe[ic]/ro_temp -ek);
+        T_temp = max(intE/(cp/gamma), 1e-6f);
+        P_temp = max((gamma-1.0)*(roe[ic]-ro_temp*ek),1e-6f);
 
-        P[ic] =(gamma-1.0)*(roe[ic]-ro[ic]*ek);
-        Ht[ic] = roe[ic]/ro[ic] + P[ic]/ro[ic];
+        T[ic] = T_temp;
+        P[ic] = P_temp;
 
-        sonic[ic] = sqrt(gamma*P[ic]/ro[ic]);
+        ro[ic] = ro_temp;
+        roe[ic] = P_temp/(gamma-1.0) + ro_temp*ek;
+
+        Ht[ic] = roe[ic]/ro_temp + P_temp/ro_temp;
+
+        sonic[ic] = sqrt(gamma*P_temp/ro_temp);
 
     }
-    __syncthreads();
 }
 
 

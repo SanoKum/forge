@@ -8,11 +8,13 @@ mesh:
 
 gpu: 1 # 0:off , 1:on
 
-#solver: "SLAU" # 
-solver: "KEEP_SLAU" # 
+solver: "SLAU" # 
+#solver: "KEEP_SLAU" # 
 
 physProp:
   isCompressible: 1 # 0:incomp, 1:compressible
+  thermalMethod: 0 # 0:calorically perfect
+  viscMethod: 0 # 0:use visc , 1:sutherland
   ro : 1.4 # [kg/m3] ignored for compressible flow
   visc : 0.0   #[Pa*s]
   thermCond: 0.0    # [W/(mK)]
@@ -20,26 +22,30 @@ physProp:
   gamma : 1.4 # [J/(kgK)]
 
 time: 
+  unsteady: 0 # 0:steady , 1:unsteady
+  dualTime: 0 # 1:use pseudo time for unsteady
   last: 
     control: 0 # 0:nStep , 1:time base
     #nStep: 8000
     nStep: 2000
+    #nStep: 10  
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
     dt: 0.00000001
-    cfl: 0.3
+    cfl: 1.5
+    cfl_pseudo: 1.0
     dt_min: 0.000000001
     dt_max: 1.0 
   #outStepInterval: 1000
-  outStepInterval: 10
+  #outStepInterval: 1
+  outStepInterval: 20
+  outStepStart: 0
   timeIntegration: 3  # 1:Euler explicit , 3:3rd Runge Explicit , 10:dual-exp
-  implicit:
-    nLoop: 100
-    cfl_pseudo: 0.5
+  nInnerLoop: 10
 
 space: 
-  convMethod: 1
+  convMethod: 2
   limiter: 2
 
 turbulence:

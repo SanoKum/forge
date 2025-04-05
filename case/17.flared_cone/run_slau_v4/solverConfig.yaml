@@ -30,7 +30,7 @@ time:
     cfl: 0.5
     dt_min: 0.000000000001
     dt_max: 1.0 
-  outStepInterval: 10
+  outStepInterval: 500
   #outStepInterval: 10
   #outStepInterval: 10
   #outStepInterval: 1

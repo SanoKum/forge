@@ -16,7 +16,7 @@ r_nose = 2.5;
 cone_angle = 7.0;   //deg
 flare_angle = 33.0; //deg
 
-nx_0 = 25;
+nx_0 = 100;
 nx_1 = 5;
 nx_2 = 150;
 nx_3 = 500;
@@ -29,7 +29,7 @@ ny = 120;
 pNoseCent = newp;
 Point(pNoseCent) = {r_nose, 0.0, 0.0, lc};
 
-y0 = 0.001;
+y0 = 0.2;
 x0 = 2.5-Sqrt(r_nose^2 - y0^2);
 pList1[0] = newp;
 Point(pList1[0]) = {x0 , y0 , 0.0 , lc};
@@ -243,15 +243,9 @@ Extrude {{1, 0, 0}, {0, 0, 0}, Pi/32} {
 //+
 //+
 Physical Surface("inlet", 1) = {46, 68, 90, 112, 134, 156, 178};
-//+
 Physical Surface("outlet", 2) = {174};
-//+
 Physical Surface("wall", 3) = {170, 148, 126, 104, 82, 38, 60};
-//+
 Physical Surface("perio1", 4) = {183, 161, 139, 117, 95, 73, 51};
-//+
 Physical Surface("perio2", 5) = {23, 24, 25, 26, 27, 28, 29};
-//+
 Physical Surface("slip", 6) = {50};
-//+
 Physical Volume("fluid", 7) = {1, 2, 3, 4, 5, 6, 7};

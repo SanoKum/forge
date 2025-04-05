@@ -1,19 +1,20 @@
 mesh:
   meshFormat: "hdf5" 
-  #meshFileName: "mach3.h5"
-  #valueFileName: "mach3.h5"
   meshFileName: "mach3_hr.h5"
   valueFileName: "mach3_hr.h5"
- 
+  #meshFileName: "laval_nozzle3.h5"
+
 
 gpu: 1 # 0:off , 1:on
 
-solver: "ROE" # SLAU, ROE, AUSM+, AUSM+UP
 #solver: "SLAU" # SLAU, ROE, AUSM+, AUSM+UP
 #solver: "KEEP_SLAU" # SLAU, ROE, AUSM+, AUSM+UP
+solver: "ROE" # SLAU, ROE, AUSM+, AUSM+UP
 
 physProp:
   isCompressible: 1 # 0:incomp, 1:compressible
+  thermalMethod: 0 # 0:calorically perfect
+  viscMethod: 0 # 0:use visc , 1:sutherland
   ro : 1.4 # [kg/m3] ignored for compressible flow
   visc : 0.0000 #[Pa*s]
   thermCond: 0.0000 # [W/(mK)]
@@ -21,28 +22,30 @@ physProp:
   gamma : 1.4 # [J/(kgK)]
 
 time: 
+  unsteady: 1 # 0:steady , 1:unsteady
+  dualTime: 0 # 1:use pseudo time for unsteady
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 100
+    nStep: 3000
     #nStep: 10
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl
-    dt: 0.00001
-    cfl: 0.5
+    dt: 0.0002
+    cfl: 1.0
+    cfl_pseudo: 0.1 # for pseudo dt
     dt_min: 0.00000001
     dt_max: 1.0 
   #outStepInterval: 500
+  outStepStart: 0
+  #outStepInterval: 50
   outStepInterval: 1
-  #outStepInterval: 1
   timeIntegration: 3  #1:Euler explicit, 3:3rd TVD Runge Explicit, 4:4th runge exp, 10:dual-exp
-  implicit:
-    nLoop: 10
-    cfl_pseudo: 0.5
+  nInnerLoop: 10
 
 space: 
-  convMethod: 0 # 0:1stUp 1:2nd 2:MUSCL
-  limiter: 2    # 
+  convMethod: 2 # 0:1stUp 1:2nd 2:MUSCL
+  limiter: 2    # 1:barth 2:venkata
 
 turbulence:
   LESorRANS: 0 # 0:no 1:LES 2:RANS

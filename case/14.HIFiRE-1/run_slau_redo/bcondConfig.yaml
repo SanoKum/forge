@@ -1,6 +1,7 @@
 inlet:
   physID: 1
   kind: inlet_uniformVelocity
+  outputHDFflg: 0
   ints:
   floats:
     Ux: 2183.0
@@ -13,6 +14,7 @@ inlet:
 outlet:
   physID: 2
   kind: outflow
+  outputHDFflg: 0
   #kind: outflow
   ints:
   floats:
@@ -23,6 +25,7 @@ outlet:
 wall:
   physID: 3
   kind: wall
+  outputHDFflg: 0
   #kind: slip
   ints:
   floats:
@@ -30,12 +33,14 @@ wall:
 perio1:
   physID: 4
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 
 perio2:
   physID: 5
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 
@@ -43,6 +48,7 @@ perio2:
 slip:
   physID: 6
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 

@@ -8,7 +8,7 @@
 __global__ void setCFL_pln_d
 ( 
  flow_float dt,
- flow_float dt_pseudo,
+ //flow_float dt_local,
  flow_float visc,
  flow_float* vis_turb  ,
 
@@ -27,15 +27,15 @@ __global__ void setCFL_pln_d
  flow_float* roe  ,
 
  flow_float* cfl ,
- flow_float* cfl_pseudo ,
+ //flow_float* cfl_pseudo ,
  flow_float* sonic,
  flow_float* Ux  ,
  flow_float* Uy  ,
  flow_float* Uz  ,
 
  //plane variables
- flow_float* cfl_pln ,
- flow_float* cfl_pseudo_pln
+ flow_float* cfl_pln
+ //flow_float* cfl_pseudo_pln
 
 )
 {
@@ -82,15 +82,15 @@ __global__ void setCFL_pln_d
 
         cfl_pln[ip] = dt*lambda/dx_min;
 
-        cfl_pseudo_pln[ip] = dt_pseudo*lambda/dx_min;
+        //cfl_pseudo_pln[ip] = dt_local*lambda/dx_min;
     }
 }
 
 __global__ void setCFL_cell_d
 ( 
- int dtControl, flow_float cfg_target,
+ int dtControl, flow_float cfl_target, flow_float cfl_pseudo_target,
+ int dualTime, int unsteady, 
  flow_float dt,
- flow_float dt_pseudo,
 
  // mesh structure
  geom_int nCells,
@@ -107,15 +107,15 @@ __global__ void setCFL_cell_d
  flow_float* roe  ,
 
  flow_float* cfl ,
- flow_float* cfl_pseudo ,
+ flow_float* dt_local  ,
  flow_float* sonic,
  flow_float* Ux  ,
  flow_float* Uy  ,
  flow_float* Uz  ,
 
  //plane variables
- flow_float* cfl_pln ,
- flow_float* cfl_pseudo_pln
+ flow_float* cfl_pln
+ //flow_float* cfl_pseudo_pln
 
 )
 {
@@ -128,18 +128,53 @@ __global__ void setCFL_cell_d
         geom_int np = index_en - index_st;
 
         cfl[ic] = 0.0;
-        cfl_pseudo[ic] = 0.0;
+        //cfl_pseudo[ic] = 0.0;
 
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             geom_int ip = cell_planes[ilp];
             
-            cfl[ic]        = max(cfl[ic], cfl_pln[ip]);
-            cfl_pseudo[ic] = max(cfl_pseudo[ic], cfl_pseudo_pln[ip]);
+            cfl[ic] = max(cfl[ic], cfl_pln[ip]);
         }
 
-        //if (dtControl == 1){
-        //    dt = 
+        //if (dualTime == 1 or unsteady == 0) {
+        //    dt_local[ic] = cfl_pseudo_target*dt/cfl[ic];
+        //} else {
+        //    dt_local[ic] = dt;
         //}
+    }
+}
+
+__global__ void setDTlocal_pseudo_cell_d
+( 
+ flow_float cfl_pseudo_target,
+ flow_float dt,
+
+ // mesh structure
+ geom_int nCells,
+ flow_float* cfl ,
+ flow_float* dt_local
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ic < nCells) {
+        dt_local[ic] = cfl_pseudo_target*dt/cfl[ic];
+    }
+}
+
+__global__ void setDTlocal_uniform_cell_d
+( 
+ flow_float dt,
+ geom_int nCells,
+
+ flow_float* dt_local
+
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ic < nCells) {
+        dt_local[ic] = dt;
     }
 }
 
@@ -148,7 +183,7 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
 {
     setCFL_pln_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
         cfg.dt,
-        cfg.dt_pseudo,
+        //cfg.dt_local,
         cfg.visc,
         var.c_d["vis_turb"] ,
 
@@ -168,22 +203,23 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         var.c_d["roUz"] ,
         var.c_d["roe"] ,
         var.c_d["cfl"]  , 
-        var.c_d["cfl_pseudo"] , 
+        //var.c_d["cfl_pseudo"] , 
         var.c_d["sonic"]  , 
         var.c_d["Ux"]  , 
         var.c_d["Uy"]  , 
         var.c_d["Uz"]  ,
 
-        var.p_d["cfl_pln"]  , 
-        var.p_d["cfl_pseudo_pln"]  
+        var.p_d["cfl_pln"] 
+        //var.p_d["cfl_pseudo_pln"]  
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
     setCFL_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
-        cfg.dtControl, cfg.cfl,
+        cfg.dtControl, cfg.cfl, cfg.cfl_pseudo,
+        cfg.dualTime, cfg.unsteady,
         cfg.dt,
-        cfg.dt_pseudo,
+        //cfg.dt_local,
 
         // mesh structure
         msh.nCells,
@@ -201,26 +237,34 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         var.c_d["roUz"] ,
         var.c_d["roe"] ,
         var.c_d["cfl"]  , 
-        var.c_d["cfl_pseudo"] , 
+        var.c_d["dt_local"] , 
         var.c_d["sonic"]  , 
         var.c_d["Ux"]  , 
         var.c_d["Uy"]  , 
         var.c_d["Uz"]  ,
 
-        var.p_d["cfl_pln"]  , 
-        var.p_d["cfl_pseudo_pln"]  
+        var.p_d["cfl_pln"] 
+        //var.p_d["cfl_pseudo_pln"]  
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 
-    //cublasHandle_t handle;
-    //cublasStatus_t stat;
-    //cublasCreate(&handle);
-    //int max_ic;
-    //stat = cublasIsamax(handle, msh.nCells, var.c_d["cfl"], 1, &max_ic);
-    //if (stat != CUBLAS_STATUS_SUCCESS) {
-    //    printf("Max failed\n");
-    //}
+    if (cfg.dualTime == 1 or cfg.unsteady == 0) {
+        setDTlocal_pseudo_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
+            cfg.cfl_pseudo,
+            cfg.dt,
+            msh.nCells,
+            var.c_d["cfl"],
+            var.c_d["dt_local"]
+        );
+
+    } else {
+        setDTlocal_uniform_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
+            cfg.dt,
+            msh.nCells,
+            var.c_d["dt_local"]
+        );
+    }
 
     flow_float cfl_max;
 
@@ -237,5 +281,11 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
 
     printf("  max cfl : %f    \n", cfl_max);
     printf("  dt      : %e [s]\n", cfg.dt);
+
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+
 
 }

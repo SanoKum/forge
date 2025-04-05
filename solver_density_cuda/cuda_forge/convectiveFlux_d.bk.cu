@@ -1,0 +1,1064 @@
+#include "convectiveFlux_d.cuh"
+
+__device__ flow_float interp_general(int scheme, int limit_scheme,
+                            flow_float phiC, flow_float phiD, 
+                            flow_float dphidxC, flow_float dphidyC, flow_float dphidzC,
+                            flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
+                            flow_float dx , flow_float dy , flow_float dz,
+                            flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                            flow_float f, flow_float limiter
+                           )
+{
+    flow_float phif;
+    flow_float k;
+    flow_float r;
+    flow_float psi_r;
+
+    flow_float DD2dx;
+    flow_float DD2dy;
+    flow_float DD2dz;
+    flow_float phiDD;
+    flow_float phiU;
+    flow_float limit;
+
+    if (limit_scheme == -1) { // minmod  not completed
+        r = (phiD - phiC)/(phiC - phiD);
+
+        DD2dx = (2.0*f-1.0)*dx;
+        DD2dy = (2.0*f-1.0)*dy;
+        DD2dz = (2.0*f-1.0)*dz;
+
+        phiDD = phiD - limiter*(DD2dx*dphidxD + DD2dy*dphidyD + DD2dz*dphidzD );
+        phiU  = phiDD -4.0*(1.0-f)*limiter*(dx*dphidxC + dy*dphidyC + dz*dphidzC );
+
+        r = (phiC - phiU)/(phiD - phiC);
+
+        limiter = max(0.0, min(1.0,r));
+    }
+
+    if (scheme == 0) {
+        phif = phiC;
+    } else if (scheme == 1) { // 2nd order
+        phif = phiC + limiter*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz);
+    } else if (scheme == 2) {// 3rd order
+        k = 1.0/3.0;
+        phif = phiC +0.5*k*(phiD-phiC) +(1.0-k)*limiter*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz);
+    } else if (scheme == -1) {// ghost
+        phif = phiC;
+    }
+
+    return phif;
+};
+
+__device__ flow_float interp_MUSCL_2nd(int scheme, int limit_scheme,
+                                       flow_float phiC, flow_float phiD, 
+                                       flow_float dphidx, flow_float dphidy, flow_float dphidz,
+                                       flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
+                                       flow_float dx , flow_float dy , flow_float dz,
+                                       flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                                       flow_float f, flow_float limiter
+                                      )
+{
+    flow_float phif;
+    flow_float k;
+    flow_float r;
+    flow_float psi_r;
+
+    phif = phiC + limiter*(dphidx*cpdx +dphidy*cpdy +dphidz*cpdz);
+
+    return phif;
+};
+
+__device__ flow_float interp_MUSCL_3rd(int scheme, int limit_scheme,
+                                       flow_float phiC, flow_float phiD, 
+                                       flow_float dphidx, flow_float dphidy, flow_float dphidz,
+                                       flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
+                                       flow_float dx , flow_float dy , flow_float dz,
+                                       flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                                       flow_float f, flow_float limiter
+                                      )
+{
+    flow_float phif;
+    flow_float k;
+    flow_float r;
+    flow_float psi_r;
+
+    k = 1.0/3.0;
+    phif = phiC +0.5*k*(phiD-phiC) +(1.0-k)*limiter*(dphidx*cpdx +dphidy*cpdy +dphidz*cpdz);
+
+    return phif;
+};
+
+
+__device__ flow_float interp_1stUp(int scheme, int limit_scheme,
+                                 flow_float phiC, flow_float phiD, 
+                                 flow_float dphidx, flow_float dphidy, flow_float dphidz,
+                                 flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
+                                 flow_float dx , flow_float dy , flow_float dz,
+                                 flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                                 flow_float f, flow_float limiter
+                                )
+{
+    return phiC;
+};
+
+__device__ flow_float interp_MINMOD(int scheme, int limit_scheme,
+                                    flow_float phiC, flow_float phiD, 
+                                    flow_float dphidxC, flow_float dphidyC, flow_float dphidzC,
+                                    flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
+                                    flow_float dx , flow_float dy , flow_float dz,
+                                    flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                                    flow_float f, flow_float limiter
+                                   )
+{
+    flow_float phif;
+    flow_float k;
+    flow_float r;
+    flow_float psi_r;
+    flow_float DD2dx;
+    flow_float DD2dy;
+    flow_float DD2dz;
+    flow_float phiDD;
+    flow_float phiU;
+    flow_float limit;
+
+    DD2dx = (2.0*f-1.0)*dx;
+    DD2dy = (2.0*f-1.0)*dy;
+    DD2dz = (2.0*f-1.0)*dz;
+
+    phiDD = phiD - (DD2dx*dphidxD + DD2dy*dphidyD + DD2dz*dphidzD );
+    phiU  = phiDD -4.0*(1.0-f)*(dx*dphidxC + dy*dphidyC + dz*dphidzC );
+
+    r = (phiC - phiU)/(phiD - phiC);
+
+    //limit = sign_sano(r)*max(0.0, (min(abs(r), sign_sano(r))));
+    limit = max(0.0, min(1.0,r));
+
+    phif = phiC + limit*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz);
+
+    return phif;
+};
+
+
+
+__device__ flow_float betaPls_slau(flow_float M)
+{
+    if (abs(M) >= 1.0) {
+        return 0.25*(2.0-M)*pow(M+1.0, 2.0);
+    } else {
+        return 0.5*(1.0+sign_sano(+M));
+    }
+}
+
+__device__ flow_float betaMns_slau(flow_float M)
+{
+    if (abs(M) >= 1.0) {
+        return 0.25*(2.0+M)*pow(M-1.0, 2.0);
+    } else {
+        return 0.5*(1.0+sign_sano(-M));
+    }
+}
+
+__global__ void SLAU_d
+( 
+ int conv_scheme, int limit_scheme,
+
+ flow_float ga,
+
+ // mesh structure
+ geom_int nCells,
+ geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,  
+ geom_int nNormal_ghst_Planes , geom_int* normal_ghst_planes_d,
+ geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
+ geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
+ geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+
+ // variables
+//flow_float* convx , flow_float* convy , flow_float* convz,
+// flow_float* diffx , flow_float* diffy , flow_float* diffz,
+ flow_float* ro   ,
+ flow_float* roUx  ,
+ flow_float* roUy  ,
+ flow_float* roUz  ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* Ps  ,
+ flow_float* Ht  ,
+ flow_float* sonic,
+ 
+ flow_float* res_ro   ,
+ flow_float* res_roUx  ,
+ flow_float* res_roUy  ,
+ flow_float* res_roUz  ,
+ flow_float* res_roe   ,
+
+ flow_float* limiter_ro,
+ flow_float* limiter_Ux,
+ flow_float* limiter_Uy,
+ flow_float* limiter_Uz,
+ flow_float* limiter_P,
+ flow_float* ducros,
+
+ flow_float* drodx  , flow_float* drody , flow_float* drodz,
+ flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
+ flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
+ flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
+ flow_float* dPdx   , flow_float* dPdy  , flow_float* dPdz
+
+)
+{
+    geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
+
+    //if (ip < nPlanes) {
+    if (ip < nNormal_ghst_Planes) {
+        geom_int ip2 = normal_ghst_planes_d[ip];
+
+        flow_float (*interp)(int , int , flow_float  , flow_float , 
+                             flow_float , flow_float , flow_float ,
+                             flow_float , flow_float , flow_float ,
+                             flow_float , flow_float , flow_float ,
+                             flow_float , flow_float , flow_float ,
+                             flow_float , flow_float );
+
+        if (conv_scheme == 0 || conv_scheme == -1) {
+            interp = &interp_1stUp;
+        } else if (conv_scheme == 1 && limit_scheme >= 0) {
+            interp = &interp_MUSCL_2nd;
+        } else if (conv_scheme == 2 && limit_scheme >= 0) {
+            interp = &interp_MUSCL_3rd;
+        } else if (limit_scheme == -1) { 
+            interp = &interp_MINMOD;
+        }
+
+        geom_int  ic0 = plane_cells[2*ip+0];
+        geom_int  ic1 = plane_cells[2*ip+1];
+
+        //__syncthreads();
+
+        geom_float f = fx[ip];
+        
+        geom_float sxx = sx[ip];
+        geom_float syy = sy[ip];
+        geom_float szz = sz[ip];
+        geom_float sss = ss[ip];
+
+        flow_float ccx_0 = ccx[ic0];
+        flow_float ccy_0 = ccy[ic0];
+        flow_float ccz_0 = ccz[ic0];
+
+        flow_float ccx_1 = ccx[ic1];
+        flow_float ccy_1 = ccy[ic1];
+        flow_float ccz_1 = ccz[ic1];
+
+        flow_float dcc_x = ccx_1 - ccx_0;
+        flow_float dcc_y = ccy_1 - ccy_0;
+        flow_float dcc_z = ccz_1 - ccz_0;
+
+        flow_float dc0p_x = pcx[ip] - ccx_0;
+        flow_float dc0p_y = pcy[ip] - ccy_0;
+        flow_float dc0p_z = pcz[ip] - ccz_0;
+
+        flow_float dc1p_x = pcx[ip] - ccx_1;
+        flow_float dc1p_y = pcy[ip] - ccy_1;
+        flow_float dc1p_z = pcz[ip] - ccz_1;
+
+        //flow_float lim_ro = min(limiter_ro[ic0], limiter_ro[ic1]);
+        //flow_float lim_Ux = min(limiter_Ux[ic0], limiter_Ux[ic1]);
+        //flow_float lim_Uy = min(limiter_Uy[ic0], limiter_Uy[ic1]);
+        //flow_float lim_Uz = min(limiter_Uz[ic0], limiter_Uz[ic1]);
+        //flow_float lim_P  = min(limiter_P [ic0], limiter_P[ic1]);
+
+        flow_float ro_L = interp(conv_scheme, limit_scheme, ro[ic0] , ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], drodx[ic1], drody[ic1], drodz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_ro[ic0]);
+        flow_float Ux_L = interp(conv_scheme, limit_scheme, Ux[ic0] , Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Ux[ic0]);
+        flow_float Uy_L = interp(conv_scheme, limit_scheme, Uy[ic0] , Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Uy[ic0]);
+        flow_float Uz_L = interp(conv_scheme, limit_scheme, Uz[ic0] , Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Uz[ic0]);
+        flow_float P_L  = interp(conv_scheme, limit_scheme, Ps[ic0] , Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_P[ic0]);
+        //flow_float Ux_L = roUx_L/ro_L;
+        //flow_float Uy_L = roUy_L/ro_L;
+        //flow_float Uz_L = roUz_L/ro_L;
+        flow_float roe_L = P_L/(ga-1.0) + 0.5*ro_L*(Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L);
+        //flow_float P_L = (ga-1.0)*roe_L - 0.5*(ga-1.0)*ro_L*(Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L);
+        flow_float Ht_L= roe_L/ro_L + P_L/ro_L;
+
+        flow_float ro_R  = interp(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro[ic1]); 
+        flow_float Ux_R  = interp(conv_scheme, limit_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Ux[ic1]);
+        flow_float Uy_R  = interp(conv_scheme, limit_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uy[ic1]);
+        flow_float Uz_R  = interp(conv_scheme, limit_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uz[ic1]);
+        flow_float P_R   = interp(conv_scheme, limit_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , dPdx[ic0] , dPdy[ic0] , dPdz[ic0] ,-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_P[ic1]);
+        flow_float roe_R = P_R/(ga-1.0) + 0.5*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
+        //flow_float P_R = (ga-1.0)*roe_R - 0.5*(ga-1.0)*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
+        flow_float Ht_R= roe_R/ro_R + P_R/ro_R;
+
+ 
+
+        flow_float ro_p= ro_L;
+        flow_float ro_m= ro_R;
+        flow_float u_p = Ux_L;
+        flow_float v_p = Uy_L;
+        flow_float w_p = Uz_L;
+        flow_float h_p = Ht_L;
+        flow_float u_m = Ux_R;
+        flow_float v_m = Uy_R;
+        flow_float w_m = Uz_R;
+        flow_float h_m = Ht_R;
+        flow_float P_p = P_L;
+        flow_float P_m = P_R;
+
+        //flow_float Vn_p = ((Ux[ic0])*sxx +(Uy[ic0])*syy +(Uz[ic0])*szz)/sss;
+        //flow_float Vn_m = ((Ux[ic1])*sxx +(Uy[ic1])*syy +(Uz[ic1])*szz)/sss;
+
+        //flow_float roVn_p = (roUx[ic0]*sxx + roUy[ic0]*syy + roUz[ic0]*szz)/sss;
+        //flow_float roVn_m = (roUx[ic1]*sxx + roUy[ic1]*syy + roUz[ic1]*szz)/sss;
+
+        //flow_float VnL = ((Ux[ic0])*sxx +(Uy[ic0])*syy +(Uz[ic0])*szz)/sss;
+        //flow_float VnR = ((Ux[ic1])*sxx +(Uy[ic1])*syy +(Uz[ic1])*szz)/sss;
+        flow_float Vn_p = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
+        flow_float Vn_m = ((Ux_R)*sxx +(Uy_R)*syy +(Uz_R)*szz)/sss;
+
+        flow_float roVn_p = (ro_L*Ux_L*sxx + ro_L*Uy_L*syy + ro_L*Uz_L*szz)/sss;
+        flow_float roVn_m = (ro_R*Ux_R*sxx + ro_R*Uy_R*syy + ro_R*Uz_R*szz)/sss;
+
+        flow_float VnL = Vn_p;
+        flow_float VnR = Vn_m;
+
+        flow_float VnL_abs = abs(VnL);
+        flow_float VnR_abs = abs(VnR);
+
+//TODO: change c
+        flow_float c_hat = 0.5*(sonic[ic0] + sonic[ic1]);
+
+        flow_float M_p = Vn_p/c_hat;
+        flow_float M_m = Vn_m/c_hat;
+
+        flow_float ro_del= ro_m - ro_p;
+        flow_float Vn_del= Vn_m - Vn_p;
+        flow_float P_del = P_m  - P_p;
+
+        flow_float beta_p, beta_m;
+
+        if (abs(M_p)>=1.0){
+            beta_p = 0.5*(M_p + abs(M_p))/M_p;
+        } else {
+            beta_p = 0.25*pow((M_p+1.0),2.0)*(2.0-M_p);
+        }
+
+        if (abs(M_m)>=1.0){
+            beta_m = 0.5*(M_m - abs(M_m))/M_m;
+        } else {
+            beta_m = 0.25*pow((M_m-1.0),2.0)*(2.0+M_m);
+        }
+
+        flow_float zero = 0.0;
+        flow_float one  = 1.0;
+        flow_float half = 0.5;
+
+        flow_float g = -max(min(M_p,zero),-one)*min(max(M_m,zero),one);
+        flow_float Vn_hat_abs   = (ro_p*abs(Vn_p) + ro_m*abs(Vn_m))/(ro_p + ro_m);
+        flow_float Vn_hat_p_abs = (1.0-g)*Vn_hat_abs + g*VnL_abs;
+        flow_float Vn_hat_m_abs = (1.0-g)*Vn_hat_abs + g*VnR_abs;
+
+        flow_float M_hat = min(one, sqrt(half*(u_m*u_m+v_m*v_m+w_m*w_m +u_p*u_p+v_p*v_p+w_p*w_p))/c_hat);
+        flow_float chi = (1.0-M_hat)*(1.0-M_hat);
+
+        flow_float p_tilde = half*(P_p+P_m) +half*(beta_p-beta_m)*(P_p-P_m)
+                             +(one-chi)*(beta_p+beta_m-one)*half*(P_m+P_p); 
+
+        flow_float mdot = sss*0.5*((ro_L*(VnL+Vn_hat_p_abs)+ro_R*(VnR-Vn_hat_m_abs)) -chi/(c_hat)*P_del);
+
+        flow_float res_ro_temp   = mdot;
+        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde*sxx;
+        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde*syy;
+        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde*szz;
+        flow_float res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
+
+        atomicAdd(&res_ro[ic0]  , -res_ro_temp);
+        atomicAdd(&res_roUx[ic0], -res_roUx_temp);
+        atomicAdd(&res_roUy[ic0], -res_roUy_temp);
+        atomicAdd(&res_roUz[ic0], -res_roUz_temp);
+        atomicAdd(&res_roe[ic0] , -res_roe_temp);
+
+        atomicAdd(&res_ro[ic1]  , res_ro_temp);
+        atomicAdd(&res_roUx[ic1], res_roUx_temp);
+        atomicAdd(&res_roUy[ic1], res_roUy_temp);
+        atomicAdd(&res_roUz[ic1], res_roUz_temp);
+        atomicAdd(&res_roe[ic1] , res_roe_temp);
+    }
+
+    __syncthreads();
+}
+
+inline __device__ flow_float sign_sano(flow_float x)
+{
+    return x > 0 ? 1 : (x<0 ? -1 : 0);
+}
+
+inline __device__ flow_float betaPls(flow_float M, flow_float alpha) // ok
+{
+    if (abs(M) >= 1.0) {
+        return 0.5*(1.0+sign_sano(M));
+    } else {
+        return 0.25*pow(M+1.0,2.0)*(2.0-M) +alpha*M*pow(M*M-1, 2.0);
+    }
+}
+
+inline __device__ flow_float betaMns(flow_float M, flow_float alpha) // ok
+{
+    if (abs(M) >= 1.0) {
+        return 0.5*(1.0-sign_sano(M));
+    } else {
+        return 0.25*pow(M-1.0,2.0)*(2.0+M) -alpha*M*pow(M*M-1, 2.0);
+    }
+}
+
+inline __device__ flow_float MPls(flow_float M) // ok
+{
+    flow_float beta = 1.0/8.0;
+    if (abs(M) >= 1.0) {
+        return 0.5*(M+abs(M));
+    } else {
+        return +0.25*pow(M+1.0,2.0) +beta*pow(M*M-1.0, 2.0);
+    }
+}
+
+inline __device__ flow_float MMns(flow_float M) // ok
+{
+    flow_float beta = 1.0/8.0;
+    if (abs(M) >= 1.0) {
+        return 0.5*(M-abs(M));
+    } else {
+        return -0.25*pow(M-1.0,2.0) -beta*pow(M*M-1.0, 2.0);
+    }
+}
+
+
+__global__ void KEEP_SLAU_d
+( 
+ int conv_scheme, int limit_scheme,
+
+ flow_float ga,
+
+ // mesh structure
+ geom_int nCells,
+ geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,  
+ geom_int nNormal_ghst_Planes , geom_int* normal_ghst_planes_d,
+ geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
+ geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
+ geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+
+ // variables
+//flow_float* convx , flow_float* convy , flow_float* convz,
+// flow_float* diffx , flow_float* diffy , flow_float* diffz,
+ flow_float* ro   ,
+ flow_float* roUx  ,
+ flow_float* roUy  ,
+ flow_float* roUz  ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* Ps  ,
+ flow_float* Ht  ,
+ flow_float* sonic,
+ 
+ flow_float* res_ro   ,
+ flow_float* res_roUx  ,
+ flow_float* res_roUy  ,
+ flow_float* res_roUz  ,
+ flow_float* res_roe   ,
+ //flow_float* limiter   ,
+
+ flow_float* limiter_ro,
+ flow_float* limiter_Ux,
+ flow_float* limiter_Uy,
+ flow_float* limiter_Uz,
+ flow_float* limiter_P,
+
+
+ flow_float* ducros,
+
+ flow_float* drodx  , flow_float* drody , flow_float* drodz,
+ flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
+ flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
+ flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
+ flow_float* dPdx   , flow_float* dPdy  , flow_float* dPdz
+ 
+)
+{
+    geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
+
+    flow_float (*interp)(int , int , flow_float  , flow_float , 
+                         flow_float , flow_float , flow_float ,
+                         flow_float , flow_float , flow_float ,
+                         flow_float , flow_float , flow_float ,
+                         flow_float , flow_float , flow_float ,
+                         flow_float , flow_float );
+
+    //if (ip < nPlanes) {
+    if (ip < nNormal_ghst_Planes) {
+        ip = normal_ghst_planes_d[ip];
+
+        if (conv_scheme == 0 || conv_scheme == -1) {
+            interp = &interp_1stUp;
+        } else if (conv_scheme == 1 && limit_scheme >= 0) {
+            interp = &interp_MUSCL_2nd;
+        } else if (conv_scheme == 2 && limit_scheme >= 0) {
+            interp = &interp_MUSCL_3rd;
+        } else if (limit_scheme == -1) { 
+            interp = &interp_MINMOD;
+        }
+
+        geom_int  ic0 = plane_cells[2*ip+0];
+        geom_int  ic1 = plane_cells[2*ip+1];
+
+        //__syncthreads();
+
+        geom_float f = fx[ip];
+        
+        geom_float sxx = sx[ip];
+        geom_float syy = sy[ip];
+        geom_float szz = sz[ip];
+        geom_float sss = ss[ip];
+
+        geom_float nx = sxx/sss;
+        geom_float ny = syy/sss;
+        geom_float nz = szz/sss;
+
+        flow_float ccx_0 = ccx[ic0];
+        flow_float ccy_0 = ccy[ic0];
+        flow_float ccz_0 = ccz[ic0];
+
+        flow_float ccx_1 = ccx[ic1];
+        flow_float ccy_1 = ccy[ic1];
+        flow_float ccz_1 = ccz[ic1];
+
+        flow_float dcc_x = ccx_1 - ccx_0;
+        flow_float dcc_y = ccy_1 - ccy_0;
+        flow_float dcc_z = ccz_1 - ccz_0;
+
+        flow_float dc0p_x = pcx[ip] - ccx_0;
+        flow_float dc0p_y = pcy[ip] - ccy_0;
+        flow_float dc0p_z = pcz[ip] - ccz_0;
+
+        flow_float dc1p_x = pcx[ip] - ccx_1;
+        flow_float dc1p_y = pcy[ip] - ccy_1;
+        flow_float dc1p_z = pcz[ip] - ccz_1;
+
+        flow_float ro_L = interp(conv_scheme, limit_scheme, ro[ic0] , ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], drodx[ic1], drody[ic1], drodz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_ro[ic0]);
+        flow_float Ux_L = interp(conv_scheme, limit_scheme, Ux[ic0] , Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Ux[ic0]);
+        flow_float Uy_L = interp(conv_scheme, limit_scheme, Uy[ic0] , Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Uy[ic0]);
+        flow_float Uz_L = interp(conv_scheme, limit_scheme, Uz[ic0] , Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Uz[ic0]);
+        flow_float P_L  = interp(conv_scheme, limit_scheme, Ps[ic0] , Ps[ic1], dPdx[ic0] , dPdy[ic0] , dPdz[ic0] , dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_P[ic0]);
+        //flow_float Ux_L = roUx_L/ro_L;
+        //flow_float Uy_L = roUy_L/ro_L;
+        //flow_float Uz_L = roUz_L/ro_L;
+        flow_float roe_L = P_L/(ga-1.0) + 0.5*ro_L*(Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L);
+        //flow_float P_L = (ga-1.0)*roe_L - 0.5*(ga-1.0)*ro_L*(Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L);
+        flow_float Ht_L= roe_L/ro_L + P_L/ro_L;
+        flow_float ca_L  = sqrt(ga*P_L/ro_L);
+
+        flow_float ro_R  = interp(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro[ic1]); 
+        flow_float Ux_R  = interp(conv_scheme, limit_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Ux[ic1]);
+        flow_float Uy_R  = interp(conv_scheme, limit_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uy[ic1]);
+        flow_float Uz_R  = interp(conv_scheme, limit_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uz[ic1]);
+        flow_float P_R   = interp(conv_scheme, limit_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , dPdx[ic0] , dPdy[ic0] , dPdz[ic0] ,-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_P[ic1]);
+        flow_float roe_R = P_R/(ga-1.0) + 0.5*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
+        //flow_float P_R = (ga-1.0)*roe_R - 0.5*(ga-1.0)*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
+        flow_float Ht_R= roe_R/ro_R + P_R/ro_R;
+
+        flow_float ro_p= ro_L;
+        flow_float ro_m= ro_R;
+        flow_float u_p = Ux_L;
+        flow_float v_p = Uy_L;
+        flow_float w_p = Uz_L;
+        flow_float h_p = Ht_L;
+        flow_float u_m = Ux_R;
+        flow_float v_m = Uy_R;
+        flow_float w_m = Uz_R;
+        flow_float h_m = Ht_R;
+        flow_float P_p = P_L;
+        flow_float P_m = P_R;
+
+        //flow_float Vn_p = ((Ux[ic0])*sxx +(Uy[ic0])*syy +(Uz[ic0])*szz)/sss;
+        //flow_float Vn_m = ((Ux[ic1])*sxx +(Uy[ic1])*syy +(Uz[ic1])*szz)/sss;
+
+        //flow_float roVn_p = (roUx[ic0]*sxx + roUy[ic0]*syy + roUz[ic0]*szz)/sss;
+        //flow_float roVn_m = (roUx[ic1]*sxx + roUy[ic1]*syy + roUz[ic1]*szz)/sss;
+
+        //flow_float VnL = ((Ux[ic0])*sxx +(Uy[ic0])*syy +(Uz[ic0])*szz)/sss;
+        //flow_float VnR = ((Ux[ic1])*sxx +(Uy[ic1])*syy +(Uz[ic1])*szz)/sss;
+        flow_float Vn_p = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
+        flow_float Vn_m = ((Ux_R)*sxx +(Uy_R)*syy +(Uz_R)*szz)/sss;
+
+        flow_float roVn_p = (ro_L*Ux_L*sxx + ro_L*Uy_L*syy + ro_L*Uz_L*szz)/sss;
+        flow_float roVn_m = (ro_R*Ux_R*sxx + ro_R*Uy_R*syy + ro_R*Uz_R*szz)/sss;
+
+        flow_float VnL = Vn_p;
+        flow_float VnR = Vn_m;
+
+        flow_float VnL_abs = abs(VnL);
+        flow_float VnR_abs = abs(VnR);
+
+//TODO: change c
+        flow_float c_hat = 0.5*(sonic[ic0] + sonic[ic1]);
+
+        flow_float M_p = Vn_p/c_hat;
+        flow_float M_m = Vn_m/c_hat;
+
+        flow_float ro_del= ro_m - ro_p;
+        flow_float Vn_del= Vn_m - Vn_p;
+        flow_float P_del = P_m  - P_p;
+
+        flow_float beta_p, beta_m;
+
+        if (abs(M_p)>=1.0){
+            beta_p = 0.5*(M_p + abs(M_p))/M_p;
+        } else {
+            beta_p = 0.25*pow((M_p+1.0),2.0)*(2.0-M_p);
+        }
+
+        if (abs(M_m)>=1.0){
+            beta_m = 0.5*(M_m - abs(M_m))/M_m;
+        } else {
+            beta_m = 0.25*pow((M_m-1.0),2.0)*(2.0+M_m);
+        }
+
+        flow_float zero = 0.0;
+        flow_float one  = 1.0;
+        flow_float half = 0.5;
+
+        flow_float g = -max(min(M_p,zero),-one)*min(max(M_m,zero),one);
+        flow_float Vn_hat_abs   = (ro_p*abs(Vn_p) + ro_m*abs(Vn_m))/(ro_p + ro_m);
+        flow_float Vn_hat_p_abs = (1.0-g)*Vn_hat_abs + g*VnL_abs;
+        flow_float Vn_hat_m_abs = (1.0-g)*Vn_hat_abs + g*VnR_abs;
+
+        flow_float M_hat = min(one, sqrt(half*(u_m*u_m+v_m*v_m+w_m*w_m +u_p*u_p+v_p*v_p+w_p*w_p))/c_hat);
+        flow_float chi = (1.0-M_hat)*(1.0-M_hat);
+
+        flow_float p_tilde = half*(P_p+P_m) +half*(beta_p-beta_m)*(P_p-P_m)
+                             +(one-chi)*(beta_p+beta_m-one)*half*(P_m+P_p); 
+
+        flow_float mdot = sss*0.5*((ro_L*(VnL+Vn_hat_p_abs)+ro_R*(VnR-Vn_hat_m_abs)) -chi/(c_hat)*P_del);
+
+        flow_float res_ro_temp   = mdot;
+        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde*sxx;
+        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde*syy;
+        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde*szz;
+        flow_float res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
+
+        // KEEP
+        flow_float duc = max(min(max(ducros[ic0], ducros[ic1]),1.0),0.0);
+
+        flow_float Ctilde  = 0.5*(ro[ic0]+ro[ic1])*0.5*( (Ux[ic0]+Ux[ic1])*nx
+                                                        +(Uy[ic0]+Uy[ic1])*ny
+                                                        +(Uz[ic0]+Uz[ic1])*nz );
+        flow_float Mtildex = Ctilde*(Ux[ic0]+Ux[ic1])*0.5;
+        flow_float Mtildey = Ctilde*(Uy[ic0]+Uy[ic1])*0.5;
+        flow_float Mtildez = Ctilde*(Uz[ic0]+Uz[ic1])*0.5;
+
+        flow_float Ktilde = Ctilde*0.5*(Ux[ic0]*Ux[ic1] +Uy[ic0]*Uy[ic1] +Uz[ic0]*Uz[ic1]);
+        flow_float Itilde = Ctilde*0.5*(Ps[ic0]/ro[ic0] +Ps[ic1]/ro[ic1])/(ga-1.0);
+
+        flow_float Gtildex = 0.5*(Ps[ic0]+Ps[ic1])*nx;
+        flow_float Gtildey = 0.5*(Ps[ic0]+Ps[ic1])*ny;
+        flow_float Gtildez = 0.5*(Ps[ic0]+Ps[ic1])*nz;
+
+        flow_float Ptilde = 0.5*((Ux[ic0]*Ps[ic1] + Ux[ic1]*Ps[ic0])*nx
+                                +(Uy[ic0]*Ps[ic1] + Uy[ic1]*Ps[ic0])*ny
+                                +(Uz[ic0]*Ps[ic1] + Uz[ic1]*Ps[ic0])*nz);
+        flow_float lim_ro = min(limiter_ro[ic0], limiter_ro[ic1]);
+
+        flow_float lim = min(limiter_Ux[ic0],limiter_Ux[ic1]);
+        lim =  min(lim,  min(limiter_Uy[ic0],limiter_Uy[ic1]));
+        lim =  min(lim,  min(limiter_Uz[ic0],limiter_Uz[ic1]));
+
+        duc = max(duc, 1.0-lim);
+
+        res_ro_temp   = (1.0-duc)*Ctilde*sss + duc*res_ro_temp;
+        res_roUx_temp = (1.0-duc)*((Mtildex + Gtildex)*sss) + duc*res_roUx_temp;
+        res_roUy_temp = (1.0-duc)*((Mtildey + Gtildey)*sss) + duc*res_roUy_temp;
+        res_roUz_temp = (1.0-duc)*((Mtildez + Gtildez)*sss) + duc*res_roUz_temp;
+        res_roe_temp  = (1.0-duc)*(Ktilde + Itilde + Ptilde)*sss + duc*res_roe_temp;
+
+        atomicAdd(&res_ro[ic0]  , -res_ro_temp);
+        atomicAdd(&res_roUx[ic0], -res_roUx_temp);
+        atomicAdd(&res_roUy[ic0], -res_roUy_temp);
+        atomicAdd(&res_roUz[ic0], -res_roUz_temp);
+        atomicAdd(&res_roe[ic0] , -res_roe_temp);
+
+        atomicAdd(&res_ro[ic1]  , res_ro_temp);
+        atomicAdd(&res_roUx[ic1], res_roUx_temp);
+        atomicAdd(&res_roUy[ic1], res_roUy_temp);
+        atomicAdd(&res_roUz[ic1], res_roUz_temp);
+        atomicAdd(&res_roe[ic1] , res_roe_temp);
+    }
+
+    __syncthreads();
+}
+
+
+__global__ void convectiveFlux_boundary_d // slau
+( 
+ flow_float ga,
+
+  // mesh structure
+ geom_int nb,
+ geom_int* bplane_plane,  
+ geom_int* bplane_cell,  
+ geom_int* bplane_cell_ghst,  
+
+ geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
+ geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
+ geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+
+ // variables
+ flow_float* ro   ,
+ flow_float* roUx  ,
+ flow_float* roUy  ,
+ flow_float* roUz  ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* Ps  ,
+ flow_float* Ht  ,
+ flow_float* sonic,
+ flow_float* Ts  ,
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb ,
+ 
+ flow_float* res_ro   ,
+ flow_float* res_roUx  ,
+ flow_float* res_roUy  ,
+ flow_float* res_roUz  ,
+ flow_float* res_roe   
+)
+{
+    geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ib < nb) {
+        geom_int  ip = bplane_plane[ib];
+        geom_int  ic = bplane_cell[ib];
+        geom_int  ig = bplane_cell_ghst[ib];
+
+        flow_float dro;
+        flow_float dP;
+        flow_float dUx;
+        flow_float dUy;
+        flow_float dUz;
+        flow_float dU;
+
+        geom_float sxx = sx[ip];
+        geom_float syy = sy[ip];
+        geom_float szz = sz[ip];
+        geom_float sss = ss[ip];
+
+        geom_float nx = sxx/sss;
+        geom_float ny = syy/sss;
+        geom_float nz = szz/sss;
+
+        flow_float ccx_0 = ccx[ic];
+        flow_float ccy_0 = ccy[ic];
+        flow_float ccz_0 = ccz[ic];
+
+        flow_float pcx_1 = pcx[ip];
+        flow_float pcy_1 = pcy[ip];
+        flow_float pcz_1 = pcz[ip];
+
+        flow_float dcc_x = pcx_1 - ccx_0;
+        flow_float dcc_y = pcy_1 - ccy_0;
+        flow_float dcc_z = pcz_1 - ccz_0;
+        flow_float dcc   = sqrt(dcc_x*dcc_x +dcc_y*dcc_y +dcc_z*dcc_z) ;
+
+        flow_float ro_L = ro[ic];
+        flow_float Ux_L = Ux[ic];
+        flow_float Uy_L = Uy[ic];
+        flow_float Uz_L = Uz[ic];
+        flow_float P_L  = Ps[ic];
+        flow_float Ht_L = Ht[ic];
+
+        flow_float ro_R= rob[ib]; 
+        flow_float Ux_R= Uxb[ib];
+        flow_float Uy_R= Uyb[ib];
+        flow_float Uz_R= Uzb[ib];
+        flow_float P_R = Psb[ib];
+        //flow_float Ht_R= Htb[ib];
+        flow_float Ht_R= (roeb[ib] + P_R)/ro_R;
+
+        flow_float ro_p= ro_L;
+        flow_float ro_m= ro_R;
+        flow_float u_p = Ux_L;
+        flow_float v_p = Uy_L;
+        flow_float w_p = Uz_L;
+        flow_float h_p = Ht_L;
+        flow_float u_m = Ux_R;
+        flow_float v_m = Uy_R;
+        flow_float w_m = Uz_R;
+        flow_float h_m = Ht_R;
+        flow_float P_p = P_L;
+        flow_float P_m = P_R;
+
+        //flow_float Vn_p = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
+        flow_float Vn_m = ((Ux_R)*sxx +(Uy_R)*syy +(Uz_R)*szz)/sss;
+
+        //flow_float roVn_p = (ro_L*Ux_L*sxx + ro_L*Uy_L*syy + ro_L*Uz_L*szz)/sss;
+        //flow_float roVn_m = (ro_R*Ux_R*sxx + ro_R*Uy_R*syy + ro_R*Uz_R*szz)/sss;
+
+        //flow_float VnL = Vn_p;
+        //flow_float VnR = Vn_m;
+
+        //flow_float VnL_abs = abs(VnL);
+        //flow_float VnR_abs = abs(VnR);
+
+//TODO: change c
+        //flow_float c_hat = 0.5*(sonic[ic] + sonic[ig]);
+
+        //flow_float M_p = Vn_p/c_hat;
+        //flow_float M_m = Vn_m/c_hat;
+
+        //flow_float ro_del= ro_m - ro_p;
+        //flow_float Vn_del= Vn_m - Vn_p;
+        //flow_float P_del = P_m  - P_p;
+
+        //flow_float beta_p, beta_m;
+
+        //if (abs(M_p)>=1.0){
+        //    beta_p = 0.5*(M_p + abs(M_p))/M_p;
+        //} else {
+        //    beta_p = 0.25*pow((M_p+1.0),2.0)*(2.0-M_p);
+        //}
+
+        //if (abs(M_m)>=1.0){
+        //    beta_m = 0.5*(M_m - abs(M_m))/M_m;
+        //} else {
+        //    beta_m = 0.25*pow((M_m-1.0),2.0)*(2.0+M_m);
+        //}
+
+        //flow_float zero = 0.0;
+        //flow_float one  = 1.0;
+        //flow_float half = 0.5;
+
+        //flow_float g = -max(min(M_p,zero),-one)*min(max(M_m,zero),one);
+        //flow_float Vn_hat_abs   = (ro_p*abs(Vn_p) + ro_m*abs(Vn_m))/(ro_p + ro_m);
+        //flow_float Vn_hat_p_abs = (1.0-g)*Vn_hat_abs + g*VnL_abs;
+        //flow_float Vn_hat_m_abs = (1.0-g)*Vn_hat_abs + g*VnR_abs;
+
+        //flow_float M_hat = min(one, sqrt(half*(u_m*u_m+v_m*v_m+w_m*w_m +u_p*u_p+v_p*v_p+w_p*w_p))/c_hat);
+        //flow_float chi = (1.0-M_hat)*(1.0-M_hat);
+
+        flow_float p_tilde = P_R;
+
+        flow_float mdot = sss*(ro_R*Vn_m);
+
+        flow_float res_ro_temp   = mdot;
+        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde*sxx;
+        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde*syy;
+        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde*szz;
+        flow_float res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
+
+        atomicAdd(&res_ro[ic]  , -res_ro_temp);
+        atomicAdd(&res_roUx[ic], -res_roUx_temp);
+        atomicAdd(&res_roUy[ic], -res_roUy_temp);
+        atomicAdd(&res_roUz[ic], -res_roUz_temp);
+        atomicAdd(&res_roe[ic] , -res_roe_temp);
+
+    }
+
+    __syncthreads();
+}
+
+
+
+
+void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_ns)
+{
+    // initialize
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_ro"]  , 0.0, msh.nCells*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roUx"], 0.0, msh.nCells*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roUy"], 0.0, msh.nCells*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roUz"], 0.0, msh.nCells*sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roe"] , 0.0, msh.nCells*sizeof(flow_float)));
+
+    // -----------------------
+    // *** sum over planes ***
+    // -----------------------
+    if (cfg.solver == "SLAU") {
+        //SLAU_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
+        SLAU_d<<<cuda_cfg.dimGrid_normal_ghst_plane , cuda_cfg.dimBlock>>> ( 
+            cfg.convMethod, cfg.limiter,
+
+            cfg.gamma,
+
+            // mesh structure
+            msh.nCells,
+            msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+            msh.nNormal_ghst_Planes, msh.normal_ghst_planes_d,
+            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+
+            // basic variables
+            //var.c_d["convx"] , var.c_d["convy"] , var.c_d["convz"] ,
+            //var.c_d["diffx"] , var.c_d["diffy"] , var.c_d["diffz"] ,
+            var.c_d["ro"] ,
+            var.c_d["roUx"] ,
+            var.c_d["roUy"] ,
+            var.c_d["roUz"] ,
+            var.c_d["roe"] ,
+            var.c_d["Ux"]  , 
+            var.c_d["Uy"]  , 
+            var.c_d["Uz"]  , 
+            var.c_d["P"]  , 
+            var.c_d["Ht"]  , 
+            var.c_d["sonic"]  , 
+
+            var.c_d["res_ro"] ,
+            var.c_d["res_roUx"] ,
+            var.c_d["res_roUy"] ,
+            var.c_d["res_roUz"] ,
+            var.c_d["res_roe"]  ,
+
+            var.c_d["limiter_ro"]  ,
+            var.c_d["limiter_Ux"]  ,
+            var.c_d["limiter_Uy"]  ,
+            var.c_d["limiter_Uz"]  ,
+            var.c_d["limiter_P"]  ,
+ 
+            var.c_d["ducros"]  ,
+
+            // gradient
+            var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
+            var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
+            var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
+            var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
+            var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"]
+
+        ) ;
+
+    } else if (cfg.solver == "KEEP_SLAU") {
+        KEEP_SLAU_d<<<cuda_cfg.dimGrid_normal_ghst_plane , cuda_cfg.dimBlock>>> ( 
+            cfg.convMethod, cfg.limiter,
+            cfg.gamma,
+
+            // mesh structure
+            msh.nCells,
+            msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+            msh.nNormal_ghst_Planes, msh.normal_ghst_planes_d, 
+            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+
+            // basic variables
+            //var.c_d["convx"] , var.c_d["convy"] , var.c_d["convz"] ,
+            //var.c_d["diffx"] , var.c_d["diffy"] , var.c_d["diffz"] ,
+            var.c_d["ro"] ,
+            var.c_d["roUx"] ,
+            var.c_d["roUy"] ,
+            var.c_d["roUz"] ,
+            var.c_d["roe"] ,
+            var.c_d["Ux"]  , 
+            var.c_d["Uy"]  , 
+            var.c_d["Uz"]  , 
+            var.c_d["P"]  , 
+            var.c_d["Ht"]  , 
+            var.c_d["sonic"]  , 
+
+            var.c_d["res_ro"] ,
+            var.c_d["res_roUx"] ,
+            var.c_d["res_roUy"] ,
+            var.c_d["res_roUz"] ,
+            var.c_d["res_roe"]  ,
+            //var.c_d["limiter"]  ,
+
+            var.c_d["limiter_ro"]  ,
+            var.c_d["limiter_Ux"]  ,
+            var.c_d["limiter_Uy"]  ,
+            var.c_d["limiter_Uz"]  ,
+            var.c_d["limiter_P"]  ,
+            var.c_d["ducros"]  ,
+
+            // gradient
+            var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
+            var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
+            var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
+            var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
+            var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"]
+        );
+        
+    } else {
+        std::cerr << "Error: unknown solver name" << cfg.solver << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    for (auto& bc : msh.bconds)
+    {
+        if (bc.bcondKind == "periodic") {
+            continue;
+        }
+
+        convectiveFlux_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
+            cfg.gamma,
+            // mesh structure
+            bc.iPlanes.size(),
+            bc.map_bplane_plane_d,  
+            bc.map_bplane_cell_d,  
+            bc.map_bplane_cell_ghst_d,
+
+            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+
+            // basic variables
+            var.c_d["ro"] ,
+            var.c_d["roUx"] ,
+            var.c_d["roUy"] ,
+            var.c_d["roUz"] ,
+            var.c_d["roe"] ,
+            var.c_d["Ux"]  , 
+            var.c_d["Uy"]  , 
+            var.c_d["Uz"]  , 
+            var.c_d["P"]  , 
+            var.c_d["Ht"]  , 
+            var.c_d["sonic"]  , 
+            var.c_d["T"]  , 
+
+            bc.bvar_d["ro"],
+            bc.bvar_d["roUx"],
+            bc.bvar_d["roUy"],
+            bc.bvar_d["roUz"],
+            bc.bvar_d["roe"],
+            bc.bvar_d["Ux"],
+            bc.bvar_d["Uy"],
+            bc.bvar_d["Uz"],
+            bc.bvar_d["Tt"],
+            bc.bvar_d["Pt"],
+            bc.bvar_d["Ts"],
+            bc.bvar_d["Ps"],
+ 
+            var.c_d["res_ro"] ,
+            var.c_d["res_roUx"] ,
+            var.c_d["res_roUy"] ,
+            var.c_d["res_roUz"] ,
+            var.c_d["res_roe"]  
+        ) ;
+    }
+
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+
+}
