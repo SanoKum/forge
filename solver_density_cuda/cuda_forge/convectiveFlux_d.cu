@@ -168,6 +168,7 @@ __global__ void SLAU_d
  // mesh structure
  geom_int nCells,
  geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,  
+ geom_int nNormal_ghst_Planes , geom_int* normal_ghst_planes_d,
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
@@ -208,11 +209,13 @@ __global__ void SLAU_d
 
 )
 {
-    geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
+    geom_int ip_orig = blockDim.x*blockIdx.x + threadIdx.x;
 
 
     //if (ip < nPlanes) {
-    if (ip < nNormalPlanes) {
+    if (ip_orig < nNormal_ghst_Planes) {
+
+        geom_int ip = normal_ghst_planes_d[ip_orig];
 
         flow_float (*interp)(int , int , flow_float  , flow_float , 
                              flow_float , flow_float , flow_float ,
@@ -220,8 +223,6 @@ __global__ void SLAU_d
                              flow_float , flow_float , flow_float ,
                              flow_float , flow_float , flow_float ,
                              flow_float , flow_float );
-
-        if (ip >= nNormalPlanes) conv_scheme = -1; // ghost
 
         if (conv_scheme == 0 || conv_scheme == -1) {
             interp = &interp_1stUp;
@@ -1877,7 +1878,7 @@ __global__ void KEEP_SLAU_d
         flow_float Ptilde = 0.5*((Ux[ic0]*Ps[ic1] + Ux[ic1]*Ps[ic0])*nx
                                 +(Uy[ic0]*Ps[ic1] + Uy[ic1]*Ps[ic0])*ny
                                 +(Uz[ic0]*Ps[ic1] + Uz[ic1]*Ps[ic0])*nz);
-        flow_float lim_ro = min(limiter_ro[ic0], limiter_ro[ic1]);
+        //flow_float lim_ro = min(limiter_ro[ic0], limiter_ro[ic1]);
 
         flow_float lim = min(limiter_Ux[ic0],limiter_Ux[ic1]);
         lim =  min(lim,  min(limiter_Uy[ic0],limiter_Uy[ic1]));
@@ -2148,7 +2149,7 @@ __global__ void KEEP_SLAU_d
 //
 //    __syncthreads();
 //}
-//
+
 __global__ void convectiveFlux_boundary_d // slau
 ( 
  flow_float ga,
@@ -2347,8 +2348,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     // *** sum over planes ***
     // -----------------------
     if (cfg.solver == "SLAU") {
-        //SLAU_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
-        SLAU_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
+        //SLAU_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
+        SLAU_d<<<cuda_cfg.dimGrid_normal_ghst_plane, cuda_cfg.dimBlock>>> ( 
             cfg.convMethod, cfg.limiter,
 
             cfg.gamma,
@@ -2356,6 +2357,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             // mesh structure
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+            msh.nNormal_ghst_Planes, msh.normal_ghst_planes_d,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
             var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
@@ -2548,9 +2550,6 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
             var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
             var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"]
-
-
-
         );
 
     } else if (cfg.solver == "KEEP_FVS") {
@@ -2605,8 +2604,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         );
 
     } else if (cfg.solver == "KEEP_SLAU") {
-        //KEEP_SLAU_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
-        KEEP_SLAU_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
+        KEEP_SLAU_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
+        //KEEP_SLAU_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
             cfg.convMethod, cfg.limiter,
             cfg.gamma,
 
@@ -2661,6 +2660,9 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     for (auto& bc : msh.bconds)
     {
+        if (bc.bcondKind == "periodic") {
+            continue;
+        }
         convectiveFlux_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
             cfg.gamma,
             // mesh structure

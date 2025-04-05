@@ -9,6 +9,7 @@ __global__ void runge_kutta_exp_4th_d
  flow_float coef_Res,
 
  flow_float dt ,
+ flow_float* dt_local ,
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -52,6 +53,8 @@ __global__ void runge_kutta_exp_4th_d
     geom_float v = vol[ic];
 
     if (ic < nCells) {
+        flow_float dt_l = dt_local[ic];
+
         if (loop == 0) {
             res_ro_m[ic]   = 0.0;
             res_roUx_m[ic] = 0.0;
@@ -60,24 +63,24 @@ __global__ void runge_kutta_exp_4th_d
             res_roe_m[ic]  = 0.0;
         }
         // N: previous outer step , M: previous inner loop
-        res_ro_m[ic]   += coef_Res*res_ro[ic]*dt/v;
-        res_roUx_m[ic] += coef_Res*res_roUx[ic]*dt/v;
-        res_roUy_m[ic] += coef_Res*res_roUy[ic]*dt/v;
-        res_roUz_m[ic] += coef_Res*res_roUz[ic]*dt/v;
-        res_roe_m[ic]  += coef_Res*res_roe[ic]*dt/v;
+        res_ro_m[ic]   += coef_Res*res_ro[ic]*dt_l/v;
+        res_roUx_m[ic] += coef_Res*res_roUx[ic]*dt_l/v;
+        res_roUy_m[ic] += coef_Res*res_roUy[ic]*dt_l/v;
+        res_roUz_m[ic] += coef_Res*res_roUz[ic]*dt_l/v;
+        res_roe_m[ic]  += coef_Res*res_roe[ic]*dt_l/v;
 
         if (loop < 3) {
-            ro[ic]   = roN[ic]   +coef_DT*res_ro[ic]*dt/v;
-            roUx[ic] = roUxN[ic] +coef_DT*res_roUx[ic]*dt/v;
-            roUy[ic] = roUyN[ic] +coef_DT*res_roUy[ic]*dt/v;
-            roUz[ic] = roUzN[ic] +coef_DT*res_roUz[ic]*dt/v;
-            roe[ic]  = roeN[ic]  +coef_DT*res_roe[ic]*dt/v;
+            ro[ic]   = roN[ic]   +coef_DT*res_ro[ic]*dt_l/v;
+            roUx[ic] = roUxN[ic] +coef_DT*res_roUx[ic]*dt_l/v;
+            roUy[ic] = roUyN[ic] +coef_DT*res_roUy[ic]*dt_l/v;
+            roUz[ic] = roUzN[ic] +coef_DT*res_roUz[ic]*dt_l/v;
+            roe[ic]  = roeN[ic]  +coef_DT*res_roe[ic]*dt_l/v;
         } else {
-            res_ro[ic]   = res_ro_m[ic]*v/dt ;
-            res_roUx[ic] = res_roUx_m[ic]*v/dt ;
-            res_roUy[ic] = res_roUy_m[ic]*v/dt ;
-            res_roUz[ic] = res_roUz_m[ic]*v/dt ;
-            res_roe[ic]  = res_roe_m[ic]*v/dt ;
+            res_ro[ic]   = res_ro_m[ic]*v/dt_l ;
+            res_roUx[ic] = res_roUx_m[ic]*v/dt_l ;
+            res_roUy[ic] = res_roUy_m[ic]*v/dt_l ;
+            res_roUz[ic] = res_roUz_m[ic]*v/dt_l ;
+            res_roe[ic]  = res_roe_m[ic]*v/dt_l ;
 
             ro[ic]   = roN[ic]  + res_ro_m[ic] ;
             roUx[ic] = roUxN[ic]+ res_roUx_m[ic] ;
@@ -86,7 +89,6 @@ __global__ void runge_kutta_exp_4th_d
             roe[ic]  = roeN[ic] + res_roe_m[ic] ;
         }
     }
-    __syncthreads();
 }
 
 __global__ void runge_kutta_exp_d
@@ -99,6 +101,7 @@ __global__ void runge_kutta_exp_d
  flow_float coef_Res,
 
  flow_float dt ,
+ flow_float* dt_local ,
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -132,17 +135,16 @@ __global__ void runge_kutta_exp_d
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
 
-    geom_float v = vol[ic];
-
     if (ic < nCells) {
+        geom_float v = vol[ic];
+        flow_float dt_l = dt_local[ic];
         // N: previous outer step , M: previous inner loop
-        ro[ic]   = coef_N*roN[ic]   + coef_M*roM[ic]   + coef_Res*res_ro[ic]*dt/v;
-        roUx[ic] = coef_N*roUxN[ic] + coef_M*roUxM[ic] + coef_Res*res_roUx[ic]*dt/v;
-        roUy[ic] = coef_N*roUyN[ic] + coef_M*roUyM[ic] + coef_Res*res_roUy[ic]*dt/v;
-        roUz[ic] = coef_N*roUzN[ic] + coef_M*roUzM[ic] + coef_Res*res_roUz[ic]*dt/v;
-        roe[ic]  = coef_N*roeN[ic]  + coef_M*roeM[ic]  + coef_Res*res_roe[ic]*dt/v;
+        ro[ic]   = coef_N*roN[ic]   + coef_M*roM[ic]   + coef_Res*res_ro[ic]*dt_l/v;
+        roUx[ic] = coef_N*roUxN[ic] + coef_M*roUxM[ic] + coef_Res*res_roUx[ic]*dt_l/v;
+        roUy[ic] = coef_N*roUyN[ic] + coef_M*roUyM[ic] + coef_Res*res_roUy[ic]*dt_l/v;
+        roUz[ic] = coef_N*roUzN[ic] + coef_M*roUzM[ic] + coef_Res*res_roUz[ic]*dt_l/v;
+        roe[ic]  = coef_N*roeN[ic]  + coef_M*roeM[ic]  + coef_Res*res_roe[ic]*dt_l/v;
     }
-    __syncthreads();
 }
 
 //TODO __global__ void runge_kutta_dual_explicit_d
@@ -211,6 +213,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             cfg.coef_DT_4thRunge[loop],
             cfg.coef_Res_4thRunge[loop],
             cfg.dt ,
+            var.c_d["dt_local"],
 
             // mesh structure
             msh.nCells_all , msh.nCells ,
@@ -224,13 +227,14 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             var.c_d["res_ro_m"], var.c_d["res_roUx_m"], var.c_d["res_roUy_m"], var.c_d["res_roUz_m"] , var.c_d["res_roe_m"] 
         ) ;
 
-    } else if (cfg.isImplicit == 0) { // explicit
+    } else if (cfg.timeIntegration == 1 or cfg.timeIntegration == 3) { // explicit
         runge_kutta_exp_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
             loop,
             cfg.coef_N[loop],
             cfg.coef_M[loop],
             cfg.coef_Res[loop],
             cfg.dt , 
+            var.c_d["dt_local"],
 
             // mesh structure
             msh.nCells_all , msh.nCells ,

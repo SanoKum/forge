@@ -64,7 +64,8 @@ public:
 
     std::list<std::string> bplaneIntNames =  
     {
-        "partnerPlnID" // for periodic 
+        "partnerPlnID"  // for periodic 
+        "partnerCellID" // for periodic 
     };
 
     geom_int physID; 
@@ -93,8 +94,8 @@ public:
     std::map<std::string, flow_float* > bvar_d; // cuda
 
     // interger values (only for periodic now)
-    std::map<std::string, std::vector<flow_float>> bint;
-    std::map<std::string, flow_float* > bint_d; // cuda
+    std::map<std::string, std::vector<geom_int>> bint;
+    std::map<std::string, geom_int* > bint_d; // cuda
 
     //cuda
     geom_int* map_bplane_plane_d;
@@ -115,8 +116,9 @@ public:
 struct mesh 
 {
 public:
-    geom_int  nNodes, nPlanes, nCells, nNormalPlanes, nBPlanes, nBconds;
-    geom_int  nCells_all, nCells_ghst , nCells_halo;
+    geom_int nNodes, nPlanes, nCells, nNormalPlanes, nBPlanes, nBconds;
+    geom_int nCells_all, nCells_ghst , nCells_halo;
+    geom_int nNormal_ghst_Planes; 
 
     std::vector<node> nodes;
     std::vector<plane> planes;
@@ -129,6 +131,8 @@ public:
 
     geom_int* map_cell_planes_index_d; 
     geom_int* map_cell_planes_d; 
+
+    geom_int* normal_ghst_planes_d; // 
 
     mesh();
     ~mesh();

@@ -39,14 +39,29 @@ add_library(cuda_forge STATIC
     fluct_variables_d.cu
     fluct_variables_d.cuh
  
+    gasProperties_d.cu
+    gasProperties_d.cuh
+ 
 
 )
 
 
 target_include_directories(cuda_forge PRIVATE .. )
 
-set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 86)
-target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -lineinfo)
+#set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 86)
+#target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -lineinfo)
+
+
+# CUDAアーキテクチャをT4(7.5)とRTX 30シリーズ(8.6)に対応させる
+set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 75 86)
+
+# コンパイルオプションを両アーキテクチャに対応
+#target_compile_options(cuda_forge PRIVATE 
+#    $<$<COMPILE_LANGUAGE:CUDA>:
+#        -gencode arch=compute_75,code=sm_75
+#        -gencode arch=compute_86,code=sm_86
+#    > 
+#    -lineinfo)
 
 #set_target_properties(cuda_forge PROPERTIES CUDA_ARCHITECTURES "86")
 #target_compile_options(cuda_forge PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -dc -w)

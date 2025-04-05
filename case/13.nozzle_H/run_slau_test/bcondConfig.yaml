@@ -1,6 +1,7 @@
 inlet:
   physID: 1
   kind: inlet_Pressure
+  outputHDFflg: 0
   ints:
   floats:
     Pt: 2000000.3987
@@ -10,6 +11,7 @@ outlet:
   physID: 2
   #kind: outlet_statPress
   kind: outflow
+  outputHDFflg: 0
   ints:
   floats:
     Ps: 600000.0
@@ -19,7 +21,9 @@ outlet:
 wall:
   physID: 3
   kind: wall
+  outputHDFflg: 0
   ints:
   floats:
-
-
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0

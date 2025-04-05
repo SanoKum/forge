@@ -15,6 +15,7 @@ public:
     dim3 dimGrid_normalcell;
     dim3 dimGrid_plane;
     dim3 dimGrid_nplane;
+    dim3 dimGrid_normal_ghst_plane;
     dim3 dimGrid_bplane;
 
     dim3 dimBlock_small;
@@ -32,5 +33,6 @@ inline cudaConfig::cudaConfig(mesh& msh)
     this->dimGrid_normalcell_small = dim3(ceil( msh.nCells / (flow_float)blocksize_small));
     this->dimGrid_plane  = dim3(ceil( msh.nPlanes/ (flow_float)blocksize));
     this->dimGrid_nplane = dim3(ceil( msh.nNormalPlanes/ (flow_float)blocksize));
+    this->dimGrid_normal_ghst_plane = dim3(ceil( msh.nPlanes/ (flow_float)blocksize));
     this->dimGrid_bplane = dim3(ceil( msh.nBPlanes/ (flow_float)blocksize));
 };

@@ -2,10 +2,7 @@ inlet:
   physID: 1 
   kind: inlet_Pressure
   outputHDFflg: 0
-  #kind: periodic
   ints:
-    type: 0
-    partnerBCID: 4
   floats:
     Pt: 100000.0
     Tt: 293.15   

@@ -22,7 +22,7 @@
 __global__ void setCFL_pln_d
 ( 
  flow_float dt,
- flow_float dt_pseudo,
+ //flow_float dt_pseudo,
  flow_float visc,
  flow_float* vis_turb  ,
 
@@ -41,22 +41,23 @@ __global__ void setCFL_pln_d
  flow_float* roe  ,
 
  flow_float* cfl ,
- flow_float* cfl_pseudo ,
+ //flow_float* cfl_pseudo ,
  flow_float* sonic,
  flow_float* Ux  ,
  flow_float* Uy  ,
  flow_float* Uz  ,
 
  //plane variables
- flow_float* cfl_pln ,
- flow_float* cfl_pseudo_pln
+ flow_float* cfl_pln
+ //flow_float* cfl_pseudo_pln
 );
 
 __global__ void setCFL_cell_d
 ( 
- int dtControl, flow_float cfl_target,
+ int dtControl, flow_float cfl_target, flow_float cfl_pseudo_target,
+ int dualTime, int unsteady,
  flow_float dt,
- flow_float dt_pseudo,
+ //flow_float dt_pseudo,
 
  // mesh structure
  geom_int nCells,
@@ -73,14 +74,14 @@ __global__ void setCFL_cell_d
  flow_float* roe  ,
 
  flow_float* cfl ,
- flow_float* cfl_pseudo ,
+ flow_float* dt_local  ,
  flow_float* sonic,
  flow_float* Ux  ,
  flow_float* Uy  ,
  flow_float* Uz  ,
 
- flow_float* cfl_pln ,
- flow_float* cfl_pseudo_pln 
+ flow_float* cfl_pln
+ //flow_float* cfl_pseudo_pln 
 );
 
 void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
