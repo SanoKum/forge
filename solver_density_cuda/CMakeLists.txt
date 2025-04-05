@@ -35,7 +35,7 @@ file( GLOB forge_cppfiles
     convectiveFlux.cpp ,
     input/solverConfig.cpp ,
     input/calcWallDistance_kdtree.cpp ,
-    setDT.cpp ,
+    #setDT.cpp ,
     setStructualVariables.cpp ,
     dependentVariables.cpp 
 )
@@ -45,14 +45,14 @@ set_source_files_properties(${forge_cppfiles} PROPERTIES LANGUAGE CUDA)
 add_executable(forge ${forge_cppfiles})
 
 
-add_subdirectory(cuda_forge )
+add_subdirectory(cuda_forge)
+add_subdirectory(probe )
 
 
 target_compile_options(forge PUBLIC
              $<$<COMPILE_LANGUAGE:CXX>:-O3 -fopenmp>)
 
-
-target_link_libraries(forge PRIVATE cuda_forge)
+target_link_libraries(forge PRIVATE cuda_forge probe)
 target_link_libraries(forge PRIVATE hdf5 yaml-cpp ${dyn_libs_cuda} kdtree)
 
 # ----------------------

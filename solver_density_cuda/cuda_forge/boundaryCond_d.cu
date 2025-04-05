@@ -191,7 +191,8 @@ void wall_d
 
         flow_float ek = 0.5*(Ux[ig]*Ux[ig] +Uy[ig]*Uy[ig] +Uz[ig]*Uz[ig]);
         P[ig] =(ga-1.0)*(roe[ig]-ro[ig]*ek);
-        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
+
+        Ht[ig]   = ga*roe[ig]/ro[ig] + (1.0-ga)*ek;
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
 
         flow_float Ux_b = Uxb[ib];
@@ -199,15 +200,14 @@ void wall_d
         flow_float Uz_b = Uzb[ib];
         ek = 0.5*(Ux_b*Ux_b +Uy_b*Uy_b +Uz_b*Uz_b);
 
-        roUxb[ib] = rob[ib]*Ux_b;
-        roUyb[ib] = rob[ib]*Uy_b;
-        roUzb[ib] = rob[ib]*Uz_b;
-        Psb[ib]   = P[ic];
         flow_float R = (ga-1.0)/ga*cp;
         flow_float Tc = P[ic]/(ro[ic]*R);
         Tsb[ib]   = Tc;
+        Psb[ib]   = P[ic];
         rob[ib]   = Psb[ib]/(R*Tc);
-        roeb[ib]  = Psb[ib]/(ga-1.0) + rob[ib]*ek;
+        roUxb[ib] = rob[ib]*Ux_b;
+        roUyb[ib] = rob[ib]*Uy_b;
+        roUzb[ib] = rob[ib]*Uz_b;
     }
 };
 
@@ -1215,6 +1215,140 @@ void outflow_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , me
         bc.bvar_d["Ps"]
     );
 }
+
+__global__ 
+void periodic_d 
+( 
+ // gas properties
+ flow_float ga,
+ flow_float cp,
+
+ // mesh structure
+ geom_int nb,
+ geom_int* bplane_plane,  
+ geom_int* bplane_cell,  
+ geom_int* bplane_cell_ghst,  
+
+ geom_int* bplane_partnerCellID,  
+ geom_float dtheta,
+
+ geom_float* x   ,  geom_float* y   ,  geom_float* z ,
+ geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+
+ // variables
+ flow_float* ro   ,
+ flow_float* roUx ,
+ flow_float* roUy ,
+ flow_float* roUz ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* P   ,
+ flow_float* T   ,
+ flow_float* Ht  ,
+ flow_float* sonic, 
+
+ // bvar
+ flow_float* rob ,
+ flow_float* roUxb ,
+ flow_float* roUyb ,
+ flow_float* roUzb ,
+ flow_float* roeb ,
+ flow_float* Uxb ,
+ flow_float* Uyb ,
+ flow_float* Uzb ,
+ flow_float* Ttb ,
+ flow_float* Ptb ,
+ flow_float* Tsb ,
+ flow_float* Psb 
+)
+{
+    geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ib < nb) {
+        geom_int  ip         = bplane_plane[ib];
+        geom_int  ic         = bplane_cell[ib];
+        geom_int  ic_partner = bplane_partnerCellID[ib];
+        geom_int  ig         = bplane_cell_ghst[ib];
+
+        ro[ig]   = ro[ic];
+        P[ig]    = P[ic];
+        Ux[ig]   = Ux[ic];
+        Uy[ig]   = Uy[ic]*cos(-dtheta) -Uz[ic]*sin(-dtheta);
+        Uz[ig]   = Uz[ic]*sin(-dtheta) +Uz[ic]*cos(-dtheta);
+        roUx[ig] = roUx[ic];
+        roUy[ig] = roUy[ic]*cos(-dtheta) -roUz[ic]*sin(-dtheta);
+        roUz[ig] = roUz[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
+        roe[ig]  = roe[ic];
+        T[ig]    = P[ic]*ga/(ro[ig]*(ga-1.0)*cp);
+
+        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
+        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+
+        rob[ib]   = ro[ic];
+        Psb[ib]   = P[ic];
+        Uxb[ib]   = Ux[ic];
+        Uyb[ib]   = Uy[ic]*cos(-dtheta) -Uz[ic]*sin(-dtheta);
+        Uzb[ib]   = Uz[ic]*sin(-dtheta) +Uz[ic]*cos(-dtheta);
+        roUxb[ib] = roUx[ic];
+        roUyb[ib] = roUy[ic]*cos(-dtheta) -roUz[ic]*sin(-dtheta);
+        roUzb[ib] = roUz[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
+        roeb[ib]  = roe[ic];
+        Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+    }
+};
+
+void periodic_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
+{
+    periodic_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>( 
+        cfg.gamma,
+        cfg.cp,
+
+        bc.iPlanes.size(),
+        bc.map_bplane_plane_d,  
+        bc.map_bplane_cell_d,  
+        bc.map_bplane_cell_ghst_d,
+
+        bc.bint_d["partnerCellID"],
+        bc.inputInts["dtheta"],
+
+        var.p_d["x"],  
+        var.p_d["y"],  
+        var.p_d["z"],  
+        var.p_d["sx"],  
+        var.p_d["sy"],  
+        var.p_d["sz"],  
+        var.p_d["ss"],  
+
+        var.c_d["ro"] ,
+        var.c_d["roUx"] ,
+        var.c_d["roUy"] ,
+        var.c_d["roUz"] ,
+        var.c_d["roe"] ,
+        var.c_d["Ux"] ,
+        var.c_d["Uy"] ,
+        var.c_d["Uz"] ,
+        var.c_d["P"], 
+        var.c_d["T"], 
+        var.c_d["Ht"], 
+        var.c_d["sonic"],
+
+        bc.bvar_d["ro"],
+        bc.bvar_d["roUx"],
+        bc.bvar_d["roUy"],
+        bc.bvar_d["roUz"],
+        bc.bvar_d["roe"],
+        bc.bvar_d["Ux"],
+        bc.bvar_d["Uy"],
+        bc.bvar_d["Uz"],
+        bc.bvar_d["Tt"],
+        bc.bvar_d["Pt"],
+        bc.bvar_d["Ts"],
+        bc.bvar_d["Ps"]
+    );
+}
+
 
 
 __global__ 

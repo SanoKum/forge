@@ -16,7 +16,7 @@ using HighFive::File;
 
 void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep)
 {
-    if (iStep%cfg.outStepInterval != 0) return;
+    if (iStep%cfg.outStepInterval != 0 or iStep < cfg.outStepStart) return;
 
     if (cfg.gpu == 1) {
         var.copyVariables_cell_D2H(var.output_cellValNames);
@@ -136,7 +136,8 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
 
 void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var , const int& iStep)
 {
-    if (iStep%cfg.outStepInterval != 0) return;
+    if (iStep%cfg.outStepInterval != 0 or iStep < cfg.outStepStart) return;
+
 
     for (auto& bc : msh.bconds) {
         //if (bc.bcondKind  != "wall") continue;

@@ -39,12 +39,6 @@ public:
         "dPdx" , "dPdy"  , "dPdz",
         "drodx", "drody" , "drodz",
 
-        //"droUxdx" , "droUxdy" , "droUxdz" , 
-        //"droUydx" , "droUydy" , "droUydz" , 
-        //"droUzdx" , "droUzdy" , "droUzdz" ,
-        //"droedx"  , "droedy"  , "droedz" ,
-
-        //"dHtdx"  , "dHtdy"  , "dHtdz" ,
         "divU*vol" , "divU" , "divU_star",
 
         "ducros" , 
@@ -54,17 +48,13 @@ public:
         "limiter_Uz" , 
         "limiter_ro" , 
         "limiter_P" , 
-        //"limiter_Ht" , 
         "limiter_T" , 
-        //"limiter_roUx" , 
-        //"limiter_roUy" , 
-        //"limiter_roUz" , 
-        //"limiter_roe" , 
-
         "vis_lam" , 
         "vis_turb" , "wall_dist" , 
 
-        "cfl"   , "cfl_pseudo",
+        "gamma" , "cp" , 
+
+        "cfl"   , "cfl_pseudo", "dt_local",
         "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe",
         "res_ro_m"  , "res_roUx_m" , "res_roUy_m" , "res_roUz_m" , "res_roe_m",
         "sonic"   , "Ht" , "ros", // s: entropy
@@ -99,11 +89,6 @@ public:
         "drodx" , "drody" , "drodz" ,
         "dPdx"  , "dPdy"  , "dPdz" ,
 
-        //"droUxdx" , "droUxdy" , "droUxdz" , 
-        //"droUydx" , "droUydy" , "droUydz" , 
-        //"droUzdx" , "droUzdy" , "droUzdz" ,
-        //"droedx"  , "droedy"  , "droedz" ,
-
         "ducros",
 
         "limiter_ro" , 
@@ -113,7 +98,9 @@ public:
         "limiter_P" , 
         //"limiter_Ht" , 
 
-        "vis_turb" , "wall_dist"  
+        "dt_local",
+
+        "vis_lam" , "vis_turb" , "wall_dist"  
     };
 
     //not yet implemented

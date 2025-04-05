@@ -21,8 +21,8 @@ public:
     flow_float Re = 5.52e6;
 
     flow_float Mach = 6.0;
-    flow_float ramda = 7.739e-5;
-    flow_float IntTurb = 0.5;
+    flow_float ramda = 7.739e-5*2;
+    flow_float IntTurb = 0.25;
     flow_float T0 = 420.0;
     flow_float P0 = 965264.3;
 

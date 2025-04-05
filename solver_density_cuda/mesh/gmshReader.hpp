@@ -205,7 +205,7 @@ public:
         boost::split(l_str, line, boost::is_space());
 
         if (l_str[0] != "$PhysicalNames") {
-            cerr << "Error: unknown gmsh format" << endl;                                                                                                     
+            cerr << "Error: unknown gmsh format phys" << endl;                                                                                                     
             exit(EXIT_FAILURE);
         }
 

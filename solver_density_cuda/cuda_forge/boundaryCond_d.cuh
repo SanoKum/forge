@@ -367,12 +367,12 @@ __global__ void outflow_d
  flow_float* Ptb ,
  flow_float* Tsb ,
  flow_float* Psb 
-
-
 );
+
 
 void outflow_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
 
+void periodic_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p); 
 
 __global__ 
 void copyBcondsGradient_d 

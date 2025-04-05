@@ -17,6 +17,7 @@ __global__ void runge_kutta_exp_4th_d
  flow_float coef_Res,
 
  flow_float dt ,
+ flow_float* dt_local ,
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -64,6 +65,7 @@ __global__ void runge_kutta_exp_d
  flow_float coef_Res,
 
  flow_float dt ,
+ flow_float* dt_local ,
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,

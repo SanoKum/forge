@@ -507,6 +507,7 @@ void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variable
             else if (bc.bcondKind == "inlet_Pressure") { inlet_Pressure_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
             else if (bc.bcondKind == "inlet_Pressure_dir") { inlet_Pressure_dir_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
             else if (bc.bcondKind == "outflow") { outflow_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
+            else if (bc.bcondKind == "periodic") { periodic_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
         }
         gpuErrchk( cudaPeekAtLastError() );
         gpuErrchk( cudaDeviceSynchronize() );

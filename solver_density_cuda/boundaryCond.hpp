@@ -195,8 +195,14 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,0},
               {"Ps"  ,0},
-              {"partnerBCID" , 11},
-              {"partnerPlnID", 3},
+              {"dtheta", 10},
+              {"dx", 10},
+              {"dy", 10},
+              {"dz", 10},
+              {"type" , 11},
+              {"partnerBCID"  , 11},
+              {"partnerPlnID" , 3},
+              {"partnerCellID", 3},
           }},
         }
     };

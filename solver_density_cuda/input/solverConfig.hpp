@@ -8,6 +8,7 @@
 #include <map>
 
 #include "yaml-cpp/yaml.h"
+#include <stdexcept>
 
 
 class solverConfig
@@ -28,6 +29,7 @@ public:
     int endTimeControl; // 0: use dt , 1: cfl
     int nStep;
     int outStepInterval;
+    int outStepStart;
 
     int dtControl; // 0: use dt , 1: cfl
     flow_float totalTime=0.0;
@@ -38,12 +40,15 @@ public:
     flow_float dt_max;
     flow_float dt_min;
 
+    int unsteady; // steady , unsteady
+    int dualTime; // 0: off , 1: on
     int timeIntegration; // 1: Euler expli , 3: 3rd Runge Explicit
 
     int isImplicit; // 0: exp , 1:imp;
 
     // for inner loop
-    int nLoop; 
+    int nStage;
+    int nInnerLoop; 
     std::vector<flow_float> coef_N;
     std::vector<flow_float> coef_M; 
     std::vector<flow_float> coef_Res;
@@ -59,6 +64,9 @@ public:
     int LESmodel; // 1:WALE
 
     int isCompressible;
+    int thermalMethod;
+    int viscMethod;
+
     flow_float ro;
     flow_float visc;
     flow_float thermCond;

@@ -39,7 +39,8 @@ __global__ void calcGradient_1_d
 
     __syncthreads();
 
-    if (ip < nNormalPlanes) {
+    //if (ip < nNormalPlanes) {
+    if (ip < nPlanes) {
         geom_int  ic0 = plane_cells[2*ip+0];
         geom_int  ic1 = plane_cells[2*ip+1];
 
@@ -58,6 +59,19 @@ __global__ void calcGradient_1_d
         geom_float szz = sz[ip];
 
         flow_float US  = Uxf*sxx +Uyf*syy +Uzf*szz;
+
+//        if (ic0 == 0 or ic1 == 0) {
+//            printf("ic0 = %d, ic1 = %d, f = %f, Uxf = %f, Uyf = %f, Uzf = %f\n", ic0, ic1, f, Uxf, Uyf, Uzf);
+//            printf("sxx = %f, syy = %f, szz = %f\n", sxx, syy, szz);
+//            printf("Pf  = %f\n", Pf);    
+//            printf("US  = %f\n", US);    
+//        }
+//
+//        if (ic0 == 1 or ic1 == 1) {
+//            printf("ic0 = %d, ic1 = %d, f = %f, Uxf = %f, Uyf = %f, Uzf = %f\n", ic0, ic1, f, Uxf, Uyf, Uzf);
+//        }
+
+
 
         atomicAdd(&dUxdx[ic0], sxx*Uxf);
         atomicAdd(&dUxdy[ic0], syy*Uxf);
@@ -408,7 +422,8 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
 
 
     // sum over planes
-    calcGradient_1_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
+    //calcGradient_1_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
+    calcGradient_1_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
         // mesh structure
         msh.nCells,
         msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
@@ -444,52 +459,52 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     ) ;
 
 
-    for (auto& bc : msh.bconds)
-    {
-        calcGradient_b_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
-            // mesh structure
-            bc.iPlanes.size(),
-            bc.map_bplane_plane_d,  
-            bc.map_bplane_cell_d,  
-            bc.map_bplane_cell_ghst_d,
+    //for (auto& bc : msh.bconds)
+    //{
+    //    calcGradient_b_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
+    //        // mesh structure
+    //        bc.iPlanes.size(),
+    //        bc.map_bplane_plane_d,  
+    //        bc.map_bplane_cell_d,  
+    //        bc.map_bplane_cell_ghst_d,
 
-            // mesh structure
-            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+    //        // mesh structure
+    //        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+    //        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+    //        var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
-            // boundary variables
-            bc.bvar_d["ro"],
-            bc.bvar_d["roUx"],
-            bc.bvar_d["roUy"],
-            bc.bvar_d["roUz"],
-            bc.bvar_d["roe"],
-            bc.bvar_d["Ux"],
-            bc.bvar_d["Uy"],
-            bc.bvar_d["Uz"],
-            bc.bvar_d["Tt"],
-            bc.bvar_d["Pt"],
-            bc.bvar_d["Ts"],
-            bc.bvar_d["Ps"],
-            bc.bvar_d["Ht"],
+    //        // boundary variables
+    //        bc.bvar_d["ro"],
+    //        bc.bvar_d["roUx"],
+    //        bc.bvar_d["roUy"],
+    //        bc.bvar_d["roUz"],
+    //        bc.bvar_d["roe"],
+    //        bc.bvar_d["Ux"],
+    //        bc.bvar_d["Uy"],
+    //        bc.bvar_d["Uz"],
+    //        bc.bvar_d["Tt"],
+    //        bc.bvar_d["Pt"],
+    //        bc.bvar_d["Ts"],
+    //        bc.bvar_d["Ps"],
+    //        bc.bvar_d["Ht"],
 
-            // gradient
-            var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
-            var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
-            var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-            var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
-            var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
-            var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
+    //        // gradient
+    //        var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
+    //        var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
+    //        var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
+    //        var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
+    //        var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
+    //        var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
 
-            //var.c_d["droUxdx"] , var.c_d["droUxdy"] , var.c_d["droUxdz"],
-            //var.c_d["droUydx"] , var.c_d["droUydy"] , var.c_d["droUydz"],
-            //var.c_d["droUzdx"] , var.c_d["droUzdy"] , var.c_d["droUzdz"],
-            //var.c_d["droedx"]  , var.c_d["droedy"]  , var.c_d["droedz"],
-            //var.c_d["dHtdx"]  , var.c_d["dHtdy"]  , var.c_d["dHtdz"],
+    //        //var.c_d["droUxdx"] , var.c_d["droUxdy"] , var.c_d["droUxdz"],
+    //        //var.c_d["droUydx"] , var.c_d["droUydy"] , var.c_d["droUydz"],
+    //        //var.c_d["droUzdx"] , var.c_d["droUzdy"] , var.c_d["droUzdz"],
+    //        //var.c_d["droedx"]  , var.c_d["droedy"]  , var.c_d["droedz"],
+    //        //var.c_d["dHtdx"]  , var.c_d["dHtdy"]  , var.c_d["dHtdz"],
  
-            var.c_d["divU"]  
-        ) ;
-    }
+    //        var.c_d["divU"]  
+    //    ) ;
+    //}
  
 
     calcGradient_2_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 

@@ -26,13 +26,13 @@
 
 #include "convectiveFlux.hpp"
 #include "implicitCorrection.hpp"
-#include "timeIntegration.hpp"
+//#include "timeIntegration.hpp"
 #include "update.hpp"
 
 #include "common/stringUtil.hpp"
 #include "common/vectorUtil.hpp"
 
-#include "setDT.hpp"
+//#include "setDT.hpp"
 
 // cuda
 #include "cuda_forge/cudaWrapper.cuh"
@@ -49,6 +49,10 @@
 #include "cuda_forge/turbulent_viscosity_d.cuh"
 
 #include "cuda_forge/fluct_variables_d.cuh"
+#include "cuda_forge/gasProperties_d.cuh"
+
+#include "probe/point_probes.cuh"
+#include "cuda_forge/setDT_d.cuh"
 
 #include <cuda_runtime.h>
 
@@ -76,6 +80,7 @@ int main(void) {
 
     cout << "Read Mesh \n";
     mesh msh;
+
     if (cfg.meshFormat == "hdf5") {
         msh.readMesh(cfg.meshFileName);
     } else {
@@ -107,6 +112,8 @@ int main(void) {
 
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns); 
 
+    gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
+
 
     // fluctuating velocity inlet
     fluct_variables fluct = fluct_variables();
@@ -124,6 +131,10 @@ int main(void) {
 
     setDT_d_wrapper(cfg , cuda_cfg , msh , var);
 
+    point_probes pprobes;
+    pprobes.init(cfg , cuda_cfg , msh);
+
+
     outputH5_XDMF(cfg , msh, var, 0);
 
     cout << "Start Calculation \n";
@@ -132,11 +143,13 @@ int main(void) {
         cout << "----------------------------\n";
         cout << "Step : " << iStep << "  Time : " << cfg.totalTime << "\n";
 
-        for (int iloop = 0 ; iloop <cfg.nLoop ; iloop++) {
+        for (int iloop = 0 ; iloop <cfg.nStage ; iloop++) {
             updateVariablesInner(cfg , cuda_cfg ,msh , var , mat_ns);
 
-            cout << "  Inner loop : " << iloop+1 << "\n" ;
+            cout << "       Stage : " << iloop+1 << "\n" ;
             dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
+
+            gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
 
             //applyBconds(cfg , cuda_cfg , msh , var, mat_ns);
             applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
@@ -162,6 +175,7 @@ int main(void) {
 
         outputH5_XDMF(cfg , msh, var, iStep+1);
         outputBconds_H5_XDMF(cfg , msh, var, iStep+1);
+        pprobes.outputProbes(cfg , cuda_cfg , msh , var , iStep+1);
 
         setDT_d_wrapper(cfg , cuda_cfg, msh , var);
 

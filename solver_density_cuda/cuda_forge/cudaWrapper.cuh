@@ -45,7 +45,9 @@ namespace cudaWrapper{
    void cudaMalloc_wrapper(geom_int** , geom_int );
 
    void cudaMemcpy_H2D_wrapper(flow_float* , flow_float* , geom_int );
+   void cudaMemcpy_H2D_wrapper(geom_int*   , geom_int* , geom_int );
    void cudaMemcpy_D2H_wrapper(flow_float* , flow_float* , geom_int );
+   void cudaMemcpy_D2H_wrapper(geom_int*   , geom_int* , geom_int );
 
    //void cudaFree_wrapper(geom_int* );
    //void cudaFree_wrapper(flow_float* );

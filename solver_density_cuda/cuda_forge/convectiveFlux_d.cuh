@@ -36,6 +36,7 @@ __global__ void SLAU_d
  // mesh structure
  geom_int nCells,
  geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,  
+ geom_int* normal_ghst_planes_d,
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,

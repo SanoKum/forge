@@ -93,12 +93,10 @@ void bcond::bcondInitVariables(const int &useGPU)
 
             if (type == 1) { // read uniform int from yaml
                 cout << "read uniform" << bIntName << " of " << bcondKind  << " from config\n";
-                for (flow_float& var : this->bint[bIntName])
+                for (geom_int& var : this->bint[bIntName])
                 {
                     var = this->inputFloats[bIntName];
                 }
-            } else if (type == 10) { // special 
-                continue; // set later
             }
 
             if (useGPU == 1){
@@ -459,6 +457,20 @@ void mesh::setPeriodicPartner()
             int bcID         = bc0.physID;
             int bcID_partner = bc0.inputInts["partnerBCID"];
 
+            flow_float dx;
+            flow_float dy;
+            flow_float dz;
+            flow_float dtheta;
+
+            if (bc0.inputInts["type"] == 0) { // Cartesian
+                dx = bc0.inputFloats["dx"];
+                dy = bc0.inputFloats["dy"];
+                dz = bc0.inputFloats["dz"];
+
+            } else if (bc0.inputInts["type"] == 1) { // rotation
+                dtheta = bc0.inputFloats["dtheta"];
+            }
+
             if (std::find(checked_bcIDs.begin(), checked_bcIDs.end(), bcID) == checked_bcIDs.end()){ // not saved BC
                 checked_bcIDs.push_back(bcID);
                 checked_bcIDs.push_back(bcID_partner);
@@ -472,7 +484,6 @@ void mesh::setPeriodicPartner()
                     //Eigen::VectorXd XYZ(3);
                     //Eigen::MatrixXd partnerXYZ(3, bc1.iPlanes.size());
                     //Eigen::MatrixXd::Index index;
-                    std::size_t three = 3;
 
                     vector<geom_float> XYZ(3);
                     vector<vector<geom_float>> partnerXYZ;
@@ -487,15 +498,30 @@ void mesh::setPeriodicPartner()
                     geom_float y1;
                     geom_float z1;
 
+                    geom_float x1_r1;
+                    geom_float y1_r1;
+                    geom_float z1_r1;
+
                     geom_int ib1_local = 0;
                     for (geom_int& ip1 : bc1.iPlanes) {
                         x1 = this->planes[ip1].centCoords[0];
                         y1 = this->planes[ip1].centCoords[1];
                         z1 = this->planes[ip1].centCoords[2];
 
-                        partnerXYZ[0][ib1_local] = x1;
-                        partnerXYZ[1][ib1_local] = y1;
-                        partnerXYZ[2][ib1_local] = z1;
+                        if (bc0.inputInts["type"] == 0) {
+                            x1_r1 = x1 - dx;
+                            y1_r1 = y1 - dy;
+                            z1_r1 = z1 - dz;
+
+                        } else if (bc0.inputInts["type"] == 1) {
+                            x1_r1 = x1;
+                            y1_r1 = cos(-dtheta)*y1 -sin(-dtheta)*z1;
+                            z1_r1 = sin(-dtheta)*y1 +cos(-dtheta)*z1;
+                        }
+
+                        partnerXYZ[0][ib1_local] = x1_r1;
+                        partnerXYZ[1][ib1_local] = y1_r1;
+                        partnerXYZ[2][ib1_local] = z1_r1;
 
                         map_ib1_iplane.push_back(ip1);
 
@@ -535,8 +561,15 @@ void mesh::setPeriodicPartner()
 
                         geom_int ip1 = map_ib1_iplane[index];
 
+                        geom_int ic0 = this->planes[ip0].iCells[0];
+                        geom_int ic1 = this->planes[ip1].iCells[0];
+
                         bc0.bint["partnerPlnID"][ib0_local] = ip1;
                         bc1.bint["partnerPlnID"][index]     = ip0;
+
+                        bc0.bint["partnerCellID"][ib0_local] = ic1;
+                        bc1.bint["partnerCellID"][index]     = ic0;
+
 
                         ib0_local++;
                     }
@@ -553,6 +586,47 @@ void mesh::setMeshMap_d()
 {
     gpuErrchk(cudaMalloc((void **)&(this->map_plane_cells_d), sizeof(geom_int)*this->nPlanes*2));
 
+    geom_int n_normal_ghst_planes =  this->nNormalPlanes;
+
+    for (auto& bc : this->bconds)
+    {
+        if (bc.bcondKind == "periodic") {
+            n_normal_ghst_planes += bc.iPlanes.size();
+        }
+    }
+
+    this->nNormal_ghst_Planes = n_normal_ghst_planes;
+
+
+    gpuErrchk(cudaMalloc((void **)&(this->normal_ghst_planes_d), sizeof(geom_int)*n_normal_ghst_planes));
+
+    geom_int* normal_ghst_planes;
+    normal_ghst_planes = (geom_int *)malloc(sizeof(geom_int)*n_normal_ghst_planes);
+
+
+    geom_int ip_sum = 0;
+    for (geom_int ip=0; ip<this->nNormalPlanes; ip++ ) {
+        normal_ghst_planes[ip] = ip_sum;
+        ip_sum += 1;
+
+    }
+
+     for (auto& bc : this->bconds)
+    {
+        if (bc.bcondKind == "periodic") {
+            for (auto& ip : bc.iPlanes){
+                normal_ghst_planes[ip_sum] = ip;
+                ip_sum += 1;
+            }
+        }
+    }
+
+    gpuErrchk(cudaMemcpy(this->normal_ghst_planes_d  , normal_ghst_planes , 
+                         sizeof(geom_int)*n_normal_ghst_planes , cudaMemcpyHostToDevice));
+
+    free(normal_ghst_planes); 
+
+
     geom_int* pc_h;
     geom_int* bp_h;
     geom_int* bc_h;
@@ -563,6 +637,7 @@ void mesh::setMeshMap_d()
     {
         pc_h[2*ip + 0] = this->planes[ip].iCells[0]; 
         pc_h[2*ip + 1] = this->planes[ip].iCells[1]; 
+        //printf("ip=%d, ic1=%d, ic2=%d\n", ip, pc_h[2*ip + 0], pc_h[2*ip + 1]);
     }
 
     gpuErrchk(cudaMemcpy(this->map_plane_cells_d  , pc_h , 

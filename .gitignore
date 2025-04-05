@@ -5,6 +5,7 @@
 *.msh
 *.o
 *.png
+*.gif
 *.cgns
 *.mp4
 *.o.d
