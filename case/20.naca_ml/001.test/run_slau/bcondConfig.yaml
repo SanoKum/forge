@@ -35,7 +35,7 @@ bot:
 wall:
   physID: 5 
   kind: wall
-  outputHDFflg: 0
+  outputHDFflg: 1
   ints:
   floats:
     Ux: 0.0
