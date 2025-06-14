@@ -27,7 +27,7 @@ struct node
 struct plane 
 {
     std::vector<geom_int> iNodes;
-    std::vector<geom_int> iCells; //chk
+    std::vector<geom_int> iCells; 
 
     std::vector<geom_float> surfVect;
     geom_float surfArea;
@@ -38,10 +38,10 @@ struct cell
 {
     std::vector<geom_int> iNodes;
 
-    std::vector<geom_int> iPlanes; //chk
+    std::vector<geom_int> iPlanes;
     std::vector<geom_int> iPlanesDir;
 
-    geom_float volume; //chk
+    geom_float volume; 
 
     geom_int ieleType;
 
@@ -116,9 +116,11 @@ public:
 struct mesh 
 {
 public:
-    geom_int nNodes, nPlanes, nCells, nNormalPlanes, nBPlanes, nBconds;
-    geom_int nCells_all, nCells_ghst , nCells_halo;
-    geom_int nNormal_ghst_Planes; 
+    geom_int nNodes , nNodes_all, nNodes_halo;
+    geom_int nPlanes, nNormalPlanes, nNormal_halo_Planes, nPlanes_all; 
+    geom_int nCells , nCells_halo, nCells_ghst , nCells_all;
+    geom_int nBPlanes;
+    geom_int nBconds;
 
     std::vector<node> nodes;
     std::vector<plane> planes;
@@ -132,7 +134,7 @@ public:
     geom_int* map_cell_planes_index_d; 
     geom_int* map_cell_planes_d; 
 
-    geom_int* normal_ghst_planes_d; // 
+    geom_int* normal_halo_planes_d; // 
 
     mesh();
     ~mesh();

@@ -2349,7 +2349,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     // -----------------------
     if (cfg.solver == "SLAU") {
         //SLAU_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
-        SLAU_d<<<cuda_cfg.dimGrid_normal_ghst_plane, cuda_cfg.dimBlock>>> ( 
+        SLAU_d<<<cuda_cfg.dimGrid_normal_halo_plane, cuda_cfg.dimBlock>>> ( 
             cfg.convMethod, cfg.limiter,
 
             cfg.gamma,
@@ -2357,7 +2357,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             // mesh structure
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-            msh.nNormal_ghst_Planes, msh.normal_ghst_planes_d,
+            msh.nNormal_halo_Planes, msh.normal_halo_planes_d,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
             var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
@@ -2657,6 +2657,11 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         std::cerr << "Error: unknown solver name" << cfg.solver << std::endl;
         exit(EXIT_FAILURE);
     }
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+
+
 
     for (auto& bc : msh.bconds)
     {
