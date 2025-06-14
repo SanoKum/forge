@@ -586,27 +586,27 @@ void mesh::setMeshMap_d()
 {
     gpuErrchk(cudaMalloc((void **)&(this->map_plane_cells_d), sizeof(geom_int)*this->nPlanes*2));
 
-    geom_int n_normal_ghst_planes =  this->nNormalPlanes;
+    geom_int n_normal_halo_planes =  this->nNormalPlanes;
 
     for (auto& bc : this->bconds)
     {
         if (bc.bcondKind == "periodic") {
-            n_normal_ghst_planes += bc.iPlanes.size();
+            n_normal_halo_planes += bc.iPlanes.size();
         }
     }
 
-    this->nNormal_ghst_Planes = n_normal_ghst_planes;
+    this->nNormal_halo_Planes = n_normal_halo_planes;
 
 
-    gpuErrchk(cudaMalloc((void **)&(this->normal_ghst_planes_d), sizeof(geom_int)*n_normal_ghst_planes));
+    gpuErrchk(cudaMalloc((void **)&(this->normal_halo_planes_d), sizeof(geom_int)*n_normal_halo_planes));
 
-    geom_int* normal_ghst_planes;
-    normal_ghst_planes = (geom_int *)malloc(sizeof(geom_int)*n_normal_ghst_planes);
+    geom_int* normal_halo_planes;
+    normal_halo_planes = (geom_int *)malloc(sizeof(geom_int)*n_normal_halo_planes);
 
 
     geom_int ip_sum = 0;
     for (geom_int ip=0; ip<this->nNormalPlanes; ip++ ) {
-        normal_ghst_planes[ip] = ip_sum;
+        normal_halo_planes[ip] = ip_sum;
         ip_sum += 1;
 
     }
@@ -615,16 +615,16 @@ void mesh::setMeshMap_d()
     {
         if (bc.bcondKind == "periodic") {
             for (auto& ip : bc.iPlanes){
-                normal_ghst_planes[ip_sum] = ip;
+                normal_halo_planes[ip_sum] = ip;
                 ip_sum += 1;
             }
         }
     }
 
-    gpuErrchk(cudaMemcpy(this->normal_ghst_planes_d  , normal_ghst_planes , 
-                         sizeof(geom_int)*n_normal_ghst_planes , cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(this->normal_halo_planes_d  , normal_halo_planes , 
+                         sizeof(geom_int)*n_normal_halo_planes , cudaMemcpyHostToDevice));
 
-    free(normal_ghst_planes); 
+    free(normal_halo_planes); 
 
 
     geom_int* pc_h;

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
-project(forge LANGUAGES CUDA)
-##project(forge LANGUAGES CXX CUDA)
+##project(forge LANGUAGES CUDA)
+project(forge LANGUAGES CXX CUDA)
 ##
 ##set(CMAKE_CXX_COMPILER /usr/bin/g++ )
 ##add_definitions( -std=c++11 -Wall )
@@ -68,7 +68,19 @@ file( GLOB mesh_cppfiles
 )
 
 set_source_files_properties(${mesh_cppfiles} PROPERTIES LANGUAGE CUDA)
-
 add_executable(convertGmshToForge  ${mesh_cppfiles})
 target_link_libraries(convertGmshToForge hdf5 yaml-cpp)
 target_link_libraries(convertGmshToForge cuda_forge kdtree )
+
+# ---------------------
+# *** mesh partition***
+# ---------------------
+file( GLOB mesh_part_cppfiles 
+    mesh/mesh_partition.cpp 
+)
+
+
+add_executable(mesh_part ${mesh_part_cppfiles})
+set_target_properties(mesh_part PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(mesh_part hdf5 hdf5_cpp metis yaml-cpp)
+
