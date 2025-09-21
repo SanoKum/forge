@@ -91,5 +91,7 @@
         "syncstream": "cpp",
         "valarray": "cpp"
     },
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": true,
+    "cmake.defaultConfigurePreset": "debug",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }

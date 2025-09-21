@@ -1,8 +1,5 @@
 #pragma once
 
-//TODO: public と privateの使い分けがわからない。
-//TODO: あと、physnameとかを整える
-
 #include <vector>
 #include <cmath>
 #include <string>
@@ -36,9 +33,44 @@ using namespace HighFive;
 class gmshReader : public mesh
 {
 public:
+    bool is3D;
+
+    class lineEnt
+    {
+    public:
+        geom_int entTag;
+        geom_float minX, minY, minZ;
+        geom_float maxX, maxY, maxZ;
+        geom_int nPhysTag;
+        //vector<geom_int> physTags;
+        geom_int physTag;
+        //geom_int nBoundCurves;
+        //vector<geom_int> curveTags;
+
+
+        lineEnt(){};
+        lineEnt(geom_int tag, geom_float minX, geom_float minY, geom_float minZ,
+                              geom_float maxX, geom_float maxY, geom_float maxZ,
+                              geom_int nPhysTag, geom_int physTag)
+                              //geom_int nBoundCurves, vector<geom_int> curveTags  )
+        {
+            this->entTag = tag;
+            this->minX = minX; this->minY = minY; this->minZ = minZ;
+            this->maxX = maxX; this->maxY = maxY; this->maxZ = maxZ;
+            this->nPhysTag = nPhysTag;
+            this->physTag  = physTag;
+            //this->nBoundCurves = nBoundCurves;
+            //this->curveTags = curveTags;
+        };
+    };
+
+
+
     class surfEnt
     {
     public:
+
+
         geom_int entTag;
         geom_float minX, minY, minZ;
         geom_float maxX, maxY, maxZ;
@@ -127,8 +159,10 @@ public:
 
     list<elementsOfEntity> elements_summary;
 
+    geom_int nLineEnt;
     geom_int nSurfEnt;
     geom_int nVolumeEnt;
+    map<geom_int,lineEnt> lineEntMap;
     map<geom_int,surfEnt> surfEntMap;
     map<geom_int,volumeEnt> volumeEntMap;
 
@@ -163,6 +197,13 @@ public:
         this->readMeshFormat(inputFile);
         this->readPhysicalNames(inputFile);
         this->readEntities(inputFile);
+        this->is3D = false;
+        for (auto d : physDim) {
+            if (d == 3) { 
+                is3D = true;
+                break;
+            }
+        }
         this->readNodes(inputFile);
         this->readElements(inputFile);
 
@@ -237,6 +278,7 @@ public:
         getline(inputFile, line);
 
         boost::split(l_str, line, boost::is_space());
+        this->nLineEnt   = stoi(l_str[1]);
         this->nSurfEnt   = stoi(l_str[2]);
         this->nVolumeEnt = stoi(l_str[3]);
 
@@ -246,10 +288,27 @@ public:
             getline(inputFile, line);
         }
 
-        // Curve Entities : just ignore
-        for (geom_int i = 0 ; i<stoi(l_str[1]); i++)
+        // Curve Entities 
+        //for (geom_int i = 0 ; i<stoi(l_str[1]); i++)
+        for (geom_int i = 0 ; i<nLineEnt; i++)
         {
             getline(inputFile, line);
+            boost::split(l_str, line, boost::is_space());
+            lineEnt lineEnt_temp = lineEnt(stoi(l_str[0]), stof(l_str[1]), stof(l_str[2]), stof(l_str[3]),
+                                           stof(l_str[4]), stof(l_str[5]), stof(l_str[6]),
+                                           stoi(l_str[7]), stoi(l_str[8]));
+
+            if (lineEnt_temp.nPhysTag > 1)
+            {
+                std::cerr << "Error: unknown gmsh format. number of PhysTag is not 1" << std::endl;                                                                                                     
+                std::cerr << "nPhysTag = " << lineEnt_temp.nPhysTag << " " << lineEnt_temp.physTag  << std::endl;                                                                                                     
+                std::cerr << "Ent id = " << i   << std::endl;                                                                                                     
+
+                exit(EXIT_FAILURE);
+            }
+
+            lineEntMap.insert(std::make_pair(lineEnt_temp.entTag, lineEnt_temp));
+
         }
 
         // Surface Entities 
@@ -308,7 +367,9 @@ public:
         vector<string> l_str;
 
         getline(inputFile, line);
+        cout << line << endl;
         getline(inputFile, line);
+        cout << line << endl;
 
         boost::split(l_str, line, boost::is_space());
         this->nNodes = stoi(l_str[1]);
@@ -390,6 +451,7 @@ public:
 
             boost::split(l_str, line, boost::is_space());
 
+
             elementTypeFormat eleType = this->eleTypeMap.mapElementFromGmshID[eleTypeGmsh];
 
             iEle += nEleEnt;
@@ -417,6 +479,7 @@ public:
 
             this->elements_summary.push_back(elementsOfEnt);
         }
+
     }
 
     void makeMesh()
@@ -427,7 +490,8 @@ public:
         // iterate over each Entity.
         for (auto &itEnt : elements_summary)
         {
-            if (itEnt.dimension != 3) continue; // skip surface. only volume
+            if (is3D == true  && itEnt.dimension != 3) continue; // skip surface. only volume
+            if (is3D == false && itEnt.dimension != 2) continue; // skip edge. only surface
 
             geom_int physTag = volumeEntMap[itEnt.entTag].physTag; // physical tag (fluid, inlet, etc.)
             elementTypeFormat eleType = this->eleTypeMap.mapElementFromGmshID[itEnt.ieleType]; // quad, hex, etc.
@@ -597,9 +661,17 @@ public:
         // make bcellMap[phystag, nodes]
         for (const auto &eleOfEnt : elements_summary)
         {
-            if (eleOfEnt.dimension != 2) continue; // skip volume. only surface
+            //if (is3D == true  && eleOfEnt.dimension != 2) continue; // skip volume. only surface
+            geom_int physTag;
 
-            geom_int physTag = surfEntMap[eleOfEnt.entTag].physTag; // physical tag (fluid, inlet, etc.)
+            if (is3D == true) {
+                if (eleOfEnt.dimension !=2) continue;
+                physTag = surfEntMap[eleOfEnt.entTag].physTag; // physical tag (fluid, inlet, etc.)
+            } else { // is3D == false
+                if (eleOfEnt.dimension !=1) continue;
+                physTag = lineEntMap[eleOfEnt.entTag].physTag; // physical tag (fluid, inlet, etc.)
+                cout << "physTag = " << physTag << endl;
+            }
 
             for (const auto &iEle : eleOfEnt.elements)
             {
@@ -845,6 +917,25 @@ public:
                 pln.surfArea = std::sqrt(  std::pow(pln.surfVect[0] , 2.0) 
                                          + std::pow(pln.surfVect[1] , 2.0)
                                          + std::pow(pln.surfVect[2] , 2.0) );
+
+            } else if (pln.iNodes.size() == 2) { // line (2D)
+
+                geom_int n0 = pln.iNodes[0];
+                geom_int n1 = pln.iNodes[1];
+
+                geom_float r01x = nodes[n1].coords[0] - nodes[n0].coords[0];
+                geom_float r01y = nodes[n1].coords[1] - nodes[n0].coords[1];
+                geom_float r01z = nodes[n1].coords[2] - nodes[n0].coords[2];
+
+                pln.surfVect.resize(3);
+
+                pln.surfVect[0] =-r01y;
+                pln.surfVect[1] =+r01x;
+                pln.surfVect[2] = 0.0;
+                pln.surfArea = std::sqrt(  std::pow(pln.surfVect[0] , 2.0) 
+                                         + std::pow(pln.surfVect[1] , 2.0)
+                                         + std::pow(pln.surfVect[2] , 2.0) );
+
             }
             // set face center
             pln.centCoords.resize(3);
@@ -947,6 +1038,56 @@ public:
                 volume += tetraVolume(cell(iNodes_temp2));
 
                 icell.volume = volume;
+            }
+
+            if (eleType.name == "quad") 
+            {
+                geom_int n0 = icell.iNodes[0];
+                geom_int n1 = icell.iNodes[1];
+                geom_int n2 = icell.iNodes[2];
+                geom_int n3 = icell.iNodes[3];
+
+                geom_float r02x = nodes[n2].coords[0] - nodes[n0].coords[0];
+                geom_float r02y = nodes[n2].coords[1] - nodes[n0].coords[1];
+                geom_float r02z = nodes[n2].coords[2] - nodes[n0].coords[2];
+
+                geom_float r13x = nodes[n1].coords[0] - nodes[n3].coords[0];
+                geom_float r13y = nodes[n1].coords[1] - nodes[n3].coords[1];
+                geom_float r13z = nodes[n1].coords[2] - nodes[n3].coords[2];
+
+
+                geom_float sv1 = -0.5*(          -r02z*r13y);
+                geom_float sv2 = -0.5*(r02z*r13x           );
+                geom_float sv3 = -0.5*(r02x*r13y -r02y*r13x);
+                geom_float ss  = std::sqrt(  std::pow(sv1 , 2.0) 
+                                           + std::pow(sv2 , 2.0)
+                                           + std::pow(sv3 , 2.0) );
+
+                icell.volume = ss;
+            }
+
+            if (eleType.name == "triangle") 
+            {
+                geom_int n0 = icell.iNodes[0];
+                geom_int n1 = icell.iNodes[1];
+                geom_int n2 = icell.iNodes[2];
+
+                geom_float r01x = nodes[n1].coords[0] - nodes[n0].coords[0];
+                geom_float r01y = nodes[n1].coords[1] - nodes[n0].coords[1];
+                geom_float r01z = nodes[n1].coords[2] - nodes[n0].coords[2];
+
+                geom_float r02x = nodes[n2].coords[0] - nodes[n0].coords[0];
+                geom_float r02y = nodes[n2].coords[1] - nodes[n0].coords[1];
+                geom_float r02z = nodes[n2].coords[2] - nodes[n0].coords[2];
+
+                geom_float sv1 = -0.5*(r01y*r02z -r01z*r02y);
+                geom_float sv2 = -0.5*(r01z*r02x -r01x*r02z);
+                geom_float sv3 = -0.5*(r01x*r02y -r01y*r02x);
+                geom_float ss  = std::sqrt(  std::pow(sv1 , 2.0) 
+                                           + std::pow(sv2 , 2.0)
+                                           + std::pow(sv3 , 2.0) );
+
+                icell.volume = ss;
             }
 
             // set volume center
@@ -1059,6 +1200,8 @@ public:
             if (name == "prism") CONNE0 = 8;
             if (name == "pyramid") CONNE0 = 7;
             if (name == "tetra") CONNE0 = 6;
+            if (name == "quad") CONNE0 = 5;
+            if (name == "triangle") CONNE0 = 4;
 
             //CONNE.push_back(nn + 1);
             CONNE.push_back(CONNE0);

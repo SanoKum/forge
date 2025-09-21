@@ -11,7 +11,7 @@ T getValidatedValue(const YAML::Node& node, const std::string& key, const std::s
             throw std::runtime_error("Key '" + key + "' is missing" + (parent.empty() ? "" : " in '" + parent + "'."));
         }
         T value = node[key].as<T>();
-        std::cout << "Loaded value for '" << key << "'" << (parent.empty() ? "" : " in '" + parent + "'") << ": " << value << std::endl;
+        std::cout << "'" << key << "'" << (parent.empty() ? "" : " in '" + parent + "'") << ": " << value << std::endl;
         return value;
     } catch (const YAML::BadConversion& e) {
         throw std::runtime_error("Key '" + key + "' in '" + parent + "' has an incorrect type.");

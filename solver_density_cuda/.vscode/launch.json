@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run (gdb, CUDA blocking)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",   // ← CMakeの選択中ターゲットを自動参照
+      "args": [],                                       // 例: ["--case","cases/sod.json"]
+      "cwd": "${workspaceFolder}/../case/20.naca_ml/001.test/run_slau",
+      "environment": [
+        { "name": "CUDA_LAUNCH_BLOCKING", "value": "1" },
+        { "name": "CUDA_VISIBLE_DEVICES", "value": "0" }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "stopAtEntry": false
+    },
+    {
+      "name": "Profile (Nsight Systems)",
+      "type": "nsight-systems-launch",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "args": [],  // 必要なら ["--config",".../solverConfig.yaml"]
+      "cwd": "${workspaceFolder}/../case/your_case_dir",
+      "trace": "cuda,osrt,mpi",            // MPI 不使用なら ",mpi" は削除
+      "collectCudaTrace": true,
+      "sample": true,                       // CPUサンプリング
+      "output": "${workspaceFolder}/profile_${timestamp}"
+    }
+  ]
+}

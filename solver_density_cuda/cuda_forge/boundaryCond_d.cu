@@ -458,10 +458,18 @@ void outlet_statPress_d
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
+        //if (ib == 0) {
+        //    printf("outlet_statPress_d: ib = %d, ip = %d, ic = %d, ig = %d\n", ib, ip, ic, ig);
+        //}
+
         flow_float sxx = sx[ip];
         flow_float syy = sy[ip];
         flow_float szz = sz[ip];
         flow_float sss = ss[ip];
+
+        //if (ib == 0) {
+        //    printf("outlet_statPress_d: sxx = %f, syy = %f, szz = %f, sss = %f\n", sxx, syy, szz, sss);
+        //}
 
         flow_float Pnew = Psb[ib];
         flow_float ronew = ro[ic];

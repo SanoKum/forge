@@ -60,6 +60,8 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
         if (name == "prism") CONNE0 = 8;
         if (name == "pyramid") CONNE0 = 7;
         if (name == "tetra") CONNE0 = 6;
+        if (name == "quad") CONNE0 = 5;
+        if (name == "triangle") CONNE0 = 4;
 
         //CONNE.push_back(nn + 1);
         CONNE.push_back(CONNE0);
@@ -187,6 +189,9 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
             } else if (nn == 4 ) {
                 string name = "quad";
                 CONNE0 = 5;
+            } else if (nn == 2 ) {
+                string name = "line";
+                CONNE0 = 2;
             }
 
             CONNE.push_back(CONNE0);
