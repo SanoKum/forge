@@ -18,7 +18,7 @@ public:
     std::vector<std::vector<geom_int>>  nodesOrderPlanes;
 
     std::map<int, std::string> elementNameFromGmshID = {
-        {2, "triangle"}, {3, "quad"}, {4, "tetra"}, {5, "hex"}, {6, "prism"}, {7, "pyramid"},
+        {1, "line"}, {2, "triangle"}, {3, "quad"}, {4, "tetra"}, {5, "hex"}, {6, "prism"}, {7, "pyramid"},
     };
 
     elementTypeFormat() {};
@@ -42,7 +42,15 @@ public:
 
     elementTypeMap()
     {
-        // Quad
+        // line
+        std::string _name2 = "line";
+        geom_int _nNodes2  = 2;
+        std::vector<std::vector<geom_int>> _nodesOrderFaces2{ {0, 1} }; 
+
+        elementTypeFormat line = elementTypeFormat( _name2, _nNodes2, _nodesOrderFaces2);
+
+
+        // triangle
         std::string _name3 = "triangle";
         geom_int _nNodes3  = 3;
         std::vector<std::vector<geom_int>> _nodesOrderFaces3{ {0, 1},
@@ -110,6 +118,7 @@ public:
 
 
 
+        mapElementFromName.insert(std::make_pair("line", line));
         mapElementFromName.insert(std::make_pair("triangle", triangle));
         mapElementFromName.insert(std::make_pair("quad", quad));
         mapElementFromName.insert(std::make_pair("hex" , hex));
@@ -117,6 +126,7 @@ public:
         mapElementFromName.insert(std::make_pair("prism" , prism));
         mapElementFromName.insert(std::make_pair("pyramid" , pyramid));
 
+        mapElementFromGmshID.insert(std::make_pair(1, line));
         mapElementFromGmshID.insert(std::make_pair(2, triangle));
         mapElementFromGmshID.insert(std::make_pair(3, quad));
         mapElementFromGmshID.insert(std::make_pair(4, tetra));

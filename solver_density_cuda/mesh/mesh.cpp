@@ -57,24 +57,23 @@ void bcond::bcondInitVariables(const int &useGPU)
             int type = valueTypes[bValName];
 
             if (type == 1) { // read uniform float from yaml
-                cout << "read " << bValName << " of " << bcondKind  << " from config\n";
+                //cout << "read " << bValName << " of " << bcondKind  << " from config\n";
                 for (flow_float& var : this->bvar[bValName])
                 {
                     var = this->inputFloats[bValName];
                 }
             }
 
-            if (useGPU == 1){
-                cout << "alloc " << bValName << " of " << bcondKind  << " from config\n";
-                gpuErrchk( cudaMalloc(&(this->bvar_d[bValName]) , this->iPlanes.size()*sizeof(flow_float)) );
-                int type = valueTypes[bValName];
+            //cout << "alloc " << bValName << " of " << bcondKind  << " from config\n";
+            gpuErrchk( cudaMalloc(&(this->bvar_d[bValName]) , this->iPlanes.size()*sizeof(flow_float)) );
+            type = valueTypes[bValName];
 
-                if (type == 1) { // read uniform float from yaml
-                    gpuErrchk( cudaMemcpy(this->bvar_d[bValName] , &(this->bvar[bValName][0]) ,
-                                                 (size_t)(this->iPlanes.size()*sizeof(flow_float)), 
-                                                 cudaMemcpyHostToDevice) );
-                }
+            if (type == 1) { // read uniform float from yaml
+                gpuErrchk( cudaMemcpy(this->bvar_d[bValName] , &(this->bvar[bValName][0]) ,
+                                             (size_t)(this->iPlanes.size()*sizeof(flow_float)), 
+                                             cudaMemcpyHostToDevice) );
             }
+            
        }
     }
 
@@ -222,6 +221,9 @@ void mesh::readMesh(string fname)
 //ghst>
     this->nCells_ghst = this->nBPlanes;
     this->nCells_all  = this->nCells + this->nCells_ghst;
+
+    cout << "Number of Ghost Cells: " << this->nCells_ghst << endl;
+    cout << "Number of All   Cells: " << this->nCells_all << endl;
     //this->nCells_all  = this->nCells ;
 //ghst<
 
