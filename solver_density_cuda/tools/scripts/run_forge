@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Wrapper for running forge without explicitly passing solverConfig.yaml
+# Usage:
+#   run_forge                # run in current directory (must contain solverConfig.yaml)
+#   run_forge <case_dir>     # cd into <case_dir> then run
+set -euo pipefail
+
+if [ $# -ge 1 ]; then
+  case_dir="$1"
+  if [ ! -d "$case_dir" ]; then
+    echo "[run_forge] ERROR: directory '$case_dir' not found" >&2
+    exit 1
+  fi
+  cd "$case_dir"
+fi
+
+if [ ! -f solverConfig.yaml ]; then
+  echo "[run_forge] ERROR: solverConfig.yaml not found in $(pwd)" >&2
+  exit 2
+fi
+
+# Optional: show which forge binary is used
+forge_bin="$(command -v forge || true)"
+if [ -z "$forge_bin" ]; then
+  echo "[run_forge] ERROR: forge binary not found in PATH. Build first (cmake --build build)." >&2
+  exit 3
+fi
+
+echo "[run_forge] Using forge: $forge_bin" >&2
+echo "[run_forge] Case dir:  $(pwd)" >&2
+echo "[run_forge] Config:   solverConfig.yaml" >&2
+
+exec "$forge_bin"
