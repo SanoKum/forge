@@ -95,31 +95,25 @@ geom_float norm2_(const Point_r1 &l, const Point_r1 &r) {
   return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+#ifdef HAVE_KDTREE
 static void useKDTree(const std::vector<Point_r1> &left, const std::vector<Point_r1> &right, std::vector<geom_float> &distance, std::vector<geom_int> &index) {
     kdtree *tree = kd_create(3);
-
     boost::scoped_array<int> indexes(new int[left.size()]);
     for (int i = 0; i < (int)left.size(); ++i) {
         indexes[i] = i;
         kd_insert3(tree, left[i].x, left[i].y, left[i].z, &indexes[i]);
     }
-
-    int l, r;
-    geom_float minimum = std::numeric_limits<geom_float>::max();
     for (int j = 0; j < (int)right.size(); ++j) {
         kdres *set = kd_nearest3(tree, right[j].x, right[j].y, right[j].z);
-
         int i = *(int *)kd_res_item_data(set);
         kd_res_free(set);
         geom_float d = norm2_(left[i], right[j]);
-
         distance.push_back(d);
         index.push_back(i);
     }
-
     kd_free(tree);
-    //return minimum;
 }
+#endif
 
 flow_float norm2(const Point_r1 &l, const Point_r1 &r) {
   const flow_float dx = l.x - r.x;
@@ -163,19 +157,21 @@ void point_probes::setNearestCell(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     geom_int ind;
 
     for (int j=0 ; j<this->nProbes ; j++) {
+#ifdef HAVE_KDTREE
+        // If kdtree is available we could batch via useKDTree; fallback keeps bruteForce for now.
         bruteForce(cellPoints, inputProbeXYZ[j], dist, ind);
-        std::cout << dist << " " << ind << std::endl;
+#else
+        bruteForce(cellPoints, inputProbeXYZ[j], dist, ind);
+#endif
+        // (optional) verbose output removed (cfg.verbose not defined)
+        // std::cout << "probe " << j << ": dist=" << dist << " cell=" << ind << std::endl;
         index.push_back(ind);
     }
     this->cell_id = index;
 
-    for (auto it = distance.begin(); it != distance.end(); ++it) {
-        std::cout << "dist" <<  *it << " \n";
-    }
-
-    for (auto it = index.begin(); it != index.end(); ++it) {
-        std::cout << "ind=" << *it << " \n";
-    }
+    // Detailed debug print disabled (cfg.verbose not present in solverConfig)
+    // for (auto d : distance) std::cout << "dist " << d << "\n";
+    // for (auto id : index) std::cout << "ind=" << id << "\n";
 
     cudaWrapper::cudaMalloc_wrapper(&(this->cell_id_d) , this->cell_id.size());
     cudaWrapper::cudaMemcpy_H2D_wrapper(this->cell_id.data() , this->cell_id_d, this->cell_id.size());

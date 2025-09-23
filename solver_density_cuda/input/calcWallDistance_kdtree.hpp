@@ -1,12 +1,19 @@
+// Optional KD-Tree based wall distance calculation.
+// If k-d tree library is not available (HAVE_KDTREE undefined), a brute force
+// fallback will be used. This removes the previous hard-coded absolute path.
+
+#pragma once
+
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <iostream>
-#include <algorithm>
-#include <vector>
-#include <random>
 #include <limits>
+#include <vector>
+
+#ifdef HAVE_KDTREE
+#include <kdtree.h>
 #include <boost/scoped_array.hpp>
-#include </home/kumpei/app/kdtree/install/include/kdtree.h>
+#endif
 
 #include "flowFormat.hpp"
 #include "input/solverConfig.hpp"
@@ -14,12 +21,8 @@
 #include "variables.hpp"
 
 struct Point {
-  double x, y, z;
-  Point(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
+  geom_float x, y, z;
+  Point(geom_float x_, geom_float y_, geom_float z_) : x(x_), y(y_), z(z_) {}
 };
 
-double norm2(const Point &l, const Point &r) ;
-
-static double useKDTree(const std::vector<Point> &left, const std::vector<Point> &right);
-
-void calcWallDistance_kdtree(solverConfig& cfg , mesh& msh , variables& var );
+void calcWallDistance_kdtree(solverConfig &cfg, mesh &msh, variables &var);

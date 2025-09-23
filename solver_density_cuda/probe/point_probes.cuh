@@ -13,7 +13,9 @@
 #include "input/solverConfig.hpp"
 #include "mesh/mesh.hpp"
 #include <boost/scoped_array.hpp>
-#include </home/kumpei/app/kdtree/install/include/kdtree.h>
+#ifdef HAVE_KDTREE
+#include <kdtree.h>
+#endif
 
 
 struct Point_r1 {

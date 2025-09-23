@@ -1,0 +1,4 @@
+[submodule "solver_density_cuda/third_party/HighFive"]
+	path = solver_density_cuda/third_party/HighFive
+	url = https://github.com/BlueBrain/HighFive.git
+	branch = master
