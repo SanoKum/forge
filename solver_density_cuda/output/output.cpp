@@ -334,9 +334,7 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
             ofs << "          </DataItem>\n";
             ofs << "        </Attribute>\n";
         }
-
         ofs << "      </Grid>\n";
-
         //ghost // ghost cell
         //ghost ofs << "      <Grid Name='wall_ghst'>\n";
         //ghost ofs << "        <Topology Type='Polyvertex' Dimensions='" << bc.iCells_ghst.size() <<"' NodesPerElement='1'>\n";

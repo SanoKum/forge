@@ -15,3 +15,8 @@ log
 solver_heat/*
 solver_smac/*
 solver_smac_cuda/*
+cmake.patch
+solver_density_cuda/.devcontainer/
+solver_density_cuda/CMakeLists.txt.bak
+solver_density_cuda/solver_docker_bundle.zip
+solver_density_cuda/tools/__pycache__/

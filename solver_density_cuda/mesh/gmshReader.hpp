@@ -1368,7 +1368,6 @@ public:
             ofs << "          </DataItem>\n";
             ofs << "        </Attribute>\n";
         }
-
         ofs << "      </Grid>\n";
         ofs << "    </Grid>\n";
         ofs << "  </Domain>\n";
