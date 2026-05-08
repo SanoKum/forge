@@ -1,0 +1,23 @@
+services:
+  dev-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    tty: true
+
+  dev-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda.dev
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
