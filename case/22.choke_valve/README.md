@@ -142,6 +142,59 @@ choke-valve-flow-sweep examples/point_syashin.csv \
 - regime vs 開度
 - 追加で `開度-流量` の単独図
 
+## 背圧ごとにフォルダを切って一括生成する
+
+`outputs/opening_sweep_by_pb` のように、同じ背圧の結果を同じフォルダへまとめたい場合は次のコマンドを使います。
+
+```bash
+mkdir -p outputs/opening_sweep_by_pb && \
+pbs='2.9 4.0 5.0 5.5 5.8' && \
+offsets='0:-0 m10:-10 m40:-40 m80:-80 m100:-100 m120:-120' && \
+for pb in $pbs; do
+  pb_tag=${pb/./p}
+  dir=outputs/opening_sweep_by_pb/pb${pb_tag}
+  mkdir -p "$dir"
+  pb_pa=$(awk "BEGIN { printf \"%.0f\", $pb*1000000 }")
+
+  for spec in $offsets; do
+    label=${spec%%:*}
+    offset=${spec##*:}
+    PYTHONPATH=src python3 -m choke_valve.cli examples/point_syashin.csv \
+      --x-min 0 \
+      --x-max 600 \
+      --dx 1.0 \
+      --offset "$offset" \
+      --p0 5900000 \
+      --t0 623.15 \
+      --pb "$pb_pa" \
+      --plot "$dir/point_syashin_${label}_pb${pb_tag}.png" \
+      > "$dir/point_syashin_${label}_pb${pb_tag}.csv" \
+      2> "$dir/point_syashin_${label}_pb${pb_tag}.txt" || exit 1
+  done
+
+  PYTHONPATH=src python3 -m choke_valve.flow_sweep_cli examples/point_syashin.csv \
+    --x-min 0 \
+    --x-max 600 \
+    --dx 1.0 \
+    --offsets 0 -10 -40 -80 -100 -120 \
+    --p0 5900000 \
+    --t0 623.15 \
+    --pb "$pb_pa" \
+    --plot "$dir/point_syashin_pb${pb_tag}_opening_summary.png" \
+    --mass-flow-plot "$dir/point_syashin_pb${pb_tag}_mass_flow_vs_opening.png" \
+    --csv "$dir/point_syashin_pb${pb_tag}_opening_summary.csv" || exit 1
+done
+```
+
+各フォルダには次が入ります。
+
+- 各開度の個別 4 段図 `point_syashin_...png`
+- 各開度の面積分布 CSV `point_syashin_...csv`
+- 各開度のログ `point_syashin_...txt`
+- 開度 sweep の summary 図 `point_syashin_pb..._opening_summary.png`
+- 開度-流量図 `point_syashin_pb..._mass_flow_vs_opening.png`
+- 開度 sweep の summary 表 `point_syashin_pb..._opening_summary.csv`
+
 ## 出力の読み方
 
 `regime` は次のいずれかです。
