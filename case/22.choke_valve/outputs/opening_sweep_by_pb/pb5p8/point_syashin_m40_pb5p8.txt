@@ -1,0 +1,15 @@
+throat_x=118.0
+throat_area=3644.7668888272483
+minimum_gap=19.802667594816416
+blocked=False
+regime=subsonic
+choked=False
+shock_candidate=False
+shock_x=None
+mass_flow_kg_s=21.40527848991833
+critical_back_pressure=5759745.715708234
+ideal_exit_pressure=5800000.0
+exit_shock_pressure=None
+exit_pressure=5800000.0
+exit_mach=0.16233012608424785
+plot_path=outputs/opening_sweep_by_pb/pb5p8/point_syashin_m40_pb5p8.png

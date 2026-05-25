@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "choke-valve"
+version = "0.1.0"
+description = "Axisymmetric choke-valve geometry preprocessing and quasi-1D flow tools"
+requires-python = ">=3.12"
+dependencies = ["matplotlib>=3.8"]
+
+[project.scripts]
+choke-valve = "choke_valve.cli:main"
+choke-valve-sweep = "choke_valve.sweep_cli:main"
+choke-valve-flow-sweep = "choke_valve.flow_sweep_cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

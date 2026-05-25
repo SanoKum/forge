@@ -1,0 +1,15 @@
+throat_x=118.0
+throat_area=4677.392977506465
+minimum_gap=32.31352179194678
+blocked=False
+regime=choked_internal_shock
+choked=True
+shock_candidate=True
+shock_x=141.24832243673706
+mass_flow_kg_s=32.40153523860396
+critical_back_pressure=5664518.353878197
+ideal_exit_pressure=460199.60153698956
+exit_shock_pressure=2720235.1517689573
+exit_pressure=5500003.246533676
+exit_mach=0.2583463638566659
+plot_path=outputs/opening_sweep_by_pb/pb5p5/point_syashin_m80_pb5p5.png

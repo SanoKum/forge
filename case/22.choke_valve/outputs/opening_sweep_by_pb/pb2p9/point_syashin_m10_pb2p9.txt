@@ -1,0 +1,15 @@
+throat_x=118.0
+throat_area=2224.906016893325
+minimum_gap=10.419526946968642
+blocked=False
+regime=choked_internal_shock
+choked=True
+shock_candidate=True
+shock_x=210.22747482995987
+mass_flow_kg_s=15.412510998249003
+critical_back_pressure=5848652.968042671
+ideal_exit_pressure=148726.3202606522
+exit_shock_pressure=1480471.675506613
+exit_pressure=2899999.0252743424
+exit_mach=0.2332776195258205
+plot_path=outputs/opening_sweep_by_pb/pb2p9/point_syashin_m10_pb2p9.png
