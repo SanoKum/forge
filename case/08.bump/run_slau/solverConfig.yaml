@@ -21,7 +21,7 @@ physProp:
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 50000
+    nStepOuter: 50000
     #nStep: 100
     time: 1.00 # [second]
   deltaT:  

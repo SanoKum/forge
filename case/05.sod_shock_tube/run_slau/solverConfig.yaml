@@ -24,7 +24,7 @@ physProp:
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 2000
+    nStepOuter: 2000
     #nStep: 1
     #nStep: 2
     time: 1.00 # [second]

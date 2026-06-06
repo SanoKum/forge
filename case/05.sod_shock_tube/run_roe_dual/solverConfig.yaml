@@ -20,7 +20,7 @@ physProp:
 time: 
   last: 
     control: 0 # 0:nStep , 1:time base
-    nStep: 100
+    nStepOuter: 100
     time: 1.00 # [second]
   deltaT:  
     control: 1 # 0:use dt , 1:use cfl

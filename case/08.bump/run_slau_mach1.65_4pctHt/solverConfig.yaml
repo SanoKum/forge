@@ -27,7 +27,7 @@ time:
   last: 
     control: 0 # 0:nStep , 1:time base
     #nStep: 8000
-    nStep: 2000
+    nStepOuter: 2000
     #nStep: 10  
     time: 1.00 # [second]
   deltaT:  
@@ -42,7 +42,7 @@ time:
   outStepInterval: 20
   outStepStart: 0
   timeIntegration: 3  # 1:Euler explicit , 3:3rd Runge Explicit , 10:dual-exp
-  nInnerLoop: 10
+  nStepInner: 10
 
 space: 
   convMethod: 2
