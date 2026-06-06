@@ -1,5 +1,29 @@
 # Forge Agent Rules
 
+このファイルは forge リポジトリの開発・運用ルールの正本であり、Claude (CLAUDE.md 経由) と GitHub Copilot (copilot-instructions.md 経由) の双方から参照される。
+
+## 文書構成
+
+各文書の役割は次の通り。詳細手順は本ファイルに重複記載せず、該当文書を参照する。
+
+| 文書 | 役割 |
+| --- | --- |
+| `AGENTS.md` (本ファイル) | 全ルール・方針の正本。常時参照される基準 |
+| [`.github/forge-calculation-workflow.md`](.github/forge-calculation-workflow.md) | 計算ケース準備・メッシュ生成/変換・`forge` 実行の標準手順 |
+| [`.github/forge-development-environment.md`](.github/forge-development-environment.md) | 開発環境とビルド (Docker / WSL native) の方針 |
+| [`.github/forge-coding-conventions.md`](.github/forge-coding-conventions.md) | ソース構成・C++/CUDA 命名規約・ビルド/テスト実行手順 |
+| [`.github/forge-verification-cases.md`](.github/forge-verification-cases.md) | コード変更時の検証ケース選定と確認手順 |
+| [`.github/plans/`](.github/plans/README.md) | 機能ごとの実装計画 (着手前に参照する基準文書) |
+| [`.github/verification-cases/`](.github/verification-cases/) | 各標準検証ケースの個別手順 |
+| [`docs/`](docs/index.md) | 理論 (`<area>/theory.md`) と実装解説 (`<area>/implementation.md`) |
+
+## 言語方針
+
+- 文書本文・コード内コメントは日本語で記述する。
+- 識別子・関数名・スキーム名・ファイルパスなどコード由来の語は原語 (英語) のまま `` `code` `` 表記とする。
+
+## 計算・実行ルール
+
 計算の実行方法、ケース準備、メッシュ生成、メッシュ変換、`forge` の起動、Docker 経由の Gmsh/ParaView 利用について回答するときは、まず `.github/forge-calculation-workflow.md` を参照し、その手順に合わせて案内すること。計算手順の本文はこのファイルに重複記載しない。
 
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。

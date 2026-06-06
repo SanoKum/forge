@@ -1,5 +1,17 @@
 # GPU 陰解法化計画
 
+## メタ
+
+- **area**: `time_integration`
+- **status**: `in_progress`
+- **related_docs**:
+  - [`docs/time_integration/theory.md`](../../docs/time_integration/theory.md)
+  - [`docs/time_integration/implementation.md`](../../docs/time_integration/implementation.md)
+- **related_plans**:
+  - [`architecture-rans-sst.md`](architecture-rans-sst.md) (SST の陰解法連成が本計画を参照)
+- **created**: 不明 (既存計画につきメタを後付け)
+- **owner**: `Copilot`
+
 ## 1. 目的
 
 `solver_density_cuda` に対して、GPU 上で実用的に回る陰解法基盤を段階導入する。

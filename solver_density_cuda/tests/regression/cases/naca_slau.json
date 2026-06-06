@@ -1,0 +1,13 @@
+{
+  "name": "naca_slau",
+  "description": "NACA (SLAU, explicit RK) steady residual regression",
+  "case_dir": "case/20.naca_ml/001.test",
+  "template_run": "run_slau",
+  "mesh_file": "naca.h5",
+  "nstep_regression": 1000,
+  "nstep_smoke": 200,
+  "compare_columns": ["rms_ro", "rms_roUx", "rms_roUy", "rms_roUz", "rms_roe"],
+  "rtol": 0.01,
+  "atol": 1e-8,
+  "sample_steps": [100, 500, 1000]
+}
