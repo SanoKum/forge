@@ -1,0 +1,173 @@
+# Forge Calculation Workflow
+
+この文書は、このリポジトリで計算ケースを準備して `forge` を実行する際の標準手順をまとめたものです。計算方法を案内するときは、まずこの文書の流れを基準にし、ケース側に専用スクリプトや README がある場合はそちらを優先します。
+
+## 対象範囲
+
+`case/` 配下の多くのケースは、概ね次の構成を取ります。
+
+- `mesh/`: `.geo` や生成スクリプトなど、メッシュ作成用の入力
+- `run_*`: `run_slau`、`run_roe`、`run_keep` など、ソルバー実行用ディレクトリ
+
+質問が特定ケースに限定されていない場合も、基本的にはこの構成を前提に案内します。
+
+## 標準手順
+
+計算を実行するときは、既存の `run_*` ディレクトリをそのまま使い回さず、必ず新しい `run_*` ディレクトリを作ってから実行する。
+
+理由:
+
+- 既存の結果やログを上書きしないため
+- 実行時の設定差分を追跡しやすくするため
+- `residual_history.csv`、`res_*.h5`、実行ログなどを run ごとに保存するため
+- 実行後に residual plot PNG を run ごとに残すため
+
+## run ディレクトリ命名規則
+
+`run_*` が増えたときに新旧や派生関係が分からなくならないよう、run 名は次の形式で統一する。
+
+```text
+run_<NNNN>_<scheme>_<short-slug>
+```
+
+例:
+
+```text
+run_0001_slau_baseline
+run_0002_slau_lowbp_1st
+run_0003_slau_lowbp_muscl_restart
+run_0004_roe_baseline
+```
+
+ルール:
+
+- `<NNNN>` は `0000` から `9999` までの 4 桁ゼロ埋め連番とする。
+- `<scheme>` は `slau`, `roe`, `keep`, `ausm`, `ausmUP` などスキーム識別子を入れる。
+- 連番はケースディレクトリごとに単調増加で使い、スキームを変えても振り直さない。
+- 欠番は気にせず、既存最大番号の次を使う。
+- `<short-slug>` は 2〜4 語程度の短い ASCII ラベルにし、変更意図を一目で分かるようにする。
+- 日付は原則 run 名に入れず、時系列は連番で管理する。
+- 既存 run を複製して派生 run を作るときも、新しい連番を必ず振り直す。
+
+推奨運用:
+
+- まず `ls` や `find` でケース内の既存 `run_` を確認する。
+- その中の最大番号に `+1` した名前で新しい run を作る。
+- `short-slug` は `baseline`, `lowbp`, `lowbp_1st`, `muscl_restart`, `axisym_m2` のように目的中心で付ける。
+
+非推奨:
+
+- `run_slau_test`, `run_new_slau`, `run_latest_slau` のような意味が時間で変わる名前
+- `run_20260531_slau_xxx` のように日付だけで順序管理する名前
+- `run_0007_slau_copy`, `run_0008_slau_final2` のような派生関係が読めない名前
+
+1. 対象のケースディレクトリを `case/` 配下から特定する。
+2. 基準にする既存の `run_*` を複製して、新しい `run_*` ディレクトリを作る。
+3. 必要なら新しい `run_*` 内の `solverConfig.yaml` などを調整する。
+4. `mesh/` に入り、Gmsh で `.geo` から `.msh` を生成する。
+5. 生成した `.msh` を新しい `run_*` ディレクトリへコピーする。
+6. その新しい `run_*` ディレクトリで `convertGmshToForge` を実行し、HDF5 に変換する。
+7. 同じ新しい `run_*` ディレクトリで `forge` を実行する。
+8. 実行後、その新しい `run_*` ディレクトリで `residual_history.csv` から `residual_history.png` を生成する。
+
+重要なのは、`solverConfig.yaml` がある新しい `run_*` ディレクトリを起点に変換と実行を行うことです。
+
+## 標準コマンド例
+
+```bash
+# 既存 run を複製して新しい run を作る
+cp -r run_0003_slau_baseline run_0004_slau_implicit_check
+
+# <case>/mesh で実行
+gmsh -3 input.geo -o case.msh -format msh4
+
+# 生成メッシュを run ディレクトリへコピー
+cp case.msh ../run_0004_slau_implicit_check/
+
+# <case>/run_0004_slau_implicit_check で実行
+convertGmshToForge case.msh case.h5
+forge
+python3 /home/sano/work/forge/solver_density_cuda/tools/plot_implicit_residuals.py \
+	--input residual_history.csv \
+	--output residual_history.png
+```
+
+読み替えポイント:
+
+- `input.geo`: 実際のジオメトリ入力ファイル名
+- `case.msh`: 生成するメッシュファイル名
+- `run_0004_slau_implicit_check`: 実際に使う新しい `run_*` ディレクトリ名
+- `case.h5`: `solverConfig.yaml` の `mesh.meshFileName` と `mesh.valueFileName` に一致する HDF5 名
+
+## Docker を使う場合の流れ
+
+`solver_density_cuda` の Docker 環境を使う場合も、計算の論理的な流れは同じです。
+
+1. 必要なら Docker イメージをビルドする。
+2. 基準にする既存の `run_*` を複製して、新しい `run_*` を作る。
+3. ケースの `mesh/` で `.msh` を生成する。
+4. `.msh` を新しい `run_*` にコピーする。
+5. その新しい `run_*` ディレクトリで `convertGmshToForge` を実行する。
+6. 同じ新しい `run_*` ディレクトリで `forge` を実行する。
+7. 実行後、その新しい `run_*` ディレクトリで `residual_history.csv` から `residual_history.png` を生成する。
+
+代表例:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+docker build -f Dockerfile.cuda.dev -t forge-solver:cuda-dev .
+
+cd /home/sano/work/forge/case/20.naca_ml/001.test
+cp -r run_slau run_slau_20260510_implicit_check
+
+cd /home/sano/work/forge/case/20.naca_ml/001.test/run_slau_20260510_implicit_check
+./run_case.sh
+```
+
+ケースに `run_case.sh` のような専用ヘルパーがある場合は、手順を手で再構成するより、そのヘルパーを優先します。ただし、その場合も既存の `run_*` を直接使わず、複製した新しい `run_*` 側で実行する。
+
+Residual plot は PNG で残せば十分とし、既定では `residual_history.csv` を入力に `residual_history.png` を生成する。
+
+## Gmsh / ParaView の起動
+
+Docker 環境経由で Gmsh や ParaView を開くときは、`solver_density_cuda/tools/` 配下のホスト側ラッパースクリプトを使います。
+
+Gmsh:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+./tools/run_gmsh_gui.sh
+```
+
+ParaView:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+./tools/run_paraview_gui.sh
+```
+
+ファイルを直接開く例:
+
+```bash
+./tools/run_gmsh_gui.sh /home/sano/work/forge/case/08.bump/mesh/bump.geo
+./tools/run_paraview_gui.sh /home/sano/work/forge/case/08.bump/run_slau/res_0.xmf
+```
+
+補足:
+
+- これらのスクリプトはコンテナ内ではなくホスト側から実行する。
+- WSL2 では WSLg を前提に GUI 転送する。
+- ParaView のアイコン表示が崩れる場合は `solver_density_cuda/Dockerfile.cuda.dev` から Docker イメージを再ビルドする。
+
+## ケースごとの注意
+
+- `run_case.sh` などのケース専用ヘルパーがあるなら、それを優先する。
+- 実行前に、既存の `run_*` を複製して新しい `run_*` を作る。既存ディレクトリへそのまま再実行しない。
+- HDF5 変換後のファイル名は、必ず `solverConfig.yaml` の `mesh.meshFileName` と `mesh.valueFileName` に合わせる。
+- `forge` は必ず `solverConfig.yaml` がある新しい `run_*` ディレクトリで実行する。
+- `forge` 実行後は、同じ新しい `run_*` ディレクトリで `residual_history.csv` から `residual_history.png` を生成する。
+- `run_*` が複数ある場合は、ユーザー指定のもの、または使いたいスキームに対応するものを選ぶ。
+
+## 運用上の位置づけ
+
+Copilot が計算手順を説明するときは、この文書を標準の参照先とします。個別ケースの検証方針や、Docker と native 実行の使い分けは、別の関連文書を優先して参照します。
