@@ -102,22 +102,22 @@ __global__ void viscousFlux_d
         flow_float v_turb = f*vis_turb[ic0] + (1.0-f)*vis_turb[ic1] ;
         flow_float mu_total = v_lam + v_turb;
 
-        flow_float tau_x = mu_total*((Ux[ic1] -Ux[ic0])/dcc)*delta_x;
-        //flow_float tau_x = mu_total*((Ux[ic1] -Ux[ic0])/dcc)*sxx;
-        tau_x += mu_total*(dUxdxf*k_x +dUydxf*k_y +dUzdxf*k_z);
-        //tau_x += mu_total*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
+        // 完全な Newton 応力 tau_ij S_j = mu(du_i/dx_j + du_j/dx_i)S_j - (2/3)mu divu S_i。
+        // 第1項 (Laplacian, mu grad(u_i).S) は over-relaxed: 法線スカラー delta + 同成分勾配.k。
+        // 第2項 (転置, mu du_j/dx_i S_j) は面平均勾配にフル S を内積。第3項 (発散) は成分 s**。
+        flow_float tau_x = mu_total*((Ux[ic1] -Ux[ic0])/dcc)*delta;
+        tau_x += mu_total*(dUxdxf*k_x +dUxdyf*k_y +dUxdzf*k_z);
+        tau_x += mu_total*(dUxdxf*sxx +dUydxf*syy +dUzdxf*szz);
         tau_x += -mu_total*2.0/3.0*(divu)*sxx;
 
-        flow_float tau_y = mu_total*((Uy[ic1] -Uy[ic0])/dcc)*delta_y;
-        //flow_float tau_y = mu_total*((Uy[ic1] -Uy[ic0])/dcc)*syy;
-        tau_y += mu_total*(dUxdyf*k_x +dUydyf*k_y +dUzdyf*k_z);
-        //tau_y += mu_total*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
+        flow_float tau_y = mu_total*((Uy[ic1] -Uy[ic0])/dcc)*delta;
+        tau_y += mu_total*(dUydxf*k_x +dUydyf*k_y +dUydzf*k_z);
+        tau_y += mu_total*(dUxdyf*sxx +dUydyf*syy +dUzdyf*szz);
         tau_y += -mu_total*2.0/3.0*(divu)*syy;
 
-        flow_float tau_z = mu_total*((Uz[ic1] -Uz[ic0])/dcc)*delta_z;
-        //flow_float tau_z = mu_total*((Uz[ic1] -Uz[ic0])/dcc)*szz;
-        tau_z += mu_total*(dUxdzf*k_x +dUydzf*k_y +dUzdzf*k_z);
-        //tau_z += mu_total*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
+        flow_float tau_z = mu_total*((Uz[ic1] -Uz[ic0])/dcc)*delta;
+        tau_z += mu_total*(dUzdxf*k_x +dUzdyf*k_y +dUzdzf*k_z);
+        tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
         flow_float heatflux = thermCond*((Ts[ic1] -Ts[ic0])/dcc)*delta;
@@ -256,17 +256,19 @@ __global__ void viscousFlux_wall_d
 
         flow_float divu = dUxdxf+dUydyf+dUzdzf;
 
-        //flow_float tau_x = mu_total*((Ux_b[ib] - Ux[ic])/dcc)*sxx;
-        flow_float tau_x = mu_total*((Ux[ig] - Ux[ic])/dcc)*sxx;
-        //tau_x += mu_total*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
+        // ミラーゴースト (u^g=-u^c) では d∥S なので over-relaxed の delta=sss、k=0。
+        // 法線項: 法線勾配 (u^g-u^c)/dcc に面積 sss (成分 s** ではなく)。
+        // 転置項: セル中心勾配にフル S を内積。発散項のみ成分 s**。
+        flow_float tau_x = mu_total*((Ux[ig] - Ux[ic])/dcc)*sss;
+        tau_x += mu_total*(dUxdxf*sxx +dUydxf*syy +dUzdxf*szz);
         tau_x += -mu_total*2.0/3.0*(divu)*sxx;
 
-        flow_float tau_y = mu_total*((Uy[ig] - Uy[ic])/dcc)*syy;
-        //tau_y += mu_total*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
+        flow_float tau_y = mu_total*((Uy[ig] - Uy[ic])/dcc)*sss;
+        tau_y += mu_total*(dUxdyf*sxx +dUydyf*syy +dUzdyf*szz);
         tau_y += -mu_total*2.0/3.0*(divu)*syy;
 
-        flow_float tau_z = mu_total*((Uz[ig] - Uz[ic])/dcc)*szz;
-        //tau_z += mu_total*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
+        flow_float tau_z = mu_total*((Uz[ig] - Uz[ic])/dcc)*sss;
+        tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
         flow_float heatflux = thermCond*((Ts[ig]- Ts[ic])/dcc)*sss;
