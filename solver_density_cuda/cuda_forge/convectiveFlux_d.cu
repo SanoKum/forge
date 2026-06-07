@@ -216,8 +216,9 @@ __device__ flow_float betaMns_slau(flow_float M)
 }
 
 __global__ void SLAU_d
-( 
+(
  int conv_scheme, int limit_scheme,
+ int slauVariant,   // 1: SLAU, 2: SLAU2 (圧力束第3項のみ低マッハ改良)
 
  flow_float ga,
 
@@ -389,8 +390,17 @@ __global__ void SLAU_d
         flow_float chi = (1.0-M_hat)*(1.0-M_hat);
 
         flow_float pressure_sum = P_L + P_R;
-        flow_float p_tilde = half*pressure_sum + half*(beta_p-beta_m)*(P_L-P_R)
-                     +(one-chi)*(beta_p+beta_m-one)*half*pressure_sum; 
+        // 圧力束の第3項のみ slauVariant で分岐 (mdot は SLAU/SLAU2 共通)。
+        // SLAU : (1-chi)(beta_p+beta_m-1) * (P_L+P_R)/2   ... 低マッハで消失し圧力散逸が乏しい
+        // SLAU2: (beta_p+beta_m-1) * sqrt((|u_L|^2+|u_R|^2)/2) * roBar * c_hat  ... M に比例した低マッハ散逸
+        flow_float p_third;
+        if (slauVariant == 2) {
+            flow_float roBar = half*(ro_L + ro_R);
+            p_third = (beta_p+beta_m-one)*sqrt(half*(velocity2_L+velocity2_R))*roBar*c_hat;
+        } else {
+            p_third = (one-chi)*(beta_p+beta_m-one)*half*pressure_sum;
+        }
+        flow_float p_tilde = half*pressure_sum + half*(beta_p-beta_m)*(P_L-P_R) + p_third;
 
         flow_float mdot = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs)+ro_R*(Vn_m-Vn_hat_m_abs)) -chi/(c_hat)*P_del);
         massflux[ip] = mdot;
@@ -2535,9 +2545,10 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     // -----------------------
     // *** sum over planes ***
     // -----------------------
-    if (cfg.solver == "SLAU") {
-        SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> ( 
-            cfg.convMethod, cfg.limiter,
+    if (cfg.solver == "SLAU" || cfg.solver == "SLAU2") {
+        int slauVariant = (cfg.solver == "SLAU2") ? 2 : 1;
+        SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
+            cfg.convMethod, cfg.limiter, slauVariant,
 
             cfg.gamma,
 
@@ -2704,6 +2715,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     // boundary-flux kernel below would then double-count the boundary contribution,
     // so it is skipped for those solvers.
     bool skipBoundaryFluxKernel = (cfg.solver == "SLAU"
+                                || cfg.solver == "SLAU2"
                                 || cfg.solver == "ROE"
                                 || cfg.solver == "HLLE");
 

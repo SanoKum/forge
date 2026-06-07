@@ -352,6 +352,38 @@ $$
 
 ここで $h_t = \gamma P / [(\gamma-1)\rho] + \tfrac{1}{2}|\mathbf u|^2 = H_t$ (全エンタルピ)。
 
+#### SLAU2 (圧力束の低マッハ改良)
+
+SLAU の圧力束 $\tilde p$ の**第 3 項のみ**を Kitamura–Shima (2013) の SLAU2 形に置き換える。
+質量流束 $\dot m$・風上化・残差組み立ては SLAU と完全に同一:
+
+$$
+\tilde{p}_{\text{SLAU2}} = \tfrac{1}{2}(P_L + P_R)
+ + \tfrac{1}{2}(\beta_+ - \beta_-)(P_L - P_R)
+ + (\beta_+ + \beta_- - 1)\,\sqrt{\tfrac{1}{2}\big(|\mathbf u_L|^2 + |\mathbf u_R|^2\big)}\;\bar\rho\,\widehat{c},
+$$
+
+ここで $\bar\rho = \tfrac{1}{2}(\rho_L + \rho_R)$、$\widehat c$ は界面音速 (上と同じ算術平均)。
+
+SLAU の第 3 項 $(1-\chi)(\beta_++\beta_--1)\tfrac{1}{2}(P_L+P_R)$ は超音速近傍で
+$(1-\chi)$ を介して平均圧力に比例するのに対し、SLAU2 の項は
+$\bar\rho\,\widehat c\,|\mathbf V| \;(\propto M\cdot\gamma P)$ に比例する。Kitamura–Shima (2013)
+の本来の狙いは、この圧力束の再定式化による**衝撃波ロバスト性の改善**(カーバンクル等の
+抑制) と $(1-\chi)$ 依存の除去であり、超音速域では両式は同等で解は実質不変。
+
+**低マッハ残差フロアとの関係 (注意)**。低マッハの圧力–速度カップリング
+(チェッカーボード抑制) を主に担うのは、SLAU/SLAU2 で**共通**の質量流束の圧力散逸項
+$-\dfrac{\chi}{\widehat c}(P_R-P_L)$ である。SLAU2 が変えるのは圧力束 (運動量側) の第 3 項
+だけなので、**低マッハのエネルギー残差フロア自体は SLAU2 では解消しない**。実際、3D ノズル
+($M_{\text{chamber}}\sim0.06$, 陰解法) で SLAU と SLAU2 を同条件比較したところ、`rms_roe`
+フロア・チャンバー圧力の非物理ばらつきはほぼ同一であった
+([`convection-slau2-lowmach.md`](../../.github/plans/convection-slau2-lowmach.md) §9)。
+低マッハフロアの根治には時間項の**前処理** (Weiss–Smith 等。質量流束の散逸スケールごと
+是正する) が必要。`solver: SLAU2` は衝撃波ロバスト性向けの選択肢として有効 (既定は `SLAU`)。
+
+これは時間項の低マッハ**前処理** (Weiss–Smith 等) とは別物で、空間 (フラックス) 側の
+散逸スケールのみを是正する軽量な対処である。`solver: SLAU2` で選択する (既定は `SLAU`)。
+
 ### HLLE
 
 Harten–Lax–van Leer–Einfeldt 形 HLL。中央波 (接触不連続) を捨て、最大・最小波速で

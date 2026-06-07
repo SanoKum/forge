@@ -23,7 +23,8 @@ forge の対流フラックス計算の実装と、ソース上の対応関係�
 
 | `cfg.solver` | 呼び出すカーネル | 状態 |
 | --- | --- | --- |
-| `"SLAU"` | `SLAU_d` | 有効 |
+| `"SLAU"` | `SLAU_d` (`slauVariant=1`) | 有効 |
+| `"SLAU2"` | `SLAU_d` (`slauVariant=2`) | 有効 (圧力束のみ SLAU2、低マッハ改良) |
 | `"HLLE"` | `HLLE_d` | 有効 |
 | `"ROE"`  | `ROE_d`  | 有効 |
 | `"AUSM+"`, `"AUSM+UP"`, `"KEEP_FVS"`, `"KEEP_SLAU"` | (実装あり) | ラッパでコメントアウト中、`exit(EXIT_FAILURE)` |
@@ -94,13 +95,21 @@ limiter = (duc > 0.8) ? max(0.0, (1.0 - duc) * limiter) : limiter;
    M_hat        = min(1, sqrt(0.5*(|u_L|² + |u_R|²)) / c_hat);
    chi          = (1 - M_hat)²;
    ```
-6. **圧力束** `p_tilde` と **質量流束** `mdot`:
+6. **圧力束** `p_tilde` と **質量流束** `mdot`。圧力束の**第 3 項のみ** `slauVariant` で
+   分岐する (`mdot` は両版共通):
    ```cpp
-   p_tilde = 0.5*(P_L+P_R) + 0.5*(beta_p-beta_m)*(P_L-P_R)
-           + (1-chi)*(beta_p+beta_m-1)*0.5*(P_L+P_R);
+   // 第 3 項: slauVariant==2 (SLAU2) のときだけ差し替え
+   if (slauVariant == 2)               // SLAU2 (低マッハ圧力散逸)
+       p_third = (beta_p+beta_m-1)*sqrt(0.5*(velocity2_L+velocity2_R))
+                 *0.5*(ro_L+ro_R)*c_hat;
+   else                                // SLAU
+       p_third = (1-chi)*(beta_p+beta_m-1)*0.5*(P_L+P_R);
+   p_tilde = 0.5*(P_L+P_R) + 0.5*(beta_p-beta_m)*(P_L-P_R) + p_third;
    mdot    = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs) + ro_R*(Vn_m-Vn_hat_m_abs))
                       - chi/c_hat * (P_R-P_L));
    ```
+   SLAU2 の根拠と式は [`theory.md` の SLAU2 節](theory.md#slau2-圧力束の低マッハ改良) を参照。
+   `velocity2_L/R`, `c_hat` は既存量、新規は `0.5*(ro_L+ro_R)` のみ。
 7. **残差**: `0.5*(mdot ± |mdot|)` で風上選択し、運動量に `p_tilde * S_*` を加え、
    エネルギは `h_p, h_m` (全エンタルピ) を風上にとる。
 8. 両側セルに `atomicAdd(±)`。
