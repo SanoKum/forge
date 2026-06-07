@@ -130,6 +130,87 @@ __device__ __forceinline__ void build_abs_jacobian(
     }
 }
 
+// LU-SGS の通量分割 Jacobian を同時構築する。
+//   a_plus = A^+ = R Λ^+ L         （対角ブロック用、Λ^+ = max(Λ,0)）
+//   k_off  = -A^- = R (-Λ^-) L = ½(|A|-A)  （RHS 近傍項用、-Λ^- = max(-Λ,0)）
+// いずれも固有値は非負。対角に A^+、RHS に +k_off·ΔQ_nbr を加えることで
+// 系 D ΔQ = -R - Σ A^- S ΔQ_nbr を構成する（詳細は docs/time_integration）。
+__device__ __forceinline__ void build_jacobian_split(
+    flow_float gamma,
+    flow_float nx,
+    flow_float ny,
+    flow_float nz,
+    flow_float u,
+    flow_float v,
+    flow_float w,
+    flow_float H,
+    flow_float c,
+    flow_float a_plus[5][5],
+    flow_float k_off[5][5]
+)
+{
+    const flow_float sonic = max(c, static_cast<flow_float>(1.0e-8));
+    const flow_float ek = 0.5 * (u * u + v * v + w * w);
+    const flow_float U = u * nx + v * ny + w * nz;
+    const flow_float chi = (gamma - 1.0) / sonic;
+    const flow_float inv_sqrt2 = static_cast<flow_float>(0.7071067811865475244);
+
+    const flow_float lambda[5] = {
+        U + sonic,
+        U,
+        U,
+        U,
+        U - sonic
+    };
+    // Λ^+ = max(λ,0), -Λ^- = max(-λ,0)（共に非負）
+    flow_float lam_p[5];
+    flow_float lam_k[5];
+    #pragma unroll
+    for (int i = 0; i < 5; ++i) {
+        lam_p[i] = max(lambda[i], static_cast<flow_float>(0.0));
+        lam_k[i] = max(-lambda[i], static_cast<flow_float>(0.0));
+    }
+
+    flow_float R[5][5];
+    flow_float L[5][5];
+
+    R[0][0] = inv_sqrt2 / sonic;             R[0][1] = ny / sonic;               R[0][2] = nz / sonic;               R[0][3] = nx / sonic;               R[0][4] = inv_sqrt2 / sonic;
+    R[1][0] = (u / sonic + nx) * inv_sqrt2; R[1][1] = u * ny / sonic + nz;      R[1][2] = u * nz / sonic - ny;      R[1][3] = u * nx / sonic;           R[1][4] = (u / sonic - nx) * inv_sqrt2;
+    R[2][0] = (v / sonic + ny) * inv_sqrt2; R[2][1] = v * ny / sonic;           R[2][2] = v * nz / sonic + nx;      R[2][3] = v * nx / sonic - nz;      R[2][4] = (v / sonic - ny) * inv_sqrt2;
+    R[3][0] = (w / sonic + nz) * inv_sqrt2; R[3][1] = w * ny / sonic - nx;      R[3][2] = w * nz / sonic;           R[3][3] = w * nx / sonic + ny;      R[3][4] = (w / sonic - nz) * inv_sqrt2;
+    R[4][0] = (ek / sonic + 1.0 / chi + U) * inv_sqrt2;
+    R[4][1] = ek * ny / sonic + nz * u - nx * w;
+    R[4][2] = ek * nz / sonic + nx * v - ny * u;
+    R[4][3] = ek * nx / sonic + ny * w - nz * v;
+    R[4][4] = (ek / sonic + 1.0 / chi - U) * inv_sqrt2;
+
+    L[0][0] = (chi * ek - U) * inv_sqrt2;   L[0][1] = (-chi * u + nx) * inv_sqrt2; L[0][2] = (-chi * v + ny) * inv_sqrt2; L[0][3] = (-chi * w + nz) * inv_sqrt2; L[0][4] = chi * inv_sqrt2;
+    L[1][0] = ny * (-chi * ek + sonic) - nz * u + nx * w;
+    L[1][1] = ny * chi * u + nz;            L[1][2] = ny * chi * v;              L[1][3] = ny * chi * w - nx;         L[1][4] = -ny * chi;
+    L[2][0] = nz * (-chi * ek + sonic) - nx * v + ny * u;
+    L[2][1] = nz * chi * u - ny;            L[2][2] = nz * chi * v + nx;         L[2][3] = nz * chi * w;              L[2][4] = -nz * chi;
+    L[3][0] = nx * (-chi * ek + sonic) - ny * w + nz * v;
+    L[3][1] = nx * chi * u;                 L[3][2] = nx * chi * v - nz;         L[3][3] = nx * chi * w + ny;         L[3][4] = -nx * chi;
+    L[4][0] = (chi * ek + U) * inv_sqrt2;   L[4][1] = (-chi * u - nx) * inv_sqrt2; L[4][2] = (-chi * v - ny) * inv_sqrt2; L[4][3] = (-chi * w - nz) * inv_sqrt2; L[4][4] = chi * inv_sqrt2;
+
+    #pragma unroll
+    for (int row = 0; row < 5; ++row) {
+        #pragma unroll
+        for (int col = 0; col < 5; ++col) {
+            flow_float sp = 0.0;
+            flow_float sk = 0.0;
+            #pragma unroll
+            for (int k = 0; k < 5; ++k) {
+                const flow_float rl = R[row][k] * L[k][col];
+                sp += rl * lam_p[k];
+                sk += rl * lam_k[k];
+            }
+            a_plus[row][col] = sp;
+            k_off[row][col] = sk;
+        }
+    }
+}
+
 __device__ __forceinline__ bool solve_5x5(flow_float mat[5][5], flow_float rhs[5], flow_float sol[5])
 {
     #pragma unroll
@@ -513,7 +594,10 @@ __global__ void implicit_defect_correction_d
     }
 }
 
-__global__ void implicit_defect_correction_block_d
+// 5×5 行列を複数保持しレジスタ消費が大きいため、block 上限を超えないよう __launch_bounds__ で
+// 1 block あたりスレッド数を 128 に制限する（起動時の "too many resources" を回避）。
+#define BLOCK_DPLUR_THREADS 128
+__global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correction_block_d
 (
  int loop,
  flow_float dt,
@@ -619,12 +703,18 @@ __global__ void implicit_defect_correction_block_d
             const geom_int ic1 = plane_cells[2 * ip + 1];
             const geom_int other_ic = (ic0 == ic) ? ic1 : ic0;
 
-            const flow_float nx = sx[ip] / face_area;
-            const flow_float ny = sy[ip] / face_area;
-            const flow_float nz = sz[ip] / face_area;
+            // 格納法線 (sx,sy,sz) は ic0→ic1 (owner ic0 から外向き)。A^± は法線符号に依存するため、
+            // 当該セル ic から見た外向き法線になるよう ic が neighbor 側 (ic1) のとき符号反転する。
+            // （旧 |A| 版は符号不変だったため反転不要だったが、A^+/A^- 分割では必須）
+            const flow_float nsign = (ic0 == ic) ? static_cast<flow_float>(1.0) : static_cast<flow_float>(-1.0);
+            const flow_float nx = nsign * sx[ip] / face_area;
+            const flow_float ny = nsign * sy[ip] / face_area;
+            const flow_float nz = nsign * sz[ip] / face_area;
 
-            flow_float abs_jac[5][5];
-            block_dplur::build_abs_jacobian(
+            // LU-SGS 通量分割: 対角に A^+ S、RHS 近傍に (-A^-) S を使う。
+            flow_float a_plus[5][5];
+            flow_float k_off[5][5];
+            block_dplur::build_jacobian_split(
                 gamma,
                 nx,
                 ny,
@@ -634,9 +724,10 @@ __global__ void implicit_defect_correction_block_d
                 velocity_z,
                 local_enthalpy,
                 local_sonic,
-                abs_jac
+                a_plus,
+                k_off
             );
-            block_dplur::add_scaled_5x5(diag_block, abs_jac, face_area);
+            block_dplur::add_scaled_5x5(diag_block, a_plus, face_area);
 
             const flow_float dcc_x = ccx[other_ic] - ccx[ic];
             const flow_float dcc_y = ccy[other_ic] - ccy[ic];
@@ -656,7 +747,13 @@ __global__ void implicit_defect_correction_block_d
             if (other_ic < nCells) {
                 flow_float dq_neighbor[5];
                 block_dplur::load_block_vec(other_ic, dq_old_0, dq_old_1, dq_old_2, dq_old_3, dq_old_4, dq_neighbor);
-                block_dplur::multiply_add_5x5_vec(abs_jac, dq_neighbor, neighbor_accum);
+                // RHS の近傍寄与は -A^- S ΔQ_nbr = k_off·(S·ΔQ_nbr)。対角 A^+ S と同じく
+                // face_area でスケールする（対角と近傍の係数スケールを一致させる）。
+                #pragma unroll
+                for (int i = 0; i < 5; ++i) {
+                    dq_neighbor[i] *= face_area;
+                }
+                block_dplur::multiply_add_5x5_vec(k_off, dq_neighbor, neighbor_accum);
             }
         }
 
@@ -685,12 +782,8 @@ __global__ void implicit_defect_correction_block_d
             correction[i] *= implicit_relax;
         }
 
-        ro[ic] += correction[0];
-        roUx[ic] += correction[1];
-        roUy[ic] += correction[2];
-        roUz[ic] += correction[3];
-        roe[ic] += correction[4];
-
+        // 古典 DPLUR: sweep 中は Q を更新せず dq_new の生成のみ。
+        // Q への commit は全 sweep 後に applyBlockImplicitCorrection でまとめて行う。
         block_dplur::store_block_vec(ic, correction, dq_new_0, dq_new_1, dq_new_2, dq_new_3, dq_new_4);
         block_dplur::store_block_vec(ic, rhs, rhs_0, rhs_1, rhs_2, rhs_3, rhs_4);
         diag_00[ic] = diag_block[0][0]; diag_01[ic] = diag_block[0][1]; diag_02[ic] = diag_block[0][2]; diag_03[ic] = diag_block[0][3]; diag_04[ic] = diag_block[0][4];
@@ -701,22 +794,15 @@ __global__ void implicit_defect_correction_block_d
     }
 }
 
-namespace {
-
-void swapImplicitCorrectionBuffers(variables& var)
+// block DPLUR の sweep 間バッファ入れ替え。ドライバ側から各 sweep 後に明示的に呼ぶ
+// （旧実装は wrapper 内部で暗黙に swap していたが、古典 DPLUR では制御フローを明示化する）。
+void swapBlockImplicitCorrectionBuffers(variables& var)
 {
-    std::swap(var.c_d["dq_ro_old"], var.c_d["dq_ro_new"]);
-    std::swap(var.c_d["dq_roUx_old"], var.c_d["dq_roUx_new"]);
-    std::swap(var.c_d["dq_roUy_old"], var.c_d["dq_roUy_new"]);
-    std::swap(var.c_d["dq_roUz_old"], var.c_d["dq_roUz_new"]);
-    std::swap(var.c_d["dq_roe_old"], var.c_d["dq_roe_new"]);
     std::swap(var.c_d["dq_block_old_0"], var.c_d["dq_block_new_0"]);
     std::swap(var.c_d["dq_block_old_1"], var.c_d["dq_block_new_1"]);
     std::swap(var.c_d["dq_block_old_2"], var.c_d["dq_block_new_2"]);
     std::swap(var.c_d["dq_block_old_3"], var.c_d["dq_block_new_3"]);
     std::swap(var.c_d["dq_block_old_4"], var.c_d["dq_block_new_4"]);
-}
-
 }
 
 //TODO __global__ void runge_kutta_dual_explicit_d
@@ -820,7 +906,10 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
         ) ;
     } else if (cfg.timeIntegration == 11) { // implicit defect-correction with diagonal Jacobian approximation
         if (cfg.blockDPLUR == 1) {
-            implicit_defect_correction_block_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+            // レジスタ過多のため専用の小さい block サイズで起動（__launch_bounds__ と整合）。
+            const int block_threads = BLOCK_DPLUR_THREADS;
+            const int block_grid = (msh.nCells_all + block_threads - 1) / block_threads;
+            implicit_defect_correction_block_d<<<block_grid , block_threads>>>(
                 loop,
                 cfg.dt,
                 var.c_d["dt_local"],
@@ -929,7 +1018,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["dq_roe_new"]
             );
         }
-        swapImplicitCorrectionBuffers(var);
+        // 古典 DPLUR: buffer swap と Q への commit はドライバ側 (main.cpp blockDPLURSolve /
+        // applyBlockImplicitCorrection) で明示的に行う。ここでは sweep カーネルの起動のみ。
 //TODO    } else if (cfg.timeIntegration == 10) { // implicit (m-time stepping & explicit scheme)
 //TODO        runge_kutta_dual_explicit_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
 //TODO            cfg.dt , 

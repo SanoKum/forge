@@ -334,7 +334,8 @@ ResidualSnapshot gatherResidualSnapshot(solverConfig& cfg, mesh& msh, variables&
     return snapshot;
 }
 
-CorrectionSnapshot gatherCorrectionSnapshot(solverConfig& cfg, mesh& msh, variables& var)
+// frozen scalar 陰解法（次フェーズ）の inner 補正ログ用。現状の経路では未使用だが温存する。
+[[maybe_unused]] CorrectionSnapshot gatherCorrectionSnapshot(solverConfig& cfg, mesh& msh, variables& var)
 {
     CorrectionSnapshot snapshot;
 
@@ -695,6 +696,192 @@ void writeInitialOutputs(
     outputH5_XDMF(cfg , msh, var, 0);
 }
 
+// 1 ステップ分の状態を束ねる軽量コンテキスト。旧 advanceOneStep の [&] capture を置換し、
+// 自由関数間でデータフローを明示する。
+struct StepContext {
+    solverConfig&       cfg;
+    cudaConfig&         cuda_cfg;
+    mesh&               msh;
+    matrix&             mat_ns;   // 陰解法では未使用だが非陰解法のシグネチャに必要なため保持
+    variables&          var;
+    fluct_variables&    fluct;
+    point_probes&       pprobes;
+    RuntimeProfiler&    profiler;
+    ResidualCsvLogger&  residual_logger;
+    ImplicitDiagLogger& implicit_diag_logger;
+    int                 iStep;
+};
+
+// 残差組み立ての単一情報源（旧 assembleCurrentState）。保存量から派生量・境界・勾配・各フラックス・
+// ソース項を計算し res_* を確定する。explicit / implicit 双方が呼ぶ。
+void assembleResidual(StepContext& s, int stage_index)
+{
+    (void)stage_index;  // 現状カーネルは stage_index を使わない（dual-time 拡張用に interface 保持）
+    s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+        updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+    });
+    s.profiler.measureWall(ProfileSection::DependentVariables, [&]() {
+        dependentVariables(s.cfg , s.cuda_cfg , s.msh , s.var, s.mat_ns);
+    });
+    s.profiler.measureCuda(ProfileSection::GasProperties, [&]() {
+        gasProperties_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
+        applyBconds(s.cfg , s.cuda_cfg , s.msh , s.var, s.mat_ns , s.fluct);
+    });
+    s.profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
+        applyRansScalarBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
+        calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
+        axisymmetricGeomTerms_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::Limiter, [&]() {
+        limiter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::DucrosSensor, [&]() {
+        ducrosSensor_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
+        turbulent_viscosity_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::ConvectiveFlux, [&]() {
+        convectiveFlux_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, s.mat_ns);
+    });
+    s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
+        scalarTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
+        calcScalarGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        ransSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
+        axisymmetricSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::ViscousFlux, [&]() {
+        viscousFlux_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, s.mat_ns);
+    });
+    // TODO(dual-time): unsteady のとき addUnsteadyTimeTerm(s) で BDF 物理時間項を res_* と
+    // 対角に加える。定常では no-op。本体は次フェーズ。
+}
+
+// 残差スナップショットを CSV へ記録（inner_index==0 で outer_begin、それ以外で inner_iter）。
+void logResidualSnapshot(StepContext& s, int inner_index)
+{
+    const ResidualSnapshot residual_snapshot = gatherResidualSnapshot(s.cfg, s.msh, s.var);
+    if (inner_index == 0) {
+        s.residual_logger.logOuterBegin(s.iStep, inner_index, residual_snapshot);
+    } else {
+        s.residual_logger.logInnerIter(s.iStep, inner_index, residual_snapshot);
+    }
+    if (s.implicit_diag_logger.enabled() && s.cfg.timeIntegration == 11) {
+        s.implicit_diag_logger.log(s.iStep, inner_index, gatherImplicitDiagSnapshot(s.cfg, s.msh, s.var));
+    }
+}
+
+// 古典 DPLUR 線形ソルバ。固定残差 res_* に対し Q を更新せず dq_block を nStepInner 回 Jacobi 緩和する。
+// 各 sweep 後にバッファを swap し、最終補正は dq_block_old に残る（commit は呼び出し側）。
+void blockDPLURSolve(StepContext& s)
+{
+    // 古典 DPLUR は dq=0 から開始する。前ステップの残留値による近傍参照を避けるため明示ゼロ化。
+    const size_t bytes = static_cast<size_t>(s.msh.nCells_all) * sizeof(flow_float);
+    cudaMemset(s.var.c_d["dq_block_old_0"], 0, bytes);
+    cudaMemset(s.var.c_d["dq_block_old_1"], 0, bytes);
+    cudaMemset(s.var.c_d["dq_block_old_2"], 0, bytes);
+    cudaMemset(s.var.c_d["dq_block_old_3"], 0, bytes);
+    cudaMemset(s.var.c_d["dq_block_old_4"], 0, bytes);
+
+    const int nSweep = std::max(1, s.cfg.nStepInner);
+    for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
+        s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
+            timeIntegration_d_wrapper(iSweep, s.cfg , s.cuda_cfg , s.msh , s.var);
+        });
+        swapBlockImplicitCorrectionBuffers(s.var);
+    }
+}
+
+// 1 回の非線形（擬似時間）更新。定常・dual-time 共有の核。
+// 残差 1 回構築 → 局所擬似時間 dτ → 古典 DPLUR 線形解 → Q への commit。
+void implicitNonlinearUpdate(StepContext& s, int inner_index)
+{
+    assembleResidual(s, 1);
+    logResidualSnapshot(s, inner_index);
+    s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+    });
+    blockDPLURSolve(s);
+    s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+        applyBlockImplicitCorrection(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+    });
+}
+
+// 陽解法 Runge-Kutta（tI 1/3/4）。steady/unsteady 両対応。
+void advanceExplicitRK(StepContext& s)
+{
+    const int iteration_count = s.cfg.perStepIterationCount();
+    const char* iteration_label = s.cfg.perStepIterationLabel();
+
+    for (int iloop = 0 ; iloop < iteration_count ; iloop++) {
+        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+            updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        });
+
+        cout << "       " << iteration_label << " : " << iloop+1 << "\n";
+        assembleResidual(s, iloop + 1);
+        logResidualSnapshot(s, iloop);
+        s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
+            timeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
+            scalarTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
+        });
+    }
+
+    s.profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
+        updateVariablesOuter(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+    });
+    s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
+        writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
+    });
+    s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+    });
+    s.residual_logger.logOuterEnd(s.iStep);
+    if (s.cfg.unsteady == 1) {
+        s.cfg.totalTime += s.cfg.dt;
+    }
+}
+
+// 定常 block DPLUR 陰解法。メインループ（nStepOuter）を擬似時間とし、1 ステップ = 1 非線形更新の縮退形。
+void advanceImplicitSteady(StepContext& s)
+{
+    // baseline (roN) は前ステップ末尾 / 初期化の updateVariablesOuter で設定済み（ro == roN）。
+    implicitNonlinearUpdate(s, 0);
+
+    s.profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
+        updateVariablesOuter(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+    });
+    s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
+        writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
+    });
+    s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+    });
+    s.residual_logger.logOuterEnd(s.iStep);
+}
+
+// 非定常 dual-time 陰解法。構造（共有核 implicitNonlinearUpdate・残差の BDF フック・config 命名分担）は
+// 用意済みだが本体は次フェーズ。誤用を防ぐため明確に throw する。
+[[noreturn]] void advanceImplicitDualTime(StepContext& s)
+{
+    (void)s;
+    // TODO(dual-time): setTimeLevels(roNN←roN, roN←ro) → 擬似時間サブ反復で implicitNonlinearUpdate を
+    // 複数回呼ぶ（assembleResidual の addUnsteadyTimeTerm で BDF 物理時間項を加算）→ 物理時間前進。
+    throw std::runtime_error(
+        "Unsteady dual-time implicit (timeIntegration==11 && unsteady==1) is not implemented yet. "
+        "It is planned for the next phase. Use unsteady==0 for steady block DPLUR implicit.");
+}
+
 void advanceOneStep(
     solverConfig& cfg,
     cudaConfig& cuda_cfg,
@@ -715,194 +902,18 @@ void advanceOneStep(
     }
     cout << "\n";
 
+    StepContext s{cfg, cuda_cfg, msh, mat_ns, var, fluct, pprobes,
+                  profiler, residual_logger, implicit_diag_logger, iStep};
+
     profiler.measureWall(ProfileSection::StepTotal, [&]() {
-        const bool steady_implicit = (cfg.isImplicit == 1 && cfg.unsteady == 0);
-        const bool frozen_scalar_implicit = (
-            cfg.timeIntegration == 11 &&
-            cfg.isImplicit == 1 &&
-            cfg.unsteady == 0 &&
-            cfg.blockDPLUR == 0
-        );
-
-        const auto assembleCurrentState = [&](int stage_index) {
-            profiler.measureWall(ProfileSection::UpdateInner, [&]() {
-                updateVariablesInner(cfg , cuda_cfg , msh , var , mat_ns);
-            });
-            profiler.measureWall(ProfileSection::DependentVariables, [&]() {
-                dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
-            });
-            profiler.measureCuda(ProfileSection::GasProperties, [&]() {
-                gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
-                applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
-            });
-            profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
-                applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
-                calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-                axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::Limiter, [&]() {
-                limiter_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::DucrosSensor, [&]() {
-                ducrosSensor_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
-                turbulent_viscosity_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::ConvectiveFlux, [&]() {
-                convectiveFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
-            });
-            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
-                scalarTransport_d_wrapper(cfg , cuda_cfg, msh , var);
-            });
-            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
-                calcScalarGradient_d_wrapper(cfg , cuda_cfg , msh , var);
-                ransSource_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-                axisymmetricSource_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::ViscousFlux, [&]() {
-                viscousFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
-            });
-        };
-
-        const auto refreshCommittedState = [&]() {
-            profiler.measureWall(ProfileSection::DependentVariables, [&]() {
-                dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
-            });
-            profiler.measureCuda(ProfileSection::GasProperties, [&]() {
-                gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
-                applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
-            });
-            profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
-                applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
-                calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-                axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::Limiter, [&]() {
-                limiter_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::DucrosSensor, [&]() {
-                ducrosSensor_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
-                turbulent_viscosity_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-        };
-
-        const auto logResidualSnapshot = [&](int inner_index) {
-            const ResidualSnapshot residual_snapshot = gatherResidualSnapshot(cfg, msh, var);
-            if (inner_index == 0) {
-                residual_logger.logOuterBegin(iStep, inner_index, residual_snapshot);
-            } else {
-                residual_logger.logInnerIter(iStep, inner_index, residual_snapshot);
-            }
-            if (implicit_diag_logger.enabled() && cfg.timeIntegration == 11) {
-                implicit_diag_logger.log(iStep, inner_index, gatherImplicitDiagSnapshot(cfg, msh, var));
-            }
-        };
-
-        if (frozen_scalar_implicit) {
-            assembleCurrentState(1);
-
-            const ResidualSnapshot outer_residual_snapshot = gatherResidualSnapshot(cfg, msh, var);
-            residual_logger.logOuterBegin(iStep, 0, outer_residual_snapshot);
-            if (implicit_diag_logger.enabled() && cfg.timeIntegration == 11) {
-                implicit_diag_logger.log(iStep, 0, gatherImplicitDiagSnapshot(cfg, msh, var));
-            }
-
-            for (int iInner = 0; iInner < std::max(1, cfg.nStepInner); ++iInner) {
-                cout << "       Inner : " << iInner + 1 << "\n";
-                profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
-                    timeIntegration_d_wrapper(iInner, cfg , cuda_cfg , msh , var);
-                });
-                residual_logger.logInnerIter(
-                    iStep,
-                    iInner + 1,
-                    outer_residual_snapshot,
-                    gatherCorrectionSnapshot(cfg, msh, var));
-                if (implicit_diag_logger.enabled() && cfg.timeIntegration == 11) {
-                    implicit_diag_logger.log(iStep, iInner + 1, gatherImplicitDiagSnapshot(cfg, msh, var));
-                }
-            }
-
-            profiler.measureWall(ProfileSection::UpdateInner, [&]() {
-                applyScalarImplicitCorrection(cfg , cuda_cfg , msh , var , mat_ns);
-            });
-            refreshCommittedState();
-
-            profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
-                updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
-            });
-            profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
-                writeStepOutputs(cfg , cuda_cfg , msh , var , pprobes , iStep+1);
-            });
-            profiler.measureCuda(ProfileSection::SetDt, [&]() {
-                setDT_d_wrapper(cfg , cuda_cfg, msh , var);
-            });
-            const ResidualSnapshot committed_residual_snapshot = gatherResidualSnapshot(cfg, msh, var);
-            const CorrectionSnapshot committed_correction_snapshot = gatherCorrectionSnapshot(cfg, msh, var);
-            residual_logger.logOuterEnd(iStep, &committed_residual_snapshot, &committed_correction_snapshot);
+        if (cfg.isImplicit == 1) {
             if (cfg.unsteady == 1) {
-                cfg.totalTime += cfg.dt;
+                advanceImplicitDualTime(s);
+            } else {
+                advanceImplicitSteady(s);
             }
-            return;
-        }
-
-        const int iteration_count = cfg.perStepIterationCount();
-        const char* iteration_label = cfg.perStepIterationLabel();
-
-        for (int iloop = 0 ; iloop < iteration_count ; iloop++) {
-            profiler.measureWall(ProfileSection::UpdateInner, [&]() {
-                updateVariablesInner(cfg , cuda_cfg , msh , var , mat_ns);
-            });
-
-            cout << "       " << iteration_label << " : " << iloop+1 << "\n";
-            assembleCurrentState(iloop + 1);
-            logResidualSnapshot(iloop);
-            profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
-                timeIntegration_d_wrapper(iloop, cfg , cuda_cfg , msh , var);
-                scalarTimeIntegration_d_wrapper(iloop, cfg , cuda_cfg , msh , var);
-            });
-
-            if (steady_implicit) {
-                const int pseudo_step = iStep * iteration_count + iloop + 1;
-                profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
-                    writeStepOutputs(cfg , cuda_cfg , msh , var , pprobes , pseudo_step);
-                });
-                profiler.measureCuda(ProfileSection::SetDt, [&]() {
-                    setDT_d_wrapper(cfg , cuda_cfg, msh , var);
-                });
-            }
-        }
-
-        profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
-            updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
-        });
-        if (!steady_implicit) {
-            profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
-                writeStepOutputs(cfg , cuda_cfg , msh , var , pprobes , iStep+1);
-            });
-            profiler.measureCuda(ProfileSection::SetDt, [&]() {
-                setDT_d_wrapper(cfg , cuda_cfg, msh , var);
-            });
-        }
-        residual_logger.logOuterEnd(iStep);
-        if (cfg.unsteady == 1) {
-            cfg.totalTime += cfg.dt;
+        } else {
+            advanceExplicitRK(s);
         }
     });
 }

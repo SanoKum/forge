@@ -339,7 +339,7 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
 
             break;
 
-        case 11: // implicit pseudo-time defect-correction
+        case 11: // implicit pseudo-time defect-correction (block DPLUR)
             this->isImplicit = 1;
             this->nStage = 1;
             this->coef_N.clear();
@@ -347,6 +347,14 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
             this->coef_Res.clear();
             this->coef_DT_4thRunge.clear();
             this->coef_Res_4thRunge.clear();
+            // 現状サポートするのは block DPLUR (blockDPLUR==1) のみ。
+            // scalar 対角版 (blockDPLUR==0 / frozen scalar 系) は一時的に無効化（次フェーズで再有効化）。
+            // TODO(next-step): frozen scalar 実装時にこの throw を外す。
+            if (this->blockDPLUR != 1) {
+                throw std::runtime_error(
+                    "timeIntegration==11: only block DPLUR (blockDPLUR=1) is currently supported. "
+                    "Scalar-diagonal implicit (blockDPLUR=0) is temporarily disabled.");
+            }
             break;
 
         default:

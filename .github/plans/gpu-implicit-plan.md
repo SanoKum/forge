@@ -12,6 +12,21 @@
 - **created**: 不明 (既存計画につきメタを後付け)
 - **owner**: `Copilot`
 
+## 0. 改訂メモ (2026-06) — 制御フロー整理・古典 DPLUR 化・dual-time 受け入れ
+
+Phase 1–6 の中核（`residual_history.csv` ログ基盤、block DPLUR 5×5 kernel、`dq_block_*`/`diag_block_*`/`rhs_block_*` バッファ、setDT 局所擬似時間）は**実装済み**。本改訂では「実装済みだが未検証・未実用」だった陰解法を、**整理して正式運用に乗せる**ことに焦点を移す。
+
+本改訂のスコープ（詳細は別途プランニング文書に基づく）:
+
+1. **制御フロー整理**: `main.cpp` `advanceOneStep` の `[&]` 巨大 lambda（`assembleCurrentState`/`refreshCommittedState`/`logResidualSnapshot`）と `frozen_scalar_implicit` 早期 return を廃し、`StepContext` 構造体＋自由関数（dispatcher / `assembleResidual` / `advanceExplicitRK` / `implicitNonlinearUpdate` / `blockDPLURSolve` / `advanceImplicitSteady`）に分解。
+2. **古典 DPLUR 化**: 1 非線形更新あたり残差/Jacobian を 1 回構築し、`Q` 固定で `dq` を `nStepInner` 回 Jacobi sweep、最後に 1 回だけ commit。kernel の inline `Q+=dq` を撤去し `applyBlockImplicitCorrection`（commit）と `swapBlockImplicitCorrectionBuffers`（swap）をドライバ側で明示化。
+3. **config 意味確定**: `nStepInner`=DPLUR sweep 回数、`nStepOuter`=擬似時間（定常）ステップ。
+4. **frozen scalar 隔離**: `blockDPLUR==0`（scalar 対角版）は config で reject（kernel/buffer は温存、frozen scalar フェーズで再有効化）。
+5. **dual-time 受け入れ**: 非定常 dual-time 陰解法は**必ず実装する**。本改訂では dispatcher 分岐（throw スタブ）・共有核 `implicitNonlinearUpdate`・残差の `addUnsteadyTimeTerm` フック・config 命名分担（`nSubIterDualTime` を後続で追加）だけ用意し、本体は後続フェーズ。
+6. **検証**: 層流・定常ケースで陽解法収束解を真値に block DPLUR の収束解一致を確認（古典 DPLUR 化は意図的挙動変更のため現 block 実装とは比較しない）。
+
+block DPLUR（簡易 Jacobian＝面 Roe 絶対値 Jacobian＋スペクトル半径粘性対角、matrix-free）が**実現済みの主モード**。§2 以降の「初回スコープ」記述はこの実現状況に読み替える。
+
 ## 1. 目的
 
 `solver_density_cuda` に対して、GPU 上で実用的に回る陰解法基盤を段階導入する。
@@ -281,3 +296,13 @@ implicit 更新の基本形は `Q \leftarrow Q + \delta Q` とし、`implicitRel
 - first implementation target は residual ログ機能の追加と、そのための `variables.cpp` / `variables.hpp` 側の保持量整理とする
 - second step で `colored sweep` や `multicolor SGS` を検討する
 - full sparse Jacobian assembly は、その後も必要性が明確な場合に限って評価する
+
+## 9. 変更ログ
+
+- 2026-06: 制御フロー整理（`StepContext`＋自由関数分解、frozen 分岐削除）、block DPLUR の古典 DPLUR 化（残差 1 回構築＋`nStepInner` sweep＋単一 commit、`applyBlockImplicitCorrection`/`swapBlockImplicitCorrectionBuffers` をドライバ側に明示化）、`blockDPLUR==0` の config 隔離、dual-time 受け入れ構造（dispatcher 分岐スタブ・共有核・`addUnsteadyTimeTerm` フック・config 命名分担）を実装。docs/time_integration の theory/implementation を同期更新。
+
+- 2026-06: **block DPLUR 演算子の修正（収束化）**。上記リファクタ後の検証（`case/20.naca_ml/001.test`, 既定 SLAU/MUSCL/venkata, cfl 1.5）で block DPLUR が収束せず発散することが判明。切り分けの結果、新旧コードとも**対角・近傍に絶対値 Jacobian $|\widetilde A|$ を符号付き分割 $A^\pm$ の代わりに誤用**しており、対角が upwind 自己 Jacobian と不一致（対流中心項欠落）・近傍結合が逆符号だった（対角のみ＝頭打ち、近傍 sweep 有効＝NaN。旧 2026-05 実装も同様に発散）。正しい LU-SGS 分割 $D_i=V/\Delta\tau I+\sum_f A^{+}_f S_f$、RHS 近傍項 $-\sum_f A^{-}_f S_f \Delta\mathbf Q_{\text{nbr}}$ に置換（`build_jacobian_split` で $A^{+}$ と $-A^{-}$ を同時構築）。局所反復行列のスペクトル半径 $\rho\approx (V/\Delta\tau)/(V/\Delta\tau+\lambda^{+})<1$ を数値確認。theory/implementation を同期更新。
+
+  検証結果 (2026-06-07, native build, `case/20.naca_ml/001.test`): 修正後の block DPLUR は発散せず収束（roe 残差 18→0.5）。pseudo CFL を上げると加速（cfl_pseudo=50 で 500 step に roe≈12、explicit は同 step で≈86）。両者を収束させた状態（explicit 40000 step roe≈0.25、implicit cfl_pseudo=20 4000 step roe≈0.5）で**壁面静圧の最大相対差 0.0552% < 0.1%**（平均 0.0053%）で一致＝陽解法と同一定常解に収束することを確認（plan Phase 7 合格）。陰解法の 4000 step 壁時計時間 25s は explicit 同 step 41s より短い。
+
+- 残: dual-time 本体・frozen scalar 有効化は後続フェーズ。

@@ -8,3 +8,4 @@
 void updateVariablesOuter(solverConfig&, cudaConfig&, mesh&, variables&, matrix& );
 void updateVariablesInner(solverConfig&, cudaConfig&, mesh&, variables&, matrix& );
 void applyScalarImplicitCorrection(solverConfig&, cudaConfig&, mesh&, variables&, matrix& );
+void applyBlockImplicitCorrection(solverConfig&, cudaConfig&, mesh&, variables&, matrix& );

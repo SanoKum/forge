@@ -90,3 +90,30 @@ __global__ void applyScalarImplicitCorrection_d
 );
 
 void applyScalarImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// block DPLUR の補正反映: Q = Q_baseline(roN) + dq_block_old を 1 回 commit する。
+// 古典 DPLUR では sweep 中に Q を更新せず、全 sweep 後にこの kernel でまとめて反映する。
+__global__ void applyBlockImplicitCorrection_d
+(
+ geom_int nCells_all , geom_int nCells,
+
+ flow_float* ro,
+ flow_float* roUx,
+ flow_float* roUy,
+ flow_float* roUz,
+ flow_float* roe,
+
+ flow_float* roN,
+ flow_float* roUxN,
+ flow_float* roUyN,
+ flow_float* roUzN,
+ flow_float* roeN,
+
+ flow_float* dq_block_0,
+ flow_float* dq_block_1,
+ flow_float* dq_block_2,
+ flow_float* dq_block_3,
+ flow_float* dq_block_4
+);
+
+void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

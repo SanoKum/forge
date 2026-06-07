@@ -184,3 +184,63 @@ void applyScalarImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cud
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
+
+__global__ void applyBlockImplicitCorrection_d
+(
+ geom_int nCells_all , geom_int nCells,
+
+ flow_float* ro,
+ flow_float* roUx,
+ flow_float* roUy,
+ flow_float* roUz,
+ flow_float* roe,
+
+ flow_float* roN,
+ flow_float* roUxN,
+ flow_float* roUyN,
+ flow_float* roUzN,
+ flow_float* roeN,
+
+ flow_float* dq_block_0,
+ flow_float* dq_block_1,
+ flow_float* dq_block_2,
+ flow_float* dq_block_3,
+ flow_float* dq_block_4
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ic < nCells) {
+        ro[ic]   = roN[ic]   + dq_block_0[ic];
+        roUx[ic] = roUxN[ic] + dq_block_1[ic];
+        roUy[ic] = roUyN[ic] + dq_block_2[ic];
+        roUz[ic] = roUzN[ic] + dq_block_3[ic];
+        roe[ic]  = roeN[ic]  + dq_block_4[ic];
+    }
+}
+
+void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    // 古典 DPLUR の sweep ループ後、最終補正は dq_block_old に入っている（最後の swap 後）。
+    applyBlockImplicitCorrection_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells_all , msh.nCells,
+        var.c_d["ro"],
+        var.c_d["roUx"],
+        var.c_d["roUy"],
+        var.c_d["roUz"],
+        var.c_d["roe"],
+        var.c_d["roN"],
+        var.c_d["roUxN"],
+        var.c_d["roUyN"],
+        var.c_d["roUzN"],
+        var.c_d["roeN"],
+        var.c_d["dq_block_old_0"],
+        var.c_d["dq_block_old_1"],
+        var.c_d["dq_block_old_2"],
+        var.c_d["dq_block_old_3"],
+        var.c_d["dq_block_old_4"]
+    );
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
