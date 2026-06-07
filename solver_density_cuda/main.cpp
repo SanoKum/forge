@@ -90,7 +90,7 @@ enum class ProfileSection {
     CalcGradient,
     Limiter,
     DucrosSensor,
-    TurbulentViscosity,
+    TurbulenceModel,
     ConvectiveFlux,
     AxisymmetricSource,
     ViscousFlux,
@@ -597,7 +597,7 @@ private:
             case ProfileSection::CalcGradient: return "calc_gradient";
             case ProfileSection::Limiter: return "limiter";
             case ProfileSection::DucrosSensor: return "ducros_sensor";
-            case ProfileSection::TurbulentViscosity: return "turb_viscosity";
+            case ProfileSection::TurbulenceModel: return "turbulence_model";
             case ProfileSection::ConvectiveFlux: return "convective_flux";
             case ProfileSection::AxisymmetricSource: return "axisym_source";
             case ProfileSection::ViscousFlux: return "viscous_flux";
@@ -752,16 +752,16 @@ void advanceOneStep(
             profiler.measureCuda(ProfileSection::DucrosSensor, [&]() {
                 ducrosSensor_d_wrapper(cfg , cuda_cfg , msh , var);
             });
-            profiler.measureCuda(ProfileSection::TurbulentViscosity, [&]() {
+            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
                 turbulent_viscosity_d_wrapper(cfg , cuda_cfg , msh , var);
             });
             profiler.measureCuda(ProfileSection::ConvectiveFlux, [&]() {
                 convectiveFlux_d_wrapper(cfg , cuda_cfg, msh , var, mat_ns);
             });
-            profiler.measureCuda(ProfileSection::ConvectiveFlux, [&]() {
+            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
                 scalarTransport_d_wrapper(cfg , cuda_cfg, msh , var);
             });
-            profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
+            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
                 calcScalarGradient_d_wrapper(cfg , cuda_cfg , msh , var);
                 ransSource_d_wrapper(cfg , cuda_cfg , msh , var);
             });
@@ -798,7 +798,7 @@ void advanceOneStep(
             profiler.measureCuda(ProfileSection::DucrosSensor, [&]() {
                 ducrosSensor_d_wrapper(cfg , cuda_cfg , msh , var);
             });
-            profiler.measureCuda(ProfileSection::TurbulentViscosity, [&]() {
+            profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
                 turbulent_viscosity_d_wrapper(cfg , cuda_cfg , msh , var);
             });
         };
