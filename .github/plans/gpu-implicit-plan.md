@@ -305,4 +305,6 @@ implicit 更新の基本形は `Q \leftarrow Q + \delta Q` とし、`implicitRel
 
   検証結果 (2026-06-07, native build, `case/20.naca_ml/001.test`): 修正後の block DPLUR は発散せず収束（roe 残差 18→0.5）。pseudo CFL を上げると加速（cfl_pseudo=50 で 500 step に roe≈12、explicit は同 step で≈86）。両者を収束させた状態（explicit 40000 step roe≈0.25、implicit cfl_pseudo=20 4000 step roe≈0.5）で**壁面静圧の最大相対差 0.0552% < 0.1%**（平均 0.0053%）で一致＝陽解法と同一定常解に収束することを確認（plan Phase 7 合格）。陰解法の 4000 step 壁時計時間 25s は explicit 同 step 41s より短い。
 
-- 残: dual-time 本体・frozen scalar 有効化は後続フェーズ。
+- 2026-06: **軸対称ケースの陰解法対応**。幾何 ($r$ 重み付き `volume`/`ss`) は既に整合しており、平均流 `A⁺/A⁻` 修正だけで軸対称 block DPLUR は収束する（ソース lagged でも可）ことを確認。さらに半径運動量ソース $S_{\rho u_r}=(p-\tau_{\theta\theta})A_{\text{planar}}$ の局所ヤコビアン（圧力 $\partial p/\partial Q$ ＋ 粘性フープ $2\mu/(\rho r_{\text{eff}})$）を `implicit_defect_correction_block_d` の roUy 行対角に追加（`isAxisymmetric`/`A_planar` 引数追加）。検証 (`case/23.axi_nozzle` M4 ノズル): 陽解法収束解と壁面静圧が平均 0.02% で一致（最大 0.32% は未収束プルーム最低圧部、explicit/lagged/jac で同一＝case 残差フロア由来）、ソースヤコビアンで過渡収束 ~2 倍速・回帰なし。超音速始動の擬似 CFL 上限は case 律速（planar でも発散）で軸対称ソース律速ではない。
+
+- 残: 乱流 (SST) 陰解法化（segregated point-implicit）、dual-time 本体・frozen scalar 有効化は後続フェーズ。

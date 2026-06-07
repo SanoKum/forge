@@ -660,7 +660,11 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float* diag_10, flow_float* diag_11, flow_float* diag_12, flow_float* diag_13, flow_float* diag_14,
  flow_float* diag_20, flow_float* diag_21, flow_float* diag_22, flow_float* diag_23, flow_float* diag_24,
  flow_float* diag_30, flow_float* diag_31, flow_float* diag_32, flow_float* diag_33, flow_float* diag_34,
- flow_float* diag_40, flow_float* diag_41, flow_float* diag_42, flow_float* diag_43, flow_float* diag_44
+ flow_float* diag_40, flow_float* diag_41, flow_float* diag_42, flow_float* diag_43, flow_float* diag_44,
+
+ // 軸対称ソースヤコビアン用（isAxisymmetric==1 のときのみ使用）
+ int isAxisymmetric,
+ flow_float* A_planar
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -760,6 +764,29 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         #pragma unroll
         for (int i = 0; i < 5; ++i) {
             rhs[i] += neighbor_accum[i];
+        }
+
+        // 軸対称ソース項のヤコビアンを対角ブロックに加える（roUy 行 = index 2）。
+        // source S_roUy = (P - τ_θθ)·A_planar,  τ_θθ = 2μ(u_r/r) - (2/3)μ·divU,  u_r/r = roUy/(ro·r_eff)。
+        // 残差 R = -res に対し D += ∂R/∂Q = -∂S/∂Q（局所・代数項のみ。divU は勾配依存のため lagged）。
+        //  - 圧力ソース: ∂P/∂Q = (½(γ-1)q², -(γ-1)Ux, -(γ-1)Uy, -(γ-1)Uz, (γ-1))
+        //  - 粘性フープ: ∂τ_θθ/∂roUy = 2μ/(ro·r_eff)（軸近傍 r_eff→0 で stiff、対角を強化＝安定化）
+        // 詳細は docs/axisymmetric/theory.md・implementation.md。
+        if (isAxisymmetric == 1) {
+            const flow_float A_pl = A_planar[ic];
+            const flow_float r_eff = max(v / max(A_pl, static_cast<flow_float>(1.0e-30)),
+                                         static_cast<flow_float>(1.0e-30));
+            const flow_float g1 = gamma - static_cast<flow_float>(1.0);
+            const flow_float q2 = velocity_x*velocity_x + velocity_y*velocity_y + velocity_z*velocity_z;
+            const flow_float mu_total = laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0));
+            const flow_float hoop = static_cast<flow_float>(2.0) * mu_total / (density * r_eff); // ∂τ_θθ/∂roUy
+            // D[2][col] += -∂S/∂col
+            diag_block[2][0] += -A_pl * (static_cast<flow_float>(0.5)*g1*q2
+                                          + hoop * velocity_y);          // -∂S/∂ro
+            diag_block[2][1] += A_pl * (g1 * velocity_x);                 // -∂S/∂roUx
+            diag_block[2][2] += A_pl * (g1 * velocity_y + hoop);          // -∂S/∂roUy（+hoop が安定化）
+            diag_block[2][3] += A_pl * (g1 * velocity_z);                 // -∂S/∂roUz
+            diag_block[2][4] += -A_pl * g1;                              // -∂S/∂roe
         }
 
         flow_float solve_mat[5][5];
@@ -964,7 +991,9 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_10"], var.c_d["diag_block_11"], var.c_d["diag_block_12"], var.c_d["diag_block_13"], var.c_d["diag_block_14"],
                 var.c_d["diag_block_20"], var.c_d["diag_block_21"], var.c_d["diag_block_22"], var.c_d["diag_block_23"], var.c_d["diag_block_24"],
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"],
-                var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"]
+                var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"],
+                cfg.isAxisymmetric,
+                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"]
             );
         } else {
             implicit_defect_correction_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(

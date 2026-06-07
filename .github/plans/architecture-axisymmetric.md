@@ -219,8 +219,13 @@ $\bar r$ 重み付け、保存変数 $Q$ はそのまま) を採用し、軸 ($r
   - 軸対称コアは `run_0022` / `run_0033` / `run_0034` で継続検証済みとして扱う。
 
 ### 残タスク (Phase 2 候補に切り出し)
-- 軸近傍セルにおけるソース項剛性の implicit 処理 (`res_roUy += p A_planar` の
-  係数 ∂R/∂Q を Jacobian に取り込む、または半径方向方程式を局所解析)。
+- ~~軸近傍セルにおけるソース項剛性の implicit 処理 (`res_roUy += p A_planar` の
+  係数 ∂R/∂Q を Jacobian に取り込む、または半径方向方程式を局所解析)。~~
+  **実施済 (2026-06)**: block DPLUR (`timeIntegration==11`) の `implicit_defect_correction_block_d` に
+  軸対称ソースヤコビアン（圧力 ∂p/∂Q ＋ 粘性フープ 2μ/(ρ r_eff)）を roUy 行の対角ブロックへ追加。
+  `case/23.axi_nozzle` M4 ノズルで陽解法収束解と壁面静圧一致（平均 0.02%）、過渡収束 ~2 倍速・回帰なし。
+  なお lagged source でも収束する（幾何 r 整合 + 平均流 A⁺/A⁻ 修正で足りる）ことを確認。詳細は
+  [`gpu-implicit-plan.md`](gpu-implicit-plan.md) と [`docs/axisymmetric/`](../../docs/axisymmetric/)。
 - 1D 等エントロピー解析解との Mach 数 / Ps 比較スクリプト整備。
 - 既存 3D 軸対称ケース `run_slau_3d_regression` との Mach 場定性比較。
 - 出力スクリプト群への $2\pi$ 補正コメント / ヘルパ追加。

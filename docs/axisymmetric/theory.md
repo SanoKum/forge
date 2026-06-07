@@ -282,15 +282,42 @@ $$
 と異なるのは、(i) 固有値が 1 個少ない、(ii) せん断波が 1 個に縮退する、
 (iii) $w$ 方向成分が落ちる、の 3 点のみ。
 
+## 陰解法 (block DPLUR) との連成
+
+block DPLUR 陰解法 (`timeIntegration==11`) を軸対称で回す際の要点。
+
+- **幾何は既に整合**: 面積 `ss`・体積 `volume` は B 流儀で $r$ 重み付け済み（[implementation.md](implementation.md)）。
+  陰解法対角 $V/\Delta\tau$・対流 $A^{+}S$・粘性 $\rho^{\nu}S$ はこの重み付き量をそのまま使うため、
+  対流・粘性ヤコビアンは自動的に $r$ 重み付けされ整合する。法線 $n=S/|S|$ は $r$ が約分されて
+  向きのみ残る。→ **平均流の `A^{+}/A^{-}` 修正だけで軸対称陰解法は収束する**（ソースを lagged 扱いでも可）。
+
+- **軸対称ソース項のヤコビアン**: 半径運動量ソース $S_{\rho u_r}=(p-\tau_{\theta\theta})A_{\text{planar}}$ は
+  $\mathbf{Q}$ の関数なので、その局所（代数）ヤコビアンを対角ブロック $D$ に加えると収束が改善する
+  （残差 $R=-\text{res}$ に対し $D \mathrel{+}= \partial R/\partial\mathbf{Q} = -\partial S/\partial\mathbf{Q}$）。roUy 行 ($i=2$) に:
+
+$$
+\frac{\partial p}{\partial\mathbf{Q}} = \big(\tfrac12(\gamma-1)q^2,\ -(\gamma-1)u,\ -(\gamma-1)v,\ -(\gamma-1)w,\ (\gamma-1)\big),\qquad
+\frac{\partial \tau_{\theta\theta}}{\partial(\rho u_r)} = \frac{2\mu}{\rho\,r_{\text{eff}}}
+$$
+
+  を用い、$D_{2,\cdot}\mathrel{+}= -A_{\text{planar}}\,\partial(p-\tau_{\theta\theta})/\partial\mathbf{Q}$ とする。
+  粘性フープ項 $2\mu/(\rho r_{\text{eff}})$ は対角 $D_{2,2}$ を**正に強化**し、軸近傍 $r_{\text{eff}}\to0$ の stiff 性を
+  安定化する。$-(2/3)\mu\,\text{div}\,U$ 項は勾配（非局所）依存のため lagged のまま。
+
+> **検証 (2026-06)**: M4 軸対称ノズル (`case/23.axi_nozzle`) で lagged source の陰解法は収束し、
+> 壁面静圧が陽解法収束解と一致（平均 0.02%）。ソースヤコビアン追加で同一解へ収束しつつ過渡収束が
+> ~2 倍速くなる（回帰なし）。なお強い超音速始動の擬似 CFL 上限は **case 律速**（同条件は planar でも発散）で、
+> 軸対称ソース律速ではない。
+
 ## Phase 1 のスコープと将来拡張
 
-| 項目 | Phase 1 (本理論) | 将来 plan |
+| 項目 | 状態 | 備考 |
 | --- | --- | --- |
 | 連続 / 運動量 / エネルギー (非粘性) | 対象 | — |
 | 半径運動量の圧力ソース $p\cdot A_{\text{planar}}$ | 対象 | — |
 | 軸 ($r=0$) BC | 自動退化 + slip 互換のラベル | 任意軸 (BCで指定) |
-| 粘性ソース $\tau_{\theta\theta}$ 由来 ($-2\mu u_r/r$ 等) | **非対象** | Phase 2 で追加 |
-| 陰解法 Jacobian の軸対称化 | **非対象** | Phase 3 |
+| 粘性ソース $\tau_{\theta\theta}$ 由来 ($-2\mu u_r/r$ 等) | 対象 (残差) | Phase 2 で追加済 |
+| 陰解法 Jacobian の軸対称化 | **対象 (2026-06)** | 圧力＋粘性フープのソースヤコビアンを対角に追加 |
 | 任意軸対応 (axis_dir 指定) | **非対象** | 別 plan |
 
 ## 参考

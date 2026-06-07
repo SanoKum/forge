@@ -254,6 +254,25 @@ Phase 1 の対応: **まずは無対策で走らせ、軸近傍セルの dt が�
 将来の Phase 3 (軸対称陰解法 Jacobian) で 4 波の固有分解を直接使う必要が
 出れば、その時点で別実装を立てる。
 
+## 陰解法 (block DPLUR) での軸対称ソースヤコビアン (2026-06)
+
+block DPLUR 陰解法 (`timeIntegration==11`) は、平均流の `A^{+}/A^{-}` 分割修正と
+$r$ 重み付け幾何の整合だけで軸対称ケースが収束する（ソースを lagged 扱いでも可）。
+さらに半径運動量ソース $S_{\rho u_r}=(p-\tau_{\theta\theta})A_{\text{planar}}$ の局所ヤコビアンを
+対角ブロックに加えて収束を改善する。
+
+- 実装: [`cuda_forge/timeIntegration_d.cu`](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu)
+  の `implicit_defect_correction_block_d` に引数 `int isAxisymmetric`・`flow_float* A_planar` を追加。
+  面ループ後・`solve_5x5` 前に `isAxisymmetric==1` のとき roUy 行 ($i=2$) へ
+  $D_{2,\cdot}\mathrel{+}= -A_{\text{planar}}\,\partial(p-\tau_{\theta\theta})/\partial\mathbf{Q}$ を加算
+  （$r_{\text{eff}}=V/A_{\text{planar}}$、$\mu_{\text{total}}=\mu_{\text{lam}}+\mu_t$）。理論式は [theory.md](theory.md) §"陰解法との連成"。
+- 粘性フープ項 $2\mu/(\rho r_{\text{eff}})$ が対角 $D_{2,2}$ を正に強化し軸近傍の stiff 性を安定化。
+  非粘性 ($\mu=0$) では圧力ソースヤコビアンのみが残る。
+- `timeIntegration_d_wrapper` の起動で `cfg.isAxisymmetric` と `A_planar`（非軸対称時は `volume` ダミー、
+  カーネル側で未使用）を渡す。
+- 検証: `case/23.axi_nozzle` M4 ノズルで陽解法収束解と壁面静圧が一致（平均 0.02%）、ソースヤコビアンで
+  過渡収束 ~2 倍速・回帰なし。擬似 CFL 上限は超音速始動の case 律速（planar でも同様に発散）。
+
 ## 出力時の積分量
 
 mdot や推力など revolved 量を物理的に正しく出すには $2\pi$ を乗じる必要が
@@ -274,6 +293,7 @@ mdot や推力など revolved 量を物理的に正しく出すには $2\pi$ を
 | `A_planar` 変数 | [`variables.hpp`](../../solver_density_cuda/variables.hpp) | セル変数リストに `"A_planar"` 追加 |
 | 圧力ソース | `cuda_forge/axisymmetricSource_d.{cu,cuh}` | **新規** |
 | 圧力ソース呼出 | [`main.cpp`](../../solver_density_cuda/main.cpp) | `convectiveFlux_d_wrapper` 直後に挿入 |
+| 陰解法ソースヤコビアン | [`cuda_forge/timeIntegration_d.cu`](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu) | **2026-06** `implicit_defect_correction_block_d` に `isAxisymmetric`/`A_planar` 引数と roUy 行のソース対角を追加 |
 | 軸 BC 種別 | [`boundaryCond.hpp`](../../solver_density_cuda/boundaryCond.hpp) | `"axis"` を `valueTypesOfBC` に追加 (slip 互換スタブ) |
 | 軸 BC dispatch | [`boundaryCond.cpp`](../../solver_density_cuda/boundaryCond.cpp) | `applyBconds` の if-else に 1 行追加 |
 | ケース設定 | [`case/23.axi_nozzle/`](../../case/23.axi_nozzle/) | `run_slau_axisymmetric/` を新規作成、`solverConfig.yaml` に `isAxisymmetric: 1`、`bcondConfig.yaml` を `kind: axis` に |
