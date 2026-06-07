@@ -1,4 +1,5 @@
 #include "convectiveFlux_d.cuh"
+#include "lowMachPrecond_d.cuh"
 
 __device__ flow_float interp_general(int scheme, int limit_scheme,
                             flow_float phiC, flow_float phiD, 
@@ -219,6 +220,7 @@ __global__ void SLAU_d
 (
  int conv_scheme, int limit_scheme,
  int slauVariant,   // 1: SLAU, 2: SLAU2 (圧力束第3項のみ低マッハ改良)
+ int lowMachPrecond, flow_float precondEps,   // 低マッハ前処理 (1: 散逸スケールを c'、0: 従来 c_hat)
 
  flow_float ga,
 
@@ -402,7 +404,16 @@ __global__ void SLAU_d
         }
         flow_float p_tilde = half*pressure_sum + half*(beta_p-beta_m)*(P_L-P_R) + p_third;
 
-        flow_float mdot = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs)+ro_R*(Vn_m-Vn_hat_m_abs)) -chi/(c_hat)*P_del);
+        // 低マッハ前処理: 圧力散逸項のスケール c_hat を前処理音速 c_diss に置き換える。
+        // lowMachPrecond==0 では c_diss==c_hat でビット不変。M>=1 でも c'=c_hat に復帰。
+        flow_float c_diss = c_hat;
+        if (lowMachPrecond == 1) {
+            flow_float velMag_face = sqrt(half*(velocity2_L + velocity2_R));
+            flow_float Un_face     = half*(Vn_p + Vn_m);
+            c_diss = lowMachCprime(c_hat, velMag_face, Un_face, precondEps);
+        }
+
+        flow_float mdot = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs)+ro_R*(Vn_m-Vn_hat_m_abs)) -chi/(c_diss)*P_del);
         massflux[ip] = mdot;
 
         flow_float res_ro_temp   = mdot;
@@ -2549,6 +2560,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         int slauVariant = (cfg.solver == "SLAU2") ? 2 : 1;
         SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.convMethod, cfg.limiter, slauVariant,
+            cfg.lowMachPrecond, cfg.precondEps,
 
             cfg.gamma,
 

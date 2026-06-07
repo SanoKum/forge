@@ -111,6 +111,32 @@ sweep 間で `dq_old`/`dq_new` バッファを入れ替える。全 sweep 後に
 定常計算はメインループ（擬似時間）を回し、1 ステップあたり 1 回の非線形更新
 （残差構築 → DPLUR sweep ×`nStepInner` → commit）を行う。
 
+### 低マッハ前処理固有値 (Weiss–Smith) — 試行したが不採用
+
+> **結論: block DPLUR では有害のため不採用**（2026-06 検証。実装後 revert）。理論メモとして残す。
+
+着想は、$A^\pm$ 分割に使う固有値を基準速度 $U_r=\min(c,\max(|\mathbf u|,\epsilon c))$、$\beta=(U_r/c)^2$ で
+前処理した
+
+$$
+\lambda_{1,2,3}' = U_n,\qquad
+\lambda_{4,5}' = \tfrac12(1+\beta)U_n \pm \tfrac12\sqrt{(1-\beta)^2 U_n^2 + 4U_r^2}
+$$
+
+に差し替え、低マッハの音響 stiffness を除く、というもの。**しかし block DPLUR (LU-SGS $A^\pm$) では
+これが逆効果**だった。理由: 対角 $D_i=V/\Delta\tau\,I+\sum_f A^{+}_f S_f$ の**対角優位性の源は大きい音響
+固有値 $U_n\pm c$ を含む $A^{+}$** であり（2026-06 の収束化はこれに依拠）、$U_n\pm c'$ (小) に落とすと
+$A^{+}$ が縮んで対角優位性が下がる。検証では、フラックス散逸前処理単独 ($\epsilon=0.15$) では安定だった
+ものが、固有値前処理を加えると発散し、**安定 $\epsilon$ 範囲をむしろ狭めた**（収束加速も根治もなし）。
+あわせて検討した setDT のスペクトル半径前処理 ($c\to c'$ による $\Delta t_{\rm loc}$ 増大) も、
+$V/\Delta\tau$ を縮めて対角を二重に潰し、最速で発散した。
+
+根因は、`build_jacobian_split` が Euler 固有ヤコビアンで**SLAU 低マッハ散逸項を表さない**こと。固有値だけ
+前処理しても aggressive なフラックス前処理を陰的に安定化できない。真の安定化には固有ベクトルも前処理する
+**完全 preconditioned-flux Jacobian**（大改修）が要る。よって現状はフラックス散逸前処理のみ採用し、LHS は
+従来の $A^\pm$ のまま。詳細・データは計画
+[`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
+
 ## 非定常 dual-time 陰解法 (実装済み 2026-06)
 
 非定常は物理時間 $t$ に対し BDF（後退差分）で物理時間微分項を残差に加え、各物理ステップ内で
@@ -171,6 +197,36 @@ $$
 近傍結合は持たない純 point-implicit（消散の stiff 性のみを陰化する最小構成）。これにより block 陰解法でも
 k/ω が凍結せず収束し、乱流ケースを陰解法で回せる。
 
+### 陽解法 RK での point-implicit 源項 (2026-06)
+
+陽解法 RK (`timeIntegration==1/3`) で RANS (SST) を回す場合、平均流は陽的でも
+**スカラー (k/ω) の消散項だけは上と同じ消散ヤコビアンで point-implicit 化**する必要がある。
+純陽的に積分すると、壁近傍の大きな $\omega$ と $D_\omega=\beta\rho\omega^2$ の stiff 性により
+CFL を下げても（$\mathrm{CFL}=0.05$ でも）初回サブステップで $\omega$ が発散する（陽的安定限界が
+源項の時間スケール $1/(2\beta\omega)$ で律速されるため）。
+
+陽解法 RK のスカラー更新は本来
+
+$$
+\rho\phi \leftarrow c_N\,\rho\phi^{N} + c_M\,\rho\phi^{M}
+  + c_{\text{res}}\,\frac{\Delta t_{\text{loc}}}{V}\,\text{res}_{\rho\phi}
+$$
+
+だが、残差増分のみを消散ヤコビアンで割って減衰させる:
+
+$$
+\rho\phi \leftarrow c_N\,\rho\phi^{N} + c_M\,\rho\phi^{M}
+  + \frac{1}{1 + c_{\text{res}}\,\Delta t_{\text{loc}}\,\partial D/\partial(\rho\phi)}
+    \cdot c_{\text{res}}\,\frac{\Delta t_{\text{loc}}}{V}\,\text{res}_{\rho\phi}
+$$
+
+ここで $\partial D/\partial(\rho\phi)\ (=\beta^\*\omega,\ 2\beta\omega)$ は block 陰解法と同じ
+`src_jac_k`/`src_jac_omega`。減衰係数 $1 + c_{\text{res}}\Delta t_{\text{loc}}\,\partial D/\partial(\rho\phi)\ge 1$
+は陰解法対角 $D_\phi = V/\Delta\tau + V\,\partial D/\partial(\rho\phi)$ に $\Delta\tau/V$ を掛けた形と整合する
+（消散項のみを陰化し、移流・拡散・生産は lagged のまま）。これにより陽解法 RK でも RANS が安定に回り、
+平均流の時間積分法 (陽 RK / block 陰) を揃えた比較ができる。realizability の floor は陰解法と共通。
+4 段 4 次 RK (`timeIntegration==4`) のスカラー積分は本減衰を未適用（RANS 非対応のまま）。
+
 ## 局所時間刻み
 
 `setDT_d_wrapper` (`cuda_forge/setDT_d.cu`) が各セルの $\Delta t_{\text{loc}}$ を
@@ -182,6 +238,11 @@ $$
 
 から $\Delta t_{\text{loc}} = \mathrm{CFL}\,V / \lambda_{\max}$ を求める。
 `cfg.dt` が指定された場合はそれを上限とする。
+
+> **setDT の低マッハ前処理は不採用** (2026-06 検証)。スペクトル半径の $c\to c'$ 置換は低マッハ域で
+> $\Delta t_{\text{loc}}$ を増大させ陰解法対角 $V/\Delta\tau$ を縮める。block DPLUR では対角優位性が崩れて
+> 発散するため採用しない（LHS 固有値前処理と併用しても二重に対角が潰れさらに悪化。上記「低マッハ前処理
+> 固有値」節を参照）。低マッハ前処理は対流フラックスの散逸スケールにのみ適用する。
 
 ## 参考
 

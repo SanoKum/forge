@@ -117,6 +117,30 @@ limiter = (duc > 0.8) ? max(0.0, (1.0 - duc) * limiter) : limiter;
 リミッタは Ducros 補正を通さず生の `limiter_*[ic0/ic1]` をそのまま渡している
 (Roe との違い)。
 
+#### 低マッハ前処理 (`lowMachPrecond`)
+
+`cfg.lowMachPrecond == 1` のとき、質量流束の圧力散逸スケール `c_hat` を**前処理音速** `c_prime`
+に置き換える (既定 `0` は従来挙動でビット不変)。共有ヘッダ
+[`lowMachPrecond_d.cuh`](../../solver_density_cuda/cuda_forge/lowMachPrecond_d.cuh) の device 関数で
+
+```cpp
+// |u|_face は L/R 速度の平均、eps は cfg.precondEps
+flow_float Ur  = min(c_hat, max(vel_mag, eps*c_hat));
+flow_float bta = (Ur/c_hat)*(Ur/c_hat);
+flow_float c_prime = 0.5*sqrt((1-bta)*(1-bta)*Vn*Vn + 4*Ur*Ur);   // → c_hat (M≥1), → Ur (M→0)
+...
+mdot = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs) + ro_R*(Vn_m-Vn_hat_m_abs))
+                - chi/c_prime * (P_R-P_L));   // lowMachPrecond=0 のとき c_prime==c_hat
+```
+
+を計算する (既定 `precondEps=0.15`)。`SLAU_d` には `int lowMachPrecond, flow_float precondEps` 引数を追加し、
+`c_prime` は散逸項 (`chi/·*ΔP`) にのみ用いる。`Vn_hat_p/m_abs` (速度上流項) と `p_tilde` (圧力束) は変更しない。
+理論的根拠と検証 (低マッハ自励振動の振幅を ε=0.15 で −32% 減衰) は
+[`theory.md` の低マッハ前処理節](theory.md#低マッハ前処理-weisssmith-型散逸スケール是正) を参照。
+
+> 当初は同じ `lowMachPrecond_d.cuh` を `setDT_d` のスペクトル半径・block DPLUR の固有値でも共用する計画
+> だったが、いずれも block DPLUR の対角優位性を崩して有害と判明し不採用 (計画 §9)。**現状フラックス散逸前処理のみ**。
+
 ### `ROE_d` ([L1474](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu#L1474))
 
 並列単位は `nNormal_halo_Planes`。レジスタ圧が最も高いカーネル。

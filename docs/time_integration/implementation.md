@@ -96,6 +96,27 @@ Q[ic] = coef_N * Q_N[ic] + coef_M * Q_M[ic]
 `loop < 3` の中間段では `Q = Q_N + coef_DT * res * dt_local / vol`、
 最終段 (`loop == 3`) で `Q = Q_N + res_*_m` として確定。
 
+### `runge_kutta_exp_scalar_d`（スカラー k/ω の陽解法 RK ＋ point-implicit 源項）
+
+[`scalarTransport_d.cu`](../../solver_density_cuda/cuda_forge/scalarTransport_d.cu) の
+`scalarTimeIntegration_d_wrapper` が平均流 RK と同じ段で k/ω を別カーネルで積分する
+（`timeIntegration==1/3` は `runge_kutta_exp_scalar_d`、`==4` は `runge_kutta_exp_scalar_4th_d`）。
+
+RANS (SST) の消散項は stiff なため、`timeIntegration==1/3` の更新は**残差増分のみ消散ヤコビアンで減衰**する:
+
+```cpp
+const flow_float fac = 1.0 + coef_Res * dt_l * src_jac[ic]; // src_jac ≥ 0 → fac ≥ 1
+rho_phi[ic] = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
+            + (coef_Res * res_rho_phi[ic] * dt_l / v) / fac;
+```
+
+- `src_jac` は `ScalarTransportDesc` 経由で k は `src_jac_k`、ω は `src_jac_omega`
+  （block 陰解法と同一。[`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) が毎 `assembleResidual` で出力）。
+- `LESorRANS!=2`（乱流なし／LES WALE）では `src_jac=0` 相当で `fac=1`、従来の純陽的更新と一致（LES は無影響）。
+- 減衰係数は `applySSTPointImplicit_d` の対角 $D_\phi=V/\Delta\tau+V\cdot\text{src\_jac}$ に $\Delta\tau/V$ を掛けた形と整合。
+- `runge_kutta_exp_scalar_4th_d`（4 次）は本減衰未適用＝RANS 非対応のまま（平均流 4 次自体が RANS 未検証）。
+- 理論は [theory.md](theory.md) §"陽解法 RK での point-implicit 源項"。
+
 ## 陰解法カーネル詳細
 
 ### `implicit_defect_correction_block_d`（block DPLUR、LU-SGS $A^\pm$ 分割）
@@ -126,6 +147,14 @@ $\Delta\mathbf Q_{\text{new}} = D_i^{-1}\,\text{RHS}$ を解く。`cfg.implicitR
 全 sweep 後に [`applyBlockImplicitCorrection`](../../solver_density_cuda/cuda_forge/update_d.cu)
 （`applyScalarImplicitCorrection` と対称、`update_d.cu` に新設）で `Q = Q_baseline + dq_block` を
 **1 度だけ** commit する。残差 `res_*` と $|\widetilde A_f|$ は sweep 中固定（matrix-free のため固定 Q から毎 sweep 再構築してよい）。
+
+**低マッハ前処理 (LHS 固有値) は不採用** (2026-06 検証・実装後 revert)。`build_jacobian_split` の
+固有値 `lambda[5]={U+c,U,U,U,U-c}` を前処理固有値 `U±c'` に差し替える案を実装・検証したが、
+block DPLUR では**対角優位性の源である大きい音響固有値を縮めてしまい有害**（フラックス散逸前処理
+単独で安定だった `eps=0.15` すら発散させ、安定 `eps` 範囲を狭めた。収束加速も根治もなし）。よって
+LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処理は `SLAU_d` の散逸スケールにのみ適用する。
+根拠・データは [`theory.md`](theory.md#低マッハ前処理固有値-weisssmith--試行したが不採用) と計画
+[`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
 ### `implicit_defect_correction_d`（scalar 対角版＝スペクトル半径）
 
@@ -162,6 +191,12 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 `setDT_d_wrapper` ([`setDT_d.cu`](../../solver_density_cuda/cuda_forge/setDT_d.cu)) が
 セル中心スペクトル半径を集計して `dt_local[ic] = CFL * V / λ_max` を書き込む。
 `cfg.dt`, `cfg.cfl` で挙動を制御。
+
+**setDT の低マッハ前処理は不採用** (2026-06 検証)。`setCFL_pln_d` のスペクトル半径の音速 `sonic` を
+前処理音速 `c'` に置換する案は、低マッハ域で `dt_local` を増大させ陰解法対角 `V/Δτ` を縮め、block DPLUR の
+対角優位性を崩して発散させた。よって `setCFL_pln_d` は従来の `sonic` のまま。低マッハ前処理は対流フラックス
+([`convectiveFlux_d.cu`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) `SLAU_d`) の散逸スケールにのみ
+適用する。詳細は計画 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
 ## 入出力
 

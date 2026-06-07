@@ -39,6 +39,10 @@ public:
     flow_float cfl_pseudo;
     flow_float implicitRelax = 1.0;
     int blockDPLUR = 0;
+    int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
+    flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
+                                   // ε 小ほど低マッハ振動を強く減衰するが ε≲0.1 は発散 (ε=0.05 で NaN)。
+                                   // ε=0.15: M4 ノズルで limit-cycle 振幅 −32% (検証済), ε=0.3: −17%。
     flow_float dt_max;
     flow_float dt_min;
 

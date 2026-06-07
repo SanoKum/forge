@@ -384,6 +384,68 @@ $-\dfrac{\chi}{\widehat c}(P_R-P_L)$ である。SLAU2 が変えるのは圧力�
 これは時間項の低マッハ**前処理** (Weiss–Smith 等) とは別物で、空間 (フラックス) 側の
 散逸スケールのみを是正する軽量な対処である。`solver: SLAU2` で選択する (既定は `SLAU`)。
 
+#### 低マッハ前処理 (Weiss–Smith 型・散逸スケール是正)
+
+SLAU2 (圧力束第 3 項) を変えても解消しなかった低マッハのエネルギー残差フロア／チャンバー圧
+チェッカーボードは、**質量流束の圧力散逸項のスケール不整合**が原因である。SLAU 質量流束
+$\dot m$ の圧力カップリング項
+
+$$
+-\frac{\chi}{\widehat c}\,(P_R - P_L)
+$$
+
+は、低マッハで $\Delta P = O(\rho u^2)$ なので寄与が $O(\rho u^2/\widehat c) = O(\rho u\,M)$ となり、
+対流主項 $O(\rho u)$ に対して $M$ 倍小さい。圧力–速度カップリングが $O(M)$ で弱まり、奇偶モード
+(チェッカーボード) が減衰しない。これは散逸行列を音速 $\widehat c$ でスケールしていることに起因する、
+密度ベース上流化スキーム共通の低マッハ縮退である。
+
+**前処理音速による是正。** Weiss–Smith (1995) / Turkel 型前処理の考え方に従い、散逸スケールの
+音速 $\widehat c$ を、低マッハで対流速度オーダーに落ちる**前処理音速** $c'$ に置き換える。基準速度
+
+$$
+U_r = \min\!\big(\widehat c,\ \max(|\mathbf u|,\ \epsilon\,\widehat c)\big),\qquad
+\beta = \Big(\frac{U_r}{\widehat c}\Big)^2 \in (0,1]
+$$
+
+(停留点フロア $\epsilon\widehat c$ で $U_r\!\to\!0$ を防ぎ、$M\!\ge\!1$ では $U_r=\widehat c$, $\beta=1$ で
+従来へ厳密復帰)。前処理した音響固有値の半広がりから散逸用の前処理音速を
+
+$$
+c' = \tfrac12\sqrt{(1-\beta)^2 U_n^2 + 4U_r^2}\quad(\to \widehat c\ \text{at}\ M\ge1,\ \to U_r\ \text{at}\ M\to0)
+$$
+
+と定義し、質量流束の圧力散逸項を
+
+$$
+-\frac{\chi}{\widehat c}\,(P_R-P_L)\ \longrightarrow\ -\frac{\chi}{c'}\,(P_R-P_L)
+$$
+
+に置き換える。$c' \ll \widehat c$ となる低マッハで圧力散逸が $O(1/M)$ 増し、カップリングが
+$O(1)$ に回復してチェッカーボードを減衰させる (速度上流項 $|\widehat V_n^\pm|$ は元々 $O(u)$ で
+スケール健全なため触らない)。
+
+**収束解への作用 (重要)。** $c'$ は残差 $\mathbf R$ の散逸の一部なので、この置換は**収束した
+離散解そのもの (の低マッハ域) を変える**。これは*意図した変更*＝低マッハの偽圧力ノイズを
+除く本体であり、超音速域 ($U_r=\widehat c$) はビット一致で不変、出口 $M$ や衝撃波構造は変わらない。
+一方、擬似/時間微分項に掛ける同じ $U_r,\beta$ ベースの前処理 (局所時間刻みのスペクトル半径・
+陰解法 LHS の固有値) は**収束解を厳密に不変**に保ち、収束を速めるだけである
+(→ [`time_integration/theory.md`](../time_integration/theory.md) の前処理固有値節)。
+
+forge では `lowMachPrecond: 1` で有効化する opt-in 機能とし (既定 `0`＝従来挙動)、$\epsilon$ は
+`precondEps` で調整する (既定 0.15)。実装は共有 device ヘッダ `lowMachPrecond_d.cuh`
+($U_r,\beta,c'$) に集約し、現状は `SLAU_d` の散逸スケールにのみ適用する (フラックス散逸前処理)。
+
+> **検証所見 (収束ベース)**。この低マッハ症状は静的な「残差フロア」ではなく**自励振動 (limit cycle)** で、
+> 3D ノズル ($M_{\rm chamber}\approx0.06$) を 20000 step 回すと chamber 圧 std/mean が 0.25–1.82% を
+> 振動する (mean 0.88%、2000 step スナップショットは過渡を拾うだけ)。フラックス散逸前処理はこの**振幅を
+> 減衰**させ、$\epsilon{=}0.15$ で mean 0.88%→0.60% (**−32%**)、$\epsilon{=}0.3$ で −17% ($\epsilon$ 小ほど強い)。
+> 超音速域の $M_{\max}$ は不変。$\epsilon$ を小さくするほど圧力散逸が増幅し、$\epsilon{=}0.05$ (停留点 ~20×) は
+> 発散、$\epsilon\!\gtrsim\!0.15$ で安定 (既定 0.15)。**陰解法 LHS の固有値前処理は block DPLUR では有害で
+> 採用しない** (対角優位性の源である音響固有値 $U\pm c$ を縮め、安定 $\epsilon$ 範囲をむしろ狭める。
+> 詳細・根拠は計画 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9)。
+> $\epsilon$ を物理値まで下げて完全に根治するには、LHS に完全 preconditioned-flux Jacobian を組む
+> (固有ベクトルも前処理する) 大改修が要る (未着手)。
+
 ### HLLE
 
 Harten–Lax–van Leer–Einfeldt 形 HLL。中央波 (接触不連続) を捨て、最大・最小波速で
