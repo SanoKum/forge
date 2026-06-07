@@ -665,7 +665,7 @@ cudaConfig initializeSimulation(
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
     applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
-    axisymmetricDiagnostics_d_wrapper(cfg , cuda_cfg , msh , var);
+    axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
     updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
     setDT_d_wrapper(cfg , cuda_cfg , msh , var);
 
@@ -744,7 +744,7 @@ void advanceOneStep(
                 calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
             });
             profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-                axisymmetricDiagnostics_d_wrapper(cfg , cuda_cfg , msh , var);
+                axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
             });
             profiler.measureCuda(ProfileSection::Limiter, [&]() {
                 limiter_d_wrapper(cfg , cuda_cfg , msh , var);
@@ -790,7 +790,7 @@ void advanceOneStep(
                 calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
             });
             profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-                axisymmetricDiagnostics_d_wrapper(cfg , cuda_cfg , msh , var);
+                axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
             });
             profiler.measureCuda(ProfileSection::Limiter, [&]() {
                 limiter_d_wrapper(cfg , cuda_cfg , msh , var);

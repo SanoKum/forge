@@ -38,34 +38,30 @@ __global__ void axisymmetricSource_d
     }
 }
 
-__global__ void axisymmetricDiagnostics_d
+// 軸対称ソース項の前計算。半径方向ひずみ u_r/r と発散 divU = ∂xUx + ∂yUy + u_r/r を
+// セル毎に求める。これらは turbulent_viscosity (S_θθ) / ransSource / axisymmetricSource が
+// 消費するため、それらより前に実行する必要がある。
+// 有効半径 r_eff は revolved 体積 (per-radian, V = r·A_planar) を planar 面積で割って得る。
+__global__ void axisymmetricGeomTerms_d
 (
     geom_int nCells,
-    flow_float* P,
     flow_float* Uy,
     flow_float* volume,
     flow_float* A_planar,
     flow_float* dUxdx,
     flow_float* dUydy,
-    flow_float* axisym_r,
-    flow_float* axisym_p_over_r,
     flow_float* axisym_uy_over_r,
-    flow_float* axisym_divU,
-    flow_float* axisym_roUy_source
+    flow_float* axisym_divU
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic < nCells) {
         const flow_float area = A_planar[ic];
         const flow_float r_eff = (area > (flow_float)0.0) ? volume[ic] / area : (flow_float)0.0;
-        axisym_r[ic] = r_eff;
-        axisym_roUy_source[ic] = P[ic] * area;
 
         if (r_eff > (flow_float)0.0) {
-            axisym_p_over_r[ic] = P[ic] / r_eff;
             axisym_uy_over_r[ic] = Uy[ic] / r_eff;
         } else {
-            axisym_p_over_r[ic] = (flow_float)0.0;
             axisym_uy_over_r[ic] = (flow_float)0.0;
         }
 
@@ -93,23 +89,19 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     gpuErrchk( cudaDeviceSynchronize() );
 }
 
-void axisymmetricDiagnostics_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (cfg.isAxisymmetric != 1) return;
 
-    axisymmetricDiagnostics_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+    axisymmetricGeomTerms_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells,
-        var.c_d["P"],
         var.c_d["Uy"],
         var.c_d["volume"],
         var.c_d["A_planar"],
         var.c_d["dUxdx"],
         var.c_d["dUydy"],
-        var.c_d["axisym_r"],
-        var.c_d["axisym_p_over_r"],
         var.c_d["axisym_uy_over_r"],
-        var.c_d["axisym_divU"],
-        var.c_d["axisym_roUy_source"]
+        var.c_d["axisym_divU"]
     );
 
     gpuErrchk( cudaPeekAtLastError() );

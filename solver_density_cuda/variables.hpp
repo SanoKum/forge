@@ -77,11 +77,8 @@ public:
         // Mesh Structure
         "volume" , "ccx" , "ccy" , "ccz",
         "A_planar",  // 軸対称: planar 面積 (= V を r で割った値)。非軸対称時は 0
-        "axisym_r",
-        "axisym_p_over_r",
         "axisym_uy_over_r",
-        "axisym_divU",
-        "axisym_roUy_source"
+        "axisym_divU"
     };
 
     const std::list<std::string> planeValNames = 
@@ -123,14 +120,9 @@ public:
 
         "dt_local",
 
-        "A_planar",
-        "axisym_r",
-        "axisym_p_over_r",
-        "axisym_uy_over_r",
         "axisym_divU",
-        "axisym_roUy_source",
 
-        "vis_lam" , "vis_turb" , "wall_dist"  
+        "vis_lam" , "vis_turb" , "wall_dist"
     };
 
     //not yet implemented
