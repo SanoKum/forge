@@ -77,7 +77,11 @@ __global__ void WALE_d
         geom_float d = wall_dist[ic];
         flow_float Ls = min(karman*d , Cw*pow(vol[ic],1.0/3.0));
 
-        vis_turb[ic] =  ro[ic]*Ls*Ls*pow(SdijSdij, 3.0/2.0)/(pow(SijSij, 5.0/2.0) + pow(SdijSdij, 5.0/4.0));
+        // WALE は一様流（勾配ゼロ）で分子分母とも 0 になり 0/0=NaN を生む。標準的に分母へ
+        // 小さな正則化項を加える（無勾配では vis_turb=0 となり物理的に正しい）。
+        const flow_float wale_denom = pow(SijSij, 5.0/2.0) + pow(SdijSdij, 5.0/4.0)
+                                    + static_cast<flow_float>(1.0e-30);
+        vis_turb[ic] =  ro[ic]*Ls*Ls*pow(SdijSdij, 3.0/2.0)/wale_denom;
     }
 }
 
