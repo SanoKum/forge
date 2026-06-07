@@ -832,6 +832,16 @@ void swapBlockImplicitCorrectionBuffers(variables& var)
     std::swap(var.c_d["dq_block_old_4"], var.c_d["dq_block_new_4"]);
 }
 
+// scalar 対角版 (blockDPLUR==0) の sweep 間バッファ入れ替え。block 版と同様にドライバ側から呼ぶ。
+void swapScalarImplicitCorrectionBuffers(variables& var)
+{
+    std::swap(var.c_d["dq_ro_old"],   var.c_d["dq_ro_new"]);
+    std::swap(var.c_d["dq_roUx_old"], var.c_d["dq_roUx_new"]);
+    std::swap(var.c_d["dq_roUy_old"], var.c_d["dq_roUy_new"]);
+    std::swap(var.c_d["dq_roUz_old"], var.c_d["dq_roUz_new"]);
+    std::swap(var.c_d["dq_roe_old"],  var.c_d["dq_roe_new"]);
+}
+
 //TODO __global__ void runge_kutta_dual_explicit_d
 //TODO // see https://sci-hub.se/https://doi.org/10.1016/j.compfluid.2003.10.004
 //TODO // N: previous outer step , M: previous inner loop

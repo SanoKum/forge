@@ -786,19 +786,33 @@ void logResidualSnapshot(StepContext& s, int inner_index)
 void blockDPLURSolve(StepContext& s)
 {
     // 古典 DPLUR は dq=0 から開始する。前ステップの残留値による近傍参照を避けるため明示ゼロ化。
+    // blockDPLUR==1: 5×5 block 版 (dq_block_*)、blockDPLUR==0: scalar 対角版 (dq_ro_* 等)。
     const size_t bytes = static_cast<size_t>(s.msh.nCells_all) * sizeof(flow_float);
-    cudaMemset(s.var.c_d["dq_block_old_0"], 0, bytes);
-    cudaMemset(s.var.c_d["dq_block_old_1"], 0, bytes);
-    cudaMemset(s.var.c_d["dq_block_old_2"], 0, bytes);
-    cudaMemset(s.var.c_d["dq_block_old_3"], 0, bytes);
-    cudaMemset(s.var.c_d["dq_block_old_4"], 0, bytes);
+    const bool useBlock = (s.cfg.blockDPLUR == 1);
+    if (useBlock) {
+        cudaMemset(s.var.c_d["dq_block_old_0"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_block_old_1"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_block_old_2"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_block_old_3"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_block_old_4"], 0, bytes);
+    } else {
+        cudaMemset(s.var.c_d["dq_ro_old"],   0, bytes);
+        cudaMemset(s.var.c_d["dq_roUx_old"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_roUy_old"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_roUz_old"], 0, bytes);
+        cudaMemset(s.var.c_d["dq_roe_old"],  0, bytes);
+    }
 
     const int nSweep = std::max(1, s.cfg.nStepInner);
     for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
         s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
             timeIntegration_d_wrapper(iSweep, s.cfg , s.cuda_cfg , s.msh , s.var);
         });
-        swapBlockImplicitCorrectionBuffers(s.var);
+        if (useBlock) {
+            swapBlockImplicitCorrectionBuffers(s.var);
+        } else {
+            swapScalarImplicitCorrectionBuffers(s.var);
+        }
     }
 }
 
@@ -813,7 +827,11 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     });
     blockDPLURSolve(s);
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
-        applyBlockImplicitCorrection(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        if (s.cfg.blockDPLUR == 1) {
+            applyBlockImplicitCorrection(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        } else {
+            applyScalarImplicitCorrection(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        }
     });
     // SST (k-ω) を segregated point-implicit で更新（凍結解除）。残差・消散ヤコビアンは
     // 直前の assembleResidual (ransSource) で確定済み、dt_local は setDT 済み。

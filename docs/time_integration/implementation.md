@@ -23,10 +23,10 @@ forge の時間積分・更新カーネルの実装とソース対応をまと�
 | --- | --- |
 | `4` | `runge_kutta_exp_4th_d` |
 | `1`, `3` | `runge_kutta_exp_d` |
-| `11`, `blockDPLUR == 1` | `implicit_defect_correction_block_d`（block DPLUR、正式サポート） |
-| `11`, `blockDPLUR == 0` | `implicit_defect_correction_d`（**現状 config で reject**。kernel は温存、後続フェーズで再有効化） |
+| `11`, `blockDPLUR == 1` | `implicit_defect_correction_block_d`（5×5 block DPLUR、LU-SGS $A^\pm$。**推奨既定**） |
+| `11`, `blockDPLUR == 0` | `implicit_defect_correction_d`（scalar 対角版＝スペクトル半径。軽量だが擬似 CFL が低く収束が遅い） |
 
-> `solverConfig::initTimeIntegrationScheme` の `case 11` で `blockDPLUR == 0` は明確なエラーを throw する（scalar 対角版の隔離）。`unsteady == 1`（dual-time）は dispatcher 側で throw する（本体未実装）。
+> `solverConfig::initTimeIntegrationScheme` の `case 11` は `blockDPLUR ∈ {0,1}` を受理（それ以外を throw）。両者とも古典 DPLUR 制御フロー（残差固定 + `nStepInner` sweep + 単一 commit）に対応。`unsteady == 1`（dual-time）は dispatcher 側で throw する（本体未実装）。
 
 ## ループ全体 ([`main.cpp`](../../solver_density_cuda/main.cpp))
 
@@ -127,12 +127,22 @@ $\Delta\mathbf Q_{\text{new}} = D_i^{-1}\,\text{RHS}$ を解く。`cfg.implicitR
 （`applyScalarImplicitCorrection` と対称、`update_d.cu` に新設）で `Q = Q_baseline + dq_block` を
 **1 度だけ** commit する。残差 `res_*` と $|\widetilde A_f|$ は sweep 中固定（matrix-free のため固定 Q から毎 sweep 再構築してよい）。
 
-### `implicit_defect_correction_d`（scalar 対角版・隔離中）
+### `implicit_defect_correction_d`（scalar 対角版＝スペクトル半径）
 
-スカラ近似版。各セルで法線スペクトル半径から擬時間係数を作り、
-`dq_*_new = (-res - implicit_off_diag(dq_old)) / (V/Δτ + spectral_radius)` 形式で更新、
-反復終了後 [`applyScalarImplicitCorrection_d`](../../solver_density_cuda/cuda_forge/update_d.cu)
-で `Q = Q_N + dq_*_old` を適用する。**現状 config で reject 中**（kernel・buffer は温存、frozen scalar フェーズで再有効化）。
+平均流 5 式を、5×5 ブロックの代わりに**スカラー対角**で解く軽量版（`blockDPLUR == 0`）。
+各セルで対角 $D = V/\Delta\tau + \sum_f(|U_n|+c+\rho^\nu)S_f$、off-diagonal $\tfrac12(|U_n|+c+\rho^\nu)S_f$ で
+`dq_*_new = relax·(res_* + Σ offdiag·dq_*_nbr^{old}) / D`（5 変数とも同じスカラー $D$）を作り、
+[`blockDPLURSolve`](../../solver_density_cuda/main.cpp) が `nStepInner` 回 sweep（各 sweep 後に
+`swapScalarImplicitCorrectionBuffers`）、最後に [`applyScalarImplicitCorrection`](../../solver_density_cuda/update.cpp)
+で `Q = Q_N + dq_*_old` を 1 回 commit する（block 版と同じ古典 DPLUR 制御フロー）。
+スペクトル半径は符号不変なので block の $A^\pm$ 法線符号問題は持たない。
+
+**block 版との比較（2026-06, `case/20.naca_ml`）**: 収束先は同一（収束場から再開すると同じ解を保持、
+壁面静圧 平均 0.02% 一致）。ただし近似ヤコビアンが粗いため**安定 `cfl_pseudo` が大幅に低い**
+（scalar ≲ 1〜2、block は 20〜50）。supercritical 始動では block が cfl_pseudo=20 で 4000 step / 25s で
+roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも収束せず大きな過渡オーバーシュート
+（roe ピーク ~186 vs block/explicit ~85）を示す。よって **block DPLUR が既定、scalar 対角版は
+5×5 を避けたい軽量用途・低レジスタ用途向けのフォールバック**と位置づける。
 
 ### `applySSTPointImplicit_d`（SST k-ω の segregated point-implicit）
 
@@ -175,7 +185,7 @@ dual-time は本流の構造を作り直さず追加できるよう、本フェ�
 
 - 非定常 dual-time 陰解法（`tI==11 && unsteady==1`）は本体未実装（dispatcher で throw）。`implicitCorrection_d.cu` の
   `dualtime_explicit_d` は SLAU/Roe 用補助で本流とは独立、dual-time 実装時に整理対象。
-- scalar 対角陰解法（`tI==11 && blockDPLUR==0`）は config で reject 中（frozen scalar フェーズで再有効化）。
+- scalar 対角陰解法（`tI==11 && blockDPLUR==0`）は有効（2026-06）。block より低 `cfl_pseudo` で収束も遅いため既定は block（上記比較参照）。
 - block 陰解法でも SST(k/ω) は `applySSTPointImplicit` で segregated point-implicit 更新され、**凍結しない**（2026-06）。消散項のみ陰化、移流・拡散・生産は lagged。
 - `matrix mat_ns` は陰解法では未使用だが非陰解法のシグネチャに残るため `StepContext` に保持（除去は別途）。
 - 旧 CPU の [`update.cpp`](../../solver_density_cuda/update.cpp) は使用されていない。

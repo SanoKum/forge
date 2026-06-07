@@ -347,13 +347,11 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
             this->coef_Res.clear();
             this->coef_DT_4thRunge.clear();
             this->coef_Res_4thRunge.clear();
-            // 現状サポートするのは block DPLUR (blockDPLUR==1) のみ。
-            // scalar 対角版 (blockDPLUR==0 / frozen scalar 系) は一時的に無効化（次フェーズで再有効化）。
-            // TODO(next-step): frozen scalar 実装時にこの throw を外す。
-            if (this->blockDPLUR != 1) {
+            // blockDPLUR==1: 5×5 block (LU-SGS A±)、blockDPLUR==0: scalar 対角 (スペクトル半径) 版。
+            // どちらも古典 DPLUR 制御フロー (残差固定 + nStepInner sweep + 単一 commit) に対応。
+            if (this->blockDPLUR != 0 && this->blockDPLUR != 1) {
                 throw std::runtime_error(
-                    "timeIntegration==11: only block DPLUR (blockDPLUR=1) is currently supported. "
-                    "Scalar-diagonal implicit (blockDPLUR=0) is temporarily disabled.");
+                    "timeIntegration==11: blockDPLUR must be 0 (scalar-diagonal) or 1 (5x5 block).");
             }
             break;
 

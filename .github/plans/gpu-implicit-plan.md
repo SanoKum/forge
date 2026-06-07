@@ -314,4 +314,6 @@ SST (k/ω) を **segregated point-implicit** で実装済み（7×7 連成では
 
 - 2026-06: **乱流 SST (k-ω) の陰解法化（segregated point-implicit）**。旧実装は block 陰解法中 k/ω を凍結していた。平均流 block DPLUR の commit 後、同一擬似時間ステップで k/ω を point-implicit 更新する経路を追加（`main.cpp` `implicitNonlinearUpdate`）。消散項の stiff 性のみ対角に陰化（`ransSource_d` が `src_jac_k=β*ω`・`src_jac_omega=2βω` を出力、`applySSTPointImplicit_d` が $D_\phi=V/\Delta\tau+V\partial D/\partial(\rho\phi)$ で更新、realizability floor 付き）。移流・拡散・生産は lagged。検証 (`case/23.axi_nozzle` M4 軸対称 SST ノズル, `run_0093` 複製を res_1000 から陰解法化): k/ω が凍結せず収束（roK ↓8倍, roOmega ↓14倍）、壁面静圧が陽解法収束解と **0.003%** で一致（PASS）。なお超音速プルームせん断層の影響で大域 roe 残差ノルムは高止まりするが、壁面・積分量は収束。強い圧縮性乱流では `cfl_pseudo ≲ 0.3` 推奨。
 
-- 残: dual-time 本体・frozen scalar(scalar 対角 blockDPLUR==0) 有効化は後続フェーズ。
+- 2026-06: **scalar 対角版 (`blockDPLUR==0`) を有効化**。古典 DPLUR 制御フローに対応（`blockDPLURSolve` を blockDPLUR で分岐、`swapScalarImplicitCorrectionBuffers` 追加、commit は `applyScalarImplicitCorrection`）、config の reject を撤廃（0/1 を受理）。対角はスカラー スペクトル半径 $D=V/\Delta\tau+\sum_f(|U_n|+c+\rho^\nu)S_f$。検証 (`case/20.naca_ml`): 収束先は block と同一（収束場保持・壁面静圧平均 0.02% 一致）だが近似が粗く**安定 cfl_pseudo が大幅に低い**（scalar ≲ 1〜2 vs block 20〜50）。supercritical 始動では block が cfl_pseudo=20/4000step/25s で roe→0.5 収束する一方、scalar は cfl_pseudo=1/12000step でも未収束・過渡オーバーシュート大（roe ピーク ~186 vs ~85）。**収束は block より遅い**。位置づけ: block DPLUR を既定、scalar 対角は 5×5 を避けたい軽量・低レジスタ用途のフォールバック。
+
+- 残: dual-time 非定常本体は後続フェーズ。

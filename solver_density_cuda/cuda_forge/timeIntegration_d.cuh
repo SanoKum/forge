@@ -102,3 +102,6 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
 
 // block DPLUR (古典 DPLUR) の sweep 間バッファ入れ替え。ドライバ側から各 sweep 後に呼ぶ。
 void swapBlockImplicitCorrectionBuffers(variables& var);
+
+// scalar 対角版 (blockDPLUR==0) の sweep 間バッファ入れ替え。
+void swapScalarImplicitCorrectionBuffers(variables& var);
