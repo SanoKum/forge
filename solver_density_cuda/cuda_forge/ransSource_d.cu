@@ -132,7 +132,9 @@ __global__ void rans_sst_source_d(
     // SST 陰解法用の消散ヤコビアン対角（point-implicit で D に加える正の量）。
     //   Dk = β* ρ k ω = β* (ρk) ω  →  ∂Dk/∂(ρk) = β* ω
     //   Dω = β ρ ω²  = β (ρω)²/ρ   →  ∂Dω/∂(ρω) = 2 β ω
-    // 生産項は limiter 付きで bounded のため lagged（陰化しない）。
+    // 生産項は limiter 付きで bounded のため lagged（陰化しない）。生産振幅を正の対角に足す
+    // under-relaxation も試したが、安定 cfl_pseudo を一切上げず（律速は k/ω 輸送項の陽的扱い）
+    // 不採用。輸送項の point-implicit 化は scalarTransport_d.cu（transport_diag）を参照。
     src_jac_k[ic]     = kBetaStar * w_c;
     src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
 }

@@ -12,6 +12,7 @@ struct ScalarTransportDesc {
     flow_float* res_rho_phi;
     flow_float* res_rho_phi_m;
     flow_float* src_jac;       // SST 消散ヤコビアン対角（k:β*ω, ω:2βω）。陽解法 RK の point-implicit 減衰に使用
+    flow_float* transport_diag;     // SST 輸送(移流+拡散)ヤコビアン対角 [m³/s]。advection/diffusion kernel で集計
     flow_float floor;          // realizability 下限（ρk≥0, ρω>1e-20）。陰解法 applySSTPointImplicit と整合
     flow_float sigma;
 };
@@ -22,8 +23,10 @@ __global__ void scalar_advection_first_order_d(
     geom_int* normal_halo_planes,
     geom_int* plane_cells,
     flow_float* phi,
+    flow_float* ro,
     flow_float* massflux,
-    flow_float* res_rho_phi)
+    flow_float* res_rho_phi,
+    flow_float* transport_diag)
 {
     geom_int ih = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -37,11 +40,15 @@ __global__ void scalar_advection_first_order_d(
         const flow_float phi_upwind = (mdot >= 0.0) ? phi[ic0] : phi[ic1];
         const flow_float flux = mdot * phi_upwind;
 
+        // point-implicit 移流対角: 1次風上の -∂res/∂(ρφ) は流出側セルに max(±ṁ,0)/ρ [m³/s]。
+        // 流出 (outflow) のみ正の対角を生み、k/ω の陽的移流 stiff 性を陰化する（拡散と同じ対角に集約）。
         if (ic0 < nCells) {
             atomicAdd(&res_rho_phi[ic0], -flux);
+            atomicAdd(&transport_diag[ic0], max(mdot, static_cast<flow_float>(0.0)) / max(ro[ic0], static_cast<flow_float>(1.0e-30)));
         }
         if (ic1 < nCells) {
             atomicAdd(&res_rho_phi[ic1], flux);
+            atomicAdd(&transport_diag[ic1], max(-mdot, static_cast<flow_float>(0.0)) / max(ro[ic1], static_cast<flow_float>(1.0e-30)));
         }
     }
 }
@@ -60,10 +67,12 @@ __global__ void scalar_diffusion_first_order_d(
     geom_float* sz,
     geom_float* ss,
     flow_float* phi,
+    flow_float* ro,
     flow_float* vis_lam,
     flow_float* vis_turb,
     flow_float sigma,
-    flow_float* res_rho_phi)
+    flow_float* res_rho_phi,
+    flow_float* transport_diag)
 {
     geom_int ih = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -94,11 +103,17 @@ __global__ void scalar_diffusion_first_order_d(
         const flow_float dphi = phi[ic1] - phi[ic0];
         const flow_float flux = mu_face * (dphi / dcc) * delta;
 
+        // point-implicit 拡散対角: -∂res/∂(ρφ) = (μ_face/ρ)·|δ|/dcc ≥ 0 [m³/s]。
+        // 各セルは自身の ρ で正規化（φ=ρφ/ρ）。壁近傍の細セルで大きくなり陽的拡散 stiff 性を陰化する。
+        const flow_float diag_face = mu_face * fabs(delta) / max(dcc, static_cast<flow_float>(1.0e-30));
+
         if (ic0 < nCells) {
             atomicAdd(&res_rho_phi[ic0], flux);
+            atomicAdd(&transport_diag[ic0], diag_face / max(ro[ic0], static_cast<flow_float>(1.0e-30)));
         }
         if (ic1 < nCells) {
             atomicAdd(&res_rho_phi[ic1], -flux);
+            atomicAdd(&transport_diag[ic1], diag_face / max(ro[ic1], static_cast<flow_float>(1.0e-30)));
         }
     }
 }
@@ -149,6 +164,7 @@ __global__ void runge_kutta_exp_scalar_d(
     flow_float* rho_phi_M,
     flow_float* res_rho_phi,
     flow_float* src_jac,
+    flow_float* transport_diag,
     flow_float floor)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -156,9 +172,12 @@ __global__ void runge_kutta_exp_scalar_d(
     if (ic < nCells) {
         const flow_float dt_l = dt_local[ic];
         const geom_float v = vol[ic];
-        // SST 消散項の stiff 性を point-implicit で減衰（src_jac=∂D/∂(ρφ)≥0、乱流なしでは 0 で従来と一致）。
-        // 減衰係数は block 陰解法対角 D_φ=V/Δτ+V·src_jac に Δτ/V を掛けた形と整合。理論は docs/time_integration。
-        const flow_float fac = static_cast<flow_float>(1.0) + coef_Res * dt_l * src_jac[ic];
+        // SST 源項（消散）+ 輸送項（移流+拡散）の stiff 性を point-implicit で減衰。
+        //   src_jac=∂D/∂(ρφ)≥0、transport_diag=Σ_f[max(±ṁ,0)+μ_face|δ|/dcc]/ρ≥0 [m³/s]（/v で 1/s 化）。
+        // 乱流なしでは双方 0 で従来の純陽的更新と一致。減衰係数は陰解法対角
+        // D_φ=V/Δτ+V·src_jac+transport_diag に Δτ/V を掛けた形と整合。理論は docs/time_integration。
+        const flow_float fac = static_cast<flow_float>(1.0)
+            + coef_Res * dt_l * (src_jac[ic] + transport_diag[ic] / v);
         const flow_float updated = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
                     + (coef_Res * res_rho_phi[ic] * dt_l / v) / fac;
         // realizability 下限（ρk≥0, ρω>1e-20）。applySSTPointImplicit と整合。乱流なしでは floor 以下にならず無影響。
@@ -240,8 +259,8 @@ __global__ void calc_scalar_gradient_div_vol_d(
 std::array<ScalarTransportDesc, 2> buildScalarDescs(variables& var)
 {
     return {{
-        {var.c_d["k"], var.c_d["roK"], var.c_d["roKN"], var.c_d["roKM"], var.c_d["res_roK"], var.c_d["res_roK_m"], var.c_d["src_jac_k"], static_cast<flow_float>(0.0), static_cast<flow_float>(0.85)},
-        {var.c_d["omega"], var.c_d["roOmega"], var.c_d["roOmegaN"], var.c_d["roOmegaM"], var.c_d["res_roOmega"], var.c_d["res_roOmega_m"], var.c_d["src_jac_omega"], static_cast<flow_float>(1.0e-20), static_cast<flow_float>(0.5)}
+        {var.c_d["k"], var.c_d["roK"], var.c_d["roKN"], var.c_d["roKM"], var.c_d["res_roK"], var.c_d["res_roK_m"], var.c_d["src_jac_k"], var.c_d["transport_diag_k"], static_cast<flow_float>(0.0), static_cast<flow_float>(0.85)},
+        {var.c_d["omega"], var.c_d["roOmega"], var.c_d["roOmegaN"], var.c_d["roOmegaM"], var.c_d["res_roOmega"], var.c_d["res_roOmega_m"], var.c_d["src_jac_omega"], var.c_d["transport_diag_omega"], static_cast<flow_float>(1.0e-20), static_cast<flow_float>(0.5)}
     }};
 }
 
@@ -251,6 +270,9 @@ void scalarTransport_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
 {
     CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roK"], 0.0, msh.nCells * sizeof(flow_float)));
     CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roOmega"], 0.0, msh.nCells * sizeof(flow_float)));
+    // 拡散ヤコビアン対角を毎 assembleResidual でゼロ初期化（diffusion kernel で面ごと加算）。
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["transport_diag_k"], 0.0, msh.nCells * sizeof(flow_float)));
+    CHECK_CUDA_ERROR(cudaMemset(var.c_d["transport_diag_omega"], 0.0, msh.nCells * sizeof(flow_float)));
 
     if (!scalarTransportEnabled(cfg)) {
         gpuErrchk( cudaPeekAtLastError() );
@@ -268,8 +290,10 @@ void scalarTransport_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
             msh.normal_halo_planes_d,
             msh.map_plane_cells_d,
             desc.phi,
+            var.c_d["ro"],
             var.p_d["massflux"],
-            desc.res_rho_phi);
+            desc.res_rho_phi,
+            desc.transport_diag);
 
         if (cfg.scalarDiffusion == 1) {
             scalar_diffusion_first_order_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>>(
@@ -286,10 +310,12 @@ void scalarTransport_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
                 var.p_d["sz"],
                 var.p_d["ss"],
                 desc.phi,
+                var.c_d["ro"],
                 var.c_d["vis_lam"],
                 var.c_d["vis_turb"],
                 desc.sigma,
-                desc.res_rho_phi);
+                desc.res_rho_phi,
+                desc.transport_diag);
         }
     }
 
@@ -332,6 +358,7 @@ void scalarTimeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& 
                 desc.rho_phi_M,
                 desc.res_rho_phi,
                 desc.src_jac,
+                desc.transport_diag,
                 desc.floor);
         }
     }

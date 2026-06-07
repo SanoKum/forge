@@ -83,7 +83,13 @@ public:
         //   src_jac_k     = ∂Dk/∂(ρk)   = β* ω
         //   src_jac_omega = ∂Dω/∂(ρω)   = 2 β ω
         "src_jac_k",
-        "src_jac_omega"
+        "src_jac_omega",
+        // SST 陰解法用: k/ω 輸送項（移流+拡散）のヤコビアン対角（point-implicit）[m³/s]。
+        // 1次風上移流の Σ_f max(±ṁ,0)/ρ と拡散 Σ_f (μ_face/ρ)(|δ|/dcc) を面ループで集計し、
+        // D_φ = V/Δτ + V·src_jac + transport_diag に加える。壁近傍の細セルで陽的輸送 stiff 性を
+        // 陰化し安定 cfl_pseudo を一桁以上引き上げる。defect-correction なので定常解は不変。
+        "transport_diag_k",
+        "transport_diag_omega"
     };
 
     const std::list<std::string> planeValNames = 

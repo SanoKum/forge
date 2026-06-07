@@ -133,6 +133,8 @@ __global__ void applySSTPointImplicit_d
  flow_float* res_roOmega,
  flow_float* src_jac_k,
  flow_float* src_jac_omega,
+ flow_float* transport_diag_k,
+ flow_float* transport_diag_omega,
  flow_float unsteady_diag
 );
 

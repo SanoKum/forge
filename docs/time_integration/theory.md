@@ -184,18 +184,52 @@ $$
 \frac{\partial D_\omega}{\partial(\rho\omega)} = 2\beta\omega
 $$
 
-これを対角に陰に取り込む point-implicit 更新を行う（移流・拡散・生産項は残差 $\text{res}_{\rho\phi}$ に
-含む lagged 扱い。生産項は limiter 付きで bounded のため陰化不要）:
+これを対角に陰に取り込む point-implicit 更新を行う:
 
 $$
-D_\phi = \frac{V}{\Delta\tau} + V\,\frac{\partial D}{\partial(\rho\phi)},\qquad
+D_\phi = \frac{V}{\Delta\tau} + V\,\frac{\partial D}{\partial(\rho\phi)} + \Lambda^{T}_\phi,\qquad
 \delta(\rho\phi) = \mathrm{relax}\cdot\frac{\text{res}_{\rho\phi}}{D_\phi},\qquad
 \rho\phi \leftarrow \max(\rho\phi^{N} + \delta(\rho\phi),\ \text{floor})
 $$
 
+ここで $\Lambda^{T}_\phi$ は次節の**輸送項 (移流+拡散) の対角**である。
 擬似時間 $\Delta\tau$ は平均流と同じ `dt_local` を流用する。realizability のため $\rho k \ge 0$、$\rho\omega > 0$ を課す。
-近傍結合は持たない純 point-implicit（消散の stiff 性のみを陰化する最小構成）。これにより block 陰解法でも
-k/ω が凍結せず収束し、乱流ケースを陰解法で回せる。
+近傍 $\Delta Q_{nbr}$ 結合・生産項は持たない純 point-implicit（消散+輸送の対角のみを陰化する最小構成）。
+これにより block 陰解法でも k/ω が凍結せず収束し、乱流ケースを陰解法で回せる。
+
+### 輸送項 (移流+拡散) の point-implicit 対角 $\Lambda^{T}_\phi$ (2026-06)
+
+消散項のみを陰化した初期実装では、壁法則検証ケース `case/26.flat_plate_sst`（乱流平板, M=0.2,
+$y^+<1$）で安定 `cfl_pseudo` が発達場 restart でも **5〜6** に制限されていた。発散の素因を切り分けると、
+平均流 5 式は block DPLUR で安定（残差フロアに静止）したまま **k/ω だけが先に指数発散**し、
+`scalarDiffusion=0`（拡散を切る）と発散が消えることから、律速は **k/ω 輸送項の陽的（lagged）扱い**
+だと判明した。壁第一セル（高さ $\sim4\times10^{-6}$ m, 高アスペクト比）で陽的拡散の安定限界
+$\Delta t < \delta^2/(2\nu_{\text{eff}})$ を、また外層で陽的移流の CFL 限界を、`cfl_pseudo`$\gtrsim6$ で超える。
+
+平均流 block DPLUR が対流ヤコビアン $A^\pm$・粘性スペクトル半径を対角に持つのと同様に、k/ω の
+**輸送スペクトル半径を point-implicit 対角に加える**:
+
+$$
+\Lambda^{T}_\phi = \underbrace{\sum_f \frac{\max(\dot m_f,0)+\max(-\dot m_f,0)}{\rho}}_{\text{移流 (1次風上)}}
+  \;+\; \underbrace{\sum_f \frac{\mu_{\text{face}}}{\rho}\frac{|\delta_f|}{|\Delta\mathbf{r}_f|}}_{\text{拡散}}
+  \;\;[\mathrm{m^3/s}]
+$$
+
+各項は 1 次風上移流／2 点拡散の流束を $\rho\phi$ で微分した対角寄与 $-\partial\text{res}/\partial(\rho\phi)$
+で、流出側セルにのみ正値を生む（$\dot m_f$ は面質量流束、$\mu_{\text{face}}=\mu+\sigma_\phi\mu_t$、
+$\delta_f$ は拡散の幾何係数）。$\Lambda^{T}_\phi\ge 0$ は単位 $[\mathrm{m^3/s}]$ で $V/\Delta\tau$ と同じ
+ため、$D_\phi$ にそのまま加える（src_jac のように $V$ を掛けない）。
+
+これは block DPLUR と同じ **defect-correction** であり、**定常解を変えない**。$\Lambda^{T}_\phi$ は更新量
+$\delta(\rho\phi)=\mathrm{relax}\cdot\text{res}_{\rho\phi}/D_\phi$ の係数にのみ入り、収束時 $\text{res}_{\rho\phi}\to0$
+では $\delta\to0$ となるため、不動点（壁法則・$C_f$）は不変で緩和経路と安定 `cfl_pseudo` の上限だけが変わる。
+`case/26.flat_plate_sst` 発達場 restart で安定 `cfl_pseudo` は **5〜6 → 120**（約 20 倍）に向上し、
+`cfl_pseudo=50` の壁法則・$C_f$ は baseline（`cfl_pseudo=5`, 120k step）と $<0.1\%$ で一致した（§検証）。
+
+> **生産項の陰化は不採用**。生産は $\phi$ を増やすため真の寄与 $-\partial P/\partial(\rho\phi)\le0$ は
+> 対角を弱め発散させ（Patankar も正の生産勾配は陰化しない）、逆に振幅 $|\partial P/\partial(\rho\phi)|$ を
+> 正対角に足す under-relaxation も試したが、上記の通り律速は輸送項のため安定 `cfl_pseudo` を一切
+> 上げず（120 で不変）、ω に至っては $P_\omega=\alpha\rho S^2$ が $\omega$ に依らず勾配ゼロ。よって採用しない。
 
 ### 陽解法 RK での point-implicit 源項 (2026-06)
 
@@ -212,18 +246,19 @@ $$
   + c_{\text{res}}\,\frac{\Delta t_{\text{loc}}}{V}\,\text{res}_{\rho\phi}
 $$
 
-だが、残差増分のみを消散ヤコビアンで割って減衰させる:
+だが、残差増分のみを源項+輸送ヤコビアンで割って減衰させる:
 
 $$
 \rho\phi \leftarrow c_N\,\rho\phi^{N} + c_M\,\rho\phi^{M}
-  + \frac{1}{1 + c_{\text{res}}\,\Delta t_{\text{loc}}\,\partial D/\partial(\rho\phi)}
+  + \frac{1}{1 + c_{\text{res}}\,\Delta t_{\text{loc}}\,(\partial D/\partial(\rho\phi) + \Lambda^{T}_\phi/V)}
     \cdot c_{\text{res}}\,\frac{\Delta t_{\text{loc}}}{V}\,\text{res}_{\rho\phi}
 $$
 
-ここで $\partial D/\partial(\rho\phi)\ (=\beta^\*\omega,\ 2\beta\omega)$ は block 陰解法と同じ
-`src_jac_k`/`src_jac_omega`。減衰係数 $1 + c_{\text{res}}\Delta t_{\text{loc}}\,\partial D/\partial(\rho\phi)\ge 1$
-は陰解法対角 $D_\phi = V/\Delta\tau + V\,\partial D/\partial(\rho\phi)$ に $\Delta\tau/V$ を掛けた形と整合する
-（消散項のみを陰化し、移流・拡散・生産は lagged のまま）。これにより陽解法 RK でも RANS が安定に回り、
+ここで `src_jac_k`/`src_jac_omega`（消散項 $\beta^\*\omega,\ 2\beta\omega$）と `transport_diag_k`/`omega`
+（輸送項 $\Lambda^{T}_\phi$）は block 陰解法と同じ対角ヤコビアンを共有する。減衰係数
+$1 + c_{\text{res}}\Delta t_{\text{loc}}(\text{src\_jac}+\text{transport\_diag}/V)\ge 1$ は陰解法対角
+$D_\phi = V/\Delta\tau + V\,\text{src\_jac} + \text{transport\_diag}$ に $\Delta\tau/V$ を掛けた形と整合する
+（消散+輸送を陰化し、生産・近傍結合は lagged のまま）。これにより陽解法 RK でも RANS が安定に回り、
 平均流の時間積分法 (陽 RK / block 陰) を揃えた比較ができる。realizability の floor は陰解法と共通。
 4 段 4 次 RK (`timeIntegration==4`) のスカラー積分は本減衰を未適用（RANS 非対応のまま）。
 

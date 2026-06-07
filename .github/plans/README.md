@@ -21,6 +21,7 @@
 | [architecture-rans-sst.md](architecture-rans-sst.md) | architecture | done | [`docs/turbulence/`](../../docs/turbulence/) | Menter SST (k-ω) を explicit 軸対称ノズル (run_0087〜0090) で 4 段階検証完了。advection・diffusion・source (F1/F2 ブレンド)・渦粘性すべて実装済。軸対称 geometric source は子 plan へ |
 | [architecture-axisym-sst.md](architecture-axisym-sst.md) | architecture | done | [`docs/turbulence/`](../../docs/turbulence/) | 親 SST の子 plan。フープひずみ $2(u_r/r)^2$ (run_0091) + 生産項の圧縮性補正 `dilatationCorrection` (0:off/1:deviatoric/2:+等方項) を実装・段階検証。run_0093(A+B) で k −12%・vis_turb −14% の膨張減衰を確認。既定値 2 (全 SST ケースに適用) |
 | [time_integration-explicit-pointimplicit-sst.md](time_integration-explicit-pointimplicit-sst.md) | time_integration | done | [`docs/time_integration/`](../../docs/time_integration/) | 陽解法 RK (`timeIntegration==1/3`) のスカラー (k/ω) 源項を消散ヤコビアン (`src_jac_k`/`src_jac_omega`) で point-implicit 減衰。block 陰解法と同じ対角を残差増分に適用し、純陽的だと壁近傍 ω で発散する RANS を陽解法 RK で安定化。LES (src_jac=0) は無影響。`case/18.backstep` 2D で検証 |
+| [time_integration-implicit-stable-cfl.md](time_integration-implicit-stable-cfl.md) | time_integration | done | [`docs/time_integration/`](../../docs/time_integration/) | 陰解法 (block DPLUR) の安定 `cfl_pseudo` 引き上げ。診断で律速は **k/ω 輸送項の陽的扱い**と確定 (平均流は静止し k/ω のみ発散・`scalarDiffusion=0` で消失)。k/ω 移流+拡散のスペクトル半径を point-implicit 対角 `transport_diag` に陰化 (defect-correction で定常解不変)。`case/26.flat_plate_sst` で安定 `cfl_pseudo` 5–6→**120** (約20倍)、壁法則・Cf は <0.1% 不変。生産項陰化 (#1) は ceiling 不変で棄却、平均流粘性 (#2) は律速でなく無効 |
 
 ## 状態の意味
 

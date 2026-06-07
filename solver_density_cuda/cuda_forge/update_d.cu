@@ -247,8 +247,8 @@ void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda
 
 // SST (k-ω) の segregated point-implicit 更新。
 // 平均流 block DPLUR の commit 後に呼び、凍結していたスカラーを陰的に更新する。
-// 消散項を point-implicit 化: D_φ = V/Δτ + V·(∂D/∂φ)、δ(ρφ) = relax·res_roφ / D_φ。
-// 移流・拡散・生産は res_roφ に含む lagged 扱い。ρφ = ρφ_baseline(N) + δ。
+// 消散項 + 輸送項(移流+拡散) を point-implicit 化: D_φ = V/Δτ + V·(∂D/∂φ) + transport_diag、
+// δ(ρφ) = relax·res_roφ / D_φ。生産・近傍 ΔQ は res_roφ に含む lagged 扱い。ρφ = ρφ_baseline(N) + δ。
 __global__ void applySSTPointImplicit_d
 (
  geom_int nCells,
@@ -265,6 +265,8 @@ __global__ void applySSTPointImplicit_d
  flow_float* res_roOmega,
  flow_float* src_jac_k,
  flow_float* src_jac_omega,
+ flow_float* transport_diag_k,
+ flow_float* transport_diag_omega,
  flow_float unsteady_diag
 )
 {
@@ -272,8 +274,10 @@ __global__ void applySSTPointImplicit_d
     if (ic < nCells) {
         const flow_float v    = vol[ic];
         const flow_float dt_l = max(dt_local[ic], static_cast<flow_float>(1.0e-30));
-        const flow_float Dk = v / dt_l + v * src_jac_k[ic]     + v * unsteady_diag;
-        const flow_float Dw = v / dt_l + v * src_jac_omega[ic] + v * unsteady_diag;
+        // D_φ = V/Δτ + V·src_jac（消散）+ transport_diag（移流+拡散、既に [m³/s]）+ V·unsteady_diag。
+        // transport_diag は壁近傍の陽的 k/ω 輸送 stiff 性を陰化し安定 cfl_pseudo を一桁以上引き上げる。
+        const flow_float Dk = v / dt_l + v * src_jac_k[ic]     + transport_diag_k[ic]     + v * unsteady_diag;
+        const flow_float Dw = v / dt_l + v * src_jac_omega[ic] + transport_diag_omega[ic] + v * unsteady_diag;
 
         const flow_float dk = implicit_relax * res_roK[ic]     / max(Dk, static_cast<flow_float>(1.0e-30));
         const flow_float dw = implicit_relax * res_roOmega[ic] / max(Dw, static_cast<flow_float>(1.0e-30));
@@ -300,6 +304,8 @@ void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],
         var.c_d["src_jac_omega"],
+        var.c_d["transport_diag_k"],
+        var.c_d["transport_diag_omega"],
         cfg.unsteadyDiagCoef
     );
 

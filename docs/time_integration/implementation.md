@@ -102,18 +102,20 @@ Q[ic] = coef_N * Q_N[ic] + coef_M * Q_M[ic]
 `scalarTimeIntegration_d_wrapper` が平均流 RK と同じ段で k/ω を別カーネルで積分する
 （`timeIntegration==1/3` は `runge_kutta_exp_scalar_d`、`==4` は `runge_kutta_exp_scalar_4th_d`）。
 
-RANS (SST) の消散項は stiff なため、`timeIntegration==1/3` の更新は**残差増分のみ消散ヤコビアンで減衰**する:
+RANS (SST) の消散項・輸送項は stiff なため、`timeIntegration==1/3` の更新は**残差増分のみ源項+輸送ヤコビアンで減衰**する:
 
 ```cpp
-const flow_float fac = 1.0 + coef_Res * dt_l * src_jac[ic]; // src_jac ≥ 0 → fac ≥ 1
+const flow_float fac = 1.0 + coef_Res * dt_l * (src_jac[ic] + transport_diag[ic] / v); // ≥ 1
 rho_phi[ic] = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
             + (coef_Res * res_rho_phi[ic] * dt_l / v) / fac;
 ```
 
-- `src_jac` は `ScalarTransportDesc` 経由で k は `src_jac_k`、ω は `src_jac_omega`
-  （block 陰解法と同一。[`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) が毎 `assembleResidual` で出力）。
-- `LESorRANS!=2`（乱流なし／LES WALE）では `src_jac=0` 相当で `fac=1`、従来の純陽的更新と一致（LES は無影響）。
-- 減衰係数は `applySSTPointImplicit_d` の対角 $D_\phi=V/\Delta\tau+V\cdot\text{src\_jac}$ に $\Delta\tau/V$ を掛けた形と整合。
+- `src_jac`（消散 $\beta^\*\omega,\,2\beta\omega$）は `ScalarTransportDesc` 経由で k=`src_jac_k`、ω=`src_jac_omega`
+  （[`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) が毎 `assembleResidual` で出力）。
+- `transport_diag`（移流+拡散の対角 $\Lambda^{T}_\phi$ [m³/s]）は `scalar_advection`/`scalar_diffusion` カーネルが
+  面ループで集計（k=`transport_diag_k`、ω=`transport_diag_omega`）。$V$ で割って $[1/s]$ 化して `fac` に入る。
+- `LESorRANS!=2`（乱流なし／LES WALE）では両者 0 で `fac=1`、従来の純陽的更新と一致（LES は無影響）。
+- 減衰係数は `applySSTPointImplicit_d` の対角 $D_\phi=V/\Delta\tau+V\cdot\text{src\_jac}+\text{transport\_diag}$ に $\Delta\tau/V$ を掛けた形と整合。
 - `runge_kutta_exp_scalar_4th_d`（4 次）は本減衰未適用＝RANS 非対応のまま（平均流 4 次自体が RANS 未検証）。
 - 理論は [theory.md](theory.md) §"陽解法 RK での point-implicit 源項"。
 
@@ -175,16 +177,23 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 
 ### `applySSTPointImplicit_d`（SST k-ω の segregated point-implicit）
 
-平均流 commit 後に呼ぶスカラー陰解法。消散項のヤコビアン対角を陰化して k/ω の凍結を解く。
+平均流 commit 後に呼ぶスカラー陰解法。源項+輸送項のヤコビアン対角を陰化して k/ω の凍結を解き、
+壁近傍の陽的輸送 stiff 性を緩和して安定 `cfl_pseudo` を一桁以上引き上げる。
 
-- [`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) の `rans_sst_source_d` が
-  残差 `res_roK`/`res_roOmega` に加え、消散ヤコビアン `src_jac_k = β*ω`・`src_jac_omega = 2βω` を出力。
-- [`update_d.cu`](../../solver_density_cuda/cuda_forge/update_d.cu) の `applySSTPointImplicit_d` が
-  各セルで $D_\phi = V/\Delta\tau + V\cdot\text{src\_jac}_\phi$、$\delta(\rho\phi)=\text{relax}\cdot\text{res}_{\rho\phi}/D_\phi$ を作り
-  $\rho\phi = \max(\rho\phi^{N}+\delta,\ \text{floor})$ を適用（$\rho k\ge0$, $\rho\omega>0$）。`dt_local` は平均流と共用。
+- 消散ヤコビアン `src_jac_k=β*ω`・`src_jac_omega=2βω` は
+  [`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) `rans_sst_source_d` が出力。
+- 輸送ヤコビアン `transport_diag_k`/`transport_diag_omega` [m³/s] は
+  [`scalarTransport_d.cu`](../../solver_density_cuda/cuda_forge/scalarTransport_d.cu) の `scalar_advection_first_order_d`
+  （1次風上 $\sum_f\max(\pm\dot m,0)/\rho$）と `scalar_diffusion_first_order_d`（$\sum_f(\mu_{\text{face}}/\rho)|\delta|/dcc$）が
+  面ループで atomicAdd 集計する（`scalarTransport_d_wrapper` 冒頭で毎 `assembleResidual` ゼロ初期化）。
+- [`update_d.cu`](../../solver_density_cuda/cuda_forge/update_d.cu) の `applySSTPointImplicit_d` が各セルで
+  $D_\phi = V/\Delta\tau + V\cdot\text{src\_jac}_\phi + \text{transport\_diag}_\phi$、
+  $\delta(\rho\phi)=\text{relax}\cdot\text{res}_{\rho\phi}/D_\phi$、$\rho\phi=\max(\rho\phi^{N}+\delta,\ \text{floor})$ を適用
+  （$\rho k\ge0$, $\rho\omega>0$）。`dt_local` は平均流と共用。
 - [`main.cpp`](../../solver_density_cuda/main.cpp) `implicitNonlinearUpdate` で `scalarResidualEnabled` のとき
-  `applyBlockImplicitCorrection` 直後に `applySSTPointImplicit` を呼ぶ。移流・拡散・生産は `res` に含む lagged。
-- 近傍結合なしの純 point-implicit（消散 stiff 性のみ陰化する最小構成）。理論は [theory.md](theory.md) §"スカラー (k/ω) の陰解法"。
+  `applyBlockImplicitCorrection` 直後に `applySSTPointImplicit` を呼ぶ。生産・近傍 ΔQ は `res` に含む lagged。
+- 近傍 ΔQ 結合なしの純 point-implicit（消散+輸送の対角のみ陰化）。defect-correction のため定常解は不変。
+  理論・検証は [theory.md](theory.md) §"輸送項 (移流+拡散) の point-implicit 対角"。
 
 ## 局所時間刻み
 
@@ -232,7 +241,7 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 
 - 非定常 dual-time 陰解法（`tI==11 && unsteady==1 && dualTime==1`）は実装済（2026-06、`blockDPLUR==1` のみ、物理 $\Delta t$ 固定 `control=0`）。`implicitCorrection_d.cu` の `dualtime_explicit_d` は SLAU/Roe 用の別系統補助で本流とは独立（未使用）。
 - scalar 対角陰解法（`tI==11 && blockDPLUR==0`）は有効（2026-06）。block より低 `cfl_pseudo` で収束も遅いため既定は block（上記比較参照）。
-- block 陰解法でも SST(k/ω) は `applySSTPointImplicit` で segregated point-implicit 更新され、**凍結しない**（2026-06）。消散項のみ陰化、移流・拡散・生産は lagged。
+- block 陰解法でも SST(k/ω) は `applySSTPointImplicit` で segregated point-implicit 更新され、**凍結しない**（2026-06）。消散+輸送(移流+拡散)の対角を陰化、生産・近傍 ΔQ は lagged。
 - `matrix mat_ns` は陰解法では未使用だが非陰解法のシグネチャに残るため `StepContext` に保持（除去は別途）。
 - 旧 CPU の [`update.cpp`](../../solver_density_cuda/update.cpp) は使用されていない。
 - 局所時間刻みの粘性スペクトル半径寄与は `setDT_d` 側で個別に実装されている。詳細は同ファイルを参照。
