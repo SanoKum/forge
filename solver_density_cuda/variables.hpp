@@ -78,7 +78,12 @@ public:
         "volume" , "ccx" , "ccy" , "ccz",
         "A_planar",  // 軸対称: planar 面積 (= V を r で割った値)。非軸対称時は 0
         "axisym_uy_over_r",
-        "axisym_divU"
+        "axisym_divU",
+        // SST 陰解法 (segregated point-implicit) 用: 消散項のヤコビアン対角
+        //   src_jac_k     = ∂Dk/∂(ρk)   = β* ω
+        //   src_jac_omega = ∂Dω/∂(ρω)   = 2 β ω
+        "src_jac_k",
+        "src_jac_omega"
     };
 
     const std::list<std::string> planeValNames = 

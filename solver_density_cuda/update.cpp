@@ -183,3 +183,35 @@ void applyBlockImplicitCorrection(solverConfig& cfg , cudaConfig& cuda_cfg ,mesh
         roe[ic]  = roeN[ic]  + dq4[ic];
     }
 }
+
+void applySSTPointImplicit(solverConfig& cfg , cudaConfig& cuda_cfg ,mesh& msh , variables& v , matrix& mat_p)
+{
+    if (cfg.gpu==1) {
+        applySSTPointImplicit_d_wrapper(cfg , cuda_cfg , msh , v);
+        return;
+    }
+
+    // SST point-implicit は GPU 経路のみ（CPU 経路は未対応）。
+    vector<flow_float>& roK      = v.c["roK"];
+    vector<flow_float>& roOmega  = v.c["roOmega"];
+    vector<flow_float>& roKN     = v.c["roKN"];
+    vector<flow_float>& roOmegaN = v.c["roOmegaN"];
+    vector<flow_float>& res_roK     = v.c["res_roK"];
+    vector<flow_float>& res_roOmega = v.c["res_roOmega"];
+    vector<flow_float>& sjk = v.c["src_jac_k"];
+    vector<flow_float>& sjw = v.c["src_jac_omega"];
+    vector<flow_float>& vol = v.c["volume"];
+    vector<flow_float>& dt_local = v.c["dt_local"];
+
+    for (geom_int ic=0 ; ic<msh.nCells; ic++)
+    {
+        const flow_float V = vol[ic];
+        const flow_float dt_l = std::max(dt_local[ic], (flow_float)1.0e-30);
+        const flow_float Dk = V/dt_l + V*sjk[ic];
+        const flow_float Dw = V/dt_l + V*sjw[ic];
+        const flow_float dk = cfg.implicitRelax * res_roK[ic]     / std::max(Dk, (flow_float)1.0e-30);
+        const flow_float dw = cfg.implicitRelax * res_roOmega[ic] / std::max(Dw, (flow_float)1.0e-30);
+        roK[ic]     = std::max(roKN[ic]     + dk, (flow_float)0.0);
+        roOmega[ic] = std::max(roOmegaN[ic] + dw, (flow_float)1.0e-20);
+    }
+}

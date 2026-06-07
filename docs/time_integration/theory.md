@@ -132,11 +132,36 @@ $$
 | `nSubIterDualTime` | 物理ステップ内の擬似時間サブ反復数 |
 | `nStepInner` | DPLUR sweep 回数（定常と同義） |
 
-## スカラー (k/ω) の扱い
+## スカラー (k/ω) の陰解法 (segregated point-implicit)
 
 平均流 5 式とスカラー (k/ω) は常に別カーネルで分離 (segregated) して積分する。
-block 陰解法中はスカラー時間積分が休止するため **k/ω は凍結**される（frozen scalar の本格対応は後続）。
-このため陰解法の検証は層流（スカラー無し）で行う。
+block 陰解法 (`timeIntegration==11`) では、平均流 block DPLUR を解いて commit した後、
+**同じ擬似時間ステップで k/ω を segregated point-implicit で更新**する（旧実装はここで k/ω を凍結していた）。
+
+SST ソースの消散項は $\mathbf{Q}$ に比例する負ソースで、時間刻みに依らず stiff:
+
+$$
+D_k = \beta^\* \rho k \omega = \beta^\*(\rho k)\,\omega,\qquad
+D_\omega = \beta \rho \omega^2 = \beta \frac{(\rho\omega)^2}{\rho}
+$$
+
+$$
+\frac{\partial D_k}{\partial(\rho k)} = \beta^\*\omega,\qquad
+\frac{\partial D_\omega}{\partial(\rho\omega)} = 2\beta\omega
+$$
+
+これを対角に陰に取り込む point-implicit 更新を行う（移流・拡散・生産項は残差 $\text{res}_{\rho\phi}$ に
+含む lagged 扱い。生産項は limiter 付きで bounded のため陰化不要）:
+
+$$
+D_\phi = \frac{V}{\Delta\tau} + V\,\frac{\partial D}{\partial(\rho\phi)},\qquad
+\delta(\rho\phi) = \mathrm{relax}\cdot\frac{\text{res}_{\rho\phi}}{D_\phi},\qquad
+\rho\phi \leftarrow \max(\rho\phi^{N} + \delta(\rho\phi),\ \text{floor})
+$$
+
+擬似時間 $\Delta\tau$ は平均流と同じ `dt_local` を流用する。realizability のため $\rho k \ge 0$、$\rho\omega > 0$ を課す。
+近傍結合は持たない純 point-implicit（消散の stiff 性のみを陰化する最小構成）。これにより block 陰解法でも
+k/ω が凍結せず収束し、乱流ケースを陰解法で回せる。
 
 ## 局所時間刻み
 

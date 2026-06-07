@@ -55,10 +55,12 @@ advanceExplicitRK(ctx):                    // tI 1/3/4（挙動不変）
   updateVariablesOuter; writeStepOutputs; setDT; logOuterEnd
 
 implicitNonlinearUpdate(ctx):              // 定常・dual-time 共有の核
-  assembleResidual(ctx, 1)                 // 残差・フラックスは 1 回
+  assembleResidual(ctx, 1)                 // 残差・フラックスは 1 回（ransSource が src_jac_k/ω も出力）
   setDT_d_wrapper                          // 局所擬似時間 dτ（diag の V/Δτ）
-  blockDPLURSolve(ctx)                     // 下記
+  blockDPLURSolve(ctx)                     // 下記（平均流 5 式）
   applyBlockImplicitCorrection(ctx)        // Q = Q_baseline + dq を 1 回 commit
+  if scalarResidualEnabled:                // RANS(SST) のとき
+     applySSTPointImplicit(ctx)            // k/ω を segregated point-implicit で更新（凍結解除）
 
 blockDPLURSolve(ctx):                      // 古典 DPLUR 線形ソルバ（res・Q 固定）
   for iSweep in nStepInner:
@@ -132,6 +134,19 @@ $\Delta\mathbf Q_{\text{new}} = D_i^{-1}\,\text{RHS}$ を解く。`cfg.implicitR
 反復終了後 [`applyScalarImplicitCorrection_d`](../../solver_density_cuda/cuda_forge/update_d.cu)
 で `Q = Q_N + dq_*_old` を適用する。**現状 config で reject 中**（kernel・buffer は温存、frozen scalar フェーズで再有効化）。
 
+### `applySSTPointImplicit_d`（SST k-ω の segregated point-implicit）
+
+平均流 commit 後に呼ぶスカラー陰解法。消散項のヤコビアン対角を陰化して k/ω の凍結を解く。
+
+- [`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) の `rans_sst_source_d` が
+  残差 `res_roK`/`res_roOmega` に加え、消散ヤコビアン `src_jac_k = β*ω`・`src_jac_omega = 2βω` を出力。
+- [`update_d.cu`](../../solver_density_cuda/cuda_forge/update_d.cu) の `applySSTPointImplicit_d` が
+  各セルで $D_\phi = V/\Delta\tau + V\cdot\text{src\_jac}_\phi$、$\delta(\rho\phi)=\text{relax}\cdot\text{res}_{\rho\phi}/D_\phi$ を作り
+  $\rho\phi = \max(\rho\phi^{N}+\delta,\ \text{floor})$ を適用（$\rho k\ge0$, $\rho\omega>0$）。`dt_local` は平均流と共用。
+- [`main.cpp`](../../solver_density_cuda/main.cpp) `implicitNonlinearUpdate` で `scalarResidualEnabled` のとき
+  `applyBlockImplicitCorrection` 直後に `applySSTPointImplicit` を呼ぶ。移流・拡散・生産は `res` に含む lagged。
+- 近傍結合なしの純 point-implicit（消散 stiff 性のみ陰化する最小構成）。理論は [theory.md](theory.md) §"スカラー (k/ω) の陰解法"。
+
 ## 局所時間刻み
 
 `setDT_d_wrapper` ([`setDT_d.cu`](../../solver_density_cuda/cuda_forge/setDT_d.cu)) が
@@ -161,7 +176,7 @@ dual-time は本流の構造を作り直さず追加できるよう、本フェ�
 - 非定常 dual-time 陰解法（`tI==11 && unsteady==1`）は本体未実装（dispatcher で throw）。`implicitCorrection_d.cu` の
   `dualtime_explicit_d` は SLAU/Roe 用補助で本流とは独立、dual-time 実装時に整理対象。
 - scalar 対角陰解法（`tI==11 && blockDPLUR==0`）は config で reject 中（frozen scalar フェーズで再有効化）。
-- block 陰解法中はスカラー(k/ω) 時間積分が休止し凍結される。陰解法の検証は層流で行う。
+- block 陰解法でも SST(k/ω) は `applySSTPointImplicit` で segregated point-implicit 更新され、**凍結しない**（2026-06）。消散項のみ陰化、移流・拡散・生産は lagged。
 - `matrix mat_ns` は陰解法では未使用だが非陰解法のシグネチャに残るため `StepContext` に保持（除去は別途）。
 - 旧 CPU の [`update.cpp`](../../solver_density_cuda/update.cpp) は使用されていない。
 - 局所時間刻みの粘性スペクトル半径寄与は `setDT_d` 側で個別に実装されている。詳細は同ファイルを参照。

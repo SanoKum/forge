@@ -203,16 +203,20 @@ laminar / LES ケースには影響しない。従来の非圧縮挙動が必要
 `isAxisymmetric == 0` のときは追加項をすべて 0 とし、既存の 2D / 3D SST と
 ビット単位で同一の挙動を維持する (子 plan の回帰判定基準)。
 
-## 6. 陰解法との切り分け
+## 6. 陰解法との連成 (segregated point-implicit, 2026-06)
 
-`timeIntegration_d.cu` とその周辺は 5 方程式固定の correction / Jacobian を
-持っているため、SST を同時に陰解法へ入れると設計面が大きく広がる。
+平均流 5 式は block DPLUR (5×5)、SST (k/ω) は **segregated point-implicit** で別に解く
+（7×7 連成はしない）。block 陰解法 (`timeIntegration==11`) では平均流を commit した後、
+同じ擬似時間ステップで k/ω を point-implicit 更新する（旧実装の「凍結」を解除）。
 
-そのため初期実装では:
+- 消散項のみ陰化（stiff、$\partial D_k/\partial(\rho k)=\beta^\*\omega$, $\partial D_\omega/\partial(\rho\omega)=2\beta\omega$）。
+  `ransSource_d.cu` が残差に加えて `src_jac_k`/`src_jac_omega` を出力。
+- `update_d.cu` の `applySSTPointImplicit_d` が $D_\phi=V/\Delta\tau+V\,\partial D/\partial(\rho\phi)$、
+  $\delta(\rho\phi)=\text{relax}\cdot\text{res}_{\rho\phi}/D_\phi$ を作り $\rho\phi=\max(\rho\phi^N+\delta,\text{floor})$ を適用。
+- `main.cpp` `implicitNonlinearUpdate` で `scalarResidualEnabled` のとき `applyBlockImplicitCorrection` 直後に呼ぶ。
+- 移流・拡散・生産は残差 lagged。詳細は [`docs/time_integration/`](../time_integration/implementation.md)。
 
-- explicit storage と residual 更新だけを先に広げる
-- implicit block system は不変のままにする
-- 将来必要なら `gpu-implicit-plan` の子 plan として 7x7 化を扱う
+将来、強連成が必要なら `gpu-implicit-plan` の子 plan として 7×7 化を検討する。
 
 ## 7. 検証方針
 

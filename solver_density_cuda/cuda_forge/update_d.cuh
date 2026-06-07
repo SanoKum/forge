@@ -117,3 +117,22 @@ __global__ void applyBlockImplicitCorrection_d
 );
 
 void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// SST (k-ω) segregated point-implicit 更新（消散項の対角を陰化）。
+__global__ void applySSTPointImplicit_d
+(
+ geom_int nCells,
+ geom_float* vol,
+ flow_float* dt_local,
+ flow_float implicit_relax,
+ flow_float* roK,
+ flow_float* roOmega,
+ flow_float* roKN,
+ flow_float* roOmegaN,
+ flow_float* res_roK,
+ flow_float* res_roOmega,
+ flow_float* src_jac_k,
+ flow_float* src_jac_omega
+);
+
+void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

@@ -271,9 +271,14 @@ implicit 更新の基本形は `Q \leftarrow Q + \delta Q` とし、`implicitRel
 
 ## 6. 将来拡張の指針
 
-### 6.1 スカラー輸送
+### 6.1 スカラー輸送 (SST k-ω) — 実装済 (2026-06)
 
-スカラー輸送は最初の拡張対象として適している。追加 unknown が各セル local に増えるだけなので、block-diagonal の拡張で取り込みやすい。
+SST (k/ω) を **segregated point-implicit** で実装済み（7×7 連成ではなく平均流 5×5 と分離）。消散項のみ陰化
+（$\partial D_k/\partial(\rho k)=\beta^\*\omega$, $\partial D_\omega/\partial(\rho\omega)=2\beta\omega$）。移流・拡散・生産は lagged。
+`ransSource_d` が `src_jac_k/ω` を出力、`applySSTPointImplicit_d` が平均流 commit 後に k/ω を更新（旧「凍結」解除）。
+詳細は [`docs/turbulence/`](../../docs/turbulence/) と [`docs/time_integration/`](../../docs/time_integration/)。
+
+凝縮・化学など他のスカラー/ソースは引き続き本方針（輸送 implicit ＋ source local implicit の分離）で拡張する。
 
 ### 6.2 凝縮計算
 
@@ -307,4 +312,6 @@ implicit 更新の基本形は `Q \leftarrow Q + \delta Q` とし、`implicitRel
 
 - 2026-06: **軸対称ケースの陰解法対応**。幾何 ($r$ 重み付き `volume`/`ss`) は既に整合しており、平均流 `A⁺/A⁻` 修正だけで軸対称 block DPLUR は収束する（ソース lagged でも可）ことを確認。さらに半径運動量ソース $S_{\rho u_r}=(p-\tau_{\theta\theta})A_{\text{planar}}$ の局所ヤコビアン（圧力 $\partial p/\partial Q$ ＋ 粘性フープ $2\mu/(\rho r_{\text{eff}})$）を `implicit_defect_correction_block_d` の roUy 行対角に追加（`isAxisymmetric`/`A_planar` 引数追加）。検証 (`case/23.axi_nozzle` M4 ノズル): 陽解法収束解と壁面静圧が平均 0.02% で一致（最大 0.32% は未収束プルーム最低圧部、explicit/lagged/jac で同一＝case 残差フロア由来）、ソースヤコビアンで過渡収束 ~2 倍速・回帰なし。超音速始動の擬似 CFL 上限は case 律速（planar でも発散）で軸対称ソース律速ではない。
 
-- 残: 乱流 (SST) 陰解法化（segregated point-implicit）、dual-time 本体・frozen scalar 有効化は後続フェーズ。
+- 2026-06: **乱流 SST (k-ω) の陰解法化（segregated point-implicit）**。旧実装は block 陰解法中 k/ω を凍結していた。平均流 block DPLUR の commit 後、同一擬似時間ステップで k/ω を point-implicit 更新する経路を追加（`main.cpp` `implicitNonlinearUpdate`）。消散項の stiff 性のみ対角に陰化（`ransSource_d` が `src_jac_k=β*ω`・`src_jac_omega=2βω` を出力、`applySSTPointImplicit_d` が $D_\phi=V/\Delta\tau+V\partial D/\partial(\rho\phi)$ で更新、realizability floor 付き）。移流・拡散・生産は lagged。検証 (`case/23.axi_nozzle` M4 軸対称 SST ノズル, `run_0093` 複製を res_1000 から陰解法化): k/ω が凍結せず収束（roK ↓8倍, roOmega ↓14倍）、壁面静圧が陽解法収束解と **0.003%** で一致（PASS）。なお超音速プルームせん断層の影響で大域 roe 残差ノルムは高止まりするが、壁面・積分量は収束。強い圧縮性乱流では `cfl_pseudo ≲ 0.3` 推奨。
+
+- 残: dual-time 本体・frozen scalar(scalar 対角 blockDPLUR==0) 有効化は後続フェーズ。

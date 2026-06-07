@@ -815,6 +815,13 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         applyBlockImplicitCorrection(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
     });
+    // SST (k-ω) を segregated point-implicit で更新（凍結解除）。残差・消散ヤコビアンは
+    // 直前の assembleResidual (ransSource) で確定済み、dt_local は setDT 済み。
+    if (scalarResidualEnabled(s.cfg)) {
+        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+            applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        });
+    }
 }
 
 // 陽解法 Runge-Kutta（tI 1/3/4）。steady/unsteady 両対応。

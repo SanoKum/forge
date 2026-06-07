@@ -34,7 +34,10 @@ __global__ void rans_sst_source_d(
     flow_float* axisym_uy_over_r,
     int dilatationCorrection,
     flow_float* res_roK,
-    flow_float* res_roOmega)
+    flow_float* res_roOmega,
+    // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
+    flow_float* src_jac_k,
+    flow_float* src_jac_omega)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -125,6 +128,13 @@ __global__ void rans_sst_source_d(
     // 残差に加算（符号: ソース項は保存変数を増加させる正方向）
     atomicAdd(&res_roK[ic],     (Pk - Dk) * v);
     atomicAdd(&res_roOmega[ic], (Pw - Dw + CDw) * v);
+
+    // SST 陰解法用の消散ヤコビアン対角（point-implicit で D に加える正の量）。
+    //   Dk = β* ρ k ω = β* (ρk) ω  →  ∂Dk/∂(ρk) = β* ω
+    //   Dω = β ρ ω²  = β (ρω)²/ρ   →  ∂Dω/∂(ρω) = 2 β ω
+    // 生産項は limiter 付きで bounded のため lagged（陰化しない）。
+    src_jac_k[ic]     = kBetaStar * w_c;
+    src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
 }
 
 }
@@ -153,7 +163,9 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["axisym_uy_over_r"],
         cfg.dilatationCorrection,
         var.c_d["res_roK"],
-        var.c_d["res_roOmega"]);
+        var.c_d["res_roOmega"],
+        var.c_d["src_jac_k"],
+        var.c_d["src_jac_omega"]);
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
