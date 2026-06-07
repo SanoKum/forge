@@ -20,6 +20,8 @@
 | [architecture-axisym-nozzle-geometry.md](architecture-axisym-nozzle-geometry.md) | architecture | done | [`docs/axisymmetric/`](../../docs/axisymmetric/) | 軸対称検証ノズルの喉部直後を 5 次多項式で滑らかに接続する geometry 改善 |
 | [architecture-rans-sst.md](architecture-rans-sst.md) | architecture | done | [`docs/turbulence/`](../../docs/turbulence/) | Menter SST (k-ω) を explicit 軸対称ノズル (run_0087〜0090) で 4 段階検証完了。advection・diffusion・source (F1/F2 ブレンド)・渦粘性すべて実装済。軸対称 geometric source は子 plan へ |
 | [architecture-axisym-sst.md](architecture-axisym-sst.md) | architecture | done | [`docs/turbulence/`](../../docs/turbulence/) | 親 SST の子 plan。フープひずみ $2(u_r/r)^2$ (run_0091) + 生産項の圧縮性補正 `dilatationCorrection` (0:off/1:deviatoric/2:+等方項) を実装・段階検証。run_0093(A+B) で k −12%・vis_turb −14% の膨張減衰を確認。既定値 2 (全 SST ケースに適用) |
+| [time_integration-explicit-pointimplicit-sst.md](time_integration-explicit-pointimplicit-sst.md) | time_integration | done | [`docs/time_integration/`](../../docs/time_integration/) | 陽解法 RK (`timeIntegration==1/3`) のスカラー (k/ω) 源項を消散ヤコビアン (`src_jac_k`/`src_jac_omega`) で point-implicit 減衰。block 陰解法と同じ対角を残差増分に適用し、純陽的だと壁近傍 ω で発散する RANS を陽解法 RK で安定化。LES (src_jac=0) は無影響。`case/18.backstep` 2D で検証 |
+
 ## 状態の意味
 
 - `draft` — 設計検討中、実装未着手。

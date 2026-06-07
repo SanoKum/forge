@@ -28,6 +28,27 @@
 
 **`limiter: 0` は原則使用しない。** 意図的に使う場合は理由を明記すること。
 
+## CFL の定義 (`cfl` と `cfl_pseudo`) — 重要
+
+`time.deltaT` には `cfl` と `cfl_pseudo` の 2 つがある。**定常計算 (`unsteady: 0`) と
+二重時間刻み (`dualTime: 1`) では、実際の局所時間刻みを決めるのは `cfl` ではなく
+`cfl_pseudo` である。** これを取り違えないこと。
+
+根拠 ([`setDT_d.cu`](../solver_density_cuda/cuda_forge/setDT_d.cu) の `setDT_d_wrapper`):
+
+- `unsteady == 0` または `dualTime == 1` のとき、局所刻みは `setDTlocal_pseudo_cell_d` で
+  `dt_local = cfl_pseudo * dt / cfl_cell` と設定される。`cfl_cell` は同じ `dt` から計算されるため
+  `dt` が相殺し、**実効局所 CFL = `cfl_pseudo`** になる。
+- `cfg.cfl` は表示用の `cfg.dt` (および `max cfl` 表示) をスケールするだけで、
+  定常計算の積分自体には効かない。したがって定常で `cfl` だけを上げても収束は速くならない。
+
+運用ルール:
+
+- **定常 (`unsteady: 0`) の収束を速めたいときは `cfl_pseudo` を上げる** (例: 陰解法 `blockDPLUR: 1`
+  なら `cfl_pseudo` を 20〜50 程度まで)。`cfl` を上げても無意味。
+- 非定常 (`unsteady: 1`, `dualTime: 0`) の物理時間刻みは `cfl` (または `dt`) で決まる。
+- ログの `max cfl` 表示は `cfg.cfl` に追従する値であり、実効積分 CFL ではない点に注意する。
+
 ## リスタート手順
 
 前の run の結果から引き継ぐ場合は `valueFileName` に該当の `res_*.h5` を指定する。

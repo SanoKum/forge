@@ -11,6 +11,8 @@ struct ScalarTransportDesc {
     flow_float* rho_phi_M;
     flow_float* res_rho_phi;
     flow_float* res_rho_phi_m;
+    flow_float* src_jac;       // SST 消散ヤコビアン対角（k:β*ω, ω:2βω）。陽解法 RK の point-implicit 減衰に使用
+    flow_float floor;          // realizability 下限（ρk≥0, ρω>1e-20）。陰解法 applySSTPointImplicit と整合
     flow_float sigma;
 };
 
@@ -145,14 +147,22 @@ __global__ void runge_kutta_exp_scalar_d(
     flow_float* rho_phi,
     flow_float* rho_phi_N,
     flow_float* rho_phi_M,
-    flow_float* res_rho_phi)
+    flow_float* res_rho_phi,
+    flow_float* src_jac,
+    flow_float floor)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (ic < nCells) {
         const flow_float dt_l = dt_local[ic];
         const geom_float v = vol[ic];
-        rho_phi[ic] = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic] + coef_Res * res_rho_phi[ic] * dt_l / v;
+        // SST 消散項の stiff 性を point-implicit で減衰（src_jac=∂D/∂(ρφ)≥0、乱流なしでは 0 で従来と一致）。
+        // 減衰係数は block 陰解法対角 D_φ=V/Δτ+V·src_jac に Δτ/V を掛けた形と整合。理論は docs/time_integration。
+        const flow_float fac = static_cast<flow_float>(1.0) + coef_Res * dt_l * src_jac[ic];
+        const flow_float updated = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
+                    + (coef_Res * res_rho_phi[ic] * dt_l / v) / fac;
+        // realizability 下限（ρk≥0, ρω>1e-20）。applySSTPointImplicit と整合。乱流なしでは floor 以下にならず無影響。
+        rho_phi[ic] = max(updated, floor);
     }
 }
 
@@ -230,8 +240,8 @@ __global__ void calc_scalar_gradient_div_vol_d(
 std::array<ScalarTransportDesc, 2> buildScalarDescs(variables& var)
 {
     return {{
-        {var.c_d["k"], var.c_d["roK"], var.c_d["roKN"], var.c_d["roKM"], var.c_d["res_roK"], var.c_d["res_roK_m"], static_cast<flow_float>(0.85)},
-        {var.c_d["omega"], var.c_d["roOmega"], var.c_d["roOmegaN"], var.c_d["roOmegaM"], var.c_d["res_roOmega"], var.c_d["res_roOmega_m"], static_cast<flow_float>(0.5)}
+        {var.c_d["k"], var.c_d["roK"], var.c_d["roKN"], var.c_d["roKM"], var.c_d["res_roK"], var.c_d["res_roK_m"], var.c_d["src_jac_k"], static_cast<flow_float>(0.0), static_cast<flow_float>(0.85)},
+        {var.c_d["omega"], var.c_d["roOmega"], var.c_d["roOmegaN"], var.c_d["roOmegaM"], var.c_d["res_roOmega"], var.c_d["res_roOmega_m"], var.c_d["src_jac_omega"], static_cast<flow_float>(1.0e-20), static_cast<flow_float>(0.5)}
     }};
 }
 
@@ -320,7 +330,9 @@ void scalarTimeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& 
                 desc.rho_phi,
                 desc.rho_phi_N,
                 desc.rho_phi_M,
-                desc.res_rho_phi);
+                desc.res_rho_phi,
+                desc.src_jac,
+                desc.floor);
         }
     }
 

@@ -293,6 +293,13 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
 
         flow_float u = M*a;
 
+        // RANS (SST) 用の自由流乱流量シード。冷間始動で roK=roOmega=0 だと
+        // mut=ro*k/omega=0 のまま乱流が立ち上がらないため、freestream 値を与える。
+        // mu_t/mu ~ 10 を目安に k=4.0, omega=500.0 (inlet bcond の k/omega と整合)。
+        // LES (WALE) では roK/roOmega は未使用なので無害。
+        flow_float kIni     = 4.0;
+        flow_float omegaIni = 500.0;
+
         for (geom_int i = 0 ; i<msh.nCells ; i++) {
 
             v.c["ro"][i]   = ro;
@@ -301,6 +308,42 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roUz"][i] = 0.0*ro;
             //v.c["roe"][i] =  pow(1.0+0.5*(gam-1.0)*M*M,-gam/(gam-1.0))*Pt/(gam-1.0) + 0.5*ro*pow((M*a),2.0);
             v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
+            v.c["roK"][i]     = ro*kIni;
+            v.c["roOmega"][i] = ro*omegaIni;
+        }
+
+    } else if (cfg.initial == "flat_plate") {
+        // 乱流平板 (SST 壁法則検証)。入口全圧/全温と M から自由流の静的状態を決め、
+        // 全域を一様流で初期化する。粘性は realistic air (mu~1.8e-5)。
+        // freestream 乱流量が小さすぎると壁近傍で k->0 に固定され SST が相対層流化する
+        // (Pk = mu_t S^2, mu_t=rho a1 k/omega なので k=0 は不動点)。
+        // そこで実績のある naca_ml RANS と同等の乱流レベル (mu_t/mu ~ 60) を与え、
+        // かつ omega を下げて長い領域での自由流減衰を抑える (k=0.3, omega=300)。
+        // inlet bcond の k/omega と一致させること。
+        flow_float gam  = 1.4;
+        flow_float Pt = 100000.0;
+        flow_float Tt = 288.15 ;
+        flow_float M  = 0.2 ;
+
+        flow_float Ps = Pt*pow((1.0+0.5*(gam-1.0)*M*M), -gam/(gam-1.0));
+        flow_float Ts = Tt*pow((1.0+0.5*(gam-1.0)*M*M), -1.0);
+        flow_float ro = gam*Ps/(cfg.cp*(gam-1.0)*Ts);
+        flow_float a = sqrt(gam*Ps/ro);
+
+        flow_float u = M*a;
+
+        // freestream 乱流量: mu_t/mu ~ 60 (naca_ml 相当), omega は減衰抑制のため低め
+        flow_float kIni     = 0.3;
+        flow_float omegaIni = 300.0;
+
+        for (geom_int i = 0 ; i<msh.nCells ; i++) {
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = u*ro;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
+            v.c["roK"][i]     = ro*kIni;
+            v.c["roOmega"][i] = ro*omegaIni;
         }
 
     } else if (cfg.initial == "kusabi") {

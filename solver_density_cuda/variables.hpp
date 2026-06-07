@@ -131,9 +131,9 @@ public:
     };
 
     //not yet implemented
-    const std::list<std::string> read_cellValNames = 
+    const std::list<std::string> read_cellValNames =
     {
-        "ro"  , "roUx"  , "roUy"  , "roUz"  , "roe" , "wall_dist"
+        "ro"  , "roUx"  , "roUy"  , "roUz"  , "roe" , "wall_dist" , "roK" , "roOmega"
     };
 
     variables();
