@@ -67,10 +67,38 @@ run_0004_roe_baseline
 4. `mesh/` に入り、Gmsh で `.geo` から `.msh` を生成する。
 5. 生成した `.msh` を新しい `run_*` ディレクトリへコピーする。
 6. その新しい `run_*` ディレクトリで `convertGmshToForge` を実行し、HDF5 に変換する。
-7. 同じ新しい `run_*` ディレクトリで `forge` を実行する。
-8. 実行後、その新しい `run_*` ディレクトリで `residual_history.csv` から `residual_history.png` を生成する。
+7. 実行する `forge` バイナリが最新ソースで再ビルドされているか確認する (下記「実行前のバイナリ鮮度チェック」)。
+8. 同じ新しい `run_*` ディレクトリで `forge` を実行する。
+9. 実行後、その新しい `run_*` ディレクトリで `residual_history.csv` から `residual_history.png` を生成する。
 
 重要なのは、`solverConfig.yaml` がある新しい `run_*` ディレクトリを起点に変換と実行を行うことです。
+
+## 実行前のバイナリ鮮度チェック (重要)
+
+`forge` を実行するコマンドは `solver_density_cuda/build/forge` を直接呼ぶだけで、**ソースの再ビルドを自動では行わない**。`cuda_forge/*.cu` などを編集した後に古い `build/forge` のまま計算すると、現行ソースと無関係な **stale バイナリの結果が silently に出る** (例: ソース側で実装した乱流モデルが反映されず、結果が壊れて見える)。
+
+`forge` を実行する前に、必ずバイナリがソースより新しいことを確認すること。
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+# build/forge より新しいソースがあれば stale (= 再ビルドが必要)
+find cuda_forge *.cpp *.cu *.hpp -newer build/forge 2>/dev/null
+```
+
+上のコマンドが何か出力したら、計算前に再ビルドする。Docker dev image 内で `tools/build.sh` を使う:
+
+```bash
+cd /home/sano/work/forge
+docker run --rm --gpus all \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD:/workspace" \
+  -e HDF5_INC=/usr/include/hdf5/serial \
+  -e HDF5_LIBDIR=/usr/lib/x86_64-linux-gnu/hdf5/serial \
+  forge-solver:cuda-dev \
+  bash -c "cd /workspace/solver_density_cuda && bash tools/build.sh"
+```
+
+設定変更 (例: `convMethod`) が解に与える影響を診断するときは、まず stale でないバイナリで「変更前設定」を再現する control run を取り、スキーム差とコード世代の差を取り違えないこと。
 
 ## 標準コマンド例
 
@@ -86,6 +114,7 @@ cp case.msh ../run_0004_slau_implicit_check/
 
 # <case>/run_0004_slau_implicit_check で実行
 convertGmshToForge case.msh case.h5
+# forge 実行前に build/forge が stale でないか確認 (「実行前のバイナリ鮮度チェック」参照)
 forge
 python3 /home/sano/work/forge/solver_density_cuda/tools/plot_implicit_residuals.py \
 	--input residual_history.csv \
