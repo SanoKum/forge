@@ -12,6 +12,27 @@
 *.bk
 */build/*
 log
+*.log
+residual_history.csv
+# ビルド成果物 (native / 各種実験ビルド)
+solver_density_cuda/.build-native/
+solver_density_cuda/build-copilot/
+solver_density_cuda/build-verify/
+solver_density_cuda/build-warn/
+solver_density_cuda/build-warn-cxx/
+# ローカル作業用 (エージェントメモリ / 一時 / 外部依存)
+.claude/
+.tmp/
+.external/
+# run 出力データ (再生成可能。commit 対象外)
+implicit_residual_history.csv
+res_wall_*.csv
+line_*.csv
+*.pvsm
+*.qdstrm
+*.nsys-rep
+*.qdrep
+*.sqlite
 solver_heat/*
 solver_smac/*
 solver_smac_cuda/*

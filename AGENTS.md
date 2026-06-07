@@ -10,6 +10,7 @@
 | --- | --- |
 | `AGENTS.md` (本ファイル) | 全ルール・方針の正本。常時参照される基準 |
 | [`.github/forge-calculation-workflow.md`](.github/forge-calculation-workflow.md) | 計算ケース準備・メッシュ生成/変換・`forge` 実行の標準手順 |
+| [`.github/forge-solver-settings.md`](.github/forge-solver-settings.md) | `convMethod` / `limiter` などの数値設定リファレンス |
 | [`.github/forge-development-environment.md`](.github/forge-development-environment.md) | 開発環境とビルド (Docker / WSL native) の方針 |
 | [`.github/forge-coding-conventions.md`](.github/forge-coding-conventions.md) | ソース構成・C++/CUDA 命名規約・ビルド/テスト実行手順 |
 | [`.github/forge-verification-cases.md`](.github/forge-verification-cases.md) | コード変更時の検証ケース選定と確認手順 |
@@ -21,10 +22,13 @@
 
 - 文書本文・コード内コメントは日本語で記述する。
 - 識別子・関数名・スキーム名・ファイルパスなどコード由来の語は原語 (英語) のまま `` `code` `` 表記とする。
+- git commit メッセージは英語の命令形で記述する (識別子・コード由来語は原語のまま)。
 
 ## 計算・実行ルール
 
 計算の実行方法、ケース準備、メッシュ生成、メッシュ変換、`forge` の起動、Docker 経由の Gmsh/ParaView 利用について回答するときは、まず `.github/forge-calculation-workflow.md` を参照し、その手順に合わせて案内すること。計算手順の本文はこのファイルに重複記載しない。
+
+`solverConfig.yaml` の `convMethod`・`limiter` などの数値設定を変更・確認するときは、必ず `.github/forge-solver-settings.md` を参照すること。設定値の意味を記憶や推測で判断しないこと。
 
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。
 また、計算を実行した場合は `residual_history.csv` から `residual_history.png` も生成して残すこと。
@@ -73,3 +77,13 @@ forge の理論的背景と実装解説は `docs/` 配下に機能単位 (物理
 - docs のみの記述補正
 
 判断がつかないときはフローを踏む側を選ぶこと。
+
+## コミット・push 運用
+
+実装または修正が一段落し、検証 (ビルド成功 + 該当検証ケースの結果が妥当) まで確認できたら、その機能・計画単位で git commit し、現在の feature ブランチへ push すること。本節は検証済みマイルストーンでの commit/push を事前承認するものとして扱い、都度の確認は不要とする。
+
+- **commit タイミング**: 機能・計画単位でまとめて commit する。段階検証ごと・小さな編集ごとには commit しない。plan を伴う作業では plan の `status: done` 化と整合させる。
+- **commit 対象**: `solver_density_cuda/` などのソース、`docs/`、`.github/plans/` といった意味あるソース・文書変更を対象とする。`case/` 配下の検証 run 成果物 (`res_*.h5`, `*.xmf`, `residual_history.csv` / `.png`, `forge_run.log` など) は commit に含めない。検証 run の入力 config (`solverConfig.yaml`, `bcondConfig.yaml` 等) は、リファレンスとして意図的に残したい場合のみ明示的に `git add` する。
+- **push**: commit 後は現在の feature ブランチへ push する。`main` へ直接 commit / push しない。`main` 上にいる場合は先に feature ブランチを切ってから作業する。
+- **commit メッセージ**: 英語の命令形で記述する (例: `Add Menter SST turbulence model with dilatation correction`)。
+- 無関係な既存の作業ツリー変更を巻き込まないよう、commit 前に `git status` / `git diff` で対象を確認すること。
