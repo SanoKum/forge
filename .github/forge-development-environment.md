@@ -26,6 +26,30 @@ NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う�
 
 通常の solver 実行は Docker を基準にしてよいが、これらのツールで計測したいときは、まず native 実行へ切り替える。
 
+## 速度評価・ベンチマークは native を既定とする (ルール)
+
+forge の **計算速度を評価・比較・プロファイルする作業は、原則 WSL native / Linux native で行う**。Docker での計測は、計測ツールがイメージに同梱されていなかったり、計測値がコンテナ層の影響で不安定になるため、速度評価の基準環境としない。
+
+対象となる作業:
+
+- 1 ステップあたりの所要時間や `nStep` あたりの total 時間の計測
+- スキーム・設定変更前後の速度比較 (control run を含む)
+- カーネル単位のボトルネック特定 (`ncu` など)
+- 内蔵プロファイラ (`FORGE_PROFILE`) を使ったセクション別計時
+
+native で計測するときの標準手順:
+
+1. `solver_density_cuda/tools/build_native_wsl.sh` で native バイナリ (`.build-native/relwithdebinfo/forge`) を最新ソースから再ビルドする (Docker の `build/forge` とは別物。stale に注意)。
+2. 計測対象の新しい `run_*` ディレクトリで native バイナリを実行する。
+3. セクション別の計時は `FORGE_PROFILE=1` (詳細は `FORGE_PROFILE_VERBOSE=1`) を付けて起動し、正常終了時に出る "Runtime Profile Summary" を読む (summary は正常終了時のみ出力されるため、計測 run は完走する step 数にする)。
+4. カーネル単位の内訳が要るときは `ncu`、タイムラインが要るときは `nsys` を native で使う。
+
+この環境 (WSL2 + Ubuntu, RTX 3060 / CC 8.6) での計測ツールの実情:
+
+- `ncu` (Nsight Compute) は単体で動作する。ウォームアップ後の代表区間に `--launch-skip` / `--launch-count` で絞り、`--metrics gpu__time_duration.sum,sm__throughput.avg.pct_of_peak_sustained_elapsed,gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed` でカーネル別の実時間と compute/memory バウンド傾向を取るのが軽い。
+- `nsys` は target パッケージのみ入っており host 側 importer (`QdstrmImporter`) が無いため、native では `.qdstrm` を収集できても `.nsys-rep` / `.sqlite` への変換・`nsys stats` ができない。タイムラインが必要なときは Windows 側 Nsight Systems GUI で `.qdstrm` を開く (`tools/check_wsl_profile_target.sh` 参照)。当面のカーネル計測は `ncu` と `FORGE_PROFILE` を優先する。
+- `nvprof` は CC 8.0 以上 (RTX 3060 = 8.6) を kernel profiling 対象にできないため使わない。
+
 ## native 実行時の目安
 
 - WSL native / Linux native では `solver_density_cuda/tools/build_native_wsl.sh` をビルドの起点として扱う。

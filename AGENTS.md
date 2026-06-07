@@ -33,7 +33,7 @@
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。
 また、計算を実行した場合は `residual_history.csv` から `residual_history.png` も生成して残すこと。
 
-開発環境に関する既定ルールは `.github/forge-development-environment.md` を参照すること。通常の開発は Docker コンテナを基本とし、NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う場合は、Docker 内でうまくいかないケースを想定して WSL native または Linux native の手順を優先する。
+開発環境に関する既定ルールは `.github/forge-development-environment.md` を参照すること。通常の開発は Docker コンテナを基本とし、NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う場合は、Docker 内でうまくいかないケースを想定して WSL native または Linux native の手順を優先する。さらに、**計算速度の評価・比較・プロファイル作業は原則 native で行う** (Docker は計測値が不安定でツールも揃わないため、速度評価の基準環境としない)。詳細は `.github/forge-development-environment.md` の「速度評価・ベンチマークは native を既定とする」を参照。
 
 コード変更時の検証ケースの選び方と個別の確認手順は `.github/forge-verification-cases.md` を参照すること。
 
