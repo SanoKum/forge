@@ -892,26 +892,6 @@ void advanceOneStep(
         profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
             updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
         });
-        if (cfg.isAxisymmetric == 1 && iStep == 0) {
-            profiler.measureWall(ProfileSection::DependentVariables, [&]() {
-                dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
-            });
-            profiler.measureCuda(ProfileSection::GasProperties, [&]() {
-                gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
-                applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
-            });
-            profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
-                applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
-                calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-            profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-                axisymmetricDiagnostics_d_wrapper(cfg , cuda_cfg , msh , var);
-            });
-        }
         if (!steady_implicit) {
             profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
                 writeStepOutputs(cfg , cuda_cfg , msh , var , pprobes , iStep+1);
