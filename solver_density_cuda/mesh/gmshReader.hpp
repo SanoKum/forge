@@ -1113,10 +1113,68 @@ public:
             icell.centCoords[2] = icell.centCoords[2]/icell.iNodes.size();
         }
 
-        // CW ワインドセルの特定: 2D 多角形の符号付き面積（Shoelace）が負なら CW。
-        // D < 0 だけで判断すると高スキューの CCW セルの面も誤って反転するため、
-        // セル単位で CW を確定し、ic0 が CW のときだけ surfVect を反転する。
+        // 面法線 (surfVect) の向きをそろえる。
+        // - 内部面: cells[ic0] -> cells[ic1] 方向 (D = (cc1-cc0)・sv > 0) にする。
+        // - 境界面: 外向き (Db = (faceCenter - cc0)・sv > 0) にする。
+        //
+        // 3D メッシュ (hex/prism/tet) では純粋な幾何判定を用いる。XY-shoelace による
+        // CW 判定はセル断面が XY 平面に乗る Z 押し出し以外の 3D セルで破綻し、
+        // 境界面・内部面の法線を誤って反転させて偽の勾配を生むため使わない。
+        // 2D メッシュは従来どおり CW(shoelace) ベースの判定を維持する (回帰防止)。
+        if (is3D)
         {
+            int nFixed = 0;
+            int nFixedBnd = 0;
+            for (geom_int i = 0; i < (geom_int)planes.size(); ++i)
+            {
+                auto& pln = planes[i];
+                geom_int ic0 = pln.iCells[0];
+                const auto& cc0 = cells[ic0].centCoords;
+
+                if (pln.iCells.size() == 1)
+                {
+                    // 境界面: 面重心がセル重心の外側に来る向きにそろえる
+                    geom_float fx = 0.0, fy = 0.0, fz = 0.0;
+                    for (geom_int nn : pln.iNodes)
+                    {
+                        fx += nodes[nn].coords[0];
+                        fy += nodes[nn].coords[1];
+                        fz += nodes[nn].coords[2];
+                    }
+                    const geom_float inv = 1.0 / (geom_float)pln.iNodes.size();
+                    fx *= inv; fy *= inv; fz *= inv;
+                    const geom_float Db = (fx - cc0[0])*pln.surfVect[0]
+                                        + (fy - cc0[1])*pln.surfVect[1]
+                                        + (fz - cc0[2])*pln.surfVect[2];
+                    if (Db < 0.0)
+                    {
+                        pln.surfVect[0] = -pln.surfVect[0];
+                        pln.surfVect[1] = -pln.surfVect[1];
+                        pln.surfVect[2] = -pln.surfVect[2];
+                        nFixedBnd += 1;
+                    }
+                    continue;
+                }
+
+                // 内部面: ic0 -> ic1 方向にそろえる
+                const auto& cc1 = cells[pln.iCells[1]].centCoords;
+                const geom_float D = (cc1[0]-cc0[0])*pln.surfVect[0]
+                                   + (cc1[1]-cc0[1])*pln.surfVect[1]
+                                   + (cc1[2]-cc0[2])*pln.surfVect[2];
+                if (D < 0.0)
+                {
+                    pln.surfVect[0] = -pln.surfVect[0];
+                    pln.surfVect[1] = -pln.surfVect[1];
+                    pln.surfVect[2] = -pln.surfVect[2];
+                    nFixed += 1;
+                }
+            }
+            cout << "face orientation fix (3D geometric): internal=" << nFixed
+                 << ", boundary=" << nFixedBnd << "\n";
+        }
+        else
+        {
+            // --- 2D: 従来の CW(shoelace) ベース判定 ---
             std::vector<bool> isCW(cells.size(), false);
             for (geom_int ic = 0; ic < (geom_int)cells.size(); ++ic)
             {
