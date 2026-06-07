@@ -51,6 +51,9 @@ public:
     // for inner loop
     int nStage;
     int nStepInner;
+    int nSubIterDualTime = 20; // dual-time: 物理ステップあたりの擬似時間サブ反復数
+    int bdfOrder = 2;          // dual-time: 物理時間 BDF 次数 (1 or 2、初回ステップは BDF1)
+    flow_float unsteadyDiagCoef = 0.0; // dual-time: 陰解法対角へ加える物理時間項係数 a/Δt（定常は 0）。driver が毎ステップ設定
     std::vector<flow_float> coef_N;
     std::vector<flow_float> coef_M; 
     std::vector<flow_float> coef_Res;

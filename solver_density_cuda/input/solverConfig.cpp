@@ -222,6 +222,9 @@ void solverConfig::read(std::string fname)
             );
         }
         this->nStepInner = getOptionalValidatedValue<int>(config["time"], "nStepInner", 1, "time");
+        // dual-time (非定常陰解法): 1 物理ステップあたりの擬似時間サブ反復数と BDF 次数。
+        this->nSubIterDualTime = getOptionalValidatedValue<int>(config["time"], "nSubIterDualTime", 20, "time");
+        this->bdfOrder = getOptionalValidatedValue<int>(config["time"], "bdfOrder", 2, "time");
 
         // 空間設定
         auto space = config["space"];

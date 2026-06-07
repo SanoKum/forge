@@ -172,19 +172,30 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 出力: 更新後の `Q = (ro, roUx, roUy, roUz, roe)`。
 陰解法では補助バッファ `dq_*_old/new`, `dq_block_old/new_k`, `diag_block_*`, `rhs_block_k`。
 
-## 非定常 dual-time の拡張シーム（後続フェーズ）
+## 非定常 dual-time 陰解法（実装済み 2026-06）
 
-dual-time は本流の構造を作り直さず追加できるよう、本フェーズで次を用意する。
+`advanceImplicitDualTime` ([`main.cpp`](../../solver_density_cuda/main.cpp)) が 1 物理ステップを担当する。
+使用条件 `unsteady=1, dualTime=1, timeIntegration=11, blockDPLUR=1, time.deltaT.control=0`（それ以外は throw）。
 
-- **dispatcher 分岐**: `isImplicit && unsteady → advanceImplicitDualTime`。本体は throw（`// TODO(dual-time):`）。
-- **共有核**: `implicitNonlinearUpdate` を定常・dual-time で共有。dual-time は擬似時間サブ反復として核を複数回呼ぶ。
-- **残差フック**: `assembleResidual` 末尾の `addUnsteadyTimeTerm(ctx)`（BDF 物理時間項を `res_*` と diag に加える。定常は no-op）。第 2 時間レベルは `roNN` 系（[`variables.hpp`](../../solver_density_cuda/variables.hpp) に登録済）。
-- **config 命名分担**: `nStepInner`=DPLUR sweep（本フェーズで確定）、`nStepOuter`=擬似/物理ステップ、`nSubIterDualTime`=擬似時間サブ反復（後続フェーズで追加）。
+1 物理ステップの流れ:
+1. **時間レベルシフト** `shiftDualTimeLevels_d_wrapper`: `roNN←roN`, `roN←ro`（$\mathbf Q^{n-1}\!\leftarrow\!\mathbf Q^n$, $\mathbf Q^n\!\leftarrow$現在）。
+2. **BDF 係数**: 初回ステップ or `bdfOrder==1` は BDF1 $(a,b,c)=(1,1,0)$、以降 BDF2 $(\tfrac32,2,\tfrac12)$。
+   `cfg.unsteadyDiagCoef = a/\Delta t` を設定（陰解法カーネルが対角に $V\cdot$この係数を加える）。
+3. **擬似時間サブ反復** `nSubIterDualTime` 回:
+   - `assembleResidual` → `addUnsteadyTimeTerm_d_wrapper(a,b,c)` で `res_* -= (V/\Delta t)(a\mathbf Q - b\mathbf Q^n + c\mathbf Q^{n-1})`
+     （`include_scalar` で k/ω も）。
+   - `setDT`（擬似 $\Delta\tau$）→ `blockDPLURSolve`（対角に $V\,a/\Delta t$ 込み）。
+   - **in-place commit** `applyBlockImplicitCorrectionInPlace_d_wrapper`（$\mathbf Q\mathrel{+}=\delta\mathbf Q$。`roN`=$\mathbf Q^n$ 固定のため）。
+     RANS のとき `applySSTPointImplicit`（こちらも in-place）。
+4. `cfg.totalTime += \Delta t`、`unsteadyDiagCoef=0` リセット、出力。
+
+実装した CUDA（[`update_d.cu`](../../solver_density_cuda/cuda_forge/update_d.cu)）: `addUnsteadyTimeTerm_d`,
+`applyBlockImplicitCorrectionInPlace_d`, `shiftDualTimeLevels_d`。block/scalar/SST 各カーネルに対角の物理時間係数
+`unsteady_diag` (`cfg.unsteadyDiagCoef`) を追加。第 2 時間レベル `roNN`/`roKNN` 系は [`variables.hpp`](../../solver_density_cuda/variables.hpp) に登録済。
 
 ## 既知の TODO / 注意点
 
-- 非定常 dual-time 陰解法（`tI==11 && unsteady==1`）は本体未実装（dispatcher で throw）。`implicitCorrection_d.cu` の
-  `dualtime_explicit_d` は SLAU/Roe 用補助で本流とは独立、dual-time 実装時に整理対象。
+- 非定常 dual-time 陰解法（`tI==11 && unsteady==1 && dualTime==1`）は実装済（2026-06、`blockDPLUR==1` のみ、物理 $\Delta t$ 固定 `control=0`）。`implicitCorrection_d.cu` の `dualtime_explicit_d` は SLAU/Roe 用の別系統補助で本流とは独立（未使用）。
 - scalar 対角陰解法（`tI==11 && blockDPLUR==0`）は有効（2026-06）。block より低 `cfl_pseudo` で収束も遅いため既定は block（上記比較参照）。
 - block 陰解法でも SST(k/ω) は `applySSTPointImplicit` で segregated point-implicit 更新され、**凍結しない**（2026-06）。消散項のみ陰化、移流・拡散・生産は lagged。
 - `matrix mat_ns` は陰解法では未使用だが非陰解法のシグネチャに残るため `StepContext` に保持（除去は別途）。

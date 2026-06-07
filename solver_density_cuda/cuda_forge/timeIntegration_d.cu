@@ -507,7 +507,10 @@ __global__ void implicit_defect_correction_d
  flow_float* corr_roUx_new,
  flow_float* corr_roUy_new,
  flow_float* corr_roUz_new,
- flow_float* corr_roe_new
+ flow_float* corr_roe_new,
+
+ // dual-time 物理時間項の対角係数 a/Δt（定常は 0）
+ flow_float unsteady_diag
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -575,7 +578,8 @@ __global__ void implicit_defect_correction_d
         }
 
         const flow_float diag = max(
-            static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30))) + diag_face_sum,
+            static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30)))
+                + static_cast<flow_float>(v) * unsteady_diag + diag_face_sum,
             static_cast<flow_float>(1.0e-30)
         );
         const flow_float inv_diag = 1.0 / diag;
@@ -664,7 +668,10 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 
  // 軸対称ソースヤコビアン用（isAxisymmetric==1 のときのみ使用）
  int isAxisymmetric,
- flow_float* A_planar
+ flow_float* A_planar,
+
+ // dual-time 物理時間項の対角係数 a/Δt（定常は 0）
+ flow_float unsteady_diag
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -687,6 +694,8 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         flow_float diag_block[5][5];
         block_dplur::zero5x5(diag_block);
         block_dplur::add_identity_scaled(diag_block, static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30))));
+        // dual-time: 物理時間項 a·V/Δt を対角へ（定常は unsteady_diag==0）。
+        block_dplur::add_identity_scaled(diag_block, static_cast<flow_float>(v) * unsteady_diag);
 
         flow_float rhs[5] = {
             res_ro[ic],
@@ -1003,7 +1012,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"],
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"],
                 cfg.isAxisymmetric,
-                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"]
+                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
+                cfg.unsteadyDiagCoef
             );
         } else {
             implicit_defect_correction_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
@@ -1054,7 +1064,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["dq_roUx_new"],
                 var.c_d["dq_roUy_new"],
                 var.c_d["dq_roUz_new"],
-                var.c_d["dq_roe_new"]
+                var.c_d["dq_roe_new"],
+                cfg.unsteadyDiagCoef
             );
         }
         // 古典 DPLUR: buffer swap と Q への commit はドライバ側 (main.cpp blockDPLURSolve /

@@ -895,16 +895,66 @@ void advanceImplicitSteady(StepContext& s)
     s.residual_logger.logOuterEnd(s.iStep);
 }
 
-// 非定常 dual-time 陰解法。構造（共有核 implicitNonlinearUpdate・残差の BDF フック・config 命名分担）は
-// 用意済みだが本体は次フェーズ。誤用を防ぐため明確に throw する。
-[[noreturn]] void advanceImplicitDualTime(StepContext& s)
+// 非定常 dual-time 陰解法。1 物理ステップ = 時間レベルシフト → 擬似時間サブ反復（BDF 物理時間項つき
+// 非線形更新を nSubIterDualTime 回）→ 物理時間前進。BDF1（初回）/ BDF2（以降, bdfOrder==2 のとき）。
+void advanceImplicitDualTime(StepContext& s)
 {
-    (void)s;
-    // TODO(dual-time): setTimeLevels(roNN←roN, roN←ro) → 擬似時間サブ反復で implicitNonlinearUpdate を
-    // 複数回呼ぶ（assembleResidual の addUnsteadyTimeTerm で BDF 物理時間項を加算）→ 物理時間前進。
-    throw std::runtime_error(
-        "Unsteady dual-time implicit (timeIntegration==11 && unsteady==1) is not implemented yet. "
-        "It is planned for the next phase. Use unsteady==0 for steady block DPLUR implicit.");
+    if (s.cfg.dualTime != 1) {
+        throw std::runtime_error(
+            "Unsteady implicit (timeIntegration==11 && unsteady==1) requires dualTime=1.");
+    }
+    if (s.cfg.blockDPLUR != 1) {
+        throw std::runtime_error(
+            "Dual-time implicit currently supports blockDPLUR=1 (5x5 block) only.");
+    }
+    if (s.cfg.dtControl != 0) {
+        // 物理 Δt は固定でなければならない（setDT が cfg.dt を CFL 適応すると BDF 項が壊れる）。
+        throw std::runtime_error(
+            "Dual-time implicit requires time.deltaT.control=0 (fixed physical dt).");
+    }
+
+    // 物理時間レベルシフト: roNN ← roN, roN ← ro（現在の ro = Q^n）。
+    s.profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
+        shiftDualTimeLevels_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    });
+
+    // BDF 係数: 初回ステップ or bdfOrder==1 は BDF1 (1,1,0)、以降 BDF2 (3/2,2,1/2)。
+    const bool useBDF2 = (s.cfg.bdfOrder >= 2) && (s.iStep > 0);
+    const flow_float a = useBDF2 ? static_cast<flow_float>(1.5) : static_cast<flow_float>(1.0);
+    const flow_float b = useBDF2 ? static_cast<flow_float>(2.0) : static_cast<flow_float>(1.0);
+    const flow_float c = useBDF2 ? static_cast<flow_float>(0.5) : static_cast<flow_float>(0.0);
+    const int include_scalar = scalarResidualEnabled(s.cfg) ? 1 : 0;
+    // 対角へ加える物理時間項係数 a/Δt（block/scalar/SST カーネルが cfg 経由で参照）。
+    s.cfg.unsteadyDiagCoef = a / std::max(s.cfg.dt, static_cast<flow_float>(1.0e-30));
+
+    const int nSub = std::max(1, s.cfg.nSubIterDualTime);
+    for (int m = 0; m < nSub; ++m) {
+        assembleResidual(s, 1);
+        // 残差に物理時間 BDF 項を加える: res* = res - (V/Δt)(a Q - b Q^n + c Q^{n-1})。
+        addUnsteadyTimeTerm_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var, a, b, c, include_scalar);
+        logResidualSnapshot(s, m);
+        s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
+            setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+        });
+        blockDPLURSolve(s);
+        // dual-time の commit は in-place（roN=Q^n は BDF 基準で固定のため roN+dq は使えない）。
+        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+            applyBlockImplicitCorrectionInPlace_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        });
+        if (include_scalar) {
+            s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+                applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+            });
+        }
+    }
+
+    s.cfg.unsteadyDiagCoef = 0.0; // 定常側へ影響しないようリセット
+    s.cfg.totalTime += s.cfg.dt;
+
+    s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
+        writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
+    });
+    s.residual_logger.logOuterEnd(s.iStep);
 }
 
 void advanceOneStep(

@@ -132,7 +132,14 @@ __global__ void applySSTPointImplicit_d
  flow_float* res_roK,
  flow_float* res_roOmega,
  flow_float* src_jac_k,
- flow_float* src_jac_omega
+ flow_float* src_jac_omega,
+ flow_float unsteady_diag
 );
 
 void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// dual-time: 物理時間 BDF 項を残差に加える / in-place commit / 時間レベルシフト。
+void addUnsteadyTimeTerm_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var,
+                                   flow_float a, flow_float b, flow_float c, int include_scalar);
+void applyBlockImplicitCorrectionInPlace_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+void shiftDualTimeLevels_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

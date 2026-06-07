@@ -316,4 +316,6 @@ SST (k/ω) を **segregated point-implicit** で実装済み（7×7 連成では
 
 - 2026-06: **scalar 対角版 (`blockDPLUR==0`) を有効化**。古典 DPLUR 制御フローに対応（`blockDPLURSolve` を blockDPLUR で分岐、`swapScalarImplicitCorrectionBuffers` 追加、commit は `applyScalarImplicitCorrection`）、config の reject を撤廃（0/1 を受理）。対角はスカラー スペクトル半径 $D=V/\Delta\tau+\sum_f(|U_n|+c+\rho^\nu)S_f$。検証 (`case/20.naca_ml`): 収束先は block と同一（収束場保持・壁面静圧平均 0.02% 一致）だが近似が粗く**安定 cfl_pseudo が大幅に低い**（scalar ≲ 1〜2 vs block 20〜50）。supercritical 始動では block が cfl_pseudo=20/4000step/25s で roe→0.5 収束する一方、scalar は cfl_pseudo=1/12000step でも未収束・過渡オーバーシュート大（roe ピーク ~186 vs ~85）。**収束は block より遅い**。位置づけ: block DPLUR を既定、scalar 対角は 5×5 を避けたい軽量・低レジスタ用途のフォールバック。
 
-- 残: dual-time 非定常本体は後続フェーズ。
+- 2026-06: **非定常 dual-time 陰解法を実装**。`advanceImplicitDualTime` が 1 物理ステップ = 時間レベルシフト (`shiftDualTimeLevels_d`) → 擬似時間サブ反復 `nSubIterDualTime` 回（各回: `assembleResidual` + BDF 物理時間項 `addUnsteadyTimeTerm_d` (`res*=res-(V/Δt)(aQ-bQ^n+cQ^{n-1})`) + block DPLUR (対角に `aV/Δt` を `cfg.unsteadyDiagCoef` 経由で加算) + in-place commit `applyBlockImplicitCorrectionInPlace_d`) → 物理時間前進。BDF1(初回)/BDF2(以降)、SST k/ω も BDF＋point-implicit 対応。config: `nSubIterDualTime`(既定20), `bdfOrder`(既定2)。使用条件 `unsteady=1,dualTime=1,blockDPLUR=1,control=0`。検証 (`case/20.naca_ml`): 各物理ステップで擬似サブ反復が R* を ~4 桁低減（rms_roe 22.9→0.0035, ~10 反復で収束）、陽解法 CFL 上限超の Δt でも安定（Δt=2e-6 vs 陽解法限界 ~9e-7）、同一 Δt=5e-7 で陽解法時間精度解と壁面静圧一致（平均 0.006%, 最大 0.2%=RK3/BDF2 の O(Δt²) スキーム差）。
+
+- 残: dual-time の scalar 対角版 (`blockDPLUR==0`) 対応、より厳密な非定常検証ケース（渦放出等）は後続。

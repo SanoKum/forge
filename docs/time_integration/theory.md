@@ -6,10 +6,10 @@ forge の時間積分は次の 3 系統を提供する。
 | --- | --- |
 | `1` / `3` | Jameson 型多段陽解法 (擬時間ステップ) |
 | `4` | 4 段 4 次 Runge–Kutta (低 storage、係数は `coef_DT_4thRunge`, `coef_Res_4thRunge`) |
-| `11` | 陰解法 (block DPLUR、簡易 Jacobian)。現状 `blockDPLUR == 1`（5×5 ブロック）のみ有効。定常を実装、非定常 dual-time は後続フェーズ |
+| `11` | 陰解法 (block DPLUR、LU-SGS $A^\pm$)。`blockDPLUR`=1(5×5 ブロック, 既定)/0(スカラー対角)。定常・非定常 dual-time とも実装済 |
 
 > **実装状態 (2026-06)**: `timeIntegration == 11` は **block DPLUR (`blockDPLUR == 1`)・定常 (`unsteady == 0`)** のみを正式サポートする。
-> スカラー対角版 (`blockDPLUR == 0`) は一時的に無効化 (config で reject)、非定常 dual-time (`unsteady == 1`) は構造のみ用意し本体は未実装 (reject)。いずれも後続フェーズで有効化する。
+> スカラー対角版 (`blockDPLUR == 0`) も有効（block より低 `cfl_pseudo`・低速）。非定常 dual-time (`unsteady=1 && dualTime=1`) も実装済（`blockDPLUR=1` のみ、物理 $\Delta t$ 固定）。
 
 ## 共通枠組み
 
@@ -111,9 +111,7 @@ sweep 間で `dq_old`/`dq_new` バッファを入れ替える。全 sweep 後に
 定常計算はメインループ（擬似時間）を回し、1 ステップあたり 1 回の非線形更新
 （残差構築 → DPLUR sweep ×`nStepInner` → commit）を行う。
 
-## 非定常 dual-time 陰解法 (後続フェーズ)
-
-> 本体は未実装。定常がその縮退形になるよう構造のみ用意する。
+## 非定常 dual-time 陰解法 (実装済み 2026-06)
 
 非定常は物理時間 $t$ に対し BDF（後退差分）で物理時間微分項を残差に加え、各物理ステップ内で
 擬似時間サブ反復により残差を収束させる二重時間刻み法を用いる。残差は
@@ -126,11 +124,21 @@ $$
 第 2 時間レベル $\mathbf{Q}^{n-1}$ は `roNN` 系に保持する。擬似時間サブ反復・DPLUR sweep の構造は定常と共有する
 （3 階層: 物理ステップ × 擬似時間サブ反復 × DPLUR sweep。定常は前 2 つが縮退）。
 
-| config (後続フェーズで追加) | 意味 |
+| config | 意味 |
 | --- | --- |
 | `nStepOuter` | 物理時間ステップ数 |
-| `nSubIterDualTime` | 物理ステップ内の擬似時間サブ反復数 |
-| `nStepInner` | DPLUR sweep 回数（定常と同義） |
+| `nSubIterDualTime` | 物理ステップ内の擬似時間サブ反復数（既定 20） |
+| `bdfOrder` | 物理時間 BDF 次数 (1 or 2、初回ステップは自動的に BDF1) |
+| `nStepInner` | 各サブ反復内の DPLUR sweep 回数（定常と同義） |
+
+使用条件: `unsteady=1, dualTime=1, timeIntegration=11, blockDPLUR=1, time.deltaT.control=0`（物理 $\Delta t$ 固定）。
+擬似時間 $\Delta\tau$ は `cfl_pseudo` から決まり（物理 $\Delta t$ とは独立）、物理 $\Delta t$ は固定。
+commit は in-place（$\mathbf Q \leftarrow \mathbf Q + \delta\mathbf Q$。`roN`=$\mathbf Q^n$ は BDF 基準で固定のため）。
+
+> **検証 (2026-06, `case/20.naca_ml`)**: 各物理ステップ内で擬似サブ反復が $\mathbf R^*$ を ~4 桁低減
+> （例: rms_roe 22.9→0.0035, サブ反復 ~10 で収束）。陽解法 CFL 上限を超える $\Delta t$ でも安定
+> （$\Delta t{=}2\times10^{-6}$, 陽解法安定限界 ~$9\times10^{-7}$）。同一 $\Delta t{=}5\times10^{-7}$ では陽解法
+> 時間精度解と壁面静圧が一致（平均 0.006%、最大 0.2% は RK3 と BDF2 の時間スキーム差 $O(\Delta t^2)$）。
 
 ## スカラー (k/ω) の陰解法 (segregated point-implicit)
 
