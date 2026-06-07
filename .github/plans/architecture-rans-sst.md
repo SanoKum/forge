@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - [`docs/turbulence/theory.md`](../../docs/turbulence/theory.md)
   - [`docs/turbulence/implementation.md`](../../docs/turbulence/implementation.md)
@@ -113,12 +113,16 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
 
 - [x] 関連 `docs/turbulence/theory.md` 追加済み
 - [x] 関連 `docs/turbulence/implementation.md` 追加済み
-- [ ] generic scalar transport 基盤の初回実装と advection-only 検証完了
-- [ ] turbulence scalar boundary layer の分離完了
-- [ ] SST source layer の分離完了
-- [ ] `.github/plans/README.md` の状態を `done` に更新
-- [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
-- [ ] 軸対称 SST の子 plan を起票
+- [x] generic scalar transport 基盤の初回実装と advection-only 検証完了 (run_0087)
+- [x] turbulence scalar boundary layer の分離完了 (`ransScalarBoundary_d.*`, `applyRansScalarBoundaries`)
+- [x] SST source layer の分離完了 (`ransSource_d.*` に production/destruction/cross-diffusion + F1/F2 実装)
+- [x] k/omega 勾配計算の実装 (`calcScalarGradient_d_wrapper` in `scalarTransport_d.*`)
+- [x] SST 渦粘性計算の実装 (`sst_eddy_viscosity_d` in `turbulent_viscosity_d.cu`)
+- [x] Stage 3+4 統合検証完了 (run_0089 — 10000 steps, vis_turb max=0.335 確認)
+- [x] 次ステップ run_0090 検証完了 (20000 steps 合計, rms_roK 0.885→0.062, rms_roOmega 15.5→5.5)
+- [x] `.github/plans/README.md` の状態を `done` に更新
+- [x] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
+- [x] 軸対称 SST の子 plan を起票 ([`architecture-axisym-sst.md`](architecture-axisym-sst.md))
 
 ## 9. 変更ログ
 
@@ -126,3 +130,15 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
 - `2026-06-06` — 実装方針を更新。SST 専用 kernel 群ではなく generic scalar transport 基盤を採用し、初回マイルストーンを advection-only に再定義。
 - `2026-06-06` — scalar transport に face ベース diffusion を追加し、`k` / `omega` の輸送を advection + diffusion の 2 段階で回す実装へ進めた。
 - `2026-06-06` — 今後の凝縮・液滴・複数 scalar 拡張を見据え、`scalarTransport_d.*` は共通輸送コアに限定し、SST 固有の boundary / source / closure は model-specific layer に分離する方針へ更新した。
+- `2026-06-07` — 段階検証を完遂。`scalarDiffusion` config フラグ追加 (solverConfig)、`calcScalarGradient_d_wrapper` 追加 (k/ω Green-Gauss 勾配)、`ransSource_d.cu` に SST 生産・消滅・交差拡散 + F1/F2 ブレンドを実装、`turbulent_viscosity_d.cu` に SST 渦粘性 (`sst_eddy_viscosity_d`) を実装した。
+  - Stage 1 (advection-only, run_0087): k/ω 残差が正常低下 → 輸送確認済み
+  - Stage 2 (advection+diffusion, run_0088): 拡散有効化後も安定 → 拡散確認済み
+  - Stage 3+4 (source+eddy viscosity, run_0089): vis_turb min=1.3e-19→max=0.335 確認、rms_roK=0.886、rms_roOmega=15.5
+- `2026-06-07` — run_0090 (full SST継続検証, 10000→20000 steps合計):
+  - rms_ro: 2.44e-5 → 1.87e-6 (13倍改善)
+  - rms_roK: 0.885 → 0.062 (14倍改善)
+  - rms_roOmega: 15.5 → 5.5 (3倍改善)
+  - vis_turb: 全セルで正値 (min=2.66e-7, max=0.344, mean=0.027)
+  - k: min=0.004, max=6.83e4, mean=7160 (負値なし)
+  - omega: min=88, max=1.96e8 (壁面近傍で大値、物理的に妥当)
+  - SST モデルの段階検証 (run_0087〜0090) すべて完了。plan status → done。

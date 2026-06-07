@@ -10,9 +10,10 @@ fi
 
 mkdir -p build
 cd build
+build_jobs="${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}"
 cmake -G Ninja \
 	-DCMAKE_BUILD_TYPE=Release \
 	-Dhdf5_inc="$HDF5_INC" \
 	-Dhdf5_libdir="$HDF5_LIBDIR" \
 	..
-cmake --build . -j
+cmake --build . -j"$build_jobs"

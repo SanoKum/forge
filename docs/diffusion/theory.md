@@ -56,6 +56,20 @@ $\overline{(\cdot)}_f = f_x (\cdot)_{c_0} + (1-f_x)(\cdot)_{c_1}$。
 両側セルに $\pm$ で加算する。エネルギ束も同様に $\tau_{ij} u_i$ と
 $\kappa (\partial_j T)$ を組み合わせる。
 
+> **重要 — 法線項はスカラー係数で評価する。** 上式の法線差分項
+> $(u_i^{c_1}-u_i^{c_0})/|\mathbf{d}|\cdot\Delta_j$ で各成分 $i$ に掛かるのは、
+> over-relaxed の**スカラー** $\beta = |\mathbf{S}|^2/(\mathbf{d}\cdot\mathbf{S})$ である。
+> すなわち $\mu\,\nabla u_i\cdot\mathbf{S}$ の法線寄与は
+> $\mu\,\beta\,(u_i^{c_1}-u_i^{c_0})$(全成分共通のスカラー $\beta$)であり、
+> 熱伝導束 $\kappa\,\beta\,(T^{c_1}-T^{c_0})$ と同型である。
+> 速度成分ごとに $\boldsymbol\Delta$ の**自身の座標成分** $\Delta_i$ を掛けると
+> (例: $\tau_x$ に $\Delta_x$)、軸平行な $y$ 法線面で $\Delta_x=0$ となり
+> 流れ方向運動量の横方向拡散 $\mu\,\partial u_x/\partial y$ が落ちる。
+> Laplacian 接線補正 $\overline{\nabla u_i}_f\cdot\mathbf{k}$ は**同一成分** $u_i$ の勾配
+> $\overline{\partial u_i/\partial x_j}\,k_j$ を用いる。転置寄与 $\mu\,\partial u_j/\partial x_i\,S_j$ は
+> 別項として面平均勾配にフル $\mathbf{S}$ を内積して加える。実装は
+> [implementation.md](implementation.md) を参照。
+
 ## 粘性係数
 
 - 層流粘性 $\mu_{\text{lam}}$: 設定値 (`cfg.visc`、定数) を使用。
@@ -68,6 +82,25 @@ $\kappa (\partial_j T)$ を組み合わせる。
 非滑り条件下の壁面では速度がゼロとなる。壁面用カーネル `viscousFlux_wall_d` で
 壁面距離 (ghost cell までの法線距離) を使って粘性応力を片側差分で評価する。
 これにより内部面ループでは未処理の壁面寄与を補う。
+
+壁面でも粘性束は内部面と**同じ** $\tau_{ij} n_j$ の評価でなければならない。
+すなわち運動量 $i$ 成分に対し
+
+$$
+F^{\text{visc}}_i = \tau_{ij}\, S_j
+= \mu\!\left(\frac{\partial u_i}{\partial x_j} + \frac{\partial u_j}{\partial x_i}\right) S_j
+- \frac{2}{3}\mu (\nabla\cdot\mathbf{u})\, S_i .
+$$
+
+平板チャネル等の軸平行壁 (法線 $\mathbf{n}=\pm\mathbf{e}_y$) では、壁摩擦の主項は
+$\tau_{xy} S_y = \mu\,(\partial u_x/\partial y)\, S_y$ という**せん断 (off-diagonal) 成分**であり、
+これがストリーム方向運動量 $\rho u_x$ への no-slip 抗力を与える。
+したがって法線差分 $(u_i^{g}-u_i^{c})/|\mathbf{d}|$ は内部面と同じく
+over-relaxed 係数 $\Delta_i$ (直交格子では $\Delta_i = S_i$、すなわち面積 $S$ に法線
+単位ベクトルを掛けたもの) と組み合わせ、$\tau_{ij}S_j$ として評価する必要がある。
+速度成分ごとに自身の座標成分 $S_i$ のみを掛ける ($\tau_x \propto S_x$ 等) と、
+軸平行壁では主せん断項が落ちて壁摩擦がゼロになる (この不具合は 2026-06-06 に修正済み。
+実装は [implementation.md](implementation.md) を参照)。
 
 ## 参考
 

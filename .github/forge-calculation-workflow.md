@@ -92,6 +92,8 @@ python3 /home/sano/work/forge/solver_density_cuda/tools/plot_implicit_residuals.
 	--output residual_history.png
 ```
 
+Docker 経由で上記を手動実行する場合は、必ず `--user "$(id -u):$(id -g)"` を付けること (詳細は `.github/forge-development-environment.md` のファイル所有者ルールを参照)。
+
 読み替えポイント:
 
 - `input.geo`: 実際のジオメトリ入力ファイル名

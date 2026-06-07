@@ -165,6 +165,194 @@ docker build -f Dockerfile.cuda.dev -t forge-solver:cuda-dev .
 
 On native Linux, you may still need to adjust environment variables or mounts depending on your desktop session.
 
+## Profiling helpers
+
+The repository now includes host-side wrapper scripts for NVIDIA profiling tools in `tools/`.
+
+### Nsight Systems
+
+Use this when you want a timeline view of:
+
+- CUDA kernel launch order
+- CPU wait time and synchronization
+- memcpy activity
+- overall GPU busy time
+
+Command pattern:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+./tools/run_nsys_profile.sh /home/sano/work/forge/case/08.bump/run_slau_mach1.65_4pctHt
+```
+
+Current repository state:
+
+- the wrapper script is present
+- the current `forge-solver:cuda-dev` image does not yet include `nsys`
+- if you run the wrapper now, it will stop with a clear error instead of failing silently
+
+That means the maintained path today is:
+
+1. use the built-in `FORGE_PROFILE=1` runtime summary for coarse timings
+2. use `run_ncu_profile.sh` for kernel-level GPU efficiency metrics
+3. add Nsight Systems to the image later if timeline analysis becomes necessary
+
+Outputs are written under the case directory:
+
+```bash
+case/08.bump/run_slau_mach1.65_4pctHt/profiles/nsys/
+```
+
+This wrapper enables `FORGE_PROFILE=1` by default, so the solver's runtime section summary is captured in the same run.
+
+If the case directory already contains `res_*.h5` or `res_*.xmf` files owned by `root`, the wrapper will stop before launching and tell you to remove or `chown` them. This avoids waiting through startup only to fail at the first output write.
+
+### Nsight Compute
+
+Use this when you want kernel-level efficiency metrics such as:
+
+- achieved occupancy
+- SM utilization
+- memory throughput
+- scheduler stall reasons
+
+Command pattern:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+./tools/run_ncu_profile.sh /home/sano/work/forge/case/08.bump/run_slau_mach1.65_4pctHt
+```
+
+You can also narrow the profile to specific kernels:
+
+```bash
+./tools/run_ncu_profile.sh \
+	/home/sano/work/forge/case/08.bump/run_slau_mach1.65_4pctHt \
+	'SLAU_d|viscousFlux_d|calcGradient_2_d'
+```
+
+For a quick profiling run without touching the source case, use temporary overrides:
+
+```bash
+FORGE_NCU_NSTEP=1 \
+FORGE_NCU_OUTSTEP_INTERVAL=1000000 \
+NCU_LAUNCH_COUNT=1 \
+./tools/run_ncu_profile.sh \
+	/home/sano/work/forge/case/08.bump/run_slau_mach1.65_4pctHt \
+	'SLAU_d'
+```
+
+Outputs are written under:
+
+```bash
+case/08.bump/run_slau_mach1.65_4pctHt/profiles/ncu/
+```
+
+Like the Nsight Systems wrapper, this script pre-checks whether existing result files in the case directory are writable by the current host user.
+
+If `ncu` stops with `ERR_NVGPUCTRPERM`, the container setup is not the issue. That error means the host NVIDIA driver is blocking access to GPU performance counters. In that case, ask the host admin to allow profiling counters or configure the NVIDIA kernel module with `NVreg_RestrictProfilingToAdminUsers=0`.
+
+For a practical workflow, use `run_nsys_profile.sh` first to identify the heaviest kernels, then use `run_ncu_profile.sh` with a narrow kernel regex to inspect GPU efficiency in detail.
+
+Given the current image contents, replace that workflow with `FORGE_PROFILE=1` plus `run_ncu_profile.sh` unless you explicitly extend the image to add `nsys`.
+
+## Windows Nsight Compute via WSL target
+
+Docker is still the maintained execution environment for this repository, and it is fine for:
+
+- building the solver
+- running cases
+- launching Gmsh and ParaView
+- collecting the coarse runtime summary added through `FORGE_PROFILE=1`
+
+The current issue is narrower than that: in this workspace's WSL2 + WDDM + Docker setup, `ncu` inside the container reaches the target process, but kernel profiling fails with `Failed to prepare kernel for profiling` / `Unknown Error on device 0`.
+
+That does not prove Docker profiling is impossible in general. It only means this environment is not currently reliable for Nsight Compute kernel collection.
+
+If you want Windows-side Nsight Compute to inspect GPU efficiency, the safer path is:
+
+1. install Nsight Compute on Windows
+2. build and run `forge` natively inside WSL instead of inside Docker
+3. use Windows Nsight Compute to remote-launch the WSL target over SSH
+
+Why use a native WSL target for Nsight Compute:
+
+- it removes one moving part from the profiling path
+- it matches NVIDIA's documented Windows host -> Linux target workflow
+- it avoids depending on container-side tool behavior when the target kernel replay is already unstable
+
+### WSL target prerequisites
+
+Check the current WSL readiness with:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+./tools/check_wsl_profile_target.sh
+```
+
+Typical packages needed in WSL:
+
+```bash
+sudo apt update
+sudo apt install -y \
+	build-essential cmake ninja-build gfortran pkg-config git \
+	python3 python3-pip python3-h5py \
+	libhdf5-dev libyaml-cpp-dev libmetis-dev \
+	openssh-server
+```
+
+You also need a CUDA toolkit installed inside WSL so that `nvcc` exists. On WSL, use the WSL-Ubuntu CUDA toolkit path from NVIDIA and avoid installing Linux driver meta-packages such as `cuda`, `cuda-12-x`, or `cuda-drivers` inside WSL.
+
+### Native WSL build
+
+After the prerequisites are installed:
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+git submodule update --init --recursive
+./tools/build_native_wsl.sh
+```
+
+This builds into:
+
+```bash
+solver_density_cuda/build/native-relwithdebinfo/
+```
+
+### Expose WSL as a profiling target
+
+Windows Nsight Compute uses SSH for remote Linux targets, so enable `sshd` inside WSL:
+
+```bash
+sudo service ssh start
+```
+
+If you want it to come up automatically when WSL starts, configure your preferred WSL/systemd startup flow for `sshd`.
+
+### Launch flow with Windows Nsight Compute
+
+Once Windows Nsight Compute is installed:
+
+1. add your WSL instance as a Linux remote target via SSH
+2. set the application executable to the native WSL build output:
+
+```bash
+/home/sano/work/forge/solver_density_cuda/build/native-relwithdebinfo/forge
+```
+
+3. set the working directory to the case directory you want to run, for example:
+
+```bash
+/home/sano/work/forge/case/08.bump/run_slau_mach1.65_4pctHt
+```
+
+4. use a short run configuration first, then widen the metric set only after one `.ncu-rep` is collected successfully
+
+Recommended interpretation:
+
+- Docker remains the default path for normal development and case execution
+- native WSL is the preferred path only for Nsight Compute collection if the container path stays unstable
+
 ## Implementation notes
 
 - Source is bind-mounted from host to `/workspace`.

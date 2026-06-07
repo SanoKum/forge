@@ -44,10 +44,50 @@ CPU 経路の独立実装は無く、GPU 経路のみで運用される。
 
 エネルギ残差には `tau_x*Uxf + tau_y*Uyf + tau_z*Uzf` (応力仕事) と `heatflux` を加える。
 
+各運動量成分 $i$ の応力 `tau_i` は完全な Newton 応力 $\tau_{ij}S_j$ を3項で構成する
+([L105-123](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu#L105)、熱伝導束と同型):
+
+```cpp
+// 例: tau_x (i=x)
+tau_x  = mu*((Ux1-Ux0)/dcc)*delta;                  // (1) Laplacian 法線 (スカラー delta)
+tau_x += mu*(dUxdxf*k_x + dUxdyf*k_y + dUxdzf*k_z); // (2) Laplacian 接線補正 (同成分 ∂u_x/∂x_j)
+tau_x += mu*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz); // (3) 転置 ∂u_j/∂x にフル S
+tau_x += -mu*2.0/3.0*divu*sxx;                      // (4) 発散項 (成分 S_x)
+```
+
+(1)+(2) が $\mu\,\nabla u_i\!\cdot\!\mathbf{S}$ の over-relaxed 評価、(3) が転置 $(\nabla u)^T$ 寄与、
+(4) が Stokes 仮定の体積粘性。`tau_y`/`tau_z` は成分を入れ替えて同型。
+
+> **履歴 (2026-06-06 修正)** — 以前は法線項に**成分** `delta_x`(`=dcc_x·β`)を使い、
+> 接線項の勾配添字が転置になっており、(3) の転置項もコメントアウトされていた。このため
+> 軸平行な $y$ 法線面で `delta_x=0` → 流れ方向運動量の横方向拡散 $\mu\,\partial u_x/\partial y$ が
+> 落ち、後述の壁面 `*sxx` 不具合と相まって境界層が形成されなかった。
+> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md)。
+
 ## `viscousFlux_wall_d` ([L150](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu#L150))
 
 各壁面境界に対し、ゴーストセル `ig` と内部セル `ic` 間の片側差分で粘性応力を構築。
 ラッパは `for (auto& bc : msh.bconds)` ループでこのカーネルを発行する。
+`wall` / `wall_isothermal` の両 BC が同じこのカーネルを共有する。
+
+ミラーゴースト (`Ux[ig]=-Ux[ic]`、`boundaryCond_d.cu` の `wall_d`) では $\mathbf{d}\parallel\mathbf{S}$
+なので over-relaxed の `delta = sss`・`k = 0` となり、内部面と同じ $\tau_{ij}S_j$ を:
+
+```cpp
+tau_x  = mu*((Ux[ig]-Ux[ic])/dcc)*sss;              // 法線項 (面積 sss)
+tau_x += mu*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz); // 転置項 (セル中心勾配にフル S)
+tau_x += -mu*2.0/3.0*divu*sxx;                      // 発散項
+```
+
+として構成する。`twall_x_b = tau_x/sss` 等が物理的な壁面せん断 (ストリーム方向) を表す。
+
+> **履歴 (2026-06-06 修正)** — 以前は法線項を成分別に `tau_x ∝ sxx`(`tau_y ∝ syy`,
+> `tau_z ∝ szz`)で組み、転置項もコメントアウトされていた。軸平行な水平壁 (法線 = $y$,
+> `sxx`≈0) では x 運動量の壁摩擦 `tau_x ∝ sxx = 0` となり、ストリーム方向の no-slip 抗力が
+> 一切かからなかった (`twall_x ≡ 0`・`twall_y` のみ非ゼロ)。case 24 で SU2 laminar 参照の
+> 放物線に対し ~18 m/s の滑り台座を持つプラグ流・流量約2倍・Mach 過大評価となっていた。
+> 修正後は壁隣接セル Ux≈0.24 m/s・中心/平均比 1.53・流量 SU2 比約9%差・`twall_x` 非ゼロ。
+> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md)。
 
 ## 入出力
 

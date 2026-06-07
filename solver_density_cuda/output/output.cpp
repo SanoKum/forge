@@ -14,6 +14,19 @@
 
 using HighFive::File;
 
+namespace {
+
+flow_float outputTimeValue(const solverConfig& cfg, int iStep)
+{
+    if (cfg.unsteady == 1) {
+        return cfg.totalTime;
+    }
+
+    return static_cast<flow_float>(iStep);
+}
+
+}
+
 void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep)
 {
     if (iStep%cfg.outStepInterval != 0 or iStep < cfg.outStepStart) return;
@@ -105,7 +118,7 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
     ofs << "<Xdmf>\n";
     ofs << "  <Domain>\n";
     ofs << "    <Grid GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
-    ofs << "    <Time TimeType='Single' Value='" << cfg.totalTime <<"'/> \n";
+    ofs << "    <Time TimeType='Single' Value='" << outputTimeValue(cfg, iStep) <<"'/> \n";
     ofs << "      <Grid Name='gridooo'>\n";
     ofs << "        <Topology Type='Mixed' NumberOfElements='" << msh.nCells << "'>\n";
     ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
@@ -309,7 +322,7 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         ofs << "<Xdmf>\n";
         ofs << "  <Domain>\n";
         ofs << "    <Grid  GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
-        ofs << "    <Time TimeType='Single' Value='" << cfg.totalTime << "'/> \n";
+        ofs << "    <Time TimeType='Single' Value='" << outputTimeValue(cfg, iStep) << "'/> \n";
         ofs << "      <Grid Name='wall'>\n";
         ofs << "        <Topology Type='Mixed' NumberOfElements='" << bc.iPlanes.size() << "'>\n";
         ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";

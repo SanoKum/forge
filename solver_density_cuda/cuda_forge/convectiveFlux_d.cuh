@@ -28,6 +28,54 @@ __device__ flow_float betaPls_slau(flow_float M);
 
 __device__ flow_float betaMns_slau(flow_float M);
 
+__global__ void HLLE_d
+(
+ int conv_scheme, int limit_scheme,
+
+ flow_float ga,
+
+ geom_int nCells,
+ geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,
+ geom_int nNormal_halo_Planes, geom_int* normal_halo_planes_d,
+ geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
+ geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
+geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+flow_float* massflux,
+
+ flow_float* ro   ,
+ flow_float* roUx  ,
+ flow_float* roUy  ,
+ flow_float* roUz  ,
+ flow_float* roe ,
+ flow_float* Ux  ,
+ flow_float* Uy  ,
+ flow_float* Uz  ,
+ flow_float* Ps  ,
+ flow_float* Ht  ,
+ flow_float* sonic,
+
+ flow_float* res_ro   ,
+ flow_float* res_roUx  ,
+ flow_float* res_roUy  ,
+ flow_float* res_roUz  ,
+ flow_float* res_roe   ,
+
+ flow_float* limiter_ro,
+ flow_float* limiter_Ux,
+ flow_float* limiter_Uy,
+ flow_float* limiter_Uz,
+ flow_float* limiter_P,
+
+ flow_float* ducros,
+
+ flow_float* drodx  , flow_float* drody , flow_float* drodz,
+ flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
+ flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
+ flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
+ flow_float* dPdx   , flow_float* dPdy  , flow_float* dPdz
+
+);
+
 
 __global__ void SLAU_d
 ( 
@@ -40,6 +88,7 @@ __global__ void SLAU_d
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+ flow_float* massflux,
 
  // variables
 //flow_float* convx , flow_float* convy , flow_float* convz,

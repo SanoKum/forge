@@ -41,6 +41,26 @@ FORGE_BUILD_JOBS=1 FORGE_CUDA_ARCHITECTURES=86 ./tools/build_native_wsl.sh
 
 この例は native 側のビルド確認用であり、通常開発の既定経路を Docker から native に置き換える意図ではない。
 
+## Docker 実行時のファイル所有者ルール
+
+`docker run` を含むすべてのスクリプト・コマンドには、必ず `--user "$(id -u):$(id -g)"` を付加すること。
+
+```bash
+docker run --rm --gpus all \
+  --user "$(id -u):$(id -g)" \
+  -v "$repo_root":/workspace \
+  ...
+```
+
+**理由:** Docker コンテナはデフォルトで root として実行される。`--user` を省略すると、コンテナ内で生成したファイル (`*.h5`, `*.msh`, `*.csv`, `*.png` など) がホスト側でも root 所有になり、通常ユーザーから読み書きできなくなる。
+
+**適用範囲:**
+- `case/` 配下の `run_case.sh`
+- `solver_density_cuda/tools/` 配下のラッパースクリプト (既適用)
+- エージェントや手動で書く `docker run` 呼び出しすべて
+
+コンテナ内でツールが `$HOME` を参照する場合は、`-e HOME=/tmp/forge-home` も合わせて指定する (ParaView など)。
+
 ## 使い分けの実務ルール
 
 - ビルドと通常のケース確認: まず Docker で行う。

@@ -140,16 +140,68 @@ model-specific source wrapper を並べる。
 diffusion では `k` と `omega` に別々の係数を与え、`vis_lam` と `vis_turb`
 から face 係数を組み立てる。
 
-## 5. 軸対称との切り分け
+## 5. 軸対称 SST の幾何項
 
-軸対称は本実装文書の初期スコープ外とする。理由は次のとおり。
+軸対称 SST の幾何項は子 plan
+[`architecture-axisym-sst.md`](../../.github/plans/architecture-axisym-sst.md)
+で扱う。理論は [theory.md §7](theory.md) を参照。実装上の要点は次のとおり。
 
-- 既存 plan で RANS が別 plan と明示されている
-- B 流儀の幾何 source を scalar 輸送へどう入れるかを整理する必要がある
-- 軸近傍での $\omega$ 境界・source の剛性確認が別途必要
+### 5.1 対流・拡散
 
-したがって、親 plan では 2D / 3D explicit SST を完了条件とし、
-軸対称は子 plan に委ねる。
+対流・拡散は B 流儀の $r$ 重み付き面積 (`A_planar`, `sx_planar`) に幾何効果が
+畳み込まれており、追加 source は不要 (theory.md §7.1)。
+`calcScalarGradient_d_wrapper` と `scalar_diffusion_first_order_d` は
+すでに `A_planar` / `sx_planar` を使うため、コード変更なしで軸対称に対応する。
+拡散の $\theta\theta$ 寄与が本当に発散形を保つかは、子 plan で
+半径方向 1D 解析解との単体比較で確認する。
+
+### 5.2 生産項・渦粘性のフープひずみ
+
+`rans_sst_source_d` ([`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu))
+と `sst_eddy_viscosity_d`
+([`turbulent_viscosity_d.cu`](../../solver_density_cuda/cuda_forge/turbulent_viscosity_d.cu))
+は現在 planar 速度勾配 9 成分のみから $S^2$ を組む。軸対称では
+フープひずみ $S_{\theta\theta} = u_r/r$ が欠落するため (theory.md §7.2)、次を追加する。
+
+- 両 kernel に `int isAxisymmetric` と `flow_float* axisym_uy_over_r` を引数追加。
+- `isAxisymmetric == 1` のとき
+  $S^2 \mathrel{+}= 2\,(\texttt{axisym\_uy\_over\_r}[ic])^2$ を加える。
+- `axisym_uy_over_r` は NS の
+  [`axisymmetricSource_d.cu`](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)
+  が毎ステップ更新済みなので、SST 側で再計算しない。呼び出し順序は
+  `axisymmetricDiagnostics_d` → SST source の順を `main.cpp` で保証する。
+
+### 5.3 圧縮性 (dilatation) 補正
+
+生産項の圧縮性補正は `solverConfig` の `dilatationCorrection` で段階制御する
+(theory.md §7.3)。
+
+| 値 | 内容 |
+| --- | --- |
+| `0` | off (非圧縮形 $P_k = \mu_t S^2$) |
+| `1` | (A) deviatoric のみ: $S^2 \mathrel{-}= \tfrac23(\nabla\!\cdot\!\mathbf u)^2$ |
+| `2` | (A)+(B): さらに $P_k \mathrel{-}= \tfrac23\rho k(\nabla\!\cdot\!\mathbf u)$ を加え $P_k\ge0$ クリップ (**既定値**) |
+
+既定は `2`。SST kernel は `LESorRANS==2 && RANSmodel==1` でのみ走るため、
+laminar / LES ケースには影響しない。従来の非圧縮挙動が必要な場合のみ明示的に `0` を指定する。
+
+実装は `rans_sst_source_d`
+([`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu)) 内で完結する。
+
+- 発散は `divU = dUxdx + dUydy + dUzdz`、軸対称時は
+  さらに `+= axisym_uy_over_r[ic]`（= 完全発散 `axisym_divU` と一致）。
+  既存配列を流用し新規計算しない。
+- (A): $P_k, P_\omega$ に使う $S^2$ から $\tfrac23(\nabla\!\cdot\!\mathbf u)^2$ を引く。
+- (B): $k$ 方程式の生産にのみ $-\tfrac23\rho k(\nabla\!\cdot\!\mathbf u)$ を加え、
+  生産リミッタ適用後に `Pk = max(Pk, 0)`。$\omega$ 生産には入れない。
+- `dilatationCorrection == 0` では従来挙動とビット一致。
+
+検証は run_0091(off) を基準に run_0092(A) → run_0093(A+B) と段階比較する。
+
+### 5.4 非軸対称ケースの不変性
+
+`isAxisymmetric == 0` のときは追加項をすべて 0 とし、既存の 2D / 3D SST と
+ビット単位で同一の挙動を維持する (子 plan の回帰判定基準)。
 
 ## 6. 陰解法との切り分け
 

@@ -5,6 +5,7 @@
 #include "solverConfig.hpp"
 #include "calcWallDistance_kdtree.hpp"
 
+#include <cstdlib>
 #include <cmath>
 
 void setInitial(solverConfig& cfg , mesh& msh , variables& v)
@@ -23,9 +24,7 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
         flow_float velR = 0.0;
 
         for (geom_int i = 0 ; i<msh.nCells ; i++) {
-            flow_float x = msh.cells[i].centCoords[0];
-
-            if (x<0.5) {
+            if (msh.cells[i].centCoords[0] < 0.5) {
                 v.c["ro"][i] = roL;
                 v.c["roUx"][i] = roL*velL;
                 v.c["roUy"][i] = 0.0;
@@ -47,8 +46,6 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
         flow_float velL = 3.0;
 
         for (geom_int i = 0 ; i<msh.nCells ; i++) {
-            flow_float x = msh.cells[i].centCoords[0];
-
             v.c["ro"][i] = roL;
             v.c["roUx"][i] = roL*velL;
             v.c["roUy"][i] = 0.0;
@@ -104,8 +101,6 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
 
     } else if (cfg.initial == "Taylor-Green" or cfg.initial == "Taylor-Green_M0.1") {
         flow_float gam = 1.4;
-        flow_float cp  = gam-1.0;
-        flow_float R   = cp*(gam-1.0)/gam;
 
         flow_float L   = 1.0; // length
 
@@ -167,6 +162,26 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
         flow_float ro= P/(R*T);
         flow_float c = sqrt(gam*R*T);
         flow_float u = c*M;
+
+        for (geom_int i = 0 ; i<msh.nCells ; i++) {
+
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = ro*u;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
+        }
+
+    } else if (cfg.initial == "uniform_p101325_u10") {
+        flow_float cp  = cfg.cp;
+        flow_float gam = cfg.gamma;
+        flow_float R   = cp*(gam-1.0)/gam;
+
+        flow_float P = 101325.0;
+        flow_float T = 300.0;
+        flow_float u = 10.0;
+
+        flow_float ro = P/(R*T);
 
         for (geom_int i = 0 ; i<msh.nCells ; i++) {
 
@@ -311,10 +326,10 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
 
     } else {
         std::cout << "Error: Unknown initial" << std::endl;
-        exit;
+        std::exit(EXIT_FAILURE);
     }
 
-    std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe"};
+    std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "roK", "roOmega"};
     v.copyVariables_cell_H2D(names);
 
     calcWallDistance_kdtree(cfg , msh , v);

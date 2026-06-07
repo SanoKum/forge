@@ -5,7 +5,9 @@ project(forge LANGUAGES C CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_CUDA_ARCHITECTURES "75;86;89;90")
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES "75;86;89;90")
+endif()
 ##
 ##set(CMAKE_CXX_COMPILER /usr/bin/g++ )
 ##add_definitions( -std=c++11 -Wall )
@@ -73,7 +75,6 @@ file( GLOB forge_cppfiles
     update.cpp 
     variables.cpp 
     boundaryCond.cpp 
-    implicitCorrection.cpp 
     convectiveFlux.cpp 
     input/solverConfig.cpp 
     input/calcWallDistance_kdtree.cpp 
@@ -81,10 +82,8 @@ file( GLOB forge_cppfiles
     dependentVariables.cpp 
 )
 
-set_source_files_properties(${forge_cppfiles} PROPERTIES LANGUAGE CUDA)
-
 add_executable(forge ${forge_cppfiles})
-target_include_directories(forge PRIVATE ${CMAKE_SOURCE_DIR} ${HIGHFIVE_ROOT})
+target_include_directories(forge PRIVATE ${CMAKE_SOURCE_DIR} ${HIGHFIVE_ROOT} ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 
 add_subdirectory(cuda_forge)
@@ -109,9 +108,8 @@ file( GLOB mesh_cppfiles
     input/calcWallDistance_kdtree.cpp 
 )
 
-set_source_files_properties(${mesh_cppfiles} PROPERTIES LANGUAGE CUDA)
 add_executable(convertGmshToForge  ${mesh_cppfiles})
-target_include_directories(convertGmshToForge PRIVATE ${CMAKE_SOURCE_DIR} ${HIGHFIVE_ROOT})
+target_include_directories(convertGmshToForge PRIVATE ${CMAKE_SOURCE_DIR} ${HIGHFIVE_ROOT} ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 target_link_libraries(convertGmshToForge ${HDF5_LIBRARIES} yaml-cpp)
 target_link_libraries(convertGmshToForge cuda_forge )
 

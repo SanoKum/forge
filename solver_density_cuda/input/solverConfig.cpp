@@ -18,6 +18,21 @@ T getValidatedValue(const YAML::Node& node, const std::string& key, const std::s
     }
 }
 
+template <typename T>
+T getOptionalValidatedValue(const YAML::Node& node, const std::string& key, const T& default_value, const std::string& parent = "") {
+    if (!node[key].IsDefined()) {
+        return default_value;
+    }
+
+    try {
+        T value = node[key].as<T>();
+        std::cout << "'" << key << "'" << (parent.empty() ? "" : " in '" + parent + "'") << ": " << value << std::endl;
+        return value;
+    } catch (const YAML::BadConversion&) {
+        throw std::runtime_error("Key '" + key + "' in '" + parent + "' has an incorrect type.");
+    }
+}
+
 
 void solverConfig::read(std::string fname)
 {
@@ -176,34 +191,79 @@ void solverConfig::read(std::string fname)
 
         auto last = config["time"]["last"];
         this->endTimeControl = getValidatedValue<int>(last, "control", "time.last");
-        this->nStep = getValidatedValue<int>(last, "nStep", "time.last");
+        if (last["nStep"].IsDefined()) {
+            throw std::runtime_error(
+                "Key 'nStep' in 'time.last' is no longer supported. Rename it to 'nStepOuter'."
+            );
+        }
+        this->nStepOuter = getValidatedValue<int>(last, "nStepOuter", "time.last");
 
         auto deltaT = config["time"]["deltaT"];
         this->dtControl = getValidatedValue<int>(deltaT, "control", "time.deltaT");
         this->dt = getValidatedValue<double>(deltaT, "dt", "time.deltaT");
         this->cfl = getValidatedValue<double>(deltaT, "cfl", "time.deltaT");
         this->cfl_pseudo = getValidatedValue<double>(deltaT, "cfl_pseudo", "time.deltaT");
+        this->implicitRelax = getOptionalValidatedValue<double>(deltaT, "implicitRelax", 1.0, "time.deltaT");
+        this->blockDPLUR = getOptionalValidatedValue<int>(deltaT, "blockDPLUR", 0, "time.deltaT");
         this->dt_max = getValidatedValue<double>(deltaT, "dt_max", "time.deltaT");
         this->dt_min = getValidatedValue<double>(deltaT, "dt_min", "time.deltaT");
 
         this->outStepInterval = getValidatedValue<int>(config["time"], "outStepInterval", "time");
         this->outStepStart = getValidatedValue<int>(config["time"], "outStepStart", "time");
         this->timeIntegration = getValidatedValue<int>(config["time"], "timeIntegration", "time");
-        this->nInnerLoop = getValidatedValue<int>(config["time"], "nInnerLoop", "time");
+        if (config["time"]["nInnerLoop"].IsDefined()) {
+            throw std::runtime_error(
+                "Key 'nInnerLoop' in 'time' is no longer supported. Rename it to 'nStepInner'."
+            );
+        }
+        if (config["time"]["dualTime_InnerLoop"].IsDefined()) {
+            throw std::runtime_error(
+                "Key 'dualTime_InnerLoop' in 'time' is no longer supported. Rename it to 'nStepInner'."
+            );
+        }
+        this->nStepInner = getOptionalValidatedValue<int>(config["time"], "nStepInner", 1, "time");
 
         // 空間設定
         auto space = config["space"];
         this->convMethod = getValidatedValue<int>(space, "convMethod", "space");
         this->limiter = getValidatedValue<int>(space, "limiter", "space");
+        if (this->limiter != 0 && this->limiter != 1 && this->limiter != 2 && this->limiter != -1) {
+            throw std::runtime_error("Key 'limiter' in 'space' must be one of 0, 1, 2, or -1.");
+        }
 
         // turbulence model
         auto turb = config["turbulence"];
         this->LESorRANS = getValidatedValue<int>(turb, "LESorRANS", "turbulence");
         this->LESmodel = getValidatedValue<int>(turb, "LESmodel", "turbulence");
+        this->RANSmodel = getOptionalValidatedValue<int>(turb, "RANSmodel", 0, "turbulence");
+        this->scalarDiffusion = getOptionalValidatedValue<int>(turb, "scalarDiffusion", 1, "turbulence");
+        this->dilatationCorrection = getOptionalValidatedValue<int>(turb, "dilatationCorrection", 2, "turbulence");
+
+        if (this->dilatationCorrection < 0 || this->dilatationCorrection > 2) {
+            throw std::runtime_error("Key 'dilatationCorrection' in 'turbulence' must be one of 0, 1, or 2.");
+        }
+
+        if (this->LESorRANS < 0 || this->LESorRANS > 2) {
+            throw std::runtime_error("Key 'LESorRANS' in 'turbulence' must be one of 0, 1, or 2.");
+        }
+        if (this->LESorRANS == 1 && this->LESmodel <= 0) {
+            throw std::runtime_error("Key 'LESmodel' in 'turbulence' must be positive when LESorRANS == 1.");
+        }
+        if (this->LESorRANS == 2 && this->RANSmodel <= 0) {
+            throw std::runtime_error("Key 'RANSmodel' in 'turbulence' must be set when LESorRANS == 2.");
+        }
+        if (this->RANSmodel < 0 || this->RANSmodel > 1) {
+            throw std::runtime_error("Key 'RANSmodel' in 'turbulence' must be one of 0 or 1.");
+        }
 
         // 物理プロパティ
         auto physProp = config["physProp"];
         this->isCompressible = getValidatedValue<int>(physProp, "isCompressible", "physProp");
+        if (physProp["isAxisymmetric"]) {
+            this->isAxisymmetric = physProp["isAxisymmetric"].as<int>();
+        } else {
+            this->isAxisymmetric = 0;
+        }
         this->thermalMethod = getValidatedValue<int>(physProp, "thermalMethod", "physProp");
         this->viscMethod = getValidatedValue<int>(physProp, "viscMethod", "physProp");
         this->ro = getValidatedValue<double>(physProp, "ro", "physProp");
@@ -279,6 +339,42 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
 
             break;
 
+        case 11: // implicit pseudo-time defect-correction
+            this->isImplicit = 1;
+            this->nStage = 1;
+            this->coef_N.clear();
+            this->coef_M.clear();
+            this->coef_Res.clear();
+            this->coef_DT_4thRunge.clear();
+            this->coef_Res_4thRunge.clear();
+            break;
+
+        default:
+            throw std::runtime_error("Unsupported timeIntegration: " + std::to_string(timeIntegration));
+
     }
 
+}
+
+int solverConfig::mainLoopCount() const
+{
+    return std::max(1, this->nStepOuter);
+}
+
+int solverConfig::perStepIterationCount() const
+{
+    if (this->isImplicit == 1) {
+        return std::max(1, this->nStepInner);
+    }
+
+    return std::max(1, this->nStage);
+}
+
+const char* solverConfig::perStepIterationLabel() const
+{
+    if (this->isImplicit == 1) {
+        return "Inner";
+    }
+
+    return "Stage";
 }

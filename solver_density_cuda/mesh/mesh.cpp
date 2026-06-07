@@ -13,7 +13,7 @@ node::node(geom_float &x, geom_float &y, geom_float &z)
 }
 
 
-cell::cell() {}
+cell::cell() : regionId(0) {}
 cell::cell(vector<geom_int> &iNodes) 
 {
     this->iNodes = iNodes;
@@ -302,6 +302,11 @@ void mesh::readMesh(string fname)
     file.getDataSet("/CELLS/volume").read(volume);
     file.getDataSet("/CELLS/centCoords").read(centCoords2);
 
+    std::vector<geom_int> regionIds;
+    if (file.exist("/CELLS/regionId")) {
+        file.getDataSet("/CELLS/regionId").read(regionIds);
+    }
+
     geom_int icc = 0;
     for (geom_int ic=0; ic<this->nCells; ic++)
     {
@@ -340,6 +345,8 @@ void mesh::readMesh(string fname)
         this->cells[ic].centCoords[0] = centCoords2[3*ic + 0];
         this->cells[ic].centCoords[1] = centCoords2[3*ic + 1];
         this->cells[ic].centCoords[2] = centCoords2[3*ic + 2];
+
+        this->cells[ic].regionId = regionIds.empty() ? 0 : regionIds[ic];
     }
 
     // boundary conditions
@@ -588,13 +595,19 @@ void mesh::setMeshMap_d()
 {
     gpuErrchk(cudaMalloc((void **)&(this->map_plane_cells_d), sizeof(geom_int)*this->nPlanes*2));
 
+    // Build a list of plane indices to be processed by convective-flux kernels.
+    // Layout:
+    //   [0, nNormalPlanes)              : interior (normal) planes
+    //   [nNormalPlanes, ...) periodic   : periodic boundary planes
+    //   [..., n_normal_halo_planes)     : non-periodic boundary planes (slip/wall/inlet/outlet/...)
+    // For non-periodic boundary planes, plane_cells[2*ip+1] is the ghost-cell index,
+    // so the convective-flux kernel can use the ghost-cell state directly without
+    // a dedicated boundary flux kernel.
     geom_int n_normal_halo_planes =  this->nNormalPlanes;
 
     for (auto& bc : this->bconds)
     {
-        if (bc.bcondKind == "periodic") {
-            n_normal_halo_planes += bc.iPlanes.size();
-        }
+        n_normal_halo_planes += bc.iPlanes.size();
     }
 
     this->nNormal_halo_Planes = n_normal_halo_planes;
@@ -616,6 +629,16 @@ void mesh::setMeshMap_d()
      for (auto& bc : this->bconds)
     {
         if (bc.bcondKind == "periodic") {
+            for (auto& ip : bc.iPlanes){
+                normal_halo_planes[ip_sum] = ip;
+                ip_sum += 1;
+            }
+        }
+    }
+
+    for (auto& bc : this->bconds)
+    {
+        if (bc.bcondKind != "periodic") {
             for (auto& ip : bc.iPlanes){
                 normal_halo_planes[ip_sum] = ip;
                 ip_sum += 1;

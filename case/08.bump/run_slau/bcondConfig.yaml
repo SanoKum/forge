@@ -1,6 +1,7 @@
 inlet:
   physID: 1 
   kind: inlet_Pressure
+  outputHDFflg: 0
   #kind: periodic
   ints:
     type: 0
@@ -12,18 +13,21 @@ inlet:
 top:
   physID: 2
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 
 bottom:
   physID: 3
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 
 outlet:
   physID: 4
   kind: outlet_statPress
+  outputHDFflg: 0
   #kind: periodic
   ints:
     type: 0
@@ -35,6 +39,7 @@ outlet:
 slip:
   physID: 5
   kind: slip
+  outputHDFflg: 0
   ints:
   floats:
 

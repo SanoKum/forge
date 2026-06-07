@@ -47,6 +47,8 @@ struct cell
 
     std::vector<geom_float> centCoords;
 
+    geom_int regionId;
+
     cell();
     cell(std::vector<geom_int>&) ;
 };
@@ -58,13 +60,14 @@ public:
     {
         "ro"   , "roUx" , "roUy" , "roUz" , "roUz" , "roe",
         "Ux"   , "Uy"   , "Uz"   , "Tt"   , "Pt"   , "Ts" , "Ps",
+        "k"    , "omega", "kb", "omegab",
         "Ux0"  , "Uy0"  , "Uz0"  , 
         "ypls" , "twall_x" , "twall_y" , "twall_z"
     };
 
     std::list<std::string> bplaneIntNames =  
     {
-        "partnerPlnID"  // for periodic 
+        "partnerPlnID",  // for periodic 
         "partnerCellID" // for periodic 
     };
 

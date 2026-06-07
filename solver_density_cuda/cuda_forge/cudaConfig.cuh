@@ -4,6 +4,7 @@
 #include <vector_types.h>
 #include "mesh/mesh.hpp"
 #include <cmath>
+#include <cstdlib>
 
 struct cudaConfig
 {
@@ -22,10 +23,29 @@ public:
     dim3 dimGrid_normalcell_small;
 
     cudaConfig(mesh&);
+
+private:
+    static int readEnvBlockSize(const char* name, int fallback)
+    {
+        const char* value = std::getenv(name);
+        if (value == nullptr || *value == '\0') {
+            return fallback;
+        }
+
+        int parsed = std::atoi(value);
+        if (parsed <= 0) {
+            return fallback;
+        }
+
+        return parsed;
+    }
 };
 
 inline cudaConfig::cudaConfig(mesh& msh)
 {
+    this->blocksize = readEnvBlockSize("FORGE_CUDA_BLOCKSIZE", blocksize);
+    this->blocksize_small = readEnvBlockSize("FORGE_CUDA_BLOCKSIZE_SMALL", blocksize_small);
+
     this->dimBlock       = dim3(blocksize);
     this->dimBlock_small = dim3(blocksize_small);
     this->dimGrid_cell   = dim3(ceil( msh.nCells_all / (flow_float)blocksize));

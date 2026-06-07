@@ -82,11 +82,69 @@ __global__ void WALE_d
 }
 
 
+// SST 渦粘性: mu_t = rho * a1 * k / max(a1 * omega, S * F2)
+// 軸対称 (isAxisymmetric=1) では planar 速度勾配に現れないフープひずみ
+// S_thetatheta = u_r/r (= axisym_uy_over_r) を S^2 に加える (docs/turbulence/theory.md §7.2)。
+__global__ void sst_eddy_viscosity_d(
+    geom_int nCells,
+    flow_float* ro,
+    flow_float* k,
+    flow_float* omega,
+    flow_float* vis_lam,
+    flow_float* wall_dist,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+    flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+    flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+    int isAxisymmetric,
+    flow_float* axisym_uy_over_r,
+    flow_float* vis_turb)
+{
+    geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+
+    constexpr flow_float a1       = static_cast<flow_float>(0.31);
+    constexpr flow_float betaStar = static_cast<flow_float>(0.09);
+    constexpr flow_float kSmall   = static_cast<flow_float>(1.0e-12);
+
+    const flow_float rho    = max(ro[ic], kSmall);
+    const flow_float k_c    = max(k[ic],  static_cast<flow_float>(0.0));
+    const flow_float w_c    = max(omega[ic], kSmall);
+    const flow_float mu_lam = vis_lam[ic];
+    const flow_float y      = max(wall_dist[ic], kSmall);
+    const flow_float nu     = mu_lam / rho;
+
+    // ひずみ速度の大きさ S = sqrt(2 Sij Sij)
+    const flow_float S11 = dUxdx[ic];
+    const flow_float S22 = dUydy[ic];
+    const flow_float S33 = dUzdz[ic];
+    const flow_float S12 = static_cast<flow_float>(0.5) * (dUxdy[ic] + dUydx[ic]);
+    const flow_float S13 = static_cast<flow_float>(0.5) * (dUxdz[ic] + dUzdx[ic]);
+    const flow_float S23 = static_cast<flow_float>(0.5) * (dUydz[ic] + dUzdy[ic]);
+    flow_float S_sq = static_cast<flow_float>(2.0) *
+        (S11*S11 + S22*S22 + S33*S33 +
+         static_cast<flow_float>(2.0) * (S12*S12 + S13*S13 + S23*S23));
+    // 軸対称: フープひずみ S_thetatheta = u_r/r を加算 (2 * S_tt^2)
+    if (isAxisymmetric) {
+        const flow_float S_tt = axisym_uy_over_r[ic];
+        S_sq += static_cast<flow_float>(2.0) * S_tt * S_tt;
+    }
+    const flow_float S_mag = sqrt(max(S_sq, static_cast<flow_float>(0.0)));
+
+    // F2 ブレンド関数
+    const flow_float arg2_a = static_cast<flow_float>(2.0) * sqrt(k_c) / (betaStar * w_c * y);
+    const flow_float arg2_b = static_cast<flow_float>(500.0) * nu / (w_c * y * y);
+    const flow_float arg2   = max(arg2_a, arg2_b);
+    const flow_float F2     = tanh(arg2 * arg2);
+
+    vis_turb[ic] = rho * a1 * k_c / max(a1 * w_c, S_mag * F2);
+}
+
+
 void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (cfg.LESorRANS == 1) { // LES
 
-        if (cfg.LESmodel = 1) {
+        if (cfg.LESmodel == 1) {
             WALE_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
                 // mesh structure
                 msh.nCells,
@@ -110,6 +168,21 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
                 var.c_d["vis_turb"] , var.c_d["wall_dist"]
             ) ;
         }
+
+    } else if (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) { // RANS SST
+        sst_eddy_viscosity_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+            msh.nCells,
+            var.c_d["ro"],
+            var.c_d["k"],
+            var.c_d["omega"],
+            var.c_d["vis_lam"],
+            var.c_d["wall_dist"],
+            var.c_d["dUxdx"], var.c_d["dUxdy"], var.c_d["dUxdz"],
+            var.c_d["dUydx"], var.c_d["dUydy"], var.c_d["dUydz"],
+            var.c_d["dUzdx"], var.c_d["dUzdy"], var.c_d["dUzdz"],
+            cfg.isAxisymmetric,
+            var.c_d["axisym_uy_over_r"],
+            var.c_d["vis_turb"]);
 
     } else {
         CHECK_CUDA_ERROR(cudaMemset(var.c_d["vis_turb"], 0.0, msh.nCells_all*sizeof(flow_float)));

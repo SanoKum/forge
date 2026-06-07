@@ -26,6 +26,7 @@ void slip_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic  ,
+ flow_float* T   ,
 
  // bvar
  flow_float* rob ,
@@ -39,7 +40,7 @@ void slip_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+ flow_float* Psb
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -51,34 +52,41 @@ void slip_d
 
         geom_float Un =  (sx[ip]*Ux[ic] + sy[ip]*Uy[ic] + sz[ip]*Uz[ic])/ss[ip];
 
+        const flow_float Ux_ig = Ux[ic] - 2 * Un * sx[ip] / ss[ip];
+        const flow_float Uy_ig = Uy[ic] - 2 * Un * sy[ip] / ss[ip];
+        const flow_float Uz_ig = Uz[ic] - 2 * Un * sz[ip] / ss[ip];
+        const flow_float Ux_b = Ux[ic] - Un * sx[ip] / ss[ip];
+        const flow_float Uy_b = Uy[ic] - Un * sy[ip] / ss[ip];
+        const flow_float Uz_b = Uz[ic] - Un * sz[ip] / ss[ip];
+
         ro[ig]   = ro[ic];
         P[ig]    = P[ic];
-        Ux[ig]   = Ux[ic]- 2*Un*sx[ip]/ss[ip];
-        Uy[ig]   = Uy[ic]- 2*Un*sy[ip]/ss[ip];
-        Uz[ig]   = Uz[ic]- 2*Un*sz[ip]/ss[ip];
+        Ux[ig]   = Ux_ig;
+        Uy[ig]   = Uy_ig;
+        Uz[ig]   = Uz_ig;
 
 
-        roUx[ig] = ro[ic]*(Ux[ic]- 2*Un*sx[ip]/ss[ip]);
-        roUy[ig] = ro[ic]*(Uy[ic]- 2*Un*sy[ip]/ss[ip]);
-        roUz[ig] = ro[ic]*(Uz[ic]- 2*Un*sz[ip]/ss[ip]);
+        roUx[ig] = ro[ic] * Ux_ig;
+        roUy[ig] = ro[ic] * Uy_ig;
+        roUz[ig] = ro[ic] * Uz_ig;
 
-        roe[ig]  = P[ic]/(ga-1.0) + 0.5*ro[ic]*(Ux[ic]*Ux[ic]+Uy[ic]*Uy[ic]+Uz[ic]*Uz[ic]);
+        roe[ig]  = P[ic] / (ga - 1.0) + 0.5 * ro[ic] * (Ux_ig * Ux_ig + Uy_ig * Uy_ig + Uz_ig * Uz_ig);
 
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
-
+        T[ig]    = P[ig]*ga/(ro[ig]*(ga-1.0)*cp);
 
         rob[ib]   = ro[ic];
         Psb[ib]   = P[ic];
-        Uxb[ib]   = Ux[ic]- Un*sx[ip]/ss[ip];
-        Uyb[ib]   = Uy[ic]- Un*sy[ip]/ss[ip];
-        Uzb[ib]   = Uz[ic]- Un*sz[ip]/ss[ip];
+        Uxb[ib]   = Ux_b;
+        Uyb[ib]   = Uy_b;
+        Uzb[ib]   = Uz_b;
 
-        roUxb[ib] = ro[ic]*(Ux[ic]- Un*sx[ip]/ss[ip]);
-        roUyb[ib] = ro[ic]*(Uy[ic]- Un*sy[ip]/ss[ip]);
-        roUzb[ib] = ro[ic]*(Uz[ic]- Un*sz[ip]/ss[ip]);
+        roUxb[ib] = ro[ic] * Ux_b;
+        roUyb[ib] = ro[ic] * Uy_b;
+        roUzb[ib] = ro[ic] * Uz_b;
 
-        roeb[ib]  = P[ic]/(ga-1.0) + 0.5*ro[ic]*(Ux[ic]*Ux[ic]+Uy[ic]*Uy[ic]+Uz[ic]*Uz[ic]);
+        roeb[ib]  = P[ic] / (ga - 1.0) + 0.5 * ro[ic] * (Ux_b * Ux_b + Uy_b * Uy_b + Uz_b * Uz_b);
         Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
     }
 };
@@ -90,26 +98,27 @@ void slip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         cfg.cp,
 
         bc.iPlanes.size(),
-        bc.map_bplane_plane_d,  
-        bc.map_bplane_cell_d,  
+        bc.map_bplane_plane_d,
+        bc.map_bplane_cell_d,
         bc.map_bplane_cell_ghst_d,
 
-        var.p_d["sx"],  
-        var.p_d["sy"],  
-        var.p_d["sz"],  
-        var.p_d["ss"],  
+        var.p_d["sx"],
+        var.p_d["sy"],
+        var.p_d["sz"],
+        var.p_d["ss"],
 
-        var.c_d["ro"] ,
-        var.c_d["roUx"] ,
-        var.c_d["roUy"] ,
-        var.c_d["roUz"] ,
-        var.c_d["roe"] ,
-        var.c_d["Ux"] ,
-        var.c_d["Uy"] ,
-        var.c_d["Uz"] ,
-        var.c_d["P"], 
-        var.c_d["Ht"], 
+        var.c_d["ro"],
+        var.c_d["roUx"],
+        var.c_d["roUy"],
+        var.c_d["roUz"],
+        var.c_d["roe"],
+        var.c_d["Ux"],
+        var.c_d["Uy"],
+        var.c_d["Uz"],
+        var.c_d["P"],
+        var.c_d["Ht"],
         var.c_d["sonic"],
+        var.c_d["T"],
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -123,12 +132,10 @@ void slip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         bc.bvar_d["Pt"],
         bc.bvar_d["Ts"],
         bc.bvar_d["Ps"]
-
     );
 }
 
-__global__ 
-void wall_d 
+__global__ void wall_d
 ( 
 
  // gas properties
@@ -154,7 +161,8 @@ void wall_d
  flow_float* Uz  ,
  flow_float* P   ,
  flow_float* Ht  ,
- flow_float* sonic,
+flow_float* sonic,
+flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -168,14 +176,12 @@ void wall_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
-
+ flow_float* Psb
 )
 {
     geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ib < nb) {
-        geom_int  ip = bplane_plane[ib];
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
@@ -202,6 +208,7 @@ void wall_d
 
         flow_float R = (ga-1.0)/ga*cp;
         flow_float Tc = P[ic]/(ro[ic]*R);
+        T[ig]     = T[ic];
         Tsb[ib]   = Tc;
         Psb[ib]   = P[ic];
         rob[ib]   = Psb[ib]/(R*Tc);
@@ -239,6 +246,7 @@ void wall_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         var.c_d["P"], 
         var.c_d["Ht"], 
         var.c_d["sonic"],
+        var.c_d["T"],
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -256,9 +264,7 @@ void wall_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
     ) ;
 }
 
-
-__global__ 
-void wall_isothermal_d 
+__global__ void wall_isothermal_d 
 ( 
 
  // gas properties
@@ -285,6 +291,7 @@ void wall_isothermal_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
+ flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -298,23 +305,22 @@ void wall_isothermal_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+ flow_float* Psb
 
 )
 {
     geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ib < nb) {
-        geom_int  ip = bplane_plane[ib];
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
         flow_float cv = cp/ga;
         flow_float R = cp-cv;
-        flow_float inE = cv*Tsb[ib];
 
         Psb[ib] = P[ic];
         rob[ib] = Psb[ib]/(R*Tsb[ib]);
+        T[ig]   = Tsb[ib];
 
         ro[ig]   = rob[ib];
         Ux[ig]   = -roUx[ic]/ro[ic];
@@ -324,6 +330,9 @@ void wall_isothermal_d
         roUy[ig] = -rob[ib]*Uy[ig];
         roUz[ig] = -rob[ib]*Uz[ig];
         roe[ig]  = roe[ic];
+        P[ig]    = P[ic];
+        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
+        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
 //
 //        flow_float ek = 0.5*(Ux[ig]*Ux[ig] +Uy[ig]*Uy[ig] +Uz[ig]*Uz[ig]);
 //        P[ig] =(ga-1.0)*(roe[ig]-ro[ig]*ek);
@@ -388,6 +397,7 @@ void wall_isothermal_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond&
         var.c_d["P"], 
         var.c_d["Ht"], 
         var.c_d["sonic"],
+        var.c_d["T"],
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -433,6 +443,7 @@ void outlet_statPress_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic ,
+ flow_float* T   ,
 
  // bvar
  flow_float* rob ,
@@ -446,7 +457,7 @@ void outlet_statPress_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+flow_float* Psb
 
 
 )
@@ -487,12 +498,12 @@ void outlet_statPress_d
             if (Un/sonic[ig]>1.0) {
                 Pnew = P[ic];
             }
-        } else { // backflow
+        } else { // backflow: stagnation conditions of ambient gas
             Uxnew = -Uxnew*sxx/sss;
             Uynew = -Uynew*syy/sss;
             Uznew = -Uznew*szz/sss;
 
-            Umag_new = sqrt(Uxnew*Uxnew +Uynew*Uynew +Uznew*Uznew);
+            Umag_new = sqrt(Uxnew*Uxnew + Uynew*Uynew + Uznew*Uznew);
 
             flow_float mach_new = Umag_new/sonic[ic];
 
@@ -514,6 +525,7 @@ void outlet_statPress_d
         roe[ig]   = roec;
         Ht[ig]    = roe[ig]/ronew + Pnew/ronew;
         sonic[ig] = sqrt(ga*Pnew/ronew);
+        T[ig]     = Pnew*ga/(ronew*(ga-1.0)*cp);
 
         rob[ib]    = ronew;
         //Psb[ib]    = Pnew;
@@ -552,9 +564,10 @@ void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond
         var.c_d["Ux"] ,
         var.c_d["Uy"] ,
         var.c_d["Uz"] ,
-        var.c_d["P"], 
-        var.c_d["Ht"], 
+        var.c_d["P"],
+        var.c_d["Ht"],
         var.c_d["sonic"],
+        var.c_d["T"],
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -572,7 +585,7 @@ void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond
     ) ;
 }
 
-__global__ 
+__global__
 void inlet_uniformVelocity_d
 ( 
  // gas 
@@ -597,6 +610,7 @@ void inlet_uniformVelocity_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
+flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -610,7 +624,7 @@ void inlet_uniformVelocity_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+ flow_float* Psb
 
 
 )
@@ -619,7 +633,6 @@ void inlet_uniformVelocity_d
 
     if (ib < nb) {
         //geom_int  ip = bplane_plane[ib];
-        geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
         ro[ig]    = rob[ib];
@@ -633,6 +646,7 @@ void inlet_uniformVelocity_d
         Uz[ig]    = Uzb[ib];
         Ht[ig]    = roe[ig]/rob[ib] + Psb[ib]/rob[ib];
         sonic[ig] = sqrt(ga*Psb[ib]/rob[ib]);
+        T[ig]     = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
 
         //rob[ib]    = rob[ib];
         roUxb[ib]  = rob[ib]*Uxb[ib];
@@ -672,6 +686,7 @@ void inlet_uniformVelocity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["P"]  , 
         var.c_d["Ht"]  , 
         var.c_d["sonic"]  , 
+        var.c_d["T"],
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -728,7 +743,7 @@ void inlet_Pressure_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+ flow_float* Psb
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -819,13 +834,13 @@ void inlet_Pressure_d
 
 
 
-        } else { // reverse
-            Ux_new = Un_c*sxx/sss;
-            Uy_new = Un_c*syy/sss;
-            Uz_new = Un_c*szz/sss;
+        } else { // reverse-flow detected at pressure inlet: clamp ghost to stagnation
+            Ux_new = 0.0;
+            Uy_new = 0.0;
+            Uz_new = 0.0;
 
-            Ps_new = Pt_b/(pow(1.0+0.5*(ga-1.0)*mach_c*mach_c, ga/(ga-1.0)));
-            Ts_new = Tt_b/(1.0+0.5*(ga-1.0)*mach_c*mach_c);
+            Ps_new = Pt_b;
+            Ts_new = Tt_b;
             sonic_new = sqrt((ga-1.0)*cp*Ts_new);
             ro_new = ga*Ps_new/((ga-1.0)*cp*Ts_new);
         }
@@ -841,6 +856,7 @@ void inlet_Pressure_d
         P[ig]     = Ps_new;
         Ht[ig]    = roe[ig]/ro_new + Ps_new/ro_new;
         sonic[ig] = sqrt(ga*Ps_new/ro_new);
+        T[ig]     = Ts_new;
 
         rob[ib]    = ro_new;
         Uxb[ib]    = Ux_new;
@@ -881,10 +897,10 @@ void inlet_Pressure_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& 
         var.c_d["Ux"]  , 
         var.c_d["Uy"]  , 
         var.c_d["Uz"]  , 
-        var.c_d["P"]  , 
+        var.c_d["P"]  ,
         var.c_d["Ht"]  , 
-        var.c_d["sonic"]  , 
-        var.c_d["T"]  , 
+        var.c_d["sonic"]  ,
+        var.c_d["T"]  ,
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -926,7 +942,7 @@ void inlet_Pressure_dir_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
- flow_float* T   ,
+flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -940,7 +956,7 @@ void inlet_Pressure_dir_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+ flow_float* Psb
 
 )
 {
@@ -1016,6 +1032,7 @@ void inlet_Pressure_dir_d
         P[ig]     = Ps_new;
         Ht[ig]    = roe[ig]/ro_new + Ps_new/ro_new;
         sonic[ig] = sqrt(ga*Ps_new/ro_new);
+        T[ig]     = Ts_new;
 
         rob[ib]    = ro_new;
         Uxb[ib]    = Ux_new;
@@ -1047,7 +1064,7 @@ void inlet_Pressure_dir_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bco
         var.c_d["roUx"] ,
         var.c_d["roUy"] ,
         var.c_d["roUz"] ,
-        var.c_d["roe"] ,
+        var.c_d["roe"]  , 
         var.c_d["Ux"]  , 
         var.c_d["Uy"]  , 
         var.c_d["Uz"]  , 
@@ -1099,6 +1116,7 @@ void outflow_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic, 
+flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -1128,7 +1146,6 @@ void outflow_d
         flow_float Uynew = Uy[ic];
         flow_float Uznew = Uz[ic];
         flow_float Umagc = sqrt(Uxnew*Uxnew+Uynew*Uynew+Uznew*Uznew);
-        flow_float roec = roe[ic];
         flow_float Umag_new;
 
         flow_float sxx = sx[ip];
@@ -1167,6 +1184,7 @@ void outflow_d
 
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
         sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+        T[ig]    = T[ic];
 
         rob[ib]   = ro[ic];
         Psb[ib]   = P[ic];
@@ -1208,6 +1226,7 @@ void outflow_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , me
         var.c_d["P"], 
         var.c_d["Ht"], 
         var.c_d["sonic"],
+        var.c_d["T"],
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
@@ -1269,25 +1288,23 @@ void periodic_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+flow_float* Psb 
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ib < nb) {
-        geom_int  ip         = bplane_plane[ib];
         geom_int  ic         = bplane_cell[ib];
-        geom_int  ic_partner = bplane_partnerCellID[ib];
         geom_int  ig         = bplane_cell_ghst[ib];
 
         ro[ig]   = ro[ic];
         P[ig]    = P[ic];
         Ux[ig]   = Ux[ic];
         Uy[ig]   = Uy[ic]*cos(-dtheta) -Uz[ic]*sin(-dtheta);
-        Uz[ig]   = Uz[ic]*sin(-dtheta) +Uz[ic]*cos(-dtheta);
+        Uz[ig]   = Uy[ic]*sin(-dtheta) +Uz[ic]*cos(-dtheta);
         roUx[ig] = roUx[ic];
         roUy[ig] = roUy[ic]*cos(-dtheta) -roUz[ic]*sin(-dtheta);
-        roUz[ig] = roUz[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
+        roUz[ig] = roUy[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
         roe[ig]  = roe[ic];
         T[ig]    = P[ic]*ga/(ro[ig]*(ga-1.0)*cp);
 
@@ -1298,10 +1315,10 @@ void periodic_d
         Psb[ib]   = P[ic];
         Uxb[ib]   = Ux[ic];
         Uyb[ib]   = Uy[ic]*cos(-dtheta) -Uz[ic]*sin(-dtheta);
-        Uzb[ib]   = Uz[ic]*sin(-dtheta) +Uz[ic]*cos(-dtheta);
+        Uzb[ib]   = Uy[ic]*sin(-dtheta) +Uz[ic]*cos(-dtheta);
         roUxb[ib] = roUx[ic];
         roUyb[ib] = roUy[ic]*cos(-dtheta) -roUz[ic]*sin(-dtheta);
-        roUzb[ib] = roUz[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
+        roUzb[ib] = roUy[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
         roeb[ib]  = roe[ic];
         Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
     }

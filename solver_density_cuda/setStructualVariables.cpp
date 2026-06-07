@@ -5,6 +5,9 @@
 
 void setStructualVariables(solverConfig& cfg , cudaConfig& cuda , mesh& msh , variables& v)
 {
+    (void)cfg;
+    (void)cuda;
+
     //geom_float ss;
     std::vector<geom_float> sv(3);
 
@@ -12,21 +15,14 @@ void setStructualVariables(solverConfig& cfg , cudaConfig& cuda , mesh& msh , va
     geom_float dcc;
 
     std::vector<geom_float> dc1pv(3);
-    geom_float dc1p;
-
     std::vector<geom_float> dc2pv(3);
-    geom_float dc2p;
 
     std::vector<geom_float> pcent(3);
     std::vector<geom_float> c1cent(3);
     std::vector<geom_float> c2cent(3);
 
-    geom_float volume;
-
     geom_int ic1;
     geom_int ic2;
-
-    geom_float f;
     std::vector<flow_float>& fxp = v.p["fx"]; std::vector<flow_float>& dccp = v.p["dcc"];
     std::vector<flow_float>& vvol = v.c["volume"];
     std::vector<flow_float>& vccx = v.c["ccx"];
@@ -52,9 +48,12 @@ void setStructualVariables(solverConfig& cfg , cudaConfig& cuda , mesh& msh , va
         dc2pv[0] = pcent[0] - c2cent[0];
         dc2pv[1] = pcent[1] - c2cent[1];
         dc2pv[2] = pcent[2] - c2cent[2];
-        dc2p     = sqrt( pow(dc2pv[0], 2.0) + pow(dc2pv[1], 2.0) + pow(dc2pv[2], 2.0));
 
-        fxp[ip]  = dc2p/dcc;
+        // fx: face centroid を cc0→cc1 方向に射影した距離比。
+        // ユークリッド距離比は面垂直方向の変位を含み歪み面で外挿になるため射影を使う。
+        // clamp [0,1] で外挿を禁止する。
+        geom_float proj = -(dc2pv[0]*dccv[0] + dc2pv[1]*dccv[1] + dc2pv[2]*dccv[2]);
+        fxp[ip]  = std::max((geom_float)0.0, std::min((geom_float)1.0, proj/(dcc*dcc)));
         dccp[ip] = dcc;
 
     }

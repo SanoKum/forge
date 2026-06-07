@@ -44,6 +44,8 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,0},
               {"Ps"  ,0},
+              {"kb"  ,0},
+              {"omegab",0},
               {"ypls",0},
               {"twall_x",0},
               {"twall_y",0},
@@ -63,6 +65,8 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,1},
               {"Ps"  ,0},
+              {"kb"  ,0},
+              {"omegab",0},
               {"ypls",0},
               {"twall_x",0},
               {"twall_y",0},
@@ -83,6 +87,8 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,0},
               {"Ps"  ,1},
+              {"k"   ,1},
+              {"omega",1},
 
           }},
 
@@ -102,6 +108,8 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,0},
               {"Ps"  ,1},
+              {"k"   ,1},
+              {"omega",1},
 
           }},
 
@@ -119,6 +127,8 @@ struct bcondConfFormat{
               {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,0},
+              {"k"   ,1},
+              {"omega",1},
           }},
 
           {"inlet_Pressure_dir", { 
@@ -134,6 +144,8 @@ struct bcondConfFormat{
               {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,0},
+              {"k"   ,1},
+              {"omega",1},
           }},
 
           {"outlet_statPress", { 
@@ -149,6 +161,8 @@ struct bcondConfFormat{
               {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,1},
+              {"kb"  ,0},
+              {"omegab",0},
           }},
 
           {"outflow", { 
@@ -164,6 +178,8 @@ struct bcondConfFormat{
               {"Pt"  ,1},
               {"Ts"  ,0},
               {"Ps"  ,0},
+              {"kb"  ,0},
+              {"omegab",0},
 
           }},
  
@@ -180,6 +196,25 @@ struct bcondConfFormat{
               {"Pt"  ,-1},
               {"Ts"  ,-1},
               {"Ps"  ,-1},
+              {"kb"  ,-1},
+              {"omegab",-1},
+          }},
+
+          {"axis", { 
+              {"ro"  ,-1},
+              {"roUx",-1},
+              {"roUy",-1},
+              {"roUz",-1},
+              {"roe" ,-1},
+              {"Ux"  ,-1},
+              {"Uy"  ,-1},
+              {"Uz"  ,-1},
+              {"Tt"  ,-1},
+              {"Pt"  ,-1},
+              {"Ts"  ,-1},
+              {"Ps"  ,-1},
+              {"kb"  ,-1},
+              {"omegab",-1},
           }},
 
           {"periodic", { 
@@ -195,6 +230,8 @@ struct bcondConfFormat{
               {"Pt"  ,0},
               {"Ts"  ,0},
               {"Ps"  ,0},
+              {"kb"  ,0},
+              {"omegab",0},
               {"dtheta", 10},
               {"dx", 10},
               {"dy", 10},
@@ -213,20 +250,9 @@ struct bcondConfFormat{
 //void setBcondsValue(solverConfig& cfg , mesh& msh , variables& var , matrix& mat_p);
 void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p , fluct_variables& fluct);
 
+void applyRansScalarBoundaries(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
 void copyBcondsGradient(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p);
 
 void readBcondConfig(solverConfig& , vector<bcond>& );
 
-void wall_isothermal(solverConfig& , bcond& , mesh& , variables& , matrix& );
-
-void inlet_uniformVelocity(solverConfig& , bcond& , mesh& , variables& , matrix& );
-
-void inlet_Pressure(solverConfig& , bcond& , mesh& , variables& , matrix& );
-
-void outlet_statPress(solverConfig& , bcond& , mesh& , variables& , matrix& );
-
-void outflow(solverConfig& , bcond& , mesh& , variables& , matrix& );
-
-void slip(solverConfig& , bcond& , mesh& , variables& , matrix& );
-
-void periodic(solverConfig& , bcond& , mesh& , variables& , matrix& );

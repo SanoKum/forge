@@ -4,6 +4,8 @@ using namespace std;
 
 void dependentVariables(solverConfig &cfg , cudaConfig &cuda_cfg , mesh &msh , variables &v , matrix& mat_ns)
 {
+    (void)mat_ns;
+
     if (cfg.gpu==1) {
         dependentVariables_d_wrapper(cfg , cuda_cfg , msh , v);
         return;
@@ -22,18 +24,13 @@ void dependentVariables(solverConfig &cfg , cudaConfig &cuda_cfg , mesh &msh , v
     vector<flow_float>& roUy = v.c["roUy"];
     vector<flow_float>& roUz = v.c["roUz"];
     vector<flow_float>& roe  = v.c["roe"];
+    vector<flow_float>& roK = v.c["roK"];
+    vector<flow_float>& roOmega = v.c["roOmega"];
+    vector<flow_float>& k = v.c["k"];
+    vector<flow_float>& omega = v.c["omega"];
     vector<flow_float>& sonic= v.c["sonic"];
     vector<flow_float>& Ht= v.c["Ht"];
-
-    vector<flow_float>& ros= v.c["ros"];
-
-    flow_float ds;
-    flow_float ga = cfg.gamma;
-
-    flow_float ros_sum = 0.0;
-    flow_float rok_sum = 0.0;
     flow_float ek;
-
     flow_float intE;
 
     for (geom_int ic=0 ; ic<msh.nCells; ic++)
@@ -48,13 +45,11 @@ void dependentVariables(solverConfig &cfg , cudaConfig &cuda_cfg , mesh &msh , v
 
         P[ic] =(cfg.gamma-1.0)*(roe[ic]-ro[ic]*ek);
         Ht[ic] = roe[ic]/ro[ic] + P[ic]/ro[ic];
+        k[ic] = std::max(roK[ic]/ro[ic], static_cast<flow_float>(0.0));
+        omega[ic] = std::max(roOmega[ic]/ro[ic], static_cast<flow_float>(0.0));
 
         sonic[ic] = sqrt(cfg.gamma*P[ic]/ro[ic]);
 
-        //ds = (cfg.cp/cfg.gamma)*log(T[ic]/cfg.Tref) - ((ga-1.0)/ga)*log(P[ic]/cfg.Pref);
-        //ros[ic] = ro[ic]*ds;
-        //ros_sum += ros[ic]*msh.cells[ic].volume;
-        //rok_sum += ro[ic]*ek*msh.cells[ic].volume;
     }
     
 }

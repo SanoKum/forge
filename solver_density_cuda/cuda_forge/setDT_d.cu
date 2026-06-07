@@ -158,7 +158,8 @@ __global__ void setDTlocal_pseudo_cell_d
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ic < nCells) {
-        dt_local[ic] = cfl_pseudo_target*dt/cfl[ic];
+        const flow_float local_cfl_rate = cfl[ic] / max(dt, static_cast<flow_float>(1.0e-30));
+        dt_local[ic] = cfl_pseudo_target / max(local_cfl_rate, static_cast<flow_float>(1.0e-30));
     }
 }
 

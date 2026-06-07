@@ -7,7 +7,9 @@ add_library(probe STATIC
 
 target_include_directories(probe PRIVATE .. )
 
-set_property(TARGET probe  PROPERTY CUDA_ARCHITECTURES 86)
-target_compile_options(probe PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -lineinfo)
+if(CMAKE_CUDA_ARCHITECTURES)
+    set_property(TARGET probe PROPERTY CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
+endif()
+target_compile_options(probe PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-O3 -lineinfo>)
 
 

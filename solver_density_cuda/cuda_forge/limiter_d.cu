@@ -1,6 +1,15 @@
 #include "limiter_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
 
+__global__ void fill_limiter_d(flow_float* values, geom_int nValues, flow_float value)
+{
+    geom_int index = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (index < nValues) {
+        values[index] = value;
+    }
+}
+
 // Limiters for Unstructured Higher-Order Accurate Solutions of the Euler Equations
 // Krzysztof Michalak
 
@@ -85,6 +94,11 @@ __global__ void limiter_r1_d
     geom_int ic0 = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ic0 < nCells) {
+        if (limiter_scheme == 0) {
+            limiter_Q[ic0] = 1.0;
+            return;
+        }
+
         geom_int ip; 
         geom_int ic1; 
         geom_float dcp_x; 
@@ -183,11 +197,17 @@ __global__ void limiter_r1_d
 
 void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
-    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_ro"] , 1.0, msh.nCells_all*sizeof(flow_float)));
-    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Ux"] , 1.0, msh.nCells_all*sizeof(flow_float)));
-    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Uy"] , 1.0, msh.nCells_all*sizeof(flow_float)));
-    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Uz"] , 1.0, msh.nCells_all*sizeof(flow_float)));
-    CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_P"] , 1.0, msh.nCells_all*sizeof(flow_float)));
+    fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_ro"], msh.nCells_all, 1.0);
+    fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_Ux"], msh.nCells_all, 1.0);
+    fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_Uy"], msh.nCells_all, 1.0);
+    fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_Uz"], msh.nCells_all, 1.0);
+    fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_P"], msh.nCells_all, 1.0);
+
+    if (cfg.limiter == 0) {
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+        return;
+    }
 
     // ro
     limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 

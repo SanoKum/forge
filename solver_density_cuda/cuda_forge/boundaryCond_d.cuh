@@ -31,6 +31,7 @@ __global__ void slip_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic  ,
+ flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -77,6 +78,7 @@ __global__ void wall_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic  ,
+ flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -169,6 +171,7 @@ __global__ void outlet_statPress_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic  ,
+ flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -182,14 +185,14 @@ __global__ void outlet_statPress_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb 
+ flow_float* Psb
 
 
 );
 
 void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p);
 
-__global__ void inlet_uniformVelocity_statPress_d 
+__global__ void inlet_uniformVelocity_d 
 ( 
  // gas 
  flow_float ga,
@@ -213,6 +216,7 @@ __global__ void inlet_uniformVelocity_statPress_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
+flow_float* T,
 
  // bvar
  flow_float* rob ,
@@ -306,9 +310,8 @@ __global__ void inlet_Pressure_dir_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
- flow_float* T   ,
 
-// bvar
+ // bvar
  flow_float* rob ,
  flow_float* roUxb ,
  flow_float* roUyb ,
@@ -353,6 +356,7 @@ __global__ void outflow_d
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
+ flow_float* T   ,
 
 // bvar
  flow_float* rob ,

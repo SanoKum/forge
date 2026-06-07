@@ -21,6 +21,7 @@ fi
 
 echo "[1/4] Generate naca.geo"
 docker run --rm --gpus all \
+  --user "$(id -u):$(id -g)" \
   -v "$repo_root":/workspace \
   -w /workspace/case/20.naca_ml/001.test/mesh \
   "$image_name" \
@@ -28,6 +29,7 @@ docker run --rm --gpus all \
 
 echo "[2/4] Generate naca.msh with gmsh"
 docker run --rm --gpus all \
+  --user "$(id -u):$(id -g)" \
   -v "$repo_root":/workspace \
   -w /workspace/case/20.naca_ml/001.test/mesh \
   "$image_name" \
@@ -37,6 +39,7 @@ cp "$mesh_dir/naca.msh" "$script_dir/naca.msh"
 
 echo "[3/4] Convert naca.msh to naca.h5"
 docker run --rm --gpus all \
+  --user "$(id -u):$(id -g)" \
   -v "$repo_root":/workspace \
   -w /workspace/case/20.naca_ml/001.test/run_slau \
   "$image_name" \
@@ -44,6 +47,7 @@ docker run --rm --gpus all \
 
 echo "[4/4] Run forge"
 exec docker run --rm --gpus all \
+  --user "$(id -u):$(id -g)" \
   -v "$repo_root":/workspace \
   -w /workspace/case/20.naca_ml/001.test/run_slau \
   "$image_name" \

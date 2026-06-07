@@ -55,6 +55,16 @@ if [[ $# -ge 1 ]]; then
   esac
 
   rel_path="${target_path#"$repo_root_real"/}"
+
+  # Prefer the XMF wrapper when the user points ParaView at a raw HDF5 result.
+  if [[ "$target_path" == *.h5 ]]; then
+    xmf_path="${target_path%.h5}.xmf"
+    if [[ -f "$xmf_path" ]]; then
+      target_path="$xmf_path"
+      rel_path="${target_path#"$repo_root_real"/}"
+    fi
+  fi
+
   target_in_container="/workspace/$rel_path"
   workdir_in_container="$(dirname -- "$target_in_container")"
 fi
@@ -67,6 +77,8 @@ docker_args=(
   -e DISPLAY
   -e WAYLAND_DISPLAY
   -e PULSE_SERVER
+  -e HOME=/tmp/forge-home
+  -e XDG_CONFIG_HOME=/tmp/forge-home/.config
   -e QT_X11_NO_MITSHM=1
 )
 
@@ -106,7 +118,7 @@ if [[ -n "$target_in_container" ]]; then
 fi
 
 if [[ -n "$target_in_container" ]]; then
-  exec docker "${docker_args[@]}" "$image_name" paraview "$target_in_container"
+  exec docker "${docker_args[@]}" "$image_name" bash -lc 'mkdir -p "$XDG_CONFIG_HOME" && exec paraview "$1"' _ "$target_in_container"
 fi
 
-exec docker "${docker_args[@]}" "$image_name" paraview
+exec docker "${docker_args[@]}" "$image_name" bash -lc 'mkdir -p "$XDG_CONFIG_HOME" && exec paraview'

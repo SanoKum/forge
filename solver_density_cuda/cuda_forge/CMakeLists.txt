@@ -12,12 +12,20 @@ add_library(cuda_forge STATIC
     update_d.cuh
     boundaryCond_d.cu
     boundaryCond_d.cuh
+    ransScalarBoundary_d.cu
+    ransScalarBoundary_d.cuh
     calcGradient_d.cu
     calcGradient_d.cuh
     limiter_d.cu
     limiter_d.cuh
     convectiveFlux_d.cu
     convectiveFlux_d.cuh
+    scalarTransport_d.cu
+    scalarTransport_d.cuh
+    ransSource_d.cu
+    ransSource_d.cuh
+    axisymmetricSource_d.cu
+    axisymmetricSource_d.cuh
     ducrosSensor_d.cu
     ducrosSensor_d.cuh
     turbulent_viscosity_d.cu
@@ -41,6 +49,8 @@ add_library(cuda_forge STATIC
  
     gasProperties_d.cu
     gasProperties_d.cuh
+    residualMonitor_d.cu
+    residualMonitor_d.cuh
  
 
 )
@@ -48,24 +58,9 @@ add_library(cuda_forge STATIC
 
 target_include_directories(cuda_forge PRIVATE .. )
 
-#set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 86)
-#target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -lineinfo)
+# Inherit CUDA_ARCHITECTURES from the top-level CMakeLists.txt.
+if(CMAKE_CUDA_ARCHITECTURES)
+    set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
+endif()
 
-
-# CUDAアーキテクチャをT4(7.5)とRTX 30シリーズ(8.6)に対応させる
-set_property(TARGET cuda_forge PROPERTY CUDA_ARCHITECTURES 75 86)
-
-# コンパイルオプションを両アーキテクチャに対応
-#target_compile_options(cuda_forge PRIVATE 
-#    $<$<COMPILE_LANGUAGE:CUDA>:
-#        -gencode arch=compute_75,code=sm_75
-#        -gencode arch=compute_86,code=sm_86
-#    > 
-#    -lineinfo)
-
-#set_target_properties(cuda_forge PROPERTIES CUDA_ARCHITECTURES "86")
-#target_compile_options(cuda_forge PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_86,code=sm_86> -dc -w)
-#set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -std=c++11 -gencode arch=compute_86,code=sm_86)
-
-#target_link_libraries( amgcl_cuda cusparse )
-#link_directories(/opt/nvidia/hpc_sdk/Linux_x86_64/23.1/math_libs/11.8/targets/x86_64-linux/lib)
+target_compile_options(cuda_forge PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-O3 -lineinfo>)

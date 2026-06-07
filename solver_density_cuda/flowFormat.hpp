@@ -1,6 +1,8 @@
 #ifndef FLOW_FORMAT_H
 #define FLOW_FORMAT_H
 
+#include <vector_types.h>
+
 typedef float flow_float;
 typedef float geom_float;
 typedef float3 flow_float3;

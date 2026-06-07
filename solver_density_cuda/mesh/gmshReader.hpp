@@ -493,7 +493,8 @@ public:
             if (is3D == true  && itEnt.dimension != 3) continue; // skip surface. only volume
             if (is3D == false && itEnt.dimension != 2) continue; // skip edge. only surface
 
-            geom_int physTag = volumeEntMap[itEnt.entTag].physTag; // physical tag (fluid, inlet, etc.)
+            geom_int physTag = is3D ? volumeEntMap[itEnt.entTag].physTag
+                                    : surfEntMap[itEnt.entTag].physTag; // physical tag (fluid, outer, etc.)
             elementTypeFormat eleType = this->eleTypeMap.mapElementFromGmshID[itEnt.ieleType]; // quad, hex, etc.
 
             vector<vector<geom_int>> nOrderPlanes = eleType.nodesOrderPlanes;
@@ -514,6 +515,7 @@ public:
                 //cell_now.nNodes = eleType.nNodes;
                 cell_now.iNodes = itEle.iNodes;
                 cell_now.ieleType = itEnt.ieleType;
+                cell_now.regionId = physTag;
                 this->cells.push_back(cell_now);
 
                 nCells_temp += 1;
@@ -929,8 +931,12 @@ public:
 
                 pln.surfVect.resize(3);
 
-                pln.surfVect[0] =-r01y;
-                pln.surfVect[1] =+r01x;
+                // For CCW-wound 2D cells (Gmsh default), edges traverse the cell
+                // counter-clockwise; rotating the edge vector by -90 deg gives the
+                // outward normal (consistent with the c0->c1 sv convention used by
+                // the flux/BC kernels).
+                pln.surfVect[0] =+r01y;
+                pln.surfVect[1] =-r01x;
                 pln.surfVect[2] = 0.0;
                 pln.surfArea = std::sqrt(  std::pow(pln.surfVect[0] , 2.0) 
                                          + std::pow(pln.surfVect[1] , 2.0)
@@ -1105,6 +1111,74 @@ public:
             icell.centCoords[0] = icell.centCoords[0]/icell.iNodes.size();
             icell.centCoords[1] = icell.centCoords[1]/icell.iNodes.size();
             icell.centCoords[2] = icell.centCoords[2]/icell.iNodes.size();
+        }
+
+        // CW ワインドセルの特定: 2D 多角形の符号付き面積（Shoelace）が負なら CW。
+        // D < 0 だけで判断すると高スキューの CCW セルの面も誤って反転するため、
+        // セル単位で CW を確定し、ic0 が CW のときだけ surfVect を反転する。
+        {
+            std::vector<bool> isCW(cells.size(), false);
+            for (geom_int ic = 0; ic < (geom_int)cells.size(); ++ic)
+            {
+                const auto& cel = cells[ic];
+                geom_int nn = (geom_int)cel.iNodes.size();
+                if (nn < 3) continue; // 辺要素はスキップ
+                geom_float signedArea = 0.0;
+                for (geom_int k = 0; k < nn; ++k)
+                {
+                    const auto& n0 = nodes[cel.iNodes[k]].coords;
+                    const auto& n1 = nodes[cel.iNodes[(k+1)%nn]].coords;
+                    signedArea += n0[0]*n1[1] - n1[0]*n0[1];
+                }
+                isCW[ic] = (signedArea < 0.0);
+            }
+            int nCW = 0;
+            for (bool b : isCW) if (b) nCW++;
+            cout << "CW cells detected: " << nCW << "\n";
+
+            int nFixed = 0;
+            int nFixedBnd = 0;
+            int nSkipped = 0; // CW でないが D<0 の内部面（高スキュー警告用）
+            for (geom_int i = 0; i < (geom_int)planes.size(); ++i)
+            {
+                auto& pln = planes[i];
+                geom_int ic0 = pln.iCells[0];
+
+                if (pln.iCells.size() == 1)
+                {
+                    // 境界面: ic0 が CW なら sv が内向きなので反転する
+                    if (isCW[ic0])
+                    {
+                        pln.surfVect[0] = -pln.surfVect[0];
+                        pln.surfVect[1] = -pln.surfVect[1];
+                        pln.surfVect[2] = -pln.surfVect[2];
+                        nFixedBnd += 1;
+                    }
+                    continue;
+                }
+
+                // 内部面
+                geom_int ic1 = pln.iCells[1];
+                if (isCW[ic0])
+                {
+                    pln.surfVect[0] = -pln.surfVect[0];
+                    pln.surfVect[1] = -pln.surfVect[1];
+                    pln.surfVect[2] = -pln.surfVect[2];
+                    nFixed += 1;
+                }
+                else
+                {
+                    const auto& cc0 = cells[ic0].centCoords;
+                    const auto& cc1 = cells[ic1].centCoords;
+                    const geom_float D = (cc1[0]-cc0[0])*pln.surfVect[0]
+                                       + (cc1[1]-cc0[1])*pln.surfVect[1]
+                                       + (cc1[2]-cc0[2])*pln.surfVect[2];
+                    if (D < 0.0) nSkipped += 1;
+                }
+            }
+            cout << "face orientation fix (CW ic0): internal=" << nFixed << ", boundary=" << nFixedBnd << "\n";
+            if (nSkipped > 0)
+                cout << "WARNING: " << nSkipped << " internal faces have D<0 but ic0 is CCW (skewed mesh)\n";
         }
 
     }
@@ -1287,6 +1361,12 @@ public:
         file.createDataSet("/CELLS/STRUCT",cells_struct);
         file.createDataSet("/CELLS/volume",volume);
         file.createDataSet("/CELLS/centCoords",centCoords2);
+
+        vector<geom_int> regionIds;
+        for (auto& cel : this->cells) {
+            regionIds.push_back(cel.regionId);
+        }
+        file.createDataSet("/CELLS/regionId", regionIds);
 
         // write initial values
         //for (string name : var.output_cellValNames)

@@ -15,13 +15,10 @@ void gradientGauss(solverConfig& cfg , cudaConfig& cuda_cfg ,mesh& msh , variabl
     std::vector<geom_float> sv(3);
 
     std::vector<geom_float> dccv(3);
-    geom_float dcc;
 
     std::vector<geom_float> dc1pv(3);
-    geom_float dc1p;
 
     std::vector<geom_float> dc2pv(3);
-    geom_float dc2p;
 
     std::vector<geom_float> pcent(3);
     std::vector<geom_float> c1cent(3);

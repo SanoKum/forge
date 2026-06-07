@@ -11,7 +11,7 @@
 __global__ void dependentVariables_d
 ( 
  // gas properties
- geom_int gamma , geom_int cp , 
+ flow_float gamma , flow_float cp , 
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -22,10 +22,14 @@ __global__ void dependentVariables_d
  flow_float* roUy  ,
  flow_float* roUz  ,
  flow_float* roe  ,
+ flow_float* roK  ,
+ flow_float* roOmega  ,
 
  flow_float* P   ,
  flow_float* Ht  ,
  flow_float* sonic,
+ flow_float* k   ,
+ flow_float* omega,
  flow_float* T   ,
  flow_float* Ux  ,
  flow_float* Uy  ,

@@ -27,7 +27,7 @@ public:
 
     //Time
     int endTimeControl; // 0: use dt , 1: cfl
-    int nStep;
+    int nStepOuter;
     int outStepInterval;
     int outStepStart;
 
@@ -37,18 +37,20 @@ public:
     flow_float dt_pseudo;
     flow_float cfl;
     flow_float cfl_pseudo;
+    flow_float implicitRelax = 1.0;
+    int blockDPLUR = 0;
     flow_float dt_max;
     flow_float dt_min;
 
     int unsteady; // steady , unsteady
     int dualTime; // 0: off , 1: on
-    int timeIntegration; // 1: Euler expli , 3: 3rd Runge Explicit
+    int timeIntegration; // 1: Euler explicit, 3: 3rd Runge explicit, 4: 4th RK, 11: implicit defect-correction
 
     int isImplicit; // 0: exp , 1:imp;
 
     // for inner loop
     int nStage;
-    int nInnerLoop; 
+    int nStepInner;
     std::vector<flow_float> coef_N;
     std::vector<flow_float> coef_M; 
     std::vector<flow_float> coef_Res;
@@ -57,13 +59,17 @@ public:
     std::vector<flow_float> coef_Res_4thRunge;
 
     flow_float  convMethod; 
-    int limiter;    // 0: off 1:venkata
+    int limiter;    // 0: off, 1: Barth-Jespersen, 2: Venkata, -1: legacy
 
 
     int LESorRANS; // 0:no 1:LES 2:RANS
     int LESmodel; // 1:WALE
+    int RANSmodel = 0; // 0:none 1:SST
+    int scalarDiffusion = 1; // 0:advection-only 1:advection+diffusion
+    int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
 
     int isCompressible;
+    int isAxisymmetric = 0;
     int thermalMethod;
     int viscMethod;
 
@@ -87,5 +93,8 @@ public:
 
     void read(std::string);
     void initTimeIntegrationScheme(int timeIntegration);
+    int mainLoopCount() const;
+    int perStepIterationCount() const;
+    const char* perStepIterationLabel() const;
 };
 

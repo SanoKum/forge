@@ -49,7 +49,6 @@ int main(int argc, char* argv[]) {
     File file(input_file, File::ReadOnly);
     Group mesh_group = file.getGroup("/MESH");
 
-    geom_int nNodes = mesh_group.getAttribute("nNodes").read<geom_int>();
     geom_int nCells = mesh_group.getAttribute("nCells").read<geom_int>();
 
     vector<geom_float> coords;
@@ -74,6 +73,13 @@ int main(int argc, char* argv[]) {
     file.getDataSet("/CELLS/volume").read(volume);
     vector<geom_float> centroids;
     file.getDataSet("/CELLS/centCoords").read(centroids);
+
+    vector<geom_int> regionId_all;
+    if (file.exist("/CELLS/regionId")) {
+        file.getDataSet("/CELLS/regionId").read(regionId_all);
+    } else {
+        regionId_all.assign(nCells, 0);
+    }
 
     // `/CELLS/STRUCT` を直接読み込む
     vector<geom_int> cell_struct;
@@ -278,11 +284,16 @@ int main(int argc, char* argv[]) {
         outf.createDataSet("/MESH/CONNE", conne_out);
 
 
+        vector<geom_int> local_regionIds;
+        for (auto cid : all_cells)
+            local_regionIds.push_back(regionId_all[cid]);
+
         Group cgrp = outf.createGroup("/CELLS");
         cgrp.createDataSet("volume", local_volume);
         cgrp.createDataSet("centCoords", local_centroids);
         cgrp.createDataSet("globalCellIDs", globalCellIDs);
-        cgrp.createDataSet("STRUCT", local_struct);                                                                                                                                        
+        cgrp.createDataSet("STRUCT", local_struct);
+        cgrp.createDataSet("regionId", local_regionIds);                                                                                                                                        
 
         Group vgrp = outf.createGroup("/VALUE");
         for (const auto& [name, vals] : local_values) {

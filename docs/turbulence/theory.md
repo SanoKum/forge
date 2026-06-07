@@ -284,7 +284,129 @@ $$
 
 を用いている。advection-only 段階では既存の体積・面積重みで scalar の対流を
 通せるが、SST 特有の diffusion / source には幾何項の検討が必要である。
-そのため軸対称 SST の完成は別 plan とする。
+詳細は子 plan
+[`architecture-axisym-sst.md`](../../.github/plans/architecture-axisym-sst.md)
+で扱い、以下に理論的な要点を整理する。
+
+### 7.1 対流・拡散には幾何 source が残らない
+
+$k$, $\omega$ の対流・拡散は円筒座標でも発散形を保つ。
+$\phi \in \{k, \omega\}$ について
+
+$$
+\frac{1}{r}\partial_r\!\big(r\,\rho u_r \phi\big) + \partial_z(\rho u_z \phi)
+=
+\frac{1}{r}\partial_r\!\big(r\,\Gamma_\phi\,\partial_r \phi\big)
++ \partial_z(\Gamma_\phi\,\partial_z \phi)
++ S_\phi
+$$
+
+であり、両辺に $r$ を掛けて planar セル $A$ で積分すると、対流項・拡散項は
+ともに $\partial_r(r\,\cdot) + \partial_z(r\,\cdot)$ の純粋な発散になる。
+運動量方程式の $-\partial_r p$ のように「発散形に直せない残差」が無いため、
+$r$ 重み付き面積 $\mathbf{S}_f = \bar r_f\,dl_f\,\hat{\mathbf n}$ を使う限り、
+**対流・拡散からは軸対称特有の幾何 source は発生しない**。
+拡散の $\theta\theta$ 寄与
+$\frac{1}{r}\partial_r(r\,\Gamma_\phi\,\partial_r\phi)$ も $r$ 重み面積に
+畳み込まれており、別途のソース項は不要である（子 plan で単体検証する）。
+
+### 7.2 生産項のフープひずみ（幾何 source の本体）
+
+幾何 source の本質は **ひずみ速度テンソルの周方向成分** にある。
+軸対称流れ ($u_\theta = 0$, $\partial_\theta = 0$) でも、円筒座標のひずみ速度は
+平面に現れない対角成分
+
+$$
+S_{\theta\theta} = \frac{u_r}{r} = \frac{U_y}{r}
+$$
+
+を持つ（フープひずみ, hoop strain）。SST の生産項は
+$P_k = \mu_t S^2$, $P_\omega = \alpha\rho S^2$ で
+$S = \sqrt{2\,S_{ij}S_{ij}}$ を用いるため、正しい大きさは
+
+$$
+S^2 = 2\!\left(S_{rr}^2 + S_{zz}^2 + S_{\theta\theta}^2\right)
++ \left(\partial_z u_r + \partial_r u_z\right)^2,
+\qquad
+S_{\theta\theta} = \frac{u_r}{r}
+$$
+
+となる。planar 速度勾配 ($\partial_x U_x \dots \partial_z U_z$) だけから組んだ
+$S^2$ には $2\,S_{\theta\theta}^2 = 2\,(u_r/r)^2$ が欠落しており、軸近傍や急拡大部で
+生産が過小評価される。同じ $S$ は渦粘性の制限子
+$\mu_t = \rho a_1 k / \max(a_1\omega,\,S F_2)$ にも入るため、両方を一貫して
+補正する必要がある。
+
+### 7.3 圧縮性（dilatation）補正
+
+超音速ノズルでは膨張・圧縮による発散 $\nabla\!\cdot\!\mathbf u$ が大きい。
+軸対称の完全な発散は
+
+$$
+\nabla\!\cdot\!\mathbf u
+= \partial_z u_z + \frac{1}{r}\partial_r(r u_r)
+= \partial_x U_x + \partial_y U_y + \frac{u_r}{r}
+\quad(=\texttt{axisym\_divU})
+$$
+
+であり、planar の発散に $u_r/r$ を加えた量となる。
+
+#### 圧縮性 Boussinesq と生産項の正確形
+
+圧縮性では乱流応力の Boussinesq 近似は等方成分を分離した形が正確である。
+
+$$
+\tau_{ij} = 2\mu_t\left(S_{ij} - \tfrac13(\nabla\!\cdot\!\mathbf u)\,\delta_{ij}\right)
+- \tfrac23\rho k\,\delta_{ij}
+$$
+
+生産項 $P_k = \tau_{ij}\,\partial_j u_i = \tau_{ij} S_{ij}$ を展開すると
+
+$$
+P_k = \underbrace{2\mu_t\!\left(S_{ij}S_{ij} - \tfrac13(\nabla\!\cdot\!\mathbf u)^2\right)}_{\text{(A) deviatoric}}
+\;\underbrace{-\;\tfrac23\rho k\,(\nabla\!\cdot\!\mathbf u)}_{\text{(B) isotropic}}
+$$
+
+となる。非圧縮形 $P_k = \mu_t S^2 = 2\mu_t S_{ij}S_{ij}$ (config `dilatationCorrection: 0`)
+は (A) の $-\tfrac13(\nabla\!\cdot\!\mathbf u)^2$ と (B) を欠き、正確形との差は
+
+$$
+P_k^{\rm 現行} - P_k^{\rm 正確}
+= \tfrac23\mu_t(\nabla\!\cdot\!\mathbf u)^2 + \tfrac23\rho k\,(\nabla\!\cdot\!\mathbf u).
+$$
+
+- **(A) deviatoric トレース除去**: 等方膨張・圧縮そのものはせん断生産に数えない。
+  $S^2 \to S^2 - \tfrac23(\nabla\!\cdot\!\mathbf u)^2$（$S^2=2S_{ij}S_{ij}$ に対して
+  $2\cdot\tfrac13(\nabla\!\cdot\!\mathbf u)^2 = \tfrac23(\nabla\!\cdot\!\mathbf u)^2$ を引く）。
+  膨張コアでの spurious な $k$ 生成を抑える。低リスク。
+- **(B) 等方項**: 膨張 ($\nabla\!\cdot\!\mathbf u>0$) で $k$ のシンク、
+  圧縮 ($\nabla\!\cdot\!\mathbf u<0$, 衝撃波) でソース。$k$ 方程式固有で、
+  $\omega$ 生産には入れない。膨張で $P_k<0$ になり得るため $P_k \ge 0$ クリップを併用する。
+
+これら (A)(B) はいずれも $\nabla\!\cdot\!\mathbf u$ (= `axisym_divU`) を用いる。
+軸対称では $u_r/r$ を含む完全発散を使わなければ強圧縮場で過大/過小評価が残る。
+
+#### 別物: dilatation-dissipation 系（採用しない）
+
+Sarkar / Zeman / Wilcox の乱流マッハ数補正
+$\varepsilon = \varepsilon_s(1 + \alpha_1 M_t^2)$, $M_t=\sqrt{2k}/a$ は
+**散逸**を増やす別系統の補正で、自由せん断層向けにキャリブレートされている。
+壁境界層・ノズル内部では逆効果になりやすく、標準 SST には組み込まない。
+本実装では (A)(B) の生産項補正のみを対象とし、$M_t$ 散逸補正は採用しない。
+
+### 7.4 既存の軸対称診断量の再利用
+
+7.2・7.3 で必要な量は、NS 用に
+[`axisymmetricSource_d.cu`](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)
+が既に計算・保持している。
+
+| 量 | 変数 | 内容 |
+| --- | --- | --- |
+| フープひずみ $u_r/r$ | `axisym_uy_over_r` | $S_{\theta\theta}$ そのもの |
+| 完全発散 $\nabla\!\cdot\!\mathbf u$ | `axisym_divU` | $\partial_x U_x+\partial_y U_y+u_r/r$ |
+
+したがって SST 側は新規物理量を計算せず、これらを kernel 引数で受け取り、
+`isAxisymmetric` のとき $S^2$ と発散補正に畳み込むだけでよい。
 
 ## 8. 初期実装の範囲外
 
@@ -294,6 +416,7 @@ $$
 - 遷移モデル
 - 圧縮性補正の詳細オプション化
 - 陰解法 Jacobian への SST 連成
-- 軸対称 SST の幾何 source 詳細
 
-それぞれ別 plan または後続フェーズで扱う。
+軸対称 SST の幾何 source (§7.1–7.4) は子 plan
+[`architecture-axisym-sst.md`](../../.github/plans/architecture-axisym-sst.md)
+で実装・検証する。その他は別 plan または後続フェーズで扱う。

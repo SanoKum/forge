@@ -5,7 +5,9 @@
 #include "point_probes.cuh"
 
 
-point_probes::point_probes() {};
+point_probes::point_probes()
+    : nProbes(0), cell_id_d(nullptr), outStepStart(0), outStepInterval(1), dimGrid_pprobe(0)
+{};
 
 point_probes::~point_probes() {
 }
@@ -20,6 +22,8 @@ void point_probes::init(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh)
 
 void point_probes::allocVariables()
 {
+    if (this->nProbes == 0) return;
+
     for (auto& valName : valNames)
     {
         this->var[valName].resize(this->nProbes); // including ghost cells
@@ -58,6 +62,13 @@ void point_probes::readYAML()
         this-> outStepStart    = config["outStepStart"].as<int>();
 
         auto probes = config["points"];
+
+        this->nProbes = 0;
+        this->inputProbeXYZ.clear();
+
+        if (!probes || !probes.IsMap()) {
+            return;
+        }
 
         std::vector<Point_r1> Points;
 
@@ -235,9 +246,11 @@ __global__ void setProbeVariables_d
 void point_probes::setProbeVariables_d_wrapper
 (solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
+    if (this->nProbes == 0) return;
+
     for (auto& varName : this->valNames) {
         std::cout << varName << std::endl;
-        setProbeVariables_d<<<this->nProbes , this->dimGrid_pprobe>>>
+        setProbeVariables_d<<<this->dimGrid_pprobe , cuda_cfg.blocksize>>>
         (
             this->nProbes,
             this->cell_id_d,

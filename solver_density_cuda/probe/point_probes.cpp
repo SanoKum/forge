@@ -117,7 +117,7 @@ void point_probes::outputProbes(solverConfig& cfg, mesh& msh , variables& var)
         std::string fname = "probe_" + oss.str() + ".out";
         outfile.open(this->outFileName);
 
-        outfile << cfg.nStep << " , " << cfg.totalTime;
+        outfile << cfg.nStepOuter << " , " << cfg.totalTime;
 
         for (auto varName : this->valNames) {
             outfile << " , " << this->var[varName][i] ;

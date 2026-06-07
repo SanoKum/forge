@@ -383,6 +383,12 @@ __global__ void calcGradient_2_d
 
 void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
+    flow_float* grad_volume = (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"];
+    flow_float* grad_sx = (cfg.isAxisymmetric == 1) ? var.p_d["sx_planar"] : var.p_d["sx"];
+    flow_float* grad_sy = (cfg.isAxisymmetric == 1) ? var.p_d["sy_planar"] : var.p_d["sy"];
+    flow_float* grad_sz = (cfg.isAxisymmetric == 1) ? var.p_d["sz_planar"] : var.p_d["sz"];
+    flow_float* grad_ss = (cfg.isAxisymmetric == 1) ? var.p_d["ss_planar"] : var.p_d["ss"];
+
     // initialize
     CHECK_CUDA_ERROR(cudaMemset(var.c_d["dUxdx"], 0.0, msh.nCells*sizeof(flow_float)));
     CHECK_CUDA_ERROR(cudaMemset(var.c_d["dUxdy"], 0.0, msh.nCells*sizeof(flow_float)));
@@ -427,9 +433,9 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
         // mesh structure
         msh.nCells,
         msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        grad_volume, var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
         var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-        var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+        grad_sx , grad_sy , grad_sz , grad_ss,
 
         // basic variables
         var.c_d["ro"] ,
@@ -510,9 +516,9 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     calcGradient_2_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
         // mesh structure
         msh.nCells,
-        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        grad_volume, var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
         var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-        var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+        grad_sx , grad_sy , grad_sz , grad_ss,
 
         // basic variables
         var.c_d["ro"] ,
