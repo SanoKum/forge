@@ -12,8 +12,8 @@ add_library(cuda_forge STATIC
     update_d.cuh
     boundaryCond_d.cu
     boundaryCond_d.cuh
-    ransScalarBoundary_d.cu
-    ransScalarBoundary_d.cuh
+    ransBoundary_d.cu
+    ransBoundary_d.cuh
     calcGradient_d.cu
     calcGradient_d.cuh
     limiter_d.cu
@@ -22,6 +22,8 @@ add_library(cuda_forge STATIC
     convectiveFlux_d.cuh
     scalarTransport_d.cu
     scalarTransport_d.cuh
+    ransTransport_d.cu
+    ransTransport_d.cuh
     ransSource_d.cu
     ransSource_d.cuh
     axisymmetricSource_d.cu

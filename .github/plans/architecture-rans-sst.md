@@ -59,9 +59,10 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
   residual 系のみを広げる。
 - 渦粘性は既存 `vis_turb` を共用し、WALE と SST が同じ出力経路を使う。
 - 乱流 scalar の対流・拡散は、既存 NS flux から分離した
-  `scalarTransport_d.*` の共通輸送コアで扱う。
+  `scalarTransport_d.*` の物理非依存な共通輸送コア (launch ヘルパ) で扱い、
+  k/ω への適用 (descriptor 構築・有効化判定・勾配) は `ransTransport_d.*` にまとめる。
 - SST 固有の boundary / source / closure は model-specific layer として分離し、
-  `ransScalarBoundary_d.*`, `ransSource_d.*` のような専用 file 群に置く。
+  `ransBoundary_d.*`, `ransSource_d.*` のような専用 file 群に置く。
 - 初回マイルストーンの scalar advection は 1 次 upwind を採用し、
   scalar gradient / limiter / diffusion / source は後段に送る。
 - axisymmetric の SST 固有幾何 source は本親計画では扱わず、子 plan に切り出す。
@@ -142,3 +143,4 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
   - k: min=0.004, max=6.83e4, mean=7160 (負値なし)
   - omega: min=88, max=1.96e8 (壁面近傍で大値、物理的に妥当)
   - SST モデルの段階検証 (run_0087〜0090) すべて完了。plan status → done。
+- `2026-06-09` — file 構成を整理 (挙動不変)。`scalarTransport_d.*` を物理非依存の共通輸送コア (`ScalarTransportDesc` + `scalarTransportResidual_d` / `scalarTimeIntegration_d`) に限定し、k/ω 固有の descriptor 構築・有効化判定・勾配・公開ラッパを新規 `ransTransport_d.*` (`ransTransport_d_wrapper` / `ransTimeIntegration_d_wrapper` / `ransGradient_d_wrapper`) へ分離。`ransScalarBoundary_d.*` → `ransBoundary_d.*` に改名 (`ransBoundary_d_wrapper`)。将来の `speciesTransport_d.*` 等は同じ共通コアを再利用する。

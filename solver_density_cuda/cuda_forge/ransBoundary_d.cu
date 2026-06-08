@@ -1,4 +1,4 @@
-#include "ransScalarBoundary_d.cuh"
+#include "ransBoundary_d.cuh"
 
 #include "cuda_forge/cudaWrapper.cuh"
 
@@ -82,7 +82,7 @@ __global__ void rans_neumann_scalar_boundary_d(
 
 }
 
-void ransScalarBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var)
+void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var)
 {
     (void)msh;
 

@@ -65,7 +65,9 @@ NS のみを想定しているため、初期実装では `scalarTransport_d.*` 
 まず 1 次 upwind の advection-only を別 wrapper として差し込んだ。
 その後、同じ wrapper に face ベースの diffusion を追加した。
 ただし source と壁面生成ロジックは `scalarTransport_d.*` に埋め込まず、
-`ransScalarBoundary_d.*` と `ransSource_d.*` のような model-specific layer に分離する。
+`ransBoundary_d.*` と `ransSource_d.*` のような model-specific layer に分離する。
+さらに k/ω への適用 (descriptor 構築・有効化判定・勾配) も共通コアから切り出し、
+`ransTransport_d.*` にまとめた。
 
 ### 3.4 渦粘性
 
@@ -99,7 +101,7 @@ NS のみを想定しているため、初期実装では `scalarTransport_d.*` 
 現行コードの対応は次のとおり。
 
 - NS BC 層が既存の `wall_d` / `wall_isothermal_d` / `inlet_*` / `outlet_*` / `slip_d` / `periodic_d` を持つ
-- turbulence scalar BC はこの後段に差し込む `ransScalarBoundary_d.*` へ移していく
+- turbulence scalar BC はこの後段に差し込む `ransBoundary_d.*` へ移していく
 - `bcondConfFormat` の `wall` / `wall_isothermal` に `kb` と `omegab`、`inlet_*` に `k` と `omega` を持てる
 
 この説明は、壁面がセル中心と ghost セルの中点にある等距離配置を前提にしたもの。
@@ -126,15 +128,21 @@ generic scalar transport 層で扱う。
 実装上の責務分担は次とする。
 
 - NS 本体: `convectiveFlux_d.*`, `viscousFlux_d.*`
-- scalar 共通: `scalarTransport_d.*`
-- model-specific boundary: `ransScalarBoundary_d.*` など
+- scalar 共通輸送コア (物理非依存の移流・拡散・時間積分): `scalarTransport_d.*`
+- RANS 適用層 (k/ω への共通コア適用・k/ω 勾配): `ransTransport_d.*`
+- model-specific boundary: `ransBoundary_d.*` など
 - model-specific source / closure: `ransSource_d.*` など
+
+`scalarTransport_d.*` は `ScalarTransportDesc` を受ける汎用 launch ヘルパ
+(`scalarTransportResidual_d` / `scalarTimeIntegration_d`) のみを公開し、
+k/ω 固有の descriptor 構築・有効化判定・勾配計算は `ransTransport_d.*` 側に置く。
+将来 species など別の scalar を足す場合も同じ共通コアを再利用する。
 
 初回は advection-only とし、descriptor は内部実装用の metadata として扱う。
 ユーザ入力に `enabled` を追加するのではなく、`LESorRANS == 2 && RANSmodel == 1`
 のとき `k`, `omega` を自動有効化する。
 
-一方で source は core に埋め込まず、main loop で `scalarTransport_d_wrapper()` の後に
+一方で source は core に埋め込まず、main loop で `ransTransport_d_wrapper()` の後に
 model-specific source wrapper を並べる。
 
 diffusion では `k` と `omega` に別々の係数を与え、`vis_lam` と `vis_turb`
@@ -150,7 +158,7 @@ diffusion では `k` と `omega` に別々の係数を与え、`vis_lam` と `vi
 
 対流・拡散は B 流儀の $r$ 重み付き面積 (`A_planar`, `sx_planar`) に幾何効果が
 畳み込まれており、追加 source は不要 (theory.md §7.1)。
-`calcScalarGradient_d_wrapper` と `scalar_diffusion_first_order_d` は
+`ransGradient_d_wrapper` と `scalar_diffusion_first_order_d` は
 すでに `A_planar` / `sx_planar` を使うため、コード変更なしで軸対称に対応する。
 拡散の $\theta\theta$ 寄与が本当に発散形を保つかは、子 plan で
 半径方向 1D 解析解との単体比較で確認する。

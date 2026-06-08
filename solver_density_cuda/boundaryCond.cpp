@@ -2,7 +2,7 @@
 
 #include "cuda_forge/cudaWrapper.cuh"
 #include "cuda_forge/boundaryCond_d.cuh"
-#include "cuda_forge/ransScalarBoundary_d.cuh"
+#include "cuda_forge/ransBoundary_d.cuh"
 #include "cuda_forge/fluct_variables_d.cuh"
 
 using namespace std;
@@ -164,7 +164,7 @@ void applyRansScalarBoundaries(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
 
     for (auto& bc : msh.bconds)
     {
-        ransScalarBoundary_d_wrapper(cfg , cuda_cfg , bc , msh , var);
+        ransBoundary_d_wrapper(cfg , cuda_cfg , bc , msh , var);
     }
 
     gpuErrchk( cudaPeekAtLastError() );

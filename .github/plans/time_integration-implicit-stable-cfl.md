@@ -71,7 +71,7 @@ $$
 
 1. `variables.hpp` に `transport_diag_k`/`transport_diag_omega`（cell 値）を追加。
 2. `scalarTransport_d.cu`: `scalar_advection_first_order_d`/`scalar_diffusion_first_order_d` に `ro`・`transport_diag`
-   引数を追加し対角を atomicAdd 集計。`scalarTransport_d_wrapper` 冒頭で `transport_diag_*` をゼロ初期化。
+   引数を追加し対角を atomicAdd 集計。`ransTransport_d_wrapper` 冒頭で `transport_diag_*` をゼロ初期化。
    `runge_kutta_exp_scalar_d` の `fac` に `transport_diag/v` を加算（陽 RK 経路）。
 3. `update_d.cu`/`.cuh`: `applySSTPointImplicit_d` に `transport_diag_k`/`omega` を渡し $D_k,D_\omega$ に加算。
 4. docs（theory/implementation）更新、本 plan・README 追記。

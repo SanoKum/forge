@@ -45,7 +45,7 @@
 
 #include "cuda_forge/calcGradient_d.cuh"
 #include "cuda_forge/convectiveFlux_d.cuh"
-#include "cuda_forge/scalarTransport_d.cuh"
+#include "cuda_forge/ransTransport_d.cuh"
 #include "cuda_forge/ransSource_d.cuh"
 #include "cuda_forge/viscousFlux_d.cuh"
 #include "cuda_forge/updateCenterVelocity_d.cuh"
@@ -751,10 +751,10 @@ void assembleResidual(StepContext& s, int stage_index)
         convectiveFlux_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, s.mat_ns);
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
-        scalarTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+        ransTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
-        calcScalarGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        ransGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         ransSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
@@ -858,7 +858,7 @@ void advanceExplicitRK(StepContext& s)
         logResidualSnapshot(s, iloop);
         s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
             timeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
-            scalarTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
+            ransTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
         });
     }
 

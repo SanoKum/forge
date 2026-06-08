@@ -54,14 +54,14 @@ $D_\phi = V/\Delta\tau + V\,\text{src\_jac}$ に $\Delta\tau/V$ を掛けた形�
 `src_jac=0`（乱流なし／LES WALE）では `fac=1` で従来の純陽的更新に一致するため LES は無影響。
 
 呼び出し順序: `advanceExplicitRK` → `assembleResidual`（`scalarTransport`+`ransSource` で res と src_jac 確定）
-→ `scalarTimeIntegration_d_wrapper`（ここで src_jac 利用可能）。
+→ `ransTimeIntegration_d_wrapper`（ここで src_jac 利用可能）。
 
 ## 5. 実装ステップ
 
 1. `ScalarTransportDesc` に `flow_float* src_jac;` を追加。
 2. `buildScalarDescs` で k に `src_jac_k`、ω に `src_jac_omega` を割り当て。
 3. `runge_kutta_exp_scalar_d` に `src_jac` 引数を追加し、残差増分を `fac` で割る。
-4. `scalarTimeIntegration_d_wrapper` の `timeIntegration==1/3` 呼び出しで `desc.src_jac` を渡す。
+4. `ransTimeIntegration_d_wrapper` の `timeIntegration==1/3` 呼び出しで `desc.src_jac` を渡す。
 5. docs (theory/implementation) 更新、本 plan 追加。
 6. `case/18.backstep` 2D メッシュで RK3 RANS を実行し、発散しないこと・残差が下がることを確認。
 

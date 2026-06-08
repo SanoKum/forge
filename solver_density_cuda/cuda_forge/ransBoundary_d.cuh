@@ -7,4 +7,4 @@
 #include "input/solverConfig.hpp"
 #include "variables.hpp"
 
-void ransScalarBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var);
+void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var);

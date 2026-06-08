@@ -44,14 +44,14 @@ advanceOneStep(ctx):                       // dispatcher
 assembleResidual(ctx, stage):              // 残差組み立ての単一情報源（旧 assembleCurrentState）
   updateInner → dependentVariables → gasProperties → applyBconds → applyRansScalarBoundaries
   → calcGradient → axisymmetricGeomTerms → limiter → ducrosSensor → turbulent_viscosity
-  → convectiveFlux → scalarTransport → calcScalarGradient + ransSource
+  → convectiveFlux → ransTransport → ransGradient + ransSource
   → axisymmetricSource → viscousFlux
   → [addUnsteadyTimeTerm(ctx)]            // dual-time の BDF 物理時間項フック（定常は no-op）
 
 advanceExplicitRK(ctx):                    // tI 1/3/4（挙動不変）
   for iloop in perStepIterationCount():
      updateVariablesInner; assembleResidual(ctx,iloop+1); logResidualSnapshot
-     timeIntegration_d_wrapper(iloop); scalarTimeIntegration_d_wrapper(iloop)
+     timeIntegration_d_wrapper(iloop); ransTimeIntegration_d_wrapper(iloop)
   updateVariablesOuter; writeStepOutputs; setDT; logOuterEnd
 
 implicitNonlinearUpdate(ctx):              // 定常・dual-time 共有の核
@@ -99,7 +99,7 @@ Q[ic] = coef_N * Q_N[ic] + coef_M * Q_M[ic]
 ### `runge_kutta_exp_scalar_d`（スカラー k/ω の陽解法 RK ＋ point-implicit 源項）
 
 [`scalarTransport_d.cu`](../../solver_density_cuda/cuda_forge/scalarTransport_d.cu) の
-`scalarTimeIntegration_d_wrapper` が平均流 RK と同じ段で k/ω を別カーネルで積分する
+`ransTimeIntegration_d_wrapper`（[`ransTransport_d.cu`](../../solver_density_cuda/cuda_forge/ransTransport_d.cu)）が平均流 RK と同じ段で k/ω を別カーネルで積分する
 （`timeIntegration==1/3` は `runge_kutta_exp_scalar_d`、`==4` は `runge_kutta_exp_scalar_4th_d`）。
 
 RANS (SST) の消散項・輸送項は stiff なため、`timeIntegration==1/3` の更新は**残差増分のみ源項+輸送ヤコビアンで減衰**する:
@@ -209,7 +209,7 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 - 輸送ヤコビアン `transport_diag_k`/`transport_diag_omega` [m³/s] は
   [`scalarTransport_d.cu`](../../solver_density_cuda/cuda_forge/scalarTransport_d.cu) の `scalar_advection_first_order_d`
   （1次風上 $\sum_f\max(\pm\dot m,0)/\rho$）と `scalar_diffusion_first_order_d`（$\sum_f(\mu_{\text{face}}/\rho)|\delta|/dcc$）が
-  面ループで atomicAdd 集計する（`scalarTransport_d_wrapper` 冒頭で毎 `assembleResidual` ゼロ初期化）。
+  面ループで atomicAdd 集計する（`ransTransport_d_wrapper` 冒頭で毎 `assembleResidual` ゼロ初期化）。
 - [`update_d.cu`](../../solver_density_cuda/cuda_forge/update_d.cu) の `applySSTPointImplicit_d` が各セルで
   $D_\phi = V/\Delta\tau + V\cdot\text{src\_jac}_\phi + \text{transport\_diag}_\phi$、
   $\delta(\rho\phi)=\text{relax}\cdot\text{res}_{\rho\phi}/D_\phi$、$\rho\phi=\max(\rho\phi^{N}+\delta,\ \text{floor})$ を適用
