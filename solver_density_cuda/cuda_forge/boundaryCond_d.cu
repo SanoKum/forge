@@ -1,11 +1,12 @@
 #include "cuda_forge/boundaryCond_d.cuh"
 
-__global__ 
-void slip_d 
-( 
+__global__
+void slip_d
+(
  // gas properties
  flow_float ga,
  flow_float cp,
+ int thermalMethod, const SpeciesThermo* sp,
 
  // mesh structure
  geom_int nb,
@@ -70,14 +71,28 @@ void slip_d
         roUy[ig] = ro[ic] * Uy_ig;
         roUz[ig] = ro[ic] * Uz_ig;
 
-        roe[ig]  = P[ic] / (ga - 1.0) + 0.5 * ro[ic] * (Ux_ig * Ux_ig + Uy_ig * Uy_ig + Uz_ig * Uz_ig);
-
-        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
-        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
-        T[ig]    = P[ig]*ga/(ro[ig]*(ga-1.0)*cp);
-
+        const flow_float ek_ig = 0.5*(Ux_ig*Ux_ig + Uy_ig*Uy_ig + Uz_ig*Uz_ig);
+        const flow_float ek_b  = 0.5*(Ux_b*Ux_b   + Uy_b*Uy_b   + Uz_b*Uz_b);
         rob[ib]   = ro[ic];
         Psb[ib]   = P[ic];
+        if (thermalMethod == 2) {
+            // slip 反射は熱力学状態を保存。e は内部温度の NASA 値を用いる。
+            const double e_in = thermo_h_mass(sp[0], (double)T[ic]) - thermo_R_species(sp[0])*(double)T[ic];
+            roe[ig]   = (flow_float)((double)ro[ic]*(e_in + (double)ek_ig));
+            Ht[ig]    = (roe[ig] + P[ig])/ro[ig];
+            sonic[ig] = sonic[ic];
+            T[ig]     = T[ic];
+            roeb[ib]  = (flow_float)((double)ro[ic]*(e_in + (double)ek_b));
+            Tsb[ib]   = T[ic];
+        } else {
+            roe[ig]  = P[ic] / (ga - 1.0) + ro[ic] * ek_ig;
+            Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
+            sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+            T[ig]    = P[ig]*ga/(ro[ig]*(ga-1.0)*cp);
+            roeb[ib] = P[ic] / (ga - 1.0) + ro[ic] * ek_b;
+            Tsb[ib]  = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+        }
+
         Uxb[ib]   = Ux_b;
         Uyb[ib]   = Uy_b;
         Uzb[ib]   = Uz_b;
@@ -85,17 +100,15 @@ void slip_d
         roUxb[ib] = ro[ic] * Ux_b;
         roUyb[ib] = ro[ic] * Uy_b;
         roUzb[ib] = ro[ic] * Uz_b;
-
-        roeb[ib]  = P[ic] / (ga - 1.0) + 0.5 * ro[ic] * (Ux_b * Ux_b + Uy_b * Uy_b + Uz_b * Uz_b);
-        Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
     }
 };
 
 void slip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
 {
-    slip_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>( 
+    slip_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
         cfg.gamma,
         cfg.cp,
+        cfg.thermalMethod, thermo_species_device_ptr(),
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,
@@ -136,19 +149,20 @@ void slip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
 }
 
 __global__ void wall_d
-( 
+(
 
  // gas properties
  flow_float ga,
  flow_float cp,
+ int thermalMethod, const SpeciesThermo* sp,
 
  // mesh structure
  geom_int nb,
- geom_int* bplane_plane,  
- geom_int* bplane_cell,  
- geom_int* bplane_cell_ghst,  
+ geom_int* bplane_plane,
+ geom_int* bplane_cell,
+ geom_int* bplane_cell_ghst,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
- geom_float* fx  , 
+ geom_float* fx  ,
 
  // variables
  flow_float* ro   ,
@@ -196,18 +210,28 @@ flow_float* T,
         roe[ig]  = roe[ic];
 
         flow_float ek = 0.5*(Ux[ig]*Ux[ig] +Uy[ig]*Uy[ig] +Uz[ig]*Uz[ig]);
-        P[ig] =(ga-1.0)*(roe[ig]-ro[ig]*ek);
-
-        Ht[ig]   = ga*roe[ig]/ro[ig] + (1.0-ga)*ek;
-        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+        flow_float R;
+        flow_float Tc;
+        if (thermalMethod == 2) {
+            // 鏡像反射は熱力学状態 (ρ,e,P,T) を保存するため内部値をコピー (NASA 整合)。
+            R  = (flow_float)thermo_R_species(sp[0]);
+            P[ig]     = P[ic];
+            Ht[ig]    = Ht[ic];
+            sonic[ig] = sonic[ic];
+            Tc        = T[ic];
+        } else {
+            P[ig] =(ga-1.0)*(roe[ig]-ro[ig]*ek);
+            Ht[ig]   = ga*roe[ig]/ro[ig] + (1.0-ga)*ek;
+            sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+            R  = (ga-1.0)/ga*cp;
+            Tc = P[ic]/(ro[ic]*R);
+        }
 
         flow_float Ux_b = Uxb[ib];
         flow_float Uy_b = Uyb[ib];
         flow_float Uz_b = Uzb[ib];
         ek = 0.5*(Ux_b*Ux_b +Uy_b*Uy_b +Uz_b*Uz_b);
 
-        flow_float R = (ga-1.0)/ga*cp;
-        flow_float Tc = P[ic]/(ro[ic]*R);
         T[ig]     = T[ic];
         Tsb[ib]   = Tc;
         Psb[ib]   = P[ic];
@@ -220,13 +244,14 @@ flow_float* T,
 
 void wall_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
 {
-    wall_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
+    wall_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
         cfg.gamma,
         cfg.cp,
+        cfg.thermalMethod, thermo_species_device_ptr(),
 
         bc.iPlanes.size(),
-        bc.map_bplane_plane_d,  
-        bc.map_bplane_cell_d,  
+        bc.map_bplane_plane_d,
+        bc.map_bplane_cell_d,
         bc.map_bplane_cell_ghst_d,
 
         var.p_d["sx"],  
@@ -706,16 +731,17 @@ void inlet_uniformVelocity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
 
 __global__ 
 void inlet_Pressure_d
-( 
- // gas 
+(
+ // gas
  flow_float ga,
  flow_float cp,
+ int thermalMethod, const SpeciesThermo* sp,
 
  // mesh structure
  geom_int nb,
- geom_int* bplane_plane,  
- geom_int* bplane_cell,  
- geom_int* bplane_cell_ghst,  
+ geom_int* bplane_plane,
+ geom_int* bplane_cell,
+ geom_int* bplane_cell_ghst,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
  // variables
  flow_float* ro   ,
@@ -823,16 +849,19 @@ void inlet_Pressure_d
             Uy_new = Un_c*syy/sss;
             Uz_new = Un_c*szz/sss;
 
-            Ps_new = Pt_b/pow(1.0+0.5*(ga-1.0)*mach_c*mach_c, ga/(ga-1.0));
-            Ts_new = Tt_b/(1.0+0.5*(ga-1.0)*mach_c*mach_c);
-            sonic_new = sqrt((ga-1.0)*cp*Ts_new);
-            ro_new = ga*Ps_new/((ga-1.0)*cp*Ts_new);
-
-            //Ux_new = -mach_b*sonic_new*sxx/sss;
-            //Uy_new = -mach_b*sonic_new*syy/sss;
-            //Uz_new = -mach_b*sonic_new*szz/sss;
-
-
+            if (thermalMethod == 2) {
+                // TP: 全温・全圧から NASA 等エントロピーで静的状態を反転 (局所マッハ |mach_c|)
+                double Ts_d, Ps_d, ro_d, umag_d;
+                thermo_isentropic_from_total_single(sp, Pt_b, Tt_b, fabs((double)mach_c),
+                                                    &Ts_d, &Ps_d, &ro_d, &umag_d);
+                Ps_new = (flow_float)Ps_d; Ts_new = (flow_float)Ts_d; ro_new = (flow_float)ro_d;
+                sonic_new = sqrt(ga*Ps_new/ro_new);
+            } else {
+                Ps_new = Pt_b/pow(1.0+0.5*(ga-1.0)*mach_c*mach_c, ga/(ga-1.0));
+                Ts_new = Tt_b/(1.0+0.5*(ga-1.0)*mach_c*mach_c);
+                sonic_new = sqrt((ga-1.0)*cp*Ts_new);
+                ro_new = ga*Ps_new/((ga-1.0)*cp*Ts_new);
+            }
 
         } else { // reverse-flow detected at pressure inlet: clamp ghost to stagnation
             Ux_new = 0.0;
@@ -841,8 +870,28 @@ void inlet_Pressure_d
 
             Ps_new = Pt_b;
             Ts_new = Tt_b;
-            sonic_new = sqrt((ga-1.0)*cp*Ts_new);
-            ro_new = ga*Ps_new/((ga-1.0)*cp*Ts_new);
+            if (thermalMethod == 2) {
+                flow_float R = (flow_float)thermo_R_species(sp[0]);
+                ro_new = Ps_new/(R*Ts_new);
+                sonic_new = sqrt(ga*Ps_new/ro_new);
+            } else {
+                sonic_new = sqrt((ga-1.0)*cp*Ts_new);
+                ro_new = ga*Ps_new/((ga-1.0)*cp*Ts_new);
+            }
+        }
+
+        flow_float ek = 0.5*(Ux_new*Ux_new +Uy_new*Uy_new +Uz_new*Uz_new);
+        flow_float roe_new;
+        if (thermalMethod == 2) {
+            // TP: roe = ρ(e_NASA(Ts) + ek), sonic = √(γ_mix R Ts) = √(γ_mix Ps/ρ)
+            const double R   = thermo_R_species(sp[0]);
+            const double e_in= thermo_h_mass(sp[0], (double)Ts_new) - R*(double)Ts_new;
+            const double cpv = thermo_cp_mass(sp[0], (double)Ts_new);
+            const double gmx = cpv/((cpv-R) > 1.0e-6 ? (cpv-R) : 1.0e-6);
+            roe_new   = (flow_float)((double)ro_new*(e_in + (double)ek));
+            sonic_new = (flow_float)sqrt(gmx*(double)Ps_new/(double)ro_new);
+        } else {
+            roe_new   = Ps_new/(ga-1.0) + ro_new*ek;
         }
 
         ro[ig]    = ro_new;
@@ -852,10 +901,10 @@ void inlet_Pressure_d
         roUx[ig]  = ro_new*Ux_new;
         roUy[ig]  = ro_new*Uy_new;
         roUz[ig]  = ro_new*Uz_new;
-        roe[ig]   = Ps_new/(ga-1.0) + 0.5*ro_new*(Ux_new*Ux_new +Uy_new*Uy_new +Uz_new*Uz_new);
+        roe[ig]   = roe_new;
         P[ig]     = Ps_new;
         Ht[ig]    = roe[ig]/ro_new + Ps_new/ro_new;
-        sonic[ig] = sqrt(ga*Ps_new/ro_new);
+        sonic[ig] = sonic_new;
         T[ig]     = Ts_new;
 
         rob[ib]    = ro_new;
@@ -865,8 +914,7 @@ void inlet_Pressure_d
         roUxb[ib]  = ro_new*Ux_new;
         roUyb[ib]  = ro_new*Uy_new;
         roUzb[ib]  = ro_new*Uz_new;
-        flow_float ek = 0.5*(Ux_new*Ux_new +Uy_new*Uy_new +Uz_new*Uz_new);
-        roeb[ib]   = Ps_new/(ga-1.0) + ro_new*ek;
+        roeb[ib]   = roe_new;
         Psb[ib]    = Ps_new;
         Tsb[ib]    = Ts_new;
 
@@ -878,9 +926,10 @@ void inlet_Pressure_d
 
 void inlet_Pressure_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
 {
-    inlet_Pressure_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
+    inlet_Pressure_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
         cfg.gamma,
         cfg.cp,
+        cfg.thermalMethod, thermo_species_device_ptr(),
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,  bc.map_bplane_cell_d, bc.map_bplane_cell_ghst_d,
@@ -1091,17 +1140,18 @@ void inlet_Pressure_dir_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bco
 
 
 __global__ 
-void outflow_d 
-( 
+void outflow_d
+(
  // gas properties
  flow_float ga,
  flow_float cp,
+ int thermalMethod, const SpeciesThermo* sp,
 
  // mesh structure
  geom_int nb,
- geom_int* bplane_plane,  
- geom_int* bplane_cell,  
- geom_int* bplane_cell_ghst,  
+ geom_int* bplane_plane,
+ geom_int* bplane_cell,
+ geom_int* bplane_cell_ghst,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
  // variables
@@ -1182,8 +1232,7 @@ flow_float* T,
         roUz[ig] = roUz[ic];
         roe[ig]  = roe[ic];
 
-        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
-        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];   // 純代数 (TP でも整合)
         T[ig]    = T[ic];
 
         rob[ib]   = ro[ic];
@@ -1195,15 +1244,23 @@ flow_float* T,
         roUyb[ib] = roUy[ic];
         roUzb[ib] = roUz[ic];
         roeb[ib]  = roe[ic];
-        Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+        if (thermalMethod == 2) {
+            // 外挿: 熱力学状態は内部コピー。sonic/Tsb を NASA 整合に。
+            sonic[ig] = sonic[ic];
+            Tsb[ib]   = T[ic];
+        } else {
+            sonic[ig] = sqrt(ga*P[ig]/ro[ig]);
+            Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+        }
     }
 };
 
 void outflow_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
 {
-    outflow_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>( 
+    outflow_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
         cfg.gamma,
         cfg.cp,
+        cfg.thermalMethod, thermo_species_device_ptr(),
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,  

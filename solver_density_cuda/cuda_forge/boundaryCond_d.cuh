@@ -6,6 +6,7 @@
 #include "mesh/mesh.hpp"
 #include "input/solverConfig.hpp"
 #include "variables.hpp"
+#include "thermo_d.cuh"
 
 __global__ void slip_d
 (

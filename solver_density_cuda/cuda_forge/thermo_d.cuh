@@ -227,6 +227,60 @@ THERMO_HD double thermo_T_from_h(const SpeciesThermo* sp, int n, const double* Y
     return T;
 }
 
+// 標準状態エントロピー S^o/R (圧力項を含まない). Roe/等エントロピー BC 用。
+THERMO_HD double thermo_s_molar_clamped(const SpeciesThermo& sp, double Tc)
+{
+    const double* a = thermo_pick_coeffs(sp, Tc);
+    const double Ti = 1.0/Tc; const double Ti2 = Ti*Ti; const double lnT = log(Tc);
+    const double sR = -a[0]*Ti2/2.0 - a[1]*Ti + a[2]*lnT + a[3]*Tc
+                    + a[4]*Tc*Tc/2.0 + a[5]*Tc*Tc*Tc/3.0 + a[6]*Tc*Tc*Tc*Tc/4.0 + a[8];
+    return THERMO_RU * sR;
+}
+THERMO_HD double thermo_s0_mass(const SpeciesThermo& sp, double T)
+{
+    double Tc = T;
+    if (Tc < sp.Tlo) Tc = sp.Tlo;
+    if (Tc > sp.Thi) Tc = sp.Thi;
+    return thermo_s_molar_clamped(sp, Tc) / sp.MW;   // [J/(kg·K)]
+}
+
+// 単成分 (M1) の等エントロピー total→static 反転。
+//   全温 Tt・全圧 Pt と局所マッハ M から静的 (Ts, Ps, ρ, |u|) を求める。
+//     h(Tt) = h(Ts) + ½u²,  u = M·a(Ts),  a=√(γ(Ts)R Ts)
+//     Ps = Pt·exp(-(s0(Tt)-s0(Ts))/R)
+THERMO_HD void thermo_isentropic_from_total_single(
+    const SpeciesThermo* sp, double Pt, double Tt, double mach,
+    double* Ts_out, double* Ps_out, double* ro_out, double* umag_out)
+{
+    const double R  = thermo_R_species(sp[0]);
+    const double h0 = thermo_h_mass(sp[0], Tt);
+    double Ts = Tt/(1.0 + 0.2*mach*mach);   // CPG 近似の初期値
+    if (Ts < 10.0) Ts = 10.0;
+    #pragma unroll 1
+    for (int it=0; it<25; ++it) {
+        const double cp = thermo_cp_mass(sp[0], Ts);
+        const double g  = cp/((cp-R) > 1.0e-6 ? (cp-R) : 1.0e-6);
+        const double a2 = g*R*Ts;
+        const double f  = thermo_h_mass(sp[0], Ts) + 0.5*mach*mach*a2 - h0;
+        const double df = cp + 0.5*mach*mach*g*R;   // 近似微分 (dγ/dT 無視)
+        double dT = f/df;
+        if (dT >  0.4*Ts) dT =  0.4*Ts;
+        if (dT < -0.4*Ts) dT = -0.4*Ts;
+        Ts -= dT;
+        if (Ts < 10.0) Ts = 10.0;
+        if (Ts > Tt)   Ts = Tt;
+        if (dT < 0.0) dT = -dT;
+        if (dT < 1.0e-3 + 1.0e-6*Ts) break;
+    }
+    const double cp = thermo_cp_mass(sp[0], Ts);
+    const double g  = cp/((cp-R) > 1.0e-6 ? (cp-R) : 1.0e-6);
+    const double a  = sqrt(g*R*Ts);
+    *umag_out = mach*a;
+    *Ps_out   = Pt*exp(-(thermo_s0_mass(sp[0],Tt) - thermo_s0_mass(sp[0],Ts))/R);
+    *Ts_out   = Ts;
+    *ro_out   = (*Ps_out)/(R*Ts);
+}
+
 // =============================================================================
 // device 側化学種データへのアクセス (thermo_d.cu が所有)
 //   - thermo_init_db: solverConfig から DB を構築し device へアップロード
