@@ -46,16 +46,19 @@ __global__ void ducrosSensor_d
 
         flow_float divu = dUxdx_0 + dUydy_0 + dUzdz_0;
         flow_float divu2 = divu*divu;
-        flow_float Umag = sqrt(pow(Ux_0,2.0) + pow(Uy_0,2.0) + pow(Uz_0,2.0));
+        // K2: pow(x,2.0)->x*x, pow(vol,1/3)->cbrt で transcendental を削減（数値は同値）
+        flow_float Umag = sqrt(Ux_0*Ux_0 + Uy_0*Uy_0 + Uz_0*Uz_0);
         flow_float eps = 1e-12;
         flow_float nu = 0.1;
-        flow_float omega2 = pow(nu*Umag/pow(volume, 1.0/3.0),2.0);
+        flow_float omega1 = nu*Umag/cbrt(volume);
+        flow_float omega2 = omega1*omega1;
 
         flow_float theta = divu2/(divu2 + omega2 + eps);
 
-        flow_float vort = pow(dUzdy[ic]-dUydz[ic],2.0)
-                        + pow(dUxdz[ic]-dUzdx[ic],2.0)
-                        + pow(dUydx[ic]-dUxdy[ic],2.0);
+        flow_float wx = dUzdy_0 - dUydz_0;
+        flow_float wy = dUxdz_0 - dUzdx_0;
+        flow_float wz = dUydx_0 - dUxdy_0;
+        flow_float vort = wx*wx + wy*wy + wz*wz;
 
         flow_float D = min((4.0/3.0)*divu2/(divu2+vort+eps), 1.0);
 
