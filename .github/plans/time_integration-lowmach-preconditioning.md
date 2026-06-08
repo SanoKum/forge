@@ -37,8 +37,15 @@ SLAU2 (圧力束第 3 項) を試したが解消せず、原因は質量流束�
   - **Phase 2** (LHS 固有値前処理 ＋ setDT) — **実装・検証したが棄却 (§9)**。
     `build_jacobian_split` の固有値 `U±c → U±c'` 差し替えと `setDT_d` の `sonic → c'` は、
     block DPLUR では**収束加速にも根治にもならず、むしろ有害**と判明したため revert。詳細・根拠は §9。
+  - **Phase 3** (b) **Thornber 型再構成補正** (RHS・LHS 不触) — **実装・検証済 → 負の結果 (§9 `2026-06-08`)**。
+    `lowMachThornber` は opt-in 残置 (既定 0)、ノズル limit cycle の根治には不採用。
+  - **Phase 4** (a) **完全 $\Gamma^{-1}A$ preconditioned-flux Jacobian** (`lowMachPrecond=2`) — **採用・実装対象 (§5 Phase 4)**:
+    - $\Gamma_Q=M\Gamma_pM^{-1}$ と前処理固有ベクトル $R_\Gamma,L_\Gamma$ を再導出、`build_jacobian_split` を前処理固有系で書き直し。
+    - 対角時間項を行列 $\Gamma_Q V/\Delta\tau'$ 化、$\Delta\tau'$ を前処理スペクトル半径から (`setDT_d`)。
+    - 単精度対策: 対角ブロック組み立て+`solve_5x5` を局所倍精度化 (§5 Phase 4.3)。
+    - 振動根治 ($\epsilon$ を物理値方向へ) と低マッハ収束加速を同時に狙う。$\beta=1$ でビット一致回帰必須。
 - **やらない**:
-  - 完全 $\Gamma^{-1}A$ 前処理 (固有ベクトル $R,L$ の前処理化)。Phase 2 は固有値差し替えの最小差分を第一候補とし、必要性が出た場合のみ別途評価。
+  - Phase 1 (flux `c'`) と Phase 4 (完全前処理) の同時併用。両者は排他 (`lowMachPrecond=1` vs `=2`)。
   - SLAU 以外 (Roe/HLLE/AUSM/KEEP) の低マッハ前処理。本 plan は SLAU 経路のみ。
   - dual-time 本体 (実装済)。`unsteady_diag` 物理時間項は前処理しない (§4 分界)。
   - scalar 対角版 (`blockDPLUR==0`) の固有値前処理 (block を既定とするため後回し)。
@@ -119,7 +126,68 @@ $\beta=1$ で $c'\!=\!c$, $\lambda'\!=\!U_n\pm c$ に厳密復帰。`__device__ 
 当初案: `build_jacobian_split` の固有値 `U±c → U±c'`、`setDT_d` の `sonic → c'`。
 実装・検証した結果 block DPLUR では有害 (収束加速も根治もせず、安定 `eps` 範囲を狭め、
 mild `eps` では chamber チェッカーボードを悪化) と判明し revert した。根拠・データは §9。
-**今後の方向は未確定** (full preconditioned-flux Jacobian / 別系の低マッハ補正 / Phase 1 で確定、の三択。§9 末尾)。
+→ §9 の `2026-06-08` 設計分析で「振動=RHS 駆動、LHS (a) は収束加速の道具で根治手段ではない」と確定。
+
+### Phase 3 (b) Thornber 型再構成補正 (RHS・LHS 不触) — 採用 (実装対象)
+
+振動の根治は RHS 側で行う (§9 `2026-06-08`)。`SLAU_d` の L/R 速度再構成直後で左右速度ジャンプを
+局所マッハ `z=min(M,1)` で縮め、低マッハで $O(1/M)$ に増大する速度ジャンプ由来の散逸を抑える。
+
+1. **config**: `solverConfig.hpp`/`.cpp` に `lowMachThornber` (int, 既定 `0`) を追加。
+   既定 0 で既存ケースはビット不変。Phase 1 (`lowMachPrecond`) と独立トグル (直交・併用可)。
+2. **対流フラックス**: `convectiveFlux_d.cu` `SLAU_d` に `int lowMachThornber` 引数追加。
+   L/R 速度再構成 ([convectiveFlux_d.cu:330-345]) 直後・`velocity2_*`/`h_*`/`Vn_*` 算出前に挿入:
+   $$ z=\min\!\Big(1,\ \tfrac{\sqrt{(|\mathbf u_L|^2+|\mathbf u_R|^2)/2}}{\hat c}\Big),\quad
+      \mathbf u_L^\* = \bar{\mathbf u}+z\,\delta\mathbf u,\ \ \mathbf u_R^\* = \bar{\mathbf u}-z\,\delta\mathbf u $$
+   ($\bar{\mathbf u}=\tfrac12(\mathbf u_L+\mathbf u_R)$, $\delta\mathbf u=\tfrac12(\mathbf u_L-\mathbf u_R)$, 3 成分すべて)。
+   `velocity2_L/R`・`h_p/h_m`・`Vn_p/Vn_m` はブレンド後の速度から算出する (`h_p`/`velocity2_L` を挿入点の後段へ移動)。
+   `lowMachThornber==0` で恒等 (ビット不変)、$M\!\ge\!1$ で $z=1$ (超音速域不変)。wrapper の `SLAU_d<<<>>>` に引数追加。
+3. **ビルド**: Docker dev image (`forge-solver:cuda-dev`) で `tools/build.sh`。
+4. **検証** (§6、`case/23.axi_nozzle` 20k step)。Phase 1 単独 (0.603%) に対し Thornber 単独・Phase1+Thornber 併用を比較。
+
+→ **結果は負** (§9 `2026-06-08`)。Phase 3 完了 (機能は opt-in 残置・根治不採用)。根治本命は Phase 4 (a) へ。
+
+### Phase 4 (a) 完全 $\Gamma^{-1}A$ preconditioned-flux Jacobian — 根治本命 (大改修・実装対象)
+
+振動根治の正しい RHS レバーは「圧力散逸を増やす」前処理音速 $c'$ (Phase 1) 側だが、$\epsilon$ を物理値
+(~0.05) まで下げると陽的フラックスが発散する (安定限界 $\epsilon\gtrsim0.15$)。$\epsilon$ を下げて根治するには
+**LHS を完全 preconditioned-flux Jacobian にして aggressive flux を陰的に安定化**する必要がある。これは
+同時に低マッハ収束加速 (擬似 CFL 上げ) も与える。Phase 1 の flux 変更とは**排他**＝新モード `lowMachPrecond=2`。
+
+**4.1 定式化** (保存変数 $Q=(\rho,\rho u,\rho v,\rho w,\rho E)$、forge の実順。**plan 旧記載「(ρ,ρE,ρu,ρv,ρw)」は誤り、エネルギは index 4**)。
+Weiss–Smith 前処理は原始変数 $Q_p=(p,u,v,w,T)$ で定義:
+$$ \Gamma_p\,\partial_\tau Q_p + \partial_t Q_c + \nabla\!\cdot F = 0,\quad
+   \Gamma_p = M^{-1}\!+\!(\Theta-\rho_p)\,\mathbf e_\rho\,\partial p,\quad \Theta=\tfrac{1}{U_r^2}-\tfrac{\rho_T}{\rho c_p}. $$
+($\rho_p=\partial\rho/\partial p|_T=1/RT$, $\rho_T=-\rho/T$, $c_p=\gamma R/(\gamma-1)$。$U_r=c$ で $\Theta=\rho_p$＝$\Gamma_p=M^{-1}$＝無前処理。)
+保存形へは $\Gamma_Q = M\,\Gamma_p\,M^{-1}$ ($M=\partial Q_c/\partial Q_p$)。前処理フラックスヤコビアン
+$\hat A_\Gamma=\Gamma_Q^{-1}A$ は前処理固有値 $\lambda'_{1,2,3}=U_n,\ \lambda'_{4,5}=\tfrac12(1+\beta)U_n\pm c'$
+($c',\beta$ は `lowMachPrecond_d.cuh` 既存) と**前処理固有ベクトル** $R_\Gamma,L_\Gamma$ を持つ。
+
+**4.2 LHS 構成** (`implicit_defect_correction_block_d`):
+- 対角時間項を**スカラー** $V/\Delta\tau\,I$ から**行列** $\Gamma_Q\,V/\Delta\tau'$ へ ([timeIntegration_d.cu:696])。
+- $\Delta\tau'$ を前処理スペクトル半径 $\lambda'_{\max}\sim|u|+c'$ から ( `setDT_d`、低マッハで $\Delta\tau'$ が $\sim1/M$ 拡大)。
+- `build_jacobian_split` を前処理固有系で書き直し: $\hat A_\Gamma^{+}=R_\Gamma\Lambda'^{+}L_\Gamma$ を対角、$-\hat A_\Gamma^{-}$ を近傍項。
+- dual-time 物理 BDF 項 $aV/\Delta t\,I$ は**非前処理のまま** (恒等)。dual-time 所有、§4.3 分界を踏襲。
+- $\beta=1$ ($M\ge1$) で $\Gamma_Q=I,\ \hat A_\Gamma=A,\ \Delta\tau'=\Delta\tau$ に**ビット一致回帰** (回帰テスト必須)。
+
+**4.3 単精度フィージビリティ (着手前に潰す設計課題・結論)**。`flow_float`=float。前処理は圧力結合方向に
+$1/\beta\sim1/M^2$ の増幅を持ち、対角ブロック $D=\Gamma_Q V/\Delta\tau'+\dots$ は保存基底で条件数 $\sim1/\beta$
+(M=0.06・$\epsilon$=0.15 で $\sim44$、物理 $\epsilon$=0.05 で $\sim400$) を持つ。前処理固有基底では $D$ は良条件
+(全モード $O(\text{area}\cdot\lambda'_{\max})$) で、悪条件は保存基底への変換 $\Gamma_Q$ が担うだけ。
+→ **対策 (採用): 対角 5×5 ブロックの組み立て + `solve_5x5` を局所倍精度で行い float に戻す** (セル毎・5×5 と
+小さく低コスト、`solve_5x5` を double テンプレート化)。併せて $\beta$ フロア ($\epsilon$) で条件数上限を担保。
+これで float 本体のまま $\epsilon$ を物理値方向へ下げられる見込み。基底変換を避ける案 (原始/固有基底で組む) は
+forge の保存変数パイプラインに侵襲的なため不採用。
+
+**4.4 実装ステップ**:
+1. **数式確定**: $\Gamma_Q=M\Gamma_pM^{-1}$ と $R_\Gamma,L_\Gamma$ の閉形を導出 (Weiss–Smith/Merkle 文献ベース、forge の
+   正規化に合わせ検証)。$\beta=1$ で恒等になることを記号的に確認。
+2. **`lowMachPrecond_d.cuh` 拡張**: $\Gamma_Q$ 構築・前処理固有値・$R_\Gamma,L_\Gamma$ の device 関数。
+3. **`solve_5x5` の double 版**、対角ブロック組み立て+解を局所倍精度化。
+4. **`build_jacobian_split` の前処理版** (`lowMachPrecond==2` 経路)、`setDT_d` の $\Delta\tau'$、時間項 $\Gamma_Q$ 化。
+5. **回帰**: $\beta=1$ (超音速単独ケース) で現行とビット一致を確認するテストを先に用意。
+6. **検証** (§6): `case/23.axi_nozzle` で $\epsilon$ を 0.15→0.05 方向に下げ、振幅が物理目標 ~0.25% に近づくか、
+   かつ擬似 CFL を上げられるか (収束加速) を測る。発散しないこと・超音速域不変。
 
 ## 6. 検証
 
@@ -147,9 +215,11 @@ mild `eps` では chamber チェッカーボードを悪化) と判明し revert
   `setDT_d.cu` (`setCFL_pln_d` 引数・分岐・wrapper)、`solverConfig.cpp`/`.hpp`。
 - 変更 (Phase 2): `timeIntegration_d.cu` (`build_jacobian_split`・`implicit_defect_correction_block_d`・
   wrapper の引数伝搬)。dual-time の `unsteady_diag` 経路は不変。
+- 変更 (Phase 3): `convectiveFlux_d.cu`/`.cuh` (`SLAU_d` の `lowMachThornber` 引数・L/R 速度ブレンド・wrapper)、
+  `solverConfig.cpp`/`.hpp` (`lowMachThornber`)。LHS (`timeIntegration_d.cu`) は不触。
 - docs: `docs/convection/{theory,implementation}.md`, `docs/time_integration/{theory,implementation}.md`
   (更新済)。`docs/index.md` は構成不変につき確認のみ。
-- 既存ケース: `lowMachPrecond` 既定 0 のため挙動不変。
+- 既存ケース: `lowMachPrecond`・`lowMachThornber` 既定 0 のため挙動不変。
 
 ## 8. 完了条件
 
@@ -158,7 +228,9 @@ mild `eps` では chamber チェッカーボードを悪化) と判明し revert
 - [x] Phase 1 実装・検証完了 (収束ベース: 低マッハ自励振動を ε=0.15 で −32% 減衰。§9)
 - [x] Phase 2 (LHS 固有値 ＋ setDT) 実装・検証 → **棄却** (block DPLUR で有害、revert。§9)
 - [x] `.github/plans/README.md` の状態を更新
-- [ ] 根治 (完全 preconditioned-flux Jacobian / 別系補正) は未着手 (§9 の選択肢 a/b)。本 plan は Phase 1 を成果として確定
+- [x] 設計分析 (a の可否・RHS/LHS 切り分け・(b) 採用決定) を §9 `2026-06-08` に記録
+- [x] **Phase 3 (b) Thornber** — docs 更新 → 実装 (`lowMachThornber`) → 20k step 検証完了。**結果は負** (この症状に無効・僅かに悪化。§9 `2026-06-08`)。機能は opt-in で残置、ノズル limit cycle の根治には不採用
+- [ ] **Phase 4 (a) $\Gamma^{-1}A$ 完全前処理** (`lowMachPrecond=2`) — 設計確定 (§5 Phase 4)。実装着手: 数式導出 → `lowMachPrecond_d.cuh` 拡張 → `solve_5x5` 倍精度 → `build_jacobian_split`/`setDT_d` 前処理 → β=1 回帰 → 20k 検証 ($\epsilon$↓で振幅根治・擬似 CFL↑)
 
 ## 9. 変更ログ
 
@@ -235,3 +307,91 @@ mild `eps` では chamber チェッカーボードを悪化) と判明し revert
   **再開時の検証手順 (重要)**: 必ず 20000 step 回し、4k–20k の chamber std/mean (M<0.08) と rms_roe の
   **平均・包絡で振幅評価** (`case/23.axi_nozzle/chamber_metric.py`)。2000 step スナップショットは過渡を拾うため不可。
   基準値: baseline 0.882%、Phase1(ε=0.15) 0.603%、物理目標 ~0.25%。
+
+- `2026-06-08` — **設計分析 (再開前のコード実体精査)。(a) の可否判定と RHS/LHS の本質的切り分けを確定し、
+  (b) を次フェーズに採用と決定**。コード根拠は次の3点:
+
+  1. **`build_jacobian_split` ([timeIntegration_d.cu:158-211]) は近似ではなく真の解析的 $R\Lambda L$ 分解**。
+     $\Lambda=\{U+c,U,U,U,U-c\}$ にフル右/左固有ベクトル $R,L$ を掛け `a_plus=RΛ⁺L`・`k_off=R(-Λ⁻)L` を構成。
+     → Phase 2 が**固有値だけ** $U\pm c\to U\pm c'$ に差し替えたのは「物理固有ベクトル $R,L$ のまま固有値のみ前処理した
+     非整合行列」で、$\Gamma^{-1}A$ の正しい分割になっていない。Phase 2 棄却は当然の帰結であり、**(a) は
+     $R_\Gamma,L_\Gamma$ の再導出が必須**と確定。
+  2. **対角優位性は音速スケールの `V/Δτ·I` に依拠** ([timeIntegration_d.cu:696-758])。対角 = `V/Δτ·I`(擬似・
+     スカラー)＋`aV/Δt·I`(BDF)＋`ΣA⁺S`＋`viscous·I`。低マッハで $\Delta\tau\sim\text{cell}/c$ ゆえ $V/\Delta\tau\sim\text{area}\cdot c$ が
+     off-diagonal `k_off`(音響 $\sim c$)を上回り優位。Phase 2 が setDT を $c'$ 化すると $V/\Delta\tau$ が縮み、固有値前処理で
+     $A⁺$ も縮む→**二重に潰れて即発散** (§9 既述) を裏付け。
+  3. **`flow_float` は単精度 float** ([flowFormat.hpp:6])。
+
+  - **判定 (a) は対角優位性を「再確保できる」が条件付き**。整合3点セット —— ①時間項を**スカラーでなく行列**
+    $V/\Delta\tau'\cdot\Gamma_Q$ ②$R_\Gamma,L_\Gamma$ 再導出 ③$\Delta\tau'$ を前処理スペクトル半径 $\lambda'_{\max}\sim|u|$ から ——
+    が揃えば、前処理固有基底で時間項と $A_\Gamma^{+}S$ が同じ $O(|u|)$ で釣り合い、優位性は条件数改善とともに回復する
+    (これが低マッハ前処理陰解法の設計目標そのもの)。**Phase 2 の失敗は「(a) 不可」の証拠ではなく「半端な前処理は壊れる」証拠**。
+    ただし forge 固有リスク2つ: (i) **単精度 × $\Gamma_Q$ 条件数** —— $\Gamma_p$ は圧力カップリング方向に $1/\beta\sim1/M^2$
+    (M=0.06 で ~280) の増幅を持ち、$\Gamma_Q=M\Gamma_pM^{-1}$ を float の `solve_5x5` で毎セル解くと桁落ちリスク。対策は
+    $\Gamma_Q$ 正規化／対角ブロック解の局所倍精度化／$\beta$ フロア。(ii) **固有ベクトル再導出の検証コスト** —— $\beta{=}1$ で
+    現行へビット一致回帰する回帰テストを先に用意。
+  - **本質的切り分け (最重要)**: §9 の実験非対称性 (**RHS の Phase 1 は振動 −32%、LHS の Phase 2 は無効〜有害**) は、
+    **低マッハ自励振動が RHS(SLAU 半離散作用素)のほぼ無散逸な低マッハモードに起因する**ことを示す。defect-correction の
+    LHS は**収束解を変えない** (§4.2) ので、**(a) は収束加速の道具であって振動の根治手段ではない**。離散定常点そのものが
+    その低マッハモードについて中立〜不安定なら、どんな LHS でもその固定点には落ちない (Phase 2 が「根治しなかった」事実と整合)。
+    → 振動の根治レバーは **RHS 側**:
+    | 目的 | 正しいレバー | コスト |
+    | --- | --- | --- |
+    | 振動を ~0.25% へ根治 (精度) | RHS 側: Phase 1 ＋ **(b) Thornber 再構成補正** | 軽 (SLAU の L/R 速度生成直後に数行・LHS 不触・Phase 1 と直交=併用可) |
+    | 低マッハの擬似 CFL/収束を上げる (剛性) | LHS 側: 完全 (a) $\Gamma^{-1}A$ | 重 (固有ベクトル再導出＋$\Gamma_Q$ 行列時間項＋単精度対策＋回帰) |
+  - **決定**: 当面の目的は**低マッハ振動の根治**ゆえ **(b) Thornber を Phase 3 として採用**し、まず RHS を低マッハ整合化する
+    (§5 Phase 3)。(a) は「低マッハ収束加速が必要」と確認された段階で別途着手 (上記リスク (i)(ii) の feasibility を先に詰める)。
+    Phase 1 (圧力散逸 `c'`) と (b) は直交ゆえ**併用**して評価する。
+
+- `2026-06-08` — **Phase 3 (b) Thornber 実装・検証 → この症状には無効 (むしろ僅かに悪化)。負の結果**。
+  `SLAU_d` に `lowMachThornber` を実装 (L/R 速度ジャンプを `z=min(M,1)` で 3 成分ブレンド)、config 追加、
+  Docker dev image でビルド成功。`case/23.axi_nozzle` 20k step 収束ベース検証 (4k–20k chamber std/mean, M<0.08):
+
+  | 設定 | chamber std/mean mean [min,max] | vs baseline | M_max |
+  | --- | --- | --- | --- |
+  | OFF (baseline) | 0.882% [0.25,1.82] | — | 6.057 |
+  | Phase1 のみ (`c'`, ε=0.15) | 0.603% [0.11,1.53] | **−32%** | 6.046 |
+  | **Thornber のみ** | **0.924% [0.28,1.85]** | **+5% (悪化)** | 6.058 |
+  | **Phase1+Thornber 併用** | **0.613% [0.10,1.54]** | −30% (Phase1 単独 0.603% に対し利得なし・僅かに悪化) | 6.046 |
+
+  - **結果**: Thornber 単独は全スナップで baseline より一様に ~3–5% 高く (ノイズでない)、併用も Phase1 単独に
+    対し一様に ~1–2% 高い。**この低マッハ自励振動に対し Thornber は無効、むしろ僅かに悪化**。
+  - **理由 (重要)**: Thornber は速度ジャンプを縮めて**運動量上流化の散逸を「減らす」**補正で、本来は低マッハの
+    **過剰散逸 (smearing) による精度劣化**を直す道具 (LES/乱流減衰など)。一方この症状は**圧力–速度カップリングの
+    under-damping (チェッカーボード/limit cycle)** で、必要なのは散逸を**増やす**方向。Phase1 の `c'` は圧力散逸を
+    増やすので効き、Thornber は散逸を減らすので逆符号。§9 `2026-06-08` の「振動=RHS 駆動」は正しかったが、
+    RHS の中でも**圧力散逸を増やす (Phase1)** が正しいレバーで、**速度ジャンプを減らす (Thornber)** はこの症状には逆。
+  - **安定性**: Thornber は安定・超音速域不変 (M_max 6.05 一致)・NaN なし。OFF (`lowMachThornber:0`) は
+    atomicAdd 非決定性の範囲で従来経路不変 (同一バイナリ二回 run の差 ~1e-4 と新旧差 ~1e-4 が同オーダーと確認)。
+  - **扱い**: `lowMachThornber` は実装としては正しく opt-in (既定 0)。LES/乱流の低マッハ精度向けには有用な可能性が
+    あるため**機能は残す**が、**ノズル低マッハ limit cycle の根治には使えない**と確定。根治の本命は引き続き Phase1
+    (圧力散逸) 側で、$\epsilon$ を下げる方向には安定限界 (ε≳0.15) があるため、それを超える根治は完全 (a) の
+    preconditioned-flux Jacobian (収束加速と同時) に戻ることになる。成果物: `run_conv_p3_thornber_only` /
+    `run_conv_p3_combo` (`residual_history.png` 付き)。
+
+- `2026-06-08` — **Phase 4 (a) 完全 $\Gamma^{-1}A$ 前処理を採用・設計確定 (実装着手前のフィージビリティ)**。
+  Thornber が負だったため、振動根治は「$\epsilon$ を物理値まで下げて圧力散逸を増やす」ルートに戻るが、それには
+  LHS で aggressive flux を陰的安定化する完全前処理が要る (同時に収束加速)。設計を §5 Phase 4 に確定:
+  - **変数順の訂正**: forge の保存変数は $Q=(\rho,\rho u,\rho v,\rho w,\rho E)$ (energy は index 4)。
+    旧 §9 の「(ρ,ρE,ρu,ρv,ρw)」は誤記。`build_jacobian_split` の $R,L$・`rhs[5]` で確認。
+  - **対角ブロックは既に 5×5 を `solve_5x5` で反転** ([timeIntegration_d.cu:743,214]) ゆえ、時間項を
+    スカラー $V/\Delta\tau\,I$ から行列 $\Gamma_Q V/\Delta\tau'$ に替える構造コストは小。
+  - **単精度フィージビリティ結論**: 保存基底で $D$ は条件数 $\sim1/\beta$ ($\epsilon$=0.15 で ~44, 0.05 で ~400)。
+    前処理固有基底では良条件なので、悪条件は $\Gamma_Q$ 変換のみが担う。**対策＝対角 5×5 の組み立て+`solve_5x5` を
+    局所倍精度化** (セル毎・小・低コスト)。これで float 本体のまま $\epsilon$ を下げられる見込み。原始/固有基底で
+    組む案は保存パイプラインに侵襲的で不採用。
+  - **最大の実装リスク**: $\Gamma_Q$ と前処理固有ベクトル $R_\Gamma,L_\Gamma$ の閉形導出と、$\beta=1$ ビット一致回帰。
+    実装は数式確定 → ヘッダ拡張 → `solve_5x5` 倍精度 → `build_jacobian_split`/`setDT_d` 前処理 → 回帰 → 検証 の順。
+
+- `2026-06-08` — **Phase 4 土台を実装 (低リスク基盤)。ビルド成功・閉形検証 PASS**。
+  - **$\Gamma_c$ がランク 1 閉形に閉じる重要発見**: $\Gamma_c=\Gamma_p M^{-1}=I+\tfrac{1-\beta}{\beta c^2}g r^\top$
+    ($g=(1,u,v,w,H)$, $r^\top=(\gamma-1)(e_k,-u,-v,-w,1)=\partial p/\partial Q_c$, $r^\top g=c^2$)、逆も
+    $\Gamma_c^{-1}=I-\tfrac{1-\beta}{c^2}g r^\top$ (Sherman-Morrison)。$\beta=1$ で両者厳密に $I$。**固有値 $\lambda'$ の
+    公式も $\mathrm{eig}(\Gamma_c^{-1}A)$ と一致を確認** (固有ベクトル導出前にスペクトルを確定)。
+  - **実装した土台**: `lowMachPrecond_d.cuh` に `lowMachBeta`/`lowMachGammaC`/`lowMachGammaCinv` (double rank-1)、
+    `timeIntegration_d.cu` に `solve_5x5_dbl` (倍精度ブロック解)。いずれも未配線 (既存経路ビット不変・ビルド 5/5 成功)。
+  - **検証**: `tools/verify_lowmach_precond.py` (numpy・2000 状態) で上記 5 恒等式すべて PASS (最大相対誤差
+    $\Gamma_c$ 5e-10, $\Gamma_c\Gamma_c^{-1}$ 4e-8, $r^\top g$ 6e-16, β=1 厳密 0, $\lambda'$ 1.7e-7)。
+  - **残り (次段)**: 前処理固有ベクトル $R_P=MR'_p,\ L_P=L'_p M^{-1}$ の閉形 → `build_jacobian_split` 前処理版
+    (`lowMachPrecond==2`)、`setDT_d` の $\Delta\tau'$、対角時間項の $\Gamma_c$ 行列化 (倍精度ブロック組み立て+解)、
+    $\beta=1$ GPU 回帰 (超音速ケースで `lowMachPrecond:0` とビット一致)、`case/23.axi_nozzle` で $\epsilon$↓ 検証。

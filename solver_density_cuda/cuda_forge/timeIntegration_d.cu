@@ -268,6 +268,69 @@ __device__ __forceinline__ bool solve_5x5(flow_float mat[5][5], flow_float rhs[5
     return true;
 }
 
+// 倍精度版の 5×5 直接解 (部分ピボット Gauss 消去)。
+// 低マッハ完全前処理 (lowMachPrecond=2) では対角ブロック D=Γ_Q·V/Δτ'+ΣÂ_Γ⁺S が保存基底で
+// 条件数 ~1/β (低マッハで大) を持つため、`flow_float`=float のままだと桁落ちする。対角ブロックの
+// 組み立てと反転のみ double で行い ΔQ を float に戻す (セル毎・5×5 と小コスト)。
+// 計画 .github/plans/time_integration-lowmach-preconditioning.md §5 Phase 4.3。
+__device__ __forceinline__ bool solve_5x5_dbl(double mat[5][5], double rhs[5], double sol[5])
+{
+    #pragma unroll
+    for (int col = 0; col < 5; ++col) {
+        int pivot = col;
+        double pivot_abs = fabs(mat[col][col]);
+        #pragma unroll
+        for (int row = col + 1; row < 5; ++row) {
+            const double candidate = fabs(mat[row][col]);
+            if (candidate > pivot_abs) {
+                pivot = row;
+                pivot_abs = candidate;
+            }
+        }
+
+        if (pivot_abs < 1.0e-300) {
+            #pragma unroll
+            for (int k = 0; k < 5; ++k) sol[k] = 0.0;
+            return false;
+        }
+
+        if (pivot != col) {
+            #pragma unroll
+            for (int k = 0; k < 5; ++k) {
+                const double tmp = mat[col][k];
+                mat[col][k] = mat[pivot][k];
+                mat[pivot][k] = tmp;
+            }
+            const double rhs_tmp = rhs[col];
+            rhs[col] = rhs[pivot];
+            rhs[pivot] = rhs_tmp;
+        }
+
+        const double inv_pivot = 1.0 / mat[col][col];
+        #pragma unroll
+        for (int row = col + 1; row < 5; ++row) {
+            const double factor = mat[row][col] * inv_pivot;
+            mat[row][col] = 0.0;
+            #pragma unroll
+            for (int k = col + 1; k < 5; ++k) {
+                mat[row][k] -= factor * mat[col][k];
+            }
+            rhs[row] -= factor * rhs[col];
+        }
+    }
+
+    for (int row = 4; row >= 0; --row) {
+        double sum = rhs[row];
+        #pragma unroll
+        for (int col = row + 1; col < 5; ++col) {
+            sum -= mat[row][col] * sol[col];
+        }
+        sol[row] = sum / mat[row][row];
+    }
+
+    return true;
+}
+
 __device__ __forceinline__ void load_block_vec(
     geom_int ic,
     flow_float* v0,

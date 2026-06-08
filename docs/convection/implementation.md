@@ -141,6 +141,37 @@ mdot = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs) + ro_R*(Vn_m-Vn_hat_m_abs))
 > 当初は同じ `lowMachPrecond_d.cuh` を `setDT_d` のスペクトル半径・block DPLUR の固有値でも共用する計画
 > だったが、いずれも block DPLUR の対角優位性を崩して有害と判明し不採用 (計画 §9)。**現状フラックス散逸前処理のみ**。
 
+#### 低マッハ再構成補正 (`lowMachThornber`)
+
+`cfg.lowMachThornber == 1` のとき、L/R 速度再構成の直後 (まだ `velocity2_*`/`h_*`/`Vn_*` を
+組む前) で左右速度ジャンプを局所マッハ `z=min(1, |u|_face/c_hat)` で縮める。`lowMachPrecond`
+(圧力散逸側) とは作用する項が異なり**直交**するため独立トグルとし、既定 `0` でビット不変。
+
+```cpp
+// L/R 速度再構成 (Ux_L..Uz_R) の直後、velocity2_L/h_p より前に挿入
+if (lowMachThornber == 1) {
+    flow_float c_hat_th = 0.5*(sonic[ic0] + sonic[ic1]);
+    flow_float v2L = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;
+    flow_float v2R = Ux_R*Ux_R + Uy_R*Uy_R + Uz_R*Uz_R;
+    flow_float z   = min((flow_float)1.0, sqrt(0.5*(v2L+v2R))/c_hat_th);   // M≥1 で z=1 (恒等)
+    flow_float um, du;
+    um = 0.5*(Ux_L+Ux_R); du = 0.5*(Ux_L-Ux_R); Ux_L = um+z*du; Ux_R = um-z*du;
+    um = 0.5*(Uy_L+Uy_R); du = 0.5*(Uy_L-Uy_R); Uy_L = um+z*du; Uy_R = um-z*du;
+    um = 0.5*(Uz_L+Uz_R); du = 0.5*(Uz_L-Uz_R); Uz_L = um+z*du; Uz_R = um-z*du;
+}
+// 以降 velocity2_L/R, h_p/h_m, Vn_p/Vn_m はブレンド後の速度から算出
+```
+
+`velocity2_L`/`h_p` は元コードでは L 再構成直後に計算しているが、ブレンドを受けるため
+挿入点の**後段へ移動**する (R 側 `velocity2_R`/`h_m` は元から後段)。圧力 `P_{L/R}`・密度
+`ro_{L/R}` は不変。`SLAU_d` に `int lowMachThornber` 引数を追加し wrapper の起動に
+`cfg.lowMachThornber` を渡す。理論・漸近的根拠は
+[`theory.md` の低マッハ再構成補正節](theory.md#低マッハ再構成補正-thornber-型速度ジャンプ縮約) を参照。
+
+> **検証結果 (負)**。`case/23.axi_nozzle` のノズル低マッハ自励振動には**無効〜僅かに悪化**
+> (理由・データは theory.md 同節の検証所見および計画 §9 `2026-06-08`)。`lowMachThornber` は
+> 正しく opt-in (既定 0・OFF 経路不変) で実装ずみだが、本症状の根治用途では使わない。
+
 ### `ROE_d` ([L1474](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu#L1474))
 
 並列単位は `nNormal_halo_Planes`。レジスタ圧が最も高いカーネル。

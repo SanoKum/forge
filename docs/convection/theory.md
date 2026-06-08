@@ -446,6 +446,52 @@ forge では `lowMachPrecond: 1` で有効化する opt-in 機能とし (既定 
 > $\epsilon$ を物理値まで下げて完全に根治するには、LHS に完全 preconditioned-flux Jacobian を組む
 > (固有ベクトルも前処理する) 大改修が要る (未着手)。
 
+#### 低マッハ再構成補正 (Thornber 型・速度ジャンプ縮約)
+
+低マッハ自励振動は **RHS (半離散作用素) の低マッハモードのほぼ無散逸性**に起因する
+(LHS=擬似時間項側の前処理は収束解を変えないため振動を根治しない。
+[`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md)
+§9 `2026-06-08`)。前処理音速 $c'$ (上節) は圧力散逸側を是正するが、もう一つの起源は
+**面再構成が作る左右速度ジャンプ** $\Delta\mathbf u=\mathbf u_L-\mathbf u_R$ である。
+Guillard–Viozat (1999) / Thornber ら (2008) の漸近解析によれば、低マッハで
+$\Delta\mathbf u$ は本来の物理スケール ($O(M^2)$ の圧力変動と整合すべき) に対し
+**人工的に過大** ($O(M)$) になり、上流化散逸 $\propto|\Delta\mathbf u|$ が
+$O(1/M)$ で過剰に効く。これがチェッカーボード／自励振動の第二の源である。
+
+**速度ジャンプの縮約。** Thornber らの補正は、支配方程式や圧力束は変えず、面再構成で得た
+左右速度を局所マッハ数で**ブレンド**して速度ジャンプだけを縮める:
+
+$$
+z = \min\!\Big(1,\ M_{\rm face}\Big),\quad
+M_{\rm face} = \frac{\sqrt{(|\mathbf u_L|^2+|\mathbf u_R|^2)/2}}{\widehat c},
+$$
+
+$$
+\mathbf u_L^{*} = \bar{\mathbf u} + z\,\delta\mathbf u,\qquad
+\mathbf u_R^{*} = \bar{\mathbf u} - z\,\delta\mathbf u,\qquad
+\bar{\mathbf u}=\tfrac12(\mathbf u_L+\mathbf u_R),\ \ \delta\mathbf u=\tfrac12(\mathbf u_L-\mathbf u_R).
+$$
+
+縮約後のジャンプは $\mathbf u_L^{*}-\mathbf u_R^{*} = z\,(\mathbf u_L-\mathbf u_R)=z\,2\,\delta\mathbf u$
+で、低マッハ ($z=M\to0$) では平均値へ収束してジャンプが消え、散逸の $O(1/M)$ 増大を
+打ち消す。超音速 ($z=1$) では恒等変換で**従来式に厳密復帰**するため衝撃波捕獲は不変。
+補正後の $\mathbf u_{L/R}^{*}$ から $|\mathbf u_{L/R}|^2$・全エンタルピ $h_{p/m}$・法線速度
+$V_n^\pm$ を組み直してフラックスへ渡す (圧力 $P_{L/R}$・密度 $\rho_{L/R}$ は触らない)。
+
+**前処理音速 $c'$ との関係 (直交だが作用の符号が逆)。** $c'$ は**圧力散逸項**のスケールを是正して
+散逸を**増やす**方向、Thornber は**運動量上流化の速度ジャンプ**を縮めて散逸を**減らす**方向で、
+作用する項が異なり独立に ON/OFF できる。いずれも RHS のみを変え LHS (block DPLUR) には触れない。
+forge では `lowMachThornber: 1` で有効化する opt-in 機能とする (既定 `0`＝従来挙動、ビット不変)。
+
+> **検証所見 (重要・負の結果)**。3D ノズル ($M_{\rm chamber}\approx0.06$) の低マッハ自励振動に対し、
+> Thornber 補正は**無効、むしろ僅かに悪化**した (20k step 収束ベース: Thornber 単独 chamber std/mean
+> 0.924% vs OFF 0.882%、Phase1 併用 0.613% vs Phase1 単独 0.603%。超音速域 $M_{\max}$ は不変)。
+> 理由は、この症状が圧力–速度カップリングの **under-damping (チェッカーボード)** であり**散逸を増やす**必要が
+> あるのに対し、Thornber は速度ジャンプを縮めて**散逸を減らす**逆符号の補正だからである。Thornber が
+> 本来効くのは低マッハの**過剰散逸による精度劣化** (smearing。LES/乱流減衰など) であり、本ノズルの limit cycle
+> 根治には使えない。根治レバーは圧力散逸を増やす前処理音速 $c'$ (上節) 側に残る
+> (詳細・データは計画 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9 `2026-06-08`)。
+
 ### HLLE
 
 Harten–Lax–van Leer–Einfeldt 形 HLL。中央波 (接触不連続) を捨て、最大・最小波速で

@@ -137,6 +137,60 @@ $V/\Delta\tau$ を縮めて対角を二重に潰し、最速で発散した。
 従来の $A^\pm$ のまま。詳細・データは計画
 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
+### 低マッハ前処理固有系 (Weiss–Smith・完全 $\Gamma^{-1}A$) — Phase 4 (実装中)
+
+固有値だけの前処理が失敗したので、**固有ベクトルまで前処理した完全形**を `lowMachPrecond=2` の新モードとして
+実装する (Phase 1 の flux 散逸 `c'` とは排他)。要点は、擬似時間項とフラックス分割を**同一の前処理計量**で
+揃えること。
+
+**保存変数前処理行列 $\Gamma_c$ (ランク 1 閉形)。** 原始変数 $Q_p=(p,u,v,w,T)$ の Weiss–Smith 前処理
+$\Gamma_p$ は変換 $M=\partial Q_c/\partial Q_p$ に対し $\rho_p=\partial\rho/\partial p|_T$ のみを
+$\Theta=1/U_r^2+(\gamma-1)/c^2$ に置換したものである ($U_r=c$ で $\Theta=\rho_p$)。保存形の擬似時間項に必要な
+$\Gamma_c=\Gamma_p M^{-1}$ は、$\Theta-\rho_p=(1-\beta)/(\beta c^2)$ を使って**恒等行列のランク 1 更新**に閉じる:
+
+$$
+\Gamma_c = I + \frac{1-\beta}{\beta c^2}\, g\, r^\top,\qquad
+g=(1,u,v,w,H)^\top,\quad
+r^\top=(\gamma-1)\,(e_k,-u,-v,-w,1)=\frac{\partial p}{\partial Q_c},
+$$
+
+ここで $H=c^2/(\gamma-1)+e_k$ (全エンタルピ)、$e_k=\tfrac12|\mathbf u|^2$、$Q_c=(\rho,\rho u,\rho v,\rho w,\rho E)$。
+$r^\top g = c^2$ が成り立ち、Sherman–Morrison で逆行列も閉じる:
+
+$$
+\Gamma_c^{-1} = I - \frac{1-\beta}{c^2}\, g\, r^\top.
+$$
+
+$\beta=1$ (超音速、$U_r=c$) で両者とも係数が 0 となり $\Gamma_c=\Gamma_c^{-1}=I$ に**厳密復帰**する。
+これらは `lowMachPrecond_d.cuh` の `lowMachGammaC` / `lowMachGammaCinv` が `double[5][5]` に組む
+(条件数 $\sim1/\beta$ のため倍精度。ランク 1 形・$r^\top g=c^2$・$\beta{=}1$ 復帰は記号的に検証済)。
+
+**前処理ヤコビアンと固有系。** 安定性・CFL を律する行列は $P=\Gamma_c^{-1}A_c$ で、その固有値は前処理済み
+
+$$
+\lambda'_{1,2,3}=U_n,\qquad
+\lambda'_{4,5}=\tfrac12(1+\beta)U_n\pm c',\quad
+c'=\tfrac12\sqrt{(1-\beta)^2U_n^2+4U_r^2},
+$$
+
+固有ベクトルは $R_P=M R'_p,\ L_P=L'_p M^{-1}$ ($R'_p,L'_p$ は原始系 $\Gamma_p^{-1}A_p$ の前処理固有ベクトル)。
+LHS の分割は $A_c$ を**前処理固有系で**割る: $\hat A_\Gamma^{\pm}=\Gamma_c\,R_P\Lambda'^{\pm}L_P$。
+
+**LHS 構成 (block DPLUR)。** 対角ブロックを
+$$
+D = \Gamma_c\,\frac{V}{\Delta\tau'} \;+\; a\frac{V}{\Delta t}I \;+\; \sum_f \hat A_{\Gamma,f}^{+}S_f \;+\;(\text{粘性})
+$$
+とし、近傍項を $-\hat A_{\Gamma,f}^{-}S_f$、$\Delta\tau'$ を前処理スペクトル半径 $\lambda'_{\max}\sim|\mathbf u|+c'$ から取る
+(低マッハで $\Delta\tau'\sim1/M$ 拡大)。dual-time の物理 BDF 項 $aV/\Delta t\,I$ は**非前処理**のまま。前処理固有基底では
+$\Gamma_c V/\Delta\tau'$ と $\hat A_\Gamma^{+}S$ が同オーダー $O(|\mathbf u|)$ で釣り合うため、Phase 2 で崩れた対角優位性が
+拡大した $\Delta\tau'$ の下で回復する (悪条件は保存基底への $\Gamma_c$ 変換だけが担うので、対角ブロックの組み立て+
+反転を倍精度 `solve_5x5_dbl` で行って吸収する)。$\beta=1$ で全体が現行 $A^\pm$ 経路にビット一致することを回帰で担保する。
+
+> **進捗 (2026-06-08)**: 土台 ($\Gamma_c/\Gamma_c^{-1}$ ランク 1 閉形の導出・検証、`lowMachGammaC`/`Cinv` device 関数、
+> `solve_5x5_dbl` 倍精度ブロック解) を実装。残り: 前処理固有ベクトル $R_P,L_P$ の閉形と `build_jacobian_split`
+> 前処理版、`setDT_d` の $\Delta\tau'$、時間項 $\Gamma_c$ 化、$\beta=1$ 回帰、20k 検証。計画
+> [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §5 Phase 4。
+
 ## 非定常 dual-time 陰解法 (実装済み 2026-06)
 
 非定常は物理時間 $t$ に対し BDF（後退差分）で物理時間微分項を残差に加え、各物理ステップ内で

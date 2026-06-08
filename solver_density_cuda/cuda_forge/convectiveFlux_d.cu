@@ -224,6 +224,7 @@ __global__ void SLAU_d
  int conv_scheme, int limit_scheme,
  int slauVariant,   // 1: SLAU, 2: SLAU2 (圧力束第3項のみ低マッハ改良)
  int lowMachPrecond, flow_float precondEps,   // 低マッハ前処理 (1: 散逸スケールを c'、0: 従来 c_hat)
+ int lowMachThornber,                         // Thornber 再構成補正 (1: L/R 速度ジャンプを z=min(M,1) で縮約)
 
  flow_float ga,
 
@@ -335,14 +336,29 @@ __global__ void SLAU_d
         //flow_float Ux_L = roUx_L/ro_L;
         //flow_float Uy_L = roUy_L/ro_L;
         //flow_float Uz_L = roUz_L/ro_L;
-        flow_float velocity2_L = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;
-        flow_float h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
+        // velocity2_L / h_p はブレンド後に算出するため後段へ移動 (lowMachThornber 対応)。
 
         flow_float ro_R  = interp_dispatch(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro[ic1]); 
         flow_float Ux_R  = interp_dispatch(conv_scheme, limit_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Ux[ic1]);
         flow_float Uy_R  = interp_dispatch(conv_scheme, limit_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uy[ic1]);
         flow_float Uz_R  = interp_dispatch(conv_scheme, limit_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uz[ic1]);
         flow_float P_R   = interp_dispatch(conv_scheme, limit_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , dPdx[ic0] , dPdy[ic0] , dPdz[ic0] ,-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_P[ic1]);
+        // 低マッハ Thornber 再構成補正: L/R 速度ジャンプを z=min(M,1) で縮約し、低マッハで
+        // O(1/M) に増大する速度ジャンプ由来の散逸を抑える。lowMachThornber==0 で恒等 (ビット不変)、
+        // M>=1 で z=1 (超音速域不変)。圧力 P_L/R・密度 ro_L/R は不変。理論は docs/convection/theory.md。
+        if (lowMachThornber == 1) {
+            flow_float c_hat_th = 0.5*(sonic[ic0] + sonic[ic1]);
+            flow_float v2L_th = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;
+            flow_float v2R_th = Ux_R*Ux_R + Uy_R*Uy_R + Uz_R*Uz_R;
+            flow_float z_th = min(static_cast<flow_float>(1.0), sqrt(0.5*(v2L_th + v2R_th))/c_hat_th);
+            flow_float um, du;
+            um = 0.5*(Ux_L+Ux_R); du = 0.5*(Ux_L-Ux_R); Ux_L = um + z_th*du; Ux_R = um - z_th*du;
+            um = 0.5*(Uy_L+Uy_R); du = 0.5*(Uy_L-Uy_R); Uy_L = um + z_th*du; Uy_R = um - z_th*du;
+            um = 0.5*(Uz_L+Uz_R); du = 0.5*(Uz_L-Uz_R); Uz_L = um + z_th*du; Uz_R = um - z_th*du;
+        }
+        // velocity2_L / h_p はブレンド後に算出 (L 再構成直後から移動)。
+        flow_float velocity2_L = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;
+        flow_float h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
         flow_float velocity2_R = Ux_R*Ux_R + Uy_R*Uy_R + Uz_R*Uz_R;
         flow_float h_m = ga*P_R/((ga-1.0)*ro_R) + 0.5*velocity2_R;
 
@@ -2564,6 +2580,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.convMethod, cfg.limiter, slauVariant,
             cfg.lowMachPrecond, cfg.precondEps,
+            cfg.lowMachThornber,
 
             cfg.gamma,
 

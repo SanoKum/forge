@@ -208,6 +208,8 @@ void solverConfig::read(std::string fname)
         // 低マッハ前処理 (Weiss-Smith): 既定 0 で従来挙動 (ビット不変)。
         this->lowMachPrecond = getOptionalValidatedValue<int>(deltaT, "lowMachPrecond", 0, "time.deltaT");
         this->precondEps = getOptionalValidatedValue<double>(deltaT, "precondEps", 0.15, "time.deltaT");
+        // Thornber 型低マッハ再構成補正: 既定 0 で従来挙動 (ビット不変)。lowMachPrecond と直交・併用可。
+        this->lowMachThornber = getOptionalValidatedValue<int>(deltaT, "lowMachThornber", 0, "time.deltaT");
         this->dt_max = getValidatedValue<double>(deltaT, "dt_max", "time.deltaT");
         this->dt_min = getValidatedValue<double>(deltaT, "dt_min", "time.deltaT");
 
