@@ -457,3 +457,17 @@ forge の保存変数パイプラインに侵襲的なため不採用。
     成果物: `run_p4_amp_eps05` / `run_p4_amp_eps15` (`residual_history.png` 付き)。
   - **残課題 (任意)**: per-step の倍精度コスト低減 (条件数が許す範囲で float 化・レジスタ削減)、β=1 完全回帰の
     専用超音速ケース整備、ε のさらなる最適化。いずれも根治の成立とは独立。
+
+- `2026-06-09` — **Sherman-Morrison 化で FP64 を排し、前処理カーネルを物理 block とほぼ同速に高速化**。
+  - **着眼**: RTX 3060 等 consumer GPU は FP64=FP32/64。前処理カーネルの倍精度対角ブロック+`solve_5x5_dbl` が
+    2.54× 遅延の主因。$\Gamma_c=I+\alpha g r^\top$ が**ランク1**ゆえ対角ブロックは $D=D_0+\gamma g r^\top$
+    ($D_0$=物理ブロック・良条件・既存 0/1 が float で解いているのと同形、$\gamma=(V/\Delta\tau')\alpha$) と分解できる。
+  - **実装**: `solve_5x5_dbl` を float の `solve_5x5_2rhs` (1 回分解で 2 RHS) に置換し、前処理カーネルを
+    Sherman-Morrison $x=y-[\gamma(r^\top y)/(1+\gamma(r^\top z))]z$ ($y=D_0^{-1}b,\ z=D_0^{-1}g$) で解く。
+    **D_0 解は float**、悪条件 $\sim1/\beta$ は分母スカラーのみ double に隔離。$g,r,\alpha$ はカーネル内インライン化し
+    未使用の `lowMachGammaC`/`lowMachGammaRank1`/`matmul_5x5_dbl`/`solve_5x5_dbl` を削除。
+  - **結果**: per-step **43ms→16.9ms (2.5×、baseline m1 17.8ms とほぼ同速)**。`case/23.axi_nozzle` ε=0.05 20k で
+    **振幅 0.087% を完全再現** (mean/min/max とも旧 double 版と一致)、残差トラジェクトリも一致、NaN なし。
+    20k 実時間 865s→**321s**。FP64 ペナルティ消滅。
+  - **収束加速への波及**: per-step がほぼ同速になったので、m2 の cfl_pseudo 余裕 (~5-7 対 m1 ~1) が
+    per-step コストで相殺されなくなった。等 wall-clock の収束加速も net で有利になった可能性が高い (要再測定)。

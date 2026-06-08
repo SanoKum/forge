@@ -1,5 +1,5 @@
 #include "timeIntegration_d.cuh"
-#include "lowMachPrecond_d.cuh"   // Phase 4: Γ_c (lowMachGammaC)・β・c' device ヘルパ
+#include "lowMachPrecond_d.cuh"   // Phase 4: β (lowMachBeta)・c' (lowMachCprime) device ヘルパ
 
 namespace block_dplur {
 
@@ -269,64 +269,56 @@ __device__ __forceinline__ bool solve_5x5(flow_float mat[5][5], flow_float rhs[5
     return true;
 }
 
-// 倍精度版の 5×5 直接解 (部分ピボット Gauss 消去)。
-// 低マッハ完全前処理 (lowMachPrecond=2) では対角ブロック D=Γ_Q·V/Δτ'+ΣÂ_Γ⁺S が保存基底で
-// 条件数 ~1/β (低マッハで大) を持つため、`flow_float`=float のままだと桁落ちする。対角ブロックの
-// 組み立てと反転のみ double で行い ΔQ を float に戻す (セル毎・5×5 と小コスト)。
-// 計画 .github/plans/time_integration-lowmach-preconditioning.md §5 Phase 4.3。
-__device__ __forceinline__ bool solve_5x5_dbl(double mat[5][5], double rhs[5], double sol[5])
+// 5×5 を 2 つの RHS について同時に解く (部分ピボット Gauss 消去を 1 回・float)。
+// Phase 4 (lowMachPrecond=2) の Sherman-Morrison 解法で D0⁻¹b と D0⁻¹g を同じ分解で得るのに使う。
+// D0 は物理ブロックで良条件 (既存 0/1 カーネルが float で解いているのと同形) ゆえ float で十分。
+__device__ __forceinline__ bool solve_5x5_2rhs(flow_float mat[5][5],
+                                               flow_float r1[5], flow_float r2[5],
+                                               flow_float s1[5], flow_float s2[5])
 {
     #pragma unroll
     for (int col = 0; col < 5; ++col) {
         int pivot = col;
-        double pivot_abs = fabs(mat[col][col]);
+        flow_float pivot_abs = fabs(mat[col][col]);
         #pragma unroll
         for (int row = col + 1; row < 5; ++row) {
-            const double candidate = fabs(mat[row][col]);
-            if (candidate > pivot_abs) {
-                pivot = row;
-                pivot_abs = candidate;
-            }
+            const flow_float candidate = fabs(mat[row][col]);
+            if (candidate > pivot_abs) { pivot = row; pivot_abs = candidate; }
         }
 
-        if (pivot_abs < 1.0e-300) {
-            #pragma unroll
-            for (int k = 0; k < 5; ++k) sol[k] = 0.0;
+        if (pivot_abs < static_cast<flow_float>(1.0e-20)) {
+            zero5(s1); zero5(s2);
             return false;
         }
 
         if (pivot != col) {
             #pragma unroll
             for (int k = 0; k < 5; ++k) {
-                const double tmp = mat[col][k];
-                mat[col][k] = mat[pivot][k];
-                mat[pivot][k] = tmp;
+                const flow_float tmp = mat[col][k]; mat[col][k] = mat[pivot][k]; mat[pivot][k] = tmp;
             }
-            const double rhs_tmp = rhs[col];
-            rhs[col] = rhs[pivot];
-            rhs[pivot] = rhs_tmp;
+            flow_float t = r1[col]; r1[col] = r1[pivot]; r1[pivot] = t;
+            t = r2[col]; r2[col] = r2[pivot]; r2[pivot] = t;
         }
 
-        const double inv_pivot = 1.0 / mat[col][col];
+        const flow_float inv_pivot = static_cast<flow_float>(1.0) / mat[col][col];
         #pragma unroll
         for (int row = col + 1; row < 5; ++row) {
-            const double factor = mat[row][col] * inv_pivot;
+            const flow_float factor = mat[row][col] * inv_pivot;
             mat[row][col] = 0.0;
             #pragma unroll
-            for (int k = col + 1; k < 5; ++k) {
-                mat[row][k] -= factor * mat[col][k];
-            }
-            rhs[row] -= factor * rhs[col];
+            for (int k = col + 1; k < 5; ++k) mat[row][k] -= factor * mat[col][k];
+            r1[row] -= factor * r1[col];
+            r2[row] -= factor * r2[col];
         }
     }
 
     for (int row = 4; row >= 0; --row) {
-        double sum = rhs[row];
+        flow_float sum1 = r1[row], sum2 = r2[row];
         #pragma unroll
-        for (int col = row + 1; col < 5; ++col) {
-            sum -= mat[row][col] * sol[col];
-        }
-        sol[row] = sum / mat[row][row];
+        for (int col = row + 1; col < 5; ++col) { sum1 -= mat[row][col] * s1[col]; sum2 -= mat[row][col] * s2[col]; }
+        const flow_float inv = static_cast<flow_float>(1.0) / mat[row][row];
+        s1[row] = sum1 * inv;
+        s2[row] = sum2 * inv;
     }
 
     return true;
@@ -894,15 +886,16 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 // =============================================================================
 // Phase 4 (a): 完全 Γ⁻¹A 低マッハ前処理の block DPLUR (lowMachPrecond=2)。
 // 既存 implicit_defect_correction_block_d (lowMachPrecond 0/1) とは別カーネルにし、
-// 0/1 経路のレジスタ・ビットを一切変えない。本カーネルは対角ブロックを倍精度で組み、
-// solve_5x5_dbl で解く (Γ_c の条件数 ~1/β 対策)。
+// 0/1 経路のレジスタ・ビットを一切変えない。
 // 保存形は (Γ_c·V/Δτ' + A_c)ΔQ = -R で、**前処理は擬似時間項 Γ_c のみ**。フラックス A_c は
 // 既存と同じ物理厳密 FVS (a_plus=A_c⁺・k_off=-A_c⁻) をそのまま使う (非前処理が正しい)。収束は
 // (Δτ'/V)Γ_c⁻¹A_c の固有値 λ' で一様に前処理され、スカラー Δτ'=cell/ρ' で効く。
 //   - 擬似時間項: Γ_c·V/Δτ' (Δτ' は setDT 側で前処理スペクトル半径から拡大した dt_local)。
 //   - フラックス: 物理 a_plus を対角・k_off を近傍 (既存 block と同一)。
-//   - 物理 BDF 項 a·V/Δt·I は非前処理 (dual-time 所有)。β=1 (超音速) で Γ_c=I・Δτ'=Δτ・フラックスも
-//     同一となり**現行カーネルと同一の組み立て**になる (倍精度で組む分だけ丸め差 ~1e-7、解は一致。回帰で担保)。
+//   - 物理 BDF 項 a·V/Δt·I は非前処理 (dual-time 所有)。
+// **Sherman-Morrison 解法**: Γ_c=I+α g rᵀ がランク1なので D=D0+γ g rᵀ (D0=物理ブロック・良条件)。
+//   D0 を float で 2 RHS 同時 (solve_5x5_2rhs) に解き、悪条件 ~1/β は分母スカラーのみ double に隔離。
+//   FP64 を回避して 0/1 カーネルに近い速度。β=1 (超音速) で Γ_c=I・Δτ'=Δτ・フラックス同一ゆえ現行と解一致。
 // 理論: docs/time_integration/theory.md「低マッハ前処理固有系」、計画 §5 Phase 4。
 __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correction_block_precond_d
 (
@@ -957,21 +950,19 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             dq_old_0[ic] = 0.0; dq_old_1[ic] = 0.0; dq_old_2[ic] = 0.0; dq_old_3[ic] = 0.0; dq_old_4[ic] = 0.0;
         }
 
-        // 倍精度対角ブロック: 擬似時間項 Γ_c·V/Δτ' + 物理 BDF a·V/Δt·I。
-        double diagD[5][5];
-        double Gc[5][5];
-        lowMachGammaC(gamma, local_sonic, vx, vy, vz, beta, Gc);
-        const double v_over_dtau = static_cast<double>(v)
-            / max(static_cast<double>(dt_l), 1.0e-30);
-        const double bdf = static_cast<double>(v) * static_cast<double>(unsteady_diag);
-        #pragma unroll
-        for (int i = 0; i < 5; ++i)
-            #pragma unroll
-            for (int j = 0; j < 5; ++j)
-                diagD[i][j] = Gc[i][j] * v_over_dtau + (i == j ? bdf : 0.0);
+        // 対角ブロックは Γ_c=I+α g rᵀ がランク1ゆえ D = D0 + γ g rᵀ と書ける:
+        //   D0 = V/Δτ'·I + a·V/Δt·I + Σ A_c⁺ S + 粘性 + 軸対称  (物理ブロック・良条件・float 可)
+        //   γ g rᵀ = (V/Δτ')·α g rᵀ                             (Γ_c 前処理寄与、悪条件 ~1/β の源)
+        // Sherman-Morrison: x = y - [γ(rᵀy)/(1+γ(rᵀz))] z,  y=D0⁻¹b, z=D0⁻¹g。
+        // D0 を float で 2 RHS 同時に解き、悪条件は分母スカラー(double)に隔離 → FP64 を回避 (RTX 等で高速)。
+        flow_float D0[5][5];
+        block_dplur::zero5x5(D0);
+        const flow_float v_over_dtau = static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30)));
+        block_dplur::add_identity_scaled(D0, v_over_dtau);
+        block_dplur::add_identity_scaled(D0, static_cast<flow_float>(v) * unsteady_diag);  // dual-time BDF (非前処理)
 
-        double rhsD[5] = { res_ro[ic], res_roUx[ic], res_roUy[ic], res_roUz[ic], res_roe[ic] };
-        double nbr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        flow_float b[5] = { res_ro[ic], res_roUx[ic], res_roUy[ic], res_roUz[ic], res_roe[ic] };
+        flow_float nbr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
 
         const geom_int plane_begin = cell_planes_index[ic];
         const geom_int plane_end = cell_planes_index[ic + 1];
@@ -986,73 +977,76 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             const flow_float ny = nsign * sy[ip] / face_area;
             const flow_float nz = nsign * sz[ip] / face_area;
 
-            // フラックスは物理の厳密 FVS (a_plus=A_c⁺, k_off=-A_c⁻) をそのまま使う。
-            // 保存形 (Γ_c V/Δτ' + A_c)ΔQ=-R より、前処理は時間項 Γ_c のみで、フラックス A_c は
-            // 非前処理が正しい (収束は (Δτ'/V)Γ_c⁻¹A_c の固有値 λ' で一様に前処理される)。
+            // フラックスは物理の厳密 FVS。前処理は時間項のみ (保存形 (Γ_c V/Δτ'+A_c)ΔQ=-R)。
             flow_float a_plus[5][5];
             flow_float k_off[5][5];
             block_dplur::build_jacobian_split(gamma, nx, ny, nz, vx, vy, vz,
                                               local_enthalpy, local_sonic, a_plus, k_off);
-            const double area = static_cast<double>(face_area);
+            block_dplur::add_scaled_5x5(D0, a_plus, face_area);
 
-            // 粘性スペクトル半径 (対角に identity 倍で加算、現行 block と同形)。
             const flow_float dcc_x = ccx[other_ic] - ccx[ic];
             const flow_float dcc_y = ccy[other_ic] - ccy[ic];
             const flow_float dcc_z = ccz[other_ic] - ccz[ic];
             const flow_float dcc = max(sqrt(dcc_x*dcc_x + dcc_y*dcc_y + dcc_z*dcc_z), static_cast<flow_float>(1.0e-30));
             const flow_float dcc_dot_s = max(fabs(dcc_x*sx[ip] + dcc_y*sy[ip] + dcc_z*sz[ip]), static_cast<flow_float>(1.0e-30));
             const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
-            const double viscous_radius = 2.0 * static_cast<double>(nu_eff) / static_cast<double>(delta);
-
-            // 対角 += A_c⁺ S + 粘性·area。
-            #pragma unroll
-            for (int i = 0; i < 5; ++i) {
-                #pragma unroll
-                for (int j = 0; j < 5; ++j) diagD[i][j] += static_cast<double>(a_plus[i][j]) * area;
-                diagD[i][i] += viscous_radius * area;
-            }
+            const flow_float viscous_radius = static_cast<flow_float>(2.0) * nu_eff / delta;
+            block_dplur::add_identity_scaled(D0, face_area * viscous_radius);
 
             // 近傍 += k_off S ΔQ_nbr (= -A_c⁻ S ΔQ_nbr)。
             if (other_ic < nCells) {
                 flow_float dqn[5];
                 block_dplur::load_block_vec(other_ic, dq_old_0, dq_old_1, dq_old_2, dq_old_3, dq_old_4, dqn);
-                double t[5];
                 #pragma unroll
-                for (int i = 0; i < 5; ++i) t[i] = static_cast<double>(dqn[i]) * area;
-                #pragma unroll
-                for (int i = 0; i < 5; ++i) {
-                    double s = 0.0;
-                    #pragma unroll
-                    for (int j = 0; j < 5; ++j) s += static_cast<double>(k_off[i][j]) * t[j];
-                    nbr[i] += s;
-                }
+                for (int i = 0; i < 5; ++i) dqn[i] *= face_area;
+                block_dplur::multiply_add_5x5_vec(k_off, dqn, nbr);
             }
         }
 
         #pragma unroll
-        for (int i = 0; i < 5; ++i) rhsD[i] += nbr[i];
+        for (int i = 0; i < 5; ++i) b[i] += nbr[i];
 
-        // 軸対称ソースヤコビアン (現行 block と同式・倍精度で加算)。
+        // 軸対称ソースヤコビアン (物理ブロック D0 へ float で加算、既存 block と同式)。
         if (isAxisymmetric == 1) {
-            const double A_pl = A_planar[ic];
-            const double r_eff = max(static_cast<double>(v) / max(A_pl, 1.0e-30), 1.0e-30);
-            const double g1 = static_cast<double>(gamma) - 1.0;
-            const double q2 = static_cast<double>(vx)*vx + static_cast<double>(vy)*vy + static_cast<double>(vz)*vz;
-            const double mu_total = static_cast<double>(laminar_visc) + max(static_cast<double>(vis_turb[ic]), 0.0);
-            const double hoop = 2.0 * mu_total / (static_cast<double>(density) * r_eff);
-            diagD[2][0] += -A_pl * (0.5*g1*q2 + hoop*vy);
-            diagD[2][1] +=  A_pl * (g1*vx);
-            diagD[2][2] +=  A_pl * (g1*vy + hoop);
-            diagD[2][3] +=  A_pl * (g1*vz);
-            diagD[2][4] += -A_pl * g1;
+            const flow_float A_pl = A_planar[ic];
+            const flow_float r_eff = max(v / max(A_pl, static_cast<flow_float>(1.0e-30)), static_cast<flow_float>(1.0e-30));
+            const flow_float g1 = gamma - static_cast<flow_float>(1.0);
+            const flow_float q2 = vx*vx + vy*vy + vz*vz;
+            const flow_float mu_total = laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0));
+            const flow_float hoop = static_cast<flow_float>(2.0) * mu_total / (density * r_eff);
+            D0[2][0] += -A_pl * (static_cast<flow_float>(0.5)*g1*q2 + hoop*vy);
+            D0[2][1] +=  A_pl * (g1*vx);
+            D0[2][2] +=  A_pl * (g1*vy + hoop);
+            D0[2][3] +=  A_pl * (g1*vz);
+            D0[2][4] += -A_pl * g1;
         }
 
-        double corrD[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
-        const bool ok = block_dplur::solve_5x5_dbl(diagD, rhsD, corrD);
+        // Γ_c のランク1寄与: g=(1,u,v,w,H), r=(γ-1)(ek,-u,-v,-w,1)=∂p/∂Q, γ=(V/Δτ')·(1-β)/(βc²)。
+        const flow_float ek = static_cast<flow_float>(0.5) * velMag * velMag;
+        const flow_float Htot = local_sonic*local_sonic/(gamma-static_cast<flow_float>(1.0)) + ek;
+        const flow_float gm1 = gamma - static_cast<flow_float>(1.0);
+        flow_float gvec[5] = { static_cast<flow_float>(1.0), vx, vy, vz, Htot };
+        const flow_float rvec[5] = { gm1*ek, -gm1*vx, -gm1*vy, -gm1*vz, gm1 };
+        const double dbeta = static_cast<double>(beta);
+        const double alpha = (1.0 - dbeta) / (dbeta * static_cast<double>(local_sonic) * static_cast<double>(local_sonic));
+        const double gam = static_cast<double>(v_over_dtau) * alpha;   // = (V/Δτ')·α
+
+        // D0 を float で 2 RHS 同時に解く: y=D0⁻¹b, z=D0⁻¹g。
+        flow_float y[5], z[5];
+        const bool ok = block_dplur::solve_5x5_2rhs(D0, b, gvec, y, z);
+
+        // Sherman-Morrison スカラー (悪条件 1/β はここだけ double): x = y - [γ(rᵀy)/(1+γ(rᵀz))] z。
+        double ry = 0.0, rz = 0.0;
+        #pragma unroll
+        for (int i = 0; i < 5; ++i) { ry += static_cast<double>(rvec[i]) * y[i]; rz += static_cast<double>(rvec[i]) * z[i]; }
+        const double denom = 1.0 + gam * rz;
+        const double sfac = (fabs(denom) > 1.0e-300) ? gam * ry / denom : 0.0;
+
         flow_float correction[5];
         #pragma unroll
         for (int i = 0; i < 5; ++i)
-            correction[i] = ok ? static_cast<flow_float>(corrD[i] * static_cast<double>(implicit_relax))
+            correction[i] = ok ? static_cast<flow_float>((static_cast<double>(y[i]) - sfac * static_cast<double>(z[i]))
+                                                         * static_cast<double>(implicit_relax))
                                : static_cast<flow_float>(0.0);
 
         block_dplur::store_block_vec(ic, correction, dq_new_0, dq_new_1, dq_new_2, dq_new_3, dq_new_4);

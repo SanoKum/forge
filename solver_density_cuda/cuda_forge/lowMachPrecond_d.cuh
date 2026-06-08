@@ -51,43 +51,7 @@ flow_float lowMachBeta(flow_float c, flow_float velMag, flow_float eps)
     return (Ur / c) * (Ur / c);
 }
 
-// Weiss-Smith 保存変数前処理のランク 1 共通形 I + coeff·g·rᵀ を double[5][5] に組む。
-//   g = (1, u, v, w, H)ᵀ,  rᵀ = (γ-1)(ek, -u, -v, -w, 1) = ∂p/∂Q_c,  H = c²/(γ-1)+ek,  ek = ½|u|²。
-//   rᵀg = c² (検証済)。Γ_c は coeff=(1-β)/(βc²)、Γ_c⁻¹ は coeff=-(1-β)/c²。
-//   いずれも β=1 で coeff=0 → 単位行列に厳密復帰。条件数 ~1/β を扱うため double で組む。
-__device__ __forceinline__
-void lowMachGammaRank1(flow_float gamma, flow_float c,
-                       flow_float u, flow_float v, flow_float w,
-                       double coeff, double mat[5][5])
-{
-    const double gm1 = static_cast<double>(gamma) - 1.0;
-    const double ek  = 0.5 * (static_cast<double>(u) * u
-                            + static_cast<double>(v) * v
-                            + static_cast<double>(w) * w);
-    const double H   = static_cast<double>(c) * static_cast<double>(c) / gm1 + ek;
-    const double g[5] = {1.0, static_cast<double>(u), static_cast<double>(v),
-                         static_cast<double>(w), H};
-    const double r[5] = {gm1 * ek, -gm1 * static_cast<double>(u), -gm1 * static_cast<double>(v),
-                         -gm1 * static_cast<double>(w), gm1};
-    #pragma unroll
-    for (int i = 0; i < 5; ++i) {
-        #pragma unroll
-        for (int j = 0; j < 5; ++j) {
-            mat[i][j] = (i == j ? 1.0 : 0.0) + coeff * g[i] * r[j];
-        }
-    }
-}
-
-// 前処理行列 Γ_c = I + ((1-β)/(βc²)) g rᵀ。擬似時間項 Γ_c·V/Δτ' の構築に使う。
-__device__ __forceinline__
-void lowMachGammaC(flow_float gamma, flow_float c,
-                   flow_float u, flow_float v, flow_float w,
-                   flow_float beta, double Gc[5][5])
-{
-    const double b = static_cast<double>(beta);
-    const double coeff = (1.0 - b) / (b * static_cast<double>(c) * static_cast<double>(c));
-    lowMachGammaRank1(gamma, c, u, v, w, coeff, Gc);
-}
-
-// 注: 逆行列 Γ_c⁻¹ = I - ((1-β)/c²) g rᵀ (Sherman-Morrison) は保存形では LHS に現れない
-// (前処理は時間項 Γ_c のみ、フラックスは物理 A_c)。閉形の検証は tools/verify_lowmach_precond.py 参照。
+// 保存変数前処理行列はランク 1 閉形 Γ_c = I + ((1-β)/(βc²)) g rᵀ:
+//   g = (1, u, v, w, H)ᵀ,  rᵀ = (γ-1)(ek, -u, -v, -w, 1) = ∂p/∂Q_c,  H = c²/(γ-1)+ek,  ek = ½|u|²,  rᵀg = c²。
+//   β=1 で Γ_c=I に厳密復帰。Γ_c 行列は陽に組まず、timeIntegration_d.cu の前処理カーネルが D=D0+γ g rᵀ の
+//   Sherman-Morrison で g/r/α を直接使う (FP64 回避)。閉形の検証は tools/verify_lowmach_precond.py 参照。

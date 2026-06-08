@@ -188,9 +188,11 @@ D = \Gamma_c\,\frac{V}{\Delta\tau'} \;+\; a\frac{V}{\Delta t}I \;+\; \sum_f A^{+
 $$
 で、$A^{+}_c=a^{+}$・$-A^{-}_c=k_{\rm off}$ は既存 `build_jacobian_split` の物理分割そのもの。$\Delta\tau'$ は前処理スペクトル半径
 $\rho'=\tfrac12(1+\beta)|U_n|+c'$ 基準に拡大する (`setDT_d` で $\Delta\tau'=\Delta\tau\cdot(|\mathbf u|+c)/\rho'$、低マッハで $\sim1/\epsilon$ 倍・有界)。
-dual-time の物理 BDF 項 $aV/\Delta t\,I$ は**非前処理**。悪条件 ($\sim1/\beta$) は $\Gamma_c$ 時間項だけが持ち込むので、対角ブロックの
-組み立て+反転を倍精度 `solve_5x5_dbl` で吸収する。$\beta=1$ (超音速) では $\Gamma_c=I,\ \Delta\tau'=\Delta\tau$・フラックス同一ゆえ
-既存カーネルと同一組み立て (倍精度の丸め差 ~1e-7、解一致)。
+dual-time の物理 BDF 項 $aV/\Delta t\,I$ は**非前処理**。悪条件 ($\sim1/\beta$) は $\Gamma_c$ 時間項だけが持ち込むが、
+$\Gamma_c=I+\alpha g r^\top$ がランク 1 ゆえ $D=D_0+\gamma g r^\top$ ($D_0$=物理ブロック・良条件) と分解でき、**Sherman-Morrison**
+$x=y-[\gamma(r^\top y)/(1+\gamma(r^\top z))]z$ ($y=D_0^{-1}b,\ z=D_0^{-1}g$) で**$D_0$ 解は float**、悪条件は分母スカラーのみ
+double に隔離する (FP64 を排し物理 block とほぼ同速)。$\beta=1$ (超音速) では $\Gamma_c=I,\ \Delta\tau'=\Delta\tau$・フラックス同一ゆえ
+既存カーネルと解一致。
 
 **前処理の2面と $U_r$ フロア $\epsilon$ (要点)。** Weiss–Smith 前処理は同じ $\Gamma$(同じ基準速度 $U_r$)が**2つの面**で効く:
 
@@ -218,7 +220,8 @@ $U_r\to0\Rightarrow\beta\to0$ となり $\Gamma_c$ が特異化 ($1/\beta\to\inf
 > `setDT_d` の $\Delta\tau'$ スケーリング、SLAU の `c'` 散逸を `lowMachPrecond>=1` に拡張、wrapper の `==2` dispatch を実装。
 > **`case/23.axi_nozzle` で低マッハ自励振動を根治**: Phase1 (物理 LHS) が発散した $\epsilon=0.05$ を前処理 LHS が安定化し、
 > chamber 圧振幅 (M<0.08, 4k–20k) を 0.882%→**0.087% (定常収束・振動消滅)**、$\epsilon=0.15$ でも 0.603%→0.333% (超音速域不変)。
-> 安定 `cfl_pseudo` は m1~1→m2~5-7 と広がるが per-step 2.54× で収束加速は等 wall-clock で互角 (価値は根治にある)。計画
+> 安定 `cfl_pseudo` は m1~1→m2~5-7 と広がる。当初は倍精度で per-step 2.54× だったが Sherman-Morrison 化で
+> per-step を物理 block とほぼ同速 (16.9 vs 17.8ms) にした (FP64 排除)。計画
 > [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9 `2026-06-09`。
 
 ## 非定常 dual-time 陰解法 (実装済み 2026-06)

@@ -163,10 +163,13 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
 上の LHS 固有値前処理 (不採用) と異なり、**前処理を一貫させた別カーネル**。`blockDPLUR==1 && lowMachPrecond==2`
 のとき wrapper がこちらを起動する (既存 `implicit_defect_correction_block_d` は 0/1 専用・ビット/レジスタ不変)。
 
-- **倍精度ブロック**: 対角ブロック $D$ を `double[5][5]` で組み [`solve_5x5_dbl`](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu) で解く
-  ($\Gamma_c$ の条件数 $\sim1/\beta$ 対策。$\beta$ フロアは `precondEps`)。
-- **時間項**: $\Gamma_c\,V/\Delta\tau'$ ([`lowMachGammaC`](../../solver_density_cuda/cuda_forge/lowMachPrecond_d.cuh) のランク 1 閉形)。
-  $\Delta\tau'$ は `setDT_d` の `setDTlocal_precond_scale_d` が `dt_local *= (|u|+c)/ρ'` で拡大済 ($\rho'$=前処理スペクトル半径)。
+- **Sherman-Morrison 解法 (FP64 回避・高速)**: $\Gamma_c=I+\alpha g r^\top$ がランク 1 ゆえ対角ブロックは
+  $D=D_0+\gamma g r^\top$ ($D_0$=V/Δτ'·I+物理 FVS+粘性+軸対称=既存 block と同形・良条件、$\gamma=(V/\Delta\tau')\alpha$)。
+  $D_0$ を **float** で 2 RHS 同時 ([`solve_5x5_2rhs`](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu)) に解き
+  $y=D_0^{-1}b,\ z=D_0^{-1}g$、$x=y-[\gamma(r^\top y)/(1+\gamma(r^\top z))]z$。悪条件 $\sim1/\beta$ は分母スカラーのみ double。
+  consumer GPU (FP64=FP32/64) でも物理 block とほぼ同速 (per-step 16.9 vs 17.8ms)。$g,r,\alpha$ はカーネル内インライン。
+- **時間項**: $\Gamma_c\,V/\Delta\tau'$ (上の $\gamma g r^\top$ 寄与)。$\Delta\tau'$ は `setDT_d` の
+  `setDTlocal_precond_scale_d` が `dt_local *= (|u|+c)/ρ'` で拡大済 ($\rho'$=前処理スペクトル半径)。
 - **フラックス分割**: **物理の厳密 FVS** をそのまま使う (対角に $a^{+}=A_c^{+}$、近傍に $k_{\rm off}=-A_c^{-}$。既存 block と同一)。
   保存形 $(\Gamma_c V/\Delta\tau' + A_c)\Delta Q=-R$ より前処理は**時間項のみ**で、$A_c$ は残差の真のヤコビアンゆえ非前処理が正しい
   ([`theory.md`](theory.md) 参照)。収束は $(\Delta\tau'/V)\Gamma_c^{-1}A_c$ の固有値 $\lambda'$ で一様に前処理される。
