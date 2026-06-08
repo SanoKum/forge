@@ -1,6 +1,9 @@
 #include "convectiveFlux_d.cuh"
 #include "lowMachPrecond_d.cuh"
 
+// K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
+__device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
+
 __device__ flow_float interp_general(int scheme, int limit_scheme,
                             flow_float phiC, flow_float phiD, 
                             flow_float dphidxC, flow_float dphidyC, flow_float dphidzC,
@@ -201,7 +204,7 @@ __device__ __forceinline__ flow_float apply_ducros_limiter(flow_float limiter, f
 __device__ flow_float betaPls_slau(flow_float M)
 {
     if (abs(M) >= 1.0) {
-        return 0.25*(2.0-M)*pow(M+1.0, 2.0);
+        return 0.25*(2.0-M)*sq(M+1.0);
     } else {
         return 0.5*(1.0+sign_sano(+M));
     }
@@ -210,7 +213,7 @@ __device__ flow_float betaPls_slau(flow_float M)
 __device__ flow_float betaMns_slau(flow_float M)
 {
     if (abs(M) >= 1.0) {
-        return 0.25*(2.0+M)*pow(M-1.0, 2.0);
+        return 0.25*(2.0+M)*sq(M-1.0);
     } else {
         return 0.5*(1.0+sign_sano(-M));
     }
@@ -370,13 +373,13 @@ __global__ void SLAU_d
         if (abs(M_p)>=1.0){
             beta_p = 0.5*(M_p + abs(M_p))/M_p;
         } else {
-            beta_p = 0.25*pow((M_p+1.0),2.0)*(2.0-M_p);
+            beta_p = 0.25*sq((M_p+1.0))*(2.0-M_p);
         }
 
         if (abs(M_m)>=1.0){
             beta_m = 0.5*(M_m - abs(M_m))/M_m;
         } else {
-            beta_m = 0.25*pow((M_m-1.0),2.0)*(2.0+M_m);
+            beta_m = 0.25*sq((M_m-1.0))*(2.0+M_m);
         }
 
         flow_float zero = 0.0;
@@ -448,7 +451,7 @@ inline __device__ flow_float betaPls(flow_float M, flow_float alpha) // ok
     if (abs(M) >= 1.0) {
         return 0.5*(1.0+sign_sano(M));
     } else {
-        return 0.25*pow(M+1.0,2.0)*(2.0-M) +alpha*M*pow(M*M-1, 2.0);
+        return 0.25*sq(M+1.0)*(2.0-M) +alpha*M*sq(M*M-1);
     }
 }
 
@@ -457,7 +460,7 @@ inline __device__ flow_float betaMns(flow_float M, flow_float alpha) // ok
     if (abs(M) >= 1.0) {
         return 0.5*(1.0-sign_sano(M));
     } else {
-        return 0.25*pow(M-1.0,2.0)*(2.0+M) -alpha*M*pow(M*M-1, 2.0);
+        return 0.25*sq(M-1.0)*(2.0+M) -alpha*M*sq(M*M-1);
     }
 }
 
@@ -467,7 +470,7 @@ inline __device__ flow_float MPls(flow_float M) // ok
     if (abs(M) >= 1.0) {
         return 0.5*(M+abs(M));
     } else {
-        return +0.25*pow(M+1.0,2.0) +beta*pow(M*M-1.0, 2.0);
+        return +0.25*sq(M+1.0) +beta*sq(M*M-1.0);
     }
 }
 
@@ -477,7 +480,7 @@ inline __device__ flow_float MMns(flow_float M) // ok
     if (abs(M) >= 1.0) {
         return 0.5*(M-abs(M));
     } else {
-        return -0.25*pow(M-1.0,2.0) -beta*pow(M*M-1.0, 2.0);
+        return -0.25*sq(M-1.0) -beta*sq(M*M-1.0);
     }
 }
 
@@ -625,8 +628,8 @@ __global__ void AUSMp_d
 
         flow_float c_star_L = sqrt(2.0*(ga-1.0)/(ga+1.0)*Ht_L); //ok
         flow_float c_star_R = sqrt(2.0*(ga-1.0)/(ga+1.0)*Ht_R); //ok
-        flow_float c_tilde_L = pow(c_star_L,2.0)/max(c_star_L, abs(U_L)); //ok
-        flow_float c_tilde_R = pow(c_star_R,2.0)/max(c_star_R, abs(U_R)); //ok
+        flow_float c_tilde_L = sq(c_star_L)/max(c_star_L, abs(U_L)); //ok
+        flow_float c_tilde_R = sq(c_star_R)/max(c_star_R, abs(U_R)); //ok
         flow_float c_half = min(c_tilde_L, c_tilde_R); //ok
 
         flow_float M_L = U_L/c_half;
@@ -2032,13 +2035,13 @@ __global__ void KEEP_SLAU_d
         if (abs(M_p)>=1.0){
             beta_p = 0.5*(M_p + abs(M_p))/M_p;
         } else {
-            beta_p = 0.25*pow((M_p+1.0),2.0)*(2.0-M_p);
+            beta_p = 0.25*sq((M_p+1.0))*(2.0-M_p);
         }
 
         if (abs(M_m)>=1.0){
             beta_m = 0.5*(M_m - abs(M_m))/M_m;
         } else {
-            beta_m = 0.25*pow((M_m-1.0),2.0)*(2.0+M_m);
+            beta_m = 0.25*sq((M_m-1.0))*(2.0+M_m);
         }
 
         flow_float zero = 0.0;
