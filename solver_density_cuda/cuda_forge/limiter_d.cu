@@ -163,14 +163,7 @@ __global__ void limiter_r1_d
             dcp_y = pcy[ip] - ccy[ic0];
             dcp_z = pcz[ip] - ccz[ic0];
 
-            dcp2_x = pcx[ip] - ccx[ic1];
-            dcp2_y = pcy[ip] - ccy[ic1];
-            dcp2_z = pcz[ip] - ccz[ic1];
-
-            flow_float ri = sqrt(dcp_x*dcp_x + dcp_y*dcp_y + dcp_z*dcp_z);
-            flow_float rk = sqrt(dcp2_x*dcp2_x + dcp2_y*dcp2_y + dcp2_z*dcp2_z);
-            flow_float rik = (ri + rk)/ri;
- 
+            // K9: dcp2_*, ri, rk, rik は未使用（dead）。compute律速の limiter から sqrt 2回/面/変数を除去。
 
             flow_float delta_p_max;
             flow_float delta_p_min;

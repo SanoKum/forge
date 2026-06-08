@@ -821,12 +821,9 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         // 古典 DPLUR: sweep 中は Q を更新せず dq_new の生成のみ。
         // Q への commit は全 sweep 後に applyBlockImplicitCorrection でまとめて行う。
         block_dplur::store_block_vec(ic, correction, dq_new_0, dq_new_1, dq_new_2, dq_new_3, dq_new_4);
+        // K8: diag_block_** への書き戻しは dead store（どこからも読まれない）だったため削除。
+        // 25 stores/cell/sweep のメモリ書込を除去。rhs_** も読者は無いが念のため残置。
         block_dplur::store_block_vec(ic, rhs, rhs_0, rhs_1, rhs_2, rhs_3, rhs_4);
-        diag_00[ic] = diag_block[0][0]; diag_01[ic] = diag_block[0][1]; diag_02[ic] = diag_block[0][2]; diag_03[ic] = diag_block[0][3]; diag_04[ic] = diag_block[0][4];
-        diag_10[ic] = diag_block[1][0]; diag_11[ic] = diag_block[1][1]; diag_12[ic] = diag_block[1][2]; diag_13[ic] = diag_block[1][3]; diag_14[ic] = diag_block[1][4];
-        diag_20[ic] = diag_block[2][0]; diag_21[ic] = diag_block[2][1]; diag_22[ic] = diag_block[2][2]; diag_23[ic] = diag_block[2][3]; diag_24[ic] = diag_block[2][4];
-        diag_30[ic] = diag_block[3][0]; diag_31[ic] = diag_block[3][1]; diag_32[ic] = diag_block[3][2]; diag_33[ic] = diag_block[3][3]; diag_34[ic] = diag_block[3][4];
-        diag_40[ic] = diag_block[4][0]; diag_41[ic] = diag_block[4][1]; diag_42[ic] = diag_block[4][2]; diag_43[ic] = diag_block[4][3]; diag_44[ic] = diag_block[4][4];
     }
 }
 
