@@ -220,8 +220,9 @@ $U_r\to0\Rightarrow\beta\to0$ となり $\Gamma_c$ が特異化 ($1/\beta\to\inf
 > `setDT_d` の $\Delta\tau'$ スケーリング、SLAU の `c'` 散逸を `lowMachPrecond>=1` に拡張、wrapper の `==2` dispatch を実装。
 > **`case/23.axi_nozzle` で低マッハ自励振動を根治**: Phase1 (物理 LHS) が発散した $\epsilon=0.05$ を前処理 LHS が安定化し、
 > chamber 圧振幅 (M<0.08, 4k–20k) を 0.882%→**0.087% (定常収束・振動消滅)**、$\epsilon=0.15$ でも 0.603%→0.333% (超音速域不変)。
-> 安定 `cfl_pseudo` は m1~1→m2~5-7 と広がる。当初は倍精度で per-step 2.54× だったが Sherman-Morrison 化で
-> per-step を物理 block とほぼ同速 (16.9 vs 17.8ms) にした (FP64 排除)。計画
+> 安定 `cfl_pseudo` は m1~1→m2~7-9 と広がる。当初は倍精度で per-step 2.54× で収束加速は互角だったが、
+> Sherman-Morrison 化で per-step を物理 block と同速 (15.7 vs 15.6ms) にした結果、cfl 余裕がそのまま wall-clock
+> 加速に転化し **rms_roe<1.0 到達で約 2.2× の net 加速** (深い収束ほど有利)。計画
 > [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9 `2026-06-09`。
 
 ## 非定常 dual-time 陰解法 (実装済み 2026-06)
