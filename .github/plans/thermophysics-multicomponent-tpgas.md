@@ -38,8 +38,11 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 
 ## 5. 実装ステップ (マイルストーン)
 
-1. **M1**: `thermo_d`, Newton 反転 (`dependentVariables_d`), `thermalMethod==2`, SLAU/ROE の TP 整合, 設定 (`solverConfig`), `main.cpp` 初期化。— **実装済・検証中**
-2. **M2**: 化学種変数登録 (`variables` の `cellValNames` 非 const 化 + `registerSpecies`), 化学種移流/実現可能性/再正規化, 化学種 BC/IC/出力 (`speciesTransport_d`, `speciesBoundary_d`)。
+1. **M1**: `thermo_d`, Newton 反転 (`dependentVariables_d`), `thermalMethod==2`, SLAU/ROE の TP 整合, 設定 (`solverConfig`), `main.cpp` 初期化。— **実装済・検証完了** (§9, 2026-06-09)
+2. **M2**: 化学種変数登録 (`variables` の `cellValNames` 非 const 化 + `registerSpecies`), 化学種移流/実現可能性/再正規化, 化学種 BC/IC/出力 (`speciesTransport_d`, `speciesBoundary_d`)。— **実装中**
+   - **設計判断 (実装時)**: 化学種は RANS k/ω と同じ汎用スカラ輸送コア `scalarTransport_d` (`ScalarTransportDesc`) を再利用し segregated に解く。1 化学種ごとに `roY{s},Y{s},roY{s}N,roY{s}M,res_roY{s},res_roY{s}_m,transport_diag_Y{s},src_jac_Y{s}` を `registerSpecies()` で動的登録 (`cellValNames`/`output_cellValNames` を非 const 化)。device には `flow_float** roY` ポインタ配列を 1 度だけ構築し `dependentVariables_d` (現状 `nullptr`) へ渡して混合則 thermo を有効化。
+   - **段階化**: M2 のスコープは **移流のみ** (拡散は M4)。化学種機構は `nSpecies>=2` でのみ起動し、単成分 (`nSpecies==1`) は M1 と完全に同一経路 (回帰がバイト一致) を保証する。
+   - **化学種 BC**: まず Neumann (zero-gradient) で ghost を埋める。slip 閉領域・内部 contact の検証には十分。組成依存のエネルギー BC (`boundaryCond_d` の TP slip が `sp[0]` 固定) の一般化は後続の改良として残す。
 3. **M3**: kinetic theory 輸送係数 (`gasProperties_d` 拡張: Wilke/Wassiljewa/混合平均拡散, Neufeld 衝突積分)。`thermCond` のセル毎配列化。
 4. **M4**: 化学種拡散 (`scalar_diffusion_species_d`) + ΣJ_i=0 補正 + エンタルピー拡散項 `Σh_s J_s` を `res_roe` へ。
 
@@ -72,3 +75,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
   - 後処理: `case/05.sod_shock_tube/gen_shocktube_ic.py` (TP/CPG IC), `compare_shocktube.py` (厳密 Sod Riemann ソルバ + 中心線照合 + `shocktube_comparison.png`)。
   - 付随: `cuda_forge/calcStructualVariables_d.cu` の幾何メトリック計算を FP32 (`sqrtf`/`powf`) → FP64 (`sqrt`/`pow`) 化 (TP の double 一貫性向上)。
   - §6 nozzle_H ベースの検証計画は本 sod_shock_tube ベースの照合に置き換え。M1 の流れ場 CEA 検証はこれで完了とみなす。
+- `2026-06-09` — **M2 多成分化学種輸送 (実装・検証完了)**。汎用スカラ輸送コア `scalarTransport_d` を化学種ごとに再利用し segregated に移流。`variables::registerSpecies` で 1 化学種あたり 8 セル変数を動的登録 (`cellValNames`/`output_cellValNames` 非 const 化)、device `flow_float** roY` を `speciesInit_d` で構築して `dependentVariables_d` の混合則 thermo を有効化。`speciesPrimitive_d`/`applySpeciesBoundaries`(Neumann)/`speciesTransport_d`/`speciesTimeIntegration_d`/`speciesRenormalize_d`(ρY_s≥0, ΣρY_s=ρ)/`speciesUpdateOuter/Inner` を追加し `main.cpp` の RK ループへ配線。`nSpecies<=1` では全機構が dormant で M1 と同一経路。
+  - **検証** (`case/05.sod_shock_tube`): ① 単成分回帰 (`run_0003`) が M1 とバイト一致。② 識別子トレーサ `[N2,N2]` (`run_0004`) — 混合則が常に N2 のため流れ場 (ρ,P,T,u) が単成分 N2 と完全一致 (rel 0)、組成は contact と共に移流、$\sum Y=1$ を float 精度 (1.2e-7) で維持、$0\le Y\le1$。③ 実 2 ガス `[O2,N2]` (`run_0005`) — 安定・有界・$\sum Y=1$、O2 駆動で密度/温度が単成分と差。後処理 `gen_shocktube_species_ic.py`, `species_comparison.png`。
+  - **既知の制約 (後続)**: 化学種拡散は未 (M4)。組成依存のエネルギー BC は未 (slip TP が `sp[0]` 固定、Neumann ghost)。陰解法 (point-implicit/segregated) は陽解法 RK 検証のため未配線。
+- ビルドは Docker dev image (`forge-solver:cuda-dev`) で実施 (native は libyaml-cpp 不在)。

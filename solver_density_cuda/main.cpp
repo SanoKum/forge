@@ -47,6 +47,7 @@
 #include "cuda_forge/convectiveFlux_d.cuh"
 #include "cuda_forge/ransTransport_d.cuh"
 #include "cuda_forge/ransSource_d.cuh"
+#include "cuda_forge/speciesTransport_d.cuh"
 #include "cuda_forge/viscousFlux_d.cuh"
 #include "cuda_forge/updateCenterVelocity_d.cuh"
 #include "cuda_forge/interpVelocity_c2p_d.cuh"
@@ -650,7 +651,13 @@ cudaConfig initializeSimulation(
     cout << "Read Boundary Conditions \n";
     readBcondConfig(cfg , msh.bconds);
 
+    // 化学種変数を登録 (allocVariables より前)。nSpecies<=1 では no-op。
+    var.registerSpecies(cfg.nSpecies);
+
     var.allocVariables(cfg.gpu , msh);
+
+    // device roY[] ポインタ配列を構築 (c_d 確保後, dependentVariables より前)。
+    speciesInit_d(cfg , var);
 
     cout << "Read Initial Values \n";
     var.readValueHDF5(cfg.valueFileName , msh);
@@ -661,6 +668,7 @@ cudaConfig initializeSimulation(
     msh.setPeriodicPartner();
 
     var.setStructuralVariables(cfg , cuda_cfg , msh);
+    speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
     gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
 
@@ -669,9 +677,11 @@ cudaConfig initializeSimulation(
 
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
     applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
+    applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
     axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
     updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
+    speciesUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);  // roY{s}N/M ベースライン
     setDT_d_wrapper(cfg , cuda_cfg , msh , var);
 
     pprobes.init(cfg , cuda_cfg , msh);
@@ -724,6 +734,9 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
     });
+    s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
+        speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // Y_s = ρY_s/ρ (混合則 thermo の前)
+    });
     s.profiler.measureWall(ProfileSection::DependentVariables, [&]() {
         dependentVariables(s.cfg , s.cuda_cfg , s.msh , s.var, s.mat_ns);
     });
@@ -735,6 +748,7 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
         applyRansScalarBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
+        applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
         calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -756,6 +770,9 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         ransTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+    });
+    s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
+        speciesTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 化学種移流残差
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         ransGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -855,6 +872,7 @@ void advanceExplicitRK(StepContext& s)
     for (int iloop = 0 ; iloop < iteration_count ; iloop++) {
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+            speciesUpdateInner_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}M ステージ始点
         });
 
         cout << "       " << iteration_label << " : " << iloop+1 << "\n";
@@ -863,11 +881,15 @@ void advanceExplicitRK(StepContext& s)
         s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
             timeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             ransTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
+            speciesTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
+            speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // ρY_s>=0, ΣρY_s=ρ
         });
     }
 
     s.profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
         updateVariablesOuter(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}N/M 次ステップ用
+        speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 Y_s を最終 roY_s と同期
     });
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);

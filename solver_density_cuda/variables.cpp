@@ -1,6 +1,8 @@
 #include <iostream>
 #include <vector>
 #include <list>
+#include <string>
+#include <algorithm>
 
 #include "flowFormat.hpp"
 #include "mesh/mesh.hpp"
@@ -24,6 +26,51 @@ variables::variables()
         this->p_d.emplace(planeValName, nullptr);
     }
 };
+
+// 化学種 (M2): 1 化学種ごとに必要なセル変数名を生成する。
+//   roY{s}   : 保存質量分率 ρY_s
+//   Y{s}     : 原始質量分率 Y_s = ρY_s/ρ
+//   roY{s}N  : RK ステップ始点, roY{s}M : RK ステージ始点
+//   res_roY{s}, res_roY{s}_m : 残差 / 4thRunge 累積
+//   transport_diag_Y{s} : 輸送 (移流+拡散) ヤコビアン対角 [m³/s]
+//   src_jac_Y{s}        : 源項ヤコビアン対角 (M2 では化学反応なしで 0)
+static std::list<std::string> speciesCellVarNames(int s)
+{
+    const std::string i = std::to_string(s);
+    return {
+        "roY"+i, "Y"+i, "roY"+i+"N", "roY"+i+"M",
+        "res_roY"+i, "res_roY"+i+"_m",
+        "transport_diag_Y"+i, "src_jac_Y"+i
+    };
+}
+
+void variables::registerSpecies(int nSpecies)
+{
+    // 単成分 (<=1) は M1 と同一経路を保つため化学種変数を登録しない。
+    if (nSpecies <= 1) {
+        this->nSpeciesRegistered = 0;
+        return;
+    }
+
+    this->nSpeciesRegistered = nSpecies;
+    this->speciesVarNames.clear();
+
+    for (int s = 0; s < nSpecies; s++) {
+        this->speciesVarNames.push_back("roY"+std::to_string(s));
+        for (const auto& name : speciesCellVarNames(s)) {
+            // cellValNames へ追加し、host/device マップにも空エントリを作る
+            // (allocVariables がこのリストを走査して確保する)。
+            this->cellValNames.push_back(name);
+            this->c.emplace(name, std::vector<flow_float>{});
+            this->c_d.emplace(name, nullptr);
+        }
+        // 原始質量分率 Y{s} は HDF5 出力対象に加える。
+        this->output_cellValNames.push_back("Y"+std::to_string(s));
+    }
+
+    std::cout << "registerSpecies: nSpecies=" << nSpecies
+              << " -> registered " << nSpecies*8 << " cell variables\n";
+}
 
 variables::~variables() {
     for (auto& cellValName : cellValNames)
@@ -378,4 +425,35 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
 
     std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "wall_dist", "roK", "roOmega"};
     this->copyVariables_cell_H2D(names);
+
+    // --- 化学種 (M2): 保存質量分率 ρY_s を読み込む ---
+    // 入力 HDF5 に VALUE/roY{s} があれば読む。無ければ s==0 を ρ (Y0=1)、他を 0 とする
+    // (= 第 1 化学種のみの単純初期値)。原始 Y{s}=ρY_s/ρ も同時に設定する。
+    if (this->nSpeciesRegistered >= 2) {
+        std::list<std::string> sp_names;
+        for (int s = 0; s < this->nSpeciesRegistered; s++) {
+            const std::string si = std::to_string(s);
+            const std::string roYname = "roY"+si;
+            const std::string Yname    = "Y"+si;
+            std::vector<flow_float>& v_roY = this->c.at(roYname);
+            std::vector<flow_float>& v_Y   = this->c.at(Yname);
+
+            std::vector<geom_float> roY_in;
+            const bool has = file.exist("/VALUE/"+roYname);
+            if (has) file.getDataSet("/VALUE/"+roYname).read(roY_in);
+
+            for (geom_int i=0; i<msh.nCells; i++) {
+                const flow_float roi = this->c.at("ro")[i];
+                flow_float roYi;
+                if (has)            roYi = roY_in[i];
+                else if (s == 0)    roYi = roi;        // 既定: 第 1 化学種のみ
+                else                roYi = 0.0;
+                v_roY[i] = roYi;
+                v_Y[i]   = roYi / std::max(roi, static_cast<flow_float>(1.0e-30));
+            }
+            sp_names.push_back(roYname);
+            sp_names.push_back(Yname);
+        }
+        this->copyVariables_cell_H2D(sp_names);
+    }
 }

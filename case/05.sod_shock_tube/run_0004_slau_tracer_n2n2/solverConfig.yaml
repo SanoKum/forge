@@ -1,0 +1,48 @@
+mesh:
+  meshFormat: "hdf5"
+  meshFileName: "1D_shock_tube.h5"
+  valueFileName: "input.h5"
+
+gpu: 1
+
+solver: "SLAU"
+
+physProp:
+  isCompressible: 1
+  thermalMethod: 2   # thermally-perfect N2 (NASA-9)
+  viscMethod: 0      # inviscid (Euler)
+  ro : 1.2
+  visc : 0.0
+  thermCond: 0.0
+  cp : 1038.8
+  gamma : 1.4
+  species: [N2, N2]
+
+time:
+  unsteady: 1
+  dualTime: 0
+  last:
+    control: 0        # step-based stop (fixed dt -> exact final time)
+    nStepOuter: 1000  # 1000 * 2.5e-7 = 2.5e-4 s
+    time: 0.00025
+  deltaT:
+    control: 0        # fixed dt for exact timing vs exact Sod
+    dt: 0.00000025    # 2.5e-7 s ; CFL ~ 0.2 (dx=2.004e-3, u+a~1700)
+    cfl: 0.2
+    cfl_pseudo: 0.1
+    dt_min: 0.000000001
+    dt_max: 1.0
+  outStepStart: 0
+  outStepInterval: 100
+  timeIntegration: 3
+  nStepInner: 10
+
+space:
+  convMethod: 2
+  limiter: 2
+
+turbulence:
+  LESorRANS: 0
+  LESmodel: 1
+
+initial: "sod"

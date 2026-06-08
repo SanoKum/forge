@@ -55,13 +55,35 @@ L/R 状態の `roe_L/Ht_L/ca_L` (および R 側) を NASA で再構成。Roe �
 - `speciesDiffusionMethod` (0:定数Sc / 1:kinetic 混合平均)、`Sc`、`Sc_t`。
 - `nSpecies` は `species` の要素数。未指定で `thermalMethod==2` なら既定 N2 単成分。
 
+## 5b. 多成分化学種輸送 (M2) `cuda_forge/speciesTransport_d.{cuh,cu}`
+
+化学種は NS の 5 元ブロックには結合させず、RANS k/ω と同じ汎用スカラ輸送コア
+`scalarTransport_d` (`ScalarTransportDesc`) を化学種ごとに再利用して **segregated** に解く。
+保存質量分率 $\rho Y_s$ の移流方程式 $\partial_t(\rho Y_s)+\nabla\!\cdot(\rho Y_s\mathbf{u})=0$ を、
+対流流束カーネルが面で確定した `massflux` (SLAU の $\dot m$) による 1 次風上で組み立てる
+(M2 は移流のみ。拡散は M4)。
+
+- **変数登録**: `variables::registerSpecies(nSpecies)` が `cellValNames`/`output_cellValNames`
+  (非 const 化) へ 1 化学種あたり `roY{s},Y{s},roY{s}N,roY{s}M,res_roY{s},res_roY{s}_m,`
+  `transport_diag_Y{s},src_jac_Y{s}` を追加し、`c`/`c_d` マップにも空エントリを作る。
+  `allocVariables` 前に 1 度だけ呼ぶ。**`nSpecies<=1` では一切登録せず M1 と同一経路**
+  (回帰がバイト一致)。
+- **device roY 配列**: `speciesInit_d` が `flow_float*[nSpecies]` を 1 度構築し、
+  `dependentVariables_d` (従来 `nullptr`) へ渡して混合則 thermo ($R_{mix},c_{p,mix},\gamma_{mix}$) を有効化。
+- **原始量・BC**: `speciesPrimitive_d` が $Y_s=\rho Y_s/\rho$ を更新。`applySpeciesBoundaries` は
+  全境界を Neumann (zero-gradient ghost) で埋める (組成依存エネルギー BC は後続)。
+- **時間積分・実現可能性**: `scalarTimeIntegration_d` (floor=0) で更新後、
+  `speciesRenormalize_d` が $\rho Y_s\ge0$ にクランプし $\sum_s\rho Y_s=\rho$ へ再スケール
+  ($\sum_s Y_s=1$)。`roY{s}N/M` は `speciesUpdateOuter/Inner` が D2D copy で NS の N/M に同期。
+
 ## 6. 検証 (M1)
 
 `case/13.nozzle_H/run_0001_tpgas_n2` (TP-N2) と `run_0002_slau_cpg` (CPG 参照) を SLAU・非粘性・warm-start で実行。`validate_tpgas.py` が中心線の M・T・P と全エンタルピー $H_0=h(T)+½|u|^2$ を抽出し、NASA(=CEA) 等エントロピー曲線と比較する。単体の NASA-9 値は NIST と一致 (N2: $R=296.8$, $c_p(300)=1040$, $c_p(2000)=1284$ J/kgK, $h(298.15)=0$、$e\to T$ 反転誤差 $\sim10^{-11}$)。
 
 ## 7. マイルストーン状況
 
-- M1 (本実装): 単成分 TP, NASA-9, Newton 反転, SLAU/ROE TP 整合 — 実装済・検証中。
-- M2: 多成分輸送 (`speciesTransport_d`), 実現可能性+再正規化, 化学種 BC/IC/出力。
+- M1 (本実装): 単成分 TP, NASA-9, Newton 反転, SLAU/ROE TP 整合 — 実装済・検証完了 (衝撃管 CEA 照合)。
+- M2: 多成分輸送 (`speciesTransport_d`), 実現可能性+再正規化, 化学種 BC/IC/出力 — 実装済・検証完了。
+  単成分回帰がバイト一致、[N2,N2] 識別子トレーサで流れが単成分と完全一致、[O2,N2] 実 2 ガスが安定・$\sum Y=1$。
 - M3: kinetic theory 輸送係数 (`gasProperties_d` 拡張)。
 - M4: 化学種拡散 + エンタルピー拡散エネルギー結合。

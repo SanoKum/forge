@@ -1,5 +1,6 @@
 #include "dependentVariables_d.cuh"
 #include "thermo_d.cuh"
+#include "speciesTransport_d.cuh"  // species_roY_device_ptr() (多成分 thermalMethod==2)
 
 // 温度反転のクランプ範囲 (NASA-9 の有効域より広めに取り, 範囲外は外挿)
 #define DEPVAR_TMIN 50.0
@@ -132,8 +133,9 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         cfg.thermalMethod ,
         cfg.gamma , cfg.cp ,
 
-        // thermally-perfect 用化学種データ (M1: 単成分なので roY=nullptr)
-        thermo_species_device_ptr() , cfg.nSpecies , nullptr ,
+        // thermally-perfect 用化学種データ。多成分 (M2, nSpecies>=2) では device roY 配列を渡し、
+        // 単成分のときは nullptr (混合則は Y={1} に縮退)。
+        thermo_species_device_ptr() , cfg.nSpecies , species_roY_device_ptr() ,
 
         // mesh structure
         msh.nCells_all , msh.nCells ,

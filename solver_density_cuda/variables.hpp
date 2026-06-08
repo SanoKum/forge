@@ -25,7 +25,9 @@ public:
     std::map<std::string, flow_float*> p_d; // device plane variables
 
 
-    const std::list<std::string> cellValNames = 
+    // 化学種輸送 (M2): registerSpecies() で 1 化学種ごとの保存量/派生量を末尾に追加するため
+    // 非 const とする。registerSpecies は変数構築後 allocVariables 前に 1 度だけ呼ぶ。
+    std::list<std::string> cellValNames =
     {
         "Ux"   , "Uy"    , "Uz"    , "T"      , "P" , "deltaP" ,
         "k"    , "omega" ,
@@ -107,9 +109,10 @@ public:
         "dcc"   // dcc: distance between two cell centers
     };
 
-    const std::list<std::string> output_cellValNames = 
+    // 化学種 (M2): registerSpecies() が Y{s} を出力対象に追加するため非 const。
+    std::list<std::string> output_cellValNames =
     {
-        "ro"    , "Ux"    , "Uy"    , "Uz"  , "T" , "P" , 
+        "ro"    , "Ux"    , "Uy"    , "Uz"  , "T" , "P" ,
         "roUx"  , "roUy"  , "roUz"  , "roe" , "roK" , "roOmega" , "k" , "omega" ,
         "cfl"   , "volume", "sonic" , 
         "dUxdx" , "dUxdy" , "dUxdz" , 
@@ -142,10 +145,22 @@ public:
         "ro"  , "roUx"  , "roUy"  , "roUz"  , "roe" , "wall_dist" , "roK" , "roOmega"
     };
 
+    // 化学種輸送 (M2)。registerSpecies() で実際に登録された化学種数 (>=2 で機構が起動)。
+    // 単成分 (0 または 1) のときは化学種変数を一切登録せず M1 と同一経路を保つ。
+    int nSpeciesRegistered = 0;
+
+    // 化学種名 (config 由来, index 順)。s 番目の保存質量分率は "roY{s}"。
+    std::vector<std::string> speciesVarNames; // ["roY0","roY1",...]
+
     variables();
 
     //variables(const int& ,  mesh&);
     ~variables();
+
+    // 化学種 (M2): cellValNames / output_cellValNames へ 1 化学種ごとの変数を追加し、
+    // c / c_d マップにも空エントリを作る。allocVariables より前に 1 度だけ呼ぶこと。
+    // nSpecies <= 1 のときは何もしない (単成分は M1 経路)。
+    void registerSpecies(int nSpecies);
 
     void allocVariables(const int &useGPU , mesh& msh);
 
