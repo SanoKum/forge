@@ -76,6 +76,21 @@ L/R 状態の `roe_L/Ht_L/ca_L` (および R 側) を NASA で再構成。Roe �
   `speciesRenormalize_d` が $\rho Y_s\ge0$ にクランプし $\sum_s\rho Y_s=\rho$ へ再スケール
   ($\sum_s Y_s=1$)。`roY{s}N/M` は `speciesUpdateOuter/Inner` が D2D copy で NS の N/M に同期。
 
+## 5c. 輸送係数 — kinetic theory (M3) `cuda_forge/thermo_d.cuh` + `gasProperties_d.cu`
+
+`thermalMethod==2` で `viscMethod==2` を選ぶと、混合粘性 $\mu$ と熱伝導率 $\lambda$ を
+Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメータ `sigma_LJ`,`eps_kB` を使用)。
+
+- **単成分** (`thermo_d.cuh`): $\mu_s=2.6693\times10^{-6}\sqrt{M_s[\mathrm{g/mol}]\,T}/(\sigma_s^2\,\Omega^{(2,2)*})$ [Pa·s]、
+  $\lambda_s=\mu_s(c_{p,s}+1.25R_s)$ (modified Eucken)。衝突積分 $\Omega^{(2,2)*},\Omega^{(1,1)*}$ は
+  Neufeld et al. (1972) 閉形式。
+- **混合**: Wilke $\mu_{mix}=\sum_i X_i\mu_i/\sum_j X_j\phi_{ij}$、Mason-Saxena $\lambda_{mix}$ (同 $\phi_{ij}$)。
+  モル分率 $X$ は `thermo_X_from_Y` で質量分率から変換。
+- **per-cell `thermCond`**: `variables` に `thermCond` を登録し、`gasProperties_d` が全 viscMethod で
+  値を書く (0/1 は一定 `cfg.thermCond`、2 は $\lambda_{mix}$)。`viscousFlux_d` の熱流束はスカラ→
+  面平均 per-cell 配列に変更。viscMethod 0/1 では一定値のため面平均は同値で**既存挙動不変**。
+- **二元/混合平均拡散** `thermo_Dbinary`/`thermo_Dmix_species` も追加 (M4 の化学種拡散で使用)。
+
 ## 6. 検証 (M1)
 
 `case/13.nozzle_H/run_0001_tpgas_n2` (TP-N2) と `run_0002_slau_cpg` (CPG 参照) を SLAU・非粘性・warm-start で実行。`validate_tpgas.py` が中心線の M・T・P と全エンタルピー $H_0=h(T)+½|u|^2$ を抽出し、NASA(=CEA) 等エントロピー曲線と比較する。単体の NASA-9 値は NIST と一致 (N2: $R=296.8$, $c_p(300)=1040$, $c_p(2000)=1284$ J/kgK, $h(298.15)=0$、$e\to T$ 反転誤差 $\sim10^{-11}$)。
@@ -85,5 +100,5 @@ L/R 状態の `roe_L/Ht_L/ca_L` (および R 側) を NASA で再構成。Roe �
 - M1 (本実装): 単成分 TP, NASA-9, Newton 反転, SLAU/ROE TP 整合 — 実装済・検証完了 (衝撃管 CEA 照合)。
 - M2: 多成分輸送 (`speciesTransport_d`), 実現可能性+再正規化, 化学種 BC/IC/出力 — 実装済・検証完了。
   単成分回帰がバイト一致、[N2,N2] 識別子トレーサで流れが単成分と完全一致、[O2,N2] 実 2 ガスが安定・$\sum Y=1$。
-- M3: kinetic theory 輸送係数 (`gasProperties_d` 拡張)。
+- M3: kinetic theory 輸送係数 (`gasProperties_d` 拡張) — 実装済・検証完了。μ/λ が NIST と一致 (N2: μ(300)=1.81e-5, μ(1000)=4.15e-5, λ(300)=0.0255; air μ=1.86e-5)、device viscMethod=2 が式と FP32 一致、非粘性回帰不変。
 - M4: 化学種拡散 + エンタルピー拡散エネルギー結合。

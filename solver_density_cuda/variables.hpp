@@ -54,8 +54,9 @@ public:
         "limiter_ro" , 
         "limiter_P" , 
         "limiter_T" , 
-        "vis_lam" , 
-        "vis_turb" , "wall_dist" , 
+        "vis_lam" ,
+        "vis_turb" , "wall_dist" ,
+        "thermCond" ,  // 熱伝導率 λ [W/(m·K)] セル毎 (M3 kinetic theory / 定数)
 
         "gamma" , "cp" , 
 
@@ -136,7 +137,7 @@ public:
 
         "axisym_divU",
 
-        "vis_lam" , "vis_turb" , "wall_dist"
+        "vis_lam" , "vis_turb" , "wall_dist" , "thermCond"
     };
 
     //not yet implemented

@@ -9,7 +9,7 @@ __global__ void viscousFlux_d
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
- flow_float mu ,  flow_float thermCond,
+ flow_float mu ,  flow_float* thermCond,
  flow_float* vis_lam   , flow_float* vis_turb  ,
 
  // variables
@@ -122,8 +122,9 @@ __global__ void viscousFlux_d
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
-        flow_float heatflux = thermCond*((Ts[ic1] -Ts[ic0])/dcc)*delta;
-        heatflux += thermCond*(dTdxf*k_x +dTdyf*k_y +dTdzf*k_z);
+        flow_float tc_face = f*thermCond[ic0] + (1.0-f)*thermCond[ic1];
+        flow_float heatflux = tc_face*((Ts[ic1] -Ts[ic0])/dcc)*delta;
+        heatflux += tc_face*(dTdxf*k_x +dTdyf*k_y +dTdzf*k_z);
 
         flow_float res_ro_temp   = 0.0;
         flow_float res_roUx_temp = tau_x;
@@ -161,7 +162,7 @@ __global__ void viscousFlux_wall_d
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
- flow_float mu ,  flow_float thermCond,
+ flow_float mu ,  flow_float* thermCond,
  flow_float* vis_lam   , flow_float* vis_turb  ,
 
  // variables
@@ -273,7 +274,7 @@ __global__ void viscousFlux_wall_d
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
-        flow_float heatflux = thermCond*((Ts[ig]- Ts[ic])/dcc)*sss;
+        flow_float heatflux = thermCond[ic]*((Ts[ig]- Ts[ic])/dcc)*sss;
 
         flow_float res_ro_temp   = 0.0;
         flow_float res_roUx_temp = tau_x;
@@ -329,7 +330,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
         var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
-        cfg.visc , cfg.thermCond,
+        cfg.visc , var.c_d["thermCond"],
         var.c_d["vis_lam"], var.c_d["vis_turb"],
 
         // basic variables
@@ -376,7 +377,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
                 var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
-                cfg.visc , cfg.thermCond,
+                cfg.visc , var.c_d["thermCond"],
                 var.c_d["vis_lam"], var.c_d["vis_turb"],
 
                 // basic variables

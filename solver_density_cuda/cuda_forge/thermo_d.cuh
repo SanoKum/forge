@@ -171,6 +171,136 @@ THERMO_HD double thermo_gamma_mix(const SpeciesThermo* sp, int n, const double* 
 }
 
 // -----------------------------------------------------------------------------
+// 輸送係数 (kinetic theory, M3)。Chapman-Enskog 単成分 + Wilke/Mason-Saxena 混合。
+//   - 衝突積分 Ω(2,2)*, Ω(1,1)* は Neufeld et al. (1972) の閉形式近似 (0.3<=T*<=100)。
+//   - 単位は CGS 換算定数で Pa·s / W·m⁻¹·K⁻¹ / m²·s⁻¹ に整える。内部 double。
+// -----------------------------------------------------------------------------
+
+// 換算衝突積分 Ω*(2,2) (粘性・熱伝導)。T* = T/(ε/kB)。
+THERMO_HD double thermo_omega22(double Tstar)
+{
+    if (Tstar < 0.3)   Tstar = 0.3;
+    if (Tstar > 100.0) Tstar = 100.0;
+    return 1.16145*pow(Tstar, -0.14874)
+         + 0.52487*exp(-0.77320*Tstar)
+         + 2.16178*exp(-2.43787*Tstar);
+}
+
+// 換算衝突積分 Ω*(1,1) (拡散)。M4 の二元拡散係数で使用。
+THERMO_HD double thermo_omega11(double Tstar)
+{
+    if (Tstar < 0.3)   Tstar = 0.3;
+    if (Tstar > 100.0) Tstar = 100.0;
+    return 1.06036*pow(Tstar, -0.15610)
+         + 0.19300*exp(-0.47635*Tstar)
+         + 1.03587*exp(-1.52996*Tstar)
+         + 1.76474*exp(-3.89411*Tstar);
+}
+
+// 単成分 Chapman-Enskog 粘性 [Pa·s]。
+//   μ = 2.6693e-6 √(M[g/mol]·T) / (σ[Å]²·Ω(2,2)*)
+THERMO_HD double thermo_mu_species(const SpeciesThermo& sp, double T)
+{
+    const double Tstar = T / (sp.eps_kB > 1.0e-30 ? sp.eps_kB : 1.0e-30);
+    const double Mg     = sp.MW * 1000.0;                 // kg/mol -> g/mol
+    const double sig2   = sp.sigma_LJ * sp.sigma_LJ;      // Å²
+    const double om     = thermo_omega22(Tstar);
+    return 2.6693e-6 * sqrt(Mg * T) / (sig2 * om);
+}
+
+// 単成分 熱伝導 [W/(m·K)] (modified Eucken: λ = μ(cp_mass + 1.25 R_s))。
+THERMO_HD double thermo_lambda_species(const SpeciesThermo& sp, double T)
+{
+    const double mu = thermo_mu_species(sp, T);
+    const double cp = thermo_cp_mass(sp, T);
+    const double R  = thermo_R_species(sp);
+    return mu * (cp + 1.25*R);
+}
+
+// 質量分率 Y -> モル分率 X (X[i]=(Y_i/MW_i)/Σ_j Y_j/MW_j)。
+THERMO_HD void thermo_X_from_Y(const SpeciesThermo* sp, int n, const double* Y, double* X)
+{
+    double s = 0.0;
+    for (int i=0;i<n;i++) { X[i] = Y[i]/sp[i].MW; s += X[i]; }
+    const double inv = 1.0/(s > 1.0e-300 ? s : 1.0e-300);
+    for (int i=0;i<n;i++) X[i] *= inv;
+}
+
+// Wilke の φ_ij = [1+√(μ_i/μ_j)(M_j/M_i)^¼]² / √(8(1+M_i/M_j))。
+THERMO_HD double thermo_wilke_phi(double mu_i, double mu_j, double M_i, double M_j)
+{
+    const double r  = sqrt(mu_i/mu_j) * pow(M_j/M_i, 0.25);
+    const double num = (1.0 + r)*(1.0 + r);
+    const double den = sqrt(8.0*(1.0 + M_i/M_j));
+    return num/den;
+}
+
+// Wilke 混合粘性 [Pa·s]。X はモル分率。
+THERMO_HD double thermo_mu_mix(const SpeciesThermo* sp, int n, const double* X, double T)
+{
+    if (n == 1) return thermo_mu_species(sp[0], T);
+    double mu_s[THERMO_MAX_SPECIES];
+    for (int i=0;i<n;i++) mu_s[i] = thermo_mu_species(sp[i], T);
+    double mu = 0.0;
+    for (int i=0;i<n;i++) {
+        if (X[i] <= 0.0) continue;
+        double denom = 0.0;
+        for (int j=0;j<n;j++)
+            denom += X[j]*thermo_wilke_phi(mu_s[i], mu_s[j], sp[i].MW, sp[j].MW);
+        if (denom > 1.0e-300) mu += X[i]*mu_s[i]/denom;
+    }
+    return mu;
+}
+
+// Mason-Saxena (Wassiljewa, Wilke の φ 流用) 混合熱伝導 [W/(m·K)]。
+THERMO_HD double thermo_lambda_mix(const SpeciesThermo* sp, int n, const double* X, double T)
+{
+    if (n == 1) return thermo_lambda_species(sp[0], T);
+    double mu_s[THERMO_MAX_SPECIES];
+    double la_s[THERMO_MAX_SPECIES];
+    for (int i=0;i<n;i++) { mu_s[i] = thermo_mu_species(sp[i], T); la_s[i] = thermo_lambda_species(sp[i], T); }
+    double la = 0.0;
+    for (int i=0;i<n;i++) {
+        if (X[i] <= 0.0) continue;
+        double denom = 0.0;
+        for (int j=0;j<n;j++)
+            denom += X[j]*thermo_wilke_phi(mu_s[i], mu_s[j], sp[i].MW, sp[j].MW);
+        if (denom > 1.0e-300) la += X[i]*la_s[i]/denom;
+    }
+    return la;
+}
+
+// 二元拡散係数 D_ij [m²/s] (Chapman-Enskog)。P [Pa]。M4 の混合平均拡散で使用。
+//   D_ij = 1.8583e-7 √(T³(1/M_i+1/M_j)[1/(g/mol)]) / (P[atm]·σ_ij²[Å²]·Ω(1,1)*)  [cm²/s] -> m²/s
+THERMO_HD double thermo_Dbinary(const SpeciesThermo& a, const SpeciesThermo& b, double T, double P)
+{
+    const double Mi = a.MW*1000.0, Mj = b.MW*1000.0;       // g/mol
+    const double sig = 0.5*(a.sigma_LJ + b.sigma_LJ);       // Å
+    const double eps = sqrt(a.eps_kB * b.eps_kB);           // K
+    const double Tstar = T / (eps > 1.0e-30 ? eps : 1.0e-30);
+    const double om = thermo_omega11(Tstar);
+    const double Patm = P / 101325.0;
+    const double Dcm2 = 1.8583e-3 * sqrt(T*T*T*(1.0/Mi + 1.0/Mj))
+                        / (Patm * sig*sig * om);             // cm²/s
+    return Dcm2 * 1.0e-4;                                    // -> m²/s
+}
+
+// 混合平均拡散係数 D_i [m²/s] (M4): D_i = (1-X_i)/Σ_{j≠i} X_j/D_ij。
+THERMO_HD double thermo_Dmix_species(const SpeciesThermo* sp, int n, const double* X,
+                                     int i, double T, double P)
+{
+    if (n == 1) return 0.0;
+    double denom = 0.0;
+    for (int j=0;j<n;j++) {
+        if (j==i) continue;
+        const double Dij = thermo_Dbinary(sp[i], sp[j], T, P);
+        denom += X[j]/(Dij > 1.0e-30 ? Dij : 1.0e-30);
+    }
+    if (denom < 1.0e-300) return thermo_Dbinary(sp[i], sp[i], T, P);
+    return (1.0 - X[i])/denom;
+}
+
+// -----------------------------------------------------------------------------
 // 温度反転: 比内部エネルギー e [J/kg] と組成 Y から T を Newton 反転で求める。
 //   f(T) = e_mix(T) - e = 0, f'(T) = cv_mix(T) = cp_mix(T) - R_mix (厳密微分)
 //   初期値 T_guess (前ステップ T) でウォームスタート, 毎反復クランプ。
