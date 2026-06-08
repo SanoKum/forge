@@ -293,8 +293,71 @@ __global__ void calcGradient_b_d
 }
 
 
+// K5: atomicAdd を使わない cell-gather 版（face並列+atomic を cell並列に置換）。
+// 各セルが自分の面を走査し、面値 φf=f*φ[ic0]+(1-f)*φ[ic1] と外向き符号で寄与を集約。
+// 内部面は両側セルが各自で再計算（face値補間は安価）。raw sum を書き、正規化は calcGradient_2_d が行う。
+__global__ void calcGradient_cellgather_d
+(
+ geom_int nCells,
+ geom_int* plane_cells,
+ geom_int* cell_planes_index, geom_int* cell_planes,
+ geom_float* sx, geom_float* sy, geom_float* sz,
+ geom_float* fx,
+ flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* P, flow_float* T,
+ flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+ flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+ flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+ flow_float* drodx, flow_float* drody, flow_float* drodz,
+ flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
+ flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz,
+ flow_float* divU
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+
+    flow_float gUxx=0,gUxy=0,gUxz=0, gUyx=0,gUyy=0,gUyz=0, gUzx=0,gUzy=0,gUzz=0;
+    flow_float grox=0,groy=0,groz=0, gPx=0,gPy=0,gPz=0, gTx=0,gTy=0,gTz=0, gdiv=0;
+
+    const geom_int st = cell_planes_index[ic];
+    const geom_int en = cell_planes_index[ic+1];
+    for (geom_int ilp=st; ilp<en; ilp++) {
+        geom_int ip  = cell_planes[ilp];
+        geom_int ic0 = plane_cells[2*ip+0];
+        geom_int ic1 = plane_cells[2*ip+1];
+        flow_float sgn = (ic0==ic) ? 1.0 : -1.0;   // 外向き法線符号（owner ic0 が +）
+        geom_float f = fx[ip];
+        flow_float g = 1.0 - f;
+
+        flow_float Uxf=f*Ux[ic0]+g*Ux[ic1];
+        flow_float Uyf=f*Uy[ic0]+g*Uy[ic1];
+        flow_float Uzf=f*Uz[ic0]+g*Uz[ic1];
+        flow_float Pf =f*P[ic0] +g*P[ic1];
+        flow_float Tf =f*T[ic0] +g*T[ic1];
+        flow_float rof=f*ro[ic0]+g*ro[ic1];
+
+        flow_float sxx=sgn*sx[ip], syy=sgn*sy[ip], szz=sgn*sz[ip];
+
+        gUxx+=sxx*Uxf; gUxy+=syy*Uxf; gUxz+=szz*Uxf;
+        gUyx+=sxx*Uyf; gUyy+=syy*Uyf; gUyz+=szz*Uyf;
+        gUzx+=sxx*Uzf; gUzy+=syy*Uzf; gUzz+=szz*Uzf;
+        gTx +=sxx*Tf;  gTy +=syy*Tf;  gTz +=szz*Tf;
+        gPx +=sxx*Pf;  gPy +=syy*Pf;  gPz +=szz*Pf;
+        grox+=sxx*rof; groy+=syy*rof; groz+=szz*rof;
+        gdiv+= Uxf*sxx + Uyf*syy + Uzf*szz;
+    }
+
+    dUxdx[ic]=gUxx; dUxdy[ic]=gUxy; dUxdz[ic]=gUxz;
+    dUydx[ic]=gUyx; dUydy[ic]=gUyy; dUydz[ic]=gUyz;
+    dUzdx[ic]=gUzx; dUzdy[ic]=gUzy; dUzdz[ic]=gUzz;
+    drodx[ic]=grox; drody[ic]=groy; drodz[ic]=groz;
+    dPdx[ic]=gPx;   dPdy[ic]=gPy;   dPdz[ic]=gPz;
+    dTdx[ic]=gTx;   dTdy[ic]=gTy;   dTdz[ic]=gTz;
+    divU[ic]=gdiv;
+}
+
 __global__ void calcGradient_2_d
-( 
+(
  // mesh structure
  geom_int nCells,
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
@@ -428,40 +491,21 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
 
 
     // sum over planes
-    //calcGradient_1_d<<<cuda_cfg.dimGrid_nplane , cuda_cfg.dimBlock>>> ( 
-    calcGradient_1_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
-        // mesh structure
+    // K5: atomicAdd 版 calcGradient_1_d を cell-gather 版へ置換（raw sum を書く。正規化は下の _2_d）。
+    calcGradient_cellgather_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
         msh.nCells,
-        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-        grad_volume, var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-        grad_sx , grad_sy , grad_sz , grad_ss,
-
-        // basic variables
-        var.c_d["ro"] ,
-        var.c_d["Ux"] ,
-        var.c_d["Uy"] ,
-        var.c_d["Uz"] ,
-        var.c_d["P"]  , 
-        var.c_d["T"] ,
-        var.c_d["roe"] ,
-        var.c_d["Ht"] ,
-
-        // gradient
+        msh.map_plane_cells_d,
+        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+        grad_sx , grad_sy , grad_sz ,
+        var.p_d["fx"],
+        var.c_d["ro"] , var.c_d["Ux"] , var.c_d["Uy"] , var.c_d["Uz"] , var.c_d["P"] , var.c_d["T"] ,
         var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
         var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
         var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
         var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
         var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
         var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
-
-        //var.c_d["droUxdx"] , var.c_d["droUxdy"] , var.c_d["droUxdz"],
-        //var.c_d["droUydx"] , var.c_d["droUydy"] , var.c_d["droUydz"],
-        //var.c_d["droUzdx"] , var.c_d["droUzdy"] , var.c_d["droUzdz"],
-        //var.c_d["droedx"]  , var.c_d["droedy"]  , var.c_d["droedz"],
-        //var.c_d["dHtdx"]  , var.c_d["dHtdy"]  , var.c_d["dHtdz"],
- 
-        var.c_d["divU"]  
+        var.c_d["divU"]
     ) ;
 
 
