@@ -21,14 +21,15 @@ __device__ flow_float venkata_limiter(flow_float delta_p_max, flow_float delta_p
     //return (x*x + 2.0*x + eps*eps)/(x*x + x + 2.0 + eps*eps);
     flow_float res;
 
+    // K11: 元は /(...)/delta_m と除算2回。/(denom*delta_m) に統合して除算1回に（compute律速の limiter 向け）。
     if (delta_m > 1e-20) {
         flow_float delta_p = delta_p_max;
-        res = (((delta_p*delta_p+eps2)*delta_m +2*delta_m*delta_m*delta_p)
-              /(delta_p*delta_p +2.0*delta_m*delta_m +delta_p*delta_m +eps2))/delta_m;
+        res = ((delta_p*delta_p+eps2)*delta_m +2*delta_m*delta_m*delta_p)
+              /((delta_p*delta_p +2.0*delta_m*delta_m +delta_p*delta_m +eps2)*delta_m);
     } else if (delta_m < -1e-20) {
         flow_float delta_p = delta_p_min;
-        res = (((delta_p*delta_p+eps2)*delta_m +2*delta_m*delta_m*delta_p)
-              /(delta_p*delta_p +2.0*delta_m*delta_m +delta_p*delta_m +eps2))/delta_m;
+        res = ((delta_p*delta_p+eps2)*delta_m +2*delta_m*delta_m*delta_p)
+              /((delta_p*delta_p +2.0*delta_m*delta_m +delta_p*delta_m +eps2)*delta_m);
     } else {
         res = 1.0;
     }
