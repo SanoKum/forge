@@ -59,6 +59,7 @@
 
 #include "cuda_forge/fluct_variables_d.cuh"
 #include "cuda_forge/gasProperties_d.cuh"
+#include "cuda_forge/thermo_d.cuh"
 
 #include "probe/point_probes.cuh"
 #include "cuda_forge/setDT_d.cuh"
@@ -631,6 +632,9 @@ cudaConfig initializeSimulation(
 {
     cout << "Read Solver Config \n";
     cfg.read("solverConfig.yaml");
+
+    cout << "Init Thermo DB \n";
+    thermo_init_db(cfg);   // NASA-9/LJ 化学種 DB を構築し device へアップロード (thermalMethod==2 用)
 
     cout << "Read Mesh \n";
     if (cfg.meshFormat == "hdf5") {

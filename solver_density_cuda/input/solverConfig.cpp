@@ -281,6 +281,22 @@ void solverConfig::read(std::string fname)
         //double gamma = getValidatedValue<double>(physProp, "gamma", "physProp");
         this->gamma = getValidatedValue<double>(physProp, "gamma", "physProp");
 
+        // 多成分 thermally-perfect gas 設定 (任意, thermalMethod==2 で使用)
+        if (physProp["species"]) {
+            this->speciesNames.clear();
+            for (const auto& sn : physProp["species"]) this->speciesNames.push_back(sn.as<std::string>());
+            this->nSpecies = static_cast<int>(this->speciesNames.size());
+        }
+        if (physProp["speciesDBFile"])          this->speciesDBFile = physProp["speciesDBFile"].as<std::string>();
+        if (physProp["speciesDiffusionMethod"]) this->speciesDiffusionMethod = physProp["speciesDiffusionMethod"].as<int>();
+        if (physProp["Sc"])                     this->Sc = physProp["Sc"].as<double>();
+        if (physProp["Sc_t"])                   this->Sc_t = physProp["Sc_t"].as<double>();
+        if (this->thermalMethod == 2 && this->speciesNames.empty()) {
+            // 既定: 単成分 N2 (CEA 検証用)
+            this->speciesNames.push_back("N2");
+            this->nSpecies = 1;
+        }
+
         // 初期条件
         this->initial = getValidatedValue<std::string>(config, "initial");
 

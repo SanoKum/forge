@@ -51,6 +51,8 @@ add_library(cuda_forge STATIC
  
     gasProperties_d.cu
     gasProperties_d.cuh
+    thermo_d.cu
+    thermo_d.cuh
     residualMonitor_d.cu
     residualMonitor_d.cuh
  

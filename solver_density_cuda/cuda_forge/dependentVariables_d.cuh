@@ -7,11 +7,16 @@
 #include "mesh/mesh.hpp"
 #include "input/solverConfig.hpp"
 #include "variables.hpp"
+#include "thermo_d.cuh"
 
 __global__ void dependentVariables_d
-( 
+(
  // gas properties
- flow_float gamma , flow_float cp , 
+ int thermalMethod ,
+ flow_float gamma , flow_float cp ,
+
+ // thermally-perfect (thermalMethod==2) 用化学種データ
+ const SpeciesThermo* sp , int nSpecies , flow_float** roY ,
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -33,7 +38,10 @@ __global__ void dependentVariables_d
  flow_float* T   ,
  flow_float* Ux  ,
  flow_float* Uy  ,
- flow_float* Uz  
+ flow_float* Uz  ,
+
+ flow_float* gam_array ,
+ flow_float* cp_array
 
 );
 

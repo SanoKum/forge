@@ -227,10 +227,12 @@ __global__ void SLAU_d
  int lowMachThornber,                         // Thornber 再構成補正 (1: L/R 速度ジャンプを z=min(M,1) で縮約)
 
  flow_float ga,
+ int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
+ const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
 
  // mesh structure
  geom_int nCells,
- geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,  
+ geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,
  geom_int nNormal_ghst_Planes , geom_int* normal_ghst_planes_d,
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
@@ -358,9 +360,22 @@ __global__ void SLAU_d
         }
         // velocity2_L / h_p はブレンド後に算出 (L 再構成直後から移動)。
         flow_float velocity2_L = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;
-        flow_float h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
         flow_float velocity2_R = Ux_R*Ux_R + Uy_R*Uy_R + Uz_R*Uz_R;
-        flow_float h_m = ga*P_R/((ga-1.0)*ro_R) + 0.5*velocity2_R;
+        flow_float h_p, h_m;
+        if (thermalMethod == 2) {
+            // TP gas: 被移流全エンタルピーを NASA 絶対エンタルピーで再構成する。
+            //   ga/(ga-1)·P/ρ = cp·T であって h(T)=∫cp dT' ではないため誤り。
+            //   面温度 T_face = P_face/(ρ_face·R) → h(T_face) を NASA で評価し ek を加える。
+            //   (M1 単成分: sp[0] を使用。多成分は将来 Y_face 再構成へ拡張)
+            const double Rg = thermo_R_species(sp[0]);
+            const double Tl = (double)P_L/((double)ro_L*Rg);
+            const double Tr = (double)P_R/((double)ro_R*Rg);
+            h_p = (flow_float)(thermo_h_mass(sp[0], Tl) + 0.5*(double)velocity2_L);
+            h_m = (flow_float)(thermo_h_mass(sp[0], Tr) + 0.5*(double)velocity2_R);
+        } else {
+            h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
+            h_m = ga*P_R/((ga-1.0)*ro_R) + 0.5*velocity2_R;
+        }
 
         //flow_float Vn_p = ((Ux[ic0])*sxx +(Uy[ic0])*syy +(Uz[ic0])*szz)/sss;
         //flow_float Vn_m = ((Ux[ic1])*sxx +(Uy[ic1])*syy +(Uz[ic1])*szz)/sss;
@@ -1515,15 +1530,17 @@ __global__ void HLLE_d
 
 
 __global__ void ROE_d
-( 
+(
  int conv_scheme, int limit_scheme,
 
  // gas property
  flow_float ga,
+ int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
+ const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
 
  // mesh structure
  geom_int nCells,
- geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,  
+ geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,
  geom_int nNormal_halo_Planes, geom_int* normal_halo_planes_d,
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
@@ -1662,10 +1679,23 @@ __global__ void ROE_d
         //flow_float Ux_L = roUx_L/ro_L;
         //flow_float Uy_L = roUy_L/ro_L;
         //flow_float Uz_L = roUz_L/ro_L;
-        flow_float roe_L = P_L/(ga-1.0) + 0.5*ro_L*(Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L);
-        //flow_float P_L = (ga-1.0)*roe_L - 0.5*(ga-1.0)*ro_L*(Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L);
-        flow_float Ht_L= roe_L/ro_L + P_L/ro_L;
-        flow_float ca_L  = sqrt(max(ga*P_L/ro_L, small_a2));
+        flow_float v2_L = Ux_L*Ux_L +Uy_L*Uy_L +Uz_L*Uz_L;
+        flow_float roe_L, Ht_L, ca_L;
+        if (thermalMethod == 2) {
+            // TP gas: 内部エネルギー・全エンタルピー・音速を NASA で再構成 (sp[0], 単成分)
+            const double Rg = thermo_R_species(sp[0]);
+            const double Tl = (double)P_L/((double)ro_L*Rg);
+            const double hl = thermo_h_mass(sp[0], Tl);
+            const double cpl= thermo_cp_mass(sp[0], Tl);
+            const double gl = cpl/((cpl-Rg) > 1.0e-6 ? (cpl-Rg) : 1.0e-6);
+            roe_L = (flow_float)((double)ro_L*((hl - Rg*Tl) + 0.5*(double)v2_L));
+            Ht_L  = (flow_float)(hl + 0.5*(double)v2_L);
+            ca_L  = (flow_float)sqrt(max(gl*Rg*Tl, (double)small_a2));
+        } else {
+            roe_L = P_L/(ga-1.0) + 0.5*ro_L*v2_L;
+            Ht_L  = roe_L/ro_L + P_L/ro_L;
+            ca_L  = sqrt(max(ga*P_L/ro_L, small_a2));
+        }
 
         flow_float ro_R  = interp_dispatch(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro_R); 
         flow_float Ux_R  = interp_dispatch(conv_scheme, limit_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Ux_R);
@@ -1676,15 +1706,25 @@ __global__ void ROE_d
         ro_R = max(ro_R, small_rho);
         P_R = max(P_R, small_p);
 
-        flow_float roe_R = P_R/(ga-1.0) + 0.5*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
-        //flow_float P_R = (ga-1.0)*roe_R - 0.5*(ga-1.0)*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
+        flow_float v2_R = Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R;
+        flow_float roe_R, Ht_R, ca_R;
+        if (thermalMethod == 2) {
+            const double Rg = thermo_R_species(sp[0]);
+            const double Tr = (double)P_R/((double)ro_R*Rg);
+            const double hr = thermo_h_mass(sp[0], Tr);
+            const double cpr= thermo_cp_mass(sp[0], Tr);
+            const double gr = cpr/((cpr-Rg) > 1.0e-6 ? (cpr-Rg) : 1.0e-6);
+            roe_R = (flow_float)((double)ro_R*((hr - Rg*Tr) + 0.5*(double)v2_R));
+            Ht_R  = (flow_float)(hr + 0.5*(double)v2_R);
+            ca_R  = (flow_float)sqrt(max(gr*Rg*Tr, (double)small_a2));
+        } else {
+            roe_R = P_R/(ga-1.0) + 0.5*ro_R*v2_R;
+            Ht_R  = roe_R/ro_R + P_R/ro_R;
+            ca_R  = sqrt(max(ga*P_R/ro_R, small_a2));
+        }
 
         flow_float U_L = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
         flow_float U_R = ((Ux_R)*sxx +(Uy_R)*syy +(Uz_R)*szz)/sss;
-
-        //flow_float roe_R = P_R/(ga-1.0) + 0.5*ro_R*(Ux_R*Ux_R +Uy_R*Uy_R +Uz_R*Uz_R);
-        flow_float Ht_R= roe_R/ro_R + P_R/ro_R;
-        flow_float ca_R  = sqrt(max(ga*P_R/ro_R, small_a2));
 
         // calc delta value
         dro = ro_R - ro_L;
@@ -1703,14 +1743,33 @@ __global__ void ROE_d
         flow_float va = (sqrt_ro_L*Uy_L + sqrt_ro_R*Uy_R)/sqrt_ro_sum;
         flow_float wa = (sqrt_ro_L*Uz_L + sqrt_ro_R*Uz_R)/sqrt_ro_sum;
         flow_float Ha = (sqrt_ro_L*Ht_L + sqrt_ro_R*Ht_R)/sqrt_ro_sum;
-        flow_float ca  = sqrt(max((ga-1.0)*(Ha-0.5*(ua*ua +va*va +wa*wa)), small_a2));
         flow_float Ua  = ua*nx +va*ny +wa*nz;
 
-        flow_float P_ro = 0.5*(ga-1.0)*(ua*ua + va*va + wa*wa);
-        flow_float P_roe = ga-1.0;
-        flow_float P_rou = -ua*(ga-1.0);
-        flow_float P_rov = -va*(ga-1.0);
-        flow_float P_row = -wa*(ga-1.0);
+        // Roe 平均状態の有効比熱比 ga_eff と音速 ca。
+        //   CPG: ga_eff=ga, ca=sqrt((ga-1)(Ha-ek))。
+        //   TP : Roe 平均静エンタルピー h~=Ha-ek から T~ を反転し ga_eff=cp~/(cp~-R),
+        //        ca=sqrt(ga_eff·R·T~) (= sqrt(ga_eff·P/ρ))。圧力微分ブロックは κ=ga_eff-1 を
+        //        採用 (χ=∂P/∂ρ|_{ρe} 項は stage-A で無視; defect-correction で収束解は不変)。
+        flow_float ga_eff = ga;
+        flow_float ca;
+        const flow_float ek_a = 0.5*(ua*ua + va*va + wa*wa);
+        if (thermalMethod == 2) {
+            const double Yone = 1.0;   // M1 単成分の質量分率
+            const double Rg = thermo_R_species(sp[0]);
+            const double ha = (double)Ha - (double)ek_a;
+            const double Ta = thermo_T_from_h(sp, 1, &Yone, ha, 300.0, 50.0, 6000.0);
+            const double cpa = thermo_cp_mass(sp[0], Ta);
+            ga_eff = (flow_float)(cpa/((cpa-Rg) > 1.0e-6 ? (cpa-Rg) : 1.0e-6));
+            ca = (flow_float)sqrt(max((double)ga_eff*Rg*Ta, (double)small_a2));
+        } else {
+            ca = sqrt(max((ga-1.0)*(Ha-ek_a), small_a2));
+        }
+
+        flow_float P_ro = 0.5*(ga_eff-1.0)*(ua*ua + va*va + wa*wa);
+        flow_float P_roe = ga_eff-1.0;
+        flow_float P_rou = -ua*(ga_eff-1.0);
+        flow_float P_rov = -va*(ga_eff-1.0);
+        flow_float P_row = -wa*(ga_eff-1.0);
         flow_float z = ua*ua+va*va+wa*wa - P_ro/P_roe;
         flow_float fai = P_ro-ca*ca;
 
@@ -2583,6 +2642,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.lowMachThornber,
 
             cfg.gamma,
+            cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
 
             // mesh structure
             msh.nCells,
@@ -2590,7 +2650,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             msh.nNormal_halo_Planes, msh.normal_halo_planes_d,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
             var.p_d["massflux"],
 
             // basic variables
@@ -2601,12 +2661,12 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             var.c_d["roUy"] ,
             var.c_d["roUz"] ,
             var.c_d["roe"] ,
-            var.c_d["Ux"]  , 
-            var.c_d["Uy"]  , 
-            var.c_d["Uz"]  , 
-            var.c_d["P"]  , 
-            var.c_d["Ht"]  , 
-            var.c_d["sonic"]  , 
+            var.c_d["Ux"]  ,
+            var.c_d["Uy"]  ,
+            var.c_d["Uz"]  ,
+            var.c_d["P"]  ,
+            var.c_d["Ht"]  ,
+            var.c_d["sonic"]  ,
 
             var.c_d["res_ro"] ,
             var.c_d["res_roUx"] ,
@@ -2619,7 +2679,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             var.c_d["limiter_Uy"]  ,
             var.c_d["limiter_Uz"]  ,
             var.c_d["limiter_P"]  ,
- 
+
             var.c_d["ducros"]  ,
 
             // gradient
@@ -2680,9 +2740,10 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     } else if (cfg.solver == "ROE") {
         //ROE_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
-        ROE_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> ( 
+        ROE_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.convMethod, cfg.limiter,
             cfg.gamma,
+            cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
 
             // mesh structure
             msh.nCells,

@@ -7,6 +7,7 @@
 #include "mesh/mesh.hpp"
 #include "input/solverConfig.hpp"
 #include "variables.hpp"
+#include "thermo_d.cuh"
 
 __device__ flow_float calcRratio(flow_float phiC, flow_float phiD, 
                                  flow_float dphidx, flow_float dphidy, flow_float dphidz,
