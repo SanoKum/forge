@@ -3,6 +3,7 @@
 //#endif
 
 #include "setDT_d.cuh"
+#include "lowMachPrecond_d.cuh"   // Phase 4: β・c' で Δτ' を前処理スペクトル半径に合わせて拡大
 
 
 __global__ void setCFL_pln_d
@@ -179,6 +180,34 @@ __global__ void setDTlocal_uniform_cell_d
     }
 }
 
+// Phase 4 (lowMachPrecond==2): 擬似時間刻みを前処理スペクトル半径に合わせて拡大する。
+// 既存 dt_local は物理スペクトル半径 λ_phys=|u|+c 基準。前処理後の律速は
+// λ'=½(1+β)|u|+c' (低マッハで小) なので、dt_local ×= λ_phys/λ' で擬似 CFL を λ' 基準に合わせる。
+// ε フロアにより λ'≥ε·c 程度に下限が付き、倍率は ~1/ε で有界 (発散しない)。
+// LHS を前処理した本モードでのみ整合的 (Phase 2 で LHS 非前処理のまま setDT 前処理して破綻した轍を踏まない)。
+__global__ void setDTlocal_precond_scale_d
+(
+ flow_float precondEps,
+ geom_int nCells,
+ flow_float* ro,
+ flow_float* Ux, flow_float* Uy, flow_float* Uz,
+ flow_float* sonic,
+ flow_float* dt_local
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const flow_float c = max(sonic[ic], static_cast<flow_float>(1.0e-8));
+        const flow_float vmag = sqrt(Ux[ic]*Ux[ic] + Uy[ic]*Uy[ic] + Uz[ic]*Uz[ic]);
+        const flow_float beta = lowMachBeta(c, vmag, precondEps);
+        const flow_float cprime = lowMachCprime(c, vmag, vmag, precondEps);
+        const flow_float lam_phys = vmag + c;
+        const flow_float lam_prec = static_cast<flow_float>(0.5)*(static_cast<flow_float>(1.0)+beta)*vmag + cprime;
+        const flow_float ratio = lam_phys / max(lam_prec, static_cast<flow_float>(1.0e-30));
+        dt_local[ic] *= max(ratio, static_cast<flow_float>(1.0));
+    }
+}
+
 
 void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
@@ -260,11 +289,25 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         );
 
     } else {
-        setDTlocal_uniform_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
+        setDTlocal_uniform_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
             cfg.dt,
             msh.nCells,
             var.c_d["dt_local"]
         );
+    }
+
+    // Phase 4: 完全前処理モードでは擬似時間刻みを前処理スペクトル半径基準に拡大する。
+    if (cfg.lowMachPrecond == 2) {
+        setDTlocal_precond_scale_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+            cfg.precondEps,
+            msh.nCells,
+            var.c_d["ro"],
+            var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
+            var.c_d["sonic"],
+            var.c_d["dt_local"]
+        );
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
     }
 
     flow_float cfl_max;

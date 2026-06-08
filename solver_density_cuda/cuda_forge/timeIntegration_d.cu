@@ -1,4 +1,5 @@
 #include "timeIntegration_d.cuh"
+#include "lowMachPrecond_d.cuh"   // Phase 4: Γ_c (lowMachGammaC)・β・c' device ヘルパ
 
 namespace block_dplur {
 
@@ -890,6 +891,174 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
     }
 }
 
+// =============================================================================
+// Phase 4 (a): 完全 Γ⁻¹A 低マッハ前処理の block DPLUR (lowMachPrecond=2)。
+// 既存 implicit_defect_correction_block_d (lowMachPrecond 0/1) とは別カーネルにし、
+// 0/1 経路のレジスタ・ビットを一切変えない。本カーネルは対角ブロックを倍精度で組み、
+// solve_5x5_dbl で解く (Γ_c の条件数 ~1/β 対策)。
+// 保存形は (Γ_c·V/Δτ' + A_c)ΔQ = -R で、**前処理は擬似時間項 Γ_c のみ**。フラックス A_c は
+// 既存と同じ物理厳密 FVS (a_plus=A_c⁺・k_off=-A_c⁻) をそのまま使う (非前処理が正しい)。収束は
+// (Δτ'/V)Γ_c⁻¹A_c の固有値 λ' で一様に前処理され、スカラー Δτ'=cell/ρ' で効く。
+//   - 擬似時間項: Γ_c·V/Δτ' (Δτ' は setDT 側で前処理スペクトル半径から拡大した dt_local)。
+//   - フラックス: 物理 a_plus を対角・k_off を近傍 (既存 block と同一)。
+//   - 物理 BDF 項 a·V/Δt·I は非前処理 (dual-time 所有)。β=1 (超音速) で Γ_c=I・Δτ'=Δτ・フラックスも
+//     同一となり**現行カーネルと同一の組み立て**になる (倍精度で組む分だけ丸め差 ~1e-7、解は一致。回帰で担保)。
+// 理論: docs/time_integration/theory.md「低マッハ前処理固有系」、計画 §5 Phase 4。
+__global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correction_block_precond_d
+(
+ int loop,
+ flow_float dt,
+ flow_float* dt_local,
+ flow_float implicit_relax,
+ flow_float gamma,
+ flow_float precondEps,
+
+ geom_int nCells_all , geom_int nCells,
+ geom_float* vol,
+ geom_int* plane_cells,
+ geom_int* cell_planes_index,
+ geom_int* cell_planes,
+ geom_float* ccx, geom_float* ccy, geom_float* ccz,
+ geom_float* sx, geom_float* sy, geom_float* sz, geom_float* ss,
+
+ flow_float* ro, flow_float* roUx, flow_float* roUy, flow_float* roUz, flow_float* roe,
+
+ flow_float laminar_visc,
+ flow_float* vis_turb,
+ flow_float* sonic,
+ flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* Ht,
+
+ flow_float* res_ro, flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roUz, flow_float* res_roe,
+
+ flow_float* dq_old_0, flow_float* dq_old_1, flow_float* dq_old_2, flow_float* dq_old_3, flow_float* dq_old_4,
+ flow_float* dq_new_0, flow_float* dq_new_1, flow_float* dq_new_2, flow_float* dq_new_3, flow_float* dq_new_4,
+
+ int isAxisymmetric,
+ flow_float* A_planar,
+ flow_float unsteady_diag
+)
+{
+    geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+
+    if (ic < nCells) {
+        const geom_float v = vol[ic];
+        const flow_float dt_l = dt_local[ic];
+        const flow_float density = max(ro[ic], static_cast<flow_float>(1.0e-30));
+        const flow_float vx = Ux[ic];
+        const flow_float vy = Uy[ic];
+        const flow_float vz = Uz[ic];
+        const flow_float local_sonic = max(sonic[ic], static_cast<flow_float>(1.0e-8));
+        const flow_float local_enthalpy = max(Ht[ic], static_cast<flow_float>(1.0e-8));
+        const flow_float nu_eff = (laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0))) / density;
+        const flow_float velMag = sqrt(vx*vx + vy*vy + vz*vz);
+        const flow_float beta = lowMachBeta(local_sonic, velMag, precondEps);
+
+        if (loop == 0) {
+            dq_old_0[ic] = 0.0; dq_old_1[ic] = 0.0; dq_old_2[ic] = 0.0; dq_old_3[ic] = 0.0; dq_old_4[ic] = 0.0;
+        }
+
+        // 倍精度対角ブロック: 擬似時間項 Γ_c·V/Δτ' + 物理 BDF a·V/Δt·I。
+        double diagD[5][5];
+        double Gc[5][5];
+        lowMachGammaC(gamma, local_sonic, vx, vy, vz, beta, Gc);
+        const double v_over_dtau = static_cast<double>(v)
+            / max(static_cast<double>(dt_l), 1.0e-30);
+        const double bdf = static_cast<double>(v) * static_cast<double>(unsteady_diag);
+        #pragma unroll
+        for (int i = 0; i < 5; ++i)
+            #pragma unroll
+            for (int j = 0; j < 5; ++j)
+                diagD[i][j] = Gc[i][j] * v_over_dtau + (i == j ? bdf : 0.0);
+
+        double rhsD[5] = { res_ro[ic], res_roUx[ic], res_roUy[ic], res_roUz[ic], res_roe[ic] };
+        double nbr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+
+        const geom_int plane_begin = cell_planes_index[ic];
+        const geom_int plane_end = cell_planes_index[ic + 1];
+        for (geom_int plane_offset = plane_begin; plane_offset < plane_end; ++plane_offset) {
+            const geom_int ip = cell_planes[plane_offset];
+            const flow_float face_area = max(ss[ip], static_cast<flow_float>(1.0e-30));
+            const geom_int ic0 = plane_cells[2 * ip + 0];
+            const geom_int ic1 = plane_cells[2 * ip + 1];
+            const geom_int other_ic = (ic0 == ic) ? ic1 : ic0;
+            const flow_float nsign = (ic0 == ic) ? static_cast<flow_float>(1.0) : static_cast<flow_float>(-1.0);
+            const flow_float nx = nsign * sx[ip] / face_area;
+            const flow_float ny = nsign * sy[ip] / face_area;
+            const flow_float nz = nsign * sz[ip] / face_area;
+
+            // フラックスは物理の厳密 FVS (a_plus=A_c⁺, k_off=-A_c⁻) をそのまま使う。
+            // 保存形 (Γ_c V/Δτ' + A_c)ΔQ=-R より、前処理は時間項 Γ_c のみで、フラックス A_c は
+            // 非前処理が正しい (収束は (Δτ'/V)Γ_c⁻¹A_c の固有値 λ' で一様に前処理される)。
+            flow_float a_plus[5][5];
+            flow_float k_off[5][5];
+            block_dplur::build_jacobian_split(gamma, nx, ny, nz, vx, vy, vz,
+                                              local_enthalpy, local_sonic, a_plus, k_off);
+            const double area = static_cast<double>(face_area);
+
+            // 粘性スペクトル半径 (対角に identity 倍で加算、現行 block と同形)。
+            const flow_float dcc_x = ccx[other_ic] - ccx[ic];
+            const flow_float dcc_y = ccy[other_ic] - ccy[ic];
+            const flow_float dcc_z = ccz[other_ic] - ccz[ic];
+            const flow_float dcc = max(sqrt(dcc_x*dcc_x + dcc_y*dcc_y + dcc_z*dcc_z), static_cast<flow_float>(1.0e-30));
+            const flow_float dcc_dot_s = max(fabs(dcc_x*sx[ip] + dcc_y*sy[ip] + dcc_z*sz[ip]), static_cast<flow_float>(1.0e-30));
+            const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
+            const double viscous_radius = 2.0 * static_cast<double>(nu_eff) / static_cast<double>(delta);
+
+            // 対角 += A_c⁺ S + 粘性·area。
+            #pragma unroll
+            for (int i = 0; i < 5; ++i) {
+                #pragma unroll
+                for (int j = 0; j < 5; ++j) diagD[i][j] += static_cast<double>(a_plus[i][j]) * area;
+                diagD[i][i] += viscous_radius * area;
+            }
+
+            // 近傍 += k_off S ΔQ_nbr (= -A_c⁻ S ΔQ_nbr)。
+            if (other_ic < nCells) {
+                flow_float dqn[5];
+                block_dplur::load_block_vec(other_ic, dq_old_0, dq_old_1, dq_old_2, dq_old_3, dq_old_4, dqn);
+                double t[5];
+                #pragma unroll
+                for (int i = 0; i < 5; ++i) t[i] = static_cast<double>(dqn[i]) * area;
+                #pragma unroll
+                for (int i = 0; i < 5; ++i) {
+                    double s = 0.0;
+                    #pragma unroll
+                    for (int j = 0; j < 5; ++j) s += static_cast<double>(k_off[i][j]) * t[j];
+                    nbr[i] += s;
+                }
+            }
+        }
+
+        #pragma unroll
+        for (int i = 0; i < 5; ++i) rhsD[i] += nbr[i];
+
+        // 軸対称ソースヤコビアン (現行 block と同式・倍精度で加算)。
+        if (isAxisymmetric == 1) {
+            const double A_pl = A_planar[ic];
+            const double r_eff = max(static_cast<double>(v) / max(A_pl, 1.0e-30), 1.0e-30);
+            const double g1 = static_cast<double>(gamma) - 1.0;
+            const double q2 = static_cast<double>(vx)*vx + static_cast<double>(vy)*vy + static_cast<double>(vz)*vz;
+            const double mu_total = static_cast<double>(laminar_visc) + max(static_cast<double>(vis_turb[ic]), 0.0);
+            const double hoop = 2.0 * mu_total / (static_cast<double>(density) * r_eff);
+            diagD[2][0] += -A_pl * (0.5*g1*q2 + hoop*vy);
+            diagD[2][1] +=  A_pl * (g1*vx);
+            diagD[2][2] +=  A_pl * (g1*vy + hoop);
+            diagD[2][3] +=  A_pl * (g1*vz);
+            diagD[2][4] += -A_pl * g1;
+        }
+
+        double corrD[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        const bool ok = block_dplur::solve_5x5_dbl(diagD, rhsD, corrD);
+        flow_float correction[5];
+        #pragma unroll
+        for (int i = 0; i < 5; ++i)
+            correction[i] = ok ? static_cast<flow_float>(corrD[i] * static_cast<double>(implicit_relax))
+                               : static_cast<flow_float>(0.0);
+
+        block_dplur::store_block_vec(ic, correction, dq_new_0, dq_new_1, dq_new_2, dq_new_3, dq_new_4);
+    }
+}
+
 // block DPLUR の sweep 間バッファ入れ替え。ドライバ側から各 sweep 後に明示的に呼ぶ
 // （旧実装は wrapper 内部で暗黙に swap していたが、古典 DPLUR では制御フローを明示化する）。
 void swapBlockImplicitCorrectionBuffers(variables& var)
@@ -1015,6 +1184,25 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             // レジスタ過多のため専用の小さい block サイズで起動（__launch_bounds__ と整合）。
             const int block_threads = BLOCK_DPLUR_THREADS;
             const int block_grid = (msh.nCells_all + block_threads - 1) / block_threads;
+            if (cfg.lowMachPrecond == 2) {
+              // Phase 4: 完全 Γ⁻¹A 前処理の倍精度カーネル (dt_local は前処理 Δτ' に拡大済)。
+              implicit_defect_correction_block_precond_d<<<block_grid , block_threads>>>(
+                loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, cfg.gamma, cfg.precondEps,
+                msh.nCells_all, msh.nCells, var.c_d["volume"],
+                msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
+                var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+                var.p_d["sx"], var.p_d["sy"], var.p_d["sz"], var.p_d["ss"],
+                var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"],
+                cfg.visc, var.c_d["vis_turb"], var.c_d["sonic"],
+                var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"], var.c_d["Ht"],
+                var.c_d["res_ro"], var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"], var.c_d["res_roe"],
+                var.c_d["dq_block_old_0"], var.c_d["dq_block_old_1"], var.c_d["dq_block_old_2"], var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"],
+                var.c_d["dq_block_new_0"], var.c_d["dq_block_new_1"], var.c_d["dq_block_new_2"], var.c_d["dq_block_new_3"], var.c_d["dq_block_new_4"],
+                cfg.isAxisymmetric,
+                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
+                cfg.unsteadyDiagCoef
+              );
+            } else
             implicit_defect_correction_block_d<<<block_grid , block_threads>>>(
                 loop,
                 cfg.dt,

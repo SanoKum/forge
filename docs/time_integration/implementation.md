@@ -158,6 +158,27 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
 根拠・データは [`theory.md`](theory.md#低マッハ前処理固有値-weisssmith--試行したが不採用) と計画
 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
+### `implicit_defect_correction_block_precond_d`（Phase 4: 完全 $\Gamma^{-1}A$ 前処理・`lowMachPrecond=2`）
+
+上の LHS 固有値前処理 (不採用) と異なり、**前処理を一貫させた別カーネル**。`blockDPLUR==1 && lowMachPrecond==2`
+のとき wrapper がこちらを起動する (既存 `implicit_defect_correction_block_d` は 0/1 専用・ビット/レジスタ不変)。
+
+- **倍精度ブロック**: 対角ブロック $D$ を `double[5][5]` で組み [`solve_5x5_dbl`](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu) で解く
+  ($\Gamma_c$ の条件数 $\sim1/\beta$ 対策。$\beta$ フロアは `precondEps`)。
+- **時間項**: $\Gamma_c\,V/\Delta\tau'$ ([`lowMachGammaC`](../../solver_density_cuda/cuda_forge/lowMachPrecond_d.cuh) のランク 1 閉形)。
+  $\Delta\tau'$ は `setDT_d` の `setDTlocal_precond_scale_d` が `dt_local *= (|u|+c)/ρ'` で拡大済 ($\rho'$=前処理スペクトル半径)。
+- **フラックス分割**: **物理の厳密 FVS** をそのまま使う (対角に $a^{+}=A_c^{+}$、近傍に $k_{\rm off}=-A_c^{-}$。既存 block と同一)。
+  保存形 $(\Gamma_c V/\Delta\tau' + A_c)\Delta Q=-R$ より前処理は**時間項のみ**で、$A_c$ は残差の真のヤコビアンゆえ非前処理が正しい
+  ([`theory.md`](theory.md) 参照)。収束は $(\Delta\tau'/V)\Gamma_c^{-1}A_c$ の固有値 $\lambda'$ で一様に前処理される。
+  ※当初フラックスも $\hat A_\Gamma=\Gamma_c^{-1}A_c$ のスペクトル半径分割で前処理したが、別系で過散逸ゆえ撤回 (上記が正)。
+- **その他**: 粘性スペクトル半径・軸対称ソースヤコビアン・dual-time 物理 BDF 項 (非前処理) も倍精度で踏襲。
+- **`SLAU_d`** は `lowMachPrecond>=1` で `c'` 散逸を使う (==2 も散逸是正を併用)。$\beta=1$ で $\Gamma_c=I$・$\Delta\tau'=\Delta\tau$・
+  フラックス同一ゆえ現行カーネルと同一組み立て (倍精度の丸め差 ~1e-7、解一致)。
+
+> **検証結果 (2026-06-09・採用)**: `case/23.axi_nozzle` で**低マッハ自励振動を根治**。Phase1 (物理 LHS) が発散した
+> $\epsilon=0.05$ を前処理 LHS が安定化し、chamber 圧振幅 (M<0.08, 4k–20k) を 0.882%→**0.087% (定常収束・振動消滅)**。
+> 安定 `cfl_pseudo` も m1~1→m2~5-7 と拡大 (収束加速は per-step 2.54× で等 wall-clock 互角。価値は根治)。データは計画 §9。
+
 ### `implicit_defect_correction_d`（scalar 対角版＝スペクトル半径）
 
 平均流 5 式を、5×5 ブロックの代わりに**スカラー対角**で解く軽量版（`blockDPLUR == 0`）。

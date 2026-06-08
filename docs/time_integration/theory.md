@@ -137,7 +137,7 @@ $V/\Delta\tau$ を縮めて対角を二重に潰し、最速で発散した。
 従来の $A^\pm$ のまま。詳細・データは計画
 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
-### 低マッハ前処理固有系 (Weiss–Smith・完全 $\Gamma^{-1}A$) — Phase 4 (実装中)
+### 低マッハ前処理固有系 (Weiss–Smith・完全 $\Gamma^{-1}A$) — Phase 4 (採用・振動根治)
 
 固有値だけの前処理が失敗したので、**固有ベクトルまで前処理した完全形**を `lowMachPrecond=2` の新モードとして
 実装する (Phase 1 の flux 散逸 `c'` とは排他)。要点は、擬似時間項とフラックス分割を**同一の前処理計量**で
@@ -173,23 +173,34 @@ $$
 c'=\tfrac12\sqrt{(1-\beta)^2U_n^2+4U_r^2},
 $$
 
-固有ベクトルは $R_P=M R'_p,\ L_P=L'_p M^{-1}$ ($R'_p,L'_p$ は原始系 $\Gamma_p^{-1}A_p$ の前処理固有ベクトル)。
-LHS の分割は $A_c$ を**前処理固有系で**割る: $\hat A_\Gamma^{\pm}=\Gamma_c\,R_P\Lambda'^{\pm}L_P$。
-
-**LHS 構成 (block DPLUR)。** 対角ブロックを
+**保存形の厳密な陰解法系は前処理を時間項のみに掛ける。** 原始系から保存形へ移すと
 $$
-D = \Gamma_c\,\frac{V}{\Delta\tau'} \;+\; a\frac{V}{\Delta t}I \;+\; \sum_f \hat A_{\Gamma,f}^{+}S_f \;+\;(\text{粘性})
+\big(\Gamma_c\,V/\Delta\tau' + A_c\big)\,\Delta Q = -\mathbf R
 $$
-とし、近傍項を $-\hat A_{\Gamma,f}^{-}S_f$、$\Delta\tau'$ を前処理スペクトル半径 $\lambda'_{\max}\sim|\mathbf u|+c'$ から取る
-(低マッハで $\Delta\tau'\sim1/M$ 拡大)。dual-time の物理 BDF 項 $aV/\Delta t\,I$ は**非前処理**のまま。前処理固有基底では
-$\Gamma_c V/\Delta\tau'$ と $\hat A_\Gamma^{+}S$ が同オーダー $O(|\mathbf u|)$ で釣り合うため、Phase 2 で崩れた対角優位性が
-拡大した $\Delta\tau'$ の下で回復する (悪条件は保存基底への $\Gamma_c$ 変換だけが担うので、対角ブロックの組み立て+
-反転を倍精度 `solve_5x5_dbl` で行って吸収する)。$\beta=1$ で全体が現行 $A^\pm$ 経路にビット一致することを回帰で担保する。
+となる。$A_c$ は**残差の真のヤコビアン**なので**物理 (非前処理)** でなければならず、前処理は擬似時間項 $\Gamma_c$ に入る。
+収束は積 $(\Gamma_c V/\Delta\tau')^{-1}A_c=(\Delta\tau'/V)\,\Gamma_c^{-1}A_c$ の固有値 $(\Delta\tau'/V)\lambda'$ で**一様に前処理される**
+(フラックスを物理のままにしても収束は前処理される)。したがって LHS は既存と同じ物理 FVS 分割をそのまま使う。
 
-> **進捗 (2026-06-08)**: 土台 ($\Gamma_c/\Gamma_c^{-1}$ ランク 1 閉形の導出・検証、`lowMachGammaC`/`Cinv` device 関数、
-> `solve_5x5_dbl` 倍精度ブロック解) を実装。残り: 前処理固有ベクトル $R_P,L_P$ の閉形と `build_jacobian_split`
-> 前処理版、`setDT_d` の $\Delta\tau'$、時間項 $\Gamma_c$ 化、$\beta=1$ 回帰、20k 検証。計画
-> [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §5 Phase 4。
+**LHS 構成 (block DPLUR)** は
+$$
+D = \Gamma_c\,\frac{V}{\Delta\tau'} \;+\; a\frac{V}{\Delta t}I \;+\; \sum_f A^{+}_{c,f}\,S_f \;+\;(\text{粘性}),\qquad
+\text{近傍} = -\sum_f A^{-}_{c,f}S_f
+$$
+で、$A^{+}_c=a^{+}$・$-A^{-}_c=k_{\rm off}$ は既存 `build_jacobian_split` の物理分割そのもの。$\Delta\tau'$ は前処理スペクトル半径
+$\rho'=\tfrac12(1+\beta)|U_n|+c'$ 基準に拡大する (`setDT_d` で $\Delta\tau'=\Delta\tau\cdot(|\mathbf u|+c)/\rho'$、低マッハで $\sim1/\epsilon$ 倍・有界)。
+dual-time の物理 BDF 項 $aV/\Delta t\,I$ は**非前処理**。悪条件 ($\sim1/\beta$) は $\Gamma_c$ 時間項だけが持ち込むので、対角ブロックの
+組み立て+反転を倍精度 `solve_5x5_dbl` で吸収する。$\beta=1$ (超音速) では $\Gamma_c=I,\ \Delta\tau'=\Delta\tau$・フラックス同一ゆえ
+既存カーネルと同一組み立て (倍精度の丸め差 ~1e-7、解一致)。
+
+> **当初の誤り (記録)**: 一旦フラックスも $\hat A_\Gamma=\Gamma_c^{-1}A_c$ のスペクトル半径分割 (Rusanov 型) で前処理したが、
+> これは解くべき系の $A_c$ を $\Gamma_c^{-1}A_c$ に置換した**別系**で過散逸だった。保存形では前処理は時間項のみが正しい (上式)。
+
+> **結果 (2026-06-09・採用)**: `implicit_defect_correction_block_precond_d` (物理 FVS + $\Gamma_c$ 時間項 + 前処理 $\Delta\tau'$、倍精度)、
+> `setDT_d` の $\Delta\tau'$ スケーリング、SLAU の `c'` 散逸を `lowMachPrecond>=1` に拡張、wrapper の `==2` dispatch を実装。
+> **`case/23.axi_nozzle` で低マッハ自励振動を根治**: Phase1 (物理 LHS) が発散した $\epsilon=0.05$ を前処理 LHS が安定化し、
+> chamber 圧振幅 (M<0.08, 4k–20k) を 0.882%→**0.087% (定常収束・振動消滅)**、$\epsilon=0.15$ でも 0.603%→0.333% (超音速域不変)。
+> 安定 `cfl_pseudo` は m1~1→m2~5-7 と広がるが per-step 2.54× で収束加速は等 wall-clock で互角 (価値は根治にある)。計画
+> [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9 `2026-06-09`。
 
 ## 非定常 dual-time 陰解法 (実装済み 2026-06)
 

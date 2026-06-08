@@ -426,7 +426,7 @@ __global__ void SLAU_d
         // 低マッハ前処理: 圧力散逸項のスケール c_hat を前処理音速 c_diss に置き換える。
         // lowMachPrecond==0 では c_diss==c_hat でビット不変。M>=1 でも c'=c_hat に復帰。
         flow_float c_diss = c_hat;
-        if (lowMachPrecond == 1) {
+        if (lowMachPrecond >= 1) {   // 1: フラックス散逸前処理のみ / 2: + LHS 完全前処理 (どちらも c' 散逸を使う)
             flow_float velMag_face = sqrt(half*(velocity2_L + velocity2_R));
             flow_float Un_face     = half*(Vn_p + Vn_m);
             c_diss = lowMachCprime(c_hat, velMag_face, Un_face, precondEps);

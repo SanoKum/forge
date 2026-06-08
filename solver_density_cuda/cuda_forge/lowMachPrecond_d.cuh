@@ -89,13 +89,5 @@ void lowMachGammaC(flow_float gamma, flow_float c,
     lowMachGammaRank1(gamma, c, u, v, w, coeff, Gc);
 }
 
-// 逆行列 Γ_c⁻¹ = I - ((1-β)/c²) g rᵀ (Sherman-Morrison)。前処理ヤコビアン P=Γ_c⁻¹A の構築に使う。
-__device__ __forceinline__
-void lowMachGammaCinv(flow_float gamma, flow_float c,
-                      flow_float u, flow_float v, flow_float w,
-                      flow_float beta, double Gcinv[5][5])
-{
-    const double coeff = -(1.0 - static_cast<double>(beta))
-                       / (static_cast<double>(c) * static_cast<double>(c));
-    lowMachGammaRank1(gamma, c, u, v, w, coeff, Gcinv);
-}
+// 注: 逆行列 Γ_c⁻¹ = I - ((1-β)/c²) g rᵀ (Sherman-Morrison) は保存形では LHS に現れない
+// (前処理は時間項 Γ_c のみ、フラックスは物理 A_c)。閉形の検証は tools/verify_lowmach_precond.py 参照。

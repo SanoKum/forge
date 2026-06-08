@@ -3,7 +3,9 @@
 ## メタ
 
 - **area**: `time_integration` (convection 横断)
-- **status**: `in_progress`  <!-- draft / in_progress / done / superseded -->
+- **status**: `done`  <!-- draft / in_progress / done / superseded -->
+  <!-- Phase1 (flux c') 採用 / Phase2 (LHS 固有値) 棄却 / Phase3 (b Thornber) 負の結果・opt-in 残置 /
+       Phase4 (a 完全 Γ⁻¹A 前処理 lowMachPrecond=2) 採用＝低マッハ自励振動を根治 (§9 2026-06-09)。 -->
 - **related_docs**:
   - [`docs/convection/theory.md`](../../docs/convection/theory.md) (低マッハ前処理節)
   - [`docs/convection/implementation.md`](../../docs/convection/implementation.md) (`lowMachPrecond`)
@@ -230,7 +232,7 @@ forge の保存変数パイプラインに侵襲的なため不採用。
 - [x] `.github/plans/README.md` の状態を更新
 - [x] 設計分析 (a の可否・RHS/LHS 切り分け・(b) 採用決定) を §9 `2026-06-08` に記録
 - [x] **Phase 3 (b) Thornber** — docs 更新 → 実装 (`lowMachThornber`) → 20k step 検証完了。**結果は負** (この症状に無効・僅かに悪化。§9 `2026-06-08`)。機能は opt-in で残置、ノズル limit cycle の根治には不採用
-- [ ] **Phase 4 (a) $\Gamma^{-1}A$ 完全前処理** (`lowMachPrecond=2`) — 設計確定 (§5 Phase 4)。実装着手: 数式導出 → `lowMachPrecond_d.cuh` 拡張 → `solve_5x5` 倍精度 → `build_jacobian_split`/`setDT_d` 前処理 → β=1 回帰 → 20k 検証 ($\epsilon$↓で振幅根治・擬似 CFL↑)
+- [x] **Phase 4 (a) $\Gamma^{-1}A$ 完全前処理** (`lowMachPrecond=2`) — 実装・検証完了。**低マッハ自励振動を根治** (ε=0.05 で振幅 0.882%→0.087%・定常収束。§9 `2026-06-09`)。時間項 $\Gamma_c$+物理フラックス FVS+$\Delta\tau'$、倍精度ブロック解。収束加速は副次 (ブレークイーブン)
 
 ## 9. 変更ログ
 
@@ -395,3 +397,63 @@ forge の保存変数パイプラインに侵襲的なため不採用。
   - **残り (次段)**: 前処理固有ベクトル $R_P=MR'_p,\ L_P=L'_p M^{-1}$ の閉形 → `build_jacobian_split` 前処理版
     (`lowMachPrecond==2`)、`setDT_d` の $\Delta\tau'$、対角時間項の $\Gamma_c$ 行列化 (倍精度ブロック組み立て+解)、
     $\beta=1$ GPU 回帰 (超音速ケースで `lowMachPrecond:0` とビット一致)、`case/23.axi_nozzle` で $\epsilon$↓ 検証。
+
+- `2026-06-09` — **Phase 4 LHS 本体を実装 (固有ベクトル前処理は採らず Rusanov 型分割で代替)。ビルド成功・
+  500 step スモーク稼働確認**。
+  - **設計判断**: 厳密前処理 FVS ($\hat A_\Gamma^{\pm}=\Gamma_c R_P\Lambda'^{\pm}L_P$) は前処理固有ベクトル $R_P$ の
+    閉形導出が要り重い。LHS は defect-correction で**解を変えない**ため、固有ベクトル不要な
+    **スペクトル半径分割** $\hat A_\Gamma^{\pm}=\tfrac12(\hat A_\Gamma\pm\rho'I)$, $\hat A_\Gamma=\Gamma_c^{-1}A_c$,
+    $\rho'=\tfrac12(1+\beta)|U_n|+c'$ で代替。より散逸的だが LHS なら安定寄り。$A_c=a^{+}-k_{\rm off}$ は既存
+    `build_jacobian_split` から、$\Gamma_c^{-1}$ はランク 1 閉形から。
+  - **実装**: `timeIntegration_d.cu` に別カーネル `implicit_defect_correction_block_precond_d`
+    (対角ブロックを倍精度で組み `solve_5x5_dbl` で解く。時間項 $\Gamma_c V/\Delta\tau'$、分割 $\tfrac12(\hat A_\Gamma\pm\rho'I)$、
+    軸対称ソース・粘性・dual-time BDF も倍精度で踏襲)、`matmul_5x5_dbl` ヘルパ。`setDT_d` に
+    `setDTlocal_precond_scale_d` ($\Delta\tau'{=}\Delta\tau\cdot(|\mathbf u|+c)/\rho'$、$\sim1/\epsilon$ 有界)。
+    `SLAU_d` の `c'` 散逸を `lowMachPrecond>=1` に拡張 (==2 も散逸是正を使う)。wrapper は `==2` で前処理カーネル+
+    setDT スケーリングに dispatch。既存カーネルは別物ゆえ **0/1 経路はビット・レジスタ不変**。
+  - **0/1 ビット不変の確認**: 別カーネル化＋`SLAU` は `==0` で分岐に入らないため。`==2` は別系。
+  - **スモーク**: `case/23.axi_nozzle` を `lowMachPrecond:2, ε=0.15` で 500 step → NaN なし・残差降下
+    (rms_roe 41→9.6)。速度は 0/1 比 ~3.6×/step (倍精度+レジスタスピル。実験モードとして許容)。
+  - **検証中 (20k)**: `run_conv_p4_eps15` (ε=0.15) と `run_conv_p4_eps05` (ε=0.05) を 20k step 実行中。
+    狙い: (1) ε=0.15 で Phase1 単独 (0.603%) と同等以上、(2) **ε=0.05 が安定** (Phase1 では発散した領域) で
+    振幅が物理目標 ~0.25% に近づくか。結果は次エントリ。
+
+- `2026-06-09` — **cfl_pseudo スウィープで収束加速を検証 → 導出誤りを発見・修正 → 加速はブレークイーブンと判明**。
+  - **cfl_pseudo=0.5 同条件では P4 が負け** (limit-cycle 帯 rms_roe mean: baseline 2.78, Phase1 2.09, P4 2.96)。
+    前処理の旨みは高 cfl_pseudo にあるので設定が不適と判断し cfl スウィープへ。
+  - **スウィープ (eps=0.15, RHS 共通, LHS のみ m1↔m2)**: 安定限界は **m1 (既存 FVS LHS) ~1** (cfl2 で発散)、
+    **m2 (前処理 LHS) ~2-3** (cfl2 安定・cfl4 発散)。前処理で安定限界は広がるが過散逸で頭打ち。
+  - **導出誤りの発見・修正 (重要)**: 保存形は $(\Gamma_c V/\Delta\tau' + A_c)\Delta Q=-R$ で、**前処理は時間項 $\Gamma_c$ のみ**、
+    フラックス $A_c$ は**物理 (非前処理)** が正しい。当初 $\hat A_\Gamma=\Gamma_c^{-1}A_c$ のスペクトル半径分割で
+    フラックスも前処理していた (二重前処理) のが過散逸の主因。`implicit_defect_correction_block_precond_d` の
+    フラックス分割を物理 `a_plus`/`k_off` (既存と同一) に戻し、$\Gamma_c$ 時間項のみ残した (Gcinv/matmul 削除→軽量化)。
+  - **修正版スウィープ**: 安定限界 **~5-7** に上昇 (cfl5 安定・cfl10 発散)。m1 ~1 の **5×**。per-step は **2.54×** (旧 3.6× から改善)。
+  - **収束加速の判定 (ブレークイーブン)**: 等 wall-clock では m2 と m1 はほぼ互角〜やや m1 有利。理由: (1) 残差は
+    低マッハ limit-cycle フロアに支配され cfl を上げても比例して速くならない、(2) 内部 Jacobi (nStepInner=20) の頭打ち、
+    (3) per-step 2.54× コスト。**収束加速器としては決定打にならず**。
+  - **β=1 性質**: 修正版は β=1 で $\Gamma_c=I$・$\Delta\tau'=\Delta\tau$・フラックス同一ゆえ既存カーネルと同一組み立て
+    (倍精度ゆえ丸め差 ~1e-7、解一致)。
+  - **次**: Phase 4 の価値は収束加速でなく**根治** (ε=0.05 を安定化し振幅を下げる) に懸かる。`run_p4_amp_eps05`
+    (==2, ε=0.05, cfl_pseudo=2, 20k) を実行中。結果次第で Phase 4 の採否を確定。
+
+- `2026-06-09` — **Phase 4 根治テスト成功。低マッハ自励振動を根治 (採用確定)**。`case/23.axi_nozzle` 20k step、
+  chamber std/mean (M<0.08, 4k–20k 包絡):
+
+  | 設定 | mean [min,max] | vs baseline | 状態 | M_max |
+  | --- | --- | --- | --- | --- |
+  | baseline (p0) | 0.882% [0.25,1.82] | — | limit cycle | 6.057 |
+  | Phase1 ε=0.15 (m1 LHS) | 0.603% [0.11,1.53] | −32% | limit cycle | 6.046 |
+  | **P4 ε=0.15 (m2 LHS)** | **0.333% [0.08,0.70]** | **−62%** | limit cycle(減衰) | 6.04 |
+  | **P4 ε=0.05 (m2 LHS)** | **0.087% [0.056,0.228]** | **−90%** | **定常収束(振動消滅)** | 6.033 |
+
+  - **要点**: (1) 同じ ε=0.15 でも前処理 LHS だけで 0.603→0.333% (limit cycle は真収束でないため、より安定な LHS が
+    振動を減衰)。(2) **ε=0.05 は前処理 LHS でしか安定化できず** (m1 は数十 step で NaN)、そこで per-snapshot が
+    単調減衰し step12000 以降 0.056% で平坦=**自励振動が消え定常収束**。物理目標 ~0.25% も下回る。超音速域 (M_max) 不変・NaN なし。
+  - **結論**: Phase 4 (完全 Γ⁻¹A 前処理, `lowMachPrecond=2`) は **plan 当初目的 (低マッハ自励振動の根治) を達成**。
+    Phase1 単独では届かなかった ε<0.15 の強い `c'` 散逸を前処理 LHS が陰的に安定化することで実現。**採用**。
+  - **収束加速は副次 (ブレークイーブン)**: cfl 限界は m1~1→m2~5-7 と広がるが per-step 2.54× で等 wall-clock は互角
+    (上エントリ)。Phase 4 の価値は加速でなく**根治**にある。
+  - **推奨運用**: 低マッハ振動が問題になる定常ケースで `lowMachPrecond: 2`, `precondEps: 0.05`, `cfl_pseudo: 2` 前後。
+    成果物: `run_p4_amp_eps05` / `run_p4_amp_eps15` (`residual_history.png` 付き)。
+  - **残課題 (任意)**: per-step の倍精度コスト低減 (条件数が許す範囲で float 化・レジスタ削減)、β=1 完全回帰の
+    専用超音速ケース整備、ε のさらなる最適化。いずれも根治の成立とは独立。
