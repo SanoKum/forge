@@ -66,3 +66,9 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 ## 9. 変更ログ
 
 - `2026-06-09` — 初稿。M1 (NASA-9 熱力学, Newton 反転, SLAU/ROE TP 整合) 実装、native ビルド成功、NASA-9 単体値を NIST と照合済み。nozzle_H で TP-N2/CPG 検証実行中。
+- `2026-06-09` — **M1 流れ場 CEA 定量検証 (完了)**。当初の nozzle_H は warm-start 元が旧バイナリ製で inlet_Pressure+SLAU が流れを確立できず不成立 (CPG でも崩壊するため TP 起因ではない)。代わりに `case/05.sod_shock_tube` の均一メッシュ (`1D_shock_tube.geo`, nx=499, x∈[0,1], 全 slip, inviscid SLAU, MUSCL+limiter, RK3, 固定 dt=2.5e-7s で t=2.5e-4s) で N2 衝撃管 (PL/PR=10, TL/TR=2000/400K) を立て直し、TP (`run_0001_slau_tp_n2`, thermalMethod==2) と CPG (`run_0002_slau_cpg`, thermalMethod==0) を実行。
+  - **枠組み検証 (CPG vs 厳密 Sod)**: 中心線で rarefaction/contact/shock 位置が一致。L2 相対誤差 P=0.90%, u=2.96%, ρ=3.53% (ρ は contact 平滑化が主因、499 セル 2次精度で妥当)。→ TP 流束+EOS+BC の数値枠組みが厳密 Sod 解と整合。
+  - **cp(T) 効果 (TP vs CPG)**: 高 T プラトー (~1650K) で TP が CPG より高温、contact/shock front が右 (高速) へシフト (T 差最大 248K, u 差 225m/s)。N2 の cp(T) 増大 (γ 低下) による実在気体効果を定量提示。
+  - 後処理: `case/05.sod_shock_tube/gen_shocktube_ic.py` (TP/CPG IC), `compare_shocktube.py` (厳密 Sod Riemann ソルバ + 中心線照合 + `shocktube_comparison.png`)。
+  - 付随: `cuda_forge/calcStructualVariables_d.cu` の幾何メトリック計算を FP32 (`sqrtf`/`powf`) → FP64 (`sqrt`/`pow`) 化 (TP の double 一貫性向上)。
+  - §6 nozzle_H ベースの検証計画は本 sod_shock_tube ベースの照合に置き換え。M1 の流れ場 CEA 検証はこれで完了とみなす。

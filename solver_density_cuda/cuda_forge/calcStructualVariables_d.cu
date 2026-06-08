@@ -33,17 +33,17 @@ void calcStructualVariables_d
         geom_float dcx = ccx1 - ccx0;
         geom_float dcy = ccy1 - ccy0;
         geom_float dcz = ccz1 - ccz0;
-        geom_float dc  = sqrtf( powf(dcx, 2.0) + pow(dcy, 2.0) + pow(dcz, 2.0));
+        geom_float dc  = sqrt( pow(dcx, 2.0) + pow(dcy, 2.0) + pow(dcz, 2.0));
 
         geom_float dc0px = sx[ip]*(pcx[ip] - ccx0)/ss[ip];
         geom_float dc0py = sy[ip]*(pcy[ip] - ccy0)/ss[ip];
         geom_float dc0pz = sz[ip]*(pcz[ip] - ccz0)/ss[ip];
-        geom_float dc0p  = sqrtf( powf(dc0px, 2.0) + pow(dc0py, 2.0) + pow(dc0pz, 2.0));
+        geom_float dc0p  = sqrt( pow(dc0px, 2.0) + pow(dc0py, 2.0) + pow(dc0pz, 2.0));
 
         geom_float dc1px = sx[ip]*(pcx[ip] - ccx1)/ss[ip];
         geom_float dc1py = sy[ip]*(pcy[ip] - ccy1)/ss[ip];
         geom_float dc1pz = sz[ip]*(pcz[ip] - ccz1)/ss[ip];
-        geom_float dc1p  = sqrtf( powf(dc1px, 2.0) + pow(dc1py, 2.0) + pow(dc1pz, 2.0));
+        geom_float dc1p  = sqrt( pow(dc1px, 2.0) + pow(dc1py, 2.0) + pow(dc1pz, 2.0));
 
         fx [ip] = dc1p/(dc0p + dc1p);
         dcc[ip] = dc;
