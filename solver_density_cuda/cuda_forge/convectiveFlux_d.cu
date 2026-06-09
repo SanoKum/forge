@@ -1,5 +1,6 @@
 #include "convectiveFlux_d.cuh"
 #include "lowMachPrecond_d.cuh"
+#include "speciesTransport_d.cuh"  // species_roY_device_ptr()
 
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
@@ -229,6 +230,7 @@ __global__ void SLAU_d
  flow_float ga,
  int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
  const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
+ flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
 
  // mesh structure
  geom_int nCells,
@@ -365,13 +367,34 @@ __global__ void SLAU_d
         if (thermalMethod == 2) {
             // TP gas: 被移流全エンタルピーを NASA 絶対エンタルピーで再構成する。
             //   ga/(ga-1)·P/ρ = cp·T であって h(T)=∫cp dT' ではないため誤り。
-            //   面温度 T_face = P_face/(ρ_face·R) → h(T_face) を NASA で評価し ek を加える。
-            //   (M1 単成分: sp[0] を使用。多成分は将来 Y_face 再構成へ拡張)
-            const double Rg = thermo_R_species(sp[0]);
-            const double Tl = (double)P_L/((double)ro_L*Rg);
-            const double Tr = (double)P_R/((double)ro_R*Rg);
-            h_p = (flow_float)(thermo_h_mass(sp[0], Tl) + 0.5*(double)velocity2_L);
-            h_m = (flow_float)(thermo_h_mass(sp[0], Tr) + 0.5*(double)velocity2_R);
+            //   面温度 T_face = P_face/(ρ_face·R_mix) → h_mix(T_face) を NASA で評価し ek を加える。
+            //   多成分 (roY!=nullptr): L 側は ic0, R 側は ic1 のセル組成 Y を使う (組成は 1 次)。
+            //   He/N2 の質量基準 cp は ~5 倍違うため、sp[0] 固定だと混合 contact で
+            //   エネルギー束が不整合になり圧力発散する。
+            if (nSpecies > 1 && roY != nullptr) {
+                double YL[THERMO_MAX_SPECIES], YR[THERMO_MAX_SPECIES];
+                const double roL_c = (double)max(ro[ic0], (flow_float)1.0e-30);
+                const double roR_c = (double)max(ro[ic1], (flow_float)1.0e-30);
+                double sL=0.0, sR=0.0;
+                for (int s=0;s<nSpecies;s++){
+                    double yl=(double)roY[s][ic0]/roL_c; if(yl<0.0)yl=0.0; YL[s]=yl; sL+=yl;
+                    double yr=(double)roY[s][ic1]/roR_c; if(yr<0.0)yr=0.0; YR[s]=yr; sR+=yr;
+                }
+                const double iL=1.0/(sL>1.0e-30?sL:1.0e-30), iR=1.0/(sR>1.0e-30?sR:1.0e-30);
+                for (int s=0;s<nSpecies;s++){ YL[s]*=iL; YR[s]*=iR; }
+                const double RgL = thermo_R_mix(sp, nSpecies, YL);
+                const double RgR = thermo_R_mix(sp, nSpecies, YR);
+                const double Tl = (double)P_L/((double)ro_L*RgL);
+                const double Tr = (double)P_R/((double)ro_R*RgR);
+                h_p = (flow_float)(thermo_h_mix(sp, nSpecies, YL, Tl) + 0.5*(double)velocity2_L);
+                h_m = (flow_float)(thermo_h_mix(sp, nSpecies, YR, Tr) + 0.5*(double)velocity2_R);
+            } else {
+                const double Rg = thermo_R_species(sp[0]);
+                const double Tl = (double)P_L/((double)ro_L*Rg);
+                const double Tr = (double)P_R/((double)ro_R*Rg);
+                h_p = (flow_float)(thermo_h_mass(sp[0], Tl) + 0.5*(double)velocity2_L);
+                h_m = (flow_float)(thermo_h_mass(sp[0], Tr) + 0.5*(double)velocity2_R);
+            }
         } else {
             h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
             h_m = ga*P_R/((ga-1.0)*ro_R) + 0.5*velocity2_R;
@@ -2643,6 +2666,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
             cfg.gamma,
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
+            species_roY_device_ptr(),
 
             // mesh structure
             msh.nCells,

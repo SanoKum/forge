@@ -123,6 +123,21 @@ void readBcondConfig(solverConfig& cfg , vector<bcond>& bconds)
             bc.valueTypes[vt.first] = vt.second;
         }
 
+        // 多成分 TP (M5): 超音速入口は全状態固定なので入口組成 Y_s も config から
+        // 与える。inlet_* 種別に対して Y0..Y{n-1} を type-1 (uniform float read) として
+        // 動的登録する。既存の単成分入口 config (Y 未指定) を壊さないよう、未指定なら
+        // Y0=1, それ以外=0 を既定値とする (= 第 1 化学種のみの単成分入口)。
+        if (cfg.nSpecies >= 2 && isInletKind(bcf.kind)) {
+            for (int s = 0; s < cfg.nSpecies; s++) {
+                const std::string yname = "Y" + std::to_string(s);
+                bc.valueTypes[yname] = 1;             // uniform float read
+                bc.bplaneValNames.push_back(yname);   // bcondInitVariables が確保・初期化する対象に
+                if (bc.inputFloats.find(yname) == bc.inputFloats.end()) {
+                    bc.inputFloats[yname] = (s == 0) ? 1.0 : 0.0;  // 既定: 単成分 (sp[0])
+                }
+            }
+        }
+
         bc.bcondInitVariables(cfg.gpu); // allocate and set boundary variables
     }
 };

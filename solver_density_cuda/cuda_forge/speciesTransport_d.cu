@@ -65,6 +65,25 @@ __global__ void species_neumann_boundary_d(
     }
 }
 
+// Dirichlet ghost 充填 (M5: 組成依存超音速入口): Y[ig]=Y_s^in, roY[ig]=ρ[ig]·Y_s^in。
+// ρ[ig] は applyBconds (inlet カーネル) が設定済みの ghost 密度。Yb は per-face 入口組成 bvar。
+__global__ void species_dirichlet_boundary_d(
+    geom_int nb,
+    geom_int* bplane_cell_ghst,
+    flow_float* ro,
+    flow_float* Yb,
+    flow_float* roY,
+    flow_float* Y)
+{
+    const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ib < nb) {
+        const geom_int ig = bplane_cell_ghst[ib];
+        const flow_float Yin = Yb[ib];
+        Y[ig]   = Yin;
+        roY[ig] = ro[ig] * Yin;
+    }
+}
+
 // 実現可能性 + 再正規化: 各 ρY_s>=0 にクランプ後、Σ_s ρY_s = ρ となるよう再スケール (ΣY_s=1)。
 __global__ void species_renormalize_d(
     geom_int nCells,
@@ -235,15 +254,28 @@ void speciesBoundary_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, bcond& b
     if (bc.iPlanes.empty()) return;
 
     const geom_int nb = static_cast<geom_int>(bc.iPlanes.size());
+    // M5: 入口種別は組成依存 Dirichlet (roY[ig]=ρ[ig]·Y_s^in)。入口組成 bvar_d["Y{s}"] は
+    // readBcondConfig が inlet_* に対して登録済み。他種別は従来通り Neumann (zero-gradient)。
+    const bool isInlet = bc.bcondKind.rfind("inlet_", 0) == 0;
     for (int s = 0; s < var.nSpeciesRegistered; s++) {
         const std::string i = std::to_string(s);
-        // M2: 全境界種別を Neumann で扱う (slip 閉領域・内部 contact の検証に十分)。
-        species_neumann_boundary_d<<<cuda_cfg.dimGrid_bplane, cuda_cfg.dimBlock>>>(
-            nb,
-            bc.map_bplane_cell_d,
-            bc.map_bplane_cell_ghst_d,
-            var.c_d["roY"+i],
-            var.c_d["Y"+i]);
+        const auto ybIt = bc.bvar_d.find("Y"+i);
+        if (isInlet && ybIt != bc.bvar_d.end()) {
+            species_dirichlet_boundary_d<<<cuda_cfg.dimGrid_bplane, cuda_cfg.dimBlock>>>(
+                nb,
+                bc.map_bplane_cell_ghst_d,
+                var.c_d["ro"],
+                ybIt->second,
+                var.c_d["roY"+i],
+                var.c_d["Y"+i]);
+        } else {
+            species_neumann_boundary_d<<<cuda_cfg.dimGrid_bplane, cuda_cfg.dimBlock>>>(
+                nb,
+                bc.map_bplane_cell_d,
+                bc.map_bplane_cell_ghst_d,
+                var.c_d["roY"+i],
+                var.c_d["Y"+i]);
+        }
     }
 }
 

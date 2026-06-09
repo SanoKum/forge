@@ -30,6 +30,7 @@ bcond::~bcond()
     }
     cudaWrapper::cudaFree_wrapper(this->map_bplane_plane_d);
     cudaWrapper::cudaFree_wrapper(this->map_bplane_cell_d);
+    if (this->Yb_d != nullptr) cudaFree(this->Yb_d);
 }
 bcond::bcond(const geom_int& physID, const vector<geom_int>& iPlanes, 
              const vector<geom_int>& iCells , const vector<geom_int>& iBPlanes)

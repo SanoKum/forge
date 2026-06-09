@@ -1,4 +1,5 @@
 #include "cuda_forge/boundaryCond_d.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
 
 __global__
 void slip_d
@@ -704,7 +705,12 @@ flow_float* T,
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb
+ flow_float* Psb ,
+
+ // 多成分 TP (M5): 入口組成 Y_s^in (device per-face array, [nSpecies])。
+ // nSpecies>=2 かつ Yb!=nullptr のとき混合則 thermo を使う。単成分では nullptr。
+ flow_float** Yb ,
+ int nSpecies
 
 
 )
@@ -717,8 +723,29 @@ flow_float* T,
 
         flow_float ek_b = 0.5f*(Uxb[ib]*Uxb[ib] + Uyb[ib]*Uyb[ib] + Uzb[ib]*Uzb[ib]);
         flow_float roe_b, sonic_b, Ts_b;
-        if (thermalMethod == 2) {
-            // TP: 指定 (ρ=rob, P=Psb, u) と整合。T=P/(ρ R_mix), roe=ρ(e_NASA(T)+ek), sonic=√(γ_mix P/ρ)。
+        if (thermalMethod == 2 && Yb != nullptr && nSpecies >= 2) {
+            // 多成分 TP: 入口組成 Y_s^in と整合。T=P/(ρ R_mix(Y)),
+            // roe=ρ(e_mix(Y,T)+ek), sonic=√(γ_mix(Y,T) P/ρ)。
+            double Yin[THERMO_MAX_SPECIES];
+            double ysum = 0.0;
+            for (int s = 0; s < nSpecies; s++) {
+                double y = (double)Yb[s][ib];
+                if (y < 0.0) y = 0.0;
+                Yin[s] = y;
+                ysum += y;
+            }
+            const double yinv = 1.0/(ysum > 1.0e-30 ? ysum : 1.0e-30);
+            for (int s = 0; s < nSpecies; s++) Yin[s] *= yinv;
+
+            const double Rg  = thermo_R_mix(sp, nSpecies, Yin);
+            const double Tg  = (double)Psb[ib]/((double)rob[ib]*Rg);
+            const double e   = thermo_e_mix(sp, nSpecies, Yin, Tg);
+            const double gmx = thermo_gamma_mix(sp, nSpecies, Yin, Tg);
+            roe_b   = (flow_float)((double)rob[ib]*(e + (double)ek_b));
+            sonic_b = (flow_float)sqrt(gmx*(double)Psb[ib]/(double)rob[ib]);
+            Ts_b    = (flow_float)Tg;
+        } else if (thermalMethod == 2) {
+            // 単成分 TP: 指定 (ρ=rob, P=Psb, u) と整合。T=P/(ρ R_s), roe=ρ(e_NASA(T)+ek), sonic=√(γ_s P/ρ)。
             const double Rg = thermo_R_species(sp[0]);
             const double Tg = (double)Psb[ib]/((double)rob[ib]*Rg);
             const double e  = thermo_h_mass(sp[0], Tg) - Rg*Tg;
@@ -762,6 +789,17 @@ flow_float* T,
 
 void inlet_uniformVelocity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
 {
+    // 多成分 TP (M5): 入口組成 Y_s^in の device ポインタ配列を遅延構築 (bc.Yb_d にキャッシュ)。
+    // 単成分 (nSpecies<2) では nullptr のままで、カーネルは従来の sp[0] 経路を使う。
+    if (cfg.thermalMethod == 2 && cfg.nSpecies >= 2 && bc.Yb_d == nullptr) {
+        std::vector<flow_float*> hYb(cfg.nSpecies);
+        for (int s = 0; s < cfg.nSpecies; s++) {
+            hYb[s] = bc.bvar_d["Y" + std::to_string(s)];
+        }
+        gpuErrchk( cudaMalloc((void**)&bc.Yb_d, cfg.nSpecies*sizeof(flow_float*)) );
+        gpuErrchk( cudaMemcpy(bc.Yb_d, hYb.data(), cfg.nSpecies*sizeof(flow_float*), cudaMemcpyHostToDevice) );
+    }
+
     inlet_uniformVelocity_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
         cfg.gamma,
         cfg.cp,
@@ -798,12 +836,15 @@ void inlet_uniformVelocity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         bc.bvar_d["Tt"],
         bc.bvar_d["Pt"],
         bc.bvar_d["Ts"],
-        bc.bvar_d["Ps"]
+        bc.bvar_d["Ps"],
+
+        bc.Yb_d,        // 多成分 TP: 入口組成 (単成分では nullptr)
+        cfg.nSpecies
     ) ;
 }
 
 
-__global__ 
+__global__
 void inlet_Pressure_d
 (
  // gas

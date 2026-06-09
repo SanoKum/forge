@@ -96,6 +96,11 @@ public:
     std::map<std::string, std::vector<flow_float>> bvar;
     std::map<std::string, flow_float* > bvar_d; // cuda
 
+    // 多成分 TP (M5): 入口組成 Y_s^in の device ポインタ配列 (flow_float*[nSpecies])。
+    // inlet カーネルが混合則 thermo を計算するため。inlet_uniformVelocity_d_wrapper で
+    // bvar_d["Y{s}"] から遅延構築する。単成分では nullptr のまま。
+    flow_float** Yb_d = nullptr; // cuda (device array of nSpecies bvar_d["Y{s}"] pointers)
+
     // interger values (only for periodic now)
     std::map<std::string, std::vector<geom_int>> bint;
     std::map<std::string, geom_int* > bint_d; // cuda

@@ -38,10 +38,12 @@
 ### SLAU (最小修正)
 被移流全エンタルピー `h_p/h_m` のみ TP 化:面温度 `T_face=P_face/(ρ_face R)` → `h(T_face)`(NASA) + `½|u|²`。音速 `c_hat=½(sonic[i]+sonic[j])` は既に `sonic[]` 配列 (混合整合) のため無改造。圧力束は `P` 直接で EOS 非依存。
 
+**多成分 (M5)**: `h_p/h_m` を L 側 ic0 / R 側 ic1 の**セル組成 `Y`** で再構成 (`thermo_R_mix`/`thermo_h_mix`)。`sp[0]` 固定だと He/N2 のように質量基準 cp が大きく異なる contact でエネルギー束が不整合になり圧力発散する。`SLAU_d` に `flow_float** roY` (= `species_roY_device_ptr()`) を追加。`nSpecies<=1` は従来 `sp[0]` 経路でビット不変。組成は 1 次 (セル中心値) で再構成 (高次は将来)。
+
 ### ROE (段階A)
 L/R 状態の `roe_L/Ht_L/ca_L` (および R 側) を NASA で再構成。Roe 平均状態は `thermo_T_from_h` で `h̃=Ha-ek` から `T̃` を反転し、有効比熱比 `ga_eff=cp(T̃)/(cp(T̃)-R)` と音速 `ca=√(ga_eff R T̃)` を用いる。圧力微分ブロック `P_ro,P_roe,...` は `κ=ga_eff-1` を採用 ($\chi=\partial P/\partial\rho|_{\rho e}\ne0$ 項は stage-A で無視。defect-correction なので収束解は不変)。厳密化は Vinokur-Montagné (stage-B, 将来)。
 
-> 現状 M1 は単成分 (`sp[0]`)。多成分は面で `Y_s` を再構成し `R_mix`/`h_mix` を評価する形へ拡張する。
+> SLAU は多成分対応済 (M5, セル組成再構成)。ROE/HLLE/AUSM/KEEP は単成分 (`sp[0]`) のまま (多成分化は後続)。
 
 ## 4. 陰解法 Jacobian (予定)
 
@@ -119,8 +121,17 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
   `inlet_Pressure_dir`(全状態と外挿静圧から NASA 等エントロピー反転), `inlet_uniformVelocity`。
 - **新規 thermo**: `thermo_isentropic_from_total_Ps_single` (全温・全圧 + 静圧 Ps から
   `s0(Ts)=s0(Tt)+R ln(Ps/Pt)` の Newton 反転で Ts, ρ, |u|)。
-- **制約**: 多成分 (nSpecies>=2) の組成依存エネルギー BC は未対応 (現状 `sp[0]` 固定)。単成分 TP は整合。
+- **組成依存超音速入口 (M5)**: `inlet_uniformVelocity` を多成分化。`readBcondConfig` が `inlet_*`
+  種別に `Y0..Y{n-1}` を type-1 uniform-float bvar として動的登録 (未指定なら `Y0=1`・他 0 で単成分後方互換)。
+  `bcond::Yb_d` (device `flow_float*[nSpecies]`) を `inlet_uniformVelocity_d_wrapper` が遅延構築し、
+  カーネル TP 分岐が `thermo_R_mix`/`thermo_e_mix`/`thermo_gamma_mix` で `T=P/(ρR_mix(Y))`,
+  `roe=ρ(e_mix+ek)`, `sonic=√(γ_mix P/ρ)` を入口組成で再構成。化学種 ghost は
+  `speciesBoundary_d_wrapper` を kind 分岐し**入口は Dirichlet** (`roY_s[ig]=ρ[ig]·Y_s^in`)、他は Neumann。
+- **制約**: slip/wall/outlet の ghost roe/sonic はまだ `sp[0]` 固定 (非粘性では SLAU 流束がセル組成で
+  再構成するため支配的影響なし)。`inlet_uniformVelocity` 以外の入口種別の組成指定も後続。
 - **注意**: TP の `roe` は NASA 絶対基準。CPG res からの warm-start 不可。IC は `roe=ρ(e_NASA(T)+ek)` で生成する。
+- **startup 注意**: 静止 IC (u=0) + `outlet_statPress` は出口が backflow 分岐に落ち、`Pt`/`Tt` 未指定で
+  0/0 NaN 化する。IC に下流速度を与え出口に `Pt`/`Tt` を指定する (`case/28` 参照)。
 
 ## 6. 検証 (M1)
 
@@ -133,3 +144,4 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
   単成分回帰がバイト一致、[N2,N2] 識別子トレーサで流れが単成分と完全一致、[O2,N2] 実 2 ガスが安定・$\sum Y=1$。
 - M3: kinetic theory 輸送係数 (`gasProperties_d` 拡張) — 実装済・検証完了。μ/λ が NIST と一致 (N2: μ(300)=1.81e-5, μ(1000)=4.15e-5, λ(300)=0.0255; air μ=1.86e-5)、device viscMethod=2 が式と FP32 一致、非粘性回帰不変。
 - M4: 化学種拡散 + エンタルピー拡散エネルギー結合 — 実装済・検証完了。静止 N2/N2 トレーサの拡散が kinetic theory 自己拡散係数と 1.3% 一致、ΣJ=0 で種質量保存 (7 桁)、O2/N2 粘性で安定。
+- M5: 組成依存超音速入口 BC (`inlet_uniformVelocity` 多成分化) + SLAU 対流流束の多成分エンタルピー — 実装済・検証完了。`case/28.cutler_coaxial_jet` の binary [He,N2] 同軸ジェット (Mach1.8) が 1次/2次でともに NaN/発散なし、$\sum Y=1$、中心 He コア (Mach1.8 He, Ux~1280 m/s)・coflow N2 を再現。CPG 単成分回帰不変。定量 Cutler 照合 (粘性 + RANS-SST + 乱流化学種拡散) は後続。

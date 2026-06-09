@@ -71,7 +71,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 
 ## 10. 残課題 (後続。M1-M4 のコア外の改良)
 
-- **多成分組成依存エネルギー BC**: 現状 BC は `sp[0]` 固定で ghost roe/sonic を単成分で再構成。slip/wall/inlet/outlet を混合則 + ghost 組成 `Y_s` で一般化する (単成分 TP は整合済)。
+- **多成分組成依存エネルギー BC**: `inlet_uniformVelocity` は組成依存化済 (M5, 下記変更ログ)。残: slip/wall/outlet の ghost roe/sonic がまだ `sp[0]` 固定 (ただし SLAU 対流流束はセル組成で再構成するため非粘性では支配的影響なし。粘性流束・他スキーム HLLE/AUSM/KEEP/ROE の TP 多成分化は未)。
 - **化学種の陰解法 (point-implicit/segregated)**: 化学種輸送は explicit RK のみ。陰解法ステップへ未配線。
 - **ROE の TP 完全整合 (段階B)**: M1 は Roe 平均の有効 γ̃ (段階A) まで。
 - **MUSCL + 陰解法の安定化**: 2次 MUSCL × 高 cfl_pseudo で発散 (block DPLUR)。limiter freezing / CFL ランプで陰解法高速化の余地。
@@ -100,4 +100,10 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 - `2026-06-09` — **TP 境界条件の整合化 (実装・検証完了)**。CPG 前提 (定数 γ,cp) だった BC を NASA 整合化: `outlet_statPress` (順流+backflow), `wall_isothermal`, `inlet_Pressure_dir`, `inlet_uniformVelocity` (M1 の slip/wall/inlet_Pressure/outflow に追加)。各カーネルに `thermalMethod, sp` を渡し、TP 分岐で `thermo_R_species`/`thermo_cp_mass`/`thermo_h_mass`/`thermo_isentropic_from_total_single`/新規 `thermo_isentropic_from_total_Ps_single` を使用。CPG 分岐は代数的に不変 (回帰安全)。
   - **検証** (CPG vs TP-AIR; 内蔵 AIR は定数 cp/R=3.5・γ=1.4 ⇒ TP-AIR は CPG を再現するはず): `20.naca_ml` planar (inlet_Pressure_dir+outlet_statPress, M~0.46) が ρ/T/P/sonic/Mach で **0.02%** 一致 (クリーン)。`23.axi_nozzle` axisym (inlet_Pressure+outlet_statPress, Mach4) が収束・平均 ~1% 一致 (差は非定常プルームに局在)。`23.axi_nozzle` 3D は TP が finite・安定で CPG と同残差 (両者非定常プルームで未収束; BC コードは次元非依存)。
   - **制約**: 多成分組成依存エネルギー BC は未対応 (sp[0] 固定)。TP warm-start は NASA 絶対基準のため CPG res から不可 (IC を `roe=ρ(e_NASA(T)+ek)` で再生成)。
+- `2026-06-09` — **M5 組成依存超音速入口 BC + 多成分対流流束エンタルピー (実装・検証完了)**。`case/28.cutler_coaxial_jet` (Cutler 超音速同軸 He/空気ジェット, AIAA-99-3588) を駆動ケースに、入口ごとに化学種組成 `Y_s` を指定できる超音速入口を実装。
+  - **入口組成 BC**: `readBcondConfig` が `inlet_*` 種別に対し `Y0..Y{n-1}` を type-1 uniform-float bvar として動的登録 (未指定なら既定 `Y0=1`, 他=0 で単成分入口に後方互換)。`bcond` に device ポインタ配列 `Yb_d` を追加し `inlet_uniformVelocity_d_wrapper` が遅延構築。`inlet_uniformVelocity_d` の TP 分岐を `sp[0]`→混合則 (`thermo_R_mix`/`thermo_e_mix`/`thermo_gamma_mix`) 化し ghost の `T=P/(ρ R_mix(Y))`, `roe=ρ(e_mix+ek)`, `sonic=√(γ_mix P/ρ)` を入口組成で再構成。化学種 ghost は `speciesBoundary_d_wrapper` を kind 分岐し入口は Dirichlet (`roY_s[ig]=ρ[ig]·Y_s^in`)、他は従来 Neumann。
+  - **多成分対流流束エンタルピー (数値スキーム変更)**: `SLAU_d` の被移流全エンタルピー `h_p/h_m` が `sp[0]` 固定で、He/N2 contact (質量基準 cp が ~5×差) でエネルギー束が不整合になり圧力発散 (1.8 GPa) していた。L 側 ic0 / R 側 ic1 のセル組成 `Y` で `R_mix`・`h_mix` を再構成するよう修正 (`roY` 配列を渡す。`nSpecies<=1` は従来 `sp[0]` 経路でビット不変)。
+  - **検証** (`case/28.cutler_coaxial_jet`): ① **CPG 単成分回帰** (`run_0002_cpg_regr`) が修正前と同一 (`rms_ro` 3.37e-5→1.76e-5, NaN なし)。② **binary [He,N2]** 1次非粘性 (`run_0003_he_n2_inviscid`, 2000 步) と 2次リスタート (`run_0008_he_n2_2nd`, 計 4000 步) がともに NaN/発散なし・残差有界。$\sum Y=1$ を機械精度で維持・$0\le Y\le1$、中心 He コア (Y_He=1, Ux~1280 m/s = Mach1.8 He)、coflow N2、P/T 物理的。2次で He ポテンシャルコア長が ~0.02m→~0.07m に伸長 (1次風上の数値拡散が緩和)。後処理 `gen_binary_ic.py` (N2 ambient NASA-IC + `roY`)、`field_YHe_Mach.png`、`residual_history.png`。
+  - **startup の落とし穴 (記録)**: 静止 IC (u=0) + `outlet_statPress` は出口セルが `Un=0` 近傍で backflow 分岐に落ち、`Pt`/`Tt` 未指定だと 0/0 で NaN 化する。IC に緩やかな下流速度 (u=100) を与え、出口 bcond に `Pt`/`Tt` を指定して回避。TP 起因ではなく BC startup 起因 (CPG は IC が u=10 だったため顕在化せず)。
+  - **既知の制約 (後続)**: 定量 Cutler 照合 (He コア長・濃度減衰 vs RELIEF survey) は粘性+乱流混合 (RANS-SST + 乱流化学種拡散 `μ_t/Sc_t`) が必要で本マイルストーン外。slip/wall/outlet ghost と HLLE/AUSM/KEEP/ROE/粘性流束の多成分エンタルピーは未対応。`[He,O2,N2]` 3 成分拡張も後続。
 - ビルドは Docker dev image (`forge-solver:cuda-dev`) で実施 (native は libyaml-cpp 不在)。
