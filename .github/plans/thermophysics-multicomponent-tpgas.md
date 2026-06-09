@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `thermophysics` (新規。理論/実装は `docs/thermophysics/`)
-- **status**: `in_progress`
+- **status**: `done` (M1-M4 + TP-BC + 陰解法 γ[ic]。後続改良は §10)
 - **related_docs**:
   - `docs/thermophysics/theory.md`
   - `docs/thermophysics/implementation.md`
@@ -39,12 +39,12 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 ## 5. 実装ステップ (マイルストーン)
 
 1. **M1**: `thermo_d`, Newton 反転 (`dependentVariables_d`), `thermalMethod==2`, SLAU/ROE の TP 整合, 設定 (`solverConfig`), `main.cpp` 初期化。— **実装済・検証完了** (§9, 2026-06-09)
-2. **M2**: 化学種変数登録 (`variables` の `cellValNames` 非 const 化 + `registerSpecies`), 化学種移流/実現可能性/再正規化, 化学種 BC/IC/出力 (`speciesTransport_d`, `speciesBoundary_d`)。— **実装中**
+2. **M2**: 化学種変数登録 (`variables` の `cellValNames` 非 const 化 + `registerSpecies`), 化学種移流/実現可能性/再正規化, 化学種 BC/IC/出力 (`speciesTransport_d`, `speciesBoundary_d`)。— **実装済・検証完了** (§9)
    - **設計判断 (実装時)**: 化学種は RANS k/ω と同じ汎用スカラ輸送コア `scalarTransport_d` (`ScalarTransportDesc`) を再利用し segregated に解く。1 化学種ごとに `roY{s},Y{s},roY{s}N,roY{s}M,res_roY{s},res_roY{s}_m,transport_diag_Y{s},src_jac_Y{s}` を `registerSpecies()` で動的登録 (`cellValNames`/`output_cellValNames` を非 const 化)。device には `flow_float** roY` ポインタ配列を 1 度だけ構築し `dependentVariables_d` (現状 `nullptr`) へ渡して混合則 thermo を有効化。
    - **段階化**: M2 のスコープは **移流のみ** (拡散は M4)。化学種機構は `nSpecies>=2` でのみ起動し、単成分 (`nSpecies==1`) は M1 と完全に同一経路 (回帰がバイト一致) を保証する。
    - **化学種 BC**: まず Neumann (zero-gradient) で ghost を埋める。slip 閉領域・内部 contact の検証には十分。組成依存のエネルギー BC (`boundaryCond_d` の TP slip が `sp[0]` 固定) の一般化は後続の改良として残す。
-3. **M3**: kinetic theory 輸送係数 (`gasProperties_d` 拡張: Wilke/Wassiljewa/混合平均拡散, Neufeld 衝突積分)。`thermCond` のセル毎配列化。
-4. **M4**: 化学種拡散 (`scalar_diffusion_species_d`) + ΣJ_i=0 補正 + エンタルピー拡散項 `Σh_s J_s` を `res_roe` へ。
+3. **M3**: kinetic theory 輸送係数 (`gasProperties_d` 拡張: Wilke/Wassiljewa/混合平均拡散, Neufeld 衝突積分)。`thermCond` のセル毎配列化。— **実装済・検証完了** (§9)
+4. **M4**: 化学種拡散 (`scalar_diffusion_species_d`) + ΣJ_i=0 補正 + エンタルピー拡散項 `Σh_s J_s` を `res_roe` へ。— **実装済・検証完了** (§9)
 
 ## 6. 検証
 
@@ -62,9 +62,22 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 
 - [x] `docs/thermophysics/theory.md` 作成
 - [x] `docs/thermophysics/implementation.md` 作成
-- [ ] M1-M4 実装・検証完了 (§6)
-- [ ] `.github/plans/README.md` 更新
-- [ ] 本 plan を `done` 化し §9 に変更ログ
+- [x] M1-M4 実装・検証完了 (§9 変更ログ参照)
+- [x] TP 境界条件整合化 (slip/wall/inlet_Pressure/outflow + outlet_statPress/wall_isothermal/inlet_Pressure_dir/inlet_uniformVelocity)
+- [x] 陰解法 block-DPLUR Jacobian の per-cell γ 化
+- [x] `.github/plans/README.md` / `docs/index.md` 更新
+- [x] 本 plan を `done` 化し §9 に変更ログ
+- [ ] (後続) §10 残課題 — 組成依存エネルギー BC・RANS+TP 検証・ROE 段階B 等
+
+## 10. 残課題 (後続。M1-M4 のコア外の改良)
+
+- **多成分組成依存エネルギー BC**: 現状 BC は `sp[0]` 固定で ghost roe/sonic を単成分で再構成。slip/wall/inlet/outlet を混合則 + ghost 組成 `Y_s` で一般化する (単成分 TP は整合済)。
+- **化学種の陰解法 (point-implicit/segregated)**: 化学種輸送は explicit RK のみ。陰解法ステップへ未配線。
+- **ROE の TP 完全整合 (段階B)**: M1 は Roe 平均の有効 γ̃ (段階A) まで。
+- **MUSCL + 陰解法の安定化**: 2次 MUSCL × 高 cfl_pseudo で発散 (block DPLUR)。limiter freezing / CFL ランプで陰解法高速化の余地。
+- **低Mach preconditioning の TP 実効検証**: 超音速で発散は正常 (M≪1 用)。真の低Mach TP ケースで `gamma[ic]` 修正後の収束加速を未確認。
+- **粘性 / RANS SST + TP のエンドツーエンド検証**: CEA 照合は非粘性。RANS×TP・乱流化学種拡散 `μ_t/Sc_t`・M3 輸送係数の実粘性 TP 流れは未検証。
+- (スコープ外: 有限速度化学 Arrhenius。設計拡張点としてのみ)
 
 ## 9. 変更ログ
 

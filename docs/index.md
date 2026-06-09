@@ -18,6 +18,6 @@ forge の理論的背景と実装解説の索引。運用方針は [README.md](R
 | Poisson 求解 | [poisson/theory.md](poisson/theory.md) | [poisson/implementation.md](poisson/implementation.md) | 整備済み |
 | 軸対称 | [axisymmetric/theory.md](axisymmetric/theory.md) | [axisymmetric/implementation.md](axisymmetric/implementation.md) | 整備済み |
 | 乱流モデル | [turbulence/theory.md](turbulence/theory.md) | [turbulence/implementation.md](turbulence/implementation.md) | 整備済み |
-| 多成分熱物性 (TP gas) | [thermophysics/theory.md](thermophysics/theory.md) | [thermophysics/implementation.md](thermophysics/implementation.md) | 整備中 (M1) |
+| 多成分熱物性 (TP gas) | [thermophysics/theory.md](thermophysics/theory.md) | [thermophysics/implementation.md](thermophysics/implementation.md) | M1-M4 + TP境界条件 完了 |
 
 新規領域を追加した場合は本表に行を追加すること。
