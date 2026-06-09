@@ -1,0 +1,51 @@
+axis:
+  physID: 1
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+jet_in:
+  physID: 2
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 582000.0
+    Tt: 300.0
+    k: 1.0
+    omega: 1000.0
+lip:
+  physID: 3
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+coflow_in:
+  physID: 4
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 582000.0
+    Tt: 300.0
+    k: 1.0
+    omega: 1000.0
+amb_in:
+  physID: 5
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+top:
+  physID: 6
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+outflow:
+  physID: 7
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 101325.0
