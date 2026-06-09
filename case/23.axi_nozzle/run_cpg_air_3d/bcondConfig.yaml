@@ -1,0 +1,51 @@
+# 境界条件: Mach 4 ノズル 90 度セクター 3D O-grid メッシュ用。
+#
+# Physical groups (axi_nozzle_3d_ogrid.geo):
+#   inlet=1, outlet=2, wall=3, sideZ0=4, sideY0=5, fluid=6
+#
+# 設計点 (gamma=1.4, M_e=4): Pt ~= 3036704.35 Pa, Tt = 300 K, Ps = 20000 Pa。
+# 2D 軸対称ケース (run_0036) と同一の inlet/outlet/wall 値を使う。
+#
+# sideZ0 (z=0, y>=0) と sideY0 (y=0, z>=0) は x 軸回り 90 度の回転周期境界。
+#   ints.type = 1 (回転), partnerBCID = 相手の physID
+#   floats.dtheta = 回転角 [rad]。両側で符号を逆にする (+pi/2 / -pi/2)。
+#
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 3036704.35  # [Pa] total pressure
+    Tt: 300.0       # [K]  total temperature
+    k: 1.0
+    omega: 1000.0
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 20000.0     # [Pa] back pressure
+
+wall:
+  physID: 3
+  kind: slip
+  outputHDFflg: 1
+  ints:
+  floats:
+
+sideZ0:
+  physID: 4
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+sideY0:
+  physID: 5
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:

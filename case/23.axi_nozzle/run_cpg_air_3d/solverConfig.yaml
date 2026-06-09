@@ -1,0 +1,54 @@
+mesh:
+  meshFormat: "hdf5"
+  meshFileName: "axi_nozzle.h5"
+  valueFileName: "axi_nozzle.h5"
+
+
+gpu: 1 # 0:off , 1:on
+
+solver: "SLAU" # SLAU, ROE, AUSM+, AUSM+UP, KEEP_SLAU
+
+physProp:
+  isCompressible: 1 # 0:incomp, 1:compressible
+  isAxisymmetric: 0 # 3D mesh
+  thermalMethod: 0 # 0:calorically perfect
+  viscMethod: 0 # 0:use visc , 1:sutherland
+  ro : 1.2          # [kg/m3] ignored for compressible flow
+  visc : 0.0        # [Pa*s] inviscid
+  thermCond: 0.0257 # [W/(mK)]
+  cp : 1004.5       # [J/(kgK)]
+  gamma : 1.4
+
+time:
+  unsteady: 0 # 0:steady , 1:unsteady
+  dualTime: 0 # 1:use pseudo time for unsteady
+  last:
+    control: 0 # 0:nStep , 1:time base
+    nStepOuter: 5000
+    time: 1.00 # [second]
+  deltaT:
+    control: 1 # 0:use dt , 1:use cfl
+    dt: 0.00000001
+    cfl: 0.3
+    cfl_pseudo: 0.3
+    dt_min: 0.000000001
+    dt_max: 1.0
+    blockDPLUR: 1       # implicit (timeIntegration 11) は block DPLUR 必須
+    implicitRelax: 0.3
+  outStepStart: 0
+  outStepInterval: 2500
+  timeIntegration: 11 # 11: implicit defect-correction (block DPLUR)
+  nStepInner: 20
+
+space:
+  convMethod: 2 # 0:1stUp 1:2ndup 2:MUSCL
+  limiter: 2    # 1:barth 2:venkata
+
+turbulence:
+  LESorRANS: 0 # smoke: 非粘性オイラー
+  LESmodel: 1
+  RANSmodel: 1
+  kInf: 1.0
+  omegaInf: 1000.0
+
+initial: "supercritical"
