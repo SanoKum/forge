@@ -663,7 +663,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float dt,
  flow_float* dt_local,
  flow_float implicit_relax,
- flow_float gamma,
+ flow_float* gamma_arr,   // per-cell γ (TP: γ_mix(T), CPG: cfg.gamma)。frozen-coefficient Jacobian 用
 
  geom_int nCells_all , geom_int nCells,
  geom_float* vol,
@@ -733,6 +733,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (ic < nCells) {
+        const flow_float gamma = gamma_arr[ic];   // 局所 γ (TP の γ_mix。CPG は cfg.gamma で不変)
         const geom_float v = vol[ic];
         const flow_float dt_l = dt_local[ic];
         const flow_float density = max(ro[ic], static_cast<flow_float>(1.0e-30));
@@ -903,7 +904,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float dt,
  flow_float* dt_local,
  flow_float implicit_relax,
- flow_float gamma,
+ flow_float* gamma_arr,   // per-cell γ (TP: γ_mix(T), CPG: cfg.gamma)
  flow_float precondEps,
 
  geom_int nCells_all , geom_int nCells,
@@ -934,6 +935,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (ic < nCells) {
+        const flow_float gamma = gamma_arr[ic];   // 局所 γ (TP の γ_mix。CPG は cfg.gamma で不変)
         const geom_float v = vol[ic];
         const flow_float dt_l = dt_local[ic];
         const flow_float density = max(ro[ic], static_cast<flow_float>(1.0e-30));
@@ -1181,7 +1183,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             if (cfg.lowMachPrecond == 2) {
               // Phase 4: 完全 Γ⁻¹A 前処理の倍精度カーネル (dt_local は前処理 Δτ' に拡大済)。
               implicit_defect_correction_block_precond_d<<<block_grid , block_threads>>>(
-                loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, cfg.gamma, cfg.precondEps,
+                loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, var.c_d["gamma"], cfg.precondEps,
                 msh.nCells_all, msh.nCells, var.c_d["volume"],
                 msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
                 var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
@@ -1202,7 +1204,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 cfg.dt,
                 var.c_d["dt_local"],
                 cfg.implicitRelax,
-                cfg.gamma,
+                var.c_d["gamma"],
                 msh.nCells_all,
                 msh.nCells,
                 var.c_d["volume"],

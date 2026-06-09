@@ -33,7 +33,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 - 熱力学コア `cuda_forge/thermo_d.{cuh,cu}` (NASA-9, 混合則, Newton 反転)。化学種データは device pointer で渡す。
 - `dependentVariables_d` に `thermalMethod==2` の Newton 反転を追加し `T,P,Ht,sonic,gamma,cp` を更新。
 - 対流流束は被移流全エンタルピーを NASA 化 (SLAU 最小修正、ROE は有効γ̃の段階A)。
-- 陰解法 Jacobian は `gamma[ic]` 配列化 (frozen-coefficient)。
+- 陰解法 Jacobian は `gamma[ic]` 配列化 (frozen-coefficient)。— **実装済** (2026-06-09, block DPLUR + precond カーネルが per-cell γ を読む。CPG は γ[ic]=cfg.gamma で不変)。
 - 化学種は segregated point-implicit で別解き (5×5 構造不変)。
 
 ## 5. 実装ステップ (マイルストーン)
