@@ -411,6 +411,38 @@ THERMO_HD void thermo_isentropic_from_total_single(
     *ro_out   = (*Ps_out)/(R*Ts);
 }
 
+// 単成分の等エントロピー total→static 反転 (静圧 Ps 指定版)。
+//   全温 Tt・全圧 Pt と静圧 Ps から静温 Ts・密度 ρ・速度 |u| を求める。
+//     s0(Ts) = s0(Tt) + R·ln(Ps/Pt)   (等エントロピー: s0(T)-R ln P 一定)
+//     |u| = √(2 max(h(Tt)-h(Ts), 0)),  ρ = Ps/(R Ts)
+THERMO_HD void thermo_isentropic_from_total_Ps_single(
+    const SpeciesThermo* sp, double Pt, double Tt, double Ps,
+    double* Ts_out, double* ro_out, double* umag_out)
+{
+    const double R  = thermo_R_species(sp[0]);
+    const double s_target = thermo_s0_mass(sp[0], Tt) + R*log((Ps > 1.0e-30 ? Ps : 1.0e-30)
+                                                              /(Pt > 1.0e-30 ? Pt : 1.0e-30));
+    double Ts = Tt;   // Ps<=Pt なら Ts<=Tt。Tt から下降側へ Newton。
+    if (Ts < 10.0) Ts = 10.0;
+    #pragma unroll 1
+    for (int it=0; it<30; ++it) {
+        const double f  = thermo_s0_mass(sp[0], Ts) - s_target;   // s0(Ts)-target
+        const double df = thermo_cp_mass(sp[0], Ts)/Ts;            // ds0/dT = cp/T
+        double dT = f/(df > 1.0e-12 ? df : 1.0e-12);
+        if (dT >  0.4*Ts) dT =  0.4*Ts;
+        if (dT < -0.4*Ts) dT = -0.4*Ts;
+        Ts -= dT;
+        if (Ts < 10.0) Ts = 10.0;
+        if (Ts > Tt)   Ts = Tt;
+        if (dT < 0.0) dT = -dT;
+        if (dT < 1.0e-3 + 1.0e-6*Ts) break;
+    }
+    const double dh = thermo_h_mass(sp[0], Tt) - thermo_h_mass(sp[0], Ts);
+    *umag_out = sqrt(dh > 0.0 ? 2.0*dh : 0.0);
+    *Ts_out   = Ts;
+    *ro_out   = Ps/(R*Ts);
+}
+
 // =============================================================================
 // device 側化学種データへのアクセス (thermo_d.cu が所有)
 //   - thermo_init_db: solverConfig から DB を構築し device へアップロード

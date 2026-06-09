@@ -1,0 +1,40 @@
+# Boundary condition configuration for the axisymmetric Mach 4
+# nozzle, upper-half true 2D mesh.
+#
+# Design point (gamma = 1.4, M_e = 4):
+#   p_t / p_e = (1 + 0.2 * M_e^2)^3.5 = 4.2^3.5 ~= 151.835
+#   T_t / T_e = 1 + 0.2 * M_e^2       = 4.2
+# With p_e = 20000 Pa and T_t = 300 K, p_t ~= 3036704.35 Pa.
+#
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 101325.0    # [Pa] total pressure
+    Tt: 300.0     # [K]  total temperature
+    k: 1.0
+    omega: 1000.0
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 100.0     # [Pa] static pressure
+
+wall:
+  physID: 3
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:
+
+axis:
+  physID: 4
+  kind: axis
+  outputHDFflg: 0
+  ints:
+  floats:

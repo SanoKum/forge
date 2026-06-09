@@ -106,6 +106,22 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
   `ScalarTransportDesc.diffusion` フラグで制御し、化学種は `0` (移流のみ) とする。RANS k/ω は `1`。
   これを怠ると層流粘性由来の $\nu$ 拡散が Fick 拡散に重畳する (検証で発見・修正)。
 
+## 5e. 境界条件の TP 整合 `cuda_forge/boundaryCond_d.cu`
+
+`thermalMethod==2` で各 BC の ghost / 境界状態を NASA 熱力学で再構成する (CPG 前提の定数 γ,cp を排除)。
+各カーネルは `int thermalMethod, const SpeciesThermo* sp` を受け取り、`thermalMethod==2` 分岐で
+`thermo_R_species`/`thermo_cp_mass`/`thermo_h_mass`/`thermo_isentropic_from_total_single`/
+`thermo_isentropic_from_total_Ps_single` を用い、`γ_mix(T)`・`R_mix`・`e_NASA(T)` で
+`roe`/`sonic`/`T` を整合させる。CPG 分岐は代数的に不変。
+
+- **M1 整合済**: `slip` / `wall`(断熱) / `inlet_Pressure` / `outflow`。
+- **本節で追加**: `outlet_statPress`(順流 + backflow 等エントロピー), `wall_isothermal`(等温壁 ghost),
+  `inlet_Pressure_dir`(全状態と外挿静圧から NASA 等エントロピー反転), `inlet_uniformVelocity`。
+- **新規 thermo**: `thermo_isentropic_from_total_Ps_single` (全温・全圧 + 静圧 Ps から
+  `s0(Ts)=s0(Tt)+R ln(Ps/Pt)` の Newton 反転で Ts, ρ, |u|)。
+- **制約**: 多成分 (nSpecies>=2) の組成依存エネルギー BC は未対応 (現状 `sp[0]` 固定)。単成分 TP は整合。
+- **注意**: TP の `roe` は NASA 絶対基準。CPG res からの warm-start 不可。IC は `roe=ρ(e_NASA(T)+ek)` で生成する。
+
 ## 6. 検証 (M1)
 
 `case/13.nozzle_H/run_0001_tpgas_n2` (TP-N2) と `run_0002_slau_cpg` (CPG 参照) を SLAU・非粘性・warm-start で実行。`validate_tpgas.py` が中心線の M・T・P と全エンタルピー $H_0=h(T)+½|u|^2$ を抽出し、NASA(=CEA) 等エントロピー曲線と比較する。単体の NASA-9 値は NIST と一致 (N2: $R=296.8$, $c_p(300)=1040$, $c_p(2000)=1284$ J/kgK, $h(298.15)=0$、$e\to T$ 反転誤差 $\sim10^{-11}$)。
