@@ -1,0 +1,74 @@
+# 28.cutler ternary [He,O2,N2] 組成依存超音速入口。
+#   中心ジェット: He-O2 95/5 vol -> mass Y=[He 0.7039, O2 0.2961, N2 0]
+#   coflow: 空気 79/21 vol -> mass Y=[He 0, O2 0.2329, N2 0.7671]
+axis:
+  physID: 1
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+jet_in:                     # He-O2 jet: MW~5.40, R~1539, Mach1.8 -> ro~0.433, u~1100
+  physID: 2
+  kind: inlet_uniformVelocity
+  outputHDFflg: 0
+  ints:
+  floats:
+    ro: 0.433
+    Ux: 1100.0
+    Uy: 0.0
+    Uz: 0.0
+    Ps: 101325.0
+    k: 900.0
+    omega: 1.7e6
+    Y0: 0.70385             # He
+    Y1: 0.29615             # O2
+    Y2: 0.0                 # N2
+
+lip:
+  physID: 3
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+coflow_in:                  # air: R~288, Mach1.8 -> ro~1.940, u~487
+  physID: 4
+  kind: inlet_uniformVelocity
+  outputHDFflg: 0
+  ints:
+  floats:
+    ro: 1.940
+    Ux: 487.0
+    Uy: 0.0
+    Uz: 0.0
+    Ps: 101325.0
+    k: 140.0
+    omega: 2.3e6
+    Y0: 0.0                 # He
+    Y1: 0.23293            # O2
+    Y2: 0.76707            # N2
+
+amb_in:
+  physID: 5
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+top:
+  physID: 6
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+outflow:
+  physID: 7
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 101325.0
+    Pt: 101325.0
+    Tt: 300.0

@@ -243,5 +243,24 @@ void scalarTimeIntegration_d(int loop, solverConfig& cfg, cudaConfig& cuda_cfg, 
             desc.src_jac,
             desc.transport_diag,
             desc.floor);
+    } else if (cfg.timeIntegration == 11) {
+        // 陰解法 (block-DPLUR) ステップでの化学種更新。1 回の point-implicit forward-Euler:
+        //   ρφ = ρφ_N + (res·Δτ/V) / (1 + Δτ(src_jac + transport_diag/V))。
+        // coef_N=1, coef_M=0, coef_Res=1 (loop 無関係)。点陰的対角が高 CFL_pseudo を安定化し、
+        // Δτ→∞ で局所定常増分 res/diag に収束 (SST point-implicit と同形)。
+        runge_kutta_exp_scalar_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+            static_cast<flow_float>(1.0),
+            static_cast<flow_float>(0.0),
+            static_cast<flow_float>(1.0),
+            var.c_d["dt_local"],
+            msh.nCells,
+            var.c_d["volume"],
+            desc.rho_phi,
+            desc.rho_phi_N,
+            desc.rho_phi_M,
+            desc.res_rho_phi,
+            desc.src_jac,
+            desc.transport_diag,
+            desc.floor);
     }
 }

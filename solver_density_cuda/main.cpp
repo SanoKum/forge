@@ -861,6 +861,17 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
             applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
         });
     }
+
+    // 化学種 (多成分 TP) を segregated point-implicit で更新（陰解法での凍結解除）。
+    // res_roY/transport_diag/src_jac は assembleResidual の speciesTransport で確定済み。
+    // baseline roY_N=roY を取り、1 回 point-implicit forward-Euler 更新 → 実現可能性再正規化。
+    // 各 wrapper は nSpecies<2 で no-op (単成分/CPG は不変)。
+    s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+        speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // roY_N = roY_M = roY
+        speciesTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+        speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // Y=roY/ρ (出力/次残差用に同期)
+    });
 }
 
 // 陽解法 Runge-Kutta（tI 1/3/4）。steady/unsteady 両対応。

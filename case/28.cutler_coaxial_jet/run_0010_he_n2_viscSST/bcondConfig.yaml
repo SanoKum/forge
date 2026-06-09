@@ -1,0 +1,70 @@
+# 28.cutler binary [He,N2] 粘性 + RANS-SST。inlet 乱流量は TI~2%, mu_t/mu~10。
+axis:
+  physID: 1
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+jet_in:                     # He: Ts~144K, u~1271, ro~0.339; k=1.5(0.02U)^2, omega=ro k/mu_t
+  physID: 2
+  kind: inlet_uniformVelocity
+  outputHDFflg: 0
+  ints:
+  floats:
+    ro: 0.339
+    Ux: 1271.0
+    Uy: 0.0
+    Uz: 0.0
+    Ps: 101325.0
+    k: 968.0
+    omega: 1.7e6
+    Y0: 1.0
+    Y1: 0.0
+
+lip:
+  physID: 3
+  kind: slip                # 0.25mm lip は薄いので slip (BL 解像はスコープ外)
+  outputHDFflg: 0
+  ints:
+  floats:
+
+coflow_in:                  # N2: Ts~182K, u~495, ro~1.876
+  physID: 4
+  kind: inlet_uniformVelocity
+  outputHDFflg: 0
+  ints:
+  floats:
+    ro: 1.876
+    Ux: 495.0
+    Uy: 0.0
+    Uz: 0.0
+    Ps: 101325.0
+    k: 147.0
+    omega: 2.3e6
+    Y0: 0.0
+    Y1: 1.0
+
+amb_in:
+  physID: 5
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+top:
+  physID: 6
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+outflow:
+  physID: 7
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 101325.0
+    Pt: 101325.0
+    Tt: 300.0

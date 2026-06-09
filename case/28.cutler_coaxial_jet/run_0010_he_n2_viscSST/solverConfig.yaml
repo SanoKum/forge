@@ -1,0 +1,49 @@
+mesh:
+  meshFormat: "hdf5"
+  meshFileName: "coaxial.h5"
+  valueFileName: "restart.h5"        # run_0009 非粘性場 + roY + 乱流量シード
+gpu: 1
+solver: "SLAU"
+physProp:
+  isCompressible: 1
+  isAxisymmetric: 1
+  thermalMethod: 2                   # 多成分 TP
+  viscMethod: 2                      # kinetic theory 混合輸送 (mu_mix, lambda_mix)
+  ro : 1.2
+  visc : 1.8e-5
+  thermCond: 0.0257
+  cp : 1004.5
+  gamma : 1.4
+  species: [He, N2]
+  speciesDiffusionMethod: 1          # kinetic 混合平均拡散 (+ 乱流 mu_t/Sc_t)
+  Sc: 0.7
+  Sc_t: 0.9
+time:
+  unsteady: 0
+  dualTime: 0
+  last:
+    control: 0
+    nStepOuter: 4000
+  deltaT:
+    control: 1
+    dt: 0.00000001
+    cfl: 0.3
+    cfl_pseudo: 0.3
+    dt_min: 0.000000001
+    dt_max: 0.001
+  outStepStart: 0
+  outStepInterval: 1000
+  timeIntegration: 3                 # explicit RK3
+  nStepInner: 1
+space:
+  convMethod: 1                      # 2次風上 (非粘性場からリスタート)
+  limiter: 2
+turbulence:
+  LESorRANS: 2                       # RANS
+  LESmodel: 1
+  RANSmodel: 1                       # Menter SST
+  scalarDiffusion: 1
+  dilatationCorrection: 2
+  kInf: 1.0
+  omegaInf: 1000.0
+initial: "uniform_p101325_u10"
