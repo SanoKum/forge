@@ -1,0 +1,68 @@
+# Boundary condition configuration for the axisymmetric Mach 4
+# nozzle, upper-half true 2D mesh.
+#
+# Design point (gamma = 1.4, M_e = 4):
+#   p_t / p_e = (1 + 0.2 * M_e^2)^3.5 = 4.2^3.5 ~= 151.835
+#   T_t / T_e = 1 + 0.2 * M_e^2       = 4.2
+# With p_e = 20000 Pa and T_t = 300 K, p_t ~= 3036704.35 Pa.
+#
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 4000000.0    # [Pa] total pressure
+    Tt: 1500.0     # [K]  total temperature
+    k: 1.0
+    omega: 1000.0
+
+wall:
+  physID: 3
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:
+
+axis:
+  physID: 4
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+# ---- Far-field plume boundaries (new mesh only) ----
+# outer1: radial face at nozzle exit, r: r_exit → r_far (= r_exit + 5D)
+outer1:
+  physID: 5
+  #kind: outlet_statPress
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+    #Ps: 40000.0     # [Pa] ambient static pressure
+    #Pt: 40000.0     # [Pa] ambient static pressure
+    #Tt: 300.0     
+
+# outer2: top boundary at r = r_far, downstream
+outer2:
+  physID: 6
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 40000.0    # [Pa] ambient total pressure
+    Tt: 300.0      # [K]  ambient total temperature
+    k: 1.0
+    omega: 1000.0
+
+# outer3: exit plane at x = x_far (= div_end_x + 10D), full radius
+outer3:
+  physID: 7
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 40000.0    # [Pa] ambient static pressure
+    Pt: 40000.0    # [Pa] ambient static pressure
+    Tt: 300.0

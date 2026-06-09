@@ -46,6 +46,17 @@ run_0001 (1 次・非粘性で確立) から warm-start し 2 次精度で比較
 - 膨張を通して TP-N2 は CPG-N2 より高温 (N2 の $c_p$ が高温で大きく、運動エネルギーへの変換が
   少ない実在気体効果)。Mach はほぼ一致。
 
+## 粘性 / RANS + TP の検証 (M3 輸送係数・RANS×TP)
+
+非粘性 CEA 照合に加え、TP-N2 を段階的に粘性化して未検証だった経路を確認 (全て NaN チェック済):
+
+- `run_0010_tpN2_visc_kintheory` — TP-N2 + `viscMethod=2` (kinetic theory 混合粘性・熱伝導, laminar)。
+  安定。**`vis_lam` = 1.28e-5〜5.51e-5 Pa·s が T[194,1551]K に対し物理的な N2 粘性** (M3 を実粘性 TP 流れで検証)。
+- `run_0011_tpN2_rans_sst` — 上記 + RANS SST (dilatation 補正 2)。安定 (残差 1.08e-3、乱流粘性が
+  プルームせん断層を平滑化)。`vis_turb` [0,0.57]、`k` [0,9.5e4] が物理的 (RANS×TP のエンドツーエンド検証)。
+
+> M4 の乱流化学種拡散 ($\mu_t/\mathrm{Sc}_t$) は単成分 N2 では dormant のため未検証 (多成分 RANS が必要。plan §10)。
+
 ## 再現手順
 
 ```bash
