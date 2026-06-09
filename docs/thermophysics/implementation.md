@@ -137,6 +137,24 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
 
 `case/13.nozzle_H/run_0001_tpgas_n2` (TP-N2) と `run_0002_slau_cpg` (CPG 参照) を SLAU・非粘性・warm-start で実行。`validate_tpgas.py` が中心線の M・T・P と全エンタルピー $H_0=h(T)+½|u|^2$ を抽出し、NASA(=CEA) 等エントロピー曲線と比較する。単体の NASA-9 値は NIST と一致 (N2: $R=296.8$, $c_p(300)=1040$, $c_p(2000)=1284$ J/kgK, $h(298.15)=0$、$e\to T$ 反転誤差 $\sim10^{-11}$)。
 
+## 6b. 性能最適化 (consumer GPU の FP64 律速対策, M6)
+
+TP-gas 経路は CPG に比べ大幅に遅い。プロファイル前の分析で**主因はアルゴリズムではなく演算精度**と判明した。
+
+### 背景: GeForce (consumer Ampere/Ada) は FP64 が FP32 の 1/64
+
+開発機 RTX 3060 (GA106, CC 8.6) は SM あたり FP64 コアが 2 基のみで、**倍精度スループットが単精度の 1/64**。一方 `thermo_d.cuh` の TP コアは桁落ち回避のため**内部計算が全て `double`**。CPG 経路は全て `flow_float` (FP32) の代数演算なので、同一演算でも TP は 1op あたり 32〜64 倍遅い土俵で回る。さらに `log/pow/exp` を毎セル・毎面・毎 Newton 反復で評価するため、ホットパス (`dependentVariables_d` 温度反転 / `SLAU_d` 面エンタルピー / `gasProperties_d` kinetic 輸送) で TP が支配的に重くなる。
+
+### 施策 (M6)
+
+精度方針を「**桁落ちのある量だけ double、それ以外は FP32**」に改める。NASA 絶対エンタルピーは生成エンタルピーを含み大きさ ~$10^7$ J/kg で増分が小さく FP32 では桁落ちするため double を保持する。一方、輸送係数・cp・混合則・面エンタルピーの増分は FP32 で安全。
+
+1. **輸送係数の FP32 化 (①)**: `thermo_omega22/11`・`thermo_mu_species`・`thermo_lambda_species`・`thermo_wilke_phi`・`thermo_mu_mix`・`thermo_lambda_mix`・`thermo_Dbinary`・`thermo_Dmix_species` を FP32 (`expf/powf/sqrtf`) 化。これらは桁落ちが無く、`gasProperties_d` (viscMethod==2) の $O(n_{sp}^2)$ pow/exp/sqrt と `species_diffusion_d` の拡散係数評価という最重量パスを FP32 へ移す。非粘性回帰 (viscMethod==0) は不変。粘性ケースは μ/λ を NIST 値と再照合 (FP32 で十分な精度)。
+2. **Newton ループの cp+h 融合評価 (②)**: `thermo_T_from_e`/`thermo_T_from_h` は毎反復 `thermo_h_mix` と `thermo_cp_mix` を**別々の種ループ**で呼び、係数選択・$T$ 冪・`log(T)` を二重計算していた。両者を 1 スイープで返す `thermo_cph_mass`/`thermo_cph_mix` を追加し、係数・$T$ 冪・`lnT` を共有。反復あたりの多項式仕事がほぼ半減。演算の並べ替えのみで結果はビット同等。`dependentVariables_d` の反転後ブロック (cp/h/gamma 再計算) にも適用。
+3. **per-cell R_mix のキャッシュ (③)**: `SLAU_d` の面エンタルピーで `thermo_R_mix(YL/YR)` を**毎面で種ループ再計算**していたが、これは再構成前のセル組成だけの定数。`dependentVariables_d` で `Rmix[ic]` を 1 回計算して `gamma/cp` と並べて格納し (CPG は $R=(\gamma-1)c_p/\gamma$)、`SLAU_d` は読むだけにする。面数 ≫ セル数なので有効。
+
+> 残レバー (M6 後続): NASA エンタルピー反転自体の FP32 化は、生成エンタルピー ≈ 0 の不活性種 (N2/He/air) では安全だが、燃焼種では sensible enthalpy ($h-h(T_{ref})$) への再定式化が必要。最大の追加効果は温度ルックアップテーブル (cp/h/s を温度グリッドで事前計算し線形補間、`log/pow/Newton` を全廃) だが結果が微変するため別マイルストーン。
+
 ## 7. マイルストーン状況
 
 - M1 (本実装): 単成分 TP, NASA-9, Newton 反転, SLAU/ROE TP 整合 — 実装済・検証完了 (衝撃管 CEA 照合)。
@@ -145,3 +163,4 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
 - M3: kinetic theory 輸送係数 (`gasProperties_d` 拡張) — 実装済・検証完了。μ/λ が NIST と一致 (N2: μ(300)=1.81e-5, μ(1000)=4.15e-5, λ(300)=0.0255; air μ=1.86e-5)、device viscMethod=2 が式と FP32 一致、非粘性回帰不変。
 - M4: 化学種拡散 + エンタルピー拡散エネルギー結合 — 実装済・検証完了。静止 N2/N2 トレーサの拡散が kinetic theory 自己拡散係数と 1.3% 一致、ΣJ=0 で種質量保存 (7 桁)、O2/N2 粘性で安定。
 - M5: 組成依存超音速入口 BC (`inlet_uniformVelocity` 多成分化) + SLAU 対流流束の多成分エンタルピー — 実装済・検証完了。`case/28.cutler_coaxial_jet` の binary [He,N2] 同軸ジェット (Mach1.8) が 1次/2次でともに NaN/発散なし、$\sum Y=1$、中心 He コア (Mach1.8 He, Ux~1280 m/s)・coflow N2 を再現。CPG 単成分回帰不変。定量 Cutler 照合 (粘性 + RANS-SST + 乱流化学種拡散) は後続。
+- M6: TP-gas 性能最適化 (§6b, 輸送係数 FP32 化 / cp+h 融合反転 / per-cell `Rmix` キャッシュ) — 実装済・検証完了。① CPG 単成分回帰は M6 前後バイナリの差が CUDA atomicAdd 非決定性 (旧×旧の run 間差) と同等で系統的変化なし。② FP32 輸送が double と相対 ~1e-8 一致 (host 単体テスト `solver_density_cuda/tools/test_m6_transport.cpp`)、NIST と N2 μ 1.5%/λ 1.9%・AIR μ 0.3%/λ 4.3%・He μ 1.7%。③ TP binary [He,N2] スモーク (`case/28` `run_0026_he_n2_m6smoke`, 500 步) が NaN なし・$\sum Y=1$ (1.2e-7)・$0\le Y\le1$・ro/P/T 物理的。実機 GPU 速度改善計測は native ベンチで別途。

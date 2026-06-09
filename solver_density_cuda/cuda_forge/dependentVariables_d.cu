@@ -39,7 +39,8 @@ __global__ void dependentVariables_d
 
  // thermally-perfect 用に毎ステップ更新する per-cell 物性
  flow_float* gam_array ,
- flow_float* cp_array
+ flow_float* cp_array ,
+ flow_float* Rmix_array   // M6: 混合比気体定数 R[ic] (SLAU 面エンタルピーが毎面再計算するのを回避)
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -87,8 +88,8 @@ __global__ void dependentVariables_d
             const double Tnew = thermo_T_from_e(sp, nSpecies, Y, e_in, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
 
             const double Rmix  = thermo_R_mix (sp, nSpecies, Y);
-            const double cpmix = thermo_cp_mix(sp, nSpecies, Y, Tnew);
-            const double hmix  = thermo_h_mix (sp, nSpecies, Y, Tnew);
+            double cpmix, hmix;
+            thermo_cph_mix(sp, nSpecies, Y, Tnew, &cpmix, &hmix);  // cp,h を 1 スイープ
             const double cvmix = cpmix - Rmix;
             const double gmix  = cpmix / (cvmix > 1.0e-6 ? cvmix : 1.0e-6);
 
@@ -104,6 +105,7 @@ __global__ void dependentVariables_d
             sonic[ic]     = (flow_float)sqrt(gmix * Rmix * Tnew);
             gam_array[ic] = (flow_float)gmix;
             cp_array[ic]  = (flow_float)cpmix;
+            Rmix_array[ic]= (flow_float)Rmix;
         } else {
             // ---- calorically perfect gas (従来経路, ビット不変) ----
             T_temp = max(intE/(cp/gamma), (flow_float)1.0e-4f);
@@ -118,6 +120,8 @@ __global__ void dependentVariables_d
             Ht[ic] = roe[ic]/ro_temp + P_temp/ro_temp;
 
             sonic[ic] = sqrt(gamma*P_temp/ro_temp);
+            // CPG の混合比気体定数 R = cp - cv = (γ-1)cp/γ (定数。SLAU 単成分経路は未使用だが整合のため埋める)
+            Rmix_array[ic] = (gamma-1.0)*cp/gamma;
         }
 
         k[ic] = max(roK[ic]/ro_temp, static_cast<flow_float>(0.0));
@@ -146,7 +150,7 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         var.c_d["P"]   , var.c_d["Ht"]  , var.c_d["sonic"], var.c_d["k"], var.c_d["omega"], var.c_d["T"],
         var.c_d["Ux"]  , var.c_d["Uy"]  , var.c_d["Uz"] ,
 
-        var.c_d["gamma"] , var.c_d["cp"]
+        var.c_d["gamma"] , var.c_d["cp"] , var.c_d["Rmix"]
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );

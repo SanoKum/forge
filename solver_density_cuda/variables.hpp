@@ -58,7 +58,7 @@ public:
         "vis_turb" , "wall_dist" ,
         "thermCond" ,  // 熱伝導率 λ [W/(m·K)] セル毎 (M3 kinetic theory / 定数)
 
-        "gamma" , "cp" , 
+        "gamma" , "cp" , "Rmix" ,  // Rmix: 混合比気体定数 R [J/(kg·K)] セル毎 (M6 TP 流束キャッシュ用; CPG は (γ-1)cp/γ)
 
         "cfl"   , "cfl_pseudo", "dt_local",
         "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe", "res_roK", "res_roOmega",

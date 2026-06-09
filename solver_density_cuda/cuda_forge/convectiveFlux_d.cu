@@ -231,6 +231,7 @@ __global__ void SLAU_d
  int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
  const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
  flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
+ flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
 
  // mesh structure
  geom_int nCells,
@@ -382,8 +383,10 @@ __global__ void SLAU_d
                 }
                 const double iL=1.0/(sL>1.0e-30?sL:1.0e-30), iR=1.0/(sR>1.0e-30?sR:1.0e-30);
                 for (int s=0;s<nSpecies;s++){ YL[s]*=iL; YR[s]*=iR; }
-                const double RgL = thermo_R_mix(sp, nSpecies, YL);
-                const double RgR = thermo_R_mix(sp, nSpecies, YR);
+                // R_mix はセル組成のみの定数。dependentVariables で計算済の per-cell 値を読む
+                // (毎面で thermo_R_mix の種ループを回さない。正規化済 Y なので ρ に依らず一致)。
+                const double RgL = (double)Rmix_cell[ic0];
+                const double RgR = (double)Rmix_cell[ic1];
                 const double Tl = (double)P_L/((double)ro_L*RgL);
                 const double Tr = (double)P_R/((double)ro_R*RgR);
                 h_p = (flow_float)(thermo_h_mix(sp, nSpecies, YL, Tl) + 0.5*(double)velocity2_L);
@@ -2667,6 +2670,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.gamma,
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
             species_roY_device_ptr(),
+            var.c_d["Rmix"],
 
             // mesh structure
             msh.nCells,
