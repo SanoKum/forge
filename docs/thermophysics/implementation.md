@@ -91,6 +91,21 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
   面平均 per-cell 配列に変更。viscMethod 0/1 では一定値のため面平均は同値で**既存挙動不変**。
 - **二元/混合平均拡散** `thermo_Dbinary`/`thermo_Dmix_species` も追加 (M4 の化学種拡散で使用)。
 
+## 5d. 化学種拡散 + エネルギー結合 (M4) `cuda_forge/speciesTransport_d.cu`
+
+粘性ケース (`viscMethod!=0`, `nSpecies>=2`) で `species_diffusion_d` が面ループで化学種拡散を加える。
+
+- **Fick 拡散**: $J_s=\rho D_s\,\nabla Y_s$ (over-relaxed 法線, `viscousFlux_d` と同じ幾何)。
+  $D_s$ は `speciesDiffusionMethod==1` で混合平均 (`thermo_Dmix_species`)、`==0` で定数 Schmidt
+  $D=\mu/(\rho\,\mathrm{Sc})$。乱流寄与 $\mu_t/(\rho\,\mathrm{Sc}_t)$ を全種に加算。
+- **質量保存補正**: $J_s^\* = J_s - Y_s\sum_k J_k$ で $\sum_s J_s^\*=0$ を厳密化 (混合平均拡散は
+  そのままでは $\sum J\neq0$)。`res_roY_s += J_s^\*`。
+- **エネルギー結合**: 化学種拡散が運ぶエンタルピー $\sum_s h_s(T)\,J_s^\*$ を `res_roe` に加える
+  ($h_s$ は NASA 絶対基準で `roe` と整合)。
+- **汎用拡散との二重計上回避**: 汎用スカラコア `scalarTransport_d` の拡散 (μ ベース) は
+  `ScalarTransportDesc.diffusion` フラグで制御し、化学種は `0` (移流のみ) とする。RANS k/ω は `1`。
+  これを怠ると層流粘性由来の $\nu$ 拡散が Fick 拡散に重畳する (検証で発見・修正)。
+
 ## 6. 検証 (M1)
 
 `case/13.nozzle_H/run_0001_tpgas_n2` (TP-N2) と `run_0002_slau_cpg` (CPG 参照) を SLAU・非粘性・warm-start で実行。`validate_tpgas.py` が中心線の M・T・P と全エンタルピー $H_0=h(T)+½|u|^2$ を抽出し、NASA(=CEA) 等エントロピー曲線と比較する。単体の NASA-9 値は NIST と一致 (N2: $R=296.8$, $c_p(300)=1040$, $c_p(2000)=1284$ J/kgK, $h(298.15)=0$、$e\to T$ 反転誤差 $\sim10^{-11}$)。
@@ -101,4 +116,4 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
 - M2: 多成分輸送 (`speciesTransport_d`), 実現可能性+再正規化, 化学種 BC/IC/出力 — 実装済・検証完了。
   単成分回帰がバイト一致、[N2,N2] 識別子トレーサで流れが単成分と完全一致、[O2,N2] 実 2 ガスが安定・$\sum Y=1$。
 - M3: kinetic theory 輸送係数 (`gasProperties_d` 拡張) — 実装済・検証完了。μ/λ が NIST と一致 (N2: μ(300)=1.81e-5, μ(1000)=4.15e-5, λ(300)=0.0255; air μ=1.86e-5)、device viscMethod=2 が式と FP32 一致、非粘性回帰不変。
-- M4: 化学種拡散 + エンタルピー拡散エネルギー結合。
+- M4: 化学種拡散 + エンタルピー拡散エネルギー結合 — 実装済・検証完了。静止 N2/N2 トレーサの拡散が kinetic theory 自己拡散係数と 1.3% 一致、ΣJ=0 で種質量保存 (7 桁)、O2/N2 粘性で安定。

@@ -30,6 +30,7 @@ void speciesBoundary_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, bcond& b
 void applySpeciesBoundaries(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
 // 化学種移流残差を組み立てる (res_roY{s} / transport_diag をゼロ初期化してから集計)。
+// 粘性 (viscMethod!=0) かつ nSpecies>=2 のとき M4 の Fick 拡散 + ΣJ=0 補正 + エンタルピー拡散も加える。
 void speciesTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
 // 化学種の時間積分 (scalarTimeIntegration_d を化学種ごとに呼ぶ)。

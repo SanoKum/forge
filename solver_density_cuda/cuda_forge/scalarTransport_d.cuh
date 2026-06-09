@@ -22,6 +22,8 @@ struct ScalarTransportDesc {
     flow_float* transport_diag; // 輸送(移流+拡散)ヤコビアン対角 [m³/s]。advection/diffusion kernel で集計
     flow_float floor;           // realizability 下限。陰解法 point-implicit と整合
     flow_float sigma;           // 拡散係数スケール (有効粘性 = vis_lam + sigma·vis_turb)
+    int diffusion;              // 1: 汎用拡散 (μ ベース, RANS k/ω) を使う / 0: 移流のみ
+                                //   (化学種は Fick 拡散を speciesTransport 側で別途扱うため 0)
 };
 
 // 1 変数ぶんの移流 + (任意) 拡散残差を組み立てる。

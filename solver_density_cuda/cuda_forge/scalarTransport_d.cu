@@ -188,7 +188,7 @@ void scalarTransportResidual_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         desc.res_rho_phi,
         desc.transport_diag);
 
-    if (cfg.scalarDiffusion == 1) {
+    if (cfg.scalarDiffusion == 1 && desc.diffusion == 1) {
         scalar_diffusion_first_order_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>>(
             msh.nCells,
             msh.nNormal_halo_Planes,
