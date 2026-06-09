@@ -568,14 +568,18 @@ flow_float* Psb
             }
         }
 
+        // 速度方向スケール。静止場 (Umagc=0) では方向が未定義なので 0 とし、0/0=NaN を防ぐ
+        // (Uxnew 等も 0 のため ghost 速度は 0 になる)。u=0 初期化での発散を回避。
+        const flow_float uscale = (Umagc > (flow_float)1.0e-30) ? (Umag_new/Umagc) : (flow_float)0.0;
+
         ro[ig]    = ronew;
         P[ig]     = Pnew;
-        Ux[ig]    = Uxnew*Umag_new/Umagc;
-        Uy[ig]    = Uynew*Umag_new/Umagc;
-        Uz[ig]    = Uznew*Umag_new/Umagc;
-        roUx[ig]  = ronew*Uxnew*Umag_new/Umagc;
-        roUy[ig]  = ronew*Uynew*Umag_new/Umagc;
-        roUz[ig]  = ronew*Uznew*Umag_new/Umagc;
+        Ux[ig]    = Uxnew*uscale;
+        Uy[ig]    = Uynew*uscale;
+        Uz[ig]    = Uznew*uscale;
+        roUx[ig]  = ronew*Uxnew*uscale;
+        roUy[ig]  = ronew*Uynew*uscale;
+        roUz[ig]  = ronew*Uznew*uscale;
 
         if (thermalMethod == 2) {
             // TP: ghost を (ρ=ronew, P=Pnew) と整合させる。T=P/(ρ R_mix), roe=ρ(e_NASA(T)+ek),
@@ -598,12 +602,12 @@ flow_float* Psb
 
         rob[ib]    = ronew;
         //Psb[ib]    = Pnew;
-        Uxb[ib]    = Uxnew*Umag_new/Umagc;
-        Uyb[ib]    = Uynew*Umag_new/Umagc;
-        Uzb[ib]    = Uznew*Umag_new/Umagc;
-        roUxb[ib]  = ronew*Uxnew*Umag_new/Umagc;
-        roUyb[ib]  = ronew*Uynew*Umag_new/Umagc;
-        roUzb[ib]  = ronew*Uznew*Umag_new/Umagc;
+        Uxb[ib]    = Uxnew*uscale;
+        Uyb[ib]    = Uynew*uscale;
+        Uzb[ib]    = Uznew*uscale;
+        roUxb[ib]  = ronew*Uxnew*uscale;
+        roUyb[ib]  = ronew*Uynew*uscale;
+        roUzb[ib]  = ronew*Uznew*uscale;
         roeb[ib]   = roe[ig];
         if (thermalMethod == 2) {
             const double R = thermo_R_species(sp[0]);
