@@ -55,9 +55,11 @@ for b in range(nb):
 xa=np.array(xa); XHe_a=np.array(XHe_a); U_a=np.array(U_a); Tt_a=np.array(Tt_a)
 o=np.argsort(xa); xa,XHe_a,U_a,Tt_a = xa[o],XHe_a[o],U_a[o],Tt_a[o]
 xD = xa/D_JET
-# ポテンシャルコア長: X_He が 0.99/0.95 を下回る最初の x
+# ポテンシャルコア長: 中心軸 X_He が出口値 (=ジェットコアのモル分率, binary 1.0 / ternary 0.95)
+# の 99%/95% を下回る最初の x。出口値で正規化し binary/ternary 双方に対応。
+X_jet = float(np.nanmax(XHe_a[xD < 2.0])) if (xD < 2.0).any() else float(XHe_a[0])
 def core_len(frac):
-    below = np.where(XHe_a < frac)[0]
+    below = np.where(XHe_a < frac*X_jet)[0]
     return xa[below[0]]/D_JET if len(below) else np.nan
 core99, core95 = core_len(0.99), core_len(0.95)
 
@@ -77,7 +79,7 @@ for s in stations:
 # --- プロット ---
 fig, ax = plt.subplots(2,2, figsize=(12,9))
 ax[0,0].plot(xD, XHe_a, '-', lw=1.5)
-ax[0,0].axhline(0.99,ls=':',c='gray'); ax[0,0].set(xlabel='x/D', ylabel='centerline $X_{He}$', title=f'He core: x/D(0.99)={core99:.1f}, x/D(0.95)={core95:.1f}')
+ax[0,0].axhline(0.99*X_jet,ls=':',c='gray'); ax[0,0].set(xlabel='x/D', ylabel='centerline $X_{He}$', title=f'He core (X_jet={X_jet:.2f}): x/D(99%)={core99:.1f}, x/D(95%)={core95:.1f}')
 ax[0,0].grid(alpha=0.3)
 ax[0,1].plot(xD, U_a, '-', lw=1.5, color='C1'); ax[0,1].set(xlabel='x/D', ylabel='centerline |U| [m/s]'); ax[0,1].grid(alpha=0.3)
 for s,(r,xh,u,tt) in rad.items():
