@@ -1,0 +1,5 @@
+case,method,final_rms_ro,steps_to_1e-4,last_step
+loM,exp,4.819135e-06,1109,39999
+loM,imp,2.266576e-06,481,7999
+hiM,exp,4.804453e-06,13,7999
+hiM,imp,2.106523e-06,1,2999
