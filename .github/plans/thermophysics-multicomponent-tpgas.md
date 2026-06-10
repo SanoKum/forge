@@ -71,7 +71,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 
 ## 10. 残課題 (後続。M1-M4 のコア外の改良)
 
-- **多成分組成依存エネルギー BC**: `inlet_uniformVelocity` は組成依存化済 (M5, 下記変更ログ)。残: slip/wall/outlet の ghost roe/sonic がまだ `sp[0]` 固定 (ただし SLAU 対流流束はセル組成で再構成するため非粘性では支配的影響なし。粘性流束・他スキーム HLLE/AUSM/KEEP/ROE の TP 多成分化は未)。
+- **多成分組成依存エネルギー BC**: `inlet_uniformVelocity` (M5) + zero-gradient/反射系 `slip`/`wall`/`wall_isothermal`/`outlet_statPress` (M7, 下記変更ログ — ghost 組成 = 内部セル組成で混合則化) が組成依存化済。残: `inlet_Pressure`/`inlet_Pressure_dir` は指定組成 `Yb` 配線が未 (多成分ケース未使用のため後続)。他スキーム HLLE/AUSM/KEEP/ROE の TP 多成分化は未。
 - **化学種の陰解法 (point-implicit/segregated)**: 化学種輸送は explicit RK のみ。陰解法ステップへ未配線。
 - **ROE の TP 完全整合 (段階B)**: M1 は Roe 平均の有効 γ̃ (段階A) まで。
 - **MUSCL + 陰解法の安定化**: 2次 MUSCL × 高 cfl_pseudo で発散 (block DPLUR)。limiter freezing / CFL ランプで陰解法高速化の余地。
@@ -124,4 +124,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
     - **binary [He,N2] 非粘性** (viscMethod=0, 輸送係数を呼ばない → ②cph 融合 + ③Rmix キャッシュのみ): per-step **18.16 ms → 17.73 ms = 1.02×** (2.4% 削減)。
     - **解釈**: 高速化の支配項は **① 輸送係数の FP32 化** で、`viscMethod=2` かつ種数増 ($O(n_{sp}^2)$) で効く (3 成分 > binary > 非粘性)。非粘性で 2.4% に留まることが「`gasProperties_d`/`species_diffusion_d` の kinetic 輸送が最重量パス」という設計仮説を裏付ける。②③ 単独はビット同等で小幅だが無コスト。全ベンチ NaN/Inf なし。ベンチ dir: `bench_m6_ternary` / `bench_m6_binary_visc` / `bench_m6_binary_invisc` (一時計測用、成果物は非コミット)。
   - **残レバー (M6 後続)**: NASA エンタルピー反転自体の FP32 化 (生成エンタルピー ≈ 0 の不活性種のみ安全、燃焼種は sensible enthalpy 再定式化が必要) / 温度ルックアップテーブル (cp/h/s を温度グリッドで事前計算し `log/pow/Newton` 全廃、結果が微変するため別マイルストーン)。非粘性経路の追加加速には SLAU 面エンタルピーの `h_mix` double 反転自体が残コスト。
+- `2026-06-10` — **M7 zero-gradient/反射系 BC の組成依存エネルギー化 (実装・検証完了)**。M5 で `inlet_uniformVelocity` のみだった組成依存エネルギー BC を、ghost 組成 = 隣接内部セル組成 (zero-gradient) となる壁/対称/出口系へ拡張。これまで `slip`/`wall`/`wall_isothermal`/`outlet_statPress` の TP 分岐は ghost の `R/cp/h/e/γ` を `sp[0]` 固定で再構成しており、Cutler (species[0]=He) では**空気/coflow 領域の壁・出口が He の物性 (N2 の ~7 倍の R) で熱再構成される**バグがあった。
+  - **実装**: `boundaryCond_d.cu` に内部セル `ic` の正規化 `Y` を取り出す device ヘルパ `bc_cell_Y` を追加 (`roY==nullptr || nSpecies<2` で false→単成分 `sp[0]` 経路を維持)。`slip`/`wall`/`wall_isothermal`/`outlet_statPress` の各カーネル+wrapper に `roY=species_roY_device_ptr()` と `nSpecies` を渡し、TP 分岐の `thermo_R_species(sp[0])`・`thermo_h_mass(sp[0])`・`thermo_cp_mass(sp[0])` を内部セル組成の `thermo_R_mix`/`thermo_e_mix`/`thermo_cp_mix` に置換。`outlet_statPress` の backflow (流入ガスの全温・全圧 NASA 等エントロピー反転) 用に `thermo_isentropic_from_total_mix` + `thermo_s0_mix` を `thermo_d.cuh` に追加。`outflow` は ghost が内部値コピーのみ (既に混合則整合) で変更不要。`inlet_Pressure`/`inlet_Pressure_dir` は指定組成 `Yb` の配線が必要・多成分ケース未使用のため据え置き。
+  - **検証**: ① **単成分 TP 回帰** — 単成分 TP N2 (`27.axi_nozzle_plume/run_0009_tpN2`, slip/wall/outlet_statPress 使用) を M7 前後バイナリで実行。差は Mach4 プルームのカオス的 atomicAdd 非決定性 (ro max|Δ|=0.068) で、**旧バイナリ同士**の run 間差 (ro max|Δ|=0.118) と同等以下 → M7 は単成分経路を変えない (`mix?新:旧` の else がビット不変、`nSpecies<2` 短絡で安全)。② **多成分 BC 健全性** — Cutler binary [He,N2] 非粘性 (`28.cutler_coaxial_jet/run_0027_he_n2_trackC`, 500 步): NaN なし・$\sum Y=1$ (1.2e-7)・$0\le Y\le1$・ro/P/T/sonic 物理的。lip (He/空気境) の slip ghost と出口が局所組成で再構成されるようになった (粘性 Cutler 検証の前提整備)。
 - ビルドは Docker dev image (`forge-solver:cuda-dev`) で実施 (native は libyaml-cpp 0.8 + hdf5 + nvcc 12.0 が揃い、速度計測は native で実施可能)。

@@ -1,5 +1,20 @@
 #include "cuda_forge/boundaryCond_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/speciesTransport_d.cuh"  // species_roY_device_ptr()
+
+// 内部セル ic の正規化質量分率 Y を取り出す (多成分 ghost の熱再構成用)。
+// 壁/slip/outflow/outlet の ghost 組成は隣接内部セルと同一 (zero-gradient) なので、
+// TP の R/cp/h/e/γ をその混合組成で再構成する。roY==nullptr または n<2 (単成分) では
+// false を返し、呼び出し側は従来の sp[0] 経路をビット不変で維持する。
+__device__ inline bool bc_cell_Y(flow_float* const* roY, int n, geom_int ic, double* Y)
+{
+    if (roY == nullptr || n < 2) return false;
+    double s = 0.0;
+    for (int k = 0; k < n; ++k) { Y[k] = (double)roY[k][ic]; s += Y[k]; }
+    const double inv = 1.0 / (s > 1.0e-300 ? s : 1.0e-300);
+    for (int k = 0; k < n; ++k) Y[k] *= inv;
+    return true;
+}
 
 __global__
 void slip_d
@@ -8,6 +23,7 @@ void slip_d
  flow_float ga,
  flow_float cp,
  int thermalMethod, const SpeciesThermo* sp,
+ flow_float* const* roY, int nSpecies,   // 多成分: ghost 組成 = 内部セル組成
 
  // mesh structure
  geom_int nb,
@@ -77,8 +93,11 @@ void slip_d
         rob[ib]   = ro[ic];
         Psb[ib]   = P[ic];
         if (thermalMethod == 2) {
-            // slip 反射は熱力学状態を保存。e は内部温度の NASA 値を用いる。
-            const double e_in = thermo_h_mass(sp[0], (double)T[ic]) - thermo_R_species(sp[0])*(double)T[ic];
+            // slip 反射は熱力学状態を保存。e は内部温度・内部組成の NASA 値を用いる。
+            double Yc[THERMO_MAX_SPECIES];
+            const bool mix = bc_cell_Y(roY, nSpecies, ic, Yc);
+            const double e_in = mix ? thermo_e_mix(sp, nSpecies, Yc, (double)T[ic])
+                                    : (thermo_h_mass(sp[0], (double)T[ic]) - thermo_R_species(sp[0])*(double)T[ic]);
             roe[ig]   = (flow_float)((double)ro[ic]*(e_in + (double)ek_ig));
             Ht[ig]    = (roe[ig] + P[ig])/ro[ig];
             sonic[ig] = sonic[ic];
@@ -110,6 +129,7 @@ void slip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         cfg.gamma,
         cfg.cp,
         cfg.thermalMethod, thermo_species_device_ptr(),
+        species_roY_device_ptr(), cfg.nSpecies,
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,
@@ -156,6 +176,7 @@ __global__ void wall_d
  flow_float ga,
  flow_float cp,
  int thermalMethod, const SpeciesThermo* sp,
+ flow_float* const* roY, int nSpecies,   // 多成分: ghost 組成 = 内部セル組成
 
  // mesh structure
  geom_int nb,
@@ -215,7 +236,9 @@ flow_float* T,
         flow_float Tc;
         if (thermalMethod == 2) {
             // 鏡像反射は熱力学状態 (ρ,e,P,T) を保存するため内部値をコピー (NASA 整合)。
-            R  = (flow_float)thermo_R_species(sp[0]);
+            double Yc[THERMO_MAX_SPECIES];
+            const bool mix = bc_cell_Y(roY, nSpecies, ic, Yc);
+            R  = (flow_float)(mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]));
             P[ig]     = P[ic];
             Ht[ig]    = Ht[ic];
             sonic[ig] = sonic[ic];
@@ -249,6 +272,7 @@ void wall_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh&
         cfg.gamma,
         cfg.cp,
         cfg.thermalMethod, thermo_species_device_ptr(),
+        species_roY_device_ptr(), cfg.nSpecies,
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,
@@ -297,6 +321,7 @@ __global__ void wall_isothermal_d
  flow_float ga,
  flow_float cp,
  int thermalMethod, const SpeciesThermo* sp,
+ flow_float* const* roY, int nSpecies,   // 多成分: ghost 組成 = 内部セル組成
 
  // mesh structure
  geom_int nb,
@@ -342,8 +367,12 @@ __global__ void wall_isothermal_d
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
-        // R は TP では混合 (NASA), CPG では cp-cp/ga。
-        flow_float R = (thermalMethod == 2) ? (flow_float)thermo_R_species(sp[0]) : (cp - cp/ga);
+        // R は TP では内部セル組成の混合 (NASA), CPG では cp-cp/ga。
+        double Yc[THERMO_MAX_SPECIES];
+        const bool mix = bc_cell_Y(roY, nSpecies, ic, Yc);
+        flow_float R = (thermalMethod == 2)
+                       ? (flow_float)(mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]))
+                       : (cp - cp/ga);
 
         Psb[ib] = P[ic];
         rob[ib] = Psb[ib]/(R*Tsb[ib]);
@@ -361,8 +390,9 @@ __global__ void wall_isothermal_d
             // 等温壁 ghost を T=Tsb と整合: roe=ρ(e_NASA(Tsb)+ek), sonic=√(γ_mix P/ρ)。
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
             const double Tw  = (double)Tsb[ib];
-            const double e   = thermo_h_mass(sp[0], Tw) - (double)R*Tw;
-            const double cpv = thermo_cp_mass(sp[0], Tw);
+            const double e   = mix ? thermo_e_mix(sp, nSpecies, Yc, Tw)
+                                   : (thermo_h_mass(sp[0], Tw) - (double)R*Tw);
+            const double cpv = mix ? thermo_cp_mix(sp, nSpecies, Yc, Tw) : thermo_cp_mass(sp[0], Tw);
             const double gmx = cpv/((cpv-(double)R) > 1.0e-6 ? (cpv-(double)R) : 1.0e-6);
             roe[ig]  = (flow_float)((double)ro[ig]*(e + (double)ekg));
             sonic[ig]= (flow_float)sqrt(gmx*(double)P[ig]/(double)ro[ig]);
@@ -405,7 +435,8 @@ __global__ void wall_isothermal_d
         rob[ib]   = Psb[ib]/(R*Tsb[ib]);
         if (thermalMethod == 2) {
             const double Tw = (double)Tsb[ib];
-            const double e  = thermo_h_mass(sp[0], Tw) - (double)R*Tw;
+            const double e  = mix ? thermo_e_mix(sp, nSpecies, Yc, Tw)
+                                  : (thermo_h_mass(sp[0], Tw) - (double)R*Tw);
             roeb[ib] = (flow_float)((double)rob[ib]*(e + (double)ek));
         } else {
             roeb[ib]  = Psb[ib]/(ga-1.0) + rob[ib]*ek;
@@ -419,6 +450,7 @@ void wall_isothermal_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond&
         cfg.gamma,
         cfg.cp,
         cfg.thermalMethod, thermo_species_device_ptr(),
+        species_roY_device_ptr(), cfg.nSpecies,
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,
@@ -463,12 +495,13 @@ void wall_isothermal_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond&
 
 
 __global__ 
-void outlet_statPress_d 
+void outlet_statPress_d
 (
  // gas properties
  flow_float ga,
  flow_float cp,
  int thermalMethod, const SpeciesThermo* sp,
+ flow_float* const* roY, int nSpecies,   // 多成分: ghost/backflow 組成 = 内部セル組成
 
  // mesh structure
  geom_int nb,
@@ -515,6 +548,10 @@ flow_float* Psb
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
 
+        // ghost / backflow 流入ガスの組成は隣接内部セルと同一 (zero-gradient)。
+        double Yc[THERMO_MAX_SPECIES];
+        const bool mix = bc_cell_Y(roY, nSpecies, ic, Yc);
+
         //if (ib == 0) {
         //    printf("outlet_statPress_d: ib = %d, ip = %d, ic = %d, ig = %d\n", ib, ip, ic, ig);
         //}
@@ -556,10 +593,14 @@ flow_float* Psb
             flow_float Pt_b = Ptb[ib];
             flow_float Tt_b = Ttb[ib];
             if (thermalMethod == 2) {
-                // TP: 全温・全圧から NASA 等エントロピーで静的 (ρ, P) を反転
+                // TP: 全温・全圧から NASA 等エントロピーで静的 (ρ, P) を反転 (流入ガス組成 = 内部セル)
                 double Ts_d, Ps_d, ro_d, um_d;
-                thermo_isentropic_from_total_single(sp, (double)Pt_b, (double)Tt_b, (double)mach_new,
-                                                    &Ts_d, &Ps_d, &ro_d, &um_d);
+                if (mix)
+                    thermo_isentropic_from_total_mix(sp, nSpecies, Yc, (double)Pt_b, (double)Tt_b,
+                                                     (double)mach_new, &Ts_d, &Ps_d, &ro_d, &um_d);
+                else
+                    thermo_isentropic_from_total_single(sp, (double)Pt_b, (double)Tt_b, (double)mach_new,
+                                                        &Ts_d, &Ps_d, &ro_d, &um_d);
                 Pnew  = (flow_float)Ps_d;
                 ronew = (flow_float)ro_d;
             } else {
@@ -586,10 +627,11 @@ flow_float* Psb
             // TP: ghost を (ρ=ronew, P=Pnew) と整合させる。T=P/(ρ R_mix), roe=ρ(e_NASA(T)+ek),
             //     sonic=√(γ_mix P/ρ)。定数 ga/cp は使わない。
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
-            const double R   = thermo_R_species(sp[0]);
+            const double R   = mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]);
             const double Tg  = (double)Pnew/((double)ronew*R);
-            const double e   = thermo_h_mass(sp[0], Tg) - R*Tg;
-            const double cpv = thermo_cp_mass(sp[0], Tg);
+            const double e   = mix ? thermo_e_mix(sp, nSpecies, Yc, Tg)
+                                   : (thermo_h_mass(sp[0], Tg) - R*Tg);
+            const double cpv = mix ? thermo_cp_mix(sp, nSpecies, Yc, Tg) : thermo_cp_mass(sp[0], Tg);
             const double gmx = cpv/((cpv-R) > 1.0e-6 ? (cpv-R) : 1.0e-6);
             roe[ig]   = (flow_float)((double)ronew*(e + (double)ekg));
             sonic[ig] = (flow_float)sqrt(gmx*(double)Pnew/(double)ronew);
@@ -611,7 +653,7 @@ flow_float* Psb
         roUzb[ib]  = ronew*Uznew*uscale;
         roeb[ib]   = roe[ig];
         if (thermalMethod == 2) {
-            const double R = thermo_R_species(sp[0]);
+            const double R = mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]);
             Tsb[ib] = (flow_float)((double)Psb[ib]/((double)rob[ib]*R));
         } else {
             Tsb[ib] = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
@@ -625,6 +667,7 @@ void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond
         cfg.gamma,
         cfg.cp,
         cfg.thermalMethod, thermo_species_device_ptr(),
+        species_roY_device_ptr(), cfg.nSpecies,
 
         bc.iPlanes.size(),
         bc.map_bplane_plane_d,

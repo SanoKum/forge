@@ -468,6 +468,50 @@ THERMO_HD void thermo_isentropic_from_total_single(
     *ro_out   = (*Ps_out)/(R*Ts);
 }
 
+// 混合 (質量分率 Y, 組成一定) の標準状態エントロピー s0_mix(T) = Σ Y_i s0_i(T) [J/(kg·K)]。
+// 等エントロピー反転では組成が一定なので混合エントロピー項は差分でキャンセルし不要。
+THERMO_HD double thermo_s0_mix(const SpeciesThermo* sp, int n, const double* Y, double T)
+{
+    double s = 0.0;
+    for (int i = 0; i < n; ++i) s += Y[i]*thermo_s0_mass(sp[i], T);
+    return s;
+}
+
+// 多成分版の等エントロピー total→static 反転 (Mach 指定版)。組成 Y は一定。
+// thermo_isentropic_from_total_single の sp[0] を混合則 (R_mix/h_mix/cp_mix/s0_mix) に置換しただけ。
+THERMO_HD void thermo_isentropic_from_total_mix(
+    const SpeciesThermo* sp, int n, const double* Y, double Pt, double Tt, double mach,
+    double* Ts_out, double* Ps_out, double* ro_out, double* umag_out)
+{
+    const double R  = thermo_R_mix(sp, n, Y);
+    const double h0 = thermo_h_mix(sp, n, Y, Tt);
+    double Ts = Tt/(1.0 + 0.2*mach*mach);   // CPG 近似の初期値
+    if (Ts < 10.0) Ts = 10.0;
+    #pragma unroll 1
+    for (int it=0; it<25; ++it) {
+        const double cp = thermo_cp_mix(sp, n, Y, Ts);
+        const double g  = cp/((cp-R) > 1.0e-6 ? (cp-R) : 1.0e-6);
+        const double a2 = g*R*Ts;
+        const double f  = thermo_h_mix(sp, n, Y, Ts) + 0.5*mach*mach*a2 - h0;
+        const double df = cp + 0.5*mach*mach*g*R;   // 近似微分 (dγ/dT 無視)
+        double dT = f/df;
+        if (dT >  0.4*Ts) dT =  0.4*Ts;
+        if (dT < -0.4*Ts) dT = -0.4*Ts;
+        Ts -= dT;
+        if (Ts < 10.0) Ts = 10.0;
+        if (Ts > Tt)   Ts = Tt;
+        if (dT < 0.0) dT = -dT;
+        if (dT < 1.0e-3 + 1.0e-6*Ts) break;
+    }
+    const double cp = thermo_cp_mix(sp, n, Y, Ts);
+    const double g  = cp/((cp-R) > 1.0e-6 ? (cp-R) : 1.0e-6);
+    const double a  = sqrt(g*R*Ts);
+    *umag_out = mach*a;
+    *Ps_out   = Pt*exp(-(thermo_s0_mix(sp,n,Y,Tt) - thermo_s0_mix(sp,n,Y,Ts))/R);
+    *Ts_out   = Ts;
+    *ro_out   = (*Ps_out)/(R*Ts);
+}
+
 // 単成分の等エントロピー total→static 反転 (静圧 Ps 指定版)。
 //   全温 Tt・全圧 Pt と静圧 Ps から静温 Ts・密度 ρ・速度 |u| を求める。
 //     s0(Ts) = s0(Tt) + R·ln(Ps/Pt)   (等エントロピー: s0(T)-R ln P 一定)
