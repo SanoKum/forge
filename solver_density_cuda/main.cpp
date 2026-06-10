@@ -994,6 +994,43 @@ void advanceImplicitDualTime(StepContext& s)
     s.residual_logger.logOuterEnd(s.iStep);
 }
 
+// detectNaN==1 のときのみ毎ステップ終端で呼ぶ診断ルーチン。保存量 (ro,roUx,roUy,roUz,roe) と圧力 P
+// (RANS 時は roK,roOmega も) を内部セルにわたって検査し、NaN/Inf があれば解を res_nan_<step>.h5 に
+// 強制ダンプして即停止する。off のときは一切呼ばれないので通常実行の性能・結果には影響しない。
+void checkNonFiniteAndHalt(StepContext& s)
+{
+    std::vector<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "P"};
+    if (scalarResidualEnabled(s.cfg)) {
+        names.emplace_back("roK");
+        names.emplace_back("roOmega");
+    }
+
+    std::string offending;
+    bool bad = false;
+    if (s.cfg.gpu == 1) {
+        bad = hasNonFiniteCellValue_d(s.msh, s.var, names, offending);
+    } else {
+        for (const std::string& name : names) {
+            auto it = s.var.c.find(name);
+            if (it == s.var.c.end()) continue;
+            for (geom_int ic = 0; ic < s.msh.nCells; ic++) {
+                if (!std::isfinite(it->second[ic])) { bad = true; offending = name; break; }
+            }
+            if (bad) break;
+        }
+    }
+
+    if (!bad) return;
+
+    const int dumpStep = s.iStep + 1;
+    std::cerr << "[detectNaN] Non-finite value detected in '" << offending
+              << "' at step " << dumpStep
+              << ". Dumping solution to res_nan_" << dumpStep
+              << ".h5 and halting." << std::endl;
+    dumpSolutionH5_force(s.cfg, s.msh, s.var, dumpStep, "res_nan_");
+    std::exit(EXIT_FAILURE);
+}
+
 void advanceOneStep(
     solverConfig& cfg,
     cudaConfig& cuda_cfg,
@@ -1028,6 +1065,11 @@ void advanceOneStep(
             advanceExplicitRK(s);
         }
     });
+
+    // detectNaN 診断モード (既定 off): 保存量+P を検査し NaN/Inf があればダンプして停止する。
+    if (cfg.detectNaN == 1) {
+        checkNonFiniteAndHalt(s);
+    }
 }
 
 }

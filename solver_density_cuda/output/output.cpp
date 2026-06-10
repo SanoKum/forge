@@ -27,10 +27,8 @@ flow_float outputTimeValue(const solverConfig& cfg, int iStep)
 
 }
 
-void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep)
+static void writeSolutionH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep , const std::string& prefix)
 {
-    if (iStep%cfg.outStepInterval != 0 or iStep < cfg.outStepStart) return;
-
     if (cfg.gpu == 1) {
         var.copyVariables_cell_D2H(var.output_cellValNames);
     }
@@ -43,7 +41,7 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
     // *** HDF5 *** 
     // ------------
     oss << iStep;
-    string fnameH5 = "res_"+oss.str()+".h5";
+    string fnameH5 = prefix+oss.str()+".h5";
     ofstream ofsH5(fnameH5);
 
     File file(fnameH5, File::ReadWrite | File::Truncate);
@@ -110,7 +108,7 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
     // ------------
     // *** XDMF ***
     // ------------
-    string fnameXDMF = "res_"+oss.str()+".xmf";
+    string fnameXDMF = prefix+oss.str()+".xmf";
     ofstream ofs(fnameXDMF);
 
     ofs << "<?xml version='1.0' ?>\n";
@@ -122,13 +120,13 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
     ofs << "      <Grid Name='gridooo'>\n";
     ofs << "        <Topology Type='Mixed' NumberOfElements='" << msh.nCells << "'>\n";
     ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
-    ofs << "            res_" << oss.str() <<".h5:MESH/CONNE\n";
+    ofs << "            " << prefix << oss.str() <<".h5:MESH/CONNE\n";
     ofs << "          </DataItem>\n";
     ofs << "        </Topology>\n";
 
     ofs << "        <Geometry Type='XYZ'>\n";
     ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << msh.nNodes*3 << "'>\n";
-    ofs << "            res_"<< oss.str() <<".h5:MESH/COORD\n";
+    ofs << "            " << prefix << oss.str() <<".h5:MESH/COORD\n";
     ofs << "          </DataItem>\n";
     ofs << "        </Geometry>\n";
 
@@ -138,7 +136,7 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
         //string name = v.first;
         ofs << "        <Attribute Name='"  << name << "' Center='Cell' >\n";
         ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << msh.nCells << "'>\n";
-        ofs << "            res_"<< oss.str() << ".h5:VALUE/" << name << "\n";
+        ofs << "            " << prefix << oss.str() << ".h5:VALUE/" << name << "\n";
         ofs << "          </DataItem>\n";
         ofs << "        </Attribute>\n";
     }
@@ -147,6 +145,20 @@ void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , 
     ofs << "    </Grid>\n";
     ofs << "  </Domain>\n";
     ofs << "</Xdmf>\n";
+}
+
+void outputH5_XDMF(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep)
+{
+    if (iStep%cfg.outStepInterval != 0 or iStep < cfg.outStepStart) return;
+
+    writeSolutionH5_XDMF(cfg , msh , var , iStep , "res_");
+}
+
+// detectNaN 診断モード用: 出力間隔ガードを無視して現在の解を強制ダンプする。
+// prefix で通常出力 (res_) と区別する (例: res_nan_)。
+void dumpSolutionH5_force(const solverConfig& cfg , const mesh& msh , variables& var , const int& iStep , const std::string& prefix)
+{
+    writeSolutionH5_XDMF(cfg , msh , var , iStep , prefix);
 }
 
 void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var , const int& iStep)

@@ -49,6 +49,21 @@
 - 非定常 (`unsteady: 1`, `dualTime: 0`) の物理時間刻みは `cfl` (または `dt`) で決まる。
 - ログの `max cfl` 表示は `cfg.cfl` に追従する値であり、実効積分 CFL ではない点に注意する。
 
+## detectNaN — NaN/Inf 検知診断モード
+
+`time.deltaT.detectNaN` (任意, 既定 `0`)。発散の発生ステップと場を特定するための診断オプション。
+
+- `0` (既定): 検査を一切行わない。通常実行はビット不変・性能影響なし。
+- `1`: **毎ステップ終端**で保存量 `ro`,`roUx`,`roUy`,`roUz`,`roe` と圧力 `P` (RANS 時は `roK`,`roOmega` も) を内部セル (`nCells`) にわたって検査する。NaN/Inf が 1 つでもあれば、その時点の解を `res_nan_<step>.h5` / `.xmf` に強制ダンプし、最初に該当した変数名を `stderr` に出力して `exit(1)` で停止する。
+
+```yaml
+time:
+  deltaT:
+    detectNaN: 1   # 発散をその場で捕捉してダンプ・停止する
+```
+
+毎ステップ GPU リダクション (`thrust::any_of`) が走るため、原因調査時のみ有効化し、本番計算では `0` のままにする。ダンプされた `res_nan_<step>.h5` を ParaView で開けば、どの境界・どのセルで最初に NaN が出たかを直接確認できる。
+
 ## リスタート手順
 
 前の run の結果から引き継ぐ場合は `valueFileName` に該当の `res_*.h5` を指定する。

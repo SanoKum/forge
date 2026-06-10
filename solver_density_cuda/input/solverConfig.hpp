@@ -39,6 +39,9 @@ public:
     flow_float cfl_pseudo;
     flow_float implicitRelax = 1.0;
     int blockDPLUR = 0;
+    int detectNaN = 0;             // 0: off (既定), 1: 毎ステップ終端で保存量+P の非有限値を検査し、
+                                   // 見つけたら res_nan_<step>.h5 をダンプして即停止する診断モード。
+                                   // off のときは検査を一切行わないため通常実行はビット不変。
     int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
     flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
                                    // ε 小ほど低マッハ振動を強く減衰するが ε≲0.1 は発散 (ε=0.05 で NaN)。

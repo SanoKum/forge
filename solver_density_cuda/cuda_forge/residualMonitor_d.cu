@@ -2,6 +2,7 @@
 
 #include <thrust/device_ptr.h>
 #include <thrust/functional.h>
+#include <thrust/logical.h>
 #include <thrust/transform_reduce.h>
 
 #include <cmath>
@@ -15,6 +16,14 @@ struct SquareValue {
     flow_float operator()(const flow_float value) const
     {
         return value * value;
+    }
+};
+
+struct IsNonFinite {
+    __host__ __device__
+    bool operator()(const flow_float value) const
+    {
+        return !isfinite(value);
     }
 };
 
@@ -64,6 +73,28 @@ std::vector<flow_float> gatherVariableRms_d(
     }
 
     return rms;
+}
+
+bool hasNonFiniteCellValue_d(
+    mesh& msh,
+    variables& var,
+    const std::vector<std::string>& variable_names,
+    std::string& offending_name)
+{
+    offending_name.clear();
+    for (const std::string& name : variable_names) {
+        auto it = var.c_d.find(name);
+        if (it == var.c_d.end()) {
+            continue;  // 未確保の変数 (turbulence off の roK 等) はスキップ
+        }
+        thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(it->second);
+        const bool bad = thrust::any_of(d_ptr, d_ptr + msh.nCells, IsNonFinite{});
+        if (bad) {
+            offending_name = name;
+            return true;
+        }
+    }
+    return false;
 }
 
 std::array<flow_float, 5> gatherResidualRms_d(mesh& msh, variables& var)
