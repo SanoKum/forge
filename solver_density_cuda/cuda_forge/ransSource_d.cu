@@ -33,6 +33,7 @@ __global__ void rans_sst_source_d(
     int isAxisymmetric,
     flow_float* axisym_uy_over_r,
     int dilatationCorrection,
+    int katoLaunder,
     flow_float* res_roK,
     flow_float* res_roOmega,
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
@@ -82,6 +83,20 @@ __global__ void rans_sst_source_d(
         S_sq = max(S_sq, static_cast<flow_float>(0.0));
     }
 
+    // Kato-Launder 補正 (docs/turbulence/theory.md §7.5): 生産の片方の S を渦度 Omega に
+    // 置換し、非回転の強加速 (よどみ点・ノズル喉中心線) での偽生産を抑える。
+    //   S_prod = S^2 (標準, katoLaunder==0)  /  S*Omega (katoLaunder==1)
+    // せん断層 S~Omega では従来同等、非回転 Omega->0 では生産->0。Omega は無旋回でも
+    // フープ補正不要 (反対称部、ひずみ S^2 の +2 S_tt^2 と非対称)。
+    flow_float S_prod = S_sq;
+    if (katoLaunder == 1) {
+        const flow_float wx = dUzdy[ic] - dUydz[ic];   // omega = rot u
+        const flow_float wy = dUxdz[ic] - dUzdx[ic];
+        const flow_float wz = dUydx[ic] - dUxdy[ic];
+        const flow_float Om_sq = wx*wx + wy*wy + wz*wz; // = 2 Omega_ij Omega_ij = |omega|^2
+        S_prod = sqrt(S_sq * Om_sq);                    // = sqrt(S_sq)*sqrt(Om_sq) = S*Omega
+    }
+
     // 交差拡散項（F1 ブレンドに使用）
     const flow_float grad_k_dot_w =
         dKdx[ic] * dOmegadx[ic] + dKdy[ic] * dOmegady[ic] + dKdz[ic] * dOmegadz[ic];
@@ -101,8 +116,8 @@ __global__ void rans_sst_source_d(
     const flow_float alpha = F1 * kAlpha1 + (static_cast<flow_float>(1.0) - F1) * kAlpha2;
     const flow_float beta  = F1 * kBeta1  + (static_cast<flow_float>(1.0) - F1) * kBeta2;
 
-    // k 生産項（10 beta* rho k omega でリミット）
-    flow_float Pk = min(mu_t_eff * S_sq,
+    // k 生産項（10 beta* rho k omega でリミット）。S_prod は katoLaunder で S^2 / S*Omega。
+    flow_float Pk = min(mu_t_eff * S_prod,
         static_cast<flow_float>(10.0) * kBetaStar * rho * k_c * w_c);
 
     // (B) 等方項 -2/3 rho k divU を k 生産に加算 (dilatationCorrection >= 2, theory.md §7.3)
@@ -116,7 +131,7 @@ __global__ void rans_sst_source_d(
     const flow_float Dk = kBetaStar * rho * k_c * w_c;
 
     // omega 生産項
-    const flow_float Pw = alpha * rho * S_sq;
+    const flow_float Pw = alpha * rho * S_prod;
 
     // omega 消滅項
     const flow_float Dw = beta * rho * w_c * w_c;
@@ -164,6 +179,7 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         cfg.isAxisymmetric,
         var.c_d["axisym_uy_over_r"],
         cfg.dilatationCorrection,
+        cfg.katoLaunder,
         var.c_d["res_roK"],
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],

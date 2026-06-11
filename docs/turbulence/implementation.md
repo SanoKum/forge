@@ -206,6 +206,33 @@ laminar / LES ケースには影響しない。従来の非圧縮挙動が必要
 
 検証は run_0091(off) を基準に run_0092(A) → run_0093(A+B) と段階比較する。
 
+### 5.3.1 Kato–Launder 生産補正 (`katoLaunder`)
+
+strain-based 生産の stagnation/加速アノマリー (theory.md §7.5) を抑えるオプション。
+`solverConfig` の `turbulence.katoLaunder` で制御する。
+
+| 値 | 内容 |
+| --- | --- |
+| `0` | 標準 $P_k=\mu_t S^2$ (**既定**, 既存挙動とビット一致) |
+| `1` | Kato–Launder $P_k=\mu_t S\,\Omega$ ($\Omega=\sqrt{2\Omega_{ij}\Omega_{ij}}=|\boldsymbol\omega|$) |
+
+実装も `rans_sst_source_d`
+([`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu)) 内で完結:
+
+- 渦度の大きさ二乗を既存の速度勾配から組む (新規物理量なし):
+  `Om_sq = (dUxdy-dUydx)^2 + (dUxdz-dUzdx)^2 + (dUydz-dUzdy)^2` $= 2\Omega_{ij}\Omega_{ij}=|\boldsymbol\omega|^2$。
+  軸対称(無旋回)でもフープは渦度を持たないため**補正不要**(ひずみと非対称)。
+- `dilatationCorrection` 適用後の `S_sq` を用い、生産係数を
+  $S^2 \to \sqrt{S\_sq}\cdot\sqrt{Om\_sq}$ に置換 (`katoLaunder==1` のとき)。
+  $P_k=\mu_t\cdot S\Omega$、$P_\omega=\alpha\rho\cdot S\Omega$ の双方に適用。
+- リミタ ($10\beta^*\rho k\omega$) と (B) 等方項は従来どおり後段で適用。
+- `katoLaunder == 0` では従来挙動とビット一致。`dilatationCorrection` と直交・併用可。
+
+**検証結果** (case 29 conical 2D, `run_0017`(off) vs `run_0018_conical_kl`(on)):
+`katoLaunder:1` で軸中心線 $k$ **17.0→1.93** (μt/μlam 37→10.7), 核 $k$ **5.0→0.47** と偽生産を除去。
+一方 **壁 BL は不変** (x=50mm で μt/μlam ピーク 13.0→12.9, $k$ 5374→5369), **推力も不変**
+(F=1953.0→1953.1, mdot・λ 一致)。$S\approx\Omega$ の BL を保ち $S\gg\Omega$ の核生産のみ落とす狙い通り。
+
 ### 5.4 非軸対称ケースの不変性
 
 `isAxisymmetric == 0` のときは追加項をすべて 0 とし、既存の 2D / 3D SST と

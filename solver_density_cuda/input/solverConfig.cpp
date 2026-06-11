@@ -253,6 +253,12 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'dilatationCorrection' in 'turbulence' must be one of 0, 1, or 2.");
         }
 
+        this->katoLaunder = getOptionalValidatedValue<int>(turb, "katoLaunder", 0, "turbulence");
+
+        if (this->katoLaunder < 0 || this->katoLaunder > 1) {
+            throw std::runtime_error("Key 'katoLaunder' in 'turbulence' must be 0 or 1.");
+        }
+
         if (this->LESorRANS < 0 || this->LESorRANS > 2) {
             throw std::runtime_error("Key 'LESorRANS' in 'turbulence' must be one of 0, 1, or 2.");
         }

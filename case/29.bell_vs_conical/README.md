@@ -180,3 +180,35 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
 
 主要成果物: `mach_comparison.png`, `exit_profiles.png`, `rans_visturb_profile.png`,
 各 `run_*/residual_history.png`, `mesh/nozzle_preview.png`。
+
+## 軸中心 k 過大の調査と Kato–Launder 検証 (2D vs 3D)
+
+RANS で**スロート中心線の $k$ が過大**になる現象を調査した。
+
+- **原因**: SST の strain-based 生産 $P_k=\mu_t S^2$ は、非回転の強加速域 (ノズル喉核) で
+  偽の乱流を生む (stagnation/加速アノマリー)。`dilatationCorrection` (等方=$\nabla\!\cdot\!u$
+  分のみ除去) では消えない別系統の欠陥で、残る**偏差伸長ひずみ**が効く。核は $S/\Omega\sim100$ と
+  ほぼ非回転 (理論: [`docs/turbulence/theory.md`](../../docs/turbulence/theory.md) §7.5)。
+
+- **2D vs 3D 切り分け** (`mesh/make_nozzle_3d.py` で 90° セクタ 3D, 非特異 squircle 断面,
+  軸を潰さない; `run_3d_conical_rans/`):
+  - **核全体の strain-dominated な $\mu_t$ 過大 (アノマリー本体) は 2D/3D 共通=幾何非依存**
+    (3D 核も $|\Omega|\sim10^2$ と物理的に小, $S/\Omega\sim100$, μt/μlam~13)。
+  - **2D 軸対称の鋭い中心線スパイク** (第1セル $k=17$ vs 核 ~4.5, μt/μlam~38) は **3D では
+    再現せず径方向平坦** (第1セル/核 ~0.8)。これは軸対称特有: 軸面積 $2\pi r\to0$ で生成 $k$ が
+    軸に封じ込められ、対称で第1セル $\Omega\to0$ → strain-only 生産が最大化。3D ではセル輸送が
+    正常で滞留しない。3D 直接比較: 2D 第1セル rad0.25mm $|\Omega|$=282 $k$=17 vs 3D rad0.49mm
+    $|\Omega|$=2351 $k$=5.3。
+
+- **Kato–Launder 修正** ($P_k=\mu_t S\Omega$, opt-in `katoLaunder:1`, 既定 0) を実装・検証
+  (`run_0018_conical_kl`, plan [`turbulence-kato-launder.md`](../../.github/plans/turbulence-kato-launder.md)):
+
+  | | 軸 $k$ | 軸 μt/μlam | 核 $k$ | 壁BL μt/μlam (x=50) | 推力 F | mdot/λ |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | `katoLaunder:0` | 17.0 | 37.0 | 5.02 | 13.0 | 1953.0 | 1.2998/0.9842 |
+  | `katoLaunder:1` | **1.93** | **10.7** | **0.47** | **12.9** | 1953.1 | 1.2998/0.9842 |
+
+  → $S\gg\Omega$ の軸・核の偽生産を除去しつつ、$S\approx\Omega$ の**壁 BL と推力は不変**。
+
+> 3D 検証メモ: convert は $k=\omega=0$ で IC を書くため 3D では $\omega$ 方程式の $1/\omega$ が
+> 起動時に発散する。IC で $\omega$ をシード (例 18000) すれば安定 (2D は耐えるが 3D 偏歪セルで顕在化)。

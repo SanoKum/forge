@@ -79,6 +79,7 @@ public:
     int RANSmodel = 0; // 0:none 1:SST
     int scalarDiffusion = 1; // 0:advection-only 1:advection+diffusion
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
+    int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (docs/turbulence §7.5)
 
     int isCompressible;
     int isAxisymmetric = 0;

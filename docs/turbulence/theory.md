@@ -408,6 +408,70 @@ $\varepsilon = \varepsilon_s(1 + \alpha_1 M_t^2)$, $M_t=\sqrt{2k}/a$ は
 したがって SST 側は新規物理量を計算せず、これらを kernel 引数で受け取り、
 `isAxisymmetric` のとき $S^2$ と発散補正に畳み込むだけでよい。
 
+### 7.5 応力生産アノマリーと Kato–Launder 補正
+
+標準 SST の生産項 $P_k = \mu_t S^2$ ($S=\sqrt{2S_{ij}S_{ij}}$) は **ひずみの大きさ**のみで
+生産を見積もる。ところがひずみテンソルは
+
+$$
+S_{ij} = \underbrace{\tfrac13(\nabla\!\cdot\!\mathbf u)\delta_{ij}}_{\text{等方(膨張)}}
++ \underbrace{S'_{ij}}_{\text{偏差}},\qquad
+S'_{ij} = \underbrace{\text{せん断成分}}_{\Omega\ \text{を伴う}}
++ \underbrace{\text{法線(伸長)異方性}}_{\text{非回転}}
+$$
+
+と分解され、偏差ひずみ $S'$ は**せん断**だけでなく**非回転の伸長(加速)ひずみ**も含む。
+速度勾配の反対称部=渦度 $\Omega_{ij}=\tfrac12(\partial_j u_i-\partial_i u_j)$,
+$\Omega=\sqrt{2\Omega_{ij}\Omega_{ij}}=|\boldsymbol\omega|$ は回転の不変尺度であり、
+**単純せん断では $S\approx\Omega$、純伸長(よどみ点・加速)では $\Omega\to0$ かつ $S$ 大**となる。
+
+§7.3 の `dilatationCorrection` は等方(トレース=$\nabla\!\cdot\!\mathbf u$)分のみを除くため、
+**非回転の偏差伸長ひずみは残り**、強加速場（ノズル喉中心線・よどみ点）で
+$P_k=\mu_t S'^2$ が偽の乱流を生む。これは strain-based SST の古典的欠陥
+(**stagnation / round-jet anomaly**) であり、`dilatationCorrection` では消えない別系統の問題。
+
+**Kato–Launder 修正** (Kato & Launder 1993) は生産の片方の $S$ を渦度 $\Omega$ に置換する:
+
+$$
+P_k = \mu_t\,S\,\Omega \qquad (\text{標準は } \mu_t S^2)
+$$
+
+- せん断層 ($S\approx\Omega$): $P_k\approx\mu_t S^2$ で**従来と一致**(壁 BL の本物の乱流は不変)。
+- 非回転加速 ($\Omega\to0$): $P_k\to0$ で**偽生産を除去**。
+
+不変量 $S,\Omega$ を使うため**座標系に依存しない**(「対角項除外」のような非不変操作は不可:
+45° 回転でせん断と伸長が入れ替わるため)。
+
+#### 本コードでの根拠 (case 29 ノズル)
+
+軸対称 conical ノズル ($M_e\approx4$) のスロート核は非回転加速域
+($S/\Omega\sim100$, 偏差ひずみ $S'^2\sim10^9$ vs $2\Omega^2\sim10^6$) で、$P_k=\mu_t S^2$ が
+偽の $k$ を生み核全体で $\mu_t/\mu_{lam}$ が freestream より高くなる。
+
+**2D 軸対称 vs 3D の切り分け** ([case 29 の 3D 90° セクタ検証](../../case/29.bell_vs_conical/README.md)):
+
+- **アノマリー本体 (核全体の strain-dominated な $\mu_t$ 過大) は 2D/3D 共通=幾何非依存**。
+  3D 核でも渦度は物理的に小さく ($|\Omega|\sim10^2$, mesh-spurious でない), $S/\Omega\sim100$,
+  $\mu_t/\mu_{lam}\sim13$。
+- 一方 **2D 軸対称では中心線に鋭いスパイク** ($\mu_t/\mu_{lam}\sim38$, 第1セル $k=17$ vs 核 ~4.5)。
+  **3D ではスパイクが消え径方向ほぼ平坦** ($\mu_t/\mu_{lam}\sim13$, 第1セル/核 ~0.8)。
+  この鋭いスパイクは軸対称特有の増幅: 軸面の面積 $2\pi r\to0$ で生成 $k$ が軸に封じ込められ、
+  対称で第1セル $\Omega\to0$ → strain-only 生産が最大化 → リミタ張り付き ($P\propto k$ 指数増幅) +
+  軸無フラックス滞留。3D ではセル輸送が正常で滞留しない。
+
+すなわち**生産アノマリー自体は幾何非依存だが、2D 軸対称の中心線スパイクは定式化由来の増幅**。
+$\Omega$ 置換 (Kato–Launder) は非回転核の偽生産を $\sim1/(S/\Omega)$ に落とし、2D の中心線スパイクも
+核の過大 $\mu_t$ も同時に抑えつつ、壁 BL ($S\approx\Omega$) を温存する。
+
+#### 適用範囲・既定
+
+- config `katoLaunder` (turbulence): `0`=標準 $\mu_t S^2$ (既定, 既存挙動とビット一致),
+  `1`=Kato–Launder $\mu_t S\Omega$。
+- $\omega$ 生産 $P_\omega=\alpha\rho S^2$ にも同じ置換 ($\alpha\rho S\Omega$) を適用し、$\mu_t$ の
+  時間スケール整合を保つ。
+- `dilatationCorrection` と**直交・併用可** (等方分は除いた上で $S\to\sqrt{S^2_{\rm corr}}$ と
+  $\Omega$ の積を取る)。
+
 ## 8. 初期実装の範囲外
 
 次は本章の対象外とする。
