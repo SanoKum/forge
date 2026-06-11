@@ -1,0 +1,21 @@
+Rao TOP bell vs C1 conical nozzle (same throat / length / exit area)
+============================================================
+throat radius Rt        : 10.000 mm
+exit radius   Re        : 32.740 mm  (both nozzles)
+chamber radius Rc       : 30.000 mm
+expansion ratio eps     : 10.719  (Ae/At)
+design exit Mach        : 4.000  (gamma=1.4)
+axial length Ln         : 85.368 mm  (throat x=0 -> exit; both)
+-- conical --
+cone half angle         : 15.00 deg (C1: arc tangent to cone)
+  arc->cone join Nc     : (0.989, 10.130) mm
+-- Rao bell --
+theta_n (start angle)   : 30.00 deg
+theta_e (exit angle)    : 8.00 deg
+bell length / 15deg-cone: 100.0%
+parabola start N        : (1.910, 10.512) mm
+Bezier control Q        : (25.944, 24.388) mm
+-- shared converging --
+converging half angle   : 30.0 deg
+chamber straight length : 20.0 mm
+axial extent            : x = -58.660 .. 85.368 mm

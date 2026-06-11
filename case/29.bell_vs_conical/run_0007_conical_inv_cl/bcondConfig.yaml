@@ -1,0 +1,41 @@
+# case 29 bell nozzle — inviscid axisymmetric (divergence-loss thrust comparison)
+#
+# IC: 準1次元等エントロピー場 (mesh/set_isentropic_ic.py で貼り付け)。
+# 設計点 (gamma=1.4): 出口 A/A*=10.72 -> M_e~3.95, 等エントロピー出口静圧 ~26 kPa。
+# outlet Ps はこの等エントロピー出口静圧より低く (20 kPa) して出口を超音速に保つ。
+# 超音速流出時 outlet_statPress は zero-gradient 外挿するため背圧は無視される。
+# 逆流 (backflow) 時の全圧も同じ静圧 (20 kPa) に設定 (ユーザ指示)。
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 4000000.0   # [Pa] total pressure
+    Tt: 1500.0      # [K]  total temperature
+    k: 1.0
+    omega: 1000.0
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 1
+  ints:
+  floats:
+    Ps: 20000.0     # [Pa] back pressure (< isentropic exit ~26 kPa; supersonic -> extrapolated)
+    Pt: 20000.0     # [Pa] backflow total pressure = same static
+    Tt: 300.0
+
+wall:
+  physID: 3
+  kind: slip          # inviscid: 発散損失 (形状効果) を分離するため滑り壁
+  outputHDFflg: 1
+  ints:
+  floats:
+
+axis:
+  physID: 4
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
