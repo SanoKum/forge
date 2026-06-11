@@ -22,7 +22,7 @@ R_GAS = 1004.5 * (GAMMA - 1.0) / GAMMA
 PAIRS = {
     "inviscid": ("run_0006_bell_inv_cl", "run_0007_conical_inv_cl", "8000", "8000"),
     "laminar": ("run_0004_bell_visc", "run_0005_conical_visc", "12000", "12000"),
-    "RANS SST": ("run_0014_bell_rans_dev", "run_0015_conical_rans_dev", "20000", "30000"),
+    "RANS SST": ("run_0016_bell_imp_sst", "run_0017_conical_imp_sst", "20000", "20000"),
 }
 
 

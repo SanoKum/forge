@@ -116,22 +116,26 @@ python3 make_plots.py                # residual / Mach 場 / 出口プロファ�
 | --- | --- | --- | --- |
 | `run_0006_bell_inv_cl` / `run_0007_conical_inv_cl` | inviscid (発散損失=形状効果を分離) | slip | 0 |
 | `run_0004_bell_visc` / `run_0005_conical_visc` | laminar (実摩擦) | no-slip | Sutherland |
-| `run_0008_bell_rans` / `run_0009_conical_rans` → 継続 `run_0014`/`run_0015` | RANS SST (乱流 BL 発達済) | no-slip | Sutherland+SST |
+| `run_0016_bell_imp_sst` / `run_0017_conical_imp_sst` | RANS SST (陰解法・clean inlet) | no-slip | Sutherland+SST |
 
 > いずれも壁密格子 (`--prog-r 0.95 --ny 100`, 第1セル ~10µm, y+≈0.6)。
 >
-> **RANS の乱流着火 (turbulent ignition) は遅い**ので注意。$k$/$\omega$ 拡散は有効粘性
-> $\mu_{lam}+\sigma\,\mu_t$ ([scalarTransport_d.cu](../../solver_density_cuda/cuda_forge/scalarTransport_d.cu)) で
-> 正しく実装されているが、層流的 IC からは $\mu_t\approx0$ のため初期は**層流拡散のみ**で $k$ の
-> 立ち上がりが極端に遅い (自己加速するまで潜伏)。順圧勾配 (喉の再層流化) と低い freestream seed
-> がこれを更に長引かせる:
-> - 12k step: 近壁 $k\approx0$, $\mu_t/\mu_{lam}\sim1.3$ — **未発達** (層流とほぼ同じ)。
-> - 40k step: x≳40mm のみ着火 ($k\sim10^4$)、x≤25mm はまだ $k\sim10^2$ — **部分発達**。
-> - ~50–60k step (warm-start 継続 `run_0012→0014`): 全 x で着火し $\mu_t/\mu_{lam}$ ピーク
->   ~25 (BL 端) の正常な乱流 BL に収束 (`rans_visturb_profile.png`)。
+> **(1) 入口 $\omega$ の適正化 (freestream $\mu_t$ 過大の修正)**: 初期設定 $k=1,\ \omega=1000$ は
+> 入口で $\mu_t/\mu_{lam}\approx176$、コアまで $\approx120$–180 と**過大** (非物理的にコアが乱流粘性で
+> floodされる)。水力直径の発達管相関 ($\ell=0.07D_h$) は大径チャンバでは逆に $\mu_t/\mu_{lam}\sim80$–1200
+> と更に過大で不適。代わりに**物理的 freestream 比 $\mu_t/\mu_{lam}=10$** を狙い、$k=1$ (強度 ~1.7%)
+> を保って $\omega=\rho k/(10\mu_{lam})\approx1.8\times10^4$ を入力。結果、入口 $\mu_t/\mu_{lam}$ 8.9、
+> 発散部コア 0.5–4 とクリーンになり、壁 BL の乱流 (近壁 $k\sim6500$, $\mu_t/\mu_{lam}$ ピーク ~26) は維持。
 >
-> 発達後の RANS 推力は未発達 (40k) 比 −0.2% (ベル) と僅かに低い (摩擦が現実的に増える)。本表は
-> **発達済** (`run_0014`/`run_0015`) の値。
+> **(2) 乱流着火 (turbulent ignition) は遅い**: $k$/$\omega$ 拡散は有効粘性
+> $\mu_{lam}+\sigma\mu_t$ ([scalarTransport_d.cu](../../solver_density_cuda/cuda_forge/scalarTransport_d.cu)) で
+> 正しく実装されているが、層流的 IC からは $\mu_t\approx0$ で初期は**層流拡散のみ**のため $k$ の
+> 立ち上がりが遅い (自己加速するまで潜伏。順圧勾配=喉の再層流化が助長)。陽解法では 12k step で
+> 近壁 $k\approx0$ (未発達)、40k で部分発達、~60k で全域発達。
+>
+> **(3) 陰解法 (block DPLUR, `timeIntegration:11`) で cfl_pseudo≈4**: 発達済場から warm-start し
+> 上記 clean inlet で収束。**ベルは cfl_pseudo=4 で安定**、**コーンは cfl_pseudo=2** (4 は step90 で
+> 発散; コーンの方が陰解法 CFL 上限が低い)。推力は ±0.01% で収束。本表は陰解法・clean inlet の値。
 
 ## 結果 — 推力比較 (同じ喉 / 軸長 / 出口面積)
 
@@ -142,7 +146,7 @@ NaN/発散チェック: 全 run NaN なし、最終場は物理的 ($P>0,\ T>0,\
 | --- | --- | --- | --- | --- | --- |
 | inviscid (slip) | 1976.2 | 1962.9 | **+0.68%** | 0.996 / 0.983 | 3.7° / 10.0° |
 | laminar | 1978.9 | 1957.2 | **+1.11%** | 0.997 / 0.984 | 3.5° / 9.8° |
-| RANS SST (発達済) | 1972.8 | 1953.4 | **+0.99%** | 0.997 / 0.984 | 3.4° / 9.7° |
+| RANS SST (陰解法・clean inlet) | 1971.3 | 1953.0 | **+0.94%** | 0.997 / 0.984 | 3.4° / 9.7° |
 
 - **ベルはコーンより ~0.7–1.1% 高推力** (inviscid/laminar/turbulent で頑健)。出口流がより軸方向
   (3.4° vs ~10°) で発散損失が小さいため。
@@ -169,6 +173,9 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
   比べ低いのは、超音速 MUSCL コアが硬いため (case 27 の implicit+MUSCL 発散と整合)。
 - **前処理 (`lowMachPrecond: 2`) は全 CFL で即発散**: 低マッハ用の手法で、超音速コアには不適
   (case 27 run_0005 と同じ)。
+- **RANS SST でも陰解法は有効** (`run_0016`/`run_0017`): 発達済場から warm-start し、ベルは
+  **cfl_pseudo=4 で安定収束**、コーンは **cfl_pseudo=2** (4 は発散、コーンの陰解法 CFL 上限が低い)。
+  陽解法 (cfl 0.3) より大幅に大きい擬似時間刻みで収束。
 - cf. [[implicit-blockdplur-config]] / [[nozzle-implicit-cfl-ceiling]]。
 
 主要成果物: `mach_comparison.png`, `exit_profiles.png`, `rans_visturb_profile.png`,
