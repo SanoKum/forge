@@ -10,7 +10,7 @@
 ## 0. エグゼクティブサマリ
 
 - **出発点ワークフローの正体**: 「目標中心線マッハ分布 → 軸対称 MOC で非粘性コンタ → 運動量積分による排除厚さ補正 → NS 確認」は、Sivells の極超音速風洞ノズル設計法（プログラム `CONTUR`, AEDC-TR-78-63, 1978）そのもの。**世界標準の正攻法**であり、捨てる理由はない。【検証済 ◎】
-- **MOC が決めない上流領域（重要・追補）**: MOC は**スロート下流の超音速部しか決めない**。(A) MOC の出発線 = 遷音速 starting line は**スロート壁曲率でパラメータ化**される遷音速解で与える（Hall 1962／Kliegel–Levine 1969）。(B) スロート形状は円弧（$R_u, R_d$）。(C) 亜音速収縮は Morel 1975（matched cubic）／Bell–Mehta 1988（5 次多項式、粘性比較で最も低非一様）。**スロート曲率は「熱流束 vs 一様性 vs 軸長」のパレート設計変数そのもの**（Bartz 1957: $h_g\propto r_c^{-0.1}$／Cuffel ら 1969: 小 $r_c$ でソニックライン非一様）であり、forge は亜音速〜超音速を一体で解くため、**これら上流領域こそ NS ループ内最適化が直接決めるべき対象**。【全て検証済 ◎】
+- **MOC が決めない上流領域（重要・追補）**: MOC は**スロート下流の超音速部しか決めない**。(A) MOC の出発線 = 遷音速 starting line は**スロート壁曲率でパラメータ化**される遷音速解で与える（Hall 1962／Kliegel–Levine 1969）。(B) スロート形状は円弧（$R_u, R_d$）。(C) 亜音速収縮は Morel 1975（matched cubic）／Bell–Mehta 1988（5 次多項式、粘性比較で最も低非一様）。**スロート曲率は「熱流束 vs 一様性 vs 軸長」のパレート設計変数そのもの**（Bartz 1957: $h_g\propto r_c^{-0.1}$／Cuffel ら 1969: 小 $r_c$ でソニックライン非一様）であり、forge は亜音速〜超音速を一体で解くため、**これら上流領域こそ NS ループ内最適化が直接決めるべき対象**。【全て検証済 ◎】**スロート近傍の幾何標準は A2.5(E) に追補**: 壁は「収縮曲線 → 円弧 $R_u$ → 円弧 $R_d$ → MOC 出力壁」の**区分構成**が正攻法で、多項式の置き場所は亜音速収縮（Bell–Mehta）と中心線マッハ分布（Sivells, 3〜4 次）の 2 箇所 — **スロートを跨ぐ単一 5 次多項式壁は標準外**（診断手順と移行レシピを A2.5(E) に提示）。
 - **NS-in-the-loop の前例と空白**: **Korte の CAN-DO（1992）**が直接前例 — フル NS（スロート）＋PNS（超音速）＋最小二乗最適化で、**排除厚さ補正を原理的に不要化**【検証済 ◎】。ただし単目的・領域分割。**「単一粘性ソルバ × 全域（収縮＋スロート＋超音速）× 多目的パレート × 多成分 TP」を満たす前例は検証文献に存在せず**、本ツールは**現状技術の最前線（ないしその先）に位置する**新規性がある。
 - **モダン化の本丸 = 随伴法 (adjoint)**: Jameson–Martinelli–Pierce (1998) が圧縮性 NS に対して確立。**勾配計算コストが設計変数の数に依存せず、1 設計サイクル ≒ 流れ計算 2 回**。これが「特性曲線法では不可能な、NS を回しながらの形状最適化」を可能にする核心技術。【検証済 ◎】
 - **参照すべき実装**: オープンソースの **SU2**（連続＋離散 AD 随伴, Economon/Palacios/Alonso）、**MACH-Aero**（FFD + 随伴, Martins グループ）、**OpenMDAO**（MDO 統合基盤, Gray/Hwang/Martins）。高速流での随伴実証は **Eilmer**（Damm ら, 極超音速インレット）。【検証済 ◎】
@@ -120,6 +120,45 @@
 >
 > ゆえに **「forge 単一ソルバ × 全域（$r_c$ 含む）× 多目的パレート × 多成分 TP」は検証済み文献における真の空白**であり、本ツールは確立手法の寄せ集めでなく**現状技術の最前線（ないしその先）に位置する**。各要素技術（CAN-DO の NS-in-loop、Matsunaga/Ogawa–Boyce のサロゲート EA、SU2 の随伴、Bianchi の $r_c$ 物理）を組み合わせて作る価値がある。
 
+### (E) 推奨標準構成 — スロート上流・スロート・初期膨張部の具体レシピ
+
+> **「スロート上流〜スロート〜スロート直下流（壁からの膨張波が、軸で反射した波とまだ重ならない kernel 初期部）をどう作るべきか」への直接の回答。**
+> 結論: この区間は**単一の多項式で壁を直接描かない**のが標準。「収縮曲線 → 上流円弧 $R_u$ → (スロート) → 下流円弧 $R_d$ → 変曲点以降は MOC が決める壁」という**区分構成**が世界標準であり、多項式の正しい置き場所は (i) 亜音速収縮（Bell–Mehta 5 次）と (ii) Sivells 流の**中心線速度分布**（3〜4 次）の 2 箇所である。
+> ステータス注記: 本節は 2026-06-12 の軽検証追補（CONTUR 入力仕様はオープン移植版ドキュメント経由 △、Rao 円弧慣行は古典 ○、曲率不連続→弱波は CSIR 事例 △）。3 票方式の敵対的検証バッチには未投入（付録 9 参照）。
+
+#### 区間別の標準形状と慣行値
+
+| 区間 | 標準形状 | 慣行値・パラメータ | 役割 |
+| --- | --- | --- | --- |
+| 亜音速収縮（チャンバ→スロート手前） | Morel matched cubic / Bell–Mehta 5 次多項式 | 収縮比・収縮長。終端はスロート円弧へ接続（下記「Bell–Mehta の罠」参照） | 剥離回避・一様ソニックライン（A2.5(C)） |
+| スロート上流円弧 $R_u$ | 円弧（曲率一定） | 風洞: $R\sim5.5$–$6\,r^*$（CONTUR 推奨入力 `RC`）△／ロケット: $R_u\sim1.5\,r^*$ ○ | 遷音速解（Hall/Kliegel–Levine）の前提＝**曲率一定**を満たし、starting line を一意化 |
+| スロート下流（初期膨張・kernel 域） | **ロケット (Rao)**: 円弧 $R_d$ を変曲点 $\theta_n$ まで明示保持○／**風洞 (Sivells)**: 円弧は遷音速パッチのみで、下流壁は中心線分布（3〜4 次多項式）＋MOC の**出力**△ | ロケット: $R_d\sim0.382$–$0.4\,r^*$（Rao）／風洞: 中心線分布の 1・2 階微分連続が遷音速解・放射流と接合 | kernel 内の膨張波発生強度（∝壁曲率）を制御し、特性線交差（圧縮波合体）を防ぐ |
+| 変曲点（最大壁角 $\theta_n$）以降 | **MOC の出力**（直接は描かない） | 風洞: 変曲角 `ETAD`（CONTUR 既定 60°）△／Rao: 変分解の旋回コンタ○ | 反射波をキャンセルし出口一様流（風洞）／推力最適（ロケット） |
+
+#### なぜ円弧が標準なのか（3 つの理由）
+
+1. **遷音速解との整合**: Hall 1962 / Kliegel–Levine 1969 の starting line はいずれも「スロート近傍の壁曲率＝一定」を仮定し、無次元曲率 $R$ 1 個でパラメータ化される。壁が円弧でないと、MOC をマーチングさせる初期値線が形状と不整合になる。
+2. **物理トレードの透明性**: Bartz（熱流束 $h_g\propto r_c^{-0.1}$）・Cuffel（ソニックライン非一様）・$C_d$ 相関はすべて $r_c$ の関数として整理されており、円弧なら設計変数がそのまま物理パラメータになる（A2.5(D) の $r_c$ パレート設計変数化と直結）。
+3. **kernel の波制御**: 壁からの膨張波の局所発生強度は壁曲率に比例する。曲率一定（円弧）なら一様に膨張し、曲率が振動すると**圧縮波が発生 → 下流で合体して弱衝撃 → 試験部一様性劣化**（CSIR 超音速風洞では既存コンタ由来の弱波による試験部流れ品質劣化が実測されている △）。
+
+#### 「スロート周り単一 5 次多項式」構成の診断
+
+単一の 5 次多項式でスロートを跨ぐ構成には次の懸念がある（程度問題であり、即不適ではない）:
+
+- **設計変数の不透明化**: スロート位置・スロート曲率（$R_u, R_d$ 相当）が両端の境界条件から「結果として」決まり、直接制御できない。$R_u\neq R_d$ の自由度も実質持てない。
+- **曲率振動**: 5 次多項式の曲率（$\approx y''$）は概ね 3 次式で変化し、区間内で符号反転・振動し得る → 上記 3. の圧縮波源になり得る。
+- **starting line 不整合**: 遷音速級数の曲率一定仮定とずれる（スロート点の局所曲率で代用すれば一次近似は可）。
+- **緩和要因**: forge で全域 NS を解く本ツールでは、**評価段階**では starting line 整合の問題は消える（NS が遷音速を直接解くため）。問題が残るのは**初期形状生成と低忠実度 MOC 層**。また C2 連続で曲率が単調なら実害が小さいことも多い。
+
+→ **判定: 「曲率を直接制御できる区分構成」への移行を推奨**。当面は、既存 5 次多項式が生成する壁の曲率分布 $\kappa(x)$ をプロットして振動・符号反転の有無を見、MOC kernel の特性線交差チェックにかければ、妥当性を安価に診断できる。
+
+#### 新ツールでの推奨パラメータ化（A2.5(D)・B1 への接続）
+
+- **設計変数を物理量で明示**: $(\text{収縮比}, L_c, R_u, R_d, \theta_n\ [\text{または中心線分布パラメータ}], \text{下流コンタ B-spline 制御点})$。ジオメトリ生成器は「区分構成＋接続点 C2 ブレンド（曲率連続）」で壁を組み立てる。
+- **接続の注意（Bell–Mehta の罠）**: Bell–Mehta 5 次は両端で曲率ゼロ条件を課す（本来は収縮→直管接続用）。これをスロート円弧（曲率 $1/R_u$）へ直結すると**接続点で曲率不連続**になる。収縮終端と円弧の間に曲率を合わせる短いブレンド区間を挟むか、収縮曲線の終端条件を円弧曲率に合わせて修正する。
+- **安価な事前フィルタ（NS 投入前に不良形状を弾く）**: (a) 曲率分布の単調性・符号チェック、(b) MOC kernel での特性線交差（圧縮波合体）チェック、(c) Kliegel–Levine 適用域チェック（小 $R$ では Hall 級数は不可、$R<1$ は Kliegel–Levine 必須）。
+- **機種別の探索中心**: ① 風洞は $R\sim5.5$–$6$ を中心に「$R$ を下げると短くなるが熱流束・ソニックライン非一様が悪化」のパレート軸として開放。② DACS はロケット慣行 $R_u\sim1.5$, $R_d\sim0.4$ を中心に探索。③ SERN はスロート部 2D 断面に同レシピを適用し、3D 角部は FFD に委ねる。
+
 ## A3. 形状パラメータ化
 
 - **文献**
@@ -158,7 +197,7 @@
   - K. Deb & H. Jain, "An Evolutionary Many-Objective Optimization Algorithm Using Reference-Point-Based Nondominated Sorting Approach, Part I: NSGA-III," *IEEE Trans. Evolutionary Computation*, 18(4):577–601, 2014（目的 4 個以上向け）。
   - 中核: 非劣ソート＋混雑度で**一発の探索でパレート前線全体**を得る。形状制約・非凸前線に強い。限界: **評価回数が多い**（数千オーダ）→ 粘性 NS 直結は高コスト → サロゲート併用が前提。
 - **サロゲート / ベイズ最適化**【○】
-  - D. R. Jones, M. Schonlau, W. J. Welch, "Efficient Global Optimization of Expensive Black-Box Functions," *J. Global Optimization*, 13:455–492, 1998（EGO: Kriging + Expected Impromevent）。
+  - D. R. Jones, M. Schonlau, W. J. Welch, "Efficient Global Optimization of Expensive Black-Box Functions," *J. Global Optimization*, 13:455–492, 1998（EGO: Kriging + Expected Improvement）。
   - A. I. J. Forrester, A. Sóbester, A. J. Keane, *Engineering Design via Surrogate Modelling: A Practical Guide*, Wiley, 2008（Kriging/共クリギング/多忠実度の実務）。
   - 多目的拡張: ParEGO（Knowles, 2006）、EHVI（Expected Hypervolume Improvement）系。
   - 中核: **少ない高コスト評価で代理モデルを学習し、獲得関数で次の評価点を賢く選ぶ**。**expensive な粘性 NS 評価と最も相性が良い**。
@@ -239,7 +278,7 @@
 
 完全新作（scratch）にも完全踏襲にもしない。**3 層に役割分担**する。
 
-1. **既存 MOC を捨てない・近代化する**: MOC は「目標マッハ分布 → きれいなコンタ」を直接与える唯一の安価な手段。**初期形状生成器**かつ**多忠実度の低忠実度層**として温存する。実在気体 MOC への拡張は任意（①の高総温向け）。**ただし MOC が決めるのは超音速部のみ**。初期形状の上流側 — 遷音速 starting line（Kliegel–Levine 級数、スロート曲率 $R_c$ 入力）、スロート円弧（$R_u, R_d$）、亜音速収縮（Morel/Bell–Mehta）— も初期化器に含め、**これら上流パラメータを設計変数として最適化に開放する**（A2.5 参照）。
+1. **既存 MOC を捨てない・近代化する**: MOC は「目標マッハ分布 → きれいなコンタ」を直接与える唯一の安価な手段。**初期形状生成器**かつ**多忠実度の低忠実度層**として温存する。実在気体 MOC への拡張は任意（①の高総温向け）。**ただし MOC が決めるのは超音速部のみ**。初期形状の上流側 — 遷音速 starting line（Kliegel–Levine 級数、スロート曲率 $R_c$ 入力）、スロート円弧（$R_u, R_d$）、亜音速収縮（Morel/Bell–Mehta）— も初期化器に含め、**これら上流パラメータを設計変数として最適化に開放する**（A2.5 参照、幾何の組み立てレシピは A2.5(E)）。
 2. **forge を粘性 NS 評価器に据える**: 軸対称・多成分 TP ガス・k-ω SST・デュアルタイム・GPU は再利用可（コードベース調査で確認）。**「補正 → 確認」を NS ループに内在化**する。
 3. **最適化層だけ新規構築**: 形状パラメータ化／メッシュ生成・変形／目的・制約抽出／サロゲート・勾配／最適化ドライバ。**OpenMDAO もしくは DAKOTA を骨格**に、**SU2/MACH-Aero の分業を手本**に組む。
 
@@ -320,7 +359,7 @@ flowchart TB
 | **② DACS サイドスラスタ** | Bézier 軸対称＋**スロート円弧 $R_u,R_d$**＋スカーフ角＋長さ | 軸長 / 推力 $C_F$ / 側力 | バルブ開度、分離回避 | 多高度背圧スイープ、バルブ開閉（非定常）、外部クロスフロー干渉 | 軸対称＋3D、デュアルタイム、遠方境界 |
 | **③ SERN（scramjet）** | FFD 3D（角部 R・スロート曲率含む） | 軸長 / 推力 / ピッチモーメント | 多高度・運転条件、3D 形状制約 | 多高度・運転条件（燃焼は解かない＝組成固定の TP 流入） | 3D RANS、多成分 TP |
 
-> いずれの機種も、**スロート曲率と収縮形状を「ルールで固定」せず設計変数に入れる**のが本ツールの肝。①では特にスロート曲率が「熱流束 vs 一様性 vs 軸長」のパレートを支配する。古典慣行値（$R_u\sim1.5r^*$ 等）・古典収縮曲線は探索範囲の中心（初期値）として使う。
+> いずれの機種も、**スロート曲率と収縮形状を「ルールで固定」せず設計変数に入れる**のが本ツールの肝。①では特にスロート曲率が「熱流束 vs 一様性 vs 軸長」のパレートを支配する。古典慣行値（$R_u\sim1.5r^*$ 等）・古典収縮曲線は探索範囲の中心（初期値）として使う。幾何の組み立てそのもの（区分構成・C2 ブレンド・事前フィルタ）は A2.5(E) のレシピに従う。
 
 ## B5. ユーザ提示フロー (1)–(4) との対応
 
@@ -343,7 +382,7 @@ flowchart TB
 | ★★★ | バッチ評価 CLI ＋ 収束/NaN 自動判定 | 1 設計点を「メッシュ→計算→収束/発散判定→指標出力」まで無人実行（AGENTS の NaN チェック規範に準拠） | 小〜中 |
 | ★★★ | 目的関数ライブラリ | `res_*.h5` から中心線マッハ一様度・コア径・$C_F$・スロート熱流束・分離指標を算出（既存 [validate_*.py]/probe を一般化） | 中 |
 | ★★★ | 形状→メッシュ生成の一般化 | パラメータ → Gmsh → forge HDF5 を 1 コマンド化（現行 case 別 Python を共通化）。**全域（チャンバ＋収縮＋スロート＋発散部）格子**を生成 | 中 |
-| ★★★ | 上流初期化器＋上流パラメータ化 | 遷音速 starting line（Kliegel–Levine 級数, $R_c$ 入力）＋スロート円弧（$R_u,R_d$）＋収縮曲線（Morel/Bell–Mehta）を生成し、それらを設計変数として最適化に開放（A2.5） | 中 |
+| ★★★ | 上流初期化器＋上流パラメータ化 | 遷音速 starting line（Kliegel–Levine 級数, $R_c$ 入力）＋スロート円弧（$R_u,R_d$）＋収縮曲線（Morel/Bell–Mehta）を**区分構成＋C2 ブレンド**で組み立て、設計変数として最適化に開放（A2.5(E) のレシピ）。NS 投入前の安価フィルタ（曲率単調性・MOC kernel 特性線交差・Kliegel–Levine 適用域）を含める | 中 |
 | ★★ | 凝縮余裕の後処理 | (T,P) 経路から過飽和比・Wilson 点距離を算出し制約化（A7） | 中 |
 | ★★ | メッシュ変形（RBF/FFD ワープ） | 随伴・高速反復用に再生成を置換（非ネイティブ＝新規） | 中〜大 |
 | ★ | 離散随伴（AD） | フェーズ B-ii。`CoDiPack` 式 AD を forge フロー反復に適用 | 大 |
@@ -383,10 +422,15 @@ flowchart LR
 - 【○】Bartz, "A Simple Equation for Rapid Estimation of Rocket Nozzle Convective Heat Transfer Coefficients," *Jet Propulsion*, 27:49–51, 1957.
 - 【◎】Morel, "Comprehensive Design of Axisymmetric Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 97(2):225–233, 1975.
 - 【◎】Bell & Mehta, *Contraction Design for Small Low-Speed Wind Tunnels*, NASA CR-177488 (JIAA-TR-84), 1988.
-- 【○】Cuffel, Back, Massier, "Transonic Flowfield in a Supersonic Nozzle with Small Throat Radius of Curvature," *AIAA Journal*, 7(7):1364–1366, 1969.
-- 【○】Tulapurkara & Bhalla, "Experimental Investigation of Morel's Method for Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 110(1):45–47, 1988.
-- 【○】Hassan/Zanoun ら, "Flow characteristics in low-speed wind tunnel contractions: Simulation and testing," *Alexandria Engineering Journal*, 2017.
-- 【△】Witoszynski 収縮曲線（古典解析形）／`aldorona/contur`（Sivells CONTUR のオープン移植, GitHub）。
+- 【◎】Cuffel, Back, Massier, "Transonic Flowfield in a Supersonic Nozzle with Small Throat Radius of Curvature," *AIAA Journal*, 7(7):1364–1366, 1969.
+- 【◎】Tulapurkara & Bhalla, "Experimental Investigation of Morel's Method for Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 110(1):45–47, 1988.
+- 【◎】Hassan/Zanoun ら, "Flow characteristics in low-speed wind tunnel contractions: Simulation and testing," *Alexandria Engineering Journal*, 2017.
+- 【△】Witoszynski 収縮曲線（古典解析形）／`aldorona/contur`・`noahess/conturpy`（Sivells CONTUR のオープン移植, GitHub）。
+
+**スロート近傍幾何の標準構成 — A2.5(E)（2026-06-12 軽検証追補）**
+- 【△】Sivells AEDC-TR-78-63 の入力仕様（`RC` 推奨 5.5–6.0 $r^*$、中心線速度分布は 3〜4 次多項式、変曲角 `ETAD` 既定 60°）— オープン移植 `noahess/conturpy` のドキュメント経由。一次資料（AEDC-TR-78-63 本文）での確認を推奨。
+- 【○】Rao 流 TOC/TOP の円弧慣行（下流円弧 $R_d=0.382\,r^*$ を変曲点 $\theta_n$ まで保持 → MOC 旋回コンタ）: Rao 1958／Sutton & Biblarz, *Rocket Propulsion Elements*（標準教科書慣行）。
+- 【△】"Investigation of nozzle contours in the CSIR supersonic wind tunnel," *R&D Journal of the South African Institution of Mechanical Engineering*, 2017（既存コンタ由来の弱波が試験部流れ品質を劣化させることを実測、Sivells 流の曲率連続設計を採用）。
 
 **NS-in-the-loop ノズル設計・粘性最適化（検証済）**
 - 【◎】Korte, "Aerodynamic Design of Axisymmetric Hypersonic Wind-Tunnel Nozzles Using a Least-Squares/Parabolized Navier-Stokes Procedure," *J. Spacecraft and Rockets*, 29(5):685–691, 1992.
@@ -475,6 +519,7 @@ flowchart LR
 6. **【解決済・否定的所見】スロート曲率の最適化トレードオフ**: 物理的根拠（Bartz $h_g\propto r_c^{-0.1}$、Cuffel ら 1969 の非一様、Back ら 1967 の再層流化、$C_d$）は検証済み（◎）。**$r_c$ を自由設計変数として「熱流束/一様性/コンパクト性/$C_d$」の多目的パレートで最適化した前例は文献に存在しない**ことを 3-0 で確証。最も近い Bianchi ら 2015 もパラメトリック感度に留まる → **本ツールの $r_c$ トレードスタディは前例なし＝新規性**（A2.5(D) 反映済み）。
 7. **【解決済】古典収縮曲線の粘性比較**: Tulapurkara–Bhalla（Morel 法の実験検証）、Hassan/Zanoun ら 2017（5 次多項式が最も低非一様 <0.5%）を検証済み（◎）。ただし**圧縮性・高総温域での比較**は低速研究が主で要確認。
 8. **【一部解決】モダン最適化の風洞ノズル一様性への適用**: Matsunaga ら 2022（超音速風洞ノズルをサロゲート支援 EA＋CFD で多目的最適化、マッハ偏差 vs 流れ偏向 vs 長さ）を確証（◎）→ 「風洞一様性のモダン最適化」前例は存在。**残る未検証**: SU2 随伴や DL サロゲート（DeepONet 等）を**極超音速**風洞コア一様性に full-RANS in-loop で適用した例。
+9. **【新規 2026-06-12・軽検証のみ】スロート近傍幾何レシピ（A2.5(E)）の一次確認**: (a) CONTUR の `RC`=5.5–6.0・中心線 3〜4 次多項式・`ETAD` 既定 60° はオープン移植版ドキュメント経由（△）→ AEDC-TR-78-63 本文で確認する。(b) 「壁曲率不連続 → 弱波 → 試験部品質劣化」の定量（CSIR 事例の一次資料確認、極超音速域での感度）。(c) Bell–Mehta 5 次の端点曲率ゼロ条件とスロート円弧の C2 接続処理に確立した標準があるか（文献が薄ければ小さな新規貢献余地）。(d) 5 次多項式壁スロートの可否を遷音速解／NS で直接比較した前例の有無。
 
 > **2026-06-11 追加調査の実行記録（最終）**: 当初 4 テーマを並行起動 → レート/セッション上限で 3 本空振り。上限回復後に逐次再実行し、**全テーマ完了**: (a) 多目的サロゲート＝co-kriging/GEK/随伴注入を確証（A5）、(b) スロート曲率 $r_c$＝25/25 確証・**多目的最適化前例なしを確定**（A2.5(D)）、(c) 凝縮＋風洞モダン＝24/25 確証（A7）、(d) ②③固有設計＝23/25 確証（A9）。教訓: **大量並行はレート制限を誘発 → 逐次が安全**。
 >
