@@ -148,9 +148,14 @@
   - A. I. J. Forrester, A. Sóbester, A. J. Keane, *Engineering Design via Surrogate Modelling: A Practical Guide*, Wiley, 2008（Kriging/共クリギング/多忠実度の実務）。
   - 多目的拡張: ParEGO（Knowles, 2006）、EHVI（Expected Hypervolume Improvement）系。
   - 中核: **少ない高コスト評価で代理モデルを学習し、獲得関数で次の評価点を賢く選ぶ**。**expensive な粘性 NS 評価と最も相性が良い**。
-- **多忠実度・縮約モデル (ROM/POD)・ML サロゲート**【△（情報源取得済・未検証）】
-  - 取得情報源: *Progress in Aerospace Sciences* 系のサロゲート/ML 設計レビュー（ScienceDirect S0376042122000410）、*CMAME* のデータ駆動代理（S0045782520306708）。深層学習サロゲート・微分可能 CFD は「直近 5–10 年」の進展だが**今回未検証**。
-  - 中核: 低忠実度（MOC/Euler）＋高忠実度（RANS）を共クリギング/多忠実度 GP で融合し評価コスト削減。CNN/GNN サロゲートで場を予測する研究が増加。
+- **勾配強化・多忠実度サロゲート（随伴勾配との結合）**【◎】— *「随伴（単目的）勾配をどうパレート探索に活かすか」への直接的な答え*
+  - A. I. J. Forrester, A. Sóbester, A. J. Keane, "Multi-Fidelity Optimization via Surrogate Modelling," *Proc. R. Soc. A*, 463:3251–3269, 2007（**co-kriging で複数忠実度を融合**。低忠実度を多数＋高忠実度を少数で安価に大域近似）。
+  - J. Laurenceau & P. Sagaut, "Building Efficient Response Surfaces of Aerodynamic Functions with Kriging and Cokriging," *AIAA Journal*, 46(2):498–507, 2008（**勾配ベクトルを補間する gradient-enhanced Kriging (GEK) は素の Kriging より応答曲面精度を劇的に改善**。2–6 次元の変形遷音速翼で実証）。
+  - Z.-H. Han, Y. Zhang, C.-X. Song, K.-S. Zhang, "Weighted Gradient-Enhanced Kriging for High-Dimensional Surrogate Modeling and Design Optimization," *AIAA Journal*, 55(12):4330–4346, 2017。**随伴法で安価に得た勾配を Kriging に注入**し、相関行列分解コストを小モデル分割＋重み付き和で回避（GEK の次元の呪いを緩和）。**遷音速翼の逆問題設計を 36–108 設計変数・RANS＋随伴で実証**。
+  - **中核と含意**: **随伴勾配は単目的だが、サロゲートに「勾配情報」として注入すれば多目的パレート探索（NSGA-II/EGO）の代理モデル精度を底上げできる** → これが本提案フェーズ B（随伴）とフェーズ A（サロゲート MOO）を繋ぐ具体的機構。多忠実度（MOC/Euler 低 ＋ RANS 高）の co-kriging と組み合わせれば評価コストをさらに削減。
+- **ML サロゲート（深層学習・作用素学習）**【△（well-known だが今回バッチはセッション上限で棄権）】
+  - DeepONet（Lu, Jin, Karniadakis ら, *Nature Machine Intelligence*, 2021）、MeshGraphNets（Pfaff, Fortunato, Sanchez-Gonzalez, Battaglia, 2020）、幾何深層学習など。CNN/GNN/作用素学習で場を高速予測。
+  - 中核: 学習済サロゲートは数値ソルバより 1–2 桁高速だが**信頼性・外挿が未成熟**。本ツールでは「サロゲートは infill 選定の補助、最終判定は forge」運用が安全。今回の検証は**セッション上限で棄権（要追検証）**。
 - **本ツールへの含意**: **パレート要件はここが主役**。推奨は「**LHS で DOE → forge 評価 → Kriging/GP サロゲート → NSGA-II（サロゲート上）＋ EGO 的 infill で真の forge を追加評価**」。非侵入（forge をブラックボックス扱い）なので**3 機種すべてに即適用でき、随伴より先に着手できる**。
 
 ## A6. 参照アーキテクチャ（実装の手本）
@@ -275,7 +280,7 @@ flowchart TB
 - **二択**:
   - **(B-i) SU2 を随伴エンジンとして併用**: forge を最終検証、SU2 を勾配源にする疎結合。早く随伴の恩恵を得る現実解。
   - **(B-ii) forge に離散随伴を AD 実装**: `CoDiPack` 式テンプレートで forge のフロー反復を逆微分（Albring ら 2016 の手法）。**「この CFD コードを開発する目的」に最も合致**するが大工事。多成分 TP ガス・SST まで AD を通す設計が要る。
-- **パレートへの合流**: 随伴は単目的 → 重み付き和 / ε 制約でパレートアンカー点を高精度化、または**勾配強化 Kriging**でフェーズ A のサロゲート精度を底上げ。
+- **パレートへの合流**【◎ A5 参照】: 随伴は単目的 → (i) 重み付き和 / ε 制約スイープでパレートアンカー点を高精度化、または (ii) **随伴勾配を gradient-enhanced Kriging (GEK) / weighted-GEK に注入**（Laurenceau–Sagaut 2008、Han ら 2017）してフェーズ A のサロゲート精度を底上げ。さらに **MOC/Euler（低）＋RANS（高）の co-kriging 多忠実度**（Forrester ら 2007）で総評価コストを削減。これが随伴とサロゲート MOO を繋ぐ実証済みの機構。
 
 ### 多忠実度の予算配分
 
@@ -387,7 +392,12 @@ flowchart LR
 - 【○】Deb & Jain, "...NSGA-III," *IEEE TEC*, 18(4):577–601, 2014.
 - 【○】Jones, Schonlau, Welch, "Efficient Global Optimization of Expensive Black-Box Functions," *J. Global Optimization*, 13:455–492, 1998.
 - 【○】Forrester, Sóbester, Keane, *Engineering Design via Surrogate Modelling*, Wiley, 2008.
-- 【△】サロゲート/ML 設計レビュー（*Progress in Aerospace Sciences*, ScienceDirect S0376042122000410）、データ駆動代理（*CMAME*, S0045782520306708）.
+- 【◎】Forrester, Sóbester, Keane, "Multi-Fidelity Optimization via Surrogate Modelling," *Proc. R. Soc. A*, 463:3251–3269, 2007.
+- 【◎】Laurenceau & Sagaut, "Building Efficient Response Surfaces of Aerodynamic Functions with Kriging and Cokriging," *AIAA Journal*, 46(2):498–507, 2008.
+- 【◎】Han, Zhang, Song, Zhang, "Weighted Gradient-Enhanced Kriging for High-Dimensional Surrogate Modeling and Design Optimization," *AIAA Journal*, 55(12):4330–4346, 2017.
+- 【○】Kennedy & O'Hagan, "Predicting the output from a complex computer code when fast approximations are available," *Biometrika*, 87(1):1–13, 2000（co-kriging 多忠実度の起点）.
+- 【○】Knowles, "ParEGO: A Hybrid Algorithm With On-Line Landscape Approximation for Expensive Multiobjective Optimization Problems," *IEEE TEC*, 10(1):50–66, 2006／Emmerich, Deutz ら（EHVI）／Zhang & Li, "MOEA/D," *IEEE TEC*, 11(6):712–731, 2007.
+- 【△ well-known・今回未検証】DeepONet（Lu ら, *Nature Machine Intelligence*, 2021）、MeshGraphNets（Pfaff ら, 2020）／サロゲート・ML 設計レビュー（*Progress in Aerospace Sciences* / *CMAME*）.
 
 **参照アーキテクチャ**
 - 【◎】MACH-Aero（U. Michigan MDO Lab）公式ドキュメント（pyGeo/IDWarp/ADflow/DAFoam/pyOptSparse）.
@@ -405,7 +415,7 @@ flowchart LR
 
 ## 付録: 今後の調査課題（自動検証で未確証 → 追検証推奨）
 
-1. **多目的サロゲートの選定**: 高コスト粘性 NS 評価に最適な多目的手法（NSGA-II/III、ベイズ/GP EGO、多忠実度、ML サロゲート）と、単目的随伴勾配との結合法（勾配強化 Kriging、重み付き和/ε 制約スイープ、surrogate-assisted EA）。
+1. **【一部解決】多目的サロゲートの選定**: 随伴勾配との結合（co-kriging 多忠実度・gradient-enhanced/weighted-GEK への随伴勾配注入）は検証済み（◎、A5）。**残る未検証**: 多目的 EA（NSGA-II/III・MOEA/D）とベイズ MOO（ParEGO・EHVI）の直接比較、ML サロゲート（DeepONet/MeshGraphNets）の設計適用成熟度（セッション上限で棄権）。
 2. **凝縮 onset の制約化**: Wegener/Sislian の古典核生成理論を最適化ループ内でどう制約化するか。随伴で扱える微分可能制約にできるか。
 3. **AD 随伴 × 実在気体多成分**: SU2-NEMO 等で温度依存・多成分熱物性が離散随伴にどこまで通っているか（「AD はモデル拡張が容易」という主張の実地検証）。
 4. **②③固有設計の一次文献固め**: スカーフド、バルブ開閉過渡、多高度、噴流-横風干渉、3D 角部 R の設計/最適化文献を、今回 △ の情報源から一次資料へ落とす。
@@ -414,4 +424,6 @@ flowchart LR
 7. **【解決済】古典収縮曲線の粘性比較**: Tulapurkara–Bhalla（Morel 法の実験検証）、Hassan/Zanoun ら 2017（5 次多項式が最も低非一様 <0.5%）を検証済み（◎）。ただし**圧縮性・高総温域での比較**は低速研究が主で要確認。
 8. **微分可能 CFD・深層学習サロゲート（風洞ノズル一様性特化）**: 2015–2025 で SU2 随伴・NSGA-II・Kriging・DL サロゲートを**風洞ノズルの試験コア一様性に full-RANS in-loop で適用**した検証済み論文は今回見つからず（取得した frontier 情報源 △ は推力/低速/翼系）。要個別追検証。
 
-> 上記のうち 5・7 は解決済み。残る 6（$r_c$ 多目的最適化の前例）・8（風洞一様性特化のモダン手法）と、A 部の 1–4（多目的サロゲート選定・凝縮制約化・AD随伴×実在気体・②③固有設計）は、本格着手前に `deep-research` の追加パス（各テーマを単独クエリ化）で個別検証することを推奨する。
+> **2026-06-11 追加調査の実行記録**: 4 テーマを並行起動した結果、**4 本同時実行がサーバ側レート制限＋セッション上限を誘発**し、(a) 多目的サロゲート＝部分成功（co-kriging/GEK/随伴注入を確証, A5 反映済み）、(b) スロート曲率 $r_c$ 多目的最適化前例＝**レート制限で空振り（0 件, 要再実行）**、(c) 凝縮制約化＋風洞モダン手法＝**空振り（0 件, 要再実行）**、(d) ②③固有設計（DACS/SERN）＝**空振り（0 件, 要再実行）**。教訓: **追加パスは並行でなく逐次（1 本ずつ間隔を空けて）実行する**こと。
+>
+> 未解決として残るのは: 6（$r_c$ 多目的最適化の前例。なお検証済みの「真の空白」と整合し、前例なし＝本ツールの新規性の可能性が高い）・8（風洞一様性特化のモダン手法）・A 部の凝縮制約化・AD随伴×実在気体・②③固有設計・ML サロゲート成熟度。これらはセッション上限リセット後に**各テーマを単独クエリで逐次** `deep-research` する。
