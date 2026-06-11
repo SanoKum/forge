@@ -181,34 +181,57 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
 主要成果物: `mach_comparison.png`, `exit_profiles.png`, `rans_visturb_profile.png`,
 各 `run_*/residual_history.png`, `mesh/nozzle_preview.png`。
 
-## 軸中心 k 過大の調査と Kato–Launder 検証 (2D vs 3D)
+## 軸中心 k 過大の調査 — 結論: **軸対称 FV の離散化不整合 (数値特異点)**
 
-RANS で**スロート中心線の $k$ が過大**になる現象を調査した。
+RANS でスロート中心線の $k$ が過大になる現象を調査した。**当初 SST の strain アノマリーと
+診断したが、検証の結果 主因は軸対称 FV の不整合 (数値特異点) と判明** (当初診断を訂正)。
 
-- **原因**: SST の strain-based 生産 $P_k=\mu_t S^2$ は、非回転の強加速域 (ノズル喉核) で
-  偽の乱流を生む (stagnation/加速アノマリー)。`dilatationCorrection` (等方=$\nabla\!\cdot\!u$
-  分のみ除去) では消えない別系統の欠陥で、残る**偏差伸長ひずみ**が効く。核は $S/\Omega\sim100$ と
-  ほぼ非回転 (理論: [`docs/turbulence/theory.md`](../../docs/turbulence/theory.md) §7.5)。
+### 決定的証拠
 
-- **2D vs 3D 切り分け** (`mesh/make_nozzle_3d.py` で 90° セクタ 3D, 非特異 squircle 断面,
-  軸を潰さない; `run_3d_conical_rans/`):
-  - **核全体の strain-dominated な $\mu_t$ 過大 (アノマリー本体) は 2D/3D 共通=幾何非依存**
-    (3D 核も $|\Omega|\sim10^2$ と物理的に小, $S/\Omega\sim100$, μt/μlam~13)。
-  - **2D 軸対称の鋭い中心線スパイク** (第1セル $k=17$ vs 核 ~4.5, μt/μlam~38) は **3D では
-    再現せず径方向平坦** (第1セル/核 ~0.8)。これは軸対称特有: 軸面積 $2\pi r\to0$ で生成 $k$ が
-    軸に封じ込められ、対称で第1セル $\Omega\to0$ → strain-only 生産が最大化。3D ではセル輸送が
-    正常で滞留しない。3D 直接比較: 2D 第1セル rad0.25mm $|\Omega|$=282 $k$=17 vs 3D rad0.49mm
-    $|\Omega|$=2351 $k$=5.3。
+1. **グリッド依存 (発散)** — `run_gr_ny100` / `run_gr_ny200` (uniform 格子, 軸セルを細分):
 
-- **Kato–Launder 修正** ($P_k=\mu_t S\Omega$, opt-in `katoLaunder:1`, 既定 0) を実装・検証
-  (`run_0018_conical_kl`, plan [`turbulence-kato-launder.md`](../../.github/plans/turbulence-kato-launder.md)):
+   | 格子 (スロート) | 軸第1セル $k$ | 中間半径 背景 $k$ | 壁 BL $k$ |
+   | --- | --- | --- | --- |
+   | prog0.95 (軸セル 0.50mm) | 17 | ~4.5 | ~3.8e4 |
+   | uniform ny=100 (0.10mm) | **836** | 4.7 | 3.97e4 |
+   | uniform ny=200 (0.05mm) | **1956** | 4.7 | 3.78e4 |
+
+   **背景 ($k$=4.7) と壁 BL ($\sim3.8\times10^4$) はグリッド収束**だが、**軸第1セルだけ細分で発散**。
+   物理量は収束するはず → 軸は**数値特異点**。
+
+2. **3D で消える** (`mesh/make_nozzle_3d_bf.py`: 90° セクタ **butterfly**, 壁第1層厚を全周一様 8µm
+   に修正; `run_3d_bf_lowbg/`, 低背景): 軸は径方向**平坦** (第1セル/核 ~0.85)。3D の整合 FV では特異化しない。
+
+3. **平均流は滑らか**: 同じ軸近傍で $U_x, T, \rho$ は平坦。$k$ のみ尖る → 乱流輸送固有。
+
+### 根本原因 (機構は未確定)
+
+確実なのは「**軸第1セルの $k$ が数値特異 (グリッド発散)**」という事実 (上表)。平均流が軸近傍で
+滑らか ($u_r$ が小さく中心線で 0; case 27 CEA 照合が通った理由) で $k$ のみ尖るのも、軸対称の
+近軸処理に固有の数値問題を示唆する。
+
+> **訂正**: 当初「面積が planar で体積 ($r$ 重み) と不整合」と推定したが**誤り**。flux 用の
+> 面積・体積は両方 $r$ 重み済 ([`variables.cpp`](../../solver_density_cuda/variables.cpp)
+> `ss *= r_face`, `volume *= r_cell`, 軸面 `r_floor=1e-20`)。私が測った h5 `surfArea` は
+> 重み付け**前**の幾何値だった。
+
+候補機構 (要追加調査, plan
+[`architecture-axisym-faceweight.md`](../../.github/plans/architecture-axisym-faceweight.md)):
+(1) 勾配 (拡散で使用) は軸対称で **planar 面積** を使う一方 flux は $r$ 重み — 近軸の非対称;
+(2) $r$ 重み FV は近軸で $V,S_f\to0$ と硬く、生産リミタの正帰還が微小不均衡を増幅。
+
+### Kato–Launder は症状緩和 (根治ではない)
+
+`katoLaunder:1` ($P_k=\mu_t S\Omega$) は生産を落とすので軸スパイクも縮むが、**特異点の根治ではない**:
 
   | | 軸 $k$ | 軸 μt/μlam | 核 $k$ | 壁BL μt/μlam (x=50) | 推力 F | mdot/λ |
   | --- | --- | --- | --- | --- | --- | --- |
   | `katoLaunder:0` | 17.0 | 37.0 | 5.02 | 13.0 | 1953.0 | 1.2998/0.9842 |
-  | `katoLaunder:1` | **1.93** | **10.7** | **0.47** | **12.9** | 1953.1 | 1.2998/0.9842 |
+  | `katoLaunder:1` | 1.93 | 10.7 | 0.47 | 12.9 | 1953.1 | 1.2998/0.9842 |
 
-  → $S\gg\Omega$ の軸・核の偽生産を除去しつつ、$S\approx\Omega$ の**壁 BL と推力は不変**。
+KL は一般 SST 欠陥への有効な opt-in 修正として残すが、case 29 の軸スパイクは**まず軸対称面積の
+$r$ 重み修正が本筋**。
 
-> 3D 検証メモ: convert は $k=\omega=0$ で IC を書くため 3D では $\omega$ 方程式の $1/\omega$ が
-> 起動時に発散する。IC で $\omega$ をシード (例 18000) すれば安定 (2D は耐えるが 3D 偏歪セルで顕在化)。
+> メモ: 3D は convert が $k=\omega=0$ で IC を書くため起動時に $1/\omega$ 発散する。IC で $\omega$ を
+> シード (例 18000) すれば安定。butterfly 格子は壁第1層が全周 8µm 一様 (squircle 版は対角で細・
+> 対称面で粗だった)。

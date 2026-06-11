@@ -81,6 +81,11 @@ strain-based SST 生産 $P_k=\mu_t S^2$ は、非回転の強加速場 (ノズ�
   ~0.8, 径方向平坦)。2D 軸対称の中心線スパイクは軸面積 $2\pi r\to0$ の封じ込め由来の増幅と判明。
   ただし**核全体の strain-dominated な $\mu_t$ 過大 (アノマリー本体) は 2D/3D 共通=幾何非依存**
   ($S/\Omega\sim100$, 渦度は物理的に小)。→ Kato–Launder は依然有効な opt-in 修正として採用。
+- `2026-06-12` — **訂正 (重要)**: その後の grid-refinement 検証で、case 29 の軸中心スパイクの
+  **主因は本アノマリーではなく軸対称 FV の不整合 (planar 面積 vs $r$ 重み体積) の数値特異点**と判明
+  (軸第1セル $k$ が細分で 17→836→1956 と発散、背景/BL は収束、3D で非再現)。KL は症状を緩和するが
+  根治ではない。根治は [`architecture-axisym-faceweight.md`](architecture-axisym-faceweight.md)。
+  KL 自体は一般 SST 欠陥への有効な opt-in 修正として残す。
 - `2026-06-12` — **実装・検証完了**: `katoLaunder` (既定 0) 追加
   (`solverConfig.{hpp,cpp}`, `ransSource_d.cu`)。`Om_sq=|ω|²` を速度勾配から組み
   `S_prod=√(S²·Ω²)` で生産置換。**検証** (`run_0017` off vs `run_0018_conical_kl` on):

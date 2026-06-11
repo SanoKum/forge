@@ -442,26 +442,36 @@ $$
 不変量 $S,\Omega$ を使うため**座標系に依存しない**(「対角項除外」のような非不変操作は不可:
 45° 回転でせん断と伸長が入れ替わるため)。
 
-#### 本コードでの根拠 (case 29 ノズル)
+#### case 29 の「軸中心 k 過大」は本アノマリーではなく**軸対称離散化の不整合** (重要な訂正)
 
-軸対称 conical ノズル ($M_e\approx4$) のスロート核は非回転加速域
-($S/\Omega\sim100$, 偏差ひずみ $S'^2\sim10^9$ vs $2\Omega^2\sim10^6$) で、$P_k=\mu_t S^2$ が
-偽の $k$ を生み核全体で $\mu_t/\mu_{lam}$ が freestream より高くなる。
+> **訂正**: 当初 case 29 conical の軸中心 $k$ 過大を本節の strain アノマリーと診断したが、
+> その後の検証で**主因は軸対称 FV の不整合 (数値特異点)** と判明した。Kato–Launder は症状を
+> 軽減するが根治ではない。詳細は
+> [`.github/plans/architecture-axisym-faceweight.md`](../../.github/plans/architecture-axisym-faceweight.md)。
 
-**2D 軸対称 vs 3D の切り分け** ([case 29 の 3D 90° セクタ検証](../../case/29.bell_vs_conical/README.md)):
+切り分けの根拠 ([case 29 検証](../../case/29.bell_vs_conical/README.md)):
 
-- **アノマリー本体 (核全体の strain-dominated な $\mu_t$ 過大) は 2D/3D 共通=幾何非依存**。
-  3D 核でも渦度は物理的に小さく ($|\Omega|\sim10^2$, mesh-spurious でない), $S/\Omega\sim100$,
-  $\mu_t/\mu_{lam}\sim13$。
-- 一方 **2D 軸対称では中心線に鋭いスパイク** ($\mu_t/\mu_{lam}\sim38$, 第1セル $k=17$ vs 核 ~4.5)。
-  **3D ではスパイクが消え径方向ほぼ平坦** ($\mu_t/\mu_{lam}\sim13$, 第1セル/核 ~0.8)。
-  この鋭いスパイクは軸対称特有の増幅: 軸面の面積 $2\pi r\to0$ で生成 $k$ が軸に封じ込められ、
-  対称で第1セル $\Omega\to0$ → strain-only 生産が最大化 → リミタ張り付き ($P\propto k$ 指数増幅) +
-  軸無フラックス滞留。3D ではセル輸送が正常で滞留しない。
+- **グリッド依存 (発散)**: スロート軸第1セルの $k$ は軸セルを細かくすると**発散**する
+  (17 → 836 → 1956 ; 軸セル 0.50 → 0.10 → 0.05 mm)。一方**中間半径の背景 $k$=4.7 と壁 BL
+  $k\sim3.8\times10^4$ はグリッド収束**。物理量は細分で収束するはずで、軸だけ発散 = **数値特異点**。
+- **3D で消える**: 真の 3D (90° セクタ, butterfly, 低背景) では軸は径方向平坦 (第1セル/核 ~0.85)。
+- **平均流は滑らか**: 同じ軸近傍で $U_x, T, \rho$ は平坦。$k$ だけが尖る。
 
-すなわち**生産アノマリー自体は幾何非依存だが、2D 軸対称の中心線スパイクは定式化由来の増幅**。
-$\Omega$ 置換 (Kato–Launder) は非回転核の偽生産を $\sim1/(S/\Omega)$ に落とし、2D の中心線スパイクも
-核の過大 $\mu_t$ も同時に抑えつつ、壁 BL ($S\approx\Omega$) を温存する。
+**根本原因 (機構) は未確定**。当初「面積が planar で体積と不整合」と推定したが誤り:
+flux 用の面積・体積は **両方とも $r$ 重み済**である ([`variables.cpp`](../../solver_density_cuda/variables.cpp)
+の `isAxisymmetric` 分岐: `ss *= r_face`, `volume *= r_cell`, 軸面は `r_floor=1e-20`。B 流儀で整合)。
+私が測ったのは h5 の **重み付け前**の幾何 `surfArea`。よって単純な面積不整合ではない。
+
+確実なのは「**軸第1セルの $k$ が数値特異 (グリッド発散)**」という事実のみ。候補機構 (要追加調査):
+1. 勾配 (拡散で使用) は軸対称で **planar 面積** を使う
+   ([`calcGradient_d.cu`](../../solver_density_cuda/cuda_forge/calcGradient_d.cu): `ss_planar`/`A_planar`)
+   一方 flux は $r$ 重み。近軸でこの非対称が拡散勾配を乱す可能性。**`scalarDiffusion=0` 試験で軸 $k$ が 836→114 (7×減) し主因が拡散と判明 → 候補1 が有力**。
+2. $r$ 重み FV は近軸で $V\to0$, $S_f\to0$ (+`r_floor`) と硬く、**生産リミタ ($P\propto k$) の
+   正帰還**が微小な近軸不均衡を増幅する可能性。
+
+調査は [`architecture-axisym-faceweight.md`](../../.github/plans/architecture-axisym-faceweight.md)
+で継続。strain アノマリー自体は一般の SST 欠陥として実在し Kato–Launder は有効な opt-in 修正
+として残すが、**case 29 の軸スパイクは strain アノマリーではなく軸対称の近軸数値特異**である。
 
 #### 適用範囲・既定
 
