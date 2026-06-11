@@ -182,13 +182,18 @@
 
 ## A7. ①固有 — 凝縮（非平衡凝縮）モデルと制約化
 
-> 情報源は取得したが今回の検証バッチ未掲載（△）。古典文献（○）で骨子を固める。
+> 追検証パスで一次資料まで確証済み（◎中心）。古典総説 P. P. Wegener & L. M. Mack, "Condensation in Supersonic and Hypersonic Wind Tunnels," *Advances in Applied Mechanics*, 5:307–447, 1958（○）を背景に、以下を裏取り。
 
-- **文献**
-  - P. P. Wegener & L. M. Mack, "Condensation in Supersonic and Hypersonic Wind Tunnels," *Advances in Applied Mechanics*, Vol. 5, pp. 307–447, 1958【○、当該分野の古典総説】。
-  - 古典核生成理論（CNT）＋液滴成長による非平衡凝縮 onset。近年の極超音速風洞での凝縮評価（例: AIAA 2020-0381、*Shock Waves* 誌の凝縮論文）【△】。
-- **中核アイデア**: 急膨張で過飽和 → 核生成 → 潜熱放出で「凝縮ショック」。**onset を避けるには、膨張経路（マッハ-温度履歴）が飽和曲線・Wilson 点に深く入らないようコンタと総温を設計**する。
-- **本ツールへの含意**: **凝縮余裕を最適化の制約（または目的）として定式化**できる。具体的には forge 解の (T, P) 経路から過飽和比 $S$ や Wilson 点距離を後処理で算出し、**制約 $g$: 局所過飽和度 ≤ しきい値** として最適化に課す。微分可能制約化できれば随伴にも載る（openQuestion）。多成分（空気/N₂/CO₂ 等）では各成分の飽和を評価。
+- **古典・非平衡凝縮理論（凝縮ショックの物理）**【◎】
+  - J. P. Sislian & I. I. Glass, "Condensation of Water Vapour in Rarefaction Waves: I. Homogeneous Nucleation," *AIAA Journal*, 14(12):1731–1737, 1976。
+  - P. A. Blythe & C. J. Shih, "Condensation shocks in nozzle flows," *J. Fluid Mechanics*, 76(3):593–621, 1976。
+  - 中核: 急膨張で過飽和（準安定）→ **均質核生成**で液滴生成 → 潜熱放出で準安定状態が崩壊し、**凝縮波＋同族特性線交差による衝撃（凝縮ショック）**。これが試験コアのマッハ一様性を乱す。
+- **onset 判定基準（設計に直結, 検証済）**【◎】
+  - F. L. Daum & G. Gyarmathy, "Condensation of Air and Nitrogen in Hypersonic Wind Tunnels," *AIAA Journal*, 6(3):458–465, 1968。低圧では**空気は実質的に純 N₂ として振る舞い**、N₂ の均質凝縮で onset。**「局所膨張率 / 静圧」の比で実験 onset を相関**できる ＝ **膨張経路（マッハ-温度履歴）とコンタ・総温が onset を決める**ことを定量化。
+  - K. Lax & S. B. Leonov, "Homogeneous Condensation of Nitrogen in Hypersonic Wind Tunnels: A Semi-Empirical Model," AIAA 2020-0381 / *AIAA Journal*, 58(11):4807–4818, 2020（DFT ベースの N₂ onset、Mach 10 軸対称ノズルで onset 静温を 3.5 K 以内で再現）。Lin, Cheng, Luo ら, "On nitrogen condensation in hypersonic nozzle flows," *Shock Waves*, 24:179–189, 2014（CNT＋Gyarmathy 液滴成長、2D・軸対称。**総温 $T_0$ を上げると凝縮量・出口圧温が減少＝余裕増**）。
+- **凝縮を最適化目的/制約にした前例（検証済・ただしドメイン違い）**【◎】
+  - M. Noori Rahim Abadi, A. Ahmadpour, J. P. Meyer ら, "CFD-based shape optimization of steam turbine blade cascade in transonic two phase flows," *Applied Thermal Engineering*, 112:1575–1589, 2017。**核生成率・最大液滴半径を最適化目的関数**にして損失低減（効率 +2.1%）。Giordano & Cinnella, "Nozzle Shape Optimization for Wet-Steam Flows," AIAA CFD Conf., 2009 も同旨。**＝凝縮 onset を最適化目的に据える実証はあるが、湿り蒸気タービンに限られ、極超音速風洞の試験ガスでは前例なし（空白）**。
+- **本ツールへの含意**: **凝縮余裕を最適化の制約（または目的）として定式化**する。forge 解の $(T,P)$ 経路から過飽和比 $S$・Wilson 点距離・（N₂ なら）Daum–Gyarmathy の膨張率/静圧パラメータを後処理算出し、**制約 $g$: 局所過飽和度 ≤ しきい値**として課す。多成分（空気/N₂/CO₂）は各成分飽和を評価。**未解決**: 凝縮 onset を**随伴で扱える微分可能制約**にできるか（湿り蒸気の前例は核生成率/液滴半径という EA 向きの非微分目的）。
 
 ## A8. ①②③共通 — 実在気体・熱的完全ガス・多成分混合熱物性
 
@@ -202,19 +207,22 @@
 
 ## A9. ②③固有 — DACS・スカーフド・クロスフロー干渉・SERN 3D・多高度・バルブ過渡
 
-> 情報源取得済・今回未検証（△）。採用前に個別追検証を推奨。
+> 追検証パスで一次資料まで確証済み（◎中心）。各論点に検証済み文献を紐づける。
 
-- **取得情報源（△）**
-  - スカーフドノズル噴流: 「Effect of Scarfing on Rectangular Nozzle Supersonic Jet Plume Flow Characteristics」, 2017。
-  - DACS / divert・ACS スラスタ、噴流-横風干渉（jet-in-crossflow）、多高度: ScienceDirect（S127096381631001X, S0094576512003736）、*Energies* (MDPI) 11(12):3449, AIAA 10.2514/2.3321, AIAA 10.2514/1.A32974 等。
-- **中核論点と本ツールへの含意**:
-  - **軸長短縮 vs 推力**（②③）: パレートの主軸。短ノズルは推力係数低下・非一様出口。FFD/Bézier で長さを変数化し forge で $C_F$ 評価。
-  - **スカーフド（切り欠き）**（②）: 出口面を斜め切断 → 推力ベクトル・側力が生じる。3D 形状パラメータに切断角を入れて評価。
-  - **外部高速クロスフロー干渉**（②）: 噴流-横風で弓状衝撃・分離渦 → 実効推力・モーメント変化。forge の遠方境界＋非定常で jet-in-crossflow を解く。
-  - **バルブ開閉過渡**（②）: チョークバルブ開度を時間境界条件化し、forge の**デュアルタイム非定常**で起動/遮断の推力応答を取得。
-  - **多高度**（②③）: 背圧スイープ（過膨張/適正/不足膨張）で各高度の $C_F$・分離をパレート化。
-  - **3D 角部 R**（③）: SERN は本質 3D。FFD で角部 R を変数化し forge 3D RANS で評価。
-- **限界**: これらは**評価シナリオの多さ**が課題（条件×形状の組合せ爆発）→ 多忠実度＋サロゲートで評価予算を配分する設計が要る（B3）。
+- **スカーフド（切り欠き）ノズル**（②）【◎】: P. Behrouzi, J. J. McGuirk, C. Avenell, "Effect of Scarfing on Rectangular Nozzle Supersonic Jet Plume Flow Characteristics," *AIAA Journal*, 56(1):301–315, 2018（※当初ラベルの「Aerospace Sci. Tech. 2017」は誤り、訂正）。**切り欠きが出口静圧分布を大きく変え二次流れ（縦渦）を誘起**、過膨張で四つ葉状・不足膨張で矩形＋分岐とプルーム形状が膨張条件依存。**注意（forge への含意）**: RANS（S-A）は四つ葉は再現するが**二次流れ速度を過大評価** → 近傍プルーム精度に依存する最適化では留意。3D 形状に切断角を変数化し側力・推力ベクトルを評価。
+- **バルブ/ピントル開閉過渡（viscous-NS-in-the-loop が確立）**（②）【◎】:
+  - A. Song ら, "Transient flow characteristics and performance of a solid rocket motor with a pintle valve," *Chinese J. Aeronautics*, 33:3189–3205, 2020（**動的メッシュ RANS、冷走試験比 <2% 誤差**）。J. Heo, K. Jeong, H.-G. Sung, "Numerical Study of the Dynamic Characteristics of Pintle Nozzles for Variable Thrust," *J. Propulsion and Power*, 31(1):230–237, 2015（**スライディングメッシュ非定常**、往復/挿入/引抜で応答遅れを定量）。
+  - M. Ji & H. Chang, "Modeling and dynamic characteristics analysis on solid attitude control motor using pintle thrusters," *Aerospace Science and Technology*, 106, 2020（**開/閉過渡を start-up・pintle-moving・thrust-establishment の 3 段に分解**するシステムモデル）。Yan ら, "Transient Characteristics of Fluidic Pintle Nozzle in a Solid Rocket Motor," *Aerospace (MDPI)*, 11(3):243, 2024（k-ω SST 動的メッシュ、4 過渡モード）。K. W. Naumann (Bayern-Chemie), "Hot Gas Nozzle-Valve Assembly... for Continuously Operating DACS," AIAA 2019-3879（実機ハードウェア・制御）。
+  - **forge への含意**: **動的/スライディングメッシュ＋デュアルタイム非定常**で起動/遮断の推力応答を解ける（前例が確立）。ただし多くは 2D/軸対称・冷走検証 → 3D・反応流は本ツールの拡張余地。
+- **外部高速クロスフロー干渉・多高度**（②）【◎】:
+  - B.-Y. Min, J.-W. Lee, Y.-H. Byun, "Numerical investigation of the shock interaction effect on the lateral jet controlled missile," *Aerospace Science and Technology*, 10(5):385–393, 2006。**分離衝撃・弓状衝撃・バレル衝撃・マッハディスク**の干渉構造、**誘起法線力 ∝ 噴流推力だが衝撃干渉で損失**（後流低圧域でモーメント生成）。
+  - C.-L. Qiao ら, "Parametric study on the sonic transverse jet in supersonic crossflow," *Aerospace Science and Technology*, 123:107472, 2022（**噴流圧力比 PR・噴射角 AoI が支配パラメータ**、高 PR で衝撃干渉不安定）。"Effectiveness of a Reaction Control System Jet in a Supersonic Crossflow," *J. Spacecraft and Rockets*, DOI 10.2514/1.A33770。**増幅率が 1 を切る**（後流圧力欠損による）。
+  - **forge への含意**: 遠方境界＋非定常で jet-in-crossflow を解き、**多高度＝過/不足膨張 PR スイープ**で増幅率・側力をパレート評価。
+- **SERN / スクラムジェット排気（多目的 CFD 最適化が確立）**（③）【◎】:
+  - H. Ogawa & R. R. Boyce, "Nozzle Design Optimization for Axisymmetric Scramjets by Using Surrogate-Assisted Evolutionary Algorithms," *J. Propulsion and Power*, 28(6):1324–1338, 2012。**サロゲート支援 EA ＋有限速度化学 RANS**（Evans–Schexnayder 25 反応/12 化学種 H₂-air、k-ω SST）、2 高度・燃料 on/off。**燃料 on でベル形・off で円錐に近い**最適形状。**＝温度依存・多成分ガスをループ内に持つ、本ツールに最も近い実装**（ただし軸対称・単目的推力）。
+  - W. Huang, Z.-G. Wang, D. B. Ingham, L. Ma, M. Pourkashanian, "Design exploration for a single expansion ramp nozzle (SERN) using data mining," *Acta Astronautica*, 83:10–17, 2013（推力/揚力/ピッチモーメントのトレード探索）。
+- **軸長短縮 vs 推力**（②③）: パレート主軸。FFD/Bézier で長さを変数化し forge で $C_F$ 評価。
+- **限界・空白**: 評価シナリオの多さ（条件×形状）→ 多忠実度＋サロゲートで予算配分（B3）。**SERN の 3D 効果（角部 R・サイドフェンス・有限スパン）と、3D・多目的パレート・多成分の統合最適化は文献未確認の空白** → 本ツールの拡張領域。
 
 ## A10. 直近 5–10 年の先端（慎重評価）
 
@@ -427,26 +435,47 @@ flowchart LR
 - 【◎】Gray, Hwang, Martins, Moore, Naylor, "OpenMDAO...," *Structural and Multidisciplinary Optimization*, 59(4), 2019.
 - 【○】DAKOTA（Sandia National Laboratories）.
 
-**凝縮・実在気体・機種固有（要追検証 △ 中心）**
-- 【○】Wegener & Mack, "Condensation in Supersonic and Hypersonic Wind Tunnels," *Advances in Applied Mechanics*, Vol. 5, 1958.
+**凝縮（非平衡凝縮）— ①固有（検証済）**
+- 【○】Wegener & Mack, "Condensation in Supersonic and Hypersonic Wind Tunnels," *Advances in Applied Mechanics*, 5:307–447, 1958.
+- 【◎】Sislian & Glass, "Condensation of Water Vapour in Rarefaction Waves: I. Homogeneous Nucleation," *AIAA Journal*, 14(12):1731–1737, 1976.
+- 【◎】Blythe & Shih, "Condensation shocks in nozzle flows," *J. Fluid Mechanics*, 76(3):593–621, 1976.
+- 【◎】Daum & Gyarmathy, "Condensation of Air and Nitrogen in Hypersonic Wind Tunnels," *AIAA Journal*, 6(3):458–465, 1968.
+- 【◎】Lax & Leonov, "Homogeneous Condensation of Nitrogen in Hypersonic Wind Tunnels: A Semi-Empirical Model," *AIAA Journal*, 58(11):4807–4818, 2020（AIAA 2020-0381）.
+- 【◎】Lin, Cheng, Luo ら, "On nitrogen condensation in hypersonic nozzle flows," *Shock Waves*, 24:179–189, 2014.
+- 【◎】Noori Rahim Abadi, Ahmadpour, Meyer ら, "CFD-based shape optimization of steam turbine blade cascade in transonic two phase flows," *Applied Thermal Engineering*, 112:1575–1589, 2017（凝縮指標を最適化目的に）／Giordano & Cinnella, "Nozzle Shape Optimization for Wet-Steam Flows," AIAA CFD Conf., 2009.
+
+**実在気体・多成分熱物性 — ①②③共通**
 - 【○/△】Gupta, Yos, Thompson, Lee, *...11-Species Air Model...*, NASA RP-1232, 1990.
-- 【△】極超音速風洞の凝縮評価（AIAA 2020-0381, *Shock Waves* DOI 10.1007/s00193-013-0490-3）.
-- 【△】スカーフドノズル噴流（"Effect of Scarfing on Rectangular Nozzle Supersonic Jet Plume...", 2017）.
-- 【△】DACS/divert・噴流-横風干渉・多高度（ScienceDirect S127096381631001X, S0094576512003736；*Energies* 11(12):3449；AIAA 10.2514/2.3321, 10.2514/1.A32974）.
+
+**②③固有設計（DACS / SERN, 検証済）**
+- 【◎】Behrouzi, McGuirk, Avenell, "Effect of Scarfing on Rectangular Nozzle Supersonic Jet Plume Flow Characteristics," *AIAA Journal*, 56(1):301–315, 2018.
+- 【◎】Song ら, "Transient flow characteristics and performance of a solid rocket motor with a pintle valve," *Chinese J. Aeronautics*, 33:3189–3205, 2020.
+- 【◎】Heo, Jeong, Sung, "Numerical Study of the Dynamic Characteristics of Pintle Nozzles for Variable Thrust," *J. Propulsion and Power*, 31(1):230–237, 2015.
+- 【◎】Ji & Chang, "Modeling and dynamic characteristics analysis on solid attitude control motor using pintle thrusters," *Aerospace Science and Technology*, 106, 2020.
+- 【◎】Yan ら, "Transient Characteristics of Fluidic Pintle Nozzle in a Solid Rocket Motor," *Aerospace (MDPI)*, 11(3):243, 2024／Naumann, "Hot Gas Nozzle-Valve Assembly... DACS," AIAA 2019-3879.
+- 【◎】Min, Lee, Byun, "Numerical investigation of the shock interaction effect on the lateral jet controlled missile," *Aerospace Science and Technology*, 10(5):385–393, 2006.
+- 【◎】Qiao ら, "Parametric study on the sonic transverse jet in supersonic crossflow," *Aerospace Science and Technology*, 123:107472, 2022／"Effectiveness of a Reaction Control System Jet in a Supersonic Crossflow," *J. Spacecraft and Rockets*, DOI 10.2514/1.A33770.
+- 【◎】Ogawa & Boyce, "Nozzle Design Optimization for Axisymmetric Scramjets...," *J. Propulsion and Power*, 28(6):1324–1338, 2012.
+- 【◎】Huang, Wang, Ingham, Ma, Pourkashanian, "Design exploration for a single expansion ramp nozzle (SERN) using data mining," *Acta Astronautica*, 83:10–17, 2013.
+
+**モダン風洞ノズル最適化・随伴（検証済）**
+- 【◎】Matsunaga, Fujio, Ogawa, Higa, Handa, "Nozzle design optimization for supersonic wind tunnel by using surrogate-assisted evolutionary algorithms," *Aerospace Science and Technology*, 130:107879, 2022.
+- 【◎】Kline & Alonso, "Adjoint of Generalized Outflow-Based Functionals Applied to Hypersonic Inlet Design," *AIAA Journal*, 55(11):3903–3915, 2017（SU2 連続随伴 RANS, 極超音速）.
+- 【◎】Shope, "Contour Design Techniques for Super/Hypersonic Wind Tunnel Nozzles," AIAA 2006-3665, 2006（MoC ベースライン）.
 
 ---
 
 ## 付録: 今後の調査課題（自動検証で未確証 → 追検証推奨）
 
 1. **【一部解決】多目的サロゲートの選定**: 随伴勾配との結合（co-kriging 多忠実度・gradient-enhanced/weighted-GEK への随伴勾配注入）は検証済み（◎、A5）。**残る未検証**: 多目的 EA（NSGA-II/III・MOEA/D）とベイズ MOO（ParEGO・EHVI）の直接比較、ML サロゲート（DeepONet/MeshGraphNets）の設計適用成熟度（セッション上限で棄権）。
-2. **凝縮 onset の制約化**: Wegener/Sislian の古典核生成理論を最適化ループ内でどう制約化するか。随伴で扱える微分可能制約にできるか。
-3. **AD 随伴 × 実在気体多成分**: SU2-NEMO 等で温度依存・多成分熱物性が離散随伴にどこまで通っているか（「AD はモデル拡張が容易」という主張の実地検証）。
-4. **②③固有設計の一次文献固め**: スカーフド、バルブ開閉過渡、多高度、噴流-横風干渉、3D 角部 R の設計/最適化文献を、今回 △ の情報源から一次資料へ落とす。
+2. **【解決済・空白あり】凝縮 onset の制約化**: 古典理論（Sislian–Glass、Blythe–Shih）と onset 判定（Daum–Gyarmathy の膨張率/静圧、Lax–Leonov、Lin ら）を検証済み（◎、A7）。凝縮指標を最適化目的にした前例（Noori Rahim Abadi ら 2017、湿り蒸気）も確証。**残る空白**: 極超音速風洞の試験ガスで凝縮余裕を制約化した前例なし／**随伴向けの微分可能制約化**は未確立（＝本ツールの新規貢献余地）。
+3. **AD 随伴 × 実在気体多成分**: SU2-NEMO 等で温度依存・多成分熱物性が離散随伴にどこまで通っているか（「AD はモデル拡張が容易」という主張の実地検証）。未検証。
+4. **【解決済】②③固有設計の一次文献固め**: スカーフド（Behrouzi ら 2018）、ピントル/バルブ過渡（Song 2020・Heo 2015・Ji–Chang 2020・Yan 2024）、噴流-横風干渉/多高度（Min 2006・Qiao 2022）、SERN（Ogawa–Boyce 2012・Huang 2013）を一次資料で確証（◎、A9）。**残る空白**: SERN の 3D 効果（角部 R・サイドフェンス・有限スパン）と 3D・多目的・多成分の統合最適化は文献未確認。
 5. **【解決済】モダン NS-in-the-loop ノズル設計**: 追加調査で Korte CAN-DO（フル NS＋PNS＋最小二乗、排除厚さ補正の原理的不要化）、Ogawa–Boyce のサロゲート支援 EA×RANS、Doolan–Morgans の Bézier 収縮最適化を一次資料で検証済み（◎、A2.5(D)）。**残る空白＝「単一粘性ソルバ × 全域 × 多目的パレート」の前例**（本ツールの新規性領域）。
 6. **【解決済・否定的所見】スロート曲率の最適化トレードオフ**: 物理的根拠（Bartz $h_g\propto r_c^{-0.1}$、Cuffel ら 1969 の非一様、Back ら 1967 の再層流化、$C_d$）は検証済み（◎）。**$r_c$ を自由設計変数として「熱流束/一様性/コンパクト性/$C_d$」の多目的パレートで最適化した前例は文献に存在しない**ことを 3-0 で確証。最も近い Bianchi ら 2015 もパラメトリック感度に留まる → **本ツールの $r_c$ トレードスタディは前例なし＝新規性**（A2.5(D) 反映済み）。
 7. **【解決済】古典収縮曲線の粘性比較**: Tulapurkara–Bhalla（Morel 法の実験検証）、Hassan/Zanoun ら 2017（5 次多項式が最も低非一様 <0.5%）を検証済み（◎）。ただし**圧縮性・高総温域での比較**は低速研究が主で要確認。
 8. **【一部解決】モダン最適化の風洞ノズル一様性への適用**: Matsunaga ら 2022（超音速風洞ノズルをサロゲート支援 EA＋CFD で多目的最適化、マッハ偏差 vs 流れ偏向 vs 長さ）を確証（◎）→ 「風洞一様性のモダン最適化」前例は存在。**残る未検証**: SU2 随伴や DL サロゲート（DeepONet 等）を**極超音速**風洞コア一様性に full-RANS in-loop で適用した例。
 
-> **2026-06-11 追加調査の実行記録**: 4 テーマを並行起動した結果、**4 本同時実行がサーバ側レート制限＋セッション上限を誘発**し、(a) 多目的サロゲート＝部分成功（co-kriging/GEK/随伴注入を確証, A5 反映済み）、(b) スロート曲率 $r_c$ 多目的最適化前例＝**レート制限で空振り（0 件, 要再実行）**、(c) 凝縮制約化＋風洞モダン手法＝**空振り（0 件, 要再実行）**、(d) ②③固有設計（DACS/SERN）＝**空振り（0 件, 要再実行）**。教訓: **追加パスは並行でなく逐次（1 本ずつ間隔を空けて）実行する**こと。
+> **2026-06-11 追加調査の実行記録（最終）**: 当初 4 テーマを並行起動 → レート/セッション上限で 3 本空振り。上限回復後に逐次再実行し、**全テーマ完了**: (a) 多目的サロゲート＝co-kriging/GEK/随伴注入を確証（A5）、(b) スロート曲率 $r_c$＝25/25 確証・**多目的最適化前例なしを確定**（A2.5(D)）、(c) 凝縮＋風洞モダン＝24/25 確証（A7）、(d) ②③固有設計＝23/25 確証（A9）。教訓: **大量並行はレート制限を誘発 → 逐次が安全**。
 >
-> 未解決として残るのは: 6（$r_c$ 多目的最適化の前例。なお検証済みの「真の空白」と整合し、前例なし＝本ツールの新規性の可能性が高い）・8（風洞一様性特化のモダン手法）・A 部の凝縮制約化・AD随伴×実在気体・②③固有設計・ML サロゲート成熟度。これらはセッション上限リセット後に**各テーマを単独クエリで逐次** `deep-research` する。
+> **未解決として残る課題**（本ツールの新規貢献余地）: 3（AD 随伴×実在気体多成分）、凝縮 onset の**微分可能制約化**、SERN の**3D 効果**（角部 R・サイドフェンス・有限スパン）、**3D・多目的パレート・多成分の統合最適化**、ML サロゲート（DeepONet 等）の設計成熟度、極超音速風洞一様性への SU2 随伴/DL 適用。いずれも「前例が薄い＝本ツールが先端を開く」領域。
