@@ -14,6 +14,7 @@
 | [`.github/forge-development-environment.md`](.github/forge-development-environment.md) | 開発環境とビルド (Docker / WSL native) の方針 |
 | [`.github/forge-coding-conventions.md`](.github/forge-coding-conventions.md) | ソース構成・C++/CUDA 命名規約・ビルド/テスト実行手順 |
 | [`.github/forge-verification-cases.md`](.github/forge-verification-cases.md) | コード変更時の検証ケース選定と確認手順 |
+| [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) | 同一メッシュ・同一 BC で SU2 と比較し forge 固有の問題を切り分ける手順 |
 | [`.github/plans/`](.github/plans/README.md) | 機能ごとの実装計画 (着手前に参照する基準文書) |
 | [`.github/verification-cases/`](.github/verification-cases/) | 各標準検証ケースの個別手順 |
 | [`docs/`](docs/index.md) | 理論 (`<area>/theory.md`) と実装解説 (`<area>/implementation.md`) |
@@ -47,6 +48,15 @@
   - 最終および中間 `res_*.h5` の `VALUE/*` (特に `ro`,`P`,`T`,`roe`,勾配 `dUxdx` 等) に NaN/Inf が無いか、値が物理的か (例: 静圧 ≤ 全圧、`ro>0`、`T>0`) を確認する。
 - **発散していた場合**: 「収束した」と報告しない。最初に NaN が出たステップ・場所 (どの境界・どのセル) を切り分け、原因 (BC のゼロ割・IC とBC の不整合・CFL 過大・メッシュ不良 等) を特定してから対処する。`max cfl` のログだけ見て安定と判断しないこと (CFL が有限でも残差が NaN のことがある)。
 - 早期確認の例: `python3` で `residual_history.csv` の先頭数十行の `rms_ro` と `res_0/res_1` 相当出力の `isnan` を見る。専用ツールがあれば優先する。
+
+**収束確認 (必須・NaN チェックとは別)**: 「NaN が無い」=「収束した」ではない。結果を使う/報告する前に、各保存量の残差が**実際に下がりきっているか**を必ず確認すること。
+
+- **`rms_ro` だけで判断しない**。`residual_history.csv` の **全列** (`rms_ro`,`rms_roUx`,`rms_roUy`,`rms_roUz`,`rms_roe`、RANS 時は `rms_roK`,`rms_roOmega`) のトレンドを見る。`rms_ro` が低くても、運動量 (特に軸対称の `rms_roUy`) や乱流 (`rms_roK`/`rms_roOmega`) が**下げ止まり・横ばい・上昇**していれば未収束。実例: 軸対称 SST で `rms_ro`≈3e-5 でも `rms_roUy`≈1e-2 停滞・`rms_roK` 増大=近軸が未収束だった ([architecture-axisym-axis-singularity.md](.github/plans/architecture-axisym-axis-singularity.md))。
+- **残差プラトーは「収束」ではない**。下げ止まる場合は、積分量 (massflux/推力/出口諸量) が**定常化**しているか、場が**発達しきっている**かを併せて確認する (リミットサイクルの可能性)。
+- **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
+- 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) を参照。
+
+forge の結果が「軸対称・乱流・近軸で forge だけ妙な値になる」ようなときは、推測で結論づけず [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) の手順で **同一メッシュ・同一 BC の SU2 と比較**して切り分けること。
 
 開発環境に関する既定ルールは `.github/forge-development-environment.md` を参照すること。通常の開発は Docker コンテナを基本とし、NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う場合は、Docker 内でうまくいかないケースを想定して WSL native または Linux native の手順を優先する。さらに、**計算速度の評価・比較・プロファイル作業は原則 native で行う** (Docker は計測値が不安定でツールも揃わないため、速度評価の基準環境としない)。詳細は `.github/forge-development-environment.md` の「速度評価・ベンチマークは native を既定とする」を参照。
 
