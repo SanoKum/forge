@@ -181,47 +181,52 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
 主要成果物: `mach_comparison.png`, `exit_profiles.png`, `rans_visturb_profile.png`,
 各 `run_*/residual_history.png`, `mesh/nozzle_preview.png`。
 
-## 軸中心 k 過大の調査 — **軸対称固有 (機構未確定)**; 過去 2 回の誤診を訂正
+## 軸中心 k 過大の調査 — **機構特定済み: 二層構造** (経緯の誤診は訂正済)
 
-RANS でスロート中心線の $k$ が過大になる現象を調査した。**当初 (1) strain アノマリー、続いて
-(2) 軸対称 FV のグリッド発散数値特異点 と診断したが、どちらも誤り/未確証**。現時点で確実なのは
-「**軸対称固有 (2D で出て 3D で消える)**」のみ。
+詳細・経緯は plan
+[`architecture-axisym-axis-singularity.md`](../../.github/plans/architecture-axisym-axis-singularity.md)。
 
-### 確実な事実
+### 層 (a): 実用格子 (軸セル ≥ 0.25mm) の軽度スパイク → **Kato–Launder で解決**
 
-- **2D 軸対称 (収束) で軸 $k$ スパイク**: `run_0017` (壁密格子, $k$ 残差 ~1e-3) で軸第1セル $k$=17
-  vs 核 ~4.5。
-- **3D (収束) で平坦**: butterfly 低背景 (`run_3d_bf_lowbg`, $k$ 残差 → 3.8e-4) で軸第1セル/核 ~0.85。
-- **平均流は軸で滑らか** ($U_x,T,\rho$ 平坦)、$k$ のみ尖る → 軸対称固有・乱流輸送由来。
+- 平均流は滑らか (Uy 振動なし)。軸第1セル $k$=17 vs 核 4.5 (`run_0017`)。
+- 大きな軸方向ひずみ + フープ + 生産リミタ正帰還 + 軸無フラックス滞留の**生産駆動**。
+- `katoLaunder: 1` で $k$ 17→1.9、壁 BL・推力不変 (下表)。3D の平坦 (第1セル/核 0.85,
+  `run_3d_bf_lowbg`) と整合。
 
-### 誤りだった推定 (訂正)
+### 層 (b): 軸 ≤10µm の細分で**平均流の数値不安定** (未根治, 実用上は回避)
 
-- **「面積が planar で体積と不整合」→ 誤り**。flux 用の面積・体積は両方 $r$ 重み済
-  ([`variables.cpp`](../../solver_density_cuda/variables.cpp): `ss *= r_face`, `volume *= r_cell`)。
-  測ったのは h5 の重み付け**前**値だった。
-- **「拡散勾配が planar 面積を使うのが bug」→ 誤り**。勾配は **planar 微分作用素**で planar 面積が
-  正しい ($r$ 重みにすると別量になる)。
-- **「グリッド発散の数値特異点」→ 未確証**。根拠の `run_gr_ny100/200` (uniform 格子) は**壁が粗く
-  SST の $k$ が収束しない** (rms_roK 0.1–0.3 plateau, 平均流は 1e-13 収束)。軸 $k$=836/1956 は
-  **未収束場**の値でグリッド試験として無効。
+2 面クラスタ格子 (`run_gx_A`: 壁=軸 9.6µm / `run_gx_B`: 3.2µm, Bump) で:
 
-### 機構特定に必要な検証 (未実施)
+- **$U_y$ が近軸チェッカーボード (偶奇) 振動**: x=0.51mm 列で +0.00, **−6.77, +7.93**, −2.32,
+  +6.26 ... (物理値 ~0.5 m/s)。stored 勾配は場の FD と一致 = 勾配計算は正しく、**場が振動**。
+- $(\partial_r U_y)^2\sim10^{11}$ → $S^2$ → $k$ 爆発 (A: $k$~1400–5500 で振動・収束せず;
+  B: rms_roK **1.6e11** 爆発 → 近軸 $k$=0 崩壊)。**軸細分で悪化** = 数値不安定。
+- inviscid / baseline (軸 0.25mm) は $U_y$ 滑らか → 細分で顕在化する潜在モード。
+- 機構: 半径方向は近軸で深い低 Mach ($u_r\to0$) → 風上流束の圧力-速度結合が消え偶奇モードが
+  生き残る (古典的チェッカーボード)。3D は軸が内部点でこの構造なし。
+- 失敗した対処: `lowMachPrecond: 2` (超音速コアで発散, 既知)・`lowMachPrecond: 1` (細軸で
+  step8 NaN)。根治候補 (near-axis 限定の圧力-速度結合回復) は plan §3。
 
-壁を保ちつつ近軸だけ細分した格子 (2 面クラスタ, 壁 8µm を維持) を **$k$ 収束まで**回し、軸 $k$ が
-グリッド収束 (物理) か発散 (数値) かを判定する。plan
-[`architecture-axisym-faceweight.md`](../../.github/plans/architecture-axisym-faceweight.md)。
+**実用指針**: 軸対称 RANS ノズルは `katoLaunder: 1` + **軸の過細分を避ける** (軸セル ≥ ~0.1mm;
+壁解像は `--prog-r` の壁側クラスタで行う)。
 
-### Kato–Launder は症状緩和 (根治ではない)
+### 経緯メモ (誤診の訂正)
 
-`katoLaunder:1` ($P_k=\mu_t S\Omega$) は生産を落とすので軸スパイクも縮むが、**特異点の根治ではない**:
+①「planar 面積 vs $r$ 重み体積の不整合」→ 誤り (flux 面積・体積は両方 $r$ 重み済,
+[`variables.cpp`](../../solver_density_cuda/variables.cpp))。②「拡散勾配の planar 面積が bug」→
+誤り (勾配は planar 作用素で正しい)。③ uniform 格子 (`run_gr_ny100/200`) のグリッド試験 →
+壁粗で $k$ 非収束のため無効。最終特定は 2 面クラスタ格子での $U_y$ チェッカーボード観測。
+
+### Kato–Launder の検証 (層 (a) への対処)
+
+`katoLaunder:1` ($P_k=\mu_t S\Omega$) は実用格子の層 (a) を解決する (`run_0018_conical_kl`):
 
   | | 軸 $k$ | 軸 μt/μlam | 核 $k$ | 壁BL μt/μlam (x=50) | 推力 F | mdot/λ |
   | --- | --- | --- | --- | --- | --- | --- |
   | `katoLaunder:0` | 17.0 | 37.0 | 5.02 | 13.0 | 1953.0 | 1.2998/0.9842 |
-  | `katoLaunder:1` | 1.93 | 10.7 | 0.47 | 12.9 | 1953.1 | 1.2998/0.9842 |
+  | `katoLaunder:1` | **1.93** | **10.7** | **0.47** | **12.9** | 1953.1 | 1.2998/0.9842 |
 
-KL は一般 SST 欠陥への有効な opt-in 修正として残すが、case 29 の軸スパイクは**まず軸対称面積の
-$r$ 重み修正が本筋**。
+層 (b) (軸過細分のチェッカーボード) には効かないため、軸セルは ≥0.1mm を保つこと。
 
 > メモ: 3D は convert が $k=\omega=0$ で IC を書くため起動時に $1/\omega$ 発散する。IC で $\omega$ を
 > シード (例 18000) すれば安定。butterfly 格子は壁第1層が全周 8µm 一様 (squircle 版は対角で細・

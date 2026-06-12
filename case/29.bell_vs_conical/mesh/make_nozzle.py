@@ -206,7 +206,7 @@ NX_ZONE = dict(chamber=18, conv_cone=45, throat_up=30, throat_dn=28,
                parabola=150, cone=150)
 
 
-def write_geo(path, which, segs, p, ny, prog_r=1.0):
+def write_geo(path, which, segs, p, ny, prog_r=1.0, bump=None):
     """exact primitive (Line/Circle/Bezier) による多ブロック構造軸対称メッシュ.
 
     各セグメント (chamber/conv_cone/throat_up/throat_dn/parabola|cone) を 1 ブロックとし、
@@ -223,6 +223,8 @@ def write_geo(path, which, segs, p, ny, prog_r=1.0):
     em("lc = 1.0;")
     em(f"ny = {ny};")
     em(f"prog_r = {prog_r};   // 半径方向クラスタリング (1.0=一様; <1 で壁に密)")
+    if bump is not None:
+        em(f"bump_r = {bump};  // 両端クラスタ (壁+軸): Transfinite Bump")
     em("")
 
     pid = [0]
@@ -281,9 +283,10 @@ def write_geo(path, which, segs, p, ny, prog_r=1.0):
         if inlet_curve is None:
             inlet_curve = left
         em(f"Transfinite Curve {{{top}, {bot}}} = {nx + 1};")
-        em(f"Transfinite Curve {{{right}}} = ny + 1 Using Progression prog_r;")
+        radial_spec = "Bump bump_r" if bump is not None else "Progression prog_r"
+        em(f"Transfinite Curve {{{right}}} = ny + 1 Using {radial_spec};")
         if prev_vert is None:
-            em(f"Transfinite Curve {{{left}}} = ny + 1 Using Progression prog_r;")
+            em(f"Transfinite Curve {{{left}}} = ny + 1 Using {radial_spec};")
         sid[0] += 1
         ll = sid[0]
         em(f"Curve Loop({ll}) = {{{bot}, {right}, -{top}, -{left}}};")
@@ -326,6 +329,8 @@ def main():
     ap.add_argument("--ny", type=int, default=80, help="半径方向分割")
     ap.add_argument("--prog-r", type=float, default=1.0,
                     help="半径方向クラスタリング比 (1.0=一様; 粘性は壁密 <1, 例 0.95)")
+    ap.add_argument("--bump-r", type=float, default=None,
+                    help="両端クラスタ (壁+軸, Transfinite Bump 係数 <1)。指定時 prog-r より優先")
     ap.add_argument("--outdir", type=str, default=".", help="出力先")
     args = ap.parse_args()
 
@@ -334,8 +339,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     write_csv(out / "contour_bell.csv", bx, by, bz)
     write_csv(out / "contour_conical.csv", cx, cy, cz)
-    write_geo(out / "bell.geo", "bell", bell_segs, p, args.ny, args.prog_r)
-    write_geo(out / "conical.geo", "conical", conical_segs, p, args.ny, args.prog_r)
+    write_geo(out / "bell.geo", "bell", bell_segs, p, args.ny, args.prog_r, args.bump_r)
+    write_geo(out / "conical.geo", "conical", conical_segs, p, args.ny, args.prog_r, args.bump_r)
 
     # --- 諸元テキスト ---
     lines = [
