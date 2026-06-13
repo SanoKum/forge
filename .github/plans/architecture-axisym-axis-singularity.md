@@ -60,16 +60,27 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
 | `cfl_pseudo` 引き上げ (2→4→8) | 効果なし (over-damping/CFL ではない) |
 | `cfl_pseudo` 引き下げ (2→0.5→0.3) | 効果なし (−0.64→−0.58→−0.53、固着のまま) |
 | scalar DPLUR (`blockDPLUR=0`) | **全発散** (cfl2 で step~9k に全場 NaN)。block DPLUR が安定性に必須 |
-| **global double** (残差・フラックス・保存量も倍精度) | **効く** |
+| `nStepInner` 増 (20→100→200 sweep) | **全く不変** (−0.64 でビット一致)。線形系は既に収束済=**Krylov(FGMRES)でも直らない** |
+| `doubleResidual` (残差を double バッファに蓄積) | **効果なし** (−0.64)。桁落ちは atomic sum ではなく**float 状態由来の per-face 値**にある |
+| **global double** (状態も double) | **効く** |
+
+**SU2 との対比 (su2.log で確認)**: SU2 = 後退Euler + **FGMRES + ILU(0)** + **double**。forge = 後退Euler defect-correction
++ **block-DPLUR (LU-SGS sweep 固定回数)** + **float**。`nStepInner` テストで forge の LU-SGS は線形系を既に
+解ききっている (sweep 増で不変) と判明したので、**SU2 の優位は FGMRES という手法ではなく double 精度**。
+`doubleResidual` テストで残差蓄積を倍精度化しても直らず、**効くのは状態 (P,ρ 等) の倍精度**のみ
+= float 状態から計算した per-face 流束が近軸で桁落ちし、陰解の `D⁻¹` がそれを増幅する。陽解は `R·dt/V` で許容。
+→ **部分倍精度・手法変更では根治せず、状態の倍精度 (global double) が必要**。SU2 の `USE_MIXED_PRECISION`
+(本体 double・前処理のみ float) も同じ結論。
 
 **決定的比較 (同一 cfl=0.5・同一 20000 step)**: 陽解法 (`timeIntegration=3`) は第一セル Uy=−14.9 (正)、
 陰 block-DPLUR (`timeIntegration=11`) は −0.58 (固着)。cfl も step 数も同一なので、差は
 「**陽の点更新 vs 陰の block-DPLUR defect-correction そのもの**」。乱流なし (laminar) でも生じる
 = **平均速度場の問題**であり、block-DPLUR (float) が近軸第一セルを構造的に収束させられない。
 
-- 切り分けの帰結: 「double-D + float-R = 固着、global = 正常」→ **陰解法は double 残差 (R) を要する**。
-  近軸の悪条件な陰解 Jacobian `D⁻¹` が float32 残差のノイズを増幅するため。**陽解法は `R·dt/V` の
-  スケールでこれを許容する** (だから float でも正しい)。
+- 切り分けの帰結: double-D (DPLUR反復) も double-R蓄積 (doubleResidual) も単独では**効かず**、
+  **状態 (P,ρ等) を double にする global double のみ効く**。近軸の悪条件な陰解 Jacobian `D⁻¹` が、
+  **float 状態から計算した per-face 流束の桁落ち**を増幅するため。**陽解法は `R·dt/V` の
+  スケールでこれを許容する** (だから float でも正しい)。→ 根治には**状態の倍精度**が要る。
 - 乱流モデル側の対処はすべて**無関係 (マスク)**: フープ除去 (6% のみ)、`dilatationCorrection`
   (トレース除去では `u_r/r` は偏差成分に残り消えない)、Kato–Launder (軸上 `Ω→0` でたまたま生産が
   落ちるだけ)。`turbulence-kato-launder.md` の「軸スパイクの対処」という位置づけは**誤り**。
@@ -84,16 +95,17 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
    かつ double ビルドでの RANS 安定性は要確認) か、**explicit**(平均流は float で正しい。
    ただし SST は剛体ソースで cfl 要調整・warm-start 推奨)。
 
-## 4. 根治の候補 (未実装・要検討)
+## 4. 根治の候補 (要検討)
 
-安価な部分倍精度では塞がらなかった (§2)。残る方向:
+部分倍精度 (DPLUR反復 / 残差蓄積) はすべて**検証して無効** (§2)。安価な根治は存在しないと判明。残る方向:
 
-- **近軸の残差 (フラックス) を倍精度で計算**: 陰解が要するのは double 残差。flux kernel の res 蓄積を
-  倍精度 (または atomicAdd を避ける cell-gather 化、勾配と同様) にすれば、保存量・記憶は float のまま
-  陰解が収束する可能性。global double より軽い。**未検証**。
-- **近軸セルだけ陽的更新するハイブリッド**: 近軸 (小 r) の悪条件セルを点陽的更新、バルクは block-DPLUR。
-  陽的は float でも正しいので近軸が直り、バルクの陰解速度を保つ。実装中規模・**未検証**。
-- **軸セルの定式化変更**: 第1セル中心を軸上に置く / axis-cell の well-balanced 化。大規模。
+- **状態の倍精度 (global double / 状態だけ double)**: 唯一実証済。近軸が要するのは float 状態から
+  計算する per-face 流束の精度なので、最低でも状態 (P,ρ,roU) を double 化する必要がある。
+  flux/勾配も double にしないと per-face 値が float 精度のままなので、実質 global double。
+  消費者GPU では FP64 が遅い (RTX3060 で ~1/32) のが難点。double ビルドでの RANS 安定性は要確認
+  (本調査では double SST が発散した)。
+- **近軸セルだけ陽的更新するハイブリッド**: ユーザ却下 (ハック的で不可)。
+- **軸セルの定式化変更**: 第1セル中心を軸上に置く (SU2 流の頂点中心) / axis-cell の特別扱い。大規模・要設計。
 
 ## 5. 検証 (根治実装時)
 
@@ -108,7 +120,11 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
   ①フープ項は主犯でない (除去で 6% のみ)。②flux スキーム非依存 (SLAU=ROE 両方で発生)。
   ③軸ゴースト・勾配は正常 (軸面流束は r 重みで実質ゼロ、勾配は planar で正しい)。
   ④**float32 陰解法 (block-DPLUR) が近軸第一セルの `u_r` を収束させきれない**のが真因。explicit float
-  と global double はいずれも正しい。部分倍精度 (solve / source-Jac / FVS-Jac / DPLUR 反復全体) は
-  すべて無効、global double のみ有効 → 陰解は double 残差を要すると判明。Kato–Launder は無関係な
-  マスクと確定 (`turbulence-kato-launder.md` の位置づけを訂正)。実用指針 (§3) を更新、安価な根治
-  (§4: 近軸残差の倍精度 / 近軸ハイブリッド陽的) は未検証で将来課題。
+  と global double はいずれも正しい。Kato–Launder は無関係なマスクと確定
+  (`turbulence-kato-launder.md` の位置づけを訂正)。
+- `2026-06-13` (追試) — 安価な根治を網羅的に検証し**すべて無効**と確定:
+  部分倍精度 (5×5 solve / source-Jac / FVS-Jac / DPLUR反復全体)、`cfl_pseudo` 上下、`nStepInner` 増
+  (線形系は収束済→FGMRES でも不可)、scalar DPLUR (発散)、**`doubleResidual` (残差の倍精度蓄積)**。
+  **global double (状態の倍精度) のみ有効**。SU2 (FGMRES+ILU+double) との対比から、**SU2 の優位は手法
+  ではなく double 精度**であり、桁落ちは残差蓄積ではなく**float 状態から計算する per-face 流束**に由来する
+  と判明。→ 根治は状態の倍精度 (≈global double) が必要、近軸ハイブリッド陽的はユーザ却下 (§4)。
