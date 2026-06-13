@@ -75,7 +75,11 @@
    **結果は §9 の `2026-06-14 M2` 参照**。要点: 低マッハ 2 次は node≈cell・implicit も良好だが、
    **高マッハ 2 次 MUSCL が壁近傍で発散** (M1 のゴースト便宜由来) → **M3 弱形式境界が必要**と確定。
 
-### M3 — 粘性 + 軸対称 (副次)
+### M3 — 弱形式境界 (前倒し) + 粘性 + 軸対称
+7.5. **弱形式境界 (前倒し, 別ファイル)**: `cuda_forge/boundaryNode_d.cu` (+ `.cuh`) を新規追加し、
+   node モードの勾配・対流フラックスの境界寄与をゴースト平均から弱形式へ差し替える
+   (docs/discretization/{theory §6, implementation §7})。既存 cell-centered BC は無変更。
+   目標: bump hiM (Mach1.65) の 2 次 MUSCL 発散を解消。cell モードは回帰でビット一致確認。
 8. viscous dual 有効化、層流ケース (`case/15` or `24`)。
 9. 双対体積の `r` 重み + 軸上マスク、`case/23.axi_nozzle` で near-axis 改善有無を比較。
 
