@@ -109,8 +109,17 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   → **SU2 流対称面を効かせるには block-DPLUR の Jacobian row を軸ノードで整合修正する必要**があり (SU2 は
   Jacobian を修正している)、commit/残差だけの hack では不可。これは delicate な implicit-solver 改修なので
   open issue とし、infra (`zeroAxisRadialResidual_d`、commit の `axis_flag` 引数) は残置・既定無効。
-  baseline (無介入) は収束し corner 1 セルのオーバーシュートのみ。explicit 経路なら `res_roUy=0` 射影が直接効く
-  可能性があるが、本ノズルは implicit 前提のため Jacobian 整合が本筋。
+  baseline (無介入) は収束し corner 1 セルのオーバーシュートのみ。
+  **explicit 検証 (ユーザ要請)**: conical Euler を explicit で回すと **node は step1 で即発散** (cfl=0.1 でも)。
+  原因は **near-axis の explicit 剛性**: 軸 CV は r 重みで面積→0 のため spectral radius→0、explicit 更新
+  `res·CFL/spectral` が発散 (cell は step3483 まで持つが非粘性ノズル startup でやはり発散)。よって本ノズルは
+  **explicit では node が回らず implicit (block-DPLUR 無条件安定) が前提**。explicit 検証には near-axis の
+  dt/spectral フロアが別途要る。射影 (roUy 残差=0) は今 node+axisym で既定 ON だが、explicit が回らない・implicit は
+  連成で漏れるため、単独では corner を直せない。
+  **入口境界の確認 (ユーザ要請)**: 収束場の入口面 (x=inlet) を r 方向に見ると **r≳0.003 で入口 BC は正常**
+  (P≈4MPa=chamber Pt・軸方向流入正)。異常は **軸-inlet 角 (r<0.002) のみ**: 軸方向**逆流 Ux≈-798**・Uy≈+164・P 6.82MPa。
+  → **入口 BC 自体は問題なし。軸特異性が角を多方程式的に汚染** (radial だけでなく axial 逆流・P も)。roUy 単独射影では
+  直らず、near-axis は全方程式整合 (対称面 + dt/spectral フロア + 連成 Jacobian) の包括対策が要る。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
