@@ -199,6 +199,34 @@ cd /home/sano/work/forge/solver_density_cuda
 - `forge` 実行後は、同じ新しい `run_*` ディレクトリで `residual_history.csv` から `residual_history.png` を生成する。
 - `run_*` が複数ある場合は、ユーザー指定のもの、または使いたいスキームに対応するものを選ぶ。
 
+## Fluent (CFF HDF5) メッシュの取り込み
+
+世の中で配布されている ANSYS Fluent の HDF5 メッシュ (`*.msh.h5` / `*.cas.h5`, いわゆる CFF) を forge 入力 HDF5 に変換するには `solver_density_cuda/tools/fluent_h5_to_forge.py` を使う。Gmsh を経由せず、Fluent の面 (face) 情報から forge の plane/cell/bcond を直接生成する (体積は発散定理で計算するので多面体セルでも解は回る。ただし多面体は forge の結果可視化では正しく描画されない)。
+
+手順:
+
+```bash
+# 1) 構造とゾーン一覧を確認 (名前・zoneType・境界/内部・単位)
+python3 solver_density_cuda/tools/fluent_h5_to_forge.py dump mesh.cas.h5
+
+# 2) ゾーン -> physID 対応表と bcondConfig.yaml の雛型を出力
+python3 solver_density_cuda/tools/fluent_h5_to_forge.py template mesh.cas.h5 \
+        -o mapping.yaml --bcond bcondConfig.yaml
+
+# 3) mapping.yaml / bcondConfig.yaml を編集後、変換 (単位換算は --scale)
+python3 solver_density_cuda/tools/fluent_h5_to_forge.py convert mesh.cas.h5 mesh.h5 \
+        --map mapping.yaml --bcond bcondConfig.yaml --scale 0.0254 \
+        --ro 1.0 --ux 100 --p 101325
+```
+
+要点:
+
+- 境界は **physID (整数)** で実行時に `bcondConfig.yaml` と突き合わされる (`boundaryCond.cpp::readBcondConfig`)。Fluent ゾーン名 -> physID の対応 (`mapping.yaml`) と、同じ physID をもつ `bcondConfig.yaml` を必ず用意する。`kind`・境界値は `bcondConfig.yaml` が正本 (H5 の `bcondKind` 属性は上書きされる)。
+- 出力 `mesh.h5` 名は `solverConfig.yaml` の `mesh.meshFileName` / `mesh.valueFileName` に合わせる。
+- 座標単位が m でない場合 (Fluent は inch/mm が多い) は `--scale` で SI へ換算する (`dump` が単位を警告する)。`--double` は double ビルド向けに float64 で書く。
+- 初期値 (`--ro/--ux/--uy/--uz/--p`/`--t`, RANS は `--rok/--roomega`) は一様値で `/VALUE/*` に焼き込まれる。`wall_dist` は `kind` が `wall` で始まる境界面から自動計算する。
+- CFF のレイアウトは Fluent バージョンで揺れる。読めない場合は `dump` で構造を確認し、必要なら `--nodes-path` 等で補う。
+
 ## 結果ディレクトリの明示 (投入時・まとめ時)
 
 検証計算の所在が後から分からなくならないよう、計算の **投入時** と **結果まとめ時** の両方で、出力先 `run_*` をリポジトリルートからの相対パスで明示する (正本ルールは `AGENTS.md` の「計算結果ディレクトリの明示」)。
