@@ -70,8 +70,10 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   ゴースト状態を設定 → 対流フラックスがゴースト経由で境界フラックスを与える (cell-centered と同型)。
   ゴースト位置は `pc = node + h·n_out` (h=0.5√双対体積) で非退化にする (M1 は非粘性 1 次のため位置は
   フラックスに影響しない)。**より厳密な弱形式境界カーネルは M2+ の精度改善として残す**。
-- 可視化 (`output.cpp` の CONNE/XDMF) は cell topology 前提なので node モードでは正しくない (M4 で対応)。
-  `/VALUE` 配列自体は CV (ノード) 単位で正しく、数値比較は可能。
+- **可視化 (対応済み)**: node モードでは `replacePrimalWithDual()` が primal セル接続を `/VIZMESH/CONNE`
+  に退避し、`writeInputH5`・`output.cpp` がそれを使って **primal セルトポロジ + `Center='Node'`** で
+  XDMF を書く (CV index == primal node index)。cell モードは従来どおり `Center='Cell'`。
+  両モードとも自己整合な XDMF/HDF5 を出力し ParaView で読める。
 
 ## 4. 書き換えが必要な箇所 (M2 以降)
 

@@ -1547,6 +1547,28 @@ public:
         const geom_int nDualInternal = (geom_int)this->dualFaceArea.size();
         const geom_int nBHalf        = (geom_int)this->dualBnodeId.size();
 
+        // ---- 可視化用に primal セルトポロジ (CONNE) を退避 ----
+        // 双対へ置換すると primal topology が失われるため、node モードの出力で
+        // 「primal セル + Center='Node'」可視化に使えるよう CONNE を保存する。
+        this->vizCONNE.clear();
+        this->vizCONNE_dim = 0;
+        this->nVizCells = (geom_int)this->cells.size();
+        for (const auto& cel : this->cells)
+        {
+            const geom_int nn = this->eleTypeMap.mapElementFromGmshID[cel.ieleType].nNodes;
+            const std::string name = this->eleTypeMap.mapElementFromGmshID[cel.ieleType].name;
+            geom_int code = 0;
+            if (name == "hex") code = 9;
+            else if (name == "prism") code = 8;
+            else if (name == "pyramid") code = 7;
+            else if (name == "tetra") code = 6;
+            else if (name == "quad") code = 5;
+            else if (name == "triangle") code = 4;
+            this->vizCONNE.push_back(code);
+            this->vizCONNE_dim += nn + 1;
+            for (const geom_int nod : cel.iNodes) this->vizCONNE.push_back(nod);
+        }
+
         // ---- 新 cells (CV = ノード) ----
         std::vector<cell> newCells(nN);
         for (geom_int i = 0; i < nN; ++i) {
@@ -1796,6 +1818,20 @@ public:
         }
         file.createDataSet("/CELLS/regionId", regionIds);
 
+        // ---- node-centered 可視化トポロジ (/VIZMESH) ----
+        // replacePrimalWithDual() で退避した primal CONNE。solver の出力が node モードで
+        // 「primal セル + Center='Node'」可視化に使う (docs/discretization/implementation.md §3.5)。
+        if (!this->vizCONNE.empty())
+        {
+            Group vgrp = file.createGroup("/VIZMESH");
+            Attribute va = vgrp.createAttribute<geom_int>("nVizCells", DataSpace::From(this->nVizCells));
+            va.write(this->nVizCells);
+            va = vgrp.createAttribute<geom_int>("vizCONNE_dim", DataSpace::From(this->vizCONNE_dim));
+            va.write(this->vizCONNE_dim);
+            file.createDataSet("/VIZMESH/CONNE", this->vizCONNE);
+            cout << "writeInputH5: wrote /VIZMESH (nVizCells=" << this->nVizCells << ")\n";
+        }
+
         // ---- median-dual (node-centered) データ ----
         // buildMedianDual() 済みのときのみ /DUAL を書く。solver は discretization=="node"
         // で /DUAL を読み CV=ノードとして消費する (docs/discretization/implementation.md §1)。
@@ -1879,11 +1915,18 @@ public:
         ofs << "<Xdmf>\n";
         ofs << "  <Domain>\n";
         ofs << "    <Grid  GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
+        // node-centered では /VIZMESH/CONNE (primal トポロジ) + Center='Node' で可視化する。
+        const bool nodeViz = !this->vizCONNE.empty();
+        const geom_int xdmfNElem = nodeViz ? this->nVizCells : (geom_int)this->cells.size();
+        const geom_int xdmfConneDim = nodeViz ? this->vizCONNE_dim : CONNE_dim;
+        const string conneRef = nodeViz ? (outFileName + ":VIZMESH/CONNE")
+                                        : (outFileName + ":MESH/CONNE");
+        const char* centerAttr = nodeViz ? "Node" : "Cell";
+
         ofs << "      <Grid Name='aaa'>\n";
-        ofs << "        <Topology Type='Mixed' NumberOfElements='" << this->cells.size() << "'>\n";
-        ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
-//        ofs << "            vol_" << oss.str() <<".h5:MESH/CONNE\n";
-        ofs << "           " + outFileName + ":MESH/CONNE\n";
+        ofs << "        <Topology Type='Mixed' NumberOfElements='" << xdmfNElem << "'>\n";
+        ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << xdmfConneDim << "'>\n";
+        ofs << "           " + conneRef + "\n";
         ofs << "          </DataItem>\n";
         ofs << "        </Topology>\n";
 
@@ -1898,7 +1941,7 @@ public:
         {
         //for (auto& v : var.c) {
             //string name = v.first;
-            ofs << "        <Attribute Name='"  << name << "' Center='Cell' >\n";
+            ofs << "        <Attribute Name='"  << name << "' Center='" << centerAttr << "' >\n";
             ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << this->cells.size() << "'>\n";
             ofs << "            " + outFileName + ":VALUE/" << name<< "\n";
             ofs << "          </DataItem>\n";

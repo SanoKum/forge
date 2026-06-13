@@ -455,6 +455,16 @@ void mesh::readMesh(string fname)
 //ghst<
         ib++;
     }
+
+    // node-centered 可視化トポロジ (/VIZMESH)。存在すれば node モードとして出力側が使う。
+    if (file.exist("/VIZMESH"))
+    {
+        Group vgrp = file.getGroup("/VIZMESH");
+        this->nVizCells    = vgrp.getAttribute("nVizCells").read<geom_int>();
+        this->vizCONNE_dim = vgrp.getAttribute("vizCONNE_dim").read<geom_int>();
+        file.getDataSet("/VIZMESH/CONNE").read(this->vizCONNE);
+        cout << "readMesh: loaded /VIZMESH (node-centered viz, nVizCells=" << this->nVizCells << ")" << endl;
+    }
 }
 
 

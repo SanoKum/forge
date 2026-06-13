@@ -57,31 +57,45 @@ static void writeSolutionH5_XDMF(const solverConfig& cfg , const mesh& msh , var
 
     file.createDataSet("/MESH/COORD",COORD);
 
+    // node-centered (median-dual) モードでは msh.cells が双対 CV なので primal トポロジを
+    // 持たない。msh.vizCONNE (primal セル接続) があればそれを使い、属性を Center='Node' で書く
+    // (CV index == primal node index)。無ければ従来の cell-centered (Center='Cell')。
+    const bool nodeViz = !msh.vizCONNE.empty();
+
     vector<geom_int> CONNE;
     geom_int CONNE_dim = 0;
-    geom_int CONNE0;    
-    //for (auto& cel : msh.cells)
-    for (geom_int ic = 0 ; ic<msh.nCells ; ic++)
+    geom_int nElements = 0;
+    if (nodeViz)
     {
-        auto cell = msh.cells[ic];
-        geom_int nn = eleTypeMap.mapElementFromGmshID[cell.ieleType].nNodes;
-        string name = eleTypeMap.mapElementFromGmshID[cell.ieleType].name;
-
-        if (name == "hex") CONNE0 = 9;
-        if (name == "prism") CONNE0 = 8;
-        if (name == "pyramid") CONNE0 = 7;
-        if (name == "tetra") CONNE0 = 6;
-        if (name == "quad") CONNE0 = 5;
-        if (name == "triangle") CONNE0 = 4;
-
-        //CONNE.push_back(nn + 1);
-        CONNE.push_back(CONNE0);
-        CONNE_dim += nn + 1;
-
-        for (auto& nod : cell.iNodes)
+        CONNE = msh.vizCONNE;
+        CONNE_dim = msh.vizCONNE_dim;
+        nElements = msh.nVizCells;
+    }
+    else
+    {
+        geom_int CONNE0;
+        for (geom_int ic = 0 ; ic<msh.nCells ; ic++)
         {
-            CONNE.push_back(nod);
+            auto cell = msh.cells[ic];
+            geom_int nn = eleTypeMap.mapElementFromGmshID[cell.ieleType].nNodes;
+            string name = eleTypeMap.mapElementFromGmshID[cell.ieleType].name;
+
+            if (name == "hex") CONNE0 = 9;
+            if (name == "prism") CONNE0 = 8;
+            if (name == "pyramid") CONNE0 = 7;
+            if (name == "tetra") CONNE0 = 6;
+            if (name == "quad") CONNE0 = 5;
+            if (name == "triangle") CONNE0 = 4;
+
+            CONNE.push_back(CONNE0);
+            CONNE_dim += nn + 1;
+
+            for (auto& nod : cell.iNodes)
+            {
+                CONNE.push_back(nod);
+            }
         }
+        nElements = msh.nCells;
     }
     file.createDataSet("/MESH/CONNE",CONNE);
 
@@ -118,7 +132,7 @@ static void writeSolutionH5_XDMF(const solverConfig& cfg , const mesh& msh , var
     ofs << "    <Grid GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
     ofs << "    <Time TimeType='Single' Value='" << outputTimeValue(cfg, iStep) <<"'/> \n";
     ofs << "      <Grid Name='gridooo'>\n";
-    ofs << "        <Topology Type='Mixed' NumberOfElements='" << msh.nCells << "'>\n";
+    ofs << "        <Topology Type='Mixed' NumberOfElements='" << nElements << "'>\n";
     ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
     ofs << "            " << prefix << oss.str() <<".h5:MESH/CONNE\n";
     ofs << "          </DataItem>\n";
@@ -130,11 +144,12 @@ static void writeSolutionH5_XDMF(const solverConfig& cfg , const mesh& msh , var
     ofs << "          </DataItem>\n";
     ofs << "        </Geometry>\n";
 
+    const char* centerAttr = nodeViz ? "Node" : "Cell";
     for (string name : var.output_cellValNames)
     {
     //for (auto& v : var.c) {
         //string name = v.first;
-        ofs << "        <Attribute Name='"  << name << "' Center='Cell' >\n";
+        ofs << "        <Attribute Name='"  << name << "' Center='" << centerAttr << "' >\n";
         ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << msh.nCells << "'>\n";
         ofs << "            " << prefix << oss.str() << ".h5:VALUE/" << name << "\n";
         ofs << "          </DataItem>\n";

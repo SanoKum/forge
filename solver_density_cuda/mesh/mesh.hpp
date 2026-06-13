@@ -135,6 +135,14 @@ public:
     std::vector<cell> cells;
     std::vector<bcond> bconds;
 
+    // node-centered (median-dual) 用の可視化トポロジ。空でなければ「CV=ノード」モードで、
+    // 出力は primal セルのトポロジ + Center='Node' で書く (CV index == primal node index)。
+    // cell-centered モードでは空のまま (出力は従来の Center='Cell')。
+    // vizCONNE は XDMF mixed-topology 形式 (各セル: [typeCode, node0, node1, ...] の連結)。
+    std::vector<geom_int> vizCONNE;
+    geom_int vizCONNE_dim = 0; // vizCONNE の総長 (XDMF DataItem Dimensions)
+    geom_int nVizCells    = 0; // primal セル数 (XDMF NumberOfElements)
+
     // cuda
     //geom_int* map_nplane_cells_d; // normal plane
     geom_int* map_plane_cells_d; // 
