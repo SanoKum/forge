@@ -189,6 +189,9 @@ void solverConfig::read(std::string fname)
         } else {
             this->discretization = "cell";
         }
+        if (config["mesh"]["bndFirstOrder"]) {
+            this->bndFirstOrder = config["mesh"]["bndFirstOrder"].as<int>();
+        }
 
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");

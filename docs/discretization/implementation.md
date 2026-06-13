@@ -117,6 +117,18 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 **検証**: bump hiM (Mach1.65) の node 2 次 MUSCL が**発散しなくなる**ことを `check_convergence.py` で確認
 (M2 で step~400 発散 → M3 で安定収束が目標)。cell モードの全既存ケースが**従来とビット一致**(無変更) を回帰確認。
 
+### 7.1 診断結果 (重要): hiM 発散は「境界値」でなく「壁近傍 2 次再構成」の問題
+弱形式実装の前に切り分け診断を実施 (`bndFirstOrder`: 境界隣接 CV の再構成勾配を 0 にし境界側を 1 次化、
+[calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu) の `zeroBndNodeGradient_d`、
+フラグは `mesh.bnode_flag_d`)。結果:
+- **`bndFirstOrder=1` で bump hiM node の NaN 発散 (step~400) が解消** (explicit は ~1e-3 のリミットサイクル、
+  **implicit + bndFirstOrder で完全収束 PASS**)。cell モードは flag 既定 0 で無影響 (ビット不変)。
+- **→ 真因は近壁 2 次 MUSCL 再構成のロバスト性であって、境界値 (φ_b) ではない**。slip 壁では弱形式の φ_b は
+  現状の `0.5(node+ghost)` と一致するため、**弱形式境界だけでは hiM は直らなかったはず**。`bndFirstOrder` が
+  実効的な最小修正。
+- **弱形式境界 (§7) は引き続き粘性 (壁せん断・熱流の正しい評価) で必要**だが、hiM 安定化とは別件として整理する。
+  よって `boundaryNode_d.cu` の新規作成は粘性着手時に回す (既存 BC カーネルの Q_b 流用方針は不変)。
+
 ## 5. 設定
 
 [solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。

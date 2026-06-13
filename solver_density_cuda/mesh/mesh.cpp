@@ -742,9 +742,20 @@ void mesh::setMeshMap_d()
         gpuErrchk(cudaMemcpy(bc.map_bplane_cell_ghst_d , bcg_h , 
                              sizeof(geom_int)*(bc.iPlanes.size()) , cudaMemcpyHostToDevice));
  
-        free(bp_h); 
+        free(bp_h);
         free(bc_h);
         free(bcg_h);
+    }
+
+    // 境界隣接 CV フラグ: いずれかの bcond の境界 CV (iCells) を 1 にする。
+    {
+        std::vector<geom_int> bnf(this->nCells, 0);
+        for (bcond& bc : this->bconds)
+            for (geom_int ic : bc.iCells)
+                if (ic >= 0 && ic < this->nCells) bnf[ic] = 1;
+        gpuErrchk(cudaMalloc((void **)&(this->bnode_flag_d), sizeof(geom_int)*this->nCells));
+        gpuErrchk(cudaMemcpy(this->bnode_flag_d, bnf.data(),
+                             sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
     }
 };
 

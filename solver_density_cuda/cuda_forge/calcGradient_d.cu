@@ -444,6 +444,28 @@ __global__ void calcGradient_2_d
 }
 
 
+// bndFirstOrder 診断/ロバスト化: 境界隣接 CV の再構成勾配 (ro,Ux,Uy,Uz,P) を 0 にし、
+// その CV からの 2 次 MUSCL 外挿を 1 次に落とす (壁近傍の過大再構成切り分け/抑制)。
+// divU・dT は粘性で使うため残す (本オプションは対流再構成のみを対象とする)。
+__global__ void zeroBndNodeGradient_d
+(
+ geom_int nCells, geom_int* bnode_flag,
+ flow_float* drodx, flow_float* drody, flow_float* drodz,
+ flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+ flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+ flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+ flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells || bnode_flag[ic] == 0) return;
+    drodx[ic]=0; drody[ic]=0; drodz[ic]=0;
+    dUxdx[ic]=0; dUxdy[ic]=0; dUxdz[ic]=0;
+    dUydx[ic]=0; dUydy[ic]=0; dUydz[ic]=0;
+    dUzdx[ic]=0; dUzdy[ic]=0; dUzdz[ic]=0;
+    dPdx[ic]=0;  dPdy[ic]=0;  dPdz[ic]=0;
+}
+
 void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     flow_float* grad_volume = (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"];
@@ -588,8 +610,20 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
         //var.c_d["droedx"]  , var.c_d["droedy"]  , var.c_d["droedz"],
         //var.c_d["dHtdx"]  , var.c_d["dHtdy"]  , var.c_d["dHtdz"],
  
-        var.c_d["divU"]  
+        var.c_d["divU"]
     ) ;
+
+    // 境界隣接 CV の再構成勾配を 0 に (境界側 1 次化)。bndFirstOrder=1 のときのみ。
+    if (cfg.bndFirstOrder == 1 && msh.bnode_flag_d != nullptr) {
+        zeroBndNodeGradient_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+            msh.nCells, msh.bnode_flag_d,
+            var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
+            var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
+            var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
+            var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
+            var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"]
+        );
+    }
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
