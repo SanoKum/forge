@@ -2,6 +2,12 @@
 #include "lowMachPrecond_d.cuh"
 #include "speciesTransport_d.cuh"  // species_roY_device_ptr()
 
+// free-stream 保存: 対流流束の圧力項を (p_tilde - d_pRef)*s で組むための基準静圧。
+// wrapper で cfg.pRef を cudaMemcpyToSymbol。既定 0.0 で従来挙動 (ビット不変)。
+// 非直交メッシュで大きな p*s を float32 加算する際の桁落ち(metric closure 由来の
+// 偽運動量源)を抑える。詳細: .github/plans/freestream-preserving-flux.md
+__constant__ flow_float d_pRef;
+
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
 
@@ -477,9 +483,10 @@ __global__ void SLAU_d
         massflux[ip] = mdot;
 
         flow_float res_ro_temp   = mdot;
-        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*Ux_L +0.5*(mdot-abs(mdot))*Ux_R +p_tilde*sxx;
-        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*Uy_L +0.5*(mdot-abs(mdot))*Uy_R +p_tilde*syy;
-        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*Uz_L +0.5*(mdot-abs(mdot))*Uz_R +p_tilde*szz;
+        flow_float p_tilde_r = p_tilde - d_pRef;   // free-stream 保存: 基準静圧を差し引いて float32 桁落ちを抑制
+        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*Ux_L +0.5*(mdot-abs(mdot))*Ux_R +p_tilde_r*sxx;
+        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*Uy_L +0.5*(mdot-abs(mdot))*Uy_R +p_tilde_r*syy;
+        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*Uz_L +0.5*(mdot-abs(mdot))*Uz_R +p_tilde_r*szz;
         flow_float res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
 
         atomicAdd(&res_ro[ic0]  , -res_ro_temp);
@@ -2626,9 +2633,10 @@ __global__ void convectiveFlux_boundary_d // slau
         flow_float mdot = sss*(ro_R*Vn_m);
 
         flow_float res_ro_temp   = mdot;
-        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde*sxx;
-        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde*syy;
-        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde*szz;
+        flow_float p_tilde_r = p_tilde - d_pRef;   // free-stream 保存: 基準静圧を差し引く (境界面)
+        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde_r*sxx;
+        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde_r*syy;
+        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde_r*szz;
         flow_float res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
 
         atomicAdd(&res_ro[ic]  , -res_ro_temp);
@@ -2647,6 +2655,12 @@ __global__ void convectiveFlux_boundary_d // slau
 
 void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_ns)
 {
+    // free-stream 保存: 基準静圧 pRef を device 定数へ転送 (既定 0.0 でビット不変)
+    {
+        flow_float pRef_h = static_cast<flow_float>(cfg.pRef);
+        CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_pRef, &pRef_h, sizeof(flow_float)));
+    }
+
     // initialize
     CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_ro"]  , 0.0, msh.nCells*sizeof(flow_float)));
     CHECK_CUDA_ERROR(cudaMemset(var.c_d["res_roUx"], 0.0, msh.nCells*sizeof(flow_float)));

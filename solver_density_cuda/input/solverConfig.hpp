@@ -75,8 +75,13 @@ public:
     std::vector<flow_float> coef_DT_4thRunge;
     std::vector<flow_float> coef_Res_4thRunge;
 
-    flow_float  convMethod; 
+    flow_float  convMethod;
     int limiter;    // 0: off, 1: Barth-Jespersen, 2: Venkata, -1: legacy
+
+    // free-stream 保存: 対流流束の圧力項を (p_tilde - pRef)*s で組み、非直交メッシュで
+    // 大きな p*s を float32 加算する際の桁落ち(metric closure 由来の偽運動量源)を抑える。
+    // 既定 0.0 で従来挙動(ビット不変)。一様基準(動作/フリーストリーム)静圧を入れる。
+    flow_float  pRef = 0.0;
 
 
     int LESorRANS; // 0:no 1:LES 2:RANS

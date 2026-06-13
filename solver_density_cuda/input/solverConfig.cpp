@@ -256,6 +256,8 @@ void solverConfig::read(std::string fname)
         if (this->limiter != 0 && this->limiter != 1 && this->limiter != 2 && this->limiter != -1) {
             throw std::runtime_error("Key 'limiter' in 'space' must be one of 0, 1, 2, or -1.");
         }
+        // free-stream 保存用の基準静圧 (既定 0.0 = 従来挙動・ビット不変)
+        this->pRef = getOptionalValidatedValue<double>(space, "pRef", 0.0, "space");
 
         // turbulence model
         auto turb = config["turbulence"];
