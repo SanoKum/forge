@@ -59,7 +59,7 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
 | **DPLUR 反復まるごと倍精度** (diag/rhs/neighbor/solve、入出力のみ float) | **効果なし** |
 | `cfl_pseudo` 引き上げ (2→4→8) | 効果なし (over-damping/CFL ではない) |
 | `cfl_pseudo` 引き下げ (2→0.5→0.3) | 効果なし (−0.64→−0.58→−0.53、固着のまま) |
-| scalar DPLUR (`blockDPLUR=0`) | **全発散** (cfl2 で step~9k に全場 NaN)。block DPLUR が安定性に必須 |
+| scalar DPLUR (`blockDPLUR=0`) | cfl2/1.0/0.5 は発散 (step 9k/250/683)。**cfl0.1 で安定収束するが第一セル Uy=−0.81 で固着** (block と同じ)。近軸固着は block/scalar 非依存=**float 陰解 defect-correction そのもの**が原因 |
 | `nStepInner` 増 (20→100→200 sweep) | **全く不変** (−0.64 でビット一致)。線形系は既に収束済=**Krylov(FGMRES)でも直らない** |
 | `doubleResidual` (残差を double バッファに蓄積) | **効果なし** (−0.64)。桁落ちは atomic sum ではなく**float 状態由来の per-face 値**にある |
 | **global double** (状態も double) | **効く** |
