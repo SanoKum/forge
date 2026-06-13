@@ -189,8 +189,12 @@
   `A_planar×R` が ≈0 → 除算爆発 (case/29 conical で 272 軸 CV、体積比 1.5e20、step3 で NaN)。
   **修正**: dual セル重心に**双対 CV の面積加重重心** (`dualCentroid`, gmshReader) を使用 (軸上でも R>0)。
   → 軸 CV 0 個・体積比 2.4e4 (cell 1.2e4 と同等) に改善。平面 bump loM node は無回帰 (ro_mean/Ux_mean が M2 と一致)。
-  **case/29 Euler 軸対称 (conical, viscMethod=0 真の Euler, 1 次, implicit cfl_pseudo=2)**: cell/node とも PASS 収束、
-  場一致 (Mach max 3.995 vs 4.000・mean 1.864 vs 1.865、chamber 4MPa 保存、NaN無し)。
+  **case/29 Euler 軸対称 (conical, viscMethod=0 真の Euler, 1 次, implicit cfl_pseudo=2)**: cell/node とも残差 PASS (rms_ro ~3e-9)。
   **注**: 初め viscMethod=1(Sutherland)で「visc=0 でも粘性が残り」発散していた→真 Euler は viscMethod=0。
   run: `case/29.bell_vs_conical/run_dual_eul_conical_{cell,node}_m3/`。
-  **次**: 2 次 Euler (bndFirstOrder+staged)・bell ノズル → 弱形式境界 (`boundaryNode_d.cu`) → viscous (no-slip 壁)。
+  **訂正 (収束場で再評価)**: 当初「Mach 一致で validated」と報告したが、それは **res_0=IC を比較していた誤り**
+  (outStepInterval=5000>4000 step で収束場が dump されていなかった)。**収束場 (res_4000) で再比較すると、bulk は一致
+  (Mach mean 1.846 vs 1.847) だが node に near-axis オーバーシュート**: P max **6.82MPa (> chamber Pt 4MPa=非物理)** が
+  軸-inlet 角 (x=inlet, r=0)、Mach max **4.915 vs cell 4.015** が軸-exit。27 セルが P>4MPa、全て inlet-axis。
+  → **CV 重心修正で軸ゼロ体積爆発は解消したが、node-centered の near-axis (r=0 境界角) 処理に残課題**。
+  bell・2 次・viscous の前に near-axis 処理 (軸 BC・inlet 角・r 重み) の検討が要る。
