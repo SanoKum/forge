@@ -156,6 +156,10 @@ public:
     // (bndFirstOrder) の診断・対策で、境界ノードの 2 次再構成を 1 次に落とすのに使う。
     geom_int* bnode_flag_d = nullptr;
 
+    // 軸上 CV フラグ [nCells] (ノード R=0 の CV=1)。node-centered 軸対称で、軸上ノードが CV 中心=
+    // 特異点になり半径方向運動量が偽駆動されるのを防ぐため、軸上で roUy=0 (対称条件) を課すのに使う。
+    geom_int* axis_flag_d = nullptr;
+
     mesh();
     ~mesh();
     mesh(geom_int& , geom_int& ,geom_int& , geom_int& , 

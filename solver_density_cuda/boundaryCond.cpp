@@ -2,6 +2,7 @@
 
 #include "cuda_forge/cudaWrapper.cuh"
 #include "cuda_forge/boundaryCond_d.cuh"
+#include "cuda_forge/axisymmetricSource_d.cuh"
 #include "cuda_forge/ransBoundary_d.cuh"
 #include "cuda_forge/fluct_variables_d.cuh"
 

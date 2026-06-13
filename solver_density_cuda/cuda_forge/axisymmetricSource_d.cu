@@ -25,11 +25,15 @@ __global__ void axisymmetricSource_d
     flow_float* vis_turb,
     flow_float* axisym_divU,
     flow_float* axisym_uy_over_r,
-    flow_float* res_roUy
+    flow_float* res_roUy,
+    geom_int* axis_flag   // node-centered で軸上 CV を示す (nullptr 可)。軸上は半径方向ソースを課さない。
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic < nCells) {
+        // 軸上 CV (R=0) は対称条件で半径方向の正味ソースが 0。node-centered では CV が軸に乗り、
+        // P*A_planar/(ro*r_eff) が極端に stiff になって偽の u_r を駆動するため、ソースを課さない。
+        if (axis_flag != nullptr && axis_flag[ic] == 1) return;
         const flow_float mu_total = vis_lam[ic] + vis_turb[ic];
         const flow_float tau_theta_theta =
             (flow_float)2.0 * mu_total * axisym_uy_over_r[ic]
@@ -74,6 +78,10 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
 {
     if (cfg.isAxisymmetric != 1) return;
 
+    // 注意: 軸上 CV のソース抑制 (axis_flag 経由) は初期試験で発散した (半径方向圧力ソースは
+    // 軸 CV の釣り合いに load-bearing で、外すと step~51 で破綻)。よって既定では nullptr=ソースを課す。
+    // node-centered の inlet-axis 角オーバーシュートは別アプローチが要る (open issue, docs §7.1)。
+    geom_int* axis_flag = nullptr;
     axisymmetricSource_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells,
         var.c_d["P"],
@@ -82,9 +90,43 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         var.c_d["vis_turb"],
         var.c_d["axisym_divU"],
         var.c_d["axisym_uy_over_r"],
-        var.c_d["res_roUy"]
+        var.c_d["res_roUy"],
+        axis_flag
     );
 
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
+// node-centered 軸対称: 軸上 CV (R=0) で半径方向運動量を 0 に (軸対称の対称条件)。
+// エネルギー整合のため、除去する半径方向運動エネルギー 0.5*roUy^2/ro を roe からも引く
+// (これを怠ると内部エネルギー=圧力が過大になり発散する)。
+__global__ void enforceAxisSymmetry_d
+(
+    geom_int nCells, geom_int* axis_flag,
+    flow_float* ro, flow_float* roUy, flow_float* roe, flow_float* Uy
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells && axis_flag[ic] == 1) {
+        const flow_float r = ro[ic];
+        if (r > (flow_float)0.0) {
+            roe[ic] -= (flow_float)0.5 * roUy[ic] * roUy[ic] / r; // 半径方向 KE を除去
+        }
+        roUy[ic] = (flow_float)0.0;
+        Uy[ic]   = (flow_float)0.0;
+    }
+}
+
+void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    // node-centered 軸対称でのみ作用 (軸上ノードが CV 中心になるのは node モード)。
+    if (cfg.isAxisymmetric != 1 || cfg.discretization != "node" || msh.axis_flag_d == nullptr) return;
+
+    enforceAxisSymmetry_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.axis_flag_d,
+        var.c_d["ro"], var.c_d["roUy"], var.c_d["roe"], var.c_d["Uy"]
+    );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }

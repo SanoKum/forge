@@ -757,6 +757,19 @@ void mesh::setMeshMap_d()
         gpuErrchk(cudaMemcpy(this->bnode_flag_d, bnf.data(),
                              sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
     }
+
+    // 軸上 CV フラグ: ノード R(=coords[1])≈0 の CV を 1 にする (node-centered 軸対称用)。
+    // node モードでは CV ic == ノード ic。cell モードでは無意味だが使用側 (axisym+node) で限定する。
+    {
+        std::vector<geom_int> axf(this->nCells, 0);
+        const geom_int nlim = std::min((geom_int)this->nodes.size(), this->nCells);
+        for (geom_int ic = 0; ic < nlim; ++ic)
+            if (this->nodes[ic].coords.size() >= 2 &&
+                std::abs(this->nodes[ic].coords[1]) < (geom_float)1.0e-9) axf[ic] = 1;
+        gpuErrchk(cudaMalloc((void **)&(this->axis_flag_d), sizeof(geom_int)*this->nCells));
+        gpuErrchk(cudaMemcpy(this->axis_flag_d, axf.data(),
+                             sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
+    }
 };
 
 matrix::matrix(){}
