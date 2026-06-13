@@ -68,10 +68,12 @@
    **注意**: `case/05.sod_shock_tube` の `1D_shock_tube.msh` は実際には 3D hex 押し出し
    (nBPlanes=1998=499×4+2) なので 2D builder の対象外。3D の sod は 3D median-dual (M4) 完成後。
 
-### M2 — 2 次 MUSCL + 勾配 + implicit + tet 比較
-5. Green–Gauss 勾配を dual 有効化、MUSCL 2 次。`calcGradient_d.cu` (無変更で動く想定、検証対象)。
-6. `case/08.bump` で wall BC node 版 + block-DPLUR dual。
-7. tet 非構造ケースで cell vs node を同一メッシュ比較 (DOF 数・実行時間・精度)。← 動機の本丸。
+### M2 — 2 次 MUSCL + 勾配 + implicit + tet 比較 **[一部完了]**
+5. **[完了]** Green–Gauss 勾配 + MUSCL 2 次を dual で検証 (カーネル無変更で動作)。
+6. **[完了]** `case/08.bump` (2D 版 `bump_2d.geo` を新規生成) で loM/hiM・explicit/implicit を cell vs node 検証。
+7. **[完了]** 三角形 (tet 相当) メッシュ `bump_2d_tri.geo` で DOF/コスト比較。
+   **結果は §9 の `2026-06-14 M2` 参照**。要点: 低マッハ 2 次は node≈cell・implicit も良好だが、
+   **高マッハ 2 次 MUSCL が壁近傍で発散** (M1 のゴースト便宜由来) → **M3 弱形式境界が必要**と確定。
 
 ### M3 — 粘性 + 軸対称 (副次)
 8. viscous dual 有効化、層流ケース (`case/15` or `24`)。
@@ -133,3 +135,24 @@
   の緩慢収束で両モード共通 (dual 起因ではない)。`output.cpp` の XDMF/CONNE は cell topology 前提のため
   node 可視化は未対応 (M4)。
   **次**: M2 (2 次 MUSCL + 勾配 + implicit を dual で有効化、tet 比較) → M3 (粘性・軸対称) → M4 (3D median-dual・I/O)。
+- `2026-06-14` — **M2 検証 (2D, 非粘性)**。`case/08.bump` の 2D 版 (`mesh/bump_2d.geo` 新規・quad、
+  `mesh/bump_2d_tri.geo` 新規・unstructured 三角形) を生成し cell vs node を比較。出力修正 (`/VIZMESH`) で
+  両モード ParaView 可読。
+  - **M2a 2 次 MUSCL+勾配**: 低マッハは node≈cell。`case/24` channel・bump loM (subsonic) とも完走・NaN無し、
+    最終場一致 (bump loM: ro_mean 1.2131 vs 1.2126、Ux_mean 175.7 vs 176.0、P range 同等)。**勾配/MUSCL/limiter
+    カーネルは dual 上で無変更で動作**。
+  - **高マッハの限界 (重要)**: bump hiM (Mach1.65 supersonic) は **node の 2 次 MUSCL が step~400 で発散**
+    (cell は安定)。CFL 0.25・limiter venkata/barth いずれでも発散 (~280-410) → CFL/limiter 強度の問題ではない。
+    **1 次は node でも安定** (rms_ro 5.8e-6 収束)。発散場所を pre-NaN snapshot で特定 = **下壁 (slip) の bump
+    後縁 x≈1.98,y≈0.009** (強膨張域)。根本原因は **M1 のゴースト便宜による境界ノード勾配の不正**で、強勾配の
+    高マッハで 2 次再構成が増幅して破綻。低マッハは勾配が緩く顕在化しない。**→ M3 の弱形式境界で解消すべき**
+    (境界 1 次化の暫定策も可)。
+  - **M2b implicit (block-DPLUR)**: dual で**無変更動作**。bump loM implicit cfl_pseudo=5 で両モード完走・NaN無し、
+    node は rms_ro 8.6e-7 まで収束 (cell 7.3e-4 より深い)。
+  - **M2c DOF/コスト (動機本丸)**: 三角形 bump で **node は DOF 半減 (CV 6436 vs cell 12548、~1.95×減)**。
+    ただし explicit の per-step 実時間はほぼ同等 (node 18.3s vs cell 19.3s/4000step)。理由: **対流フラックス
+    コストは面 (エッジ) 数律速で、双対の内部面数 (~19k) は primal の面数とほぼ同じ**。DOF 半減の効果は
+    **メモリと implicit 線形系サイズ**に出る (explicit per-step では出にくい)。
+  run: `case/08.bump/run_dual_{loM,hiM}_{cell,node}_m2/`, `run_dual_imp_loM_{cell,node}_m2b/`,
+  `run_dual_tri_loM_{cell,node}_m2c/` (比較図 `m2_bump_cell_vs_node.png`)。
+  **次 (M3 を前倒し)**: 弱形式境界カーネル (境界ノード半割面に直接フラックス) で高マッハ 2 次の壁近傍を解消 → 粘性。
