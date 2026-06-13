@@ -9,6 +9,7 @@ forge の理論的背景と実装解説の索引。運用方針は [README.md](R
 | 領域 | theory | implementation | 状態 |
 | --- | --- | --- | --- |
 | アーキテクチャ全体 | — | [architecture/overview.md](architecture/overview.md) | 整備済み |
+| 離散化レイアウト (cell/node) | [discretization/theory.md](discretization/theory.md) | [discretization/implementation.md](discretization/implementation.md) | 整備中 (median-dual 両対応) |
 | 勾配再構成 | [gradient/theory.md](gradient/theory.md) | [gradient/implementation.md](gradient/implementation.md) | 整備済み |
 | リミッタ | [limiter/theory.md](limiter/theory.md) | [limiter/implementation.md](limiter/implementation.md) | 整備済み |
 | 対流フラックス | [convection/theory.md](convection/theory.md) | [convection/implementation.md](convection/implementation.md) | 整備済み |

@@ -88,6 +88,10 @@ public:
 
     int isCompressible;
     int isAxisymmetric = 0;
+
+    // 離散化レイアウト。"cell": cell-centered FVM (既定・従来)、"node": node-centered
+    // (中点双対 median-dual) FVM。docs/discretization/ 参照。
+    std::string discretization = "cell";
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
 

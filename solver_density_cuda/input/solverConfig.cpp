@@ -179,6 +179,17 @@ void solverConfig::read(std::string fname)
         this->meshFileName = getValidatedValue<std::string>(config["mesh"], "meshFileName", "mesh");
         this->valueFileName = getValidatedValue<std::string>(config["mesh"], "valueFileName", "mesh");
 
+        // 離散化レイアウト (任意, 既定 "cell")。"cell": cell-centered、"node": node-centered
+        // (中点双対 median-dual)。docs/discretization/ 参照。
+        if (config["mesh"]["discretization"]) {
+            this->discretization = config["mesh"]["discretization"].as<std::string>();
+            if (this->discretization != "cell" && this->discretization != "node") {
+                throw std::runtime_error("Key 'discretization' in 'mesh' must be 'cell' or 'node'.");
+            }
+        } else {
+            this->discretization = "cell";
+        }
+
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");
 

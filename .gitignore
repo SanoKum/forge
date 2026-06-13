@@ -20,6 +20,7 @@ solver_density_cuda/build-copilot/
 solver_density_cuda/build-verify/
 solver_density_cuda/build-warn/
 solver_density_cuda/build-warn-cxx/
+solver_density_cuda/build-dual/
 # ローカル作業用 (エージェントメモリ / 一時 / 外部依存)
 .claude/
 .tmp/

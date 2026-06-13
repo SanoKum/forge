@@ -41,6 +41,14 @@ int main(int argc , char *argv[])
     var.allocVariables(cfg.gpu , gmsh);
     setInitial(cfg , gmsh , var);
 
+    // node-centered (median-dual) モードでは双対メッシュを構築し /DUAL を併記する。
+    if (cfg.discretization == "node") {
+        cout << "-------------------------------- \n";
+        cout << "*** Build Median-Dual Mesh   *** \n";
+        cout << "-------------------------------- \n";
+        gmsh.buildMedianDual();
+    }
+
     cout << "------------------------ \n";
     cout << "*** Write Input HDF5 *** \n";
     cout << "------------------------ \n";

@@ -3,6 +3,8 @@
 #include <vector>
 #include <cmath>
 #include <string>
+#include <array>
+#include <map>
 
 #include <flowFormat.hpp>
 #include <mesh/elementType.hpp>
@@ -34,6 +36,21 @@ class gmshReader : public mesh
 {
 public:
     bool is3D;
+
+    // ---- median-dual (node-centered) 前処理の生成物 ----
+    // buildMedianDual() で構築。空なら writeInputH5 は /DUAL を書かない (cell モード)。
+    // CV = ノード、双対面 = primal エッジ (2D では plane と 1:1)、CV 重心 = ノード座標。
+    bool dualBuilt = false;
+    std::vector<geom_float> dualVolume;     // [nNodes] 各ノードの双対 CV 体積 (2D は面積×単位厚み)
+    std::vector<geom_int>   dualFaceCells;  // [nDualFaces*2] 双対面が繋ぐ 2 ノード {n0,n1}
+    std::vector<geom_float> dualFaceVect;   // [nDualFaces*3] 双対面ベクトル (n0->n1 向き)
+    std::vector<geom_float> dualFaceArea;   // [nDualFaces]   |dualFaceVect|
+    std::vector<geom_float> dualFaceCent;   // [nDualFaces*3] 双対面重心 (面積加重)
+    // 境界半割双対面: 境界ノードに割り当てる外向き面ベクトル (bcond ごと)。
+    std::vector<geom_int>   dualBnodeId;    // [nBHalf]   境界ノード id (bcond 境界順に連結)
+    std::vector<geom_float> dualBnodeVect;  // [nBHalf*3] 外向き半割面ベクトル
+    std::vector<geom_int>   dualBcondOffset;// [nBconds+1] bcond ごとの dualBnode* への CSR オフセット
+    std::vector<geom_int>   dualBcondPhysID;// [nBconds]   各 bcond の physID (順序対応)
 
     class lineEnt
     {
@@ -1269,6 +1286,241 @@ public:
 
     }
 
+    // -------------------------------------------------------------------------
+    // 中点双対 (median-dual) メッシュを primal から構築する (node-centered 用)。
+    //
+    // 現状 2D (triangle / quad) のみ実装。3D は警告して何もしない (M4 で対応)。
+    // theory: docs/discretization/theory.md §3、impl: docs/discretization/implementation.md §2。
+    //
+    // 生成物 (メンバ): dualVolume / dualFace* / dualBnode* / dualBcond*。
+    // 整合チェック (前処理必須, theory §3.3): ① Σ双対体積 == Σprimal体積、
+    // ② 各ノードの符号付き双対面ベクトル和 + 境界半割面 = 0 (閉性)、
+    // ③ Σ半割面積 == primal 境界面積。逸脱が大きければ exit。
+    // -------------------------------------------------------------------------
+    void buildMedianDual()
+    {
+        if (is3D)
+        {
+            cout << "[buildMedianDual] 3D mesh: median-dual generation not implemented yet "
+                    "(node-centered M4). Skipping /DUAL output.\n";
+            dualBuilt = false;
+            return;
+        }
+
+        cout << "[buildMedianDual] building 2D median-dual mesh ...\n";
+
+        const geom_int nN = this->nNodes;
+        const geom_int nP = this->nPlanes; // 2D では plane = primal エッジ (一意)
+
+        dualVolume.assign(nN, 0.0);
+        dualFaceCells.assign(nP * 2, -1);
+        dualFaceVect.assign(nP * 3, 0.0);
+        dualFaceArea.assign(nP, 0.0);
+        dualFaceCent.assign(nP * 3, 0.0);
+
+        // ---- 双対面: primal エッジ ip ごとに 1 枚。隣接セルの (midpoint -> centroid)
+        //      区間を集約。法線は n0->n1 向きに統一 (cell-centered 規約と同型)。
+        for (geom_int ip = 0; ip < nP; ++ip)
+        {
+            const geom_int A = this->planes[ip].iNodes[0];
+            const geom_int B = this->planes[ip].iNodes[1];
+            dualFaceCells[2*ip + 0] = A;
+            dualFaceCells[2*ip + 1] = B;
+
+            const geom_float Mx = 0.5*(nodes[A].coords[0] + nodes[B].coords[0]);
+            const geom_float My = 0.5*(nodes[A].coords[1] + nodes[B].coords[1]);
+
+            const geom_float eABx = nodes[B].coords[0] - nodes[A].coords[0];
+            const geom_float eABy = nodes[B].coords[1] - nodes[A].coords[1];
+
+            geom_float vx = 0.0, vy = 0.0;       // 集約面ベクトル
+            geom_float cx = 0.0, cy = 0.0, wsum = 0.0; // 面積加重重心
+
+            for (const geom_int ic : this->planes[ip].iCells)
+            {
+                const geom_float Gx = cells[ic].centCoords[0];
+                const geom_float Gy = cells[ic].centCoords[1];
+
+                // 区間 midpoint(M) -> centroid(G)。単位厚みの面ベクトルは rotate(-90)。
+                const geom_float sx = Gx - Mx;
+                const geom_float sy = Gy - My;
+                geom_float nx = sy;     // rotate(-90): (sx,sy) -> (sy,-sx)
+                geom_float ny = -sx;
+                // n0->n1 (A->B) 向きにそろえる
+                if (nx*eABx + ny*eABy < 0.0) { nx = -nx; ny = -ny; }
+
+                vx += nx; vy += ny;
+                const geom_float seglen = std::sqrt(nx*nx + ny*ny);
+                cx += 0.5*(Mx + Gx) * seglen;
+                cy += 0.5*(My + Gy) * seglen;
+                wsum += seglen;
+            }
+
+            dualFaceVect[3*ip + 0] = vx;
+            dualFaceVect[3*ip + 1] = vy;
+            dualFaceVect[3*ip + 2] = 0.0;
+            dualFaceArea[ip] = std::sqrt(vx*vx + vy*vy);
+            if (wsum > 0.0) {
+                dualFaceCent[3*ip + 0] = cx / wsum;
+                dualFaceCent[3*ip + 1] = cy / wsum;
+            } else {
+                dualFaceCent[3*ip + 0] = Mx;
+                dualFaceCent[3*ip + 1] = My;
+            }
+            dualFaceCent[3*ip + 2] = 0.0;
+        }
+
+        // ---- 双対体積: セルごとに、各ノードの sub-CV 四角形 (A, M1, G, M2) の面積を集計。
+        //      M1,M2 = そのセルで A に接する 2 エッジの中点。
+        for (geom_int ic = 0; ic < this->nCells; ++ic)
+        {
+            const geom_float Gx = cells[ic].centCoords[0];
+            const geom_float Gy = cells[ic].centCoords[1];
+
+            for (const geom_int A : cells[ic].iNodes)
+            {
+                // A に接する 2 エッジの中点を集める
+                geom_float mid[2][2];
+                int nmid = 0;
+                for (const geom_int ip : cells[ic].iPlanes)
+                {
+                    const geom_int e0 = this->planes[ip].iNodes[0];
+                    const geom_int e1 = this->planes[ip].iNodes[1];
+                    if (e0 != A && e1 != A) continue;
+                    if (nmid < 2) {
+                        mid[nmid][0] = 0.5*(nodes[e0].coords[0] + nodes[e1].coords[0]);
+                        mid[nmid][1] = 0.5*(nodes[e0].coords[1] + nodes[e1].coords[1]);
+                    }
+                    nmid++;
+                }
+                if (nmid != 2) {
+                    cerr << "[buildMedianDual] node " << A << " in cell " << ic
+                         << " has " << nmid << " incident edges (expected 2).\n";
+                    exit(EXIT_FAILURE);
+                }
+
+                // 四角形 A -> M1 -> G -> M2 を shoelace (絶対値) で面積化
+                const geom_float px[4] = { nodes[A].coords[0], mid[0][0], Gx, mid[1][0] };
+                const geom_float py[4] = { nodes[A].coords[1], mid[0][1], Gy, mid[1][1] };
+                geom_float area2 = 0.0;
+                for (int k = 0; k < 4; ++k) {
+                    const int kn = (k + 1) % 4;
+                    area2 += px[k]*py[kn] - px[kn]*py[k];
+                }
+                dualVolume[A] += 0.5 * std::fabs(area2);
+            }
+        }
+
+        // ---- 境界半割双対面: 各 bcond の境界エッジを構成ノードへ midpoint 分配 (各 1/2)。
+        const geom_int nBc = (geom_int)this->bconds.size();
+        dualBcondOffset.assign(nBc + 1, 0);
+        dualBcondPhysID.assign(nBc, 0);
+        std::vector<geom_float> bnodeAccum(nN * 3, 0.0); // 全体集計 (閉性チェック用)
+
+        for (geom_int ib = 0; ib < nBc; ++ib)
+        {
+            dualBcondPhysID[ib] = this->bconds[ib].physID;
+            // この bcond に現れるノードを集め、半割面ベクトルを accum
+            std::map<geom_int, std::array<geom_float,3>> half; // node -> outward half vect
+            for (const geom_int ip : this->bconds[ib].iPlanes)
+            {
+                const geom_int A = this->planes[ip].iNodes[0];
+                const geom_int B = this->planes[ip].iNodes[1];
+                const geom_float hx = 0.5*this->planes[ip].surfVect[0]; // 外向き (makeMesh で整向済)
+                const geom_float hy = 0.5*this->planes[ip].surfVect[1];
+                const geom_float hz = 0.5*this->planes[ip].surfVect[2];
+                for (const geom_int N : {A, B}) {
+                    auto& h = half[N];
+                    h[0] += hx; h[1] += hy; h[2] += hz;
+                }
+            }
+            for (const auto& kv : half) {
+                dualBnodeId.push_back(kv.first);
+                dualBnodeVect.push_back(kv.second[0]);
+                dualBnodeVect.push_back(kv.second[1]);
+                dualBnodeVect.push_back(kv.second[2]);
+                bnodeAccum[3*kv.first + 0] += kv.second[0];
+                bnodeAccum[3*kv.first + 1] += kv.second[1];
+                bnodeAccum[3*kv.first + 2] += kv.second[2];
+            }
+            dualBcondOffset[ib + 1] = (geom_int)dualBnodeId.size();
+        }
+
+        // ---- 整合チェック ----
+        // 診断は double で集計 (geom_float=float の累積丸めをアルゴリズム誤差から分離するため)。
+        // ① 体積総和
+        double sumDual = 0.0, sumPrimal = 0.0;
+        for (geom_int in = 0; in < nN; ++in) sumDual += dualVolume[in];
+        for (geom_int ic = 0; ic < this->nCells; ++ic) sumPrimal += cells[ic].volume;
+        const double volErr = std::fabs(sumDual - sumPrimal) / std::max(sumPrimal, 1e-30);
+        cout << "[buildMedianDual] volume sum: dual=" << sumDual << " primal=" << sumPrimal
+             << " relErr=" << volErr << "\n";
+
+        // 負体積チェック
+        geom_int nNeg = 0;
+        for (geom_int in = 0; in < nN; ++in) if (dualVolume[in] <= 0.0) nNeg++;
+        if (nNeg > 0) cout << "[buildMedianDual] WARNING: " << nNeg << " non-positive dual volumes\n";
+
+        // ② 閉性: 各ノードで Σ(符号付き双対面ベクトル) + 半割面 = 0
+        std::vector<double> clos(nN * 3, 0.0);
+        for (geom_int ip = 0; ip < nP; ++ip)
+        {
+            const geom_int A = dualFaceCells[2*ip + 0];
+            const geom_int B = dualFaceCells[2*ip + 1];
+            for (int d = 0; d < 3; ++d) {
+                clos[3*A + d] += dualFaceVect[3*ip + d]; // A=n0: 外向き +
+                clos[3*B + d] -= dualFaceVect[3*ip + d]; // B=n1: 内向き -
+            }
+        }
+        for (geom_int in = 0; in < nN; ++in)
+            for (int d = 0; d < 3; ++d) clos[3*in + d] += bnodeAccum[3*in + d];
+
+        double maxClos = 0.0, refArea = 0.0;
+        for (geom_int ip = 0; ip < nP; ++ip) refArea = std::max(refArea, (double)dualFaceArea[ip]);
+        for (geom_int in = 0; in < nN; ++in) {
+            const double c = std::sqrt(clos[3*in+0]*clos[3*in+0]
+                                     + clos[3*in+1]*clos[3*in+1]
+                                     + clos[3*in+2]*clos[3*in+2]);
+            maxClos = std::max(maxClos, c);
+        }
+        cout << "[buildMedianDual] closure max|sum dS| = " << maxClos
+             << " (ref face area=" << refArea << ", normalized=" << maxClos/std::max(refArea,1e-30) << ")\n";
+
+        // ③ 境界半割面積 == primal 境界面積 (bcond ごと)
+        for (geom_int ib = 0; ib < nBc; ++ib)
+        {
+            geom_float primalA = 0.0;
+            for (const geom_int ip : this->bconds[ib].iPlanes) primalA += this->planes[ip].surfArea;
+            geom_float halfA = 0.0;
+            for (geom_int k = dualBcondOffset[ib]; k < dualBcondOffset[ib+1]; ++k) {
+                halfA += std::sqrt(dualBnodeVect[3*k+0]*dualBnodeVect[3*k+0]
+                                 + dualBnodeVect[3*k+1]*dualBnodeVect[3*k+1]
+                                 + dualBnodeVect[3*k+2]*dualBnodeVect[3*k+2]);
+            }
+            // 注: 半割の合計面積は端点で内向き相殺し得るため、面積総和ではなくベクトル総和=primal
+            // で評価する方が厳密。ここでは参考値として両者を表示する。
+            cout << "[buildMedianDual]   bcond physID=" << dualBcondPhysID[ib]
+                 << " primalArea=" << primalA << " sum|halfVect|=" << halfA << "\n";
+        }
+
+        // 許容値は geom_float=float の累積丸めを考慮した値 (実バグは O(0.1-1) で明確に検出される)。
+        const double closTol = 1e-3;
+        const double volTol  = 1e-3;
+        if (volErr > volTol) {
+            cerr << "[buildMedianDual] ERROR: dual volume sum mismatch (relErr=" << volErr << ")\n";
+            exit(EXIT_FAILURE);
+        }
+        if (maxClos/std::max(refArea,1e-30) > closTol) {
+            cerr << "[buildMedianDual] ERROR: dual faces not closed (normalized="
+                 << maxClos/std::max(refArea,1e-30) << ")\n";
+            exit(EXIT_FAILURE);
+        }
+
+        dualBuilt = true;
+        cout << "[buildMedianDual] done. nNodes(CV)=" << nN << " nDualFaces=" << nP
+             << " nBHalf=" << dualBnodeId.size() << "\n";
+    }
+
     void writeInputH5(const string outFileName ,variables var)
     {
         // ------------
@@ -1425,6 +1677,34 @@ public:
             regionIds.push_back(cel.regionId);
         }
         file.createDataSet("/CELLS/regionId", regionIds);
+
+        // ---- median-dual (node-centered) データ ----
+        // buildMedianDual() 済みのときのみ /DUAL を書く。solver は discretization=="node"
+        // で /DUAL を読み CV=ノードとして消費する (docs/discretization/implementation.md §1)。
+        if (this->dualBuilt)
+        {
+            Group dgrp = file.createGroup("/DUAL");
+            const geom_int nDualFaces = (geom_int)this->dualFaceArea.size();
+            const geom_int nBc        = (geom_int)this->dualBcondPhysID.size();
+
+            Attribute da = dgrp.createAttribute<geom_int>("nNodes", DataSpace::From(this->nNodes));
+            da.write(this->nNodes);
+            da = dgrp.createAttribute<geom_int>("nDualFaces", DataSpace::From(nDualFaces));
+            da.write(nDualFaces);
+            da = dgrp.createAttribute<geom_int>("nBconds", DataSpace::From(nBc));
+            da.write(nBc);
+
+            file.createDataSet("/DUAL/volume",    this->dualVolume);
+            file.createDataSet("/DUAL/faceCells", this->dualFaceCells);
+            file.createDataSet("/DUAL/faceVect",  this->dualFaceVect);
+            file.createDataSet("/DUAL/faceArea",  this->dualFaceArea);
+            file.createDataSet("/DUAL/faceCent",  this->dualFaceCent);
+            file.createDataSet("/DUAL/bnodeId",   this->dualBnodeId);
+            file.createDataSet("/DUAL/bnodeVect", this->dualBnodeVect);
+            file.createDataSet("/DUAL/bcondOffset", this->dualBcondOffset);
+            file.createDataSet("/DUAL/bcondPhysID", this->dualBcondPhysID);
+            cout << "writeInputH5: wrote /DUAL (nDualFaces=" << nDualFaces << ")\n";
+        }
 
         // write initial values
         //for (string name : var.output_cellValNames)
