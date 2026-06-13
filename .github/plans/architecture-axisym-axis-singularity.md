@@ -58,7 +58,14 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
 | FVS 面ヤコビアン `build_jacobian_split` (`a_plus`/`k_off`) | 効果なし (float の固有積は元々正確) |
 | **DPLUR 反復まるごと倍精度** (diag/rhs/neighbor/solve、入出力のみ float) | **効果なし** |
 | `cfl_pseudo` 引き上げ (2→4→8) | 効果なし (over-damping/CFL ではない) |
+| `cfl_pseudo` 引き下げ (2→0.5→0.3) | 効果なし (−0.64→−0.58→−0.53、固着のまま) |
+| scalar DPLUR (`blockDPLUR=0`) | **全発散** (cfl2 で step~9k に全場 NaN)。block DPLUR が安定性に必須 |
 | **global double** (残差・フラックス・保存量も倍精度) | **効く** |
+
+**決定的比較 (同一 cfl=0.5・同一 20000 step)**: 陽解法 (`timeIntegration=3`) は第一セル Uy=−14.9 (正)、
+陰 block-DPLUR (`timeIntegration=11`) は −0.58 (固着)。cfl も step 数も同一なので、差は
+「**陽の点更新 vs 陰の block-DPLUR defect-correction そのもの**」。乱流なし (laminar) でも生じる
+= **平均速度場の問題**であり、block-DPLUR (float) が近軸第一セルを構造的に収束させられない。
 
 - 切り分けの帰結: 「double-D + float-R = 固着、global = 正常」→ **陰解法は double 残差 (R) を要する**。
   近軸の悪条件な陰解 Jacobian `D⁻¹` が float32 残差のノイズを増幅するため。**陽解法は `R·dt/V` の
