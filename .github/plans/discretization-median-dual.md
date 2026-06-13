@@ -207,6 +207,8 @@
   - **node-centered no-slip 粘性壁は planar で OK と判明**: `case/24` channel viscous (平面, 非軸対称) を node で実行 →
     **発散せず cell と追従** (ro_mean 1.178 一致, NaN無し, 両者 still converging)。run: `case/24/run_dual_visc_{cell,node}_m3diag/`。
     → **既存ゴースト壁 + CV 重心で node 粘性壁は動く。弱形式 no-slip 壁 (`boundaryNode_d.cu`) は当面不要**。
+    implicit 12000step で well-developed (主残差 roUx: cell 4.0dec / node 4.4dec、roUy は near-zero 横流れで両者 plateau)、
+    収束場一致 (ro_mean 1.18064 vs 1.18060、Ux_mean 10.68 vs 10.93 ≈2.3%、NaN無し)。
   - **結論**: case/29 viscous (軸対称) の step5 発散は **壁ではなく軸 (near-axis)** が原因。M3 の残 blocker は
     node-centered の **near-axis (r=0) 処理**であり、これは [[architecture-axisym-axis-singularity]] と同種の難問。
     壁・平面 viscous・Euler (bulk) は node で動く。**次の本丸は near-axis 専用の腰を据えた対策**。
