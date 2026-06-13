@@ -433,13 +433,14 @@ FLUENT_ZTYPE_KIND = {
 # forge メッシュ構築
 # ==========================================================================
 class ForgeMesh:
-    def __init__(self, fl: FluentMesh, verbose=True):
+    def __init__(self, fl: FluentMesh, triangulate=False, verbose=True):
         self.fl = fl
         self.verbose = verbose
         self.dim = fl.dim
         self.coords = fl.coords
         self.nNodes = len(fl.coords)
         self.nCells = fl.nCells
+        self.triangulate = triangulate
         self._build()
 
     def _log(self, *a):
@@ -455,7 +456,7 @@ class ForgeMesh:
             if fc["c1"] >= 0:
                 cell_faces[fc["c1"]].append(fi)
 
-        # --- cell の節点集合・要素タイプ・順序付き接続 ---
+        # --- cell の節点集合・要素タイプ・順序付き接続 (元の面で判定; viz/iNodes 用) ---
         self.cell_nodes = []   # 順序付き (可能なら) 節点
         self.cell_etype = []   # gmsh id
         for ic in range(self.nCells):
@@ -464,16 +465,26 @@ class ForgeMesh:
             self.cell_etype.append(etype)
             self.cell_nodes.append(ordered)
 
+        # --- 面リスト (任意で四角/多角形を三角形に分割) ---
+        # 3D の非平面四角面 (Fluent の境界層 prism 側面など) は単一法線で表せず
+        # forge のスキームが不安定化する。--triangulate で全面を三角形化し平面化する。
+        if self.triangulate and self.dim == 3:
+            wfaces = _triangulate_faces(fl.faces)
+            self._log(f"  triangulate: faces {len(fl.faces)} -> {len(wfaces)}")
+        else:
+            wfaces = fl.faces
+        self._wfaces = wfaces
+
         # --- 面 (plane) を内部->境界の順に並べ替え ---
-        internal = [fi for fi, fc in enumerate(fl.faces) if fc["c1"] >= 0]
-        boundary = [fi for fi, fc in enumerate(fl.faces) if fc["c1"] < 0]
+        internal = [fi for fi, fc in enumerate(wfaces) if fc["c1"] >= 0]
+        boundary = [fi for fi, fc in enumerate(wfaces) if fc["c1"] < 0]
         order = internal + boundary
         self.nNormalPlanes = len(internal)
         self.nBPlanes = len(boundary)
         self.nPlanes = len(order)
 
         # 旧 index -> 新 index
-        new_of = np.empty(len(fl.faces), dtype=np.int64)
+        new_of = np.empty(len(wfaces), dtype=np.int64)
         for new_i, old_i in enumerate(order):
             new_of[old_i] = new_i
 
@@ -496,12 +507,15 @@ class ForgeMesh:
         self.cell_vol = np.zeros(self.nCells)
 
         for new_i, old_i in enumerate(order):
-            fc = fl.faces[old_i]
+            fc = wfaces[old_i]
             nd = fc["nodes"]
             c0 = fc["c0"]
             c1 = fc["c1"]
-            sv = _area_vector(self.coords[nd], self.dim)
-            cent = self.coords[nd].mean(axis=0)
+            pts = self.coords[nd]
+            sv = _area_vector(pts, self.dim)
+            cent = pts.mean(axis=0)
+            # 体積寄与 (sv と同じ未反転向きに対応する厳密モーメント)
+            moment = _face_volume_moment(pts, self.dim)
 
             # 向きをそろえる: 内部は c0->c1, 境界は c0 から外向き
             if c1 >= 0:
@@ -510,6 +524,7 @@ class ForgeMesh:
                 d = cent - self.cell_cent[c0]
             if np.dot(d, sv) < 0.0:
                 sv = -sv
+                moment = -moment
 
             area = float(np.linalg.norm(sv))
             self.surfVect[new_i] = sv
@@ -521,16 +536,14 @@ class ForgeMesh:
             else:
                 self.pl_cells.append([c0])
 
-            # iPlanesDir と体積 (発散定理) を蓄積
+            # iPlanesDir と体積 (発散定理, 面三角分割で厳密) を蓄積
             cell_planes[c0].append(new_i)
             cell_pdir[c0].append(1)
-            # owner からの外向きは +sv
-            self.cell_vol[c0] += float(np.dot(cent, sv))
+            self.cell_vol[c0] += moment            # owner: 外向き +sv
             if c1 >= 0:
                 cell_planes[c1].append(new_i)
                 cell_pdir[c1].append(-1)
-                # neighbor からの外向きは -sv
-                self.cell_vol[c1] += float(np.dot(cent, -sv))
+                self.cell_vol[c1] -= moment        # neighbor: 外向き -sv
 
         self.cell_vol /= float(self.dim)
         self.cell_vol = np.abs(self.cell_vol)
@@ -545,7 +558,7 @@ class ForgeMesh:
         # zone id -> [新 plane index]
         self.bzone_planes = {}
         for old_i in boundary:
-            zid = fl.faces[old_i]["zone"]
+            zid = wfaces[old_i]["zone"]
             self.bzone_planes.setdefault(zid, []).append(int(new_of[old_i]))
 
         self._log(f"planes: total={self.nPlanes} internal={self.nNormalPlanes} "
@@ -564,6 +577,27 @@ class ForgeMesh:
 # --------------------------------------------------------------------------
 # 幾何ユーティリティ
 # --------------------------------------------------------------------------
+def _triangulate_faces(faces):
+    """四角/多角形の面を扇状に三角形へ分割する (3D)。
+
+    共有面は 1 度だけ分割され、両側セルが同じ三角形を参照する (保存性を保つ)。
+    c0/c1/zone は引き継ぐ。三角形は常に平面なので、非平面四角面による
+    単一法線の不整合を解消できる。
+    """
+    out = []
+    for fc in faces:
+        nd = fc["nodes"]
+        if len(nd) <= 3:
+            out.append(fc)
+            continue
+        for k in range(1, len(nd) - 1):
+            out.append({
+                "nodes": np.array([nd[0], nd[k], nd[k + 1]], dtype=np.int64),
+                "c0": fc["c0"], "c1": fc["c1"], "zone": fc["zone"],
+            })
+    return out
+
+
 def _area_vector(pts, dim):
     """面の面積ベクトル (大きさ=面積) を返す。向きは未確定 (後で補正)。"""
     if dim == 2:
@@ -577,6 +611,36 @@ def _area_vector(pts, dim):
     for i in range(n):
         sv += np.cross(pts[i], pts[(i + 1) % n])
     return 0.5 * sv
+
+
+def _face_volume_moment(pts, dim):
+    """発散定理による体積の面寄与 ∫_face (x·n) dA を厳密に返す。
+
+    返り値 M は (未反転の面ベクトル sv0 = _area_vector(pts) に対応する向きでの)
+    ∫_face x·n dA。セル体積は V = (1/dim) Σ_face (±M) で、± は面ベクトルを
+    そのセルの外向きへそろえた符号。
+
+    平面三角形では ∫ x·n dA = (三角形重心)·(三角形面ベクトル) が厳密。
+    非平面多角形は扇状に三角形分割して三角形ごとに厳密積分し総和する
+    (節点平均重心を使う単一面近似より厳密。tet/平面では従来と一致)。
+    """
+    if dim == 2:  # 辺要素: 中点·辺法線 が厳密
+        c = 0.5 * (pts[0] + pts[1])
+        t = pts[1] - pts[0]
+        sv = np.array([t[1], -t[0], 0.0])
+        return float(np.dot(c, sv))
+    n = len(pts)
+    if n == 3:
+        c = pts.mean(axis=0)
+        av = 0.5 * np.cross(pts[1] - pts[0], pts[2] - pts[0])
+        return float(np.dot(c, av))
+    # 多角形: pts[0] を扇の要に三角形分割
+    M = 0.0
+    for k in range(1, n - 1):
+        av = 0.5 * np.cross(pts[k] - pts[0], pts[k + 1] - pts[0])
+        c = (pts[0] + pts[k] + pts[k + 1]) / 3.0
+        M += float(np.dot(c, av))
+    return M
 
 
 def _signed_volume_tet(a, b, c, d):
@@ -1031,22 +1095,23 @@ def cmd_template(args):
 
 
 def _guess_kind(z):
-    # まず Fluent zoneType から推定
-    zt = z.get("zoneType")
-    if isinstance(zt, (int, np.integer)) and int(zt) in FLUENT_ZTYPE_KIND:
-        return FLUENT_ZTYPE_KIND[int(zt)]
-    # 次に名前から推定
+    # 名前のキーワードを優先する。mesh のみの *.msh.h5 では BC 未設定で
+    # zoneType が wall(3) 既定になりがちで当てにならないため (例: 入口 in1 が type3)。
     name = (z.get("name") or "").lower()
-    if "wall" in name:
-        return "wall"
-    if "inlet" in name or "inflow" in name:
+    if "inlet" in name or "inflow" in name or name.startswith("in"):
         return "inlet_uniformVelocity"
-    if "outlet" in name or "outflow" in name or "exit" in name:
+    if "outlet" in name or "outflow" in name or "exit" in name or name.startswith("out"):
         return "outflow"
     if "sym" in name or "axis" in name:
         return "slip"
     if "far" in name:
         return "inlet_uniformVelocity"
+    if "wall" in name:
+        return "wall"
+    # 名前で判らなければ Fluent zoneType から推定 (*.cas.h5 では信頼できる)
+    zt = z.get("zoneType")
+    if isinstance(zt, (int, np.integer)) and int(zt) in FLUENT_ZTYPE_KIND:
+        return FLUENT_ZTYPE_KIND[int(zt)]
     return "wall"
 
 
@@ -1079,7 +1144,7 @@ def cmd_convert(args):
         else:
             zone_kind[zid] = _guess_kind(fl.zones[zid])
 
-    fm = ForgeMesh(fl, verbose=True)
+    fm = ForgeMesh(fl, triangulate=args.triangulate, verbose=True)
 
     # 壁ゾーン = kind が wall で始まるもの
     wall_zone_ids = [zid for zid, k in zone_kind.items() if k.startswith("wall")]
@@ -1128,6 +1193,8 @@ def build_argparser():
                     help="座標スケール係数 (in->m: 0.0254, mm->m: 0.001)")
     pc.add_argument("--double", action="store_true",
                     help="geom_float=double ビルド向けに float64 で書く")
+    pc.add_argument("--triangulate", action="store_true",
+                    help="3D の四角/多角形面を三角形に分割 (非平面面の不整合回避)")
     # 初期値
     pc.add_argument("--ro", default=1.225, help="初期密度")
     pc.add_argument("--ux", default=0.0)
