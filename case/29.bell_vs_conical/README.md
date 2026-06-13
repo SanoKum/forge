@@ -231,3 +231,35 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
 > メモ: 3D は convert が $k=\omega=0$ で IC を書くため起動時に $1/\omega$ 発散する。IC で $\omega$ を
 > シード (例 18000) すれば安定。butterfly 格子は壁第1層が全周 8µm 一様 (squircle 版は対角で細・
 > 対称面で粗だった)。
+
+## 計算 run 一覧
+
+> 本ケースは複数系列の run が同居する (推力比較 = `run_0001_bell`/`run_0002_conical` 系、k スパイク調査 =
+> `run_0016〜0018`・`run_3d_*`、**近軸 混合精度の根治 = 下表 = `run_0001_mixed_lam_slau`〜`run_0015_prod_double`**)。
+> 番号が衝突する別系列があるので、目的は slug と本表で判断すること。
+
+### 近軸 混合精度・閉形式 FVS の調査と根治 (2026-06-13〜14, plan [precision-mixed-axisym.md](../../.github/plans/precision-mixed-axisym.md))
+
+laminar conical 第一セル `Uy`(x=40mm) が物理値 −15 でなく float 陰解で −0.6 固着する問題の切り分け〜本番化。
+**結論: 真因は block-DPLUR 線形 solve の精度。閉形式 FVS を既定化 (float ~10%速)、`implicitSolvePrecision=1` で根治。**
+
+| run_* | 目的・設定 | 主要結果 | 状態 |
+| --- | --- | --- | --- |
+| `run_axis_lam_slau` | 参照: 純 float 陰解 (laminar conical) | Uy0=−0.645 (固着) | ref |
+| `run_axis_lam_slau_double` | 参照: global double | Uy0=−15.1 (正) | ref |
+| `run_axis_lam_slau_expl` | 参照: explicit float | Uy0=−14.9 (正) | ref |
+| `run_su2cmp_forge_sst` | 参照: SST conical (float, k スパイク) | k_axis=9.16 | ref |
+| `run_0001_mixed_lam_slau` | double 残差+**float** solve (itref 単純分割) | Uy0=−0.641 **固着→棄却** | active |
+| `run_0002_dsolve_fres_lam_slau` | **float 残差+double solve** (対称実験) | Uy0=−14.88 ★真因=solve精度を確定★ | active |
+| `run_0003_dsolve_sst` | SST + double solve | k_axis 9.16→7.4 (縮小・残留) | active |
+| `run_0004_float_timing` | 純 float baseline 速度 | 91.5s (×1.0) | active |
+| `run_0005_dsolve_bs64` | double solve, block size 64 | 502.9s (×5.5, bs 効果薄) | active |
+| `run_0006_dsolve_restruct` | double solve, R/L 排除再構成 | 426.9s (×4.67) | active |
+| `run_0007_dsolve_closedform` | **double solve, 閉形式 A±** | 240s (×2.62), Uy0=−15.03 | active |
+| `run_0008_dsolve_cf_sst` | SST 閉形式 double solve | 249s, k_axis=7.45 (run_0003 と一致) | active |
+| `run_0009_dsolve_shareddiag` | 閉形式 double + diag を shared | 239s (スピル除去も速度不変) | active |
+| `run_0010_dsolve_df` / `run_0011_dsolve_df_fix` | compensated double-float (部分) | 固着 (精度不足) | active |
+| `run_0012_dffull` | full double-float | 固着 (~48bit 不足→df 棄却) | active |
+| `run_0013_float_cf` | **float 閉形式** (R/L 排除) 速度 | 82.8s (×0.90 = 10%速), 数値 legacy 等価 | active |
+| `run_0014_prod_float` | **本番** `implicitSolvePrecision=0` (既定 float) | 82.6s, Uy0=−0.6449 | active |
+| `run_0015_prod_double` | **本番** `implicitSolvePrecision=1` (double solve) | 234.5s, Uy0=**−14.98** (根治) | active |

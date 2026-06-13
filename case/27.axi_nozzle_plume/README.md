@@ -67,3 +67,11 @@ cd run_0001_cpg_1st_establish && convertGmshToForge axi_nozzle.msh axi_nozzle.h5
 # 3) CEA 照合
 python3 compare_cea.py run_0008_cpgN2_2nd/res_8000.h5 run_0009_tpN2_2nd/res_8000.h5
 ```
+
+## 計算 run 一覧 (抜粋)
+
+| run_* | 目的・設定 | 主要結果 | 状態 |
+| --- | --- | --- | --- |
+| `run_0004_imp_2nd_cflp5` | 軸対称 SLAU 2nd block-DPLUR 陰解 (cfl0.5) | **float では step3000 付近で NaN** (近軸不安定) | active |
+| `run_regr_cf` | 回帰: 閉形式 FVS 既定 float。run_0004 同条件 | float は同様に NaN (≈step4000) = 閉形式由来でない | active |
+| `run_regr_cf_double` | `implicitSolvePrecision=1` (double solve)。run_0004 同条件 | **完走・NaN なし → 近軸 double solve が発散を安定化**。plan [precision-mixed-axisym.md](../../.github/plans/precision-mixed-axisym.md) | active |
