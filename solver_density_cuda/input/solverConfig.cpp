@@ -394,6 +394,32 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
 
     }
 
+    // implicitSolvePrecision (block-DPLUR 線形 solve の double 化) のサポート範囲チェック。
+    // 未対応の組み合わせはフラグが黙って無視され「効いていない」事故になるため、明示エラーで停止する。
+    // 実装済みは block 経路 (blockDPLUR==1) かつ非 precond (lowMachPrecond 0/1) の implicit (timeIntegration==11) のみ。
+    // 詳細: .github/plans/precision-mixed-axisym.md §13。
+    if (this->implicitSolvePrecision != 0 && this->implicitSolvePrecision != 1) {
+        throw std::runtime_error(
+            "implicitSolvePrecision must be 0 (float) or 1 (double).");
+    }
+    if (this->implicitSolvePrecision == 1) {
+        if (timeIntegration != 11) {
+            throw std::runtime_error(
+                "implicitSolvePrecision==1 (double solve) requires timeIntegration==11 "
+                "(implicit block DPLUR). It has no effect for explicit schemes.");
+        }
+        if (this->blockDPLUR != 1) {
+            throw std::runtime_error(
+                "implicitSolvePrecision==1 (double solve) is only supported with blockDPLUR==1 "
+                "(5x5 block DPLUR); scalar-diagonal DPLUR (blockDPLUR==0) is not supported.");
+        }
+        if (this->lowMachPrecond == 2) {
+            throw std::runtime_error(
+                "implicitSolvePrecision==1 (double solve) is not supported with lowMachPrecond==2 "
+                "(full preconditioned block DPLUR). Use lowMachPrecond 0 or 1.");
+        }
+    }
+
 }
 
 int solverConfig::mainLoopCount() const
