@@ -156,3 +156,19 @@
   run: `case/08.bump/run_dual_{loM,hiM}_{cell,node}_m2/`, `run_dual_imp_loM_{cell,node}_m2b/`,
   `run_dual_tri_loM_{cell,node}_m2c/` (比較図 `m2_bump_cell_vs_node.png`)。
   **次 (M3 を前倒し)**: 弱形式境界カーネル (境界ノード半割面に直接フラックス) で高マッハ 2 次の壁近傍を解消 → 粘性。
+- `2026-06-14` — **M2 収束判定の訂正 (反省)**。上記 M2 報告の多くは **NaN チェックのみで収束を確認しておらず誤り**だった。
+  新ツール `solver_density_cuda/tools/check_convergence.py` で全残差列を再判定した結果:
+  - **explicit の channel M1・bump loM/hiM は全て未収束のトランジェント** (0.6〜2.5 桁しか低下せず `falling`)。
+    cell と node が**ほぼ同一に推移**するのは discretization 等価性の傍証ではあるが「収束・一致」ではない。
+  - **bump loM implicit (cfl_pseudo=5, 8000step)**: **node は PASS (5.1 桁低下)、cell は ~2.3 桁で停滞 (NOT CONVERGED)**。
+    cfl_pseudo=20 は両モードとも NaN 発散 (memory の cfl50 安定は別 case)。
+  - 教訓を `AGENTS.md` の「収束確認 (必須)」に反映: **check_convergence.py の VERDICT 提示を必須化**。
+    今後は「収束/一致」と書く前に必ずツールを通す ([[convergence-check-discipline]])。
+  - **収束済み比較を実施** (`case/24` channel implicit, MUSCL, cfl_pseudo=5, 12000step):
+    **cell は PASS** (rms_ro/roUx/roe 3.3〜3.5 桁低下・falling、roUy は初期厳密 0 の near-zero)。
+    **node は「still converging」** (主残差 3.3 桁 falling、roUy のみ 1.4 桁で収束途中=要追加 step、停滞ではない)。
+    well-developed 状態の場は一致: ro_mean 1.17927 vs 1.17928、Ux_mean 35.25 vs 35.20 (0.14%)、P≈101325 一様、NaN無し。
+    収束流速 Ux≈35 (M≈0.1、case 設計値) は **未収束 M1 トランジェントの Ux≈13.5 と全く異なる** = M1 比較が
+    トランジェント同士だった証左。run: `run_dual_imp_{cell,node}_m2chk/`。
+  - ツール改良: init=0 の near-zero 列を inactive 扱い、未収束理由を `still converging`(falling)/`stalled`(flat)/
+    `diverged`(NaN/rising) で区別表示。

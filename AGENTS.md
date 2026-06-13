@@ -58,6 +58,7 @@
 
 **収束確認 (必須・NaN チェックとは別)**: 「NaN が無い」=「収束した」ではない。結果を使う/報告する前に、各保存量の残差が**実際に下がりきっているか**を必ず確認すること。
 
+- **判定は手作業の目視ではなく `solver_density_cuda/tools/check_convergence.py <run_dir> ...` を実行して行う** (本ルールの実体化ツール)。全残差列の低下桁数・トレンド・NaN を判定し `PASS / NOT CONVERGED / DIVERGED` を返す。**「収束した」「一致した」と報告する応答には、このツールの VERDICT を根拠として必ず貼ること** (これを怠り `rms_ro` だけで「収束」と誤報告した事例があるため、ツール経由を必須とする)。未収束なら「未収束」と明記し、未収束のトランジェント同士の場の比較を「一致」と表現しない。
 - **`rms_ro` だけで判断しない**。`residual_history.csv` の **全列** (`rms_ro`,`rms_roUx`,`rms_roUy`,`rms_roUz`,`rms_roe`、RANS 時は `rms_roK`,`rms_roOmega`) のトレンドを見る。`rms_ro` が低くても、運動量 (特に軸対称の `rms_roUy`) や乱流 (`rms_roK`/`rms_roOmega`) が**下げ止まり・横ばい・上昇**していれば未収束。実例: 軸対称 SST で `rms_ro`≈3e-5 でも `rms_roUy`≈1e-2 停滞・`rms_roK` 増大=近軸が未収束だった ([architecture-axisym-axis-singularity.md](.github/plans/architecture-axisym-axis-singularity.md))。
 - **残差プラトーは「収束」ではない**。下げ止まる場合は、積分量 (massflux/推力/出口諸量) が**定常化**しているか、場が**発達しきっている**かを併せて確認する (リミットサイクルの可能性)。
 - **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
