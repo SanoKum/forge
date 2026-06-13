@@ -94,6 +94,9 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   除算爆発**する (case/29 conical で 272 軸 CV が体積比 1.5e20、step3 で NaN)。対策: `replacePrimalWithDual` が
   dual セル重心に**双対 CV の面積加重重心** (`dualCentroid`, 軸上ノードでも R>0) を使う。これで回転体積が正しくなり
   (体積比 2.4e4, cell の 1.2e4 と同等)、平面ケースは無回帰 (内部ノードでは重心≈ノード)。FV 的にも CV 重心が正しい中心。
+  **ただし残課題**: これは軸上のゼロ体積爆発を解消するだけで、node-centered の near-axis 精度問題は別途残る。
+  case/29 conical Euler の収束場で、node は軸-inlet 角に非物理 P オーバーシュート (P>chamber Pt)・軸-exit に Mach
+  スパイクが出る (bulk は cell と一致)。軸 BC・inlet 角・r 重みの near-axis 処理は今後の課題 ([architecture-axisym-axis-singularity] と関連)。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
