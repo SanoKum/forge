@@ -93,6 +93,30 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
 
+## 7. M3: node-centered 弱形式境界 (実装方針)
+
+理論は [theory.md](theory.md) §6。**cell-centered のゴースト経路 ([boundaryCond_d.cu](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu))
+は一切変更せず**、node 専用の弱形式を**別ファイル** `cuda_forge/boundaryNode_d.cu` (+ `.cuh`) に実装する。
+
+**設計判断 (既存ロジックの流用)**: 各 BC 種別の境界状態 $Q_b$ は、既存 BC カーネルが**従来どおり
+ゴースト CV に書き込む値**を流用する (slip 鏡像・inlet 規定・outlet 外挿の物理を再実装しない)。
+弱形式カーネルはこの $Q_b$ (= ゴースト値) と半割面幾何を使い、勾配・フラックスへの寄与だけを置き換える。
+ゴースト CV は残すが、**勾配・対流フラックスの境界寄与をゴースト平均から弱形式へ差し替える**のが要点。
+
+**node モードのパイプライン差し替え** (`cfg.discretization=="node"` で分岐、cell は不変):
+1. **勾配** ([calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu)):
+   `calcGradient_cellgather_d` は CSR 中の**内部面のみ** (`ip < nNormalPlanes`) を集約 (node モードで境界面をスキップ)。
+   その後 `boundaryGradientNode_d` が各境界半割面で $\phi_b \mathbf{S}_b$ (φ_b=ゴースト値) を raw 勾配へ atomicAdd。
+   最後に `calcGradient_2_d` が体積正規化 (閉曲面が内部+境界で閉じる → §6.2)。
+2. **対流フラックス** ([convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) wrapper):
+   node モードは内部面 `[0,nNormalPlanes)` のみ処理し、境界は `boundaryFluxNode_d` が
+   1 次 Riemann/SLAU フラックス $\hat F(Q_i,Q_b,n_b)S_b$ を残差へ atomicAdd。
+3. **ロバスト化 (任意)**: 境界ノードに隣接する内部面の MUSCL 再構成を 1 次に落とすオプション
+   (高マッハ壁近傍の過大再構成対策)。まず弱形式勾配で改善するか確認し、不足なら導入。
+
+**検証**: bump hiM (Mach1.65) の node 2 次 MUSCL が**発散しなくなる**ことを `check_convergence.py` で確認
+(M2 で step~400 発散 → M3 で安定収束が目標)。cell モードの全既存ケースが**従来とビット一致**(無変更) を回帰確認。
+
 ## 5. 設定
 
 [solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。
