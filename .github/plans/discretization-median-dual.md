@@ -56,14 +56,17 @@
    エッジ双対面 (= primal plane と 1:1)・境界半割面・閉性チェック・`/DUAL` HDF5 出力。
    `convertGmshToForge` が `discretization=="node"` で呼ぶ。`input/solverConfig.{hpp,cpp}` に
    `discretization` フラグ追加 (既定 `cell`)。**3D median-dual は未実装 (M4)**。
-2. `mesh/mesh.cpp` `readMesh` に dual 分岐 (`nCells:=nNodes`, `nCells_ghst:=0`)、ゴースト生成スキップ。
-3. 境界最小実装: slip + supersonic in/out の node 弱形式カーネル (`cuda_forge/boundaryFlux_node_d.cu`)。
-   ディスパッチ `boundaryCond.cpp`。
-4. 対流 1 次・粘性 OFF・RK 陽解法で **2D ケース**を実行。
+2. **[完了・方針変更]** 当初は `readMesh` の dual 分岐を予定したが、検討の結果 **solver 無変更**で
+   実現できると判明。`replacePrimalWithDual()` ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp))
+   が双対を primary mesh として `/MESH /PLANES /CELLS /BCONDS /VALUE` に書き出し、solver の `readMesh` が
+   境界半割面から自動でゴースト CV を生成する。`setMeshMap_d`・カーネル・BC はすべて無変更。
+3. **[完了・方針変更]** 新 BC カーネルは M1 では**不要**。境界半割面にゴースト CV を置き、既存
+   `wall_d`/`inlet_*`/`outlet_*`/`slip_d` がゴースト状態を設定 → 対流フラックスが弱形式の境界
+   フラックスを与える (cell-centered と同型)。厳密な弱形式 BC カーネルは M2+ の精度改善に回す。
+4. **[完了]** 対流 1 次・粘性 OFF・RK3 陽解法で 2D ケースを cell/node 両モードで実走・比較。
+   検証ケースは `case/24.laminar_channel_bl` (quad)。
    **注意**: `case/05.sod_shock_tube` の `1D_shock_tube.msh` は実際には 3D hex 押し出し
-   (nBPlanes=1998=499×4+2) なので 2D builder の対象外。M1 の最初の 2D 検証は
-   `case/24.laminar_channel_bl` (quad)・`case/08.bump`・`case/23.axi_nozzle` の `*_2d.msh` を使う。
-   3D の sod は 3D median-dual (M4) 完成後。
+   (nBPlanes=1998=499×4+2) なので 2D builder の対象外。3D の sod は 3D median-dual (M4) 完成後。
 
 ### M2 — 2 次 MUSCL + 勾配 + implicit + tet 比較
 5. Green–Gauss 勾配を dual 有効化、MUSCL 2 次。`calcGradient_d.cu` (無変更で動く想定、検証対象)。
@@ -117,4 +120,16 @@
   双対体積総和 relErr=5.7e-8、閉性 max|ΣdS| 正規化=1.5e-5 (float32 丸め)、境界半割面積=primal
   面積 (0.01/0.01/0.2 一致)、nNodes(CV)=13065・nDualFaces=25864・nBHalf=532。アルゴリズム正当性を確認。
   **副次発見**: `case/05.sod_shock_tube` は 3D hex 押し出しのため 2D 検証は `case/24` 等を使用 (§5 M1-4)。
-  **次**: M1-2 (`readMesh` の dual 消費) → M1-3 (node 境界カーネル) → M1-4 (2D ケース実走)。
+- `2026-06-14` — **M1-2/M1-3/M1-4 完了 (2D)・方針変更**。検討の結果、**solver は一切変更せず**に node-centered を
+  実現 (当初の `readMesh` dual 分岐・新 BC カーネルは不要)。`replacePrimalWithDual()` で双対を primary mesh
+  として書き出し、solver の `readMesh` が境界半割面からゴースト CV を自動生成 → 既存カーネル・BC が無変更で動く。
+  境界はゴースト経由の弱形式 (既存 `wall_d`/`inlet_*`/`outlet_*` を再利用)。
+  **検証** (`case/24.laminar_channel_bl`, 非粘性 1 次 RK3 陽解法 3000 step, cell vs node 同一メッシュ):
+  両モードとも exit0・NaN/Inf=0・3000 step 完走。残差はほぼ一致 (rms_ro 2.67e-6 vs 2.75e-6、
+  rms_roUx 9.66e-4 vs 9.59e-4、rms_roe 0.82 vs 0.84、残差履歴の形状もほぼ重なる)。
+  最終場も一致 (ro_mean 1.1788 vs 1.1785、Ux_mean 13.60 vs 13.53、P_mean 101537 vs 101506、
+  物理的に健全 Ps≤P≤Pt・ro>0・NaN無し)。run: `case/24.laminar_channel_bl/run_dual_{cell,node}_m1/`
+  (比較図 `m1_cell_vs_node_residuals.png`)。**注**: rms_roe プラトーは低マッハ非粘性 duct の陽解法 3000 step
+  の緩慢収束で両モード共通 (dual 起因ではない)。`output.cpp` の XDMF/CONNE は cell topology 前提のため
+  node 可視化は未対応 (M4)。
+  **次**: M2 (2 次 MUSCL + 勾配 + implicit を dual で有効化、tet 比較) → M3 (粘性・軸対称) → M4 (3D median-dual・I/O)。
