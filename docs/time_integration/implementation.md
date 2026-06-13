@@ -123,13 +123,20 @@ rho_phi[ic] = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
 
 ### `implicit_defect_correction_block_d`（block DPLUR、LU-SGS $A^\pm$ 分割）
 
-5×5 ブロック版。`block_dplur` 名前空間に補助 device 関数群を持つ。
+5×5 ブロック版。`block_dplur` 名前空間に補助 device 関数群を持つ。カーネルは線形 solve の内部精度
+`ST` (float/double) で `template<typename ST>` 化され、状態/残差 (float) を `ST` へキャストして取り込む
+(混合精度。下記「閉形式 FVS と混合精度」参照)。
 
-- `build_jacobian_split` — セル中心状態から固有分解 $R,\Lambda,L$ を作り、**対角用 $A^{+}=R\,\Lambda^{+}L$** と
+- `accumulate_split_jacobian_cf<T>`（**既定の閉形式 FVS**）— $R,\Lambda,L$ の 5×5×5 三重積を作らず、
+  **音響右/左固有ベクトルのみ**で $M(g)=g_2 I+(g_1-g_2)\,r_1\!\otimes l_1+(g_5-g_2)\,r_5\!\otimes l_5$
+  ($=R\,\mathrm{diag}(g)\,L$) を構成し、$a^{+}=M(\Lambda^{+})$ を対角へ・$k_{\rm off}=M((-\Lambda)^{+})$ を近傍へ
+  **直接畳み込む**（$a^{+}/k_{\rm off}$ を materialize しない）。`build_jacobian_split` (下記) と軸対称 (nz=0) で
+  数値等価かつ ~10% 高速 (レジスタ・スピル削減)。
+- `build_jacobian_split` — （旧経路・precond 版が使用）固有分解 $R,\Lambda,L$ から **対角用 $A^{+}=R\,\Lambda^{+}L$** と
   **RHS 近傍用 $K=-A^{-}=R\,(-\Lambda^{-})L=\tfrac12(|\widetilde A|-\widetilde A)$** を同時に返す
   （$\Lambda^{+}=\max(\Lambda,0)$、$-\Lambda^{-}=\max(-\Lambda,0)$、共に非負）。
 - `add_identity_scaled`, `add_scaled_5x5` — $V/\Delta\tau\,I$・粘性対角・面寄与の加算。
-- `solve_5x5` — 部分ピボット付き Gauss 消去。`|pivot| < 1e-20` でゼロ解にフォールバック。
+- `solve_5x5` — 部分ピボット付き Gauss 消去（`diag` を破壊して in-place）。`|pivot| < 1e-20` でゼロ解にフォールバック。
 - `multiply_add_5x5_vec` — 行列ベクトル積。
 
 各セルで近傍寄与を集約し、対角 $D_i = V/\Delta\tau\,I + \sum_f A^{+}_f S_f + \sum_f \rho^{\nu}_f S_f\,I$、
@@ -149,6 +156,33 @@ $\Delta\mathbf Q_{\text{new}} = D_i^{-1}\,\text{RHS}$ を解く。`cfg.implicitR
 全 sweep 後に [`applyBlockImplicitCorrection`](../../solver_density_cuda/cuda_forge/update_d.cu)
 （`applyScalarImplicitCorrection` と対称、`update_d.cu` に新設）で `Q = Q_baseline + dq_block` を
 **1 度だけ** commit する。残差 `res_*` と $|\widetilde A_f|$ は sweep 中固定（matrix-free のため固定 Q から毎 sweep 再構築してよい）。
+
+#### 閉形式 FVS と混合精度 (`implicitSolvePrecision`)
+
+`accumulate_split_jacobian_cf<T>` は固有ベクトル行列 $R,L$ を陽に作らず、$\mathrm{diag}(g)-g_2 I$ が
+shear/entropy の 3 モードを消すことを使って **音響右/左固有ベクトル $r_1,r_5,l_1,l_5$ のみ**で
+$M(g)=R\,\mathrm{diag}(g_1,g_2,g_2,g_2,g_5)\,L = g_2 I+(g_1-g_2)\,r_1 l_1^\top+(g_5-g_2)\,r_5 l_5^\top$
+を構成し、$a^{+}=M(\Lambda^{+})$ を対角へ・$k_{\rm off}=M((-\Lambda)^{+})$ を近傍へ直接畳み込む。
+$R\,\Lambda\,L$ の 5×5×5 三重積と $a^{+}/k_{\rm off}/\text{solve\_mat}$ 保持を排除し、float 陰解法で ~10% 高速
+(レジスタ・スピル削減)。**軸対称・平面 (nz=0) では legacy `build_jacobian_split` と数値厳密一致**
+(一般 3D は legacy の $R,L$ が厳密逆行列でない=$RL\neq I$ ため僅差だが、固有値を厳密に $\max(\lambda,0)$ とする
+valid な FVS で defect-correction の定常解は不変)。
+
+カーネルは線形 solve の内部精度 `ST` で `template<typename ST>` 化。`solverConfig` の
+**`implicitSolvePrecision`** (`time.deltaT`、既定 `0`) で切替える:
+
+- `0` (float): 状態/残差 (float) のまま float で組立・solve（既定・高速）。
+- `1` (double): 状態/残差を **double へキャスト**して Jacobian 構築・5×5 solve・近傍 sweep を **double** で行い、
+  補正 $\Delta\mathbf Q$ を float `dq_new` へ書戻す（混合精度 iterative refinement）。
+
+**動機**: float32 の block-DPLUR は軸対称 近軸第一セルで平均速度 `Uy` を収束させきれず偽固着する
+(laminar conical で `Uy` が物理値 $-15$ でなく $-0.6$ に張り付き、SST では偽ひずみが軸中心 k スパイクを駆動)。
+真因は**線形 solve の精度**で、残差は float で良い（itref Algorithm 1 の「状態+残差 double / solve float」とは逆）。
+`implicitSolvePrecision=1` で `Uy` が $-14.98$ に収束し、近軸 float 陰解の発散ケース (例 `case/27` 軸対称陰解) も安定化する。
+RTX 3060 では FP64=FP32 の 1/32 ゆえ ~×2.8 遅い（compensated double-float は ~48bit で精度不足のため不採用）。
+切り分け・速度の詳細は [`.github/plans/precision-mixed-axisym.md`](../../.github/plans/precision-mixed-axisym.md)
+と [`.github/plans/architecture-axisym-axis-singularity.md`](../../.github/plans/architecture-axisym-axis-singularity.md)。
+現状 `blockDPLUR=1`・`lowMachPrecond` 0/1 経路のみ対応 (precond=2 / scalar 版は float のまま)。
 
 **低マッハ前処理 (LHS 固有値) は不採用** (2026-06 検証・実装後 revert)。`build_jacobian_split` の
 固有値 `lambda[5]={U+c,U,U,U,U-c}` を前処理固有値 `U±c'` に差し替える案を実装・検証したが、

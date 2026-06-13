@@ -39,6 +39,11 @@ public:
     flow_float cfl_pseudo;
     flow_float implicitRelax = 1.0;
     int blockDPLUR = 0;
+    int implicitSolvePrecision = 0; // block-DPLUR 線形 solve の内部精度。0: float (既定・高速), 1: double。
+                                    // 残差/状態は float のまま、Jacobian 構築+5×5 solve のみ double 化する混合精度
+                                    // (iterative refinement)。軸対称 近軸の float 陰解固着 (Uy が −15 でなく
+                                    // −0.6 固着) を根治するが double は遅い (RTX で ~×2.6)。詳細:
+                                    // .github/plans/precision-mixed-axisym.md。blockDPLUR==1・lowMachPrecond 0/1 でのみ有効。
     int detectNaN = 0;             // 0: off (既定), 1: 毎ステップ終端で保存量+P の非有限値を検査し、
                                    // 見つけたら res_nan_<step>.h5 をダンプして即停止する診断モード。
                                    // off のときは検査を一切行わないため通常実行はビット不変。

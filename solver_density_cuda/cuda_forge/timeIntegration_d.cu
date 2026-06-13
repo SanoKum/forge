@@ -3,7 +3,8 @@
 
 namespace block_dplur {
 
-__device__ __forceinline__ void zero5(flow_float* vec)
+template<typename T>
+__device__ __forceinline__ void zero5(T* vec)
 {
     #pragma unroll
     for (int i = 0; i < 5; ++i) {
@@ -11,11 +12,57 @@ __device__ __forceinline__ void zero5(flow_float* vec)
     }
 }
 
-__device__ __forceinline__ void add_identity_scaled(flow_float mat[5][5], flow_float scale)
+template<typename T>
+__device__ __forceinline__ void add_identity_scaled(T mat[5][5], T scale)
 {
     #pragma unroll
     for (int row = 0; row < 5; ++row) {
         mat[row][row] += scale;
+    }
+}
+
+// 閉形式 FVS 蓄積 (R/L 固有分解を作らず音響固有ベクトルの rank-2 外積で A⁺S を diag・k_off·sdq を nbr へ)。
+// double/float 双方で使える (T=scalar)。R/L 5×5×5 三重積と a_plus/k_off 保持を排除し float でも ~10% 高速。
+// 軸対称 (nz=0) で legacy build_jacobian_split (R Λ L) と数値等価 (/tmp/mtest.cpp 検証)。一般 3D は legacy の
+// R/L が厳密逆行列でない (RL≠I) ため僅差だが、固有値を厳密に max(λ,0) とする valid な FVS で定常解は不変。
+//   M(g) = g₂ I + (g₁−g₂) r₁⊗l₁ + (g₅−g₂) r₅⊗l₅,  a_plus=M(λ⁺), k_off=M((−λ)⁺)
+template<typename T>
+__device__ __forceinline__ void accumulate_split_jacobian_cf(
+    T gamma, T nx, T ny, T nz, T u, T v, T w, T c,
+    T face_area, bool has_nbr, const T sdq[5], T diag[5][5], T nbr[5])
+{
+    const T sonic = max(c, static_cast<T>(1.0e-8));
+    const T ek = static_cast<T>(0.5)*(u*u+v*v+w*w);
+    const T V = u*nx+v*ny+w*nz;
+    const T chi = (gamma-static_cast<T>(1.0))/sonic;
+    const T inv_chi = sonic/(gamma-static_cast<T>(1.0));
+    const T s2 = static_cast<T>(0.7071067811865475244);
+    const T is = static_cast<T>(1.0)/sonic;
+    const T r1[5]={ s2*is, (u*is+nx)*s2, (v*is+ny)*s2, (w*is+nz)*s2, (ek*is+inv_chi+V)*s2 };
+    const T r5[5]={ s2*is, (u*is-nx)*s2, (v*is-ny)*s2, (w*is-nz)*s2, (ek*is+inv_chi-V)*s2 };
+    const T l1[5]={ (chi*ek-V)*s2, (-chi*u+nx)*s2, (-chi*v+ny)*s2, (-chi*w+nz)*s2, chi*s2 };
+    const T l5[5]={ (chi*ek+V)*s2, (-chi*u-nx)*s2, (-chi*v-ny)*s2, (-chi*w-nz)*s2, chi*s2 };
+    const T lam1=V+sonic, lam2=V, lam5=V-sonic;
+    const T zero=static_cast<T>(0.0);
+    const T p2=max(lam2,zero), pa1=max(lam1,zero)-p2, pa5=max(lam5,zero)-p2;
+    #pragma unroll
+    for (int i=0;i<5;++i){
+        const T c1=pa1*r1[i], c5=pa5*r5[i];
+        #pragma unroll
+        for (int j=0;j<5;++j){
+            T m = c1*l1[j] + c5*l5[j];
+            if (i==j) m += p2;
+            diag[i][j] += face_area * m;
+        }
+    }
+    if (has_nbr){
+        const T n2=max(-lam2,zero), na1=max(-lam1,zero)-n2, na5=max(-lam5,zero)-n2;
+        T l1s=zero, l5s=zero;
+        #pragma unroll
+        for (int j=0;j<5;++j){ l1s+=l1[j]*sdq[j]; l5s+=l5[j]*sdq[j]; }
+        const T cc1=na1*l1s, cc5=na5*l5s;
+        #pragma unroll
+        for (int i=0;i<5;++i) nbr[i] += n2*sdq[i] + cc1*r1[i] + cc5*r5[i];
     }
 }
 
@@ -44,7 +91,8 @@ __device__ __forceinline__ void copy5(const flow_float* src, flow_float* dst)
     }
 }
 
-__device__ __forceinline__ void zero5x5(flow_float mat[5][5])
+template<typename T>
+__device__ __forceinline__ void zero5x5(T mat[5][5])
 {
     #pragma unroll
     for (int row = 0; row < 5; ++row) {
@@ -212,22 +260,23 @@ __device__ __forceinline__ void build_jacobian_split(
     }
 }
 
-__device__ __forceinline__ bool solve_5x5(flow_float mat[5][5], flow_float rhs[5], flow_float sol[5])
+template<typename T>
+__device__ __forceinline__ bool solve_5x5(T mat[5][5], T rhs[5], T sol[5])
 {
     #pragma unroll
     for (int col = 0; col < 5; ++col) {
         int pivot = col;
-        flow_float pivot_abs = fabs(mat[col][col]);
+        T pivot_abs = fabs(mat[col][col]);
         #pragma unroll
         for (int row = col + 1; row < 5; ++row) {
-            const flow_float candidate = fabs(mat[row][col]);
+            const T candidate = fabs(mat[row][col]);
             if (candidate > pivot_abs) {
                 pivot = row;
                 pivot_abs = candidate;
             }
         }
 
-        if (pivot_abs < static_cast<flow_float>(1.0e-20)) {
+        if (pivot_abs < static_cast<T>(1.0e-20)) {
             zero5(sol);
             return false;
         }
@@ -235,19 +284,19 @@ __device__ __forceinline__ bool solve_5x5(flow_float mat[5][5], flow_float rhs[5
         if (pivot != col) {
             #pragma unroll
             for (int k = 0; k < 5; ++k) {
-                const flow_float tmp = mat[col][k];
+                const T tmp = mat[col][k];
                 mat[col][k] = mat[pivot][k];
                 mat[pivot][k] = tmp;
             }
-            const flow_float rhs_tmp = rhs[col];
+            const T rhs_tmp = rhs[col];
             rhs[col] = rhs[pivot];
             rhs[pivot] = rhs_tmp;
         }
 
-        const flow_float inv_pivot = 1.0 / mat[col][col];
+        const T inv_pivot = static_cast<T>(1.0) / mat[col][col];
         #pragma unroll
         for (int row = col + 1; row < 5; ++row) {
-            const flow_float factor = mat[row][col] * inv_pivot;
+            const T factor = mat[row][col] * inv_pivot;
             mat[row][col] = 0.0;
             #pragma unroll
             for (int k = col + 1; k < 5; ++k) {
@@ -258,7 +307,7 @@ __device__ __forceinline__ bool solve_5x5(flow_float mat[5][5], flow_float rhs[5
     }
 
     for (int row = 4; row >= 0; --row) {
-        flow_float sum = rhs[row];
+        T sum = rhs[row];
         #pragma unroll
         for (int col = row + 1; col < 5; ++col) {
             sum -= mat[row][col] * sol[col];
@@ -657,6 +706,11 @@ __global__ void implicit_defect_correction_d
 // 5×5 行列を複数保持しレジスタ消費が大きいため、block 上限を超えないよう __launch_bounds__ で
 // 1 block あたりスレッド数を 128 に制限する（起動時の "too many resources" を回避）。
 #define BLOCK_DPLUR_THREADS 128
+// block-DPLUR の閉形式 FVS 版。線形 solve の内部精度を ST (float 既定 / double で軸対称近軸を根治) で
+// テンプレート化。残差/状態 (flow_float=float) を ST へキャストして取り込み、R/L を作らず閉形式で
+// diag/nbr を畳み、ST で in-place 5×5 solve、補正を float dq_new へ書戻す (混合精度 iterative refinement)。
+// 詳細: .github/plans/precision-mixed-axisym.md。
+template<typename ST>
 __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correction_block_d
 (
  int loop,
@@ -733,98 +787,78 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
 
     if (ic < nCells) {
-        const flow_float gamma = gamma_arr[ic];   // 局所 γ (TP の γ_mix。CPG は cfg.gamma で不変)
-        const geom_float v = vol[ic];
-        const flow_float dt_l = dt_local[ic];
-        const flow_float density = max(ro[ic], static_cast<flow_float>(1.0e-30));
-        const flow_float velocity_x = Ux[ic];
-        const flow_float velocity_y = Uy[ic];
-        const flow_float velocity_z = Uz[ic];
-        const flow_float local_sonic = max(sonic[ic], static_cast<flow_float>(1.0e-8));
-        const flow_float local_enthalpy = max(Ht[ic], static_cast<flow_float>(1.0e-8));
-        const flow_float nu_eff = (laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0))) / density;
+        // 状態/残差 (flow_float=float) を solve 精度 ST へキャストして取り込む (混合精度)。
+        const ST gamma = static_cast<ST>(gamma_arr[ic]);   // 局所 γ
+        const ST v = static_cast<ST>(vol[ic]);
+        const ST dt_l = static_cast<ST>(dt_local[ic]);
+        const ST density = max(static_cast<ST>(ro[ic]), static_cast<ST>(1.0e-30));
+        const ST velocity_x = static_cast<ST>(Ux[ic]);
+        const ST velocity_y = static_cast<ST>(Uy[ic]);
+        const ST velocity_z = static_cast<ST>(Uz[ic]);
+        const ST local_sonic = max(static_cast<ST>(sonic[ic]), static_cast<ST>(1.0e-8));
+        const ST nu_eff = (static_cast<ST>(laminar_visc) + max(static_cast<ST>(vis_turb[ic]), static_cast<ST>(0.0))) / density;
 
         if (loop == 0) {
             dq_old_0[ic] = 0.0; dq_old_1[ic] = 0.0; dq_old_2[ic] = 0.0; dq_old_3[ic] = 0.0; dq_old_4[ic] = 0.0;
         }
 
-        flow_float diag_block[5][5];
+        ST diag_block[5][5];
         block_dplur::zero5x5(diag_block);
-        block_dplur::add_identity_scaled(diag_block, static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30))));
+        block_dplur::add_identity_scaled(diag_block, static_cast<ST>(v / max(dt_l, static_cast<ST>(1.0e-30))));
         // dual-time: 物理時間項 a·V/Δt を対角へ（定常は unsteady_diag==0）。
-        block_dplur::add_identity_scaled(diag_block, static_cast<flow_float>(v) * unsteady_diag);
+        block_dplur::add_identity_scaled(diag_block, v * static_cast<ST>(unsteady_diag));
 
-        flow_float rhs[5] = {
-            res_ro[ic],
-            res_roUx[ic],
-            res_roUy[ic],
-            res_roUz[ic],
-            res_roe[ic]
+        ST rhs[5] = {
+            static_cast<ST>(res_ro[ic]),
+            static_cast<ST>(res_roUx[ic]),
+            static_cast<ST>(res_roUy[ic]),
+            static_cast<ST>(res_roUz[ic]),
+            static_cast<ST>(res_roe[ic])
         };
-        flow_float neighbor_accum[5];
+        ST neighbor_accum[5];
         block_dplur::zero5(neighbor_accum);
 
         const geom_int plane_begin = cell_planes_index[ic];
         const geom_int plane_end = cell_planes_index[ic + 1];
         for (geom_int plane_offset = plane_begin; plane_offset < plane_end; ++plane_offset) {
             const geom_int ip = cell_planes[plane_offset];
-            const flow_float face_area = max(ss[ip], static_cast<flow_float>(1.0e-30));
+            const ST face_area = max(static_cast<ST>(ss[ip]), static_cast<ST>(1.0e-30));
             const geom_int ic0 = plane_cells[2 * ip + 0];
             const geom_int ic1 = plane_cells[2 * ip + 1];
             const geom_int other_ic = (ic0 == ic) ? ic1 : ic0;
 
-            // 格納法線 (sx,sy,sz) は ic0→ic1 (owner ic0 から外向き)。A^± は法線符号に依存するため、
-            // 当該セル ic から見た外向き法線になるよう ic が neighbor 側 (ic1) のとき符号反転する。
-            // （旧 |A| 版は符号不変だったため反転不要だったが、A^+/A^- 分割では必須）
-            const flow_float nsign = (ic0 == ic) ? static_cast<flow_float>(1.0) : static_cast<flow_float>(-1.0);
-            const flow_float nx = nsign * sx[ip] / face_area;
-            const flow_float ny = nsign * sy[ip] / face_area;
-            const flow_float nz = nsign * sz[ip] / face_area;
+            // 格納法線 (sx,sy,sz) は ic0→ic1。ic が neighbor 側 (ic1) のとき符号反転。
+            const ST nsign = (ic0 == ic) ? static_cast<ST>(1.0) : static_cast<ST>(-1.0);
+            const ST nx = nsign * static_cast<ST>(sx[ip]) / face_area;
+            const ST ny = nsign * static_cast<ST>(sy[ip]) / face_area;
+            const ST nz = nsign * static_cast<ST>(sz[ip]) / face_area;
 
-            // LU-SGS 通量分割: 対角に A^+ S、RHS 近傍に (-A^-) S を使う。
-            flow_float a_plus[5][5];
-            flow_float k_off[5][5];
-            block_dplur::build_jacobian_split(
-                gamma,
-                nx,
-                ny,
-                nz,
-                velocity_x,
-                velocity_y,
-                velocity_z,
-                local_enthalpy,
-                local_sonic,
-                a_plus,
-                k_off
-            );
-            block_dplur::add_scaled_5x5(diag_block, a_plus, face_area);
-
-            const flow_float dcc_x = ccx[other_ic] - ccx[ic];
-            const flow_float dcc_y = ccy[other_ic] - ccy[ic];
-            const flow_float dcc_z = ccz[other_ic] - ccz[ic];
-            const flow_float dcc = max(
-                sqrt(dcc_x * dcc_x + dcc_y * dcc_y + dcc_z * dcc_z),
-                static_cast<flow_float>(1.0e-30)
-            );
-            const flow_float dcc_dot_s = max(
-                fabs(dcc_x * sx[ip] + dcc_y * sy[ip] + dcc_z * sz[ip]),
-                static_cast<flow_float>(1.0e-30)
-            );
-            const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
-            const flow_float viscous_radius = 2.0 * nu_eff / delta;
-            block_dplur::add_identity_scaled(diag_block, face_area * viscous_radius);
-
-            if (other_ic < nCells) {
-                flow_float dq_neighbor[5];
-                block_dplur::load_block_vec(other_ic, dq_old_0, dq_old_1, dq_old_2, dq_old_3, dq_old_4, dq_neighbor);
-                // RHS の近傍寄与は -A^- S ΔQ_nbr = k_off·(S·ΔQ_nbr)。対角 A^+ S と同じく
-                // face_area でスケールする（対角と近傍の係数スケールを一致させる）。
-                #pragma unroll
-                for (int i = 0; i < 5; ++i) {
-                    dq_neighbor[i] *= face_area;
-                }
-                block_dplur::multiply_add_5x5_vec(k_off, dq_neighbor, neighbor_accum);
+            // 閉形式 FVS (R/L を作らず rank-2 外積で A⁺S を diag・k_off·sdq を nbr へ)。
+            const bool has_nbr = (other_ic < nCells);
+            ST sdq[5] = {static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0)};
+            if (has_nbr) {
+                sdq[0] = face_area * static_cast<ST>(dq_old_0[other_ic]);
+                sdq[1] = face_area * static_cast<ST>(dq_old_1[other_ic]);
+                sdq[2] = face_area * static_cast<ST>(dq_old_2[other_ic]);
+                sdq[3] = face_area * static_cast<ST>(dq_old_3[other_ic]);
+                sdq[4] = face_area * static_cast<ST>(dq_old_4[other_ic]);
             }
+            block_dplur::accumulate_split_jacobian_cf<ST>(
+                gamma, nx, ny, nz, velocity_x, velocity_y, velocity_z,
+                local_sonic, face_area, has_nbr, sdq, diag_block, neighbor_accum
+            );
+
+            const ST dcc_x = static_cast<ST>(ccx[other_ic]) - static_cast<ST>(ccx[ic]);
+            const ST dcc_y = static_cast<ST>(ccy[other_ic]) - static_cast<ST>(ccy[ic]);
+            const ST dcc_z = static_cast<ST>(ccz[other_ic]) - static_cast<ST>(ccz[ic]);
+            const ST dcc = max(sqrt(dcc_x * dcc_x + dcc_y * dcc_y + dcc_z * dcc_z), static_cast<ST>(1.0e-30));
+            const ST dcc_dot_s = max(
+                fabs(dcc_x * static_cast<ST>(sx[ip]) + dcc_y * static_cast<ST>(sy[ip]) + dcc_z * static_cast<ST>(sz[ip])),
+                static_cast<ST>(1.0e-30)
+            );
+            const ST delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<ST>(1.0e-30));
+            const ST viscous_radius = static_cast<ST>(2.0) * nu_eff / delta;
+            block_dplur::add_identity_scaled(diag_block, face_area * viscous_radius);
         }
 
         #pragma unroll
@@ -832,55 +866,46 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             rhs[i] += neighbor_accum[i];
         }
 
-        // 軸対称ソース項のヤコビアンを対角ブロックに加える（roUy 行 = index 2）。
-        // source S_roUy = (P - τ_θθ)·A_planar,  τ_θθ = 2μ(u_r/r) - (2/3)μ·divU,  u_r/r = roUy/(ro·r_eff)。
-        // 残差 R = -res に対し D += ∂R/∂Q = -∂S/∂Q（局所・代数項のみ。divU は勾配依存のため lagged）。
-        //  - 圧力ソース: ∂P/∂Q = (½(γ-1)q², -(γ-1)Ux, -(γ-1)Uy, -(γ-1)Uz, (γ-1))
-        //  - 粘性フープ: ∂τ_θθ/∂roUy = 2μ/(ro·r_eff)（軸近傍 r_eff→0 で stiff、対角を強化＝安定化）
-        // 詳細は docs/axisymmetric/theory.md・implementation.md。
+        // 軸対称ソース項のヤコビアンを対角ブロックに加える（roUy 行 = index 2）。詳細は実装ドキュメント参照。
         if (isAxisymmetric == 1) {
-            const flow_float A_pl = A_planar[ic];
-            const flow_float r_eff = max(v / max(A_pl, static_cast<flow_float>(1.0e-30)),
-                                         static_cast<flow_float>(1.0e-30));
-            const flow_float g1 = gamma - static_cast<flow_float>(1.0);
-            const flow_float q2 = velocity_x*velocity_x + velocity_y*velocity_y + velocity_z*velocity_z;
-            const flow_float mu_total = laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0));
-            const flow_float hoop = static_cast<flow_float>(2.0) * mu_total / (density * r_eff); // ∂τ_θθ/∂roUy
-            // D[2][col] += -∂S/∂col
-            diag_block[2][0] += -A_pl * (static_cast<flow_float>(0.5)*g1*q2
-                                          + hoop * velocity_y);          // -∂S/∂ro
-            diag_block[2][1] += A_pl * (g1 * velocity_x);                 // -∂S/∂roUx
-            diag_block[2][2] += A_pl * (g1 * velocity_y + hoop);          // -∂S/∂roUy（+hoop が安定化）
-            diag_block[2][3] += A_pl * (g1 * velocity_z);                 // -∂S/∂roUz
-            diag_block[2][4] += -A_pl * g1;                              // -∂S/∂roe
+            const ST A_pl = static_cast<ST>(A_planar[ic]);
+            const ST r_eff = max(v / max(A_pl, static_cast<ST>(1.0e-30)), static_cast<ST>(1.0e-30));
+            const ST g1 = gamma - static_cast<ST>(1.0);
+            const ST q2 = velocity_x*velocity_x + velocity_y*velocity_y + velocity_z*velocity_z;
+            const ST mu_total = static_cast<ST>(laminar_visc) + max(static_cast<ST>(vis_turb[ic]), static_cast<ST>(0.0));
+            const ST hoop = static_cast<ST>(2.0) * mu_total / (density * r_eff);
+            diag_block[2][0] += -A_pl * (static_cast<ST>(0.5)*g1*q2 + hoop * velocity_y);
+            diag_block[2][1] += A_pl * (g1 * velocity_x);
+            diag_block[2][2] += A_pl * (g1 * velocity_y + hoop);
+            diag_block[2][3] += A_pl * (g1 * velocity_z);
+            diag_block[2][4] += -A_pl * g1;
         }
 
-        flow_float solve_mat[5][5];
-        #pragma unroll
-        for (int row = 0; row < 5; ++row) {
-            #pragma unroll
-            for (int col = 0; col < 5; ++col) {
-                solve_mat[row][col] = diag_block[row][col];
-            }
-        }
-
-        flow_float correction[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
-        const bool ok = block_dplur::solve_5x5(solve_mat, rhs, correction);
+        // diag_block を破壊して in-place で解く (solve_mat コピー排除)。
+        ST correction[5] = {static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0)};
+        const bool ok = block_dplur::solve_5x5(diag_block, rhs, correction);
         if (!ok) {
             block_dplur::zero5(correction);
         }
 
+        const ST relax = static_cast<ST>(implicit_relax);
         #pragma unroll
         for (int i = 0; i < 5; ++i) {
-            correction[i] *= implicit_relax;
+            correction[i] *= relax;
         }
 
-        // 古典 DPLUR: sweep 中は Q を更新せず dq_new の生成のみ。
-        // Q への commit は全 sweep 後に applyBlockImplicitCorrection でまとめて行う。
-        block_dplur::store_block_vec(ic, correction, dq_new_0, dq_new_1, dq_new_2, dq_new_3, dq_new_4);
-        // K8: diag_block_** への書き戻しは dead store（どこからも読まれない）だったため削除。
-        // 25 stores/cell/sweep のメモリ書込を除去。rhs_** も読者は無いが念のため残置。
-        block_dplur::store_block_vec(ic, rhs, rhs_0, rhs_1, rhs_2, rhs_3, rhs_4);
+        // 古典 DPLUR: float dq_new へ書戻し。Q への commit は applyBlockImplicitCorrection。
+        dq_new_0[ic] = static_cast<flow_float>(correction[0]);
+        dq_new_1[ic] = static_cast<flow_float>(correction[1]);
+        dq_new_2[ic] = static_cast<flow_float>(correction[2]);
+        dq_new_3[ic] = static_cast<flow_float>(correction[3]);
+        dq_new_4[ic] = static_cast<flow_float>(correction[4]);
+        // rhs_** は読者が無いが従来通り残置（診断用）。
+        rhs_0[ic] = static_cast<flow_float>(rhs[0]);
+        rhs_1[ic] = static_cast<flow_float>(rhs[1]);
+        rhs_2[ic] = static_cast<flow_float>(rhs[2]);
+        rhs_3[ic] = static_cast<flow_float>(rhs[3]);
+        rhs_4[ic] = static_cast<flow_float>(rhs[4]);
     }
 }
 
@@ -1198,67 +1223,34 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
                 cfg.unsteadyDiagCoef
               );
-            } else
-            implicit_defect_correction_block_d<<<block_grid , block_threads>>>(
-                loop,
-                cfg.dt,
-                var.c_d["dt_local"],
-                cfg.implicitRelax,
-                var.c_d["gamma"],
-                msh.nCells_all,
-                msh.nCells,
-                var.c_d["volume"],
-                msh.map_plane_cells_d,
-                msh.map_cell_planes_index_d,
-                msh.map_cell_planes_d,
-                var.c_d["ccx"],
-                var.c_d["ccy"],
-                var.c_d["ccz"],
-                var.p_d["sx"],
-                var.p_d["sy"],
-                var.p_d["sz"],
-                var.p_d["ss"],
-                var.c_d["ro"],
-                var.c_d["roUx"],
-                var.c_d["roUy"],
-                var.c_d["roUz"],
-                var.c_d["roe"],
-                cfg.visc,
-                var.c_d["vis_turb"],
-                var.c_d["sonic"],
-                var.c_d["Ux"],
-                var.c_d["Uy"],
-                var.c_d["Uz"],
-                var.c_d["Ht"],
-                var.c_d["res_ro"],
-                var.c_d["res_roUx"],
-                var.c_d["res_roUy"],
-                var.c_d["res_roUz"],
-                var.c_d["res_roe"],
-                var.c_d["dq_block_old_0"],
-                var.c_d["dq_block_old_1"],
-                var.c_d["dq_block_old_2"],
-                var.c_d["dq_block_old_3"],
-                var.c_d["dq_block_old_4"],
-                var.c_d["dq_block_new_0"],
-                var.c_d["dq_block_new_1"],
-                var.c_d["dq_block_new_2"],
-                var.c_d["dq_block_new_3"],
-                var.c_d["dq_block_new_4"],
-                var.c_d["rhs_block_0"],
-                var.c_d["rhs_block_1"],
-                var.c_d["rhs_block_2"],
-                var.c_d["rhs_block_3"],
-                var.c_d["rhs_block_4"],
-                var.c_d["diag_block_00"], var.c_d["diag_block_01"], var.c_d["diag_block_02"], var.c_d["diag_block_03"], var.c_d["diag_block_04"],
-                var.c_d["diag_block_10"], var.c_d["diag_block_11"], var.c_d["diag_block_12"], var.c_d["diag_block_13"], var.c_d["diag_block_14"],
-                var.c_d["diag_block_20"], var.c_d["diag_block_21"], var.c_d["diag_block_22"], var.c_d["diag_block_23"], var.c_d["diag_block_24"],
-                var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"],
-                var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"],
-                cfg.isAxisymmetric,
-                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
-                cfg.unsteadyDiagCoef
-            );
+            } else {
+            // implicitSolvePrecision: 0=float (既定・高速), 1=double (軸対称近軸の根治, 遅い)。
+            // 同じテンプレートカーネルを ST=float/double で起動。引数は共通 (FORGE_BDPLUR_ARGS)。
+            #define FORGE_BDPLUR_ARGS \
+                loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, var.c_d["gamma"], \
+                msh.nCells_all, msh.nCells, var.c_d["volume"], \
+                msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d, \
+                var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"], \
+                var.p_d["sx"], var.p_d["sy"], var.p_d["sz"], var.p_d["ss"], \
+                var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"], \
+                cfg.visc, var.c_d["vis_turb"], var.c_d["sonic"], \
+                var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"], var.c_d["Ht"], \
+                var.c_d["res_ro"], var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"], var.c_d["res_roe"], \
+                var.c_d["dq_block_old_0"], var.c_d["dq_block_old_1"], var.c_d["dq_block_old_2"], var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"], \
+                var.c_d["dq_block_new_0"], var.c_d["dq_block_new_1"], var.c_d["dq_block_new_2"], var.c_d["dq_block_new_3"], var.c_d["dq_block_new_4"], \
+                var.c_d["rhs_block_0"], var.c_d["rhs_block_1"], var.c_d["rhs_block_2"], var.c_d["rhs_block_3"], var.c_d["rhs_block_4"], \
+                var.c_d["diag_block_00"], var.c_d["diag_block_01"], var.c_d["diag_block_02"], var.c_d["diag_block_03"], var.c_d["diag_block_04"], \
+                var.c_d["diag_block_10"], var.c_d["diag_block_11"], var.c_d["diag_block_12"], var.c_d["diag_block_13"], var.c_d["diag_block_14"], \
+                var.c_d["diag_block_20"], var.c_d["diag_block_21"], var.c_d["diag_block_22"], var.c_d["diag_block_23"], var.c_d["diag_block_24"], \
+                var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"], \
+                var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
+                cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef
+            if (cfg.implicitSolvePrecision == 1)
+                implicit_defect_correction_block_d<double><<<block_grid , block_threads>>>(FORGE_BDPLUR_ARGS);
+            else
+                implicit_defect_correction_block_d<float><<<block_grid , block_threads>>>(FORGE_BDPLUR_ARGS);
+            #undef FORGE_BDPLUR_ARGS
+            }
         } else {
             implicit_defect_correction_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
                 loop,

@@ -205,6 +205,8 @@ void solverConfig::read(std::string fname)
         this->cfl_pseudo = getValidatedValue<double>(deltaT, "cfl_pseudo", "time.deltaT");
         this->implicitRelax = getOptionalValidatedValue<double>(deltaT, "implicitRelax", 1.0, "time.deltaT");
         this->blockDPLUR = getOptionalValidatedValue<int>(deltaT, "blockDPLUR", 0, "time.deltaT");
+        // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。
+        this->implicitSolvePrecision = getOptionalValidatedValue<int>(deltaT, "implicitSolvePrecision", 0, "time.deltaT");
         // NaN 検知診断モード: 既定 0 で従来挙動 (検査なし・ビット不変)。1 で毎ステップ終端に検査。
         this->detectNaN = getOptionalValidatedValue<int>(deltaT, "detectNaN", 0, "time.deltaT");
         // 低マッハ前処理 (Weiss-Smith): 既定 0 で従来挙動 (ビット不変)。

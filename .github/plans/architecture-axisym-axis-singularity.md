@@ -3,7 +3,8 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `in_progress`  <!-- 根本原因を特定。安価な根治は未発見 (global double / explicit が実証済の対処) -->
+- **status**: `done`  <!-- 根本原因を特定。安価な根治を実装: 真因は「線形 solve の精度」で、閉形式 FVS +
+                            implicitSolvePrecision フラグ (solve のみ double) で根治。詳細 precision-mixed-axisym.md §13 -->
 - **related_docs**:
   - `docs/turbulence/theory.md` (§7.5)
   - `docs/time_integration/` (block DPLUR)
@@ -56,13 +57,14 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
 | 5×5 ブロック solve (`solve_5x5`) | 効果なし |
 | 軸対称ソースヤコビアン除去 | 効果なし |
 | FVS 面ヤコビアン `build_jacobian_split` (`a_plus`/`k_off`) | 効果なし (float の固有積は元々正確) |
-| **DPLUR 反復まるごと倍精度** (diag/rhs/neighbor/solve、入出力のみ float) | **効果なし** |
+| **DPLUR 反復まるごと倍精度** (diag/rhs/neighbor/solve、入出力のみ float) | ~~効果なし~~ **← 2026-06-13 追試で覆る (下記)**。生 float 入力を double 昇格した solve 全鎖の double 化は **直る** (run_0002, Uy=−14.88)。旧「効果なし」は部分昇格 (Jacobian 入力/面法線が float のまま等) だった可能性大 |
 | `cfl_pseudo` 引き上げ (2→4→8) | 効果なし (over-damping/CFL ではない) |
 | `cfl_pseudo` 引き下げ (2→0.5→0.3) | 効果なし (−0.64→−0.58→−0.53、固着のまま) |
 | scalar DPLUR (`blockDPLUR=0`) | cfl2/1.0/0.5 は発散 (step 9k/250/683)。**cfl0.1 で安定収束するが第一セル Uy=−0.81 で固着** (block と同じ)。近軸固着は block/scalar 非依存=**float 陰解 defect-correction そのもの**が原因 |
 | `nStepInner` 増 (20→100→200 sweep) | **全く不変** (−0.64 でビット一致)。線形系は既に収束済=**Krylov(FGMRES)でも直らない** |
 | `doubleResidual` (残差を double バッファに蓄積) | **効果なし** (−0.64)。桁落ちは atomic sum ではなく**float 状態由来の per-face 値**にある |
-| **global double** (状態も double) | **効く** |
+| **double 残差/状態 + float 線形 solve** (Algorithm 1 単純分割。global double ビルド + block-DPLUR solve 内部のみ float) | **効果なし** (−0.641 @20k、float と一致。`run_0001_mixed_lam_slau`)。R が double でも float `D⁻¹` が悪条件を増幅し固着 |
+| **global double** (状態も double = 残差・solve 双方 double) | **効く** |
 
 **SU2 との対比 (su2.log で確認)**: SU2 = 後退Euler + **FGMRES + ILU(0)** + **double**。forge = 後退Euler defect-correction
 + **block-DPLUR (LU-SGS sweep 固定回数)** + **float**。`nStepInner` テストで forge の LU-SGS は線形系を既に
@@ -81,6 +83,18 @@ x=40mm 第一セル `Uy` の収束履歴 (laminar conical):
   **状態 (P,ρ等) を double にする global double のみ効く**。近軸の悪条件な陰解 Jacobian `D⁻¹` が、
   **float 状態から計算した per-face 流束の桁落ち**を増幅するため。**陽解法は `R·dt/V` の
   スケールでこれを許容する** (だから float でも正しい)。→ 根治には**状態の倍精度**が要る。
+- **追試① (2026-06-13): 「double 残差/状態 + float 線形 solve」(itref Algorithm 1 の単純分割) は無効**
+  (`run_0001_mixed_lam_slau`、−0.641@20k で float と一致)。残差を double にしても solve が float なら固着。
+- **追試② (2026-06-13・対称実験): 「float 残差/状態 + double 線形 solve」は ★直る★**
+  (`run_0002_dsolve_fres_lam_slau`、Uy=**−14.88**@20k で global double と一致)。
+  → **真の判別因子は「線形 solve (Jacobian 構築 + 面法線 + 5×5 + 近傍 sweep) の精度」であり、残差/状態の
+  精度ではない**。近軸の悪条件 `D⁻¹` の**適用**にこそ double が要る。`R·dt/V` で済む陽解法が float でも
+  正しいのと整合 (陽解は D⁻¹ を使わない)。
+- **帰結の訂正**: 「根治には状態の倍精度 (≈global double) が必要・安価な根治は無い」という旧結論は**誤り**。
+  **全配列 float のまま block-DPLUR solve カーネル内部だけ double 化すれば直る**(メモリ増なし、追加 FP64 は
+  セル毎 5×5+Jacobian のみ)。詳細・実装方針は `precision-mixed-axisym.md` §9/§10 を一次情報とする。
+  (上表「DPLUR反復まるごと倍精度=効果なし」も同様に訂正対象。生 float 入力を昇格した solve 全鎖の
+  double 化が要件で、部分昇格・solve_5x5 単独・build_jacobian_split 単独では不足だった。)
 - 乱流モデル側の対処はすべて**無関係 (マスク)**: フープ除去 (6% のみ)、`dilatationCorrection`
   (トレース除去では `u_r/r` は偏差成分に残り消えない)、Kato–Launder (軸上 `Ω→0` でたまたま生産が
   落ちるだけ)。`turbulence-kato-launder.md` の「軸スパイクの対処」という位置づけは**誤り**。
