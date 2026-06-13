@@ -89,6 +89,11 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 - **プローブ** ([point_probes.cpp](../../solver_density_cuda/probe/point_probes.cpp)): KD-tree を CV 中心=ノード座標で構築。
 - **implicit/AMG の edge 分類** ([mesh.cpp:742-780](../../solver_density_cuda/mesh/mesh.cpp)):
   `nNormalPlanes` ベースの CV 隣接で内部 edge と境界 edge を厳密に分類。
+- **軸対称の軸 (R=0) 注意点 (対応済み)**: solver は回転体積を `volume = A_planar × ccy`(ccy=セル重心 R)で
+  実行時計算する。node-centered で CV 重心にノード座標 (軸上で R=0) を使うと**軸ノードの回転体積が ≈0 → 時間積分が
+  除算爆発**する (case/29 conical で 272 軸 CV が体積比 1.5e20、step3 で NaN)。対策: `replacePrimalWithDual` が
+  dual セル重心に**双対 CV の面積加重重心** (`dualCentroid`, 軸上ノードでも R>0) を使う。これで回転体積が正しくなり
+  (体積比 2.4e4, cell の 1.2e4 と同等)、平面ケースは無回帰 (内部ノードでは重心≈ノード)。FV 的にも CV 重心が正しい中心。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
