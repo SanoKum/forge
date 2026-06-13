@@ -101,6 +101,16 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   (2) 軸ノードで半径方向圧力ソース抑制 → ソースは軸 CV の釣り合いに load-bearing で step~51 破綻。
   **結論: 半径ソースは軸 CV にも必要で安易な対称強制は不可**。baseline (ソース維持) は収束し corner オーバーシュートのみ残る。
   infra (`mesh.axis_flag_d`, `enforceAxisSymmetry_d`) は残置・既定 off。corner の正攻法は別途要検討。
+  **SU2 流の確認 (ユーザ提案)**: SU2 はノードベース (中点双対) で、軸を `MARKER_SYM=(axis)` の**対称面**として扱い、
+  対称ノードで**法線 (=半径) 運動量成分を残差から射影**する。forge で同方式を試したが、forge の implicit は
+  **block-DPLUR (5×5 連成)** のため:
+  - (3) `res_roUy=0` 射影 (全 flux+source 後) → 単独では連成 solve が補正を漏らし**無効** (Uy 164→136 でほぼ不変)。
+  - (4) implicit commit で `roUy=0` 強制 → 線形 solve と不整合で**発散級に悪化 (Mach~1000)**。
+  → **SU2 流対称面を効かせるには block-DPLUR の Jacobian row を軸ノードで整合修正する必要**があり (SU2 は
+  Jacobian を修正している)、commit/残差だけの hack では不可。これは delicate な implicit-solver 改修なので
+  open issue とし、infra (`zeroAxisRadialResidual_d`、commit の `axis_flag` 引数) は残置・既定無効。
+  baseline (無介入) は収束し corner 1 セルのオーバーシュートのみ。explicit 経路なら `res_roUy=0` 射影が直接効く
+  可能性があるが、本ノズルは implicit 前提のため Jacobian 整合が本筋。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。

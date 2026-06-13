@@ -118,6 +118,31 @@ __global__ void enforceAxisSymmetry_d
     }
 }
 
+// SU2 流の軸対称対称面処理 (MARKER_SYM): 軸上 CV (R=0) で半径方向運動量の「残差」を 0 にする。
+// res_roUy=0 にすると roUy は更新されず初期値 (=0, 対称条件) を保つ。状態やエネルギーをいじらず、
+// flux+source を全て積んだ後に残差を射影するだけなので陰解法とも整合し発散しない (状態強制版・source
+// 抑制版は発散したのに対し、これは SU2 と同じ「残差から法線運動量成分を除去」する方式)。
+__global__ void zeroAxisRadialResidual_d
+(
+    geom_int nCells, geom_int* axis_flag, flow_float* res_roUy
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells && axis_flag[ic] == 1) {
+        res_roUy[ic] = (flow_float)0.0;
+    }
+}
+
+void zeroAxisRadialResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.isAxisymmetric != 1 || cfg.discretization != "node" || msh.axis_flag_d == nullptr) return;
+    zeroAxisRadialResidual_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.axis_flag_d, var.c_d["res_roUy"]
+    );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
 void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     // node-centered 軸対称でのみ作用 (軸上ノードが CV 中心になるのは node モード)。

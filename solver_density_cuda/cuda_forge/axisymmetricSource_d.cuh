@@ -13,3 +13,7 @@ void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
 // node-centered 軸対称: 軸上ノード (R=0) で半径方向運動量 roUy=0 (対称条件) を課す。
 // 軸上 CV が特異点になり半径方向圧力ソースで偽の Uy が駆動されるのを防ぐ。cell モードや非軸対称では no-op。
 void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// SU2 流 (MARKER_SYM): node-centered 軸対称で軸上 CV の半径方向運動量「残差」を 0 にし、
+// roUy=0 (対称条件) を保つ。assembleResidual の最後 (全 flux+source 積算後) に呼ぶ。
+void zeroAxisRadialResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

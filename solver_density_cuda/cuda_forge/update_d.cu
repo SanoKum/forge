@@ -205,7 +205,8 @@ __global__ void applyBlockImplicitCorrection_d
  flow_float* dq_block_1,
  flow_float* dq_block_2,
  flow_float* dq_block_3,
- flow_float* dq_block_4
+ flow_float* dq_block_4,
+ geom_int* axis_flag   // node-centered 軸対称: 軸上 CV で roUy=0 (対称条件)。nullptr 可。
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -213,7 +214,10 @@ __global__ void applyBlockImplicitCorrection_d
     if (ic < nCells) {
         ro[ic]   = roN[ic]   + dq_block_0[ic];
         roUx[ic] = roUxN[ic] + dq_block_1[ic];
-        roUy[ic] = roUyN[ic] + dq_block_2[ic];
+        // 軸上 CV は半径方向運動量を 0 に保つ (SU2 MARKER_SYM 流。block-DPLUR の連成で
+        // 補正が漏れるのを commit 時に射影。roUy~0 なので KE 不整合は無視できる)。
+        roUy[ic] = (axis_flag != nullptr && axis_flag[ic] == 1)
+                       ? (flow_float)0.0 : roUyN[ic] + dq_block_2[ic];
         roUz[ic] = roUzN[ic] + dq_block_3[ic];
         roe[ic]  = roeN[ic]  + dq_block_4[ic];
     }
@@ -238,7 +242,11 @@ void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda
         var.c_d["dq_block_old_1"],
         var.c_d["dq_block_old_2"],
         var.c_d["dq_block_old_3"],
-        var.c_d["dq_block_old_4"]
+        var.c_d["dq_block_old_4"],
+        // 注: 軸上 roUy=0 を commit で強制すると block-DPLUR の線形 solve と不整合になり発散級に悪化
+        // (Mach~1000)。SU2 流の対称面は Jacobian を整合的に修正する必要がある (block-DPLUR の row 修正)。
+        // 暫定で無効 (nullptr=baseline)。near-axis corner は open issue (docs §7.1)。
+        nullptr
     );
 
     gpuErrchk( cudaPeekAtLastError() );

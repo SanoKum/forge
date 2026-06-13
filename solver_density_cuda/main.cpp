@@ -784,6 +784,10 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureCuda(ProfileSection::ViscousFlux, [&]() {
         viscousFlux_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, s.mat_ns);
     });
+    // 注: SU2 流の軸対称対称面 (MARKER_SYM, res_roUy=0 射影) は block-DPLUR の連成で補正が漏れ単独では
+    // 無効、commit 強制は発散級に悪化した。整合には Jacobian row 修正が要る (open issue, docs §7.1)。
+    // 暫定で無効化 (baseline は corner オーバーシュート 1 セルのみで収束)。infra は残置。
+    // zeroAxisRadialResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // TODO(dual-time): unsteady のとき addUnsteadyTimeTerm(s) で BDF 物理時間項を res_* と
     // 対角に加える。定常では no-op。本体は次フェーズ。
 }
