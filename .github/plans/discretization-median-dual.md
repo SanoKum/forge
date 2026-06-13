@@ -160,6 +160,20 @@
   run: `case/08.bump/run_dual_{loM,hiM}_{cell,node}_m2/`, `run_dual_imp_loM_{cell,node}_m2b/`,
   `run_dual_tri_loM_{cell,node}_m2c/` (比較図 `m2_bump_cell_vs_node.png`)。
   **次 (M3 を前倒し)**: 弱形式境界カーネル (境界ノード半割面に直接フラックス) で高マッハ 2 次の壁近傍を解消 → 粘性。
+- `2026-06-14` — **SU2 参照検証 + 入口/軸重複の切り分け (自律検証)**。
+  - **入口×軸 重複の確認 (ユーザ仮説)**: 角 CV (id=2) は inlet_Pressure と slip(軸) の両 bcond に属するが、
+    `inlet_Pressure_d`/`slip_d` とも **ghost のみ書込み・内部ノード状態は上書きしない** (状態競合は無し)。
+    真因は、角 (r≈0) で**両境界半割面が r 重みで面積→0** になり BC が実質効かず、軸対称の半径方向圧力ソースが
+    不釣合になること。入口面を r 方向に見ると **r≳0.003 で入口 BC は正常** (P≈4MPa=Pt・流入正)、異常は軸-inlet 角のみ。
+  - **cell-centered は SU2 と一致 (検証済み)**: `run_su2cmp_su2_euler` の SU2 軸対称 Euler を参照に、conical 中心線
+    Mach を比較 — cell は exit Mach 3.79 vs SU2 3.71、平均 |ΔM|=0.073、Pmax 一致 (3.99MPa)、overshoot 無し。
+  - **node は bulk で SU2/cell に一致・アーティファクトは near-axis に限局**: conical を半径帯で node vs cell 比較すると
+    **r 30-50%: 平均|ΔM|=0.014、r 70-95%: 0.011** (max Mach も一致)、**r<3% のみ大 (max|ΔM|=0.95, exit 軸 Mach 5.18,
+    inlet 角 P 7.44MPa)**。中心線プロット (`m3_conical_centerline_su2_cell_node.png`) でも cell/node が SU2 と重なり、
+    node だけ inlet 角・exit 軸に数点の外れ値。bell も同様 (near-axis のみ)。
+  - **結論 (確定)**: **node-centered 軸対称 Euler は bulk で正しい (SU2/cell に ~1% 一致)。欠陥は r=0 軸線の局所処理のみ**。
+    explicit は軸 CV の spectral→0 で step1 発散 (implicit 前提)。near-axis 包括対策 (全方程式対称+dt/spectral フロア+
+    連携 Jacobian) が唯一の残課題。run: `run_dual_eul_{conical,bell}_{cell,node}_m3/`, `run_su2cmp_su2_euler/`。
 - `2026-06-14` — **M2 収束判定の訂正 (反省)**。上記 M2 報告の多くは **NaN チェックのみで収束を確認しておらず誤り**だった。
   新ツール `solver_density_cuda/tools/check_convergence.py` で全残差列を再判定した結果:
   - **explicit の channel M1・bump loM/hiM は全て未収束のトランジェント** (0.6〜2.5 桁しか低下せず `falling`)。
