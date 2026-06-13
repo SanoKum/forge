@@ -1521,6 +1521,124 @@ public:
              << " nBHalf=" << dualBnodeId.size() << "\n";
     }
 
+    // -------------------------------------------------------------------------
+    // buildMedianDual() で計算した双対量で primal の cells/planes/bconds を置き換え、
+    // 「双対メッシュを primary mesh として」書き出せる状態にする (node-centered)。
+    //
+    // これにより solver 側 (readMesh / setMeshMap_d / 各カーネル / 境界条件) は一切変更なしで
+    // node-centered を扱える: CV=ノード、内部面=双対面、境界面=半割双対面 (solver の readMesh が
+    // 境界面から自動でゴースト CV を生成する。ゴースト経由で既存 BC カーネル・対流フラックスが動く)。
+    //
+    // 注意 (M1): 境界半割面の重心 pc は「ノード座標 + h·n_out」に置く (h=0.5√(双対体積))。
+    // これは solver のゴースト鏡像生成で非退化 (dcc>0) を保証するための便宜。半割面は厳密には
+    // 境界上だが、M1 は非粘性 1 次でゴーストが 1 次精度を強制するため pc 位置はフラックスに影響しない
+    // (fx/dcc は再構成・粘性で使われるが M1 では未使用)。厳密な境界は弱形式 (M2+) で扱う。
+    // 可視化 (output の CONNE/XDMF) は cell topology を前提とするため node モードでは正しくない (M4)。
+    // -------------------------------------------------------------------------
+    void replacePrimalWithDual()
+    {
+        if (!dualBuilt) {
+            cerr << "[replacePrimalWithDual] buildMedianDual() must run first (dualBuilt=false).\n";
+            exit(EXIT_FAILURE);
+        }
+        cout << "[replacePrimalWithDual] replacing primal cells/planes/bconds with median-dual ...\n";
+
+        const geom_int nN = this->nNodes;
+        const geom_int nDualInternal = (geom_int)this->dualFaceArea.size();
+        const geom_int nBHalf        = (geom_int)this->dualBnodeId.size();
+
+        // ---- 新 cells (CV = ノード) ----
+        std::vector<cell> newCells(nN);
+        for (geom_int i = 0; i < nN; ++i) {
+            newCells[i].centCoords = nodes[i].coords;       // CV 重心 = ノード座標
+            newCells[i].volume     = dualVolume[i];
+            newCells[i].ieleType   = 2;                     // placeholder (output CONNE 用, viz は M4)
+            newCells[i].iNodes      = { i };
+            newCells[i].regionId    = 0;
+            // iPlanes/iPlanesDir は下で充填
+        }
+
+        // ---- 新 planes: 内部双対面 [0,nDualInternal) + 境界半割面 [nDualInternal, +nBHalf) ----
+        std::vector<plane> newPlanes;
+        newPlanes.reserve(nDualInternal + nBHalf);
+        for (geom_int f = 0; f < nDualInternal; ++f) {
+            const geom_int A = dualFaceCells[2*f + 0];
+            const geom_int B = dualFaceCells[2*f + 1];
+            plane p;
+            p.iNodes = { A, B };
+            p.iCells = { A, B };
+            p.surfVect = { dualFaceVect[3*f+0], dualFaceVect[3*f+1], dualFaceVect[3*f+2] };
+            p.surfArea = dualFaceArea[f];
+            p.centCoords = { dualFaceCent[3*f+0], dualFaceCent[3*f+1], dualFaceCent[3*f+2] };
+            newPlanes.push_back(std::move(p));
+        }
+        for (geom_int k = 0; k < nBHalf; ++k) {
+            const geom_int nd = dualBnodeId[k];
+            const geom_float vx = dualBnodeVect[3*k+0];
+            const geom_float vy = dualBnodeVect[3*k+1];
+            const geom_float vz = dualBnodeVect[3*k+2];
+            const geom_float area = std::sqrt(vx*vx + vy*vy + vz*vz);
+            const geom_float inva = (area > 1e-30) ? 1.0/area : 0.0;
+            const geom_float h = 0.5 * std::sqrt(std::max(dualVolume[nd], (geom_float)1e-30));
+            plane p;
+            p.iNodes = { nd };
+            p.iCells = { nd };  // 1 セルのみ → solver readMesh がゴーストを追加
+            p.surfVect = { vx, vy, vz };
+            p.surfArea = area;
+            // pc = ノード + h·n_out (ゴースト非退化のため境界外側に少しずらす, M1 便宜)
+            p.centCoords = { nodes[nd].coords[0] + h*vx*inva,
+                             nodes[nd].coords[1] + h*vy*inva,
+                             nodes[nd].coords[2] + h*vz*inva };
+            newPlanes.push_back(std::move(p));
+        }
+
+        this->nNormalPlanes = nDualInternal;
+        this->nBPlanes      = nBHalf;
+        this->nPlanes       = nDualInternal + nBHalf;
+        this->nCells        = nN;
+        this->nCells_all    = nN; // ゴーストは solver readMesh で付与
+
+        // ---- cells の iPlanes / iPlanesDir を充填 ----
+        for (geom_int ip = 0; ip < this->nPlanes; ++ip) {
+            const auto& ic = newPlanes[ip].iCells;
+            for (size_t j = 0; j < ic.size(); ++j) {
+                newCells[ic[j]].iPlanes.push_back(ip);
+                newCells[ic[j]].iPlanesDir.push_back(j == 0 ? 1 : -1);
+            }
+        }
+
+        this->cells  = std::move(newCells);
+        this->planes = std::move(newPlanes);
+
+        // ---- bconds を双対境界半割面で更新 (bcondKind / physID / 入力値は保持) ----
+        const geom_int nBc = (geom_int)this->bconds.size();
+        for (geom_int ib = 0; ib < nBc; ++ib) {
+            if (this->bconds[ib].physID != dualBcondPhysID[ib]) {
+                cerr << "[replacePrimalWithDual] bcond order mismatch at ib=" << ib
+                     << " (physID " << this->bconds[ib].physID << " vs " << dualBcondPhysID[ib] << ")\n";
+                exit(EXIT_FAILURE);
+            }
+            this->bconds[ib].iPlanes.clear();
+            this->bconds[ib].iCells.clear();
+            this->bconds[ib].iBPlanes.clear();
+            this->bconds[ib].iCells_ghst.clear();
+            for (geom_int k = dualBcondOffset[ib]; k < dualBcondOffset[ib+1]; ++k) {
+                const geom_int gp = nDualInternal + k;
+                this->bconds[ib].iPlanes.push_back(gp);
+                this->bconds[ib].iCells.push_back(dualBnodeId[k]);
+                this->bconds[ib].iBPlanes.push_back(gp - this->nNormalPlanes);
+            }
+        }
+
+        // 双対は primary に昇格したので /DUAL の重複出力は不要にする
+        dualBuilt = false;
+
+        cout << "[replacePrimalWithDual] done. nCells(CV)=" << this->nCells
+             << " nNormalPlanes=" << this->nNormalPlanes
+             << " nBPlanes=" << this->nBPlanes
+             << " nPlanes=" << this->nPlanes << "\n";
+    }
+
     void writeInputH5(const string outFileName ,variables var)
     {
         // ------------

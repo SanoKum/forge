@@ -55,7 +55,25 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 | block-DPLUR 陰解法 | [timeIntegration_d.cu](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu) | 無変更 |
 | 構造量 (fx/dcc) | [calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu) | 無変更 (CV 重心と面重心から再計算) |
 
-## 4. 書き換えが必要な箇所
+## 3.5. M1 実装方針 (確定): 双対を primary mesh として書き出す
+
+設計検討の結果、**M1 は solver 側を一切変更せずに実現できる**ことが判明した (当初計画の
+`readMesh` dual 分岐や新 BC カーネルは不要だった)。具体的には:
+
+- `convertGmshToForge` が node モードで `buildMedianDual()` → `replacePrimalWithDual()` を実行し、
+  双対メッシュ (CV=ノード、内部面=双対面、境界面=半割双対面) を **そのまま `/MESH /PLANES /CELLS
+  /BCONDS /VALUE` に primary mesh として書き出す** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp))。
+- solver の `readMesh` はそれを通常メッシュとして読み、**境界半割面 (1 セルの境界 plane) から既存ロジックで
+  自動的にゴースト CV を生成する**。よって `setMeshMap_d`・構造量カーネル・対流フラックス・既存 BC
+  カーネル (`wall_d`/`inlet_*`/`outlet_*`/`slip_d`) はすべて無変更で node-centered を扱える。
+- **境界はゴースト経由の弱形式**: 各境界ノードの半割面に対しゴースト CV を置き、既存 BC カーネルが
+  ゴースト状態を設定 → 対流フラックスがゴースト経由で境界フラックスを与える (cell-centered と同型)。
+  ゴースト位置は `pc = node + h·n_out` (h=0.5√双対体積) で非退化にする (M1 は非粘性 1 次のため位置は
+  フラックスに影響しない)。**より厳密な弱形式境界カーネルは M2+ の精度改善として残す**。
+- 可視化 (`output.cpp` の CONNE/XDMF) は cell topology 前提なので node モードでは正しくない (M4 で対応)。
+  `/VALUE` 配列自体は CV (ノード) 単位で正しく、数値比較は可能。
+
+## 4. 書き換えが必要な箇所 (M2 以降)
 
 - **境界条件** ([boundaryCond_d.cu](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu)):
   現状はゴーストセル法 (`bplane_cell` / `bplane_cell_ghst` に対称/反射値)。node では境界ノードが

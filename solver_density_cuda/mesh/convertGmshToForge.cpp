@@ -34,20 +34,23 @@ int main(int argc , char *argv[])
     cout << "-------------------------------- \n";
     readBcondConfig(cfg , gmsh.bconds);
 
+    // node-centered (median-dual) モードでは、双対メッシュを構築して primal を置き換え、
+    // 「双対メッシュを primary mesh」として書き出す (solver 側は無変更で node-centered を扱える)。
+    // 初期値は置き換え後の CV (=ノード) 上で設定する必要があるため、setInitial より前に置換する。
+    if (cfg.discretization == "node") {
+        cout << "-------------------------------- \n";
+        cout << "*** Build Median-Dual Mesh   *** \n";
+        cout << "-------------------------------- \n";
+        gmsh.buildMedianDual();
+        gmsh.replacePrimalWithDual();
+    }
+
     cout << "-------------------------- \n";
     cout << "*** Set Initial Values *** \n";
     cout << "-------------------------- \n";
     variables var = variables();
     var.allocVariables(cfg.gpu , gmsh);
     setInitial(cfg , gmsh , var);
-
-    // node-centered (median-dual) モードでは双対メッシュを構築し /DUAL を併記する。
-    if (cfg.discretization == "node") {
-        cout << "-------------------------------- \n";
-        cout << "*** Build Median-Dual Mesh   *** \n";
-        cout << "-------------------------------- \n";
-        gmsh.buildMedianDual();
-    }
 
     cout << "------------------------ \n";
     cout << "*** Write Input HDF5 *** \n";
