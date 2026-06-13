@@ -185,3 +185,12 @@
     弱形式境界は hiM の特効薬ではなく**粘性 (壁せん断・熱流) の正確評価用**と整理し、粘性着手時に `boundaryNode_d.cu` を作る。
   - 新フラグ `bndFirstOrder` (mesh: 既定 0) を `solverConfig` に追加。run: `run_dual_hiM_node_m3{diag,imp}/`。
   **次**: 粘性 (viscous) を dual で有効化する際に弱形式境界 (`boundaryNode_d.cu`) を実装。軸対称 (M3 後半) も。
+- `2026-06-14` — **node-centered 軸対称 (case/29) + 軸 R=0 修正**。軸ノード(R=0)が CV 中心になると回転体積
+  `A_planar×R` が ≈0 → 除算爆発 (case/29 conical で 272 軸 CV、体積比 1.5e20、step3 で NaN)。
+  **修正**: dual セル重心に**双対 CV の面積加重重心** (`dualCentroid`, gmshReader) を使用 (軸上でも R>0)。
+  → 軸 CV 0 個・体積比 2.4e4 (cell 1.2e4 と同等) に改善。平面 bump loM node は無回帰 (ro_mean/Ux_mean が M2 と一致)。
+  **case/29 Euler 軸対称 (conical, viscMethod=0 真の Euler, 1 次, implicit cfl_pseudo=2)**: cell/node とも PASS 収束、
+  場一致 (Mach max 3.995 vs 4.000・mean 1.864 vs 1.865、chamber 4MPa 保存、NaN無し)。
+  **注**: 初め viscMethod=1(Sutherland)で「visc=0 でも粘性が残り」発散していた→真 Euler は viscMethod=0。
+  run: `case/29.bell_vs_conical/run_dual_eul_conical_{cell,node}_m3/`。
+  **次**: 2 次 Euler (bndFirstOrder+staged)・bell ノズル → 弱形式境界 (`boundaryNode_d.cu`) → viscous (no-slip 壁)。

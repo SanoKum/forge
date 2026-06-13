@@ -42,6 +42,9 @@ public:
     // CV = ノード、双対面 = primal エッジ (2D では plane と 1:1)、CV 重心 = ノード座標。
     bool dualBuilt = false;
     std::vector<geom_float> dualVolume;     // [nNodes] 各ノードの双対 CV 体積 (2D は面積×単位厚み)
+    std::vector<geom_float> dualCentroid;   // [nNodes*3] 双対 CV の面積加重重心 (FV セル中心)。
+                                            // 軸対称で重要: 軸上ノード(R=0)でも CV 重心 R>0 となり
+                                            // 回転体積 volume=A_planar*r が非ゼロになる (theory §3.4)。
     std::vector<geom_int>   dualFaceCells;  // [nDualFaces*2] 双対面が繋ぐ 2 ノード {n0,n1}
     std::vector<geom_float> dualFaceVect;   // [nDualFaces*3] 双対面ベクトル (n0->n1 向き)
     std::vector<geom_float> dualFaceArea;   // [nDualFaces]   |dualFaceVect|
@@ -1313,6 +1316,7 @@ public:
         const geom_int nP = this->nPlanes; // 2D では plane = primal エッジ (一意)
 
         dualVolume.assign(nN, 0.0);
+        dualCentroid.assign(nN * 3, 0.0);
         dualFaceCells.assign(nP * 2, -1);
         dualFaceVect.assign(nP * 3, 0.0);
         dualFaceArea.assign(nP, 0.0);
@@ -1399,15 +1403,39 @@ public:
                     exit(EXIT_FAILURE);
                 }
 
-                // 四角形 A -> M1 -> G -> M2 を shoelace (絶対値) で面積化
+                // 四角形 A -> M1 -> G -> M2 の面積と面積加重重心 (shoelace)。
                 const geom_float px[4] = { nodes[A].coords[0], mid[0][0], Gx, mid[1][0] };
                 const geom_float py[4] = { nodes[A].coords[1], mid[0][1], Gy, mid[1][1] };
-                geom_float area2 = 0.0;
+                geom_float area2 = 0.0, cx2 = 0.0, cy2 = 0.0;
                 for (int k = 0; k < 4; ++k) {
                     const int kn = (k + 1) % 4;
-                    area2 += px[k]*py[kn] - px[kn]*py[k];
+                    const geom_float cross = px[k]*py[kn] - px[kn]*py[k];
+                    area2 += cross;
+                    cx2 += (px[k] + px[kn]) * cross;
+                    cy2 += (py[k] + py[kn]) * cross;
                 }
-                dualVolume[A] += 0.5 * std::fabs(area2);
+                const geom_float subArea = 0.5 * std::fabs(area2);
+                dualVolume[A] += subArea;
+                // ポリゴン重心 = (1/6A)Σ(p_k+p_{k+1})cross。area2 の符号と整合させ subArea 加重。
+                if (std::fabs(area2) > 0.0) {
+                    dualCentroid[3*A + 0] += subArea * (cx2 / (3.0 * area2));
+                    dualCentroid[3*A + 1] += subArea * (cy2 / (3.0 * area2));
+                    // z は 2D で node 値 (押し出し厚みの中央)。
+                    dualCentroid[3*A + 2] += subArea * nodes[A].coords[2];
+                }
+            }
+        }
+        // 面積加重重心を正規化 (= 双対 CV の FV セル中心)。
+        for (geom_int in = 0; in < nN; ++in) {
+            const geom_float v = dualVolume[in];
+            if (v > 0.0) {
+                dualCentroid[3*in + 0] /= v;
+                dualCentroid[3*in + 1] /= v;
+                dualCentroid[3*in + 2] /= v;
+            } else {
+                dualCentroid[3*in + 0] = nodes[in].coords[0];
+                dualCentroid[3*in + 1] = nodes[in].coords[1];
+                dualCentroid[3*in + 2] = nodes[in].coords[2];
             }
         }
 
@@ -1572,7 +1600,9 @@ public:
         // ---- 新 cells (CV = ノード) ----
         std::vector<cell> newCells(nN);
         for (geom_int i = 0; i < nN; ++i) {
-            newCells[i].centCoords = nodes[i].coords;       // CV 重心 = ノード座標
+            // CV 重心 = 双対 CV の面積加重重心 (FV セル中心)。軸対称で軸上ノード(R=0)でも R>0 となり
+            // 回転体積が非ゼロになる (theory §3.4)。内部ノードでは ≈ ノード座標。
+            newCells[i].centCoords = { dualCentroid[3*i+0], dualCentroid[3*i+1], dualCentroid[3*i+2] };
             newCells[i].volume     = dualVolume[i];
             newCells[i].ieleType   = 2;                     // placeholder (output CONNE 用, viz は M4)
             newCells[i].iNodes      = { i };
