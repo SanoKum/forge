@@ -174,6 +174,11 @@
   - **結論 (確定)**: **node-centered 軸対称 Euler は bulk で正しい (SU2/cell に ~1% 一致)。欠陥は r=0 軸線の局所処理のみ**。
     explicit は軸 CV の spectral→0 で step1 発散 (implicit 前提)。near-axis 包括対策 (全方程式対称+dt/spectral フロア+
     連携 Jacobian) が唯一の残課題。run: `run_dual_eul_{conical,bell}_{cell,node}_m3/`, `run_su2cmp_su2_euler/`。
+  - **explicit 追検証 (detectNaN + subsonic)**: supersonic conical explicit は **step2 で exit-wall 角 (x=exit,r=rmax) の
+    outlet 近傍**が発散 (detectNaN: ro NaN @ CV(x=0.086,r=0.033)、P→2.5e11)。さらに**低圧subsonic (Pt=110k) でも explicit は発散**。
+    → **node-centered 軸対称は Mach によらず explicit で回らない (軸 CV が explicit 不安定) → implicit 必須**。
+    よって SU2 流残差射影 (res_roUy=0) の explicit 有効性は本系では検証不能。検証には平面 (case/24, 既に node 粘性壁 OK) か、
+    軸を持たない gentle 系が要る。**結論不変: node 軸対称は implicit 前提、near-axis 包括対策が残課題。**
 - `2026-06-14` — **M2 収束判定の訂正 (反省)**。上記 M2 報告の多くは **NaN チェックのみで収束を確認しておらず誤り**だった。
   新ツール `solver_density_cuda/tools/check_convergence.py` で全残差列を再判定した結果:
   - **explicit の channel M1・bump loM/hiM は全て未収束のトランジェント** (0.6〜2.5 桁しか低下せず `falling`)。
