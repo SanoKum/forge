@@ -198,3 +198,15 @@
   軸-inlet 角 (x=inlet, r=0)、Mach max **4.915 vs cell 4.015** が軸-exit。27 セルが P>4MPa、全て inlet-axis。
   → **CV 重心修正で軸ゼロ体積爆発は解消したが、node-centered の near-axis (r=0 境界角) 処理に残課題**。
   bell・2 次・viscous の前に near-axis 処理 (軸 BC・inlet 角・r 重み) の検討が要る。
+- `2026-06-14` — **M3 切り分け (重要): 壁は OK、軸が blocker**。
+  - **near-axis 角オーバーシュートの試行は全て発散** (軸ノード roUy=0 強制→roe<0で全域NaN、軸ソース抑制→step51破綻)。
+    半径方向圧力ソースは軸 CV にも load-bearing で、安易な対称強制は不可。baseline は収束 (corner 1 セルのみ過大)。
+    infra (`mesh.axis_flag_d`/`enforceAxisSymmetry_d`) は残置・既定 off。
+  - **bell Euler 軸対称**: conical と同様 cell/node とも PASS、bulk 一致 (Mach mean 1.926 vs 1.926)、node に同じ
+    inlet-axis corner オーバーシュート (P 6.82MPa, 1 セル)。run: `run_dual_eul_bell_{cell,node}_m3/`。
+  - **node-centered no-slip 粘性壁は planar で OK と判明**: `case/24` channel viscous (平面, 非軸対称) を node で実行 →
+    **発散せず cell と追従** (ro_mean 1.178 一致, NaN無し, 両者 still converging)。run: `case/24/run_dual_visc_{cell,node}_m3diag/`。
+    → **既存ゴースト壁 + CV 重心で node 粘性壁は動く。弱形式 no-slip 壁 (`boundaryNode_d.cu`) は当面不要**。
+  - **結論**: case/29 viscous (軸対称) の step5 発散は **壁ではなく軸 (near-axis)** が原因。M3 の残 blocker は
+    node-centered の **near-axis (r=0) 処理**であり、これは [[architecture-axisym-axis-singularity]] と同種の難問。
+    壁・平面 viscous・Euler (bulk) は node で動く。**次の本丸は near-axis 専用の腰を据えた対策**。
