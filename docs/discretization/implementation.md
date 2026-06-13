@@ -97,6 +97,10 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   **ただし残課題**: これは軸上のゼロ体積爆発を解消するだけで、node-centered の near-axis 精度問題は別途残る。
   case/29 conical Euler の収束場で、node は軸-inlet 角に非物理 P オーバーシュート (P>chamber Pt)・軸-exit に Mach
   スパイクが出る (bulk は cell と一致)。軸 BC・inlet 角・r 重みの near-axis 処理は今後の課題 ([architecture-axisym-axis-singularity] と関連)。
+  **試行 (いずれも発散→不採用)**: (1) 軸ノードで `roUy=0` 毎ステージ強制 (roe から半径 KE 除去) → 過渡で roe<0→全域 NaN。
+  (2) 軸ノードで半径方向圧力ソース抑制 → ソースは軸 CV の釣り合いに load-bearing で step~51 破綻。
+  **結論: 半径ソースは軸 CV にも必要で安易な対称強制は不可**。baseline (ソース維持) は収束し corner オーバーシュートのみ残る。
+  infra (`mesh.axis_flag_d`, `enforceAxisSymmetry_d`) は残置・既定 off。corner の正攻法は別途要検討。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
