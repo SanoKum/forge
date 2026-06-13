@@ -92,6 +92,10 @@ public:
     // 離散化レイアウト。"cell": cell-centered FVM (既定・従来)、"node": node-centered
     // (中点双対 median-dual) FVM。docs/discretization/ 参照。
     std::string discretization = "cell";
+
+    // 境界隣接 CV の 2 次再構成を 1 次に落とす (0:off 既定, 1:on)。node-centered の壁近傍
+    // 高マッハ発散の原因切り分け診断 / ロバスト化。docs/discretization/implementation.md §7。
+    int bndFirstOrder = 0;
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
 

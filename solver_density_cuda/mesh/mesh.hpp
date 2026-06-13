@@ -150,7 +150,11 @@ public:
     geom_int* map_cell_planes_index_d; 
     geom_int* map_cell_planes_d; 
 
-    geom_int* normal_halo_planes_d; // 
+    geom_int* normal_halo_planes_d; //
+
+    // 境界隣接 CV フラグ [nCells] (境界面を持つ CV=1)。node-centered の壁近傍ロバスト化
+    // (bndFirstOrder) の診断・対策で、境界ノードの 2 次再構成を 1 次に落とすのに使う。
+    geom_int* bnode_flag_d = nullptr;
 
     mesh();
     ~mesh();

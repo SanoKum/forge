@@ -82,3 +82,19 @@ mesh:
 
 1. `convMethod: 0, limiter: 2` で安定した解を得る（例：10000ステップ）
 2. その結果を `valueFileName` で引き継ぎ、`convMethod: 1, limiter: 2` で計算する
+
+## discretization / bndFirstOrder — 離散化レイアウト (node-centered)
+
+`mesh.discretization` (任意, 既定 `"cell"`)。`"node"` で node-centered (中点双対 median-dual) 化。
+詳細は [`docs/discretization/`](../docs/discretization/)。
+
+`mesh.bndFirstOrder` (任意, 既定 `0`)。`1` で境界隣接 CV の 2 次 MUSCL 再構成を 1 次に落とす。
+node-centered の壁近傍高マッハ発散 (近壁 2 次再構成のロバスト性問題) の対策。explicit では
+リミットサイクルが残ることがあり、implicit と併用すると完全収束する (bump Mach1.65 で確認)。
+cell-centered では通常不要 (既定 0)。
+
+```yaml
+mesh:
+  discretization: "node"   # cell | node
+  bndFirstOrder: 1         # node-centered の壁近傍高マッハ安定化
+```

@@ -76,10 +76,10 @@
    **高マッハ 2 次 MUSCL が壁近傍で発散** (M1 のゴースト便宜由来) → **M3 弱形式境界が必要**と確定。
 
 ### M3 — 弱形式境界 (前倒し) + 粘性 + 軸対称
-7.5. **弱形式境界 (前倒し, 別ファイル)**: `cuda_forge/boundaryNode_d.cu` (+ `.cuh`) を新規追加し、
-   node モードの勾配・対流フラックスの境界寄与をゴースト平均から弱形式へ差し替える
-   (docs/discretization/{theory §6, implementation §7})。既存 cell-centered BC は無変更。
-   目標: bump hiM (Mach1.65) の 2 次 MUSCL 発散を解消。cell モードは回帰でビット一致確認。
+7.5. **[診断完了]** hiM 発散の切り分け診断 `bndFirstOrder` を実装 (境界隣接 CV の再構成勾配を 0 化)。
+   **結果: hiM node の NaN 発散は「壁近傍 2 次再構成のロバスト性」が真因で「境界値」ではないと確定**。
+   `bndFirstOrder=1` で発散解消 (implicit と併用で完全収束 PASS)。詳細は §9 `M3 診断`。
+   → 弱形式境界 (`boundaryNode_d.cu`) は hiM の特効薬ではなく**粘性 (壁せん断/熱流) 用**として粘性着手時に作る。
 8. viscous dual 有効化、層流ケース (`case/15` or `24`)。
 9. 双対体積の `r` 重み + 軸上マスク、`case/23.axi_nozzle` で near-axis 改善有無を比較。
 
@@ -176,3 +176,12 @@
     トランジェント同士だった証左。run: `run_dual_imp_{cell,node}_m2chk/`。
   - ツール改良: init=0 の near-zero 列を inactive 扱い、未収束理由を `still converging`(falling)/`stalled`(flat)/
     `diverged`(NaN/rising) で区別表示。
+- `2026-06-14` — **M3 診断: hiM 発散の真因を特定**。弱形式境界の実装前に切り分け診断 `bndFirstOrder`
+  (境界隣接 CV `mesh.bnode_flag_d` の再構成勾配を `zeroBndNodeGradient_d` で 0 化=境界側 1 次) を実装し bump hiM で検証:
+  - **`bndFirstOrder=1` で node hiM 2 次 MUSCL の NaN 発散 (step~400) が解消**。explicit は ~1e-3 のリミットサイクル
+    (min rms_ro 7.8e-4 で振動、発散ではない)、**implicit + bndFirstOrder で全列 PASS 完全収束**。
+  - cell モードは flag 既定 0 で無影響 (新コードは `bndFirstOrder==1` で完全ガード)。
+  - **結論**: hiM 発散は**近壁 2 次再構成のロバスト性**が真因で、**境界値 (φ_b) ではない** (slip では弱形式 φ_b=現状平均で一致)。
+    弱形式境界は hiM の特効薬ではなく**粘性 (壁せん断・熱流) の正確評価用**と整理し、粘性着手時に `boundaryNode_d.cu` を作る。
+  - 新フラグ `bndFirstOrder` (mesh: 既定 0) を `solverConfig` に追加。run: `run_dual_hiM_node_m3{diag,imp}/`。
+  **次**: 粘性 (viscous) を dual で有効化する際に弱形式境界 (`boundaryNode_d.cu`) を実装。軸対称 (M3 後半) も。
