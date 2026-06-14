@@ -240,9 +240,9 @@ __global__ void SLAU_d
  flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
  flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
 
- // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピー H=cpT-gL+ek に補正する。
- // g_total==nullptr (凝縮 off) のとき補正せず単相のまま (ビット不変)。cp_cpg は CPG 比熱。
- flow_float cp_cpg, flow_float* g_total, flow_float* T_cell,
+ // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正する。g_total==nullptr で従来 (ビット不変)。
+ // cp_cpg=CPG 比熱 (pure)。condModel=凝縮種 (0:N2, 1:H2O carrier の潜熱選択)。
+ flow_float cp_cpg, flow_float* g_total, flow_float* T_cell, int condModel,
 
  // mesh structure
  geom_int nCells,
@@ -408,6 +408,13 @@ __global__ void SLAU_d
                 const double Tr = (double)P_R/((double)ro_R*Rg);
                 h_p = (flow_float)(thermo_h_mass(sp[0], Tl) + 0.5*(double)velocity2_L);
                 h_m = (flow_float)(thermo_h_mass(sp[0], Tr) + 0.5*(double)velocity2_R);
+            }
+            // carrier+condensible (H2O in N2) 二相補正: 凝縮した水の潜熱を引く
+            //   h_2phase = h_gas^全蒸気 - g L_w + ek。気相混合 h は全蒸気なので -g L_w を足すだけ。
+            if (g_total != nullptr) {
+                const CondSpeciesProps cprL = (condModel == 1) ? condProps_H2O() : condProps_N2();
+                h_p -= (flow_float)((double)g_total[ic0]*cond_latent(cprL, (double)T_cell[ic0]));
+                h_m -= (flow_float)((double)g_total[ic1]*cond_latent(cprL, (double)T_cell[ic1]));
             }
         } else {
             h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
@@ -2736,7 +2743,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
             species_roY_device_ptr(),
             var.c_d["Rmix"],
-            cfg.cp, cond_g, var.c_d["T"],
+            cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
 
             // mesh structure
             msh.nCells,

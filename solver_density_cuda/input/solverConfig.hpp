@@ -144,6 +144,10 @@ public:
     // Phase 1 はモーメントを受動スカラー (ソース=0) として輸送するのみ。既定 off で従来経路ビット不変。
     int condensation = 0;    // 0: off (既定), 1: on
     int nCondSpecies = 0;    // 凝縮種数。condensation==1 のとき >=1。当面 1 (N2)
+    int condModel = 0;       // 凝縮種の物性/核生成/成長モデル。0: N2 (CNT_Iland+Goodheart, CPG),
+                             //   1: H2O (Murphy-Koop, CNT+Kantrowitz+Hertz-Knudsen, carrier+TP)
+    int condGasSpecies = -1; // carrier+condensible: 凝縮する気相化学種の index (roY{s})。
+                             //   -1: pure-condensible (気相=凝縮種, N2 Arthur)。>=0: H2O 等の希薄凝縮 (Wyslouzil)
       //          int isCompressible = physProp["isCompressible"].as<int>();
       //          if (isCompressible == 0) flow_float ro = physProp["isCompressible"]["ro"].as<flow_float>();
       //          flow_float visc = physProp["visc"].as<flow_float>();

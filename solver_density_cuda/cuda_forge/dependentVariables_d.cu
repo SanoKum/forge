@@ -19,6 +19,7 @@ __global__ void dependentVariables_d
 
  // 非平衡凝縮 (一温度 二相 EOS)。condensation==0 のとき従来経路 (ビット不変)。
  int condensation , int nCondSpecies , flow_float** rog ,
+ int condGasSpecies , int condModel ,   // carrier+condensible: 凝縮気相種 index / モデル(0:N2,1:H2O)
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -93,18 +94,28 @@ __global__ void dependentVariables_d
 
             // 非平衡凝縮 (一温度 二相 EOS): 総液相質量分率 g を集計。condensation==0 で g=0 (従来経路)。
             double g_liq = 0.0;
+            const bool carrier = (condensation == 1 && condGasSpecies >= 0);
             if (condensation == 1 && rog != nullptr) {
                 for (int s = 0; s < nCondSpecies; ++s) {
                     double gs = (double)rog[s][ic] / (double)ro_temp;
                     if (gs > 0.0) g_liq += gs;
                 }
-                if (g_liq > 0.99) g_liq = 0.99;   // realizability
-                if (g_liq < 0.0)  g_liq = 0.0;
+                // realizability: carrier は g≤Y_凝縮種 (蒸気以上は凝縮しない)、pure は g≤0.99。
+                if (carrier && roY != nullptr) {
+                    double Yw = (double)roY[condGasSpecies][ic]/(double)ro_temp;
+                    if (g_liq > Yw) g_liq = (Yw > 0.0 ? Yw : 0.0);
+                } else if (g_liq > 0.99) g_liq = 0.99;
+                if (g_liq < 0.0) g_liq = 0.0;
             }
 
-            // g≈0 は従来 thermo_T_from_e で厳密に単相 TP に縮約。g>0 のみ二相反転。
+            const CondSpeciesProps cprops = (condModel == 1) ? condProps_H2O() : condProps_N2();
+            const double Rw = cprops.R;   // 凝縮種の比気体定数 (carrier: 蒸気分圧/EOS に使用)
+
+            // 温度反転。g≈0 は従来 thermo_T_from_e で厳密縮約。
             double Tnew;
-            if (g_liq > 1.0e-12) {
+            if (g_liq > 1.0e-12 && carrier) {
+                Tnew = cond_T_from_e_carrier(sp, nSpecies, Y, e_in, g_liq, Rw, cprops, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
+            } else if (g_liq > 1.0e-12) {
                 Tnew = cond_T_from_e_onetemp(sp, nSpecies, Y, e_in, g_liq, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
             } else {
                 Tnew = thermo_T_from_e(sp, nSpecies, Y, e_in, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
@@ -112,19 +123,24 @@ __global__ void dependentVariables_d
 
             const double Rmix  = thermo_R_mix (sp, nSpecies, Y);
             double cpmix, hmix;
-            thermo_cph_mix(sp, nSpecies, Y, Tnew, &cpmix, &hmix);  // cp,h を 1 スイープ (気相)
+            thermo_cph_mix(sp, nSpecies, Y, Tnew, &cpmix, &hmix);  // cp,h を 1 スイープ (全蒸気混合)
             const double cvmix = cpmix - Rmix;
             const double gmix  = cpmix / (cvmix > 1.0e-6 ? cvmix : 1.0e-6);
 
-            // 気相内部エネルギー e_v と混合内部エネルギー e_mix = e_v + g R T - g L(T)
-            // (e_l=e_v+R_vT-L)。g=0 → e_v (従来と一致)。
             const double e_v   = hmix - Rmix*Tnew;
-            const double Lcond = (g_liq > 1.0e-12) ? n2_latent(Tnew) : 0.0;
-            const double e_mix = e_v + g_liq*Rmix*Tnew - g_liq*Lcond;
-            const double oneMg = 1.0 - g_liq;
-
-            // 圧力: 液滴は圧力を持たない。p = (1-g)ρ R_v T (g=0 → 従来 ρ R T)。
-            double Pnew = (double)ro_temp * oneMg * Rmix * Tnew;
+            const double Lcond = (g_liq > 1.0e-12) ? cond_latent(cprops, Tnew) : 0.0;
+            double e_mix, Pnew, oneMg;
+            if (carrier) {
+                // carrier+condensible: e_mix=e_全蒸気+g(R_w T-L)、p=ρT(R_mix-g R_w)(凝縮で蒸気モル減)。
+                e_mix = e_v + g_liq*(Rw*Tnew - Lcond);
+                Pnew  = (double)ro_temp * Tnew * (Rmix - g_liq*Rw);
+                oneMg = 1.0;  // 気相質量は別途、p で表現済
+            } else {
+                // pure-condensible (気相=凝縮種): e_l=e_v+R_vT-L、p=(1-g)ρR T。
+                e_mix = e_v + g_liq*Rmix*Tnew - g_liq*Lcond;
+                oneMg = 1.0 - g_liq;
+                Pnew  = (double)ro_temp * oneMg * Rmix * Tnew;
+            }
             if (Pnew < 1.0) Pnew = 1.0;
 
             T[ic]         = (flow_float)Tnew;
@@ -210,6 +226,7 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
 
         // 非平衡凝縮 (二相 EOS)。condensation==0 で rog=nullptr/g=0 → 従来経路ビット不変。
         cfg.condensation , var.nCondSpeciesRegistered , cond_rog_device_ptr() ,
+        cfg.condGasSpecies , cfg.condModel ,
 
         // mesh structure
         msh.nCells_all , msh.nCells ,

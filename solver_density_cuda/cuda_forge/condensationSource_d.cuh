@@ -17,62 +17,73 @@
 #define COND_NA 6.02214076e23     // Avogadro [1/mol]
 #define COND_PI 3.141592653589793
 
-// 核生成 (CNT × Iland 経験補正)。J [1/(m^3 s)], r* [m] を返す。過飽和でなければ 0。
-//   J_CNT = √(2σ/(π m^3))·(ρ_v²/ρ_l)·exp(-ΔG*/(k_B T)),  ΔG*=(4/3)π r*²σ,
-//   r* = 2σ/(ρ_l R T ln S),  S=p_v/p_sat(T),  J = J_CNT·exp(A+B/T) [A=-55,B=4270].
-__host__ __device__ inline void cond_nucleation_N2(
-    double T, double p_v, double rho_v, double R, double M,
+// 核生成 (CNT × 種ごと補正)。J [1/(m^3 s)], r* [m]。過飽和でなければ 0。cprops で N2/H2O を切替。
+//   J_CNT = √(2σ/(π m^3))·(ρ_v²/ρ_l)·exp(-ΔG*/(k_B T)),  ΔG*=(4/3)π r*²σ,  r*=2σ/(ρ_l R T ln S)。
+//   N2: ×exp(A+B/T) [Iland]。H2O: 等温 CNT (キャリア N2 がクラスタを熱平衡化し Kantrowitz 非等温抑制は
+//        ~1 に量子化されるため、希薄水-N2 では等温近似。過抑制を避ける; 必要なら carrier-Kantrowitz を後段)。
+__host__ __device__ inline void cond_nucleation(
+    const CondSpeciesProps& cp, double T, double p_v, double rho_v,
     double* J_out, double* rstar_out)
 {
-    const double psat = n2_psat(T);
+    const double psat = cond_psat(cp, T);
     const double S = p_v / (psat > 1.0e-300 ? psat : 1.0e-300);
     if (S <= 1.0 || rho_v <= 0.0) { *J_out = 0.0; *rstar_out = 0.0; return; }
-
+    const double R     = cp.R;
     const double lnS   = log(S);
-    const double sigma = n2_sigma(T);
-    const double rho_l = n2_rho_cond(T);
+    const double sigma = cond_sigma(cp, T);
+    const double rho_l = cond_rho_cond(cp, T);
     const double rstar = 2.0*sigma / (rho_l*R*T*lnS);
     const double dG    = (4.0/3.0)*COND_PI*rstar*rstar*sigma;
-    const double m     = M / COND_NA;                       // 分子質量 [kg]
+    const double m     = cp.M / COND_NA;
     const double Kcnt  = sqrt(2.0*sigma/(COND_PI*m*m*m)) * (rho_v*rho_v/rho_l);
-    const double expo  = -dG/(COND_KB*T) + (-55.0 + 4270.0/T); // CNT 障壁 + Iland 補正
-    // exp 引数の下限ガード (アンダーフロー時 J=0)
-    const double J = (expo > -700.0) ? Kcnt*exp(expo) : 0.0;
+    double corr = 1.0;
+    if (cp.model == COND_MODEL_N2) corr = exp(-55.0 + 4270.0/T); // Iland 経験補正
+    // H2O: corr=1 (carrier-thermalized 等温 CNT)
+    const double expo = -dG/(COND_KB*T);
+    const double J = (expo > -700.0) ? Kcnt*exp(expo)*corr : 0.0;
     *J_out = J;
     *rstar_out = rstar;
 }
 
-// 成長率 dr/dt [m/s] (Goodheart, 平均半径 r_bar で評価)。一温度 T_d=T。
-//   dr/dt = (1/ρ_l) f_FS(Kn) (k R T²/L²) ln(p/p_sat(T)),
-//   f_FS = (1+2Kn)/(r(1+3.42Kn+5.32Kn²))·(1-r*/r),  Kn=λ/2r。
-__host__ __device__ inline double cond_growth_N2(
-    double T, double p_v, double r_bar, double rstar, double R)
+// 成長率 dr/dt [m/s]。一温度 T_d=T。N2=Goodheart(連続〜自由分子), H2O=Hertz-Knudsen(自由分子)。
+//   N2: (1/ρ_l) f_FS(Kn)(k R T²/L²) ln(p/psat)。
+//   H2O: (α/ρ_l)(p_v - p_d)/√(2π R T),  p_d=psat(T)exp(2σ/(ρ_l R T r)) [Kelvin]。
+__host__ __device__ inline double cond_growth(
+    const CondSpeciesProps& cp, double T, double p_v, double r_bar, double rstar)
 {
     if (r_bar <= 0.0) return 0.0;
-    const double psat    = n2_psat(T);
-    const double driving = log(p_v / (psat > 1.0e-300 ? psat : 1.0e-300)); // ln(p/psat) (>0 で成長)
-    const double L   = n2_latent(T);
-    const double k   = n2_kgas(T);
-    const double lam = cond_mean_free_path(T, p_v, R);
-    const double Kn  = lam/(2.0*r_bar);
-    const double fFS = (1.0+2.0*Kn)/(r_bar*(1.0+3.42*Kn+5.32*Kn*Kn)) * (1.0 - rstar/r_bar);
-    const double rho_l = n2_rho_cond(T);
-    return (1.0/rho_l)*fFS*(k*R*T*T/(L*L))*driving;
+    const double R    = cp.R;
+    const double psat = cond_psat(cp, T);
+    const double rho_l= cond_rho_cond(cp, T);
+    if (cp.model == COND_MODEL_H2O) {
+        const double sigma = cond_sigma(cp, T);
+        const double pd = psat*exp(2.0*sigma/(rho_l*R*T*r_bar)); // Kelvin 効果
+        const double alpha = 1.0; // 質量適応係数
+        return (alpha/rho_l)*(p_v - pd)/sqrt(2.0*COND_PI*R*T);
+    } else {
+        const double driving = log(p_v / (psat > 1.0e-300 ? psat : 1.0e-300));
+        const double L   = cond_latent(cp, T);
+        const double k   = n2_kgas(T);
+        const double lam = cond_mean_free_path(T, p_v, R);
+        const double Kn  = lam/(2.0*r_bar);
+        const double fFS = (1.0+2.0*Kn)/(r_bar*(1.0+3.42*Kn+5.32*Kn*Kn)) * (1.0 - rstar/r_bar);
+        return (1.0/rho_l)*fFS*(k*R*T*T/(L*L))*driving;
+    }
 }
 
-// 相変化ソースベクトル S=(S_Q0,S_Q1,S_Q2,S_g)。モーメントは保存量 (ρQn)。N2。
-__host__ __device__ inline void cond_source_vector_N2(
-    double T, double p_v, double rho, double g, double R, double M,
+// 相変化ソースベクトル S=(S_Q0,S_Q1,S_Q2,S_g)。モーメントは保存量 (ρQn)。
+//   p_v: 凝縮種の蒸気分圧 (pure=P, carrier=ρ(Y-g)R_w T)。rho_v: 蒸気密度。cprops で種を切替。
+__host__ __device__ inline void cond_source_vector(
+    const CondSpeciesProps& cp, double T, double p_v, double rho_v,
     double roQ0, double roQ1, double roQ2,
     double* SQ0, double* SQ1, double* SQ2, double* Sg)
 {
-    double rho_v = (1.0 - g)*rho;
     if (rho_v < 0.0) rho_v = 0.0;
     double J, rstar;
-    cond_nucleation_N2(T, p_v, rho_v, R, M, &J, &rstar);
+    cond_nucleation(cp, T, p_v, rho_v, &J, &rstar);
     const double r_bar = (roQ0 > 1.0e-30) ? (roQ1/roQ0) : rstar;
-    const double drdt  = (roQ0 > 1.0e-30) ? cond_growth_N2(T, p_v, r_bar, rstar, R) : 0.0;
-    const double rho_l = n2_rho_cond(T);
+    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar) : 0.0;
+    const double rho_l = cond_rho_cond(cp, T);
     *SQ0 = J;
     *SQ1 = J*rstar + roQ0*drdt;
     *SQ2 = J*rstar*rstar + 2.0*roQ1*drdt;
