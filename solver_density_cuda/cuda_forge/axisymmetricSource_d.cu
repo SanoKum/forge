@@ -78,9 +78,9 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
 {
     if (cfg.isAxisymmetric != 1) return;
 
-    // SU2 流の軸ソース OFF (axis_flag) は roUy=0 強制と併用しても block-DPLUR では発散した (下記)。
-    // 外部からの roUy 状態手術は implicit と非整合 (SU2 は Jacobian 内で対称化する)。よって既定 nullptr=ソース ON。
-    geom_int* axis_flag = nullptr;
+    // 軸 (R≤eps) でソース OFF。ソースは r 重みされない唯一の項で source/volume=P/r→∞ (r→0) が発散源。
+    // node-centered 軸対称でのみ作用 (axis_flag = ノード R≈0)。SU2 の y<EPS ソース OFF に相当。
+    geom_int* axis_flag = (cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr;
     axisymmetricSource_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells,
         var.c_d["P"],

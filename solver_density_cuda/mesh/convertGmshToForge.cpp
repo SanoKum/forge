@@ -41,6 +41,7 @@ int main(int argc , char *argv[])
         cout << "-------------------------------- \n";
         cout << "*** Build Median-Dual Mesh   *** \n";
         cout << "-------------------------------- \n";
+        gmsh.axisCentroidShift = (cfg.axisCentroidShift != 0);
         gmsh.buildMedianDual();
         gmsh.replacePrimalWithDual();
     }
