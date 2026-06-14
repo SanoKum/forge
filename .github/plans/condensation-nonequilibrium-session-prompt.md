@@ -40,6 +40,16 @@ Lin, Cheng, Luo, Qin, *On nitrogen condensation in hypersonic nozzle flows*, Sho
 > [`papers/on nitrogen condensation in hypersonic nozzle flows_summary.md`](../../papers/on%20nitrogen%20condensation%20in%20hypersonic%20nozzle%20flows_summary.md)
 > に詳細整理済み。まずこれを読むこと。
 
+### ローカル資料パス (リポジトリルートからの相対)
+
+- 主論文 PDF: `papers/on nitrogen condensation in hypersonic nozzle flows.pdf`
+  (Lin, Cheng, Luo, Qin, Shock Waves 24:179–189, 2014)
+- 上記まとめ (日本語): `papers/on nitrogen condensation in hypersonic nozzle flows_summary.md`
+- 検証ノズルの原典 (形状の一次出典): `papers/Arthur_pd_1952.pdf`
+  (P.D. Arthur PhD thesis, Caltech/GALCIT, 1952。スキャン PDF=テキスト層なし、画像描画で読む)
+- Ref.5 (製作詳細, 入手不可): Nagamatsu & Willmarth, GALCIT Memo No.6 = J. Appl. Phys. 23(10) 1089 (1952),
+  DOI 10.1063/1.1701991 (AIP 有料、NTRS/DTIC・ローカルに無し)。スロート曲率はここにも無い公算大。
+
 ## 既存実装の最良テンプレート: RANS 2 方程式 (roK/roOmega)
 
 forge は既に「移流される追加保存スカラー + stiff ソース項」を RANS (k-ω SST) で実装済み。
@@ -64,6 +74,59 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
   を検討 (核生成率 J は ln(p_v/p_sat) に指数的で極めて stiff)。
 - **float 精度の注意**: 出口 T~27K, P~200Pa まで落ちる (case/34 で確認済み)。`r*`,`J` は
   指数・対数で桁が飛ぶので、ソース評価は double で行う (forge は混合精度可)。
+
+## 設計上の重要論点 (実装前に方針を決めること)
+
+着手前に plan で次の 3 点の方針を必ず決める。安易にスカラー追加するだけでは陰解法・Roe で破綻する。
+
+### (A) 多成分凝縮への一般化 (H2O 等を見据える)
+
+- **今は凝縮する分子を 1 種類しか想定していない** (N2)。だが将来 **H2O 凝縮やその他の凝縮**に
+  使う可能性があるため、**最初から「凝縮種ごとに 4 モーメント + 物性セット」を持てる構造**で設計する。
+  - モーメント変数は `roQ0_<sp>, roQ1_<sp>, roQ2_<sp>, rog_<sp>` のように**凝縮種インデックス付き**で
+    確保し、種数 `nCondSpecies` でループする (RANS の roK/roOmega 固定 2 本とは違い、可変本数)。
+  - 物性 (飽和圧 `p_sat(T)`, 液密度 `ρ_l(T)`, 潜熱 `L(T)`, 表面張力 `σ(T)`, 経験補正 A,B) を
+    **種ごとのテーブル/構造体**にまとめ、N2 は最初の実装、H2O は係数差し替えで足せるようにする。
+  - 二相 EOS `e = e_gas + Σ_sp g_sp (e_l,sp - e_v,sp)` も種で和を取る形に。気相は当面 1 成分 (キャリア)
+    でよいが、将来「キャリアガス + 複数凝縮種」へ拡張できるよう既存の多成分 TP (`thermalMethod 2`,
+    `nSpecies`, `Y_s`) との関係を整理する (凝縮種 = 気相成分の一部が液化、という対応付け)。
+  - **当面の実装は nCondSpecies=1 (N2) で動かす**が、配列・ループ・物性 API は多種前提で書く。
+
+### (B) flux Jacobian (対流) が変わる — Roe で強く効く / SLAU は要調査
+
+- 保存ベクトルに 4×nCondSpecies 本のスカラーが増えるので、**対流フラックスの Jacobian (∂F/∂U) が
+  拡大**する。モーメントは基本「気相速度で移流される受動スカラー」だが、**二相 EOS で圧力 p が g に
+  依存する**ため、純粋な受動スカラーではなく**気相系へ弱く逆結合**する (p の固有構造が変わる)。
+  - **Roe**: 完全な Roe 行列 (固有値分解) を使うと、追加変数で**固有ベクトル/固有値構造が変わり影響大**。
+    モーメントを「移流のみ (固有値 = u_n) の付加波」として扱い、p の g 依存を Roe 平均にどう入れるかを
+    決める必要がある。素朴に分けると保存性・上流性が崩れるので注意。
+  - **SLAU**: 圧力流束と質量流束を分離する形式なので、追加スカラーは質量流束に乗せた upwind で
+    扱える見込みだが、**g 依存の圧力項が SLAU の圧力フラックスにどう入るかは未確認**。まず SLAU で
+    「モーメント=質量流束 upwind の受動スカラー、圧力は二相 EOS で評価」を実装して挙動を見る。
+  - 実装初手は **Roe より SLAU 優先** (case/34 も SLAU で回している)。Roe 対応は後段で固有構造を
+    検討してから。
+
+### (C) 陰解法 (block-DPLUR / DPLUR) の方針 — 圧力微分とソース stiff 化
+
+- 陰解法の対角/ブロック Jacobian は **∂(flux)/∂U** と **∂p/∂U** に依存する。二相化で:
+  - **圧力の微分が変わる**: `p = p(ρ, ρe, ρu_i, g)` となり (e=(1-g)e_v+g e_l)、`∂p/∂(roe)`,
+    `∂p/∂ro` に加え **`∂p/∂(rog)` が新たに出る**。既存の implicit (scalar/block DPLUR) の圧力微分
+    (`solverConfig`/`timeIntegration` 周り、`cuda_forge/implicitCorrection_d.cu`,
+    `timeIntegration_d.cu`, axisym 源 Jacobian の既存実装が参考) を**二相対応に拡張**する作戦が要る。
+  - **核生成・成長ソースが極めて stiff**: `J ∝ exp(-ΔG*/kT)`, `dr/dt ∝ ln(p/p_sat(T_d))` は
+    過飽和に指数的・対数的で、陽な積分では時間刻みが潰れる。**ソースの point-implicit 化**
+    (`∂S/∂U` を対角に組み込む) が事実上必須。RANS の SST ソース damping
+    (`run_*`/`ransSource` の point-implicit、flat_plate SST の commit 履歴) が**直接の手本**。
+  - **結合度の選択**: ①モーメントを気相と**疎結合 (スカラー DPLUR で別個に陰)** + ソース point-implicit、
+    ②気相+モーメントを**密結合 block** で解く、の二択。まず ① (実装が軽く安定) で立ち上げ、収束が
+    悪ければ ② を検討、と plan に明記する。
+  - **fractional-step との整合**: 「対流 (既存陰解法) → 凝縮ソース (point-implicit サブステップ)」の
+    分離なら、対流側 Jacobian は圧力の g 依存だけ直せばよく、ソースの stiff 性はサブステップ側に閉じる。
+    これを既定方針の候補とする。
+
+> まとめ: **(B) 対流 Jacobian (特に Roe)** と **(C) 陰解法の圧力微分 + ソース point-implicit** は
+> 「スカラーを足すだけ」では済まない中核課題。plan の段階で具体的な数式 (∂p/∂rog, ∂S/∂U) と
+> 結合戦略 (疎結合+split を初手とする) を書き下してから実装に入ること。
 
 ## 検証計画
 
@@ -107,5 +170,9 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
 > `papers/on nitrogen condensation in hypersonic nozzle flows_summary.md` を読み、AGENTS.md の
 > 開発フローに従って (1) docs/condensation/theory.md, (2) docs/condensation/implementation.md,
 > (3) .github/plans/condensation-nonequilibrium.md を作成してから実装に入って。実装は既存の RANS
-> 2 方程式 (roK/roOmega) の追加保存スカラー+ソースの骨格を流用する方針で。検証は case/34 の
-> Arthur ノズルで dry 一致 → 凝縮 ON で静圧上振れ、の順。
+> 2 方程式 (roK/roOmega) の追加保存スカラー+ソースの骨格を流用する方針で。ただし「設計上の重要論点」
+> (A) 多成分凝縮 (H2O 等) への一般化 = 凝縮種ごとに 4 モーメント+物性を持てる構造 (当面 N2 1 種で動かす)、
+> (B) 対流 flux Jacobian の変化 (Roe で強く効く・SLAU は要調査、SLAU 優先)、(C) 陰解法の圧力微分
+> ∂p/∂rog とソース point-implicit (疎結合+fractional-step を初手) — の 3 点の方針を plan で先に
+> 数式込みで決めてから着手すること。検証は case/34 の Arthur ノズルで dry 一致 → 凝縮 ON で静圧
+> 上振れ、の順。
