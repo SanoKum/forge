@@ -55,6 +55,8 @@ L/R 状態の `roe_L/Ht_L/ca_L` (および R 側) を NASA で再構成。Roe �
 - `species: [N2, O2, ...]` — 混合構成 (順序が index $s$)。
 - `speciesDBFile` — 外部 NASA-9/LJ DB (yaml)。空なら内蔵 DB。
 - `speciesDiffusionMethod` (0:定数Sc / 1:kinetic 混合平均)、`Sc`、`Sc_t`。
+  乱流シュミット数 `Sc_t` は `physProp.Sc_t` または `turbulence.turbulentSchmidt` で設定する
+  (両方あれば後者を優先。`turbulence.turbulentPrandtl` と同じブロックで揃えられる)。既定 0.7。
 - `nSpecies` は `species` の要素数。未指定で `thermalMethod==2` なら既定 N2 単成分。
 
 ## 5b. 多成分化学種輸送 (M2) `cuda_forge/speciesTransport_d.{cuh,cu}`

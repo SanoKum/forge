@@ -335,6 +335,15 @@ void solverConfig::read(std::string fname)
         if (physProp["speciesDiffusionMethod"]) this->speciesDiffusionMethod = physProp["speciesDiffusionMethod"].as<int>();
         if (physProp["Sc"])                     this->Sc = physProp["Sc"].as<double>();
         if (physProp["Sc_t"])                   this->Sc_t = physProp["Sc_t"].as<double>();
+        // 乱流シュミット数は turbulence.turbulentSchmidt でも設定可 (turbulentPrandtl と同じ場所)。
+        // 後方互換: physProp.Sc_t も有効。両方あれば turbulence 側を優先する。
+        if (config["turbulence"] && config["turbulence"]["turbulentSchmidt"]) {
+            this->Sc_t = config["turbulence"]["turbulentSchmidt"].as<flow_float>();
+            std::cout << "'turbulentSchmidt' in 'turbulence': " << this->Sc_t << std::endl;
+        }
+        if (this->Sc_t <= 0.0) {
+            throw std::runtime_error("Turbulent Schmidt number (Sc_t / turbulentSchmidt) must be positive.");
+        }
         if (this->thermalMethod == 2 && this->speciesNames.empty()) {
             // 既定: 単成分 N2 (CEA 検証用)
             this->speciesNames.push_back("N2");

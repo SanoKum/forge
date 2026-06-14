@@ -1,0 +1,28 @@
+inlet:
+  physID: 1
+  kind: inlet_uniformVelocity   # スロート直下の超音速入口 (M=1.05): ρ,U,Ps を全量固定
+  outputHDFflg: 0
+  ints:
+  floats:
+    ro: 5.959        # throat 静密度 [kg/m^3]  (P0=844037, T0=290, M=1.05)
+    Ux: 329.94       # throat 軸方向速度 [m/s] (= 1.05 * c)
+    Uy: 0.0
+    Uz: 0.0
+    Ps: 420250.0     # throat 静圧 [Pa]
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 100.0        # 超音速流出: 等エントロピー出口 Ps~200Pa より低くして外挿させる
+    Pt: 844037.0     # 逆流時のバックフロー全圧
+    Tt: 290.0        # 逆流時のバックフロー全温
+
+wall:
+  physID: 3
+  kind: slip          # 上壁(source-flow 直線) + 中心線(対称) + z 両面
+  outputHDFflg: 0
+  ints:
+  floats:

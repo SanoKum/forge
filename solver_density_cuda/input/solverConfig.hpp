@@ -137,7 +137,8 @@ public:
     std::string speciesDBFile = "";            // 任意: NASA-9/LJ 係数の外部 DB (yaml)。空なら内蔵 DB
     int speciesDiffusionMethod = 1;            // 0: 定数 Schmidt, 1: kinetic theory 混合平均拡散
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
-    flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数
+    flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
+                                               // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)
       //          int isCompressible = physProp["isCompressible"].as<int>();
       //          if (isCompressible == 0) flow_float ro = physProp["isCompressible"]["ro"].as<flow_float>();
       //          flow_float visc = physProp["visc"].as<flow_float>();
