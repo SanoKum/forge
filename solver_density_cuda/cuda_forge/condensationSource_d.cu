@@ -87,6 +87,34 @@ __global__ void condensation_source_d(
         if (dTl > dT_max)        theta = fmin(theta, dT_max/dTl);
         if (dg  > 0.9*avail)     theta = fmin(theta, 0.9*avail/fmax(dg,1.0e-300));
     }
+    // --- point-implicit 線形化 (生成項の自己抑制を src_jac=max(0,-∂S/∂(ρφ)) [1/s] へ) ---
+    // 凝縮の自己抑制 (g↑ → 潜熱で T↑ → p_sat↑ → 過飽和 S↓ → 生成↓) を捉える。
+    // 支配項は g: ∂S_g/∂(ρg) ≈ ∂S_g/∂T·∂T/∂(ρg)、∂T/∂(ρg)=(L-RT)/(ρ(c_v+gR))。∂S/∂T は数値微分。
+    // 成長の r̄=Q1/Q0 自己減衰を Q1 に。Q0/Q2 は自己依存が無く 0。θ で律速済みの量に整合させる。
+    {
+        const double dTp = 0.1;
+        double a0,a1,a2,ag;
+        cond_source_vector_N2(Td + dTp, Pd, rod, g, Rgas, M, q0, q1, q2, &a0, &a1, &a2, &ag);
+        if (ag < 0.0) ag = 0.0;
+        const double dSgdT  = (ag - Sg)/dTp;                 // ∂S_g/∂T (<0 で自己抑制)
+        const double dTdrog = (L - Rgas*Td)/(rod*(cv + g*Rgas)); // ∂T/∂(ρg) (>0)
+        double sjg = -theta*dSgdT*dTdrog;                    // -∂(θS_g)/∂(ρg)
+        if (sjg < 0.0) sjg = 0.0;
+        sj_g[ic] = (flow_float)sjg;
+
+        double sjq1 = 0.0;
+        if (q0 > 1.0e-30) {
+            const double dq1 = (q1 > 0.0 ? 0.01*q1 : 1.0e-3);
+            double b0,b1,b2,bg;
+            cond_source_vector_N2(Td, Pd, rod, g, Rgas, M, q0, q1 + dq1, q2, &b0, &b1, &b2, &bg);
+            const double dSQ1 = (b1 - SQ1)/dq1;              // ∂S_Q1/∂(ρQ1) (成長 r̄ 自己減衰で <0)
+            sjq1 = -theta*dSQ1;
+            if (sjq1 < 0.0) sjq1 = 0.0;
+        }
+        sj_Q1[ic] = (flow_float)sjq1;
+        // sj_Q0, sj_Q2 は kernel 冒頭で 0 設定済 (自己依存なし)
+    }
+
     SQ0 *= theta; SQ1 *= theta; SQ2 *= theta; Sg *= theta;
 
     const double v = (double)vol[ic];
