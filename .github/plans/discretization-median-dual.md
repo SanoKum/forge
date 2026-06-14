@@ -240,3 +240,16 @@
     explicit 不安定 (多方程式)**。implicit の inlet-axis corner オーバーシュートと同根。
   - **残課題は corner CV の構造/コヒーレント処理**で確定 (roUy 対称は解決済み)。候補: 角 CV を隣接へ merge して極小 CV を
     作らない / 角専用 dt フロア / SU2 CSymmetryPlane を flux+残差+Jacobian 一体移植。
+- `2026-06-14` — **[解決] near-axis corner (implicit Euler)**。長く open だった inlet/outlet-axis 角の P オーバーシュート/
+  逆流を **2 修正の併用で解決** (commit ec3372b)。①**軸 (R≤eps) で軸対称ソース OFF** (`axisymmetricSource_d` に
+  `axis_flag`、node+axisym のみ)。ソース `res_roUy += P·A_planar` は唯一 r 重みされない項で `source/volume = P/r → ∞`
+  (r→0) が発散源、対流項は r_face/r_cell キャンセルで有限 → 軸でソースを切るのが本質 (SU2 の y<EPS 相当、ユーザ提案)。
+  ②**境界半割面の重心に真の面積加重重心 (R≥0) を使う** (`dualBnodeCent`)。旧 `node+h·n_out` 便宜は pcy≈0/<0 で入口/出口
+  BC の r 重み実効面積を ~0 にし **BC が軸近傍 corner CV に届いていなかった** → 真の重心 (R>0) で入口がコーナーに届き
+  P=chamber に。(`axisCentroidShift=1` で CV セル中心に面積加重重心を使うのも維持: r_cell と r_face を一致させ対流項の r を
+  キャンセル。) **検証** (case/29 conical & bell, 軸対称 Euler implicit): PASS。corner P=3.99MPa(=chamber, overshoot 0
+  セル、旧 6.82e6)、Ux=+51.7(流入, 旧 −798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と一致**。near-axis<3% 帯
+  mean|ΔM|=0.016/max0.049 (旧 max0.95) と中/外帯並み。平面 (bump loM) 無回帰。run:
+  `case/29.bell_vs_conical/run_dual_eul_{conical_node_srcoff_keepshift, bell_node_m3, conical_cell_m3}/`。
+  **残**: explicit は startup の exit-wall 角で依然脆く発散 (cell explicit も同様、軸でなく supersonic-startup ロバスト性) →
+  implicit が実用。viscous (軸対称) を次に検証。
