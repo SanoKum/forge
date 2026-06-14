@@ -202,11 +202,16 @@ def write_csv(path, x, y, z):
 
 
 # 各 zone の x 分割数 (壁の曲率に応じて配分)
-NX_ZONE = dict(chamber=18, conv_cone=45, throat_up=30, throat_dn=28,
-               parabola=150, cone=150)
+# throat_dn (スロート下流円弧) と発散部 (parabola/cone) を増やし、スロート直後の急拡大を解像する。
+NX_ZONE = dict(chamber=18, conv_cone=45, throat_up=30, throat_dn=44,
+               parabola=200, cone=200)
+
+# 発散部 (parabola/cone) は軸方向に「スロート側へクラスタリング」する (Progression, ブロック左端=スロート側)。
+# prog_x>1 でスロート直後を細かく、出口へ向け緩やかに粗く → 急拡大を解像 (幾何は不変)。
+DIVERGING_ZONES = {"parabola", "cone"}
 
 
-def write_geo(path, which, segs, p, ny, prog_r=1.0, bump=None):
+def write_geo(path, which, segs, p, ny, prog_r=1.0, bump=None, prog_x=1.0):
     """exact primitive (Line/Circle/Bezier) による多ブロック構造軸対称メッシュ.
 
     各セグメント (chamber/conv_cone/throat_up/throat_dn/parabola|cone) を 1 ブロックとし、
@@ -282,7 +287,11 @@ def write_geo(path, which, segs, p, ny, prog_r=1.0, bump=None):
         right = newline(f"{{{pa1}, {pw1}}}")
         if inlet_curve is None:
             inlet_curve = left
-        em(f"Transfinite Curve {{{top}, {bot}}} = {nx + 1};")
+        if s["zone"] in DIVERGING_ZONES and abs(prog_x - 1.0) > 1e-9:
+            # スロート側 (ブロック左端=曲線始点 pw0/pa0) を密にする軸方向クラスタリング
+            em(f"Transfinite Curve {{{top}, {bot}}} = {nx + 1} Using Progression {prog_x};")
+        else:
+            em(f"Transfinite Curve {{{top}, {bot}}} = {nx + 1};")
         radial_spec = "Bump bump_r" if bump is not None else "Progression prog_r"
         em(f"Transfinite Curve {{{right}}} = ny + 1 Using {radial_spec};")
         if prev_vert is None:
@@ -331,6 +340,8 @@ def main():
                     help="半径方向クラスタリング比 (1.0=一様; 粘性は壁密 <1, 例 0.95)")
     ap.add_argument("--bump-r", type=float, default=None,
                     help="両端クラスタ (壁+軸, Transfinite Bump 係数 <1)。指定時 prog-r より優先")
+    ap.add_argument("--prog-x", type=float, default=1.0,
+                    help="発散部 (parabola/cone) の軸方向クラスタリング比 (1.0=一様; >1 でスロート直後を密に)")
     ap.add_argument("--outdir", type=str, default=".", help="出力先")
     args = ap.parse_args()
 
@@ -339,8 +350,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     write_csv(out / "contour_bell.csv", bx, by, bz)
     write_csv(out / "contour_conical.csv", cx, cy, cz)
-    write_geo(out / "bell.geo", "bell", bell_segs, p, args.ny, args.prog_r, args.bump_r)
-    write_geo(out / "conical.geo", "conical", conical_segs, p, args.ny, args.prog_r, args.bump_r)
+    write_geo(out / "bell.geo", "bell", bell_segs, p, args.ny, args.prog_r, args.bump_r, args.prog_x)
+    write_geo(out / "conical.geo", "conical", conical_segs, p, args.ny, args.prog_r, args.bump_r, args.prog_x)
 
     # --- 諸元テキスト ---
     lines = [
