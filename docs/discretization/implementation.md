@@ -128,6 +128,13 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   剛性)。**結論: SU2 処方は原理的に正しいが、forge では「外部状態手術」では不可。block-DPLUR の軸ノード 5×5 Jacobian で
   roUy 行を decouple する実装 (= SU2 と同じ内挿) が必須**。全フック (axis_flag/enforceAxisSymmetry/zeroAxisRadialResidual)
   は実装済み・既定無効で残置。baseline (無介入・ソース ON) は収束し corner 1 セルのみオーバーシュート。
+  **in-Jacobian decouple も試行 (SU2 と同じ「Jacobian 内で対称化」)**: block-DPLUR の軸ノード 5×5 で roUy 行 (index2) を
+  単位行に置換し rhs[2]=0 (`timeIntegration_d.cu` の `axis_flag`) → solve の中で一貫して dq_roUy=0。結果:
+  **bulk は正しい (mean Mach 1.883) が、corner 2 セル (inlet-axis, exit-axis) が Mach~1007 に発散**(P 22MPa)。
+  **重要: corner の発散は roUy ではなく軸方向運動量・密度**(Ux 逆流 −798 と同系)。**= corner CV (r=0 で両境界半割面が
+  r 重み→0 の極小 CV) は多方程式的に ill-posed で、roUy の対称化だけ (外部手術でも in-Jacobian でも) では直らない**。
+  → corner は構造的処置が要る可能性 (例: 軸-境界角ノードを隣接へ merge/除外する、専用の角クロージャ)。
+  baseline (無介入) が現状ベスト (収束・bulk 正しい・corner は P≤6.8MPa の局所オーバーシュートに留まる)。全フックは既定無効。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。

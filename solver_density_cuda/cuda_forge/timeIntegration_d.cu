@@ -781,7 +781,11 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float* A_planar,
 
  // dual-time 物理時間項の対角係数 a/Δt（定常は 0）
- flow_float unsteady_diag
+ flow_float unsteady_diag,
+
+ // node-centered 軸対称: 軸上 CV で半径方向運動量 (roUy, index2) 行を decouple する (nullptr 可)。
+ // SU2 流の対称面を Jacobian 内で課す = solve の外で状態を手術せず一貫して dq_roUy=0 を得る。
+ geom_int* axis_flag
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -879,6 +883,15 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             diag_block[2][2] += A_pl * (g1 * velocity_y + hoop);
             diag_block[2][3] += A_pl * (g1 * velocity_z);
             diag_block[2][4] += -A_pl * g1;
+        }
+
+        // SU2 流の軸対称対称面 (MARKER_SYM) を Jacobian 内で課す: 軸上 CV で roUy 行 (index 2) を単位行に
+        // 置換し rhs[2]=0 とする → solve が一貫して dq_roUy=0 を返す (他方程式は dq_roUy=0 固定で解かれる)。
+        // solve の外で状態を手術する方式は block-DPLUR と非整合で Mach~1000 に発散したが、本方式は整合的。
+        if (axis_flag != nullptr && axis_flag[ic] == 1) {
+            for (int jj = 0; jj < 5; ++jj) diag_block[2][jj] = static_cast<ST>(0.0);
+            diag_block[2][2] = static_cast<ST>(1.0);
+            rhs[2] = static_cast<ST>(0.0);
         }
 
         // diag_block を破壊して in-place で解く (solve_mat コピー排除)。
@@ -1244,7 +1257,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_20"], var.c_d["diag_block_21"], var.c_d["diag_block_22"], var.c_d["diag_block_23"], var.c_d["diag_block_24"], \
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"], \
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
-                cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef
+                cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
+                nullptr  /* axis_flag: in-Jacobian roUy decouple は corner を直さず (corner は多方程式不良) 既定無効 */
             if (cfg.implicitSolvePrecision == 1)
                 implicit_defect_correction_block_d<double><<<block_grid , block_threads>>>(FORGE_BDPLUR_ARGS);
             else
