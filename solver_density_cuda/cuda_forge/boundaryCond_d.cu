@@ -251,18 +251,21 @@ flow_float* T,
             Tc = P[ic]/(ro[ic]*R);
         }
 
-        flow_float Ux_b = Uxb[ib];
-        flow_float Uy_b = Uyb[ib];
-        flow_float Uz_b = Uzb[ib];
-        ek = 0.5*(Ux_b*Ux_b +Uy_b*Uy_b +Uz_b*Uz_b);
-
+        // 境界値 (bvar): node-centered 弱形式が直接消費する壁面値。no-slip なので速度=0 を明示
+        // (対流境界 flux=圧力のみ・勾配 φ_b 速度=0・粘性壁応力の no-work を保証)。
         T[ig]     = T[ic];
         Tsb[ib]   = Tc;
         Psb[ib]   = P[ic];
         rob[ib]   = Psb[ib]/(R*Tc);
-        roUxb[ib] = rob[ib]*Ux_b;
-        roUyb[ib] = rob[ib]*Uy_b;
-        roUzb[ib] = rob[ib]*Uz_b;
+        Uxb[ib]   = (flow_float)0.0;
+        Uyb[ib]   = (flow_float)0.0;
+        Uzb[ib]   = (flow_float)0.0;
+        roUxb[ib] = (flow_float)0.0;
+        roUyb[ib] = (flow_float)0.0;
+        roUzb[ib] = (flow_float)0.0;
+        // roeb: 壁面の全エネルギー (KE=0 なので内部エネルギーのみ)。内部セルの内部エネルギーを採る
+        // (断熱壁 ~ 内部温度)。CPG/TP 双方で成立。
+        roeb[ib]  = roe[ic] - (flow_float)0.5*(roUx[ic]*roUx[ic] + roUy[ic]*roUy[ic] + roUz[ic]*roUz[ic])/ro[ic];
     }
 };
 

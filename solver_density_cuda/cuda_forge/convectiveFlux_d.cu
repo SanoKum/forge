@@ -2671,6 +2671,14 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     dim3 dimGrid_normal_halo = dim3(ceil(msh.nNormal_halo_Planes / (flow_float)cuda_cfg.blocksize));
 
+    // node-centered 弱形式 (壁のみ): 主対流ループは「内部 + 非壁境界(ゴースト)」を処理し、末尾に並ぶ壁境界 plane
+    // (nWallHaloPlanes) を除外する。壁は別途 pressure-only の convectiveFlux_boundary_d (bvar u=0) で扱う
+    // (壁ノードは壁上に乗りミラーゴーストの幾何が退化=fx≠0.5 で質量貫通し発散するため)。
+    // inlet/outlet/axis は従来どおり主ループ+ゴーストで処理し既存の near-axis corner 修正を保つ。
+    // cell モードは全 plane を主ループで処理 (従来どおり)。
+    const geom_int convPlaneBound = (cfg.discretization == "node")
+                                  ? (msh.nNormal_halo_Planes - msh.nWallHaloPlanes) : msh.nNormal_halo_Planes;
+
     // -----------------------
     // *** sum over planes ***
     // -----------------------
@@ -2689,7 +2697,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             // mesh structure
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-            msh.nNormal_halo_Planes, msh.normal_halo_planes_d,
+            convPlaneBound, msh.normal_halo_planes_d,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
             var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
@@ -2740,7 +2748,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-            msh.nNormal_halo_Planes, msh.normal_halo_planes_d,
+            convPlaneBound, msh.normal_halo_planes_d,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
             var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
@@ -2790,7 +2798,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             // mesh structure
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-            msh.nNormal_halo_Planes, msh.normal_halo_planes_d,
+            convPlaneBound, msh.normal_halo_planes_d,
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
             var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
@@ -2844,15 +2852,18 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     gpuErrchk( cudaDeviceSynchronize() );
 
 
-    // For SLAU/ROE/HLLE the convective-flux kernel above already loops over all
-    // boundary planes via normal_halo_planes_d, with plane_cells[2*ip+1] pointing
-    // to the ghost cell whose state has been set by applyBconds(). The dedicated
-    // boundary-flux kernel below would then double-count the boundary contribution,
-    // so it is skipped for those solvers.
-    bool skipBoundaryFluxKernel = (cfg.solver == "SLAU"
+    // cell モード: SLAU/ROE/HLLE は主ループが normal_halo_planes_d 経由で全境界 plane をゴースト処理するため、
+    // この dedicated 境界カーネルは二重計上になるのでスキップする。
+    // node モード (弱形式・壁のみ): 主ループは壁 plane を除外した (convPlaneBound) ので、壁の境界寄与を
+    // この convectiveFlux_boundary_d が bvar (u=0 → mdot=0, pressure-only) から担う。非壁 (inlet/outlet/axis)
+    // は主ループ+ゴーストのままなので本カーネルからは除外する。
+    const bool nodeMode = (cfg.discretization == "node");
+    bool skipBoundaryFluxKernel = (!nodeMode)
+                               && (cfg.solver == "SLAU"
                                 || cfg.solver == "SLAU2"
                                 || cfg.solver == "ROE"
                                 || cfg.solver == "HLLE");
+    auto isWallKind = [](const std::string& k){ return k == "wall" || k == "wall_isothermal"; };
 
     for (auto& bc : msh.bconds)
     {
@@ -2862,7 +2873,11 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         if (skipBoundaryFluxKernel) {
             continue;
         }
-        convectiveFlux_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
+        // node モードでは壁 bcond のみ弱形式境界 flux を適用 (非壁は主ループで処理済み)。
+        if (nodeMode && !isWallKind(bc.bcondKind)) {
+            continue;
+        }
+        convectiveFlux_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
             cfg.gamma,
             // mesh structure
             bc.iPlanes.size(),

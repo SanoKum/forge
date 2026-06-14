@@ -203,38 +203,43 @@ Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と�
 - **弱形式境界 (§7) は引き続き粘性 (壁せん断・熱流の正しい評価) で必要**だが、hiM 安定化とは別件として整理する。
   よって `boundaryNode_d.cu` の新規作成は粘性着手時に回す (既存 BC カーネルの Q_b 流用方針は不変)。
 
-### 7.2 node モード: ゴースト全撤廃へ (段階導入)
+### 7.2 node モード: 壁の弱形式 pressure-only 対流 ＋ 壁優先コーナー所有 ＋ explicit (viscous)
 
-理論は [theory.md](theory.md) §6.3/§6.4。node-centered は最終的に**境界ゴーストを全撤廃**し、境界ノード/半割面に
-BC を直接課す。段階導入し、まず粘性壁の発散 (case/29 viscous node の exit-lip NaN) を Phase 1 で止める。
-専用計画: [`discretization-node-boundary-ghostless.md`](../../.github/plans/discretization-node-boundary-ghostless.md)。
+理論は [theory.md](theory.md) §6.3/§6.4。専用計画:
+[`discretization-node-boundary-ghostless.md`](../../.github/plans/discretization-node-boundary-ghostless.md)。
+ねらいは case/29 viscous node の壁発散の解消。試行錯誤の結論を実装に反映:
 
-**Phase 1 — 壁ゴースト撤廃 ＋ 壁 Dirichlet ＋ 壁優先コーナー所有** (流入出/slip/axis はゴースト維持):
+**(A) 壁優先コーナー所有** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp), commit 93ef041):
+各境界ノードを優先度 (wall>inlet>outlet>slip/axis) で 1 bcond に所有。壁∩出口リップは壁所有となり矛盾する
+2 重ゴーストが消える。`wall_flag_d` ([mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp)) も同時に構築。
 
-1. **壁優先所有・壁 plane 不出力** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp)
-   `buildMedianDual`/`replacePrimalWithDual`): 各境界ノードを優先度 (wall>inlet>outlet>slip/axis) で 1 bcond に
-   所有。**wall 所有ノードは境界 plane を出力しない** (→ ghost 生成されない) が、wall bcond のノード列 (iCells) は
-   h5 に残す。コーナー (wall 所有) は出口 plane を持たない → 出口ゴーストの矛盾消滅。
-2. **wall_flag_d** ([mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp) `setMeshMap_d`,
-   [mesh.hpp](../../solver_density_cuda/mesh/mesh.hpp)): `axis_flag_d` と同パターンで wall 種別 bcond の iCells を 1 に。
-3. **壁 no-slip カーネル** ([axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)
-   に追記、軸カーネルと同型):
-   - `enforceWallNoSlip_d` (一度きり state 初期化): 壁ノードで `roe -= 0.5*(roUx²+roUy²+roUz²)/ro` 後
-     `roU{x,y,z}=0`, `U{x,y,z}=0` (`enforceAxisSymmetry_d` の 3 成分版)。IC 確定後 1 回。
-   - `zeroWallMomentumResidual_d` (毎反復残差射影): 壁ノードで `res_roU{x,y,z}=0` (`zeroAxisRadialResidual_d` の
-     3 成分版)。**残差射影なので block-DPLUR と整合** (state 直書きは Mach1000 発散実績)。
-4. **ディスパッチ/呼び出し**: [boundaryCond.cpp](../../solver_density_cuda/boundaryCond.cpp) は node モードで
-   wall/wall_isothermal を no-op 化。[main.cpp](../../solver_density_cuda/main.cpp) で `enforceWallNoSlip` を IC 後 1 回、
-   `zeroWallMomentumResidual` を `assembleResidual` 末尾 (軸射影 `zeroAxisRadialResidual` の後) に毎反復。
-   全変更を `discretization=="node"` ＋ `wall_flag_d` でゲートし cell モードは無変更。
+**(B) 壁の弱形式 pressure-only 対流** (本節の要):
+- 壁境界値 (bvar) を no-slip に: `wall_d` ([boundaryCond_d.cu](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu))
+  が壁 bvar 速度=0, `roUb=0`, `roeb=内部エネルギーのみ` を明示。
+- `normal_halo_planes_d` で**壁境界 plane を末尾に並べ** (`nWallHaloPlanes`)、node モードの主対流ループ
+  ([convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu)) は壁を除外
+  (`convPlaneBound = nNormal_halo_Planes - nWallHaloPlanes`)。壁だけ `convectiveFlux_boundary_d` (bvar) で扱う:
+  u=0 → `mdot=0` → **運動量=圧力のみ p·n·S** (ユーザ指摘の「壁残差に圧力寄与」を保持)。
+  これで壁ノード (壁上に乗りミラーゴースト幾何が退化=fx≠0.5 で質量貫通) の発散源を断つ。
+- **inlet/outlet/axis は従来どおり主ループ+ゴースト**で処理 → 既存の near-axis corner 修正 (§7.0) を保つ。
+  最初に試した「全境界 弱形式 (convectiveFlux_boundary_d)」は inflow flux が SLAU と非等価で inlet-axis corner を
+  6.1MPa に悪化させたため、**壁のみ**に限定した。
+- 勾配・粘性は壁ミラーゴースト経由のまま (cellgather は全 plane 処理)。壁ミラーは面値 φ_b=0 (no-slip) を与えるため
+  勾配の境界閉性は保たれ、壁せん断は内部双対面が担う (theory §6.3)。
 
-**なぜ壁ゴーストを消してよいか** (theory §6.3): 断熱壁の壁半割面フラックスは恒等的に 0 (u·n=0、運動量は
-Dirichlet、熱流束 0)、近壁せん断は壁ノード (u=0) と内部ノードを繋ぐ**内部双対面**が担うため。等温壁は壁半割面に
-熱流束項を別途加える (Phase 1 拡張、case/29 は断熱で不要)。
+**(C) viscous は explicit (cfl≤0.1)**: 近壁の極小双対 CV (vol~1.8e-9) に対する粘性が **block-DPLUR の近似対角では
+十分 implicit 化されず** (cfl 2→0.1 で発散 step13→610=構造的)、陰解法は viscous node で発散する。一方 **explicit
+(timeIntegration=3 RK3) は `setDT` の粘性スペクトル半径 `2(visc+vt)/(ro·dx_min)` で局所 dt が近壁で縮むため安定**。
+cfl=0.5 は発散、**cfl=0.1 で安定収束** (検証: case/29 conical, 30k step 完走・NaN なし・残差 ~3 桁低下、場は物理的
+P≤Pt/ro>0/T>0; 高 Re 層流で BL は微小厚=未解像のため場は概ね Euler 相当=正しい挙動)。陰解法での viscous node は
+近壁粘性 Jacobian (スペクトル半径) 強化が要 (gpu-implicit-plan の後続)。
 
-**Phase 2 — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: 半割面ジオメトリ (`dualBnodeId/Vect/Cent`,
-`dualBcondOffset`) を device 転送し、§7 の `boundaryFluxNode_d`/`boundaryGradientNode_d` で半割面上に直接 flux を
-評価、共有 flux ループは node モードで境界 plane をスキップ。implicit 寄与も flux/Jacobian に内在化。
+**棄却した方式**: 残差射影 Dirichlet (`zeroWallMomentumResidual_d`, `nodeWallDirichlet`) は壁圧力寄与も落とすため
+不正で壁全域発散 (ユーザ指摘どおり)。既定 OFF で残置。壁 plane 不出力 (ghost 完全撤廃) は勾配閉性を壊し悪化したため
+不採用 (壁 ghost は勾配/粘性 mirror 用に残す)。
+
+**Phase 2 (後続) — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: `convectiveFlux_boundary_d` を SLAU 等価にした上で
+半割面弱形式へ、スカラ輸送 (rans/species) も境界カーネル化、その後 node モードで ghost 生成停止。
 
 ## 5. 設定
 

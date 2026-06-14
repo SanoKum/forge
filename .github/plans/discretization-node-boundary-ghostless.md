@@ -98,3 +98,18 @@ flux 寄与は不要。
 
 - `2026-06-14` — 初稿。node 境界ゴースト全撤廃の段階計画 (Phase 1: 壁 Dirichlet＋壁優先コーナー, Phase 2: 残り撤廃)。
   親 plan discretization-median-dual から分離。
+- `2026-06-14` — **方式確定・viscous node が回る (explicit)**。試行錯誤の結論:
+  - 残差射影 Dirichlet は壁圧力寄与を落とし発散 (不正、ユーザ指摘)。壁 ghost 完全撤廃は勾配閉性を壊し悪化。
+    → 採用: **壁優先コーナー所有 (commit 93ef041) + 壁の弱形式 pressure-only 対流 (bvar 速度=0, mdot=0→圧力のみ)**。
+    壁 ghost は勾配/粘性 mirror 用に残す。inlet/outlet/axis は実績ある主ループ+ghost のまま (全境界弱形式は
+    `convectiveFlux_boundary_d` の inflow flux が SLAU 非等価で inlet-axis corner を 6.1MPa に悪化させたため壁限定)。
+  - 実装: `wall_d` bvar=no-slip(0), `normal_halo_planes_d` 末尾に壁 plane (`nWallHaloPlanes`), 主対流ループは
+    node で壁除外, `convectiveFlux_boundary_d` を壁 bcond のみ起動。
+  - **viscous は explicit**: 近壁極小双対 CV の粘性が block-DPLUR 近似対角で implicit 化不足 (cfl2→0.1 で発散
+    step13→610=構造的)。explicit(RK3) は setDT 粘性スペクトル半径で局所 dt が縮み安定。cfl0.5 発散・**cfl0.1 安定**。
+  - **検証**: node Euler conical 無回帰 (Pmax=4.475MPa=committed 一致, inlet-axis overshoot なし)。cell viscous conical
+    無回帰 (rms_ro 2.02e-5 vs baseline 2.10e-5)。**node viscous conical explicit cfl0.1: 30k step 完走・NaN なし・残差
+    ~3 桁低下 (still converging)・場 物理的** (P≤Pt, ro>0, T 359-2231K)。run:
+    `case/29.bell_vs_conical/run_expl_test/` (residual_history.png), 長 run `run_dual_visc_conical_node_expl_long/`。
+  - **残**: 陰解法 viscous node (近壁粘性 Jacobian 強化=gpu-implicit-plan 後続)、Phase 2 (inlet/outlet/slip/axis +
+    スカラ輸送のゴースト撤廃)、bell viscous explicit, より深い収束。

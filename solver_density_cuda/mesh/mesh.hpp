@@ -128,6 +128,7 @@ public:
     geom_int nPlanes, nNormalPlanes, nNormal_halo_Planes, nPlanes_all; 
     geom_int nCells , nCells_halo, nCells_ghst , nCells_all;
     geom_int nBPlanes;
+    geom_int nWallHaloPlanes = 0; // normal_halo_planes_d 末尾に並ぶ壁境界 plane 数 (node 弱形式で主ループから除外)
     geom_int nBconds;
 
     std::vector<node> nodes;

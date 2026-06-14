@@ -310,7 +310,9 @@ __global__ void calcGradient_cellgather_d
  flow_float* drodx, flow_float* drody, flow_float* drodz,
  flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
  flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz,
- flow_float* divU
+ flow_float* divU,
+ geom_int gradPlaneSkipFrom   // node 弱形式: ip>=この値 (=nNormalPlanes) の境界面はスキップし
+                              // calcGradient_b_d (bvar) に委ねる。cell では nPlanes 以上を渡し従来どおり全面処理。
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -323,6 +325,7 @@ __global__ void calcGradient_cellgather_d
     const geom_int en = cell_planes_index[ic+1];
     for (geom_int ilp=st; ilp<en; ilp++) {
         geom_int ip  = cell_planes[ilp];
+        if (ip >= gradPlaneSkipFrom) continue;   // node: 境界半割面は calcGradient_b_d で処理
         geom_int ic0 = plane_cells[2*ip+0];
         geom_int ic1 = plane_cells[2*ip+1];
         flow_float sgn = (ic0==ic) ? 1.0 : -1.0;   // 外向き法線符号（owner ic0 が +）
@@ -527,57 +530,12 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
         var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
         var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
         var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
-        var.c_d["divU"]
+        var.c_d["divU"],
+        // 勾配は cell/node とも全面 (内部+境界 plane=ゴースト/ミラー) で処理する。壁ミラーゴーストは
+        // 面値 φ_b=0 (no-slip) を与えるため node でも勾配の境界閉性は保たれる (calcGradient_b_d 不要)。
+        msh.nPlanes
     ) ;
 
-
-    //for (auto& bc : msh.bconds)
-    //{
-    //    calcGradient_b_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> ( 
-    //        // mesh structure
-    //        bc.iPlanes.size(),
-    //        bc.map_bplane_plane_d,  
-    //        bc.map_bplane_cell_d,  
-    //        bc.map_bplane_cell_ghst_d,
-
-    //        // mesh structure
-    //        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-    //        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-    //        var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
-
-    //        // boundary variables
-    //        bc.bvar_d["ro"],
-    //        bc.bvar_d["roUx"],
-    //        bc.bvar_d["roUy"],
-    //        bc.bvar_d["roUz"],
-    //        bc.bvar_d["roe"],
-    //        bc.bvar_d["Ux"],
-    //        bc.bvar_d["Uy"],
-    //        bc.bvar_d["Uz"],
-    //        bc.bvar_d["Tt"],
-    //        bc.bvar_d["Pt"],
-    //        bc.bvar_d["Ts"],
-    //        bc.bvar_d["Ps"],
-    //        bc.bvar_d["Ht"],
-
-    //        // gradient
-    //        var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
-    //        var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
-    //        var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-    //        var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
-    //        var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
-    //        var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
-
-    //        //var.c_d["droUxdx"] , var.c_d["droUxdy"] , var.c_d["droUxdz"],
-    //        //var.c_d["droUydx"] , var.c_d["droUydy"] , var.c_d["droUydz"],
-    //        //var.c_d["droUzdx"] , var.c_d["droUzdy"] , var.c_d["droUzdz"],
-    //        //var.c_d["droedx"]  , var.c_d["droedy"]  , var.c_d["droedz"],
-    //        //var.c_d["dHtdx"]  , var.c_d["dHtdy"]  , var.c_d["dHtdz"],
- 
-    //        var.c_d["divU"]  
-    //    ) ;
-    //}
- 
 
     calcGradient_2_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
         // mesh structure

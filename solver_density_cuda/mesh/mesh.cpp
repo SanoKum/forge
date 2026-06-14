@@ -651,17 +651,33 @@ void mesh::setMeshMap_d()
         }
     }
 
+    // 非 periodic 境界 plane: 非壁を先に、壁 (wall/wall_isothermal) を末尾に並べる。
+    // これにより node 弱形式では主対流ループを「内部+非壁境界」に限定 (末尾の壁 plane を除外) でき、
+    // 壁だけ別途 pressure-only の境界 flux (convectiveFlux_boundary_d) で扱える。
+    // cell モードは従来どおり全 plane (壁含む) を主ループでゴースト処理する (順序は無影響)。
+    auto isWallKind = [](const std::string& k){ return k == "wall" || k == "wall_isothermal"; };
     for (auto& bc : this->bconds)
     {
-        if (bc.bcondKind != "periodic") {
+        if (bc.bcondKind != "periodic" && !isWallKind(bc.bcondKind)) {
             for (auto& ip : bc.iPlanes){
                 normal_halo_planes[ip_sum] = ip;
                 ip_sum += 1;
             }
         }
     }
+    this->nWallHaloPlanes = 0;
+    for (auto& bc : this->bconds)
+    {
+        if (isWallKind(bc.bcondKind)) {
+            for (auto& ip : bc.iPlanes){
+                normal_halo_planes[ip_sum] = ip;
+                ip_sum += 1;
+                this->nWallHaloPlanes += 1;
+            }
+        }
+    }
 
-    gpuErrchk(cudaMemcpy(this->normal_halo_planes_d  , normal_halo_planes , 
+    gpuErrchk(cudaMemcpy(this->normal_halo_planes_d  , normal_halo_planes ,
                          sizeof(geom_int)*n_normal_halo_planes , cudaMemcpyHostToDevice));
 
     free(normal_halo_planes); 
