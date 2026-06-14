@@ -28,6 +28,8 @@ forge の時間積分・更新カーネルの実装とソース対応をまと�
 
 > `solverConfig::initTimeIntegrationScheme` の `case 11` は `blockDPLUR ∈ {0,1}` を受理（それ以外を throw）。両者とも古典 DPLUR 制御フロー（残差固定 + `nStepInner` sweep + 単一 commit）に対応。`unsteady == 1`（dual-time）は dispatcher 側で throw する（本体未実装）。
 
+> **軸対称ソース項の Jacobian**: scalar 版 `implicit_defect_correction_d` も block と整合させ、軸対称フープ源 `res_roUy += (P − τ_θθ)·A_planar` の Jacobian 対角成分 `A_pl·((γ−1)u_y + 2μ/(ρ r_eff))`（非負側、per-cell γ で TP 整合）を roUy 方程式の対角に陰化する。ただし scalar は式間連成 (源 Jacobian の非対角) を表現できないため、軸近傍以外が律速の強膨張ケース（例 `case/29` 出口コーナーの 2 次 MUSCL オーバーシュート）は救えない。**2 次精度の陰解法は block DPLUR 推奨**、scalar DPLUR は 1 次（起動・ロバスト用）に限るのが実用指針（切り分けは [`time_integration-scalar-dplur-axisym-source.md`](../../.github/plans/time_integration-scalar-dplur-axisym-source.md) / `case/29.bell_vs_conical/README.md`）。
+
 ## ループ全体 ([`main.cpp`](../../solver_density_cuda/main.cpp))
 
 `advanceOneStep` は巨大 lambda を廃し、`StepContext`（cfg, cuda_cfg, msh, mat_ns, var, fluct,

@@ -561,6 +561,7 @@ __global__ void implicit_defect_correction_d
  flow_float dt,
  flow_float* dt_local,
  flow_float implicit_relax,
+ flow_float* gamma_arr,   // per-cell γ (TP: γ_mix(T), CPG: cfg.gamma)。軸対称ソース Jacobian 用
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -614,6 +615,9 @@ __global__ void implicit_defect_correction_d
  flow_float* corr_roUz_new,
  flow_float* corr_roe_new,
 
+ // 軸対称ソース項 Jacobian 用 (CPG/TP 共通)
+ int isAxisymmetric,
+ flow_float* A_planar,
  // dual-time 物理時間項の対角係数 a/Δt（定常は 0）
  flow_float unsteady_diag
 )
@@ -692,9 +696,28 @@ __global__ void implicit_defect_correction_d
         );
         const flow_float inv_diag = 1.0 / diag;
 
+        // 軸対称フープ源 (res_roUy += (P-τθθ)·A_planar, axisymmetricSource_d.cu) の Jacobian 対角成分を
+        // roUy 方程式の対角に陰化する。これが無いと近軸の剛フープ源 (∝1/r) が陽 (lagged) 扱いになり、
+        // block-DPLUR が安定な CFL でも scalar が発散する (block は diag_block[2][2] で陰化済。
+        // 切り分けは case/29 README / plan time_integration-scalar-dplur-axisym-source.md)。
+        // block 版 diag_block[2][2] と同形: A_pl·((γ-1)u_y + 2μ/(ρ r_eff))。
+        // γ は per-cell gamma_arr[ic] (TP=γ_mix(T) / CPG=cfg.gamma) を使い thermally perfect でも整合。
+        // scalar 対角の正値性 (対角優位) を保つため非負側のみ加える (defect-correction の不動点は不変)。
+        flow_float diag_roUy = diag;
+        if (isAxisymmetric == 1) {
+            const flow_float A_pl = max(A_planar[ic], static_cast<flow_float>(1.0e-30));
+            const flow_float r_eff = max(static_cast<flow_float>(v) / A_pl, static_cast<flow_float>(1.0e-30));
+            const flow_float g1 = gamma_arr[ic] - static_cast<flow_float>(1.0);
+            const flow_float mu_total = laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0));
+            const flow_float hoop = static_cast<flow_float>(2.0) * mu_total / (density * r_eff);
+            const flow_float src_diag = A_pl * (g1 * velocity_y + hoop);
+            diag_roUy = diag + max(src_diag, static_cast<flow_float>(0.0));
+        }
+        const flow_float inv_diag_roUy = 1.0 / diag_roUy;
+
         const flow_float jacobi_ro = (res_ro[ic] + neighbor_ro) * inv_diag;
         const flow_float jacobi_roUx = (res_roUx[ic] + neighbor_roUx) * inv_diag;
-        const flow_float jacobi_roUy = (res_roUy[ic] + neighbor_roUy) * inv_diag;
+        const flow_float jacobi_roUy = (res_roUy[ic] + neighbor_roUy) * inv_diag_roUy;
         const flow_float jacobi_roUz = (res_roUz[ic] + neighbor_roUz) * inv_diag;
         const flow_float jacobi_roe = (res_roe[ic] + neighbor_roe) * inv_diag;
 
@@ -1278,6 +1301,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 cfg.dt,
                 var.c_d["dt_local"],
                 cfg.implicitRelax,
+                var.c_d["gamma"],
                 msh.nCells_all,
                 msh.nCells,
                 var.c_d["volume"],
@@ -1322,6 +1346,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["dq_roUy_new"],
                 var.c_d["dq_roUz_new"],
                 var.c_d["dq_roe_new"],
+                cfg.isAxisymmetric,
+                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
                 cfg.unsteadyDiagCoef
             );
         }

@@ -346,3 +346,60 @@ plan の「SST k スパイクは double solve でも縮小・残留 (9.16→7.4)
 (古典的な CFL 安定限界)。一方 **block DPLUR は同 CFL 2.0 で安定**に回り 1〜2 dec 下げてプラトーする。
 よって陰解法の実用パスは引き続き block DPLUR であり、粘性 Jacobian 是正は block の近軸固着を解消したが、
 scalar DPLUR の対角近似 (運動量連成を落とす) の弱さを救うものではない。残差図は各 run の `residual_history.png`。
+
+#### 切り分け: 陽解法は安定なのに scalar DPLUR が発散する真因 (2026-06-14)
+
+「陽解法が回るのに陰解法 (scalar) が発散するのは式間違いでは」という疑義を、同一 conical メッシュ +
+等エントロピー IC で対照実験して切り分けた。
+
+| run_* | スキーム | CFL | 内反復 | 結果 |
+| --- | --- | --- | --- | --- |
+| `run_disent_expl_cfl0p3` | explicit RK3 | 0.3 | – | **安定** (rms_ro −1.2dec) |
+| `run_disent_expl_cfl0p5` | explicit RK3 | 0.5 | – | **安定** (rms_ro −1.2dec) |
+| `run_disent_scalar_cfl0p5_inner1` | scalar DPLUR | 0.5 | **1** | NaN なしだが残差**上昇** |
+| `run_disent_scalar_cfl0p5` | scalar DPLUR | 0.5 | 20 | **NaN @ step 557** |
+| `run_disent_lam_cm1_viscfix` | block DPLUR | 2.0 | 20 | 安定 (プラトー) |
+
+確定事項:
+- **陽解法 (RK3) は CFL 0.5 で安定**。よって発散は物理/メッシュでなく **scalar DPLUR の LHS** に起因。
+- **内反復を増やすほど悪化** (1 sweep=上昇のみ, 20 sweeps=NaN)。収束した scalar-LHS の解そのものが不安定化方向
+  = LHS が真の Jacobian の不十分/不整合な近似。
+
+##### 仮説1 (軸対称ソース Jacobian 欠落) — 実装・検証したが**棄却**
+
+当初「scalar カーネルが軸対称フープ源 (`res_roUy += (P−τθθ)·A_planar`) の Jacobian を持たない
+(block は `diag_block[2][2]` に陰化済) のが真因」と考え、scalar カーネルに `isAxisymmetric`/`A_planar`/
+per-cell `gamma` を渡し roUy 対角へ同形項 `A_pl·((γ−1)u_y + 2μ/(ρ r_eff))` を陰化した
+([timeIntegration_d.cu] `implicit_defect_correction_d`, TP=per-cell γ 対応)。
+
+結果は **before/after でほぼ不変** (`run_disent_scalarfix_*`): cfl0.5 NaN@557→557, cfl1 @246→246,
+cfl2 @85→82。軌跡は摂動するが発散段は同じ。よって**軸対称ソース項は本ケース発散の主因ではない**。
+(この Jacobian 追加自体は block との整合・他軸対称ケース向けに正しい改善なので残置。)
+
+##### 真因 — 出口コーナーでの 2 次 MUSCL オーバーシュート (空間的に切り分け)
+
+`run_disent_scalarfix_cfl2_diag` (dense 出力) で発散セルの座標を追うと、**軸ではなく出口面・外壁コーナー**
+(x≈0.085=出口, y≈0.032≈R_e、`CELLS/centCoords` で確認) で先に壊れる: P が下限 1 Pa に貼り付き
+(過膨張)→ ρ が負 → Ux が大きな負 (逆流) に発散。剛フープ源の軸近傍ではない。
+
+決定打は **1 次精度 (`convMethod: 0`) で scalar DPLUR が安定収束**すること:
+
+| run_* | 空間 | CFL | 結果 |
+| --- | --- | --- | --- |
+| `run_disent_scalarfix_cfl0p5` | 2次 MUSCL | 0.5 | NaN@557 |
+| `run_disent_scalarfix_cfl2`   | 2次 MUSCL | 2.0 | NaN@82 |
+| `run_disent_scalarfix_o1_cfl0p5` | **1次** | 0.5 | **安定 −2.4dec** |
+| `run_disent_scalarfix_o1_cfl2`   | **1次** | 2.0 | **安定 −1.6dec** |
+
+→ scalar DPLUR の**式は構造的に正しい** (1次なら cfl2 でも収束)。発散は **2次 MUSCL が出口コーナーの強膨張で
+オーバーシュート**し、それを scalar の**弱い (式分離・1次凍結) LHS が減衰できない**ことに起因する
+(defect-correction で LHS=1次・residual=2次の不整合)。block は真の 5×5 Jacobian の式間連成で同 2次残差を
+cfl≈5 まで減衰でき、scalar のスペクトル半径対角はできない。陽解法 RK3 は広い安定域で 2次残差を直接捌けるため
+安定。**式の符号ミスではなく、scalar LHS の前処理能力不足**が結論。
+
+**乱流 (SST)**: 別経路 (`applySSTPointImplicit`, `D_φ=V/Δτ+V·src_jac+transport_diag`) で mean-flow の
+scalar/block 選択に依存しない。RANS でも mean-flow を 2次 scalar DPLUR で回せば同じ出口コーナーで発散する
+(SST 側に固有のバグはない)。
+
+**実用指針**: 2次精度の陰解法は **block DPLUR** を使う。scalar DPLUR を使うなら **1次** (起動・ロバスト用)
+に限る。残差図は各 run の `residual_history.png`。
