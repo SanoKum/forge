@@ -118,6 +118,16 @@ H2O モデル (CNT_Kantrowitz + Hertz–Knudsen) + Wyslouzil 検証。詳細は 
 
 ## 9. 変更ログ
 
+- `2026-06-14` — **N2 検証成功 (Fig.2 一致)**。全エンタルピー診断 (ユーザ提案) で **SLAU エネルギー流束が
+  単相エンタルピー $h=c_p(1-g)T+ek$ を運び潜熱 $-gL$ を落としていた**ことが判明 (dry は H 保存 0.0%、
+  凝縮で −8.7%/局所 −16% の非保存)。このエネルギー漏れが過冷却→過飽和維持→過剰凝縮 (g~0.34) の根本。
+  **修正**: SLAU_d CPG 分岐で $h$ を二相全エンタルピー $h=c_pT-gL+ek$ に補正 (差 $g(c_pT-L)$、セル値 1 次、
+  $g$=nullptr でビット不変)。結果: 全エンタルピー保存回復 (dev −0.0%)、**過剰凝縮解消 (g max 0.34→0.08,
+  mean 1.0%)**、**壁面静圧の凝縮上昇が論文 Fig.2 と 1–2% 一致** (cond/dry 比 3in 1.21x/5in 1.43x vs 論文
+  1.20/1.45x、onset バンプ再現)。Fig.2 は `case/34/arthur_fig2_digitized.csv`。**残**: 同バグを
+  HLLE/ROE/AUSM/TP 分岐へ展開 (case/34 は SLAU+CPG で完了)、dry baseline ズレ (①) 切り分け。
+
+
 - `2026-06-14` — 初稿。docs (theory/implementation) 作成、Phase 1 (受動スカラー骨格) 着手。
 - `2026-06-14` — **Phase 2 ソース項 初期実装 (bounded 確認)**。核生成 (CNT+Iland)・成長 (Goodheart) を
   `condensationSource_d.{cu,cuh}` に実装、一温度・rates freeze・明示的ソース+安定化 clamp/limiter
