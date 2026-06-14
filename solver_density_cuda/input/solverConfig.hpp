@@ -148,6 +148,8 @@ public:
                              //   1: H2O (Murphy-Koop, CNT+Kantrowitz+Hertz-Knudsen, carrier+TP)
     int condGasSpecies = -1; // carrier+condensible: 凝縮する気相化学種の index (roY{s})。
                              //   -1: pure-condensible (気相=凝縮種, N2 Arthur)。>=0: H2O 等の希薄凝縮 (Wyslouzil)
+    int condKantrowitz = 0;  // 核生成の Kantrowitz 非等温補正。0: off (等温 CNT, 既定), 1: on
+    int condGrowthModel = 0; // 成長則。0: 既定 (H2O=Hertz-Knudsen, N2=Goodheart), 1: Gyarmathy(熱伝導律速)
       //          int isCompressible = physProp["isCompressible"].as<int>();
       //          if (isCompressible == 0) flow_float ro = physProp["isCompressible"]["ro"].as<flow_float>();
       //          flow_float visc = physProp["visc"].as<flow_float>();

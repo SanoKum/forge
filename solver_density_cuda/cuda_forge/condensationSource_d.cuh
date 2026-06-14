@@ -21,9 +21,15 @@
 //   J_CNT = √(2σ/(π m^3))·(ρ_v²/ρ_l)·exp(-ΔG*/(k_B T)),  ΔG*=(4/3)π r*²σ,  r*=2σ/(ρ_l R T ln S)。
 //   N2: ×exp(A+B/T) [Iland]。H2O: 等温 CNT (キャリア N2 がクラスタを熱平衡化し Kantrowitz 非等温抑制は
 //        ~1 に量子化されるため、希薄水-N2 では等温近似。過抑制を避ける; 必要なら carrier-Kantrowitz を後段)。
+// 核生成 (CNT × 種ごと補正 × 任意 Kantrowitz 非等温補正)。
+//   kantrowitz!=0 のとき J を 1/(1+θ) 倍する (Feder/Kantrowitz 非等温補正):
+//     θ = 2(γ-1)/(γ+1) · b(b-1/2),  b = L/(R_v T)  (γ=熱を運ぶ気相の比熱比 gamma_gas)。
+//   純蒸気では θ が大きく J を桁で抑える。キャリア気体 (N2) 中ではキャリアが潜熱を奪い θ→小 となるが、
+//   ここでは感度評価用に純蒸気形 (gamma_gas=carrier γ) をそのまま掛ける on/off スイッチとして実装。
 __host__ __device__ inline void cond_nucleation(
     const CondSpeciesProps& cp, double T, double p_v, double rho_v,
-    double* J_out, double* rstar_out)
+    double* J_out, double* rstar_out,
+    int kantrowitz = 0, double gamma_gas = 1.4)
 {
     const double psat = cond_psat(cp, T);
     const double S = p_v / (psat > 1.0e-300 ? psat : 1.0e-300);
@@ -39,22 +45,43 @@ __host__ __device__ inline void cond_nucleation(
     double corr = 1.0;
     if (cp.model == COND_MODEL_N2) corr = exp(-55.0 + 4270.0/T); // Iland 経験補正
     // H2O: corr=1 (carrier-thermalized 等温 CNT)
+    if (kantrowitz) {
+        const double b = cond_latent(cp, T) / (R*T);
+        const double theta = (2.0*(gamma_gas-1.0)/(gamma_gas+1.0)) * b * (b - 0.5);
+        corr /= (1.0 + (theta > 0.0 ? theta : 0.0));   // 非等温抑制 (θ<0 は掛けない)
+    }
     const double expo = -dG/(COND_KB*T);
     const double J = (expo > -700.0) ? Kcnt*exp(expo)*corr : 0.0;
     *J_out = J;
     *rstar_out = rstar;
 }
 
-// 成長率 dr/dt [m/s]。一温度 T_d=T。N2=Goodheart(連続〜自由分子), H2O=Hertz-Knudsen(自由分子)。
-//   N2: (1/ρ_l) f_FS(Kn)(k R T²/L²) ln(p/psat)。
-//   H2O: (α/ρ_l)(p_v - p_d)/√(2π R T),  p_d=psat(T)exp(2σ/(ρ_l R T r)) [Kelvin]。
+// 成長率 dr/dt [m/s]。一温度 T_d=T。
+//   既定 (growthModel=0): N2=Goodheart, H2O=Hertz-Knudsen(自由分子, 質量輸送律速)。
+//   growthModel=1 (Gyarmathy): 熱伝導律速の Gyarmathy(1982) 式 (極超音速ノズル凝縮で標準)。
+//     dr/dt = (k R T²/L²) ln(S) /ρ_l · (1-r*/r)/(r(1+3.18 Kn)),  Kn=l/(2r) (キャリア気体の l)。
+//     N2 Goodheart と前因子 (k R T² ln S /ρ_l L²) を共有し、Knudsen 内挿のみ 1/(1+3.18Kn) に差し替えた形。
+//   p_gas: Kn 用の気相全圧 (<0 で p_v にフォールバック=純蒸気)。k_gas は n2_kgas(T) (キャリア N2 熱伝導率)。
 __host__ __device__ inline double cond_growth(
-    const CondSpeciesProps& cp, double T, double p_v, double r_bar, double rstar)
+    const CondSpeciesProps& cp, double T, double p_v, double r_bar, double rstar,
+    int growthModel = 0, double p_gas = -1.0)
 {
     if (r_bar <= 0.0) return 0.0;
     const double R    = cp.R;
     const double psat = cond_psat(cp, T);
     const double rho_l= cond_rho_cond(cp, T);
+    const double pK   = (p_gas > 0.0) ? p_gas : p_v;   // Kn 用は全圧 (carrier)、純蒸気では p_v
+    if (growthModel == 1) {
+        // Gyarmathy 熱伝導律速 (種共通)。過飽和 → 過冷却 ΔT_sub=(R T²/L)ln S を駆動力に。
+        if (p_v <= psat) return 0.0;
+        const double driving = log(p_v / (psat > 1.0e-300 ? psat : 1.0e-300));
+        const double L   = cond_latent(cp, T);
+        const double k   = n2_kgas(T);                 // キャリア (N2) 熱伝導率
+        const double lam = cond_mean_free_path(T, pK, R);
+        const double Kn  = lam/(2.0*r_bar);
+        const double fac = (1.0 - rstar/r_bar) / (r_bar*(1.0 + 3.18*Kn));
+        return (1.0/rho_l)*fac*(k*R*T*T/(L*L))*driving;
+    }
     if (cp.model == COND_MODEL_H2O) {
         const double sigma = cond_sigma(cp, T);
         const double pd = psat*exp(2.0*sigma/(rho_l*R*T*r_bar)); // Kelvin 効果
@@ -64,7 +91,7 @@ __host__ __device__ inline double cond_growth(
         const double driving = log(p_v / (psat > 1.0e-300 ? psat : 1.0e-300));
         const double L   = cond_latent(cp, T);
         const double k   = n2_kgas(T);
-        const double lam = cond_mean_free_path(T, p_v, R);
+        const double lam = cond_mean_free_path(T, pK, R);
         const double Kn  = lam/(2.0*r_bar);
         const double fFS = (1.0+2.0*Kn)/(r_bar*(1.0+3.42*Kn+5.32*Kn*Kn)) * (1.0 - rstar/r_bar);
         return (1.0/rho_l)*fFS*(k*R*T*T/(L*L))*driving;
@@ -76,13 +103,14 @@ __host__ __device__ inline double cond_growth(
 __host__ __device__ inline void cond_source_vector(
     const CondSpeciesProps& cp, double T, double p_v, double rho_v,
     double roQ0, double roQ1, double roQ2,
-    double* SQ0, double* SQ1, double* SQ2, double* Sg)
+    double* SQ0, double* SQ1, double* SQ2, double* Sg,
+    int kantrowitz = 0, int growthModel = 0, double gamma_gas = 1.4, double p_gas = -1.0)
 {
     if (rho_v < 0.0) rho_v = 0.0;
     double J, rstar;
-    cond_nucleation(cp, T, p_v, rho_v, &J, &rstar);
+    cond_nucleation(cp, T, p_v, rho_v, &J, &rstar, kantrowitz, gamma_gas);
     const double r_bar = (roQ0 > 1.0e-30) ? (roQ1/roQ0) : rstar;
-    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar) : 0.0;
+    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas) : 0.0;
     const double rho_l = cond_rho_cond(cp, T);
     *SQ0 = J;
     *SQ1 = J*rstar + roQ0*drdt;

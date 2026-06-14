@@ -109,10 +109,20 @@ $$
 22%) なのは収束 dry からの一斉 onset アーティファクト ($S\sim3\times10^4$ で全冷却セルが同時核生成)。
 **定量一致は後続** (膨張流からの physical onset / レート較正 / 完全 src_jac 線形化)。
 
-### モデル切替 (将来)
+### モデル切替 (config フラグ)
 
-核生成/成長/補正を **enum + switch (device)**、係数は種ごと構造体に。N2=CNT_Iland+Goodheart /
-H2O=CNT_Kantrowitz+Hertz–Knudsen を同枠で。現状は N2 ハードコード。
+核生成/成長/補正は **enum + switch (device)** で種ごとに切替 (`CondSpeciesProps.model` で N2/H2O)。
+加えて、以下を `solverConfig.yaml > condensation` のフラグで個別 on/off でき、感度評価に使う:
+
+| フラグ | 既定 | 効果 |
+| --- | --- | --- |
+| `condKantrowitz` | 0 | 1 で核生成に **Kantrowitz 非等温補正** $J\to J/(1+\theta)$, $\theta=\frac{2(\gamma-1)}{\gamma+1}b(b-\tfrac12)$, $b=L/(R_vT)$ ($\gamma$=気相比熱比)。0 は等温 CNT。|
+| `condGrowthModel` | 0 | 0=既定 (H2O: Hertz–Knudsen 質量律速 / N2: Goodheart)、1=**Gyarmathy** 熱伝導律速 $\frac{dr}{dt}=\frac{kRT^2}{\rho_lL^2}\ln S\frac{1-r_*/r}{r(1+3.18Kn)}$ (極超音速ノズル凝縮で標準)。|
+
+実装は [`condensationSource_d.cuh`](../../solver_density_cuda/cuda_forge/condensationSource_d.cuh) の
+`cond_nucleation` (Kantrowitz) と `cond_growth` (Gyarmathy 分岐)。Gyarmathy は N2 Goodheart と前因子
+$kRT^2\ln S/(\rho_lL^2)$ を共有し Knudsen 内挿のみ $1/(1+3.18Kn)$ に差し替えた形。carrier では Kn 用の
+平均自由行程に全圧 $p$ を用いる (希薄蒸気で $p_v$ を使うと Kn 過大になるのを回避)。
 
 ---
 

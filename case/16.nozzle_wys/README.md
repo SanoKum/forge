@@ -67,7 +67,21 @@ Wyslouzil et al. JCP 113, 7317 (2000) **Fig.3 (pv0=1.0 kPa 水)** 条件で、N2
 | `run_0007_h2o_cond` | 2D 非粘性 (CPG+species) | off | dry baseline。収束 (rms_ro↓3.5dec) | active |
 | `run_0008_h2o_cond_on` | 2D 非粘性 | **on** | 潜熱で T 143→185K, p/p0 +19〜28%。cond/dry 比が exp と ~5% 一致 | active |
 | `run_0009_h2o_sst_dry` | 2D 粘性+SST 乱流 | off | dry SST baseline (Wyslouzil 条件)。T≤Tt | active |
-| `run_0010_h2o_sst_cond` | 2D 粘性+SST 乱流 | **on** | viscous+turb での凝縮効果 (ユーザ要望の比較) | active |
+| `run_0010_h2o_sst_cond` | 2D 粘性+SST 乱流 | **on** | 凝縮効果 (ユーザ要望)。等温CNT + Hertz-Knudsen (baseline) | active |
+
+**核生成/成長モデル感度 (SST, 凝縮 on, `condKantrowitz`×`condGrowthModel`)** — `compare_models.png`:
+
+| run | Kantrowitz | 成長則 | onset 位置 | 備考 |
+| --- | --- | --- | --- | --- |
+| `run_0010_h2o_sst_cond` | off | Hertz-Knudsen | x≈1.5cm | baseline。等温CNT は onset 早すぎ・bump 過大 |
+| `run_0011_h2o_sst_kw_hk` | **on** | Hertz-Knudsen | x≈2.3cm | Kantrowitz が J 抑制 → onset 遅延 (実験寄り)、bump 控えめ |
+| `run_0012_h2o_sst_nokw_gyar` | off | **Gyarmathy** | x≈1.3cm | Gyarmathy は成長急 → bump が最も鋭く過大 |
+| `run_0013_h2o_sst_kw_gyar` | **on** | **Gyarmathy** | x≈2.0cm | **onset 位置・peak が実験に最も一致** (Kantrowitz 遅延 + Gyarmathy 急成長) |
+
+知見: **Kantrowitz 非等温補正は核生成 J を抑え onset を下流へ遅らせる**(等温CNT は onset が早すぎ実験の
+bump 位置を外す)。**Gyarmathy(熱伝導律速)は Hertz-Knudsen より成長が急**で p/p0 の立ち上がりが鋭い。
+両者を併せた `run_0013` (Kantrowitz+Gyarmathy) が x≈2〜3.5cm の onset/peak を実験と最もよく再現
+(x=3.1cm: forge 0.353 vs exp 0.354)。下流 x≳4cm は全モデルほぼ収束し、実験より ~0.02 低い (膨張側オフセット)。
 
 **非平衡凝縮の検証結果**:
 

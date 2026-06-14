@@ -34,6 +34,7 @@ __host__ __device__ inline void cond_vapor_state(
 __global__ void condensation_source_d(
     geom_int nCells,
     int condModel, int carrier, double Rw, double M,
+    int kantrowitz, int growthModel,
     flow_float cp_cpg, flow_float gamma_cpg,
     double Jmax, double dg_max, double dT_max,
     geom_float* vol, flow_float* dt_local,
@@ -71,15 +72,19 @@ __global__ void condensation_source_d(
     double pv, rho_v;
     cond_vapor_state(carrier, rod, Pd, Td, g, Yw, Rw, &pv, &rho_v);
 
+    // Kantrowitz 用の気相比熱比、Gyarmathy Kn 用の全圧 (carrier=Pd, pure=pv)
+    const double gamma_gas = cpg/cvg;
+    const double p_gas = carrier ? Pd : pv;
+
     // 核生成・成長 (freeze, 亜臨界停止・蒸発 clamp)
     double J, rstar;
-    cond_nucleation(cprops, Td, pv, rho_v, &J, &rstar);
+    cond_nucleation(cprops, Td, pv, rho_v, &J, &rstar, kantrowitz, gamma_gas);
     if (J > Jmax) J = Jmax;
     if (J < 0.0)  J = 0.0;
     double r_bar = (q0 > 1.0e-30) ? (q1/q0) : rstar;
     double drdt = 0.0;
     if (q0 > 1.0e-30 && rstar > 0.0 && r_bar > rstar) {
-        drdt = cond_growth(cprops, Td, pv, r_bar, rstar);
+        drdt = cond_growth(cprops, Td, pv, r_bar, rstar, growthModel, p_gas);
         if (drdt < 0.0) drdt = 0.0;
     }
     const double rho_l = cond_rho_cond(cprops, Td);
@@ -109,7 +114,8 @@ __global__ void condensation_source_d(
         double pvp, rvp;
         cond_vapor_state(carrier, rod, Pd, Td+dTp, g, Yw, Rw, &pvp, &rvp);
         double a0,a1,a2,ag;
-        cond_source_vector(cprops, Td+dTp, pvp, rvp, q0, q1, q2, &a0,&a1,&a2,&ag);
+        cond_source_vector(cprops, Td+dTp, pvp, rvp, q0, q1, q2, &a0,&a1,&a2,&ag,
+                           kantrowitz, growthModel, gamma_gas, p_gas);
         if (ag < 0.0) ag = 0.0;
         const double dSgdT  = (ag - Sg)/dTp;
         const double dTdrog = (L - (carrier?Rw:Rg)*Td)/(rod*cvg);
@@ -119,7 +125,8 @@ __global__ void condensation_source_d(
         if (q0 > 1.0e-30) {
             const double dq1 = (q1 > 0.0 ? 0.01*q1 : 1.0e-3);
             double b0,b1,b2,bg;
-            cond_source_vector(cprops, Td, pv, rho_v, q0, q1+dq1, q2, &b0,&b1,&b2,&bg);
+            cond_source_vector(cprops, Td, pv, rho_v, q0, q1+dq1, q2, &b0,&b1,&b2,&bg,
+                               kantrowitz, growthModel, gamma_gas, p_gas);
             double sjq1 = -theta*(b1 - SQ1)/dq1;
             if (sjq1 < 0.0) sjq1 = 0.0;
             sj_Q1[ic] = (flow_float)sjq1;
@@ -159,6 +166,7 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
         condensation_source_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
             msh.nCells,
             cfg.condModel, carrier, Rw, M,
+            cfg.condKantrowitz, cfg.condGrowthModel,
             cfg.cp, cfg.gamma,
             Jmax, dg_max, dT_max,
             var.c_d["volume"], var.c_d["dt_local"],

@@ -134,6 +134,14 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 
 ## 9. 変更ログ
 
+- `2026-06-15` — **核生成/成長モデルの感度スイッチ追加 (Kantrowitz / Gyarmathy)**。ユーザ要望で、
+  核生成の **Kantrowitz 非等温補正**と **Gyarmathy 熱伝導律速成長**を config フラグ化:
+  - `condKantrowitz` (0/1): $J\to J/(1+\theta)$, $\theta=\frac{2(\gamma-1)}{\gamma+1}b(b-\tfrac12)$, $b=L/(R_vT)$。
+  - `condGrowthModel` (0=Hertz-Knudsen/Goodheart, 1=Gyarmathy): Gyarmathy は N2 Goodheart と前因子を共有し
+    Knudsen 内挿を $1/(1+3.18Kn)$ にした熱伝導律速形。carrier では Kn 用平均自由行程に全圧を使用。
+  - 実装: `condensationSource_d.{cuh,cu}` の `cond_nucleation`/`cond_growth`/`cond_source_vector` に
+    引数追加 (既定 off でビット不変)、`solverConfig.{hpp,cpp}` にフラグ。docs/condensation/implementation.md 更新。
+  - 検証: case/16 SST で 2×2 (Kantrowitz off/on × HK/Gyarmathy) = run_0010〜0013 を比較。
 - `2026-06-15` — **Phase 3 H2O / Wyslouzil Fig.3 検証成功 + carrier=CPG へ方針変更**。
   - **発散原因究明**: 当初の Option A (thermalMethod 2 / NASA-9 TP で N2+H2O) は、ノズル膨張で気相が
     **<200K (NASA-9 フィット下限) まで冷却**し外挿が不安定→初手から発散 (T が 50K フロアに張り付き P が
