@@ -158,25 +158,77 @@ __host__ __device__ inline double cond_mean_free_path(double T, double p, double
     return (n2_mu_gas(T)/pf) * sqrt(3.14159265358979*R*T/2.0);
 }
 
-// --- 種ディスパッチ (将来 H2O を足す枠) ---
+// =====================================================================================
+// H2O (水) 物性 — 過冷却液 (Wyslouzil ノズルは ~207K まで膨張、過冷却水滴)。
+// psat は Murphy-Koop (2005) の過冷却液式 (123–332K で妥当)、他は標準フィット。
+// =====================================================================================
+
+// 水 飽和蒸気圧 p_sat(T) [Pa] — Murphy & Koop (2005) liquid (過冷却水, 123<T<332K)。
+__host__ __device__ inline double h2o_psat(double T)
+{
+    double Tc = (T > 120.0) ? T : 120.0;
+    const double lnp = 54.842763 - 6763.22/Tc - 4.210*log(Tc) + 0.000367*Tc
+        + tanh(0.0415*(Tc - 218.8)) * (53.878 - 1331.22/Tc - 9.44523*log(Tc) + 0.014025*Tc);
+    return exp(lnp); // Pa
+}
+
+// 水 液密度 ρ_l(T) [kg/m³] — 過冷却水の簡易フィット (200–300K で ~%)。
+__host__ __device__ inline double h2o_rho_cond(double T)
+{
+    // 過冷却水: 277K で最大 ~1000、低温で僅かに低下。簡易: 線形近似 + フロア。
+    double r = 1000.0 - 0.12*(277.0 - T); // ゆるい近似
+    if (r < 920.0) r = 920.0;
+    return r;
+}
+
+// 水 蒸発潜熱 L(T) [J/kg] — 線形フィット (0°C で 2.50e6, 過冷却で増)。
+__host__ __device__ inline double h2o_latent(double T)
+{
+    double L = 3.1485e6 - 2370.0*T;
+    if (L < 2.0e6) L = 2.0e6;
+    if (L > 3.0e6) L = 3.0e6;
+    return L;
+}
+
+// 水 表面張力 σ(T) [N/m] — IAPWS 形を過冷却へ外挿 (Tc=647.096K)。
+__host__ __device__ inline double h2o_sigma(double T)
+{
+    const double Tc = 647.096;
+    double tau = (Tc - T)/Tc;
+    if (tau < 0.0) tau = 0.0;
+    double s = 0.2358 * pow(tau, 1.256) * (1.0 - 0.625*tau); // N/m
+    if (s < 0.0) s = 0.0;
+    return s;
+}
+
+// --- 種ディスパッチ (model で N2 / H2O を切替) ---
 __host__ __device__ inline double cond_psat(const CondSpeciesProps& s, double T)
 {
-    // 現状 N2 のみ。H2O は Phase 3 で分岐追加。
-    return n2_psat(T);
-    (void)s;
+    return (s.model == COND_MODEL_H2O) ? h2o_psat(T) : n2_psat(T);
 }
 __host__ __device__ inline double cond_rho_cond(const CondSpeciesProps& s, double T)
 {
-    return n2_rho_cond(T);
-    (void)s;
+    return (s.model == COND_MODEL_H2O) ? h2o_rho_cond(T) : n2_rho_cond(T);
 }
 __host__ __device__ inline double cond_latent(const CondSpeciesProps& s, double T)
 {
-    return n2_latent(T);
-    (void)s;
+    return (s.model == COND_MODEL_H2O) ? h2o_latent(T) : n2_latent(T);
 }
 __host__ __device__ inline double cond_sigma(const CondSpeciesProps& s, double T)
 {
-    return n2_sigma(T);
-    (void)s;
+    return (s.model == COND_MODEL_H2O) ? h2o_sigma(T) : n2_sigma(T);
+}
+
+// H2O 既定パラメータ (キャリア+凝縮種)。R_H2O=461.5, M=0.0180153。
+__host__ __device__ inline CondSpeciesProps condProps_H2O()
+{
+    CondSpeciesProps s;
+    s.model = COND_MODEL_H2O;
+    s.R  = 461.5;
+    s.cv = 1418.0;   // 蒸気 cv (参考、TP では NASA を使う)
+    s.cp = 1880.0;
+    s.Tt = 273.16;
+    s.Tc = 647.096;
+    s.M  = 0.0180153;
+    return s;
 }

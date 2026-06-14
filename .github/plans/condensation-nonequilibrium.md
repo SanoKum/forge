@@ -88,9 +88,25 @@ $\xi_g=\partial p/\partial(\rho g)=-RT+\kappa(L-RT)$ (新規列)、flux Jacobian
 4. **ソース kernel** $S_{Q_n},S_g$ + point-implicit `src_jac` + $\mu_n$ 無次元化 (float)。
 5. **検証**: case/34 で貯気を振り中心線静圧が dry 等エントロピー線より上振れ (論文 Fig.11)。
 
-### Phase 3 (planned)
+### Phase 3 (H2O / Wyslouzil, carrier+condensible) — 着手
 
-H2O モデル (CNT_Kantrowitz + Hertz–Knudsen) + Wyslouzil 検証。詳細は implementation.md 4–8 節。
+**系**: N2 キャリア(非凝縮)+ 水蒸気(凝縮、希薄)。case/16 ノズル(M≈2, 整備済)。検証=Wyslouzil
+JCP 113,7317 (2000) Fig.3 の 1kPa ケース(p0=59.07kPa, T0=286.65K, pv0=1.0kPa, y=1.7%, 水~1.1%質量)。
+digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
+
+**設計 (Option A 完全多成分, ユーザ確定)**: 化学種は **N2 と「総水(蒸気+液)」** を保存
+(thermalMethod 2, ΣY_s=1 不変、既存化学種輸送そのまま)。**液は moment `rog`、蒸気 = ρY_H2O − ρg**。
+凝縮は総水保存のまま蒸気→液を移す → **化学種側に sink 不要**(最小結合)。EOS/ソースで蒸気=Y_H2O−g
+を使い、過飽和 S=pv/psat(T)、pv=(水蒸気モル分率)·p。realizability: g≤Y_H2O。
+
+**実装ステップ**:
+1. **H2O thermo (NASA-9) を thermo DB に追加** — 済。
+2. **水凝縮物性** (`h2o_psat`=Murphy-Koop 過冷却水, `h2o_rho_cond/latent/sigma`, model 切替) — 済 (anchors 検証)。
+3. **carrier+condensible EOS** (dependentVariables thermalMethod 2): 蒸気=Y_H2O−g で気相混合圧力、
+   潜熱 g·L_H2O を含む T 逆算。
+4. **ソース結合**: 蒸気分圧から S、CNT+Kantrowitz 核生成・Hertz–Knudsen 成長 (enum で N2 と切替)、g≤Y_H2O。
+5. **エネルギー流束** 二相 (水潜熱・気相混合) — SLAU の補正を carrier 系へ一般化。
+6. case/16 に H2O run、Fig.3 と比較。
 
 ## 6. 検証
 
