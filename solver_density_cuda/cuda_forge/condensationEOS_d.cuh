@@ -23,22 +23,24 @@
 //
 // 現状 N2 のみ (潜熱 n2_latent)。多成分凝縮では Σ_sp g_sp L_sp(T) に一般化する (将来)。
 
-// 一温度 二相 温度反転 (calorically perfect gas; 初期実装)。
-// 気相 e_v(T)=c_v T (cv 一定)、液相 e_l=e_v-L(T) より e = c_v T - g L(T) = e_in を Newton で解く。
-// **L の温度依存は入れる** (n2_latent(T))。論文は完全理想気体 (cp 一定) なのでこの形が基本。
-// g=0 で T=e_in/cv (従来 CPG と一致)。cv = cp/γ。
+// 一温度 二相 温度反転 (calorically perfect gas; 初期実装)。論文 Eq.16-18 (g0=0):
+//   液相 e_l = e_v + R_v T - L(T) = c_p T - L  (∵ h_v-h_l=L, h_v=e_v+R_vT, h_l≈e_l)
+//   e = (1-g)e_v + g e_l = (c_v + g R_v) T - g L(T)   (e_v=c_v T)
+//   ⇒ T = (e_in + g L(T))/(c_v + g R_v)  (= Eq.18, Cv0=Cvv=c_v)
+// **L の温度依存は入れる** (n2_latent(T))。g=0 で T=e_in/cv (従来 CPG と一致)。cv=cp/γ, R=(γ-1)cv。
 __host__ __device__ inline double cond_T_from_e_cpg(
-    double e_in, double g_tot, double cv, double T_guess)
+    double e_in, double g_tot, double cv, double R, double T_guess)
 {
+    const double a = cv + g_tot*R;   // 実効熱容量 (T に対し一定)
     double T = T_guess;
     if (!(T > 1.0)) T = 1.0;
     #pragma unroll 1
     for (int it = 0; it < 30; ++it) {
         const double L  = n2_latent(T);
         const double dL = (n2_latent(T + 0.1) - n2_latent(T - 0.1)) / 0.2;
-        const double G  = cv*T - g_tot*L - e_in;
-        const double Gp = cv - g_tot*dL;
-        const double Gpf = (Gp > 1.0e-2*cv) ? Gp : 1.0e-2*cv;
+        const double G  = a*T - g_tot*L - e_in;
+        const double Gp = a - g_tot*dL;
+        const double Gpf = (Gp > 1.0e-2*a) ? Gp : 1.0e-2*a;
         double dT = G / Gpf;
         if (dT >  0.5*T) dT =  0.5*T;
         if (dT < -0.5*T) dT = -0.5*T;
@@ -69,8 +71,9 @@ __host__ __device__ inline double cond_T_from_e_onetemp(
         const double cv  = cp_T - R;                   // de_v/dT
         const double L   = n2_latent(T);               // 潜熱 (N2)
         const double dL  = (n2_latent(T + 0.1) - n2_latent(T - 0.1)) / 0.2; // dL/dT (数値)
-        const double G   = e_v - g_tot*L - e_in;
-        const double Gp  = cv - g_tot*dL;
+        // e = (1-g)e_v + g e_l, e_l = e_v + R T - L ⇒ e = e_v + g R T - g L
+        const double G   = e_v + g_tot*R*T - g_tot*L - e_in;
+        const double Gp  = cv + g_tot*R - g_tot*dL;
         const double Gpf = (Gp > 1.0e-2*R) ? Gp : 1.0e-2*R; // 0 割回避フロア
         double dT = G / Gpf;
         if (dT >  0.5*T) dT =  0.5*T;

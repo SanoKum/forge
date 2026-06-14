@@ -116,10 +116,11 @@ __global__ void dependentVariables_d
             const double cvmix = cpmix - Rmix;
             const double gmix  = cpmix / (cvmix > 1.0e-6 ? cvmix : 1.0e-6);
 
-            // 気相内部エネルギー e_v と混合内部エネルギー e_mix = e_v - g L(T)。
+            // 気相内部エネルギー e_v と混合内部エネルギー e_mix = e_v + g R T - g L(T)
+            // (e_l=e_v+R_vT-L)。g=0 → e_v (従来と一致)。
             const double e_v   = hmix - Rmix*Tnew;
             const double Lcond = (g_liq > 1.0e-12) ? n2_latent(Tnew) : 0.0;
-            const double e_mix = e_v - g_liq*Lcond;        // g=0 → e_v (従来と一致)
+            const double e_mix = e_v + g_liq*Rmix*Tnew - g_liq*Lcond;
             const double oneMg = 1.0 - g_liq;
 
             // 圧力: 液滴は圧力を持たない。p = (1-g)ρ R_v T (g=0 → 従来 ρ R T)。
@@ -157,9 +158,9 @@ __global__ void dependentVariables_d
                 // 二相: e = cv T - g L(T) = intE を Newton で反転、p=(1-g)ρRT。
                 const double e_in = (double)intE;
                 const double Tguess = (double)max(intE/(cp/gamma), (flow_float)1.0e-4f);
-                const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Tguess);
+                const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Rgas, Tguess);
                 const double L = n2_latent(Tn);
-                const double e_mix = cv*Tn - g_liq*L;             // = e_in
+                const double e_mix = (cv + g_liq*Rgas)*Tn - g_liq*L;   // = e_in
                 const double oneMg = 1.0 - g_liq;
                 double Pn = oneMg*(double)ro_temp*Rgas*Tn;
                 if (Pn < 1.0) Pn = 1.0;

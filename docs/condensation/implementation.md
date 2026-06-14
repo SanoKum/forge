@@ -113,7 +113,9 @@ $\kappa,\chi,\xi_g$ で変わるため一般 EOS Roe (Vinokur–Montagné 流) �
 
 [dependentVariables_d.cu](../../solver_density_cuda/cuda_forge/dependentVariables_d.cu) の
 `thermalMethod==0` 分岐に追加 (`cond_T_from_e_cpg`)。気相 $e_v(T)=c_v T$ ($c_v=c_p/\gamma$ 一定)、
-液相 $e_l=e_v-L(T)$ より $e=c_v T - g L(T)$。$T$ を Newton で反転、$p=(1-g)\rho R T$ ($R=(\gamma-1)c_v$)。
+液相 $e_l=e_v+R_vT-L(T)=c_pT-L$ (∵ $h_v-h_l=L$, $h_v=e_v+R_vT$, $h_l\approx e_l$) より
+$e=(1-g)e_v+ge_l=(c_v+gR_v)T-gL(T)$ (論文 Eq.18, $g_0{=}0$)。$T$ を Newton で反転、
+$p=(1-g)\rho R_v T$ ($R_v=(\gamma-1)c_v$)。
 
 ### 一温度近似 (T_v=T_d=T)
 
@@ -126,16 +128,16 @@ T 1 変数 Newton で、拡張時に 2×2 Newton へ置換できる設計。
 保存量から $e_{in}=\rho e/\rho-\tfrac12|\mathbf u|^2$ を作り、
 
 $$
-G(T)=c_v T - g\,L(T)-e_{in}=0,\quad G'(T)=c_v - g\,L'(T)
+G(T)=(c_v+gR_v)T - g\,L(T)-e_{in}=0,\quad G'(T)=(c_v+gR_v) - g\,L'(T)
 $$
 
 をセルごとに Newton で解く ($L'$ は数値微分)。$g$ は総液相質量分率 $\sum_s \rho g_s/\rho$ ($g_s$ は
 device `rog` 配列、`condensationInit_d` が構築)。$g<10^{-12}$ で従来 CPG 経路 ($T=e_{in}/c_v$) を呼び、
 **単相 CPG に bit 同一**を保証 (圧力も $(1-g)=1$ で従来 $\rho R T$ と一致)。$\rho e$・$Ht$ は
-$e_{mix}=c_v T-gL$ で再構成、frozen 音速は気相 $\sqrt{\gamma R T}$ (loose coupling 近似)。
+$e_{mix}=(c_v+gR_v)T-gL$ で再構成、frozen 音速は気相 $\sqrt{\gamma R_v T}$ (loose coupling 近似)。
 
-TP 版 (`thermalMethod 2`, 後続 B) は $e_v(T)$ を NASA-9 thermo (`thermo_cph_mix`) で評価する以外は同形
-(`cond_T_from_e_onetemp`)、$g=0$ で `thermo_T_from_e` に厳密縮約。
+TP 版 (`thermalMethod 2`, 後続 B) は $e_v(T)$ を NASA-9 thermo で評価する以外は同形
+($e=e_v(T)+gR_vT-gL$, `cond_T_from_e_onetemp`)、$g=0$ で `thermo_T_from_e` に厳密縮約。
 
 ### 検証 (host unit test 済)
 
