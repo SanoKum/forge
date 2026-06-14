@@ -268,3 +268,14 @@
     角 CV を隣接へ merge して極小 CV を作らない / 角専用の粘性フラックス制限・dt フロア / wall BC と outlet BC の
     ゴースト整合 (角では wall 優先で no-slip を満たす)。run: `run_dual_visc_conical_node_{cornerfix(o2),cf_o1,cf_cfl03,
     cf_nan,cf_cfl03_nan}/` (全て発散、NaN 種=exit-lip)、cell 比較 `run_dual_visc_conical_cell_m3/` (収束)。
+- `2026-06-14` — **node 内部双対面の面補間係数を中点 (fx=0.5) に固定するフラグ `nodeMidpointFx` (既定 0=OFF)**
+  (レビュー指摘)。`dualFaceCent` がエッジ中点でなく面積加重重心のため `fx` が歪み面で 0.5 からずれていた問題を、
+  標準的な median-dual エッジ補間 $\phi_f=\tfrac12(\phi_A+\phi_B)$ に揃える。`calcStructualVariables_d` に `nodeMode`
+  (`discretization=="node" && nodeMidpointFx==1`) を渡し内部面 (`ip<nNormalPlanes`) で `fx=0.5` 固定。
+  cell モード・境界半割面は不変。docs/discretization/implementation.md §7.4。
+  **検証** (node 層流 40k, `run_divufix_node_after` 幾何fx vs `run_fx_node` fx0.5、build-lsq vs build-lsqfx、divu 込み):
+  近壁 `dUxdy` checkerboard roughness 99pct **12.84→8.23 (−36%)** 低減。**SU2 (axisym laminar 同条件 `run_su2cmp_su2_lam`)
+  壁圧比較で fx ON/OFF は区別不能 (<0.5%)、両者 SU2 に平均 3.2% 一致** → fx=0.5 は SU2 一致を悪化させず安全。
+  局所 Ux は出口リップ近傍で 1376→430 と変わるが圧力場に伝播せず、SU2/forge とも未収束のため near-wall 速度細部の
+  厳密な是非は未確定 → 既定 OFF で opt-in 残置。node SST は node-viscous 脆弱性 (§7.2)+SST 剛性で baseline build から
+  発散し検証不可。

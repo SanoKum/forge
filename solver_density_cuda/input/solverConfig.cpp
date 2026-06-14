@@ -198,6 +198,12 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["nodeWallDirichlet"]) {
             this->nodeWallDirichlet = config["mesh"]["nodeWallDirichlet"].as<int>();
         }
+        if (config["mesh"]["gradLSQ"]) {
+            this->gradLSQ = config["mesh"]["gradLSQ"].as<int>();
+        }
+        if (config["mesh"]["nodeMidpointFx"]) {
+            this->nodeMidpointFx = config["mesh"]["nodeMidpointFx"].as<int>();
+        }
 
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");
@@ -281,6 +287,12 @@ void solverConfig::read(std::string fname)
 
         if (this->katoLaunder < 0 || this->katoLaunder > 1) {
             throw std::runtime_error("Key 'katoLaunder' in 'turbulence' must be 0 or 1.");
+        }
+
+        // 乱流プラントル数 Pr_t (乱流熱伝導 k_t = cp*mu_t/Pr_t)。既定 0.9。
+        this->turbulentPrandtl = getOptionalValidatedValue<flow_float>(turb, "turbulentPrandtl", 0.85, "turbulence");
+        if (this->turbulentPrandtl <= 0.0) {
+            throw std::runtime_error("Key 'turbulentPrandtl' in 'turbulence' must be positive.");
         }
 
         if (this->LESorRANS < 0 || this->LESorRANS > 2) {

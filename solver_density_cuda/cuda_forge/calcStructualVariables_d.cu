@@ -10,9 +10,10 @@ void calcStructualVariables_d
  geom_int nPlanes, geom_int nNormalPlanes,
  geom_int* plane_cells ,  
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz ,  geom_float* ss,
- geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz ,  
- geom_float* ccx ,  geom_float* ccy ,  geom_float* ccz ,  
- geom_float* fx  ,  geom_float* dcc 
+ geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz ,
+ geom_float* ccx ,  geom_float* ccy ,  geom_float* ccz ,
+ geom_float* fx  ,  geom_float* dcc ,
+ int nodeMode   // 1: node-centered (median-dual) → 内部双対面は fx=0.5 (ノード間中点) に固定
 )
 {
     geom_int  ip  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -47,18 +48,28 @@ void calcStructualVariables_d
 
         fx [ip] = dc1p/(dc0p + dc1p);
         dcc[ip] = dc;
+
+        // node-centered: 内部双対面はノード–ノード中点で値を取る (φ_f=½(φ0+φ1)) のが標準的な
+        // median-dual エッジ補間。歪み面で重心射影 fx が 0.5 からずれる (cell では従来どおり幾何 fx)。
+        // 境界半割面 (ip>=nNormalPlanes) はゴースト/弱形式扱いのため対象外。
+        if (nodeMode == 1 && ip < nNormalPlanes) {
+            fx[ip] = (geom_float)0.5;
+        }
     }
 };
 
-void calcStructualVariables_d_wrapper(cudaConfig& cuda_cfg , mesh& msh,  variables& v)
+void calcStructualVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh,  variables& v)
 {
+    // node-centered かつ nodeMidpointFx=1 のときのみ内部双対面を fx=0.5 に固定 (SU2 検証まで既定 OFF)。
+    const int nodeMode = (cfg.discretization == "node" && cfg.nodeMidpointFx == 1) ? 1 : 0;
     calcStructualVariables_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>>(
         msh.nPlanes, msh.nNormalPlanes,
         msh.map_plane_cells_d,
         v.p_d["sx"] , v.p_d["sy"] , v.p_d["sz"], v.p_d["ss"],
         v.p_d["pcx"], v.p_d["pcy"], v.p_d["pcz"],
         v.c_d["ccx"], v.c_d["ccy"], v.c_d["ccz"],
-        v.p_d["fx"] , v.p_d["dcc"]
+        v.p_d["fx"] , v.p_d["dcc"],
+        nodeMode
     );
 
     //for (auto& bc : msh.bconds)

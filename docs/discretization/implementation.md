@@ -241,6 +241,69 @@ P≤Pt/ro>0/T>0; 高 Re 層流で BL は微小厚=未解像のため場は概ね
 **Phase 2 (後続) — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: `convectiveFlux_boundary_d` を SLAU 等価にした上で
 半割面弱形式へ、スカラ輸送 (rans/species) も境界カーネル化、その後 node モードで ghost 生成停止。
 
+### 7.3 node モード: 最小二乗 (LSQ) 勾配 (`gradLSQ`, 既定 OFF)
+
+専用計画: [`discretization-lsq-gradient.md`](../../.github/plans/discretization-lsq-gradient.md)。
+
+**動機**: node-centered (median-dual) の近壁では Green-Gauss 面勾配 (面値 $\phi_f$ を両側中心の線形補間で作る、
+[gradient/theory.md](../gradient/theory.md)) が **checkerboard (奇偶デカップリング) モード**を持ち、薄い粘性境界層で
+速度勾配 $\to$ せん断応力を振動させる。GG は隣接「面」を介した広い stencil の平均で、median-dual の歪んだ近壁双対面では
+中心点の値変動を平滑化しきれない。**重み付き最小二乗 (LSQ) 勾配**は近傍 CV「中心」の差分を直接フィットするため、
+この checkerboard を持たず近壁で素直な勾配を返す。
+
+**手法**: セル $i$ の勾配 $\mathbf{g}$ を、近傍 $j$ について逆距離二乗重み $w_{ij}=1/|\mathbf{d}_{ij}|^2$
+($\mathbf{d}_{ij}=\mathbf{x}_j-\mathbf{x}_i$) を付けた正規方程式
+
+$$
+\underbrace{\Big(\textstyle\sum_j w_{ij}\,\mathbf{d}_{ij}\mathbf{d}_{ij}^{\mathsf T}\Big)}_{M\ (\text{対称}3\times3)} \mathbf{g}
+= \underbrace{\textstyle\sum_j w_{ij}\,\mathbf{d}_{ij}\,(\phi_j-\phi_i)}_{\mathbf b}
+$$
+
+で解く。境界は **bvar 境界値** (壁=速度 0 等) を半割面重心 $\mathbf{p}_c$ の LSQ 点として加え、勾配を閉じる
+(GG の「ゴースト値を $c_2$ とする」閉じ方の LSQ 版)。
+
+**実装** ([calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu)): 3 カーネルで構成。
+1. `lsqGrad_accumInternal_d` — per-cell gather で**内部面のみ** (`ip < nNormalPlanes`) を走査し $M$ と $\mathbf b$ を蓄積。
+   $\mathbf b$ は既存の勾配配列を流用して書く (専用バッファ不要)。$M$ は static な scratch (`Mxx..Mzz`、`nCells` 変化時のみ再確保)。
+2. `lsqGrad_accumBoundary_d` — 各境界半割面の bvar 点を `atomicAdd` で $M,\mathbf b$ に加える (1 セルが複数境界面を持つため atomic)。
+3. `lsqGrad_solve_d` — 対称 $3\times3$ を変数ごとに解いて勾配を**その場で上書き** (`lsq_solve_sym3`; $m_{zz}\le\text{tol}$ を
+   2D と判定し $xy$ の $2\times2$ を解き $g_z=0$)。最後に `divU` を更新。$M$ の組み立て・solve は倍精度。
+
+`gradLSQ=1` かつ `discretization=="node"` のときのみ有効で、LSQ 経路は wrapper 内で**早期 `return`** し GG の正規化
+(`calcGradient_2_d`) と弱形式境界加算 (§7.2 の `calcGradient_b_d` ループ) をスキップする (LSQ は勾配を直接解くため正規化不要)。
+**cell モード、および `gradLSQ=0` (既定) の node モードは従来の GG 経路のまま**で、数値はビット不変。
+
+**設定**: `mesh.gradLSQ` (0:GG, 1:LSQ)。[solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp)。
+
+**検証状況 (未完)**: コードは実装済みだが **GPU 実 run による検証は未実施** (本セクション記載時点で `gradLSQ=1` を使った
+`run_*` は皆無)。検証ケース・判定基準は計画 §6 を参照。実装上の**未確認リスク**: ① ghost セル
+(`ic >= nCells`) の勾配は LSQ では更新されない (内部面 gather は実セルのみ) — node 弱形式では境界寄与を bvar で
+閉じるため不要のはずだが要確認、② 1 セル厚 2D での z 境界面 ($d_z\ne0$) が $m_{zz}$ に混入して誤って 3D 解に
+落ちないか (bvar の対称面値で $g_z\approx0$ になる想定だが要確認)。
+
+### 7.4 node モード: 内部双対面の面補間係数を中点 (fx=0.5) に固定
+
+node-centered (median-dual) では、双対面を挟む 2 つの CV 中心は**ノード**であり、面値は
+ノード–ノード中点での平均 $\phi_f=\tfrac12(\phi_A+\phi_B)$ を取るのが標準的なエッジベース補間 (2 次精度)。
+しかし forge の `dualFaceCent` は各セルの (エッジ中点 $M$ → セル重心 $G$) 区間の**面積加重重心**で、
+$M$ そのものではない ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp))。このため面補間係数
+`fx = dc1p/(dc0p+dc1p)` ([calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu)、
+面重心を法線方向に射影した距離比) は対称メッシュでは 0.5 だが**歪み面では 0.5 からずれ**、ノード間の中点で
+値を取らない。
+
+**修正 (2026-06-14)**: フラグ `nodeMidpointFx` (既定 0=OFF) を追加。`discretization=="node"` かつ
+`nodeMidpointFx==1` のとき**内部双対面** (`ip < nNormalPlanes`) を `fx[ip]=0.5` に固定し
+$\phi_f=\tfrac12(\phi_A+\phi_B)$ の中点補間にする ([calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu))。
+cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は対流・粘性の全面補間で使われる
+(gradient の over-relaxed 法線項が使う `dcc` は CV 中心間距離のまま)。
+
+**検証 (case/29 conical, node laminar viscous 40k)**: `fx=0.5` は近壁 `dUxdy` の checkerboard roughness を
+低減 (99pct 12.84→8.23, −36%)。SU2 (axisym laminar 同条件) との**壁圧比較で fx ON/OFF は区別不能** (<0.5% 差、
+両者とも SU2 に平均 3.2% 一致、最大は未収束の超音速出口)。局所 Ux は出口リップ近傍で大きく変わる
+(1376→430) が圧力場に伝播しない近傍速度の細部。**SU2/forge とも本ケースは未収束のため near-wall 速度細部の
+厳密な是非は未確定**だが、fx=0.5 は SU2 一致を悪化させず checkerboard を下げる。既定 OFF・opt-in で残置。
+計画は [`discretization-median-dual.md`](../../.github/plans/discretization-median-dual.md)。
+
 ## 5. 設定
 
 [solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。

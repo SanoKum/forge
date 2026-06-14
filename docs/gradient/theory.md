@@ -64,7 +64,9 @@ $$
 ## 既知の制約
 
 - 制限関数 (limiter) は適用していない。スカラー量も含め純粋な Green-Gauss。
-- 高次再構成 (二次以上) と最小二乗勾配は未実装。
+- 高次再構成 (二次以上) は未実装。最小二乗 (LSQ) 勾配は **node-centered モード限定**で
+  `gradLSQ=1` のとき利用可 (近壁 checkerboard 対策、既定は Green-Gauss)。詳細は
+  [discretization/implementation.md §7.3](../discretization/implementation.md)。cell モードは GG のみ。
 - 境界面の寄与はゴーストセル値を `c_2` として扱うことで吸収する設計。
   GPU カーネル `calcGradient_b_d` は実装されているが現状コメントアウトされており、
   境界寄与は内部面ループ + ゴーストセル値で表現される。

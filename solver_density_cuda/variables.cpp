@@ -359,7 +359,7 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         cudaMemcpy(c_A_planar , A_planar_h , msh.nCells_all*sizeof(geom_float) , cudaMemcpyHostToDevice);
     }
 
-    calcStructualVariables_d_wrapper(cuda_cfg , msh , *this);
+    calcStructualVariables_d_wrapper(cfg , cuda_cfg , msh , *this);
 
     free(sx) ; free(sy) ; free(sz) ; free(ss);
     free(sx_planar) ; free(sy_planar) ; free(sz_planar) ; free(ss_planar);

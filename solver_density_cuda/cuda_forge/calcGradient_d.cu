@@ -469,6 +469,139 @@ __global__ void zeroBndNodeGradient_d
     dPdx[ic]=0;  dPdy[ic]=0;  dPdz[ic]=0;
 }
 
+// ===================== 最小二乗 (LSQ) 勾配 (node-centered 用) =====================
+// median-dual の近壁で Green-Gauss 面勾配が checkerboard を持ち粘性 BL を振動させるため、
+// LSQ 勾配 (近傍 CV 中心の重み付き最小二乗) で checkerboard-free に求める。
+// b 配列は既存の勾配配列を流用 (accum で b を貯め、solve で in-place に勾配へ上書き)。
+// M (対称 3x3) は scratch。境界は bvar 境界値 (壁=速度0) を半割面重心 pc の LSQ 点として含め勾配を閉じる。
+
+// 対称 3x3 を解く。2D (mzz≈0) は xy の 2x2 を解き gz=0。
+__device__ __forceinline__ void lsq_solve_sym3(
+    double mxx,double mxy,double mxz,double myy,double myz,double mzz,
+    double bx,double by,double bz,
+    flow_float& gx, flow_float& gy, flow_float& gz)
+{
+    const double tol = 1.0e-12 * (mxx + myy + 1.0e-300);
+    if (mzz <= tol) { // 2D (z 方向に格子が無い)
+        double det = mxx*myy - mxy*mxy;
+        double idet = (fabs(det) > 1.0e-300) ? 1.0/det : 0.0;
+        gx = (flow_float)((myy*bx - mxy*by)*idet);
+        gy = (flow_float)((mxx*by - mxy*bx)*idet);
+        gz = (flow_float)0.0;
+    } else {
+        double c00=myy*mzz-myz*myz, c01=mxz*myz-mxy*mzz, c02=mxy*myz-mxz*myy;
+        double det=mxx*c00+mxy*c01+mxz*c02;
+        double idet=(fabs(det)>1.0e-300)?1.0/det:0.0;
+        double c11=mxx*mzz-mxz*mxz, c12=mxz*mxy-mxx*myz, c22=mxx*myy-mxy*mxy;
+        gx=(flow_float)((c00*bx+c01*by+c02*bz)*idet);
+        gy=(flow_float)((c01*bx+c11*by+c12*bz)*idet);
+        gz=(flow_float)((c02*bx+c12*by+c22*bz)*idet);
+    }
+}
+
+// 内部面 (ip<nNormalPlanes) について per-cell gather で M と b を貯める。
+__global__ void lsqGrad_accumInternal_d(
+    geom_int nCells, geom_int* plane_cells,
+    geom_int* cell_planes_index, geom_int* cell_planes, geom_int nNormalPlanes,
+    geom_float* ccx, geom_float* ccy, geom_float* ccz,
+    flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* P, flow_float* T,
+    flow_float* Mxx, flow_float* Mxy, flow_float* Mxz, flow_float* Myy, flow_float* Myz, flow_float* Mzz,
+    flow_float* drodx, flow_float* drody, flow_float* drodz,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+    flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+    flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+    flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
+    flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    double mxx=0,mxy=0,mxz=0,myy=0,myz=0,mzz=0;
+    double bro[3]={0,0,0}, bux[3]={0,0,0}, buy[3]={0,0,0}, buz[3]={0,0,0}, bp[3]={0,0,0}, bt[3]={0,0,0};
+    const double cx=ccx[ic], cy=ccy[ic], cz=ccz[ic];
+    const double r0=ro[ic], ux0=Ux[ic], uy0=Uy[ic], uz0=Uz[ic], p0=P[ic], t0=T[ic];
+    const geom_int st=cell_planes_index[ic], en=cell_planes_index[ic+1];
+    for (geom_int ilp=st; ilp<en; ++ilp) {
+        const geom_int ip=cell_planes[ilp];
+        if (ip>=nNormalPlanes) continue;          // 境界面は別途 bvar で
+        const geom_int ic0=plane_cells[2*ip+0], ic1=plane_cells[2*ip+1];
+        const geom_int jc=(ic0==ic)?ic1:ic0;
+        const double dx=ccx[jc]-cx, dy=ccy[jc]-cy, dz=ccz[jc]-cz;
+        const double w=1.0/fmax(dx*dx+dy*dy+dz*dz,1.0e-300);
+        mxx+=w*dx*dx; mxy+=w*dx*dy; mxz+=w*dx*dz; myy+=w*dy*dy; myz+=w*dy*dz; mzz+=w*dz*dz;
+        const double dr=ro[jc]-r0, dux=Ux[jc]-ux0, duy=Uy[jc]-uy0, duz=Uz[jc]-uz0, dp=P[jc]-p0, dt=T[jc]-t0;
+        bro[0]+=w*dx*dr; bro[1]+=w*dy*dr; bro[2]+=w*dz*dr;
+        bux[0]+=w*dx*dux; bux[1]+=w*dy*dux; bux[2]+=w*dz*dux;
+        buy[0]+=w*dx*duy; buy[1]+=w*dy*duy; buy[2]+=w*dz*duy;
+        buz[0]+=w*dx*duz; buz[1]+=w*dy*duz; buz[2]+=w*dz*duz;
+        bp[0]+=w*dx*dp;  bp[1]+=w*dy*dp;  bp[2]+=w*dz*dp;
+        bt[0]+=w*dx*dt;  bt[1]+=w*dy*dt;  bt[2]+=w*dz*dt;
+    }
+    Mxx[ic]=mxx; Mxy[ic]=mxy; Mxz[ic]=mxz; Myy[ic]=myy; Myz[ic]=myz; Mzz[ic]=mzz;
+    drodx[ic]=bro[0]; drody[ic]=bro[1]; drodz[ic]=bro[2];
+    dUxdx[ic]=bux[0]; dUxdy[ic]=bux[1]; dUxdz[ic]=bux[2];
+    dUydx[ic]=buy[0]; dUydy[ic]=buy[1]; dUydz[ic]=buy[2];
+    dUzdx[ic]=buz[0]; dUzdy[ic]=buz[1]; dUzdz[ic]=buz[2];
+    dPdx[ic]=bp[0];   dPdy[ic]=bp[1];   dPdz[ic]=bp[2];
+    dTdx[ic]=bt[0];   dTdy[ic]=bt[1];   dTdz[ic]=bt[2];
+}
+
+// 境界半割面の bvar 境界値を LSQ 点 (半割面重心 pc) として M,b へ atomicAdd で加える。
+__global__ void lsqGrad_accumBoundary_d(
+    geom_int nb, geom_int* bplane_plane, geom_int* bplane_cell,
+    geom_float* pcx, geom_float* pcy, geom_float* pcz,
+    geom_float* ccx, geom_float* ccy, geom_float* ccz,
+    flow_float* rob, flow_float* Uxb, flow_float* Uyb, flow_float* Uzb, flow_float* Psb, flow_float* Tsb,
+    flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* P, flow_float* T,
+    flow_float* Mxx, flow_float* Mxy, flow_float* Mxz, flow_float* Myy, flow_float* Myz, flow_float* Mzz,
+    flow_float* drodx, flow_float* drody, flow_float* drodz,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+    flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+    flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+    flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
+    flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz)
+{
+    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ib >= nb) return;
+    const geom_int ip=bplane_plane[ib], ic=bplane_cell[ib];
+    const double dx=pcx[ip]-ccx[ic], dy=pcy[ip]-ccy[ic], dz=pcz[ip]-ccz[ic];
+    const double w=1.0/fmax(dx*dx+dy*dy+dz*dz,1.0e-300);
+    atomicAdd(&Mxx[ic],(flow_float)(w*dx*dx)); atomicAdd(&Mxy[ic],(flow_float)(w*dx*dy));
+    atomicAdd(&Mxz[ic],(flow_float)(w*dx*dz)); atomicAdd(&Myy[ic],(flow_float)(w*dy*dy));
+    atomicAdd(&Myz[ic],(flow_float)(w*dy*dz)); atomicAdd(&Mzz[ic],(flow_float)(w*dz*dz));
+    const double dr=rob[ib]-ro[ic], dux=Uxb[ib]-Ux[ic], duy=Uyb[ib]-Uy[ic],
+                 duz=Uzb[ib]-Uz[ic], dp=Psb[ib]-P[ic], dt=Tsb[ib]-T[ic];
+    atomicAdd(&drodx[ic],(flow_float)(w*dx*dr)); atomicAdd(&drody[ic],(flow_float)(w*dy*dr)); atomicAdd(&drodz[ic],(flow_float)(w*dz*dr));
+    atomicAdd(&dUxdx[ic],(flow_float)(w*dx*dux)); atomicAdd(&dUxdy[ic],(flow_float)(w*dy*dux)); atomicAdd(&dUxdz[ic],(flow_float)(w*dz*dux));
+    atomicAdd(&dUydx[ic],(flow_float)(w*dx*duy)); atomicAdd(&dUydy[ic],(flow_float)(w*dy*duy)); atomicAdd(&dUydz[ic],(flow_float)(w*dz*duy));
+    atomicAdd(&dUzdx[ic],(flow_float)(w*dx*duz)); atomicAdd(&dUzdy[ic],(flow_float)(w*dy*duz)); atomicAdd(&dUzdz[ic],(flow_float)(w*dz*duz));
+    atomicAdd(&dPdx[ic],(flow_float)(w*dx*dp)); atomicAdd(&dPdy[ic],(flow_float)(w*dy*dp)); atomicAdd(&dPdz[ic],(flow_float)(w*dz*dp));
+    atomicAdd(&dTdx[ic],(flow_float)(w*dx*dt)); atomicAdd(&dTdy[ic],(flow_float)(w*dy*dt)); atomicAdd(&dTdz[ic],(flow_float)(w*dz*dt));
+}
+
+// M g = b を変数ごとに解いて勾配を in-place に上書きし、divU を更新する。
+__global__ void lsqGrad_solve_d(
+    geom_int nCells,
+    flow_float* Mxx, flow_float* Mxy, flow_float* Mxz, flow_float* Myy, flow_float* Myz, flow_float* Mzz,
+    flow_float* drodx, flow_float* drody, flow_float* drodz,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+    flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+    flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+    flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
+    flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz,
+    flow_float* divU)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const double mxx=Mxx[ic], mxy=Mxy[ic], mxz=Mxz[ic], myy=Myy[ic], myz=Myz[ic], mzz=Mzz[ic];
+    lsq_solve_sym3(mxx,mxy,mxz,myy,myz,mzz, drodx[ic],drody[ic],drodz[ic], drodx[ic],drody[ic],drodz[ic]);
+    lsq_solve_sym3(mxx,mxy,mxz,myy,myz,mzz, dUxdx[ic],dUxdy[ic],dUxdz[ic], dUxdx[ic],dUxdy[ic],dUxdz[ic]);
+    lsq_solve_sym3(mxx,mxy,mxz,myy,myz,mzz, dUydx[ic],dUydy[ic],dUydz[ic], dUydx[ic],dUydy[ic],dUydz[ic]);
+    lsq_solve_sym3(mxx,mxy,mxz,myy,myz,mzz, dUzdx[ic],dUzdy[ic],dUzdz[ic], dUzdx[ic],dUzdy[ic],dUzdz[ic]);
+    lsq_solve_sym3(mxx,mxy,mxz,myy,myz,mzz, dPdx[ic],dPdy[ic],dPdz[ic], dPdx[ic],dPdy[ic],dPdz[ic]);
+    lsq_solve_sym3(mxx,mxy,mxz,myy,myz,mzz, dTdx[ic],dTdy[ic],dTdz[ic], dTdx[ic],dTdy[ic],dTdz[ic]);
+    divU[ic] = dUxdx[ic] + dUydy[ic] + dUzdz[ic];
+}
+
 void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     flow_float* grad_volume = (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"];
@@ -515,6 +648,58 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     //CHECK_CUDA_ERROR(cudaMemset(var.c_d["droedz"], 0.0, msh.nCells*sizeof(flow_float)));
 
 
+    // ---- LSQ 勾配 (node-centered, gradLSQ=1): Green-Gauss の checkerboard を避ける ----
+    if (cfg.gradLSQ && cfg.discretization == "node") {
+        static flow_float *Mxx=nullptr,*Mxy=nullptr,*Mxz=nullptr,*Myy=nullptr,*Myz=nullptr,*Mzz=nullptr;
+        static geom_int M_n=0;
+        if (Mxx==nullptr || M_n!=msh.nCells) {
+            if (Mxx){cudaFree(Mxx);cudaFree(Mxy);cudaFree(Mxz);cudaFree(Myy);cudaFree(Myz);cudaFree(Mzz);}
+            size_t sz=sizeof(flow_float)*msh.nCells;
+            gpuErrchk(cudaMalloc(&Mxx,sz)); gpuErrchk(cudaMalloc(&Mxy,sz)); gpuErrchk(cudaMalloc(&Mxz,sz));
+            gpuErrchk(cudaMalloc(&Myy,sz)); gpuErrchk(cudaMalloc(&Myz,sz)); gpuErrchk(cudaMalloc(&Mzz,sz));
+            M_n=msh.nCells;
+        }
+        lsqGrad_accumInternal_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+            msh.nCells, msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.nNormalPlanes,
+            var.c_d["ccx"],var.c_d["ccy"],var.c_d["ccz"],
+            var.c_d["ro"],var.c_d["Ux"],var.c_d["Uy"],var.c_d["Uz"],var.c_d["P"],var.c_d["T"],
+            Mxx,Mxy,Mxz,Myy,Myz,Mzz,
+            var.c_d["drodx"],var.c_d["drody"],var.c_d["drodz"],
+            var.c_d["dUxdx"],var.c_d["dUxdy"],var.c_d["dUxdz"],
+            var.c_d["dUydx"],var.c_d["dUydy"],var.c_d["dUydz"],
+            var.c_d["dUzdx"],var.c_d["dUzdy"],var.c_d["dUzdz"],
+            var.c_d["dPdx"],var.c_d["dPdy"],var.c_d["dPdz"],
+            var.c_d["dTdx"],var.c_d["dTdy"],var.c_d["dTdz"]);
+        for (auto& bc : msh.bconds) {
+            if (bc.iPlanes.size()==0) continue;
+            lsqGrad_accumBoundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
+                (geom_int)bc.iPlanes.size(), bc.map_bplane_plane_d, bc.map_bplane_cell_d,
+                var.p_d["pcx"],var.p_d["pcy"],var.p_d["pcz"],
+                var.c_d["ccx"],var.c_d["ccy"],var.c_d["ccz"],
+                bc.bvar_d["ro"],bc.bvar_d["Ux"],bc.bvar_d["Uy"],bc.bvar_d["Uz"],bc.bvar_d["Ps"],bc.bvar_d["Ts"],
+                var.c_d["ro"],var.c_d["Ux"],var.c_d["Uy"],var.c_d["Uz"],var.c_d["P"],var.c_d["T"],
+                Mxx,Mxy,Mxz,Myy,Myz,Mzz,
+                var.c_d["drodx"],var.c_d["drody"],var.c_d["drodz"],
+                var.c_d["dUxdx"],var.c_d["dUxdy"],var.c_d["dUxdz"],
+                var.c_d["dUydx"],var.c_d["dUydy"],var.c_d["dUydz"],
+                var.c_d["dUzdx"],var.c_d["dUzdy"],var.c_d["dUzdz"],
+                var.c_d["dPdx"],var.c_d["dPdy"],var.c_d["dPdz"],
+                var.c_d["dTdx"],var.c_d["dTdy"],var.c_d["dTdz"]);
+        }
+        lsqGrad_solve_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+            msh.nCells, Mxx,Mxy,Mxz,Myy,Myz,Mzz,
+            var.c_d["drodx"],var.c_d["drody"],var.c_d["drodz"],
+            var.c_d["dUxdx"],var.c_d["dUxdy"],var.c_d["dUxdz"],
+            var.c_d["dUydx"],var.c_d["dUydy"],var.c_d["dUydz"],
+            var.c_d["dUzdx"],var.c_d["dUzdy"],var.c_d["dUzdz"],
+            var.c_d["dPdx"],var.c_d["dPdy"],var.c_d["dPdz"],
+            var.c_d["dTdx"],var.c_d["dTdy"],var.c_d["dTdz"],
+            var.c_d["divU"]);
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+        return;   // LSQ は正規化不要 (直接勾配を解く)。GG 経路はスキップ。
+    }
+
     // sum over planes
     // K5: atomicAdd 版 calcGradient_1_d を cell-gather 版へ置換（raw sum を書く。正規化は下の _2_d）。
     calcGradient_cellgather_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
@@ -531,10 +716,38 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
         var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
         var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
         var.c_d["divU"],
-        // 勾配は cell/node とも全面 (内部+境界 plane=ゴースト/ミラー) で処理する。壁ミラーゴーストは
-        // 面値 φ_b=0 (no-slip) を与えるため node でも勾配の境界閉性は保たれる (calcGradient_b_d 不要)。
-        msh.nPlanes
+        // node 弱形式: 境界半割面 (ip>=nNormalPlanes) を cellgather でスキップし calcGradient_b_d (bvar+真の
+        // 半割面) に委ねる。壁ノードは壁上に乗りミラーゴーストが退化するため、ミラー経由の cellgather 勾配が
+        // 不正確 → 粘性 BL 振動の原因。弱形式の境界寄与で正しく閉じる。cell は nPlanes (全面処理, 従来)。
+        (cfg.discretization == "node") ? msh.nNormalPlanes : msh.nPlanes
     ) ;
+
+    // node 弱形式 境界勾配: 各境界半割面の φ_b·S_b を bvar から加える (cellgather は内部のみ計算済み)。
+    // 軸対称は cellgather と同じ planar 面積 (grad_sx=sx_planar) を使い r 重みを一致させる。
+    if (cfg.discretization == "node") {
+        for (auto& bc : msh.bconds)
+        {
+            calcGradient_b_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
+                bc.iPlanes.size(),
+                bc.map_bplane_plane_d, bc.map_bplane_cell_d, bc.map_bplane_cell_ghst_d,
+                var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+                var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+                grad_sx          , grad_sy       , grad_sz       , grad_ss,
+                bc.bvar_d["ro"], bc.bvar_d["roUx"], bc.bvar_d["roUy"], bc.bvar_d["roUz"], bc.bvar_d["roe"],
+                bc.bvar_d["Ux"], bc.bvar_d["Uy"], bc.bvar_d["Uz"],
+                bc.bvar_d["Tt"], bc.bvar_d["Pt"], bc.bvar_d["Ts"], bc.bvar_d["Ps"], bc.bvar_d["Ht"],
+                var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
+                var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
+                var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
+                var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
+                var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
+                var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
+                var.c_d["divU"]
+            ) ;
+        }
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchk( cudaDeviceSynchronize() );
+    }
 
 
     calcGradient_2_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 

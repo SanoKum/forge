@@ -13,9 +13,10 @@ __global__ void calcStructualVariables_d
  geom_int , geom_int,
  geom_int* ,  
  geom_float* ,  geom_float* ,  geom_float* ,  geom_float* ,  
- geom_float* ,  geom_float* ,  geom_float* ,  
- geom_float* ,  geom_float* ,  geom_float* ,  
- geom_float* ,  geom_float*
+ geom_float* ,  geom_float* ,  geom_float* ,
+ geom_float* ,  geom_float* ,  geom_float* ,
+ geom_float* ,  geom_float* ,
+ int
 );
 
 //__global__ void calcStructualVariables_bp_d
@@ -30,5 +31,5 @@ __global__ void calcStructualVariables_d
 //);
 //
 
-void calcStructualVariables_d_wrapper( cudaConfig& , mesh& ,  variables& );
+void calcStructualVariables_d_wrapper( solverConfig& , cudaConfig& , mesh& ,  variables& );
 
