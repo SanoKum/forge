@@ -762,9 +762,48 @@ flow_float* T,
 
     if (ib < nb) {
         //geom_int  ip = bplane_plane[ib];
+        geom_int  ic = bplane_cell[ib];        // 内面セル
         geom_int  ig = bplane_cell_ghst[ib];
 
+        // 速度は常に指定値 (Uxb/Uyb/Uzb) を課す。
+        // 超音速流入: 全量を境界指定 (ρ=rob, P=Psb) で固定 (従来挙動)。
+        // 亜音速流入: 1 特性が内部から出るため ρ,P は内面セルから外挿し、
+        //             速度のみ指定する (velocity inlet)。
+        // 判定は指定速度の大きさ vs 内面音速 (Mach = |U_in| / c_interior)。
         flow_float ek_b = 0.5f*(Uxb[ib]*Uxb[ib] + Uyb[ib]*Uyb[ib] + Uzb[ib]*Uzb[ib]);
+        flow_float Umag = sqrt(2.0f*ek_b);
+        bool supersonic = (Umag >= sonic[ic]);
+
+        // 超音速流入: 全量を境界指定 (ρ=rob, P=Psb)。
+        // 亜音速流入: 非反射 (Riemann 不変量) 速度入口。純粋な速度固定+圧力外挿は
+        //   音響波を反射して不安定化するため、外向き特性 R+=un_i+2c_i/(γ-1) を内面から取り、
+        //   指定法線速度 un_b と合わせて境界音速 c_b を決める。熱力学レベルは config エントロピー
+        //   s=Psb/rob^γ で閉じ、ρ,P を一意化する (一様流では基準状態を厳密保存)。
+        flow_float ro_use, P_use;
+        if (supersonic) {
+            ro_use = rob[ib];
+            P_use  = Psb[ib];
+        } else if (thermalMethod != 2) {
+            geom_int ip = bplane_plane[ib];
+            flow_float inv_ss = 1.0f/ss[ip];
+            flow_float nx = sx[ip]*inv_ss, ny = sy[ip]*inv_ss, nz = sz[ip]*inv_ss;
+            flow_float un_i = Ux[ic]*nx + Uy[ic]*ny + Uz[ic]*nz;   // 内面法線速度
+            flow_float c_i  = sonic[ic];
+            flow_float un_b = Uxb[ib]*nx + Uyb[ib]*ny + Uzb[ib]*nz; // 指定法線速度
+            flow_float Rplus = un_i + 2.0f*c_i/(ga-1.0f);          // 内面からの外向き特性
+            flow_float c_b   = 0.5f*(ga-1.0f)*(Rplus - un_b);
+            flow_float c_floor = 1.0e-3f*c_i;
+            if (c_b < c_floor) c_b = c_floor;                      // 非物理 (c_b<=0) 回避
+            flow_float s_cfg = Psb[ib]/pow(rob[ib], ga);           // config エントロピー
+            ro_use = pow(c_b*c_b/(ga*s_cfg), 1.0f/(ga-1.0f));
+            P_use  = ro_use*c_b*c_b/ga;
+        } else {
+            // TP (thermalMethod 2) は等エントロピー閉包が非定数 γ で複雑なため、当面は
+            // 圧力のみ内面外挿・等温で ρ を整合 (簡易)。必要なら別途精緻化。
+            P_use  = P[ic];
+            ro_use = rob[ib]*P_use/Psb[ib];
+        }
+
         flow_float roe_b, sonic_b, Ts_b;
         if (thermalMethod == 2 && Yb != nullptr && nSpecies >= 2) {
             // 多成分 TP: 入口組成 Y_s^in と整合。T=P/(ρ R_mix(Y)),
@@ -781,52 +820,55 @@ flow_float* T,
             for (int s = 0; s < nSpecies; s++) Yin[s] *= yinv;
 
             const double Rg  = thermo_R_mix(sp, nSpecies, Yin);
-            const double Tg  = (double)Psb[ib]/((double)rob[ib]*Rg);
+            const double Tg  = (double)P_use/((double)ro_use*Rg);
             const double e   = thermo_e_mix(sp, nSpecies, Yin, Tg);
             const double gmx = thermo_gamma_mix(sp, nSpecies, Yin, Tg);
-            roe_b   = (flow_float)((double)rob[ib]*(e + (double)ek_b));
-            sonic_b = (flow_float)sqrt(gmx*(double)Psb[ib]/(double)rob[ib]);
+            roe_b   = (flow_float)((double)ro_use*(e + (double)ek_b));
+            sonic_b = (flow_float)sqrt(gmx*(double)P_use/(double)ro_use);
             Ts_b    = (flow_float)Tg;
         } else if (thermalMethod == 2) {
-            // 単成分 TP: 指定 (ρ=rob, P=Psb, u) と整合。T=P/(ρ R_s), roe=ρ(e_NASA(T)+ek), sonic=√(γ_s P/ρ)。
+            // 単成分 TP: 指定 (ρ=ro_use, P=P_use, u) と整合。T=P/(ρ R_s), roe=ρ(e_NASA(T)+ek), sonic=√(γ_s P/ρ)。
             const double Rg = thermo_R_species(sp[0]);
-            const double Tg = (double)Psb[ib]/((double)rob[ib]*Rg);
+            const double Tg = (double)P_use/((double)ro_use*Rg);
             const double e  = thermo_h_mass(sp[0], Tg) - Rg*Tg;
             const double cpv= thermo_cp_mass(sp[0], Tg);
             const double gmx= cpv/((cpv-Rg) > 1.0e-6 ? (cpv-Rg) : 1.0e-6);
-            roe_b   = (flow_float)((double)rob[ib]*(e + (double)ek_b));
-            sonic_b = (flow_float)sqrt(gmx*(double)Psb[ib]/(double)rob[ib]);
+            roe_b   = (flow_float)((double)ro_use*(e + (double)ek_b));
+            sonic_b = (flow_float)sqrt(gmx*(double)P_use/(double)ro_use);
             Ts_b    = (flow_float)Tg;
         } else {
-            roe_b   = Psb[ib]/(ga-1.0) + rob[ib]*ek_b;
-            sonic_b = sqrt(ga*Psb[ib]/rob[ib]);
-            Ts_b    = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+            roe_b   = P_use/(ga-1.0) + ro_use*ek_b;
+            sonic_b = sqrt(ga*P_use/ro_use);
+            Ts_b    = P_use*ga/(ro_use*(ga-1.0)*cp);
         }
 
-        ro[ig]    = rob[ib];
-        roUx[ig]  = rob[ib]*Uxb[ib];
-        roUy[ig]  = rob[ib]*Uyb[ib];
-        roUz[ig]  = rob[ib]*Uzb[ib];
+        ro[ig]    = ro_use;
+        roUx[ig]  = ro_use*Uxb[ib];
+        roUy[ig]  = ro_use*Uyb[ib];
+        roUz[ig]  = ro_use*Uzb[ib];
         roe[ig]   = roe_b;
-        P[ig]     = Psb[ib];
+        P[ig]     = P_use;
         Ux[ig]    = Uxb[ib];
         Uy[ig]    = Uyb[ib];
         Uz[ig]    = Uzb[ib];
-        Ht[ig]    = roe[ig]/rob[ib] + Psb[ib]/rob[ib];
+        Ht[ig]    = roe_b/ro_use + P_use/ro_use;
         sonic[ig] = sonic_b;
         T[ig]     = Ts_b;
 
-        //rob[ib]    = rob[ib];
-        roUxb[ib]  = rob[ib]*Uxb[ib];
-        roUyb[ib]  = rob[ib]*Uyb[ib];
-        roUzb[ib]  = rob[ib]*Uzb[ib];
+        // 境界流束 (convectiveFlux_boundary_d) が読む R 状態 (bvar) を更新。
+        // 速度 Uxb/Uyb/Uzb は指定値のまま保持。亜音速では rob/Psb を内面値で上書きする
+        // (outflow_d と同じ作法; 指定 ρ,P は亜音速では使わない)。
+        rob[ib]    = ro_use;
+        roUxb[ib]  = ro_use*Uxb[ib];
+        roUyb[ib]  = ro_use*Uyb[ib];
+        roUzb[ib]  = ro_use*Uzb[ib];
         roeb[ib]   = roe_b;
-        //Psb[ib]    = Psb[ib];
+        Psb[ib]    = P_use;
         Tsb[ib]    = Ts_b;
-        //Uxb[ib]    = Uxb[ib];
+        //Uxb[ib]    = Uxb[ib];  // 速度は指定値を保持
         //Uyb[ib]    = Uyb[ib];
         //Uzb[ib]    = Uzb[ib];
- 
+
     }
 };
 

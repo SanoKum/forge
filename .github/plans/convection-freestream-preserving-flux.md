@@ -65,12 +65,32 @@ forge (float32) は非直交メッシュで一様場 (free-stream) を保持で�
 
 ## 6. 残課題 (別 plan 化)
 
-- **inlet/outflow で流れを与えると依然発散** (fan/StaticMixer, cfl 0.05 でも step3)。
-  free-stream は保存済み (U=0 基準) なので別機構。移流項の metric 整合、inlet/outflow BC、
-  非直交セルでの 1次移流の堅牢性などを切り分ける。`case/33` に periodic 一様流 (U≠0) を
-  足して移流側の free-stream を測るのが次の診断。
-- ROE/AUSM/KEEP への展開。
+- ROE/AUSM/KEEP への pRef 展開 (現状 SLAU のみ)。
 - `docs/convection/implementation.md` への反映と回帰テスト登録。
+
+## 7. 「流れありで発散」の決着 (2026-06-14) — pRef とは別問題だった
+
+当初「inlet/outflow で流れを与えると発散」を free-stream/inlet-3D の問題と疑ったが、
+**backstep の動く実メッシュに同設定を載せても発散** したことで、原因は **実行設定** と確定。
+真因は3つ (いずれも pRef/コンバータ/メッシュとは無関係):
+
+1. **explicit (timeIntegration 3) + 定常 (unsteady=0) は局所時間刻みで不安定**。
+   → 定常は **implicit (11, blockDPLUR, cfl_pseudo≈1, nStepInner≈10)**、explicit なら unsteady=1。
+   (静止場は流れが無いので explicit+定常でも安定 = 当初 free-stream に見えていた)。
+2. **静止場に速度入口を当てると危険**。初期場の流速の向き・速さを入口とおおむね合わせる。
+3. **outlet_statPress は逆流 (Un<0) 分岐で Ptb/Ttb を使う**。Ps のみ指定だと Pt=0→ρ=0→NaN。
+   逆流用 Pt/Tt を設定する (StaticMixer の混合域過渡逆流での step137 発散はこれが原因)。
+
+実証: **fan (Fluent hex) 完全収束** (case/32 run_0011_proper)、
+**StaticMixer (Fluent tet+prism) 300歩健全完走** (case/31 run_0012_backflow)。
+hex/tet/prism の Fluent メッシュが forge で計算可能と実証。レシピは
+`.github/forge-calculation-workflow.md` の Fluent 節に記載。
+
+## 変更ログ
+
+- 2026-06-14: SLAU に pRef 差分を実装。case/33 (歪みhex 静止) で free-stream を machine zero 化。
+- 2026-06-14: 「流れあり発散」を切り分け、原因は実行設定 (explicit+定常 / 静止IC / 逆流 Pt/Tt 欠落)
+  と確定。pRef は静止場の free-stream にのみ寄与。Fluent メッシュ (fan/StaticMixer) の実行を実証。
 
 ## 変更ログ
 

@@ -227,6 +227,17 @@ python3 solver_density_cuda/tools/fluent_h5_to_forge.py convert mesh.cas.h5 mesh
 - 初期値 (`--ro/--ux/--uy/--uz/--p`/`--t`, RANS は `--rok/--roomega`) は一様値で `/VALUE/*` に焼き込まれる。`wall_dist` は `kind` が `wall` で始まる境界面から自動計算する。
 - CFF のレイアウトは Fluent バージョンで揺れる。読めない場合は `dump` で構造を確認し、必要なら `--nodes-path` 等で補う。
 
+### 変換メッシュを安定に回す実行レシピ (重要)
+
+非構造/非直交の Fluent メッシュを発散させずに回すには、実行設定が肝になる (検証済み: fan(hex) 完全収束、StaticMixer(tet+prism) 健全完走)。
+
+1. **1 次風上で投入する** (`space.convMethod: 0`)。歪んだセルで MUSCL(2)は overshoot しやすい。収束後に必要なら 2 次へ上げる。
+2. **初期場の流速を入口流れとおおむね一致させる**。静止場に速度入口を当てると危険 (起動衝撃)。入口が `Ux=50` なら初期場も `U=(50,0,0)` 程度にする。
+3. **定常は陰解法 (`timeIntegration: 11`, `blockDPLUR: 1`, `cfl_pseudo`≈1, `nStepInner`≈10)**。**陽解法 (`timeIntegration: 3`) + 定常 (`unsteady: 0`) は局所時間刻みで不安定**になりやすい。陽解法を使うなら `unsteady: 1` (時間精度)。
+4. **非直交メッシュは `space.pRef` に動作静圧を入れる** (free-stream 保存)。既定 0 で従来挙動。
+5. **出口は `outlet_statPress`** (静圧指定)。`outflow` は超音速用なので亜音速には使わない。
+6. **`outlet_statPress` には逆流用の `Pt`/`Tt` も必ず設定する**。逆流 (出口で内向き) が生じた面では `Pt`/`Tt` から逆流ガスの静的状態を作るため、`Ps` だけだと `Pt=0`→密度 0→NaN になる。混合・剥離など出口で逆流が出うる流れでは必須。
+
 ## 結果ディレクトリの明示 (投入時・まとめ時)
 
 検証計算の所在が後から分からなくならないよう、計算の **投入時** と **結果まとめ時** の両方で、出力先 `run_*` をリポジトリルートからの相対パスで明示する (正本ルールは `AGENTS.md` の「計算結果ディレクトリの明示」)。
