@@ -50,6 +50,43 @@ Wyslouzil et al., *J. Chem. Phys.* **113**, 7317 (2000)
 exit Mach の単調序列 (非粘性 1.99 > 層流 1.94 > 2D乱流 1.88 > 3D乱流 1.53) は
 境界層変位による有効面積減少として物理的に整合。中心線静温はいずれも全温 293 K 以下。
 
+## 非平衡凝縮 (H2O) run 一覧 — Wyslouzil Fig.3 検証
+
+Wyslouzil et al. JCP 113, 7317 (2000) **Fig.3 (pv0=1.0 kPa 水)** 条件で、N2 キャリア中の
+希薄水蒸気 (Y_H2O=0.01095) の非平衡凝縮を 4 モーメント法で計算し、凝縮あり/なしの静圧比を比較する。
+凝縮潜熱で中心線静圧が dry 等エントロピー線より上振れする現象 ([condensation plan](../../.github/plans/condensation-nonequilibrium.md))。
+
+- 入口: `inlet_Pressure` Pt=59070 Pa, Tt=286.65 K, Y(N2,H2O)=(0.98905, 0.01095)。
+- **carrier=CPG**: 低温 (<200K) で NASA-9 TP が外挿不可・発散するため、N2 キャリアは CPG (γ=1.4) で解く
+  (この温度域の N2 cp はほぼ一定で CPG が正確かつ頑健)。H2O は移流種 (vapor budget) として追跡し、
+  凝縮潜熱・物性 (Murphy-Koop psat / Hertz-Knudsen 成長) は CPG エネルギー経路に組み込む。
+- 検証図: `fig3_compare.png` (非粘性), `fig3_compare_visc.png` (非粘性+粘性SST 重ね合わせ)。
+
+| run | 物理 | 凝縮 | 主要結果 | 状態 |
+| --- | --- | --- | --- | --- |
+| `run_0007_h2o_cond` | 2D 非粘性 (CPG+species) | off | dry baseline。収束 (rms_ro↓3.5dec) | active |
+| `run_0008_h2o_cond_on` | 2D 非粘性 | **on** | 潜熱で T 143→185K, p/p0 +19〜28%。cond/dry 比が exp と ~5% 一致 | active |
+| `run_0009_h2o_sst_dry` | 2D 粘性+SST 乱流 | off | dry SST baseline (Wyslouzil 条件)。T≤Tt | active |
+| `run_0010_h2o_sst_cond` | 2D 粘性+SST 乱流 | **on** | viscous+turb での凝縮効果 (ユーザ要望の比較) | active |
+
+**非平衡凝縮の検証結果**:
+
+- **非粘性 (run_0008)**: 凝縮ありの中心線 p/p0 は dry 比で 1.19〜1.28 倍 (スロート下流 2.5〜8 cm)、
+  実験の cond/isentrope 比 1.18〜1.23 と ~5% 以内で一致。**凝縮効果 (比) は定量一致**するが、絶対 p/p0 は
+  非粘性 dry が実験等エントロピーよりやや低い (粘性排除厚さ未考慮)。
+- **粘性+SST 乱流 (run_0010 vs run_0009, ユーザ要望)**: 粘性排除厚さで dry baseline が押し上がり、
+  **絶対 p/p0 も実験と一致**する (下表)。凝縮 onset (x≈1.7cm の潜熱スパイク) も再現。x≳6cm は近壁メッシュが
+  Euler デモ解像度のため両曲線が実験より下振れ (既知の課題)。
+
+  | x [cm] | SST dry | SST cond | exp isentrope | exp cond |
+  | --- | --- | --- | --- | --- |
+  | 2.5 | 0.300 | 0.381 | 0.305 | 0.375 |
+  | 3.0 | 0.279 | 0.349 | 0.290 | 0.355 |
+  | 5.0 | 0.223 | 0.267 | 0.240 | 0.290 |
+
+  → **「粘性+乱流で凝縮あり/なしを計算すると Fig.3 の差が出る」というユーザ仮説を定量的に確認**。
+  比較図は `fig3_compare_visc.png` (非粘性破線 + 粘性SST実線 + 実験点)。
+
 ## 既知の課題
 
 - 近壁メッシュは Euler デモ用で y+~1 の壁解像ではない。乱流 BL を定量評価するには

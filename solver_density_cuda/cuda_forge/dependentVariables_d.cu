@@ -174,8 +174,9 @@ __global__ void dependentVariables_d
                 // 二相: e = cv T - g L(T) = intE を Newton で反転、p=(1-g)ρRT。
                 const double e_in = (double)intE;
                 const double Tguess = (double)max(intE/(cp/gamma), (flow_float)1.0e-4f);
-                const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Rgas, Tguess);
-                const double L = n2_latent(Tn);
+                const CondSpeciesProps cpropsCpg = (condModel == 1) ? condProps_H2O() : condProps_N2();
+                const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Rgas, Tguess, cpropsCpg);
+                const double L = cond_latent(cpropsCpg, Tn);
                 const double e_mix = (cv + g_liq*Rgas)*Tn - g_liq*L;   // = e_in
                 const double oneMg = 1.0 - g_liq;
                 double Pn = oneMg*(double)ro_temp*Rgas*Tn;

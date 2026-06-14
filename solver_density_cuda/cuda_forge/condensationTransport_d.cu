@@ -46,6 +46,27 @@ __global__ void cond_primitive_d(
     }
 }
 
+// 実現可能性クランプ: 液相保存量 rog と モーメント roQ0/1/2 を物理範囲に戻す。
+//   0 ≤ rog ≤ roY_w (carrier: 利用可能な総水量) または ≤ 0.99 ρ (pure)。roQn ≥ 0。
+// θ 律速は瞬間 Sg を抑えるが、陰解法の実効 Δt と dt_local の差で僅かに過凝縮しうるため
+// 毎ステップここで硬クランプして二相 EOS・次ステップ source に渡す値を保証する。
+__global__ void cond_realizability_clamp_d(
+    geom_int nCells,
+    flow_float* ro, flow_float* roY_w,   // roY_w: carrier の総水保存量 (pure では nullptr)
+    flow_float* rog, flow_float* roQ0, flow_float* roQ1, flow_float* roQ2)
+{
+    geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const flow_float gmax = (roY_w != nullptr) ? roY_w[ic] : (flow_float)0.99*ro[ic];
+    flow_float r = rog[ic];
+    if (r < (flow_float)0.0) r = (flow_float)0.0;
+    if (r > gmax)            r = gmax;
+    rog[ic] = r;
+    if (roQ0[ic] < (flow_float)0.0) roQ0[ic] = (flow_float)0.0;
+    if (roQ1[ic] < (flow_float)0.0) roQ1[ic] = (flow_float)0.0;
+    if (roQ2[ic] < (flow_float)0.0) roQ2[ic] = (flow_float)0.0;
+}
+
 // Neumann (zero-gradient) ghost 充填: rophi[ig]=rophi[ic], phi[ig]=phi[ic]。
 __global__ void cond_neumann_boundary_d(
     geom_int nb,
@@ -109,6 +130,16 @@ void condensationPrimitive_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, me
 {
     (void)cfg;
     if (!condensationEnabled(var)) return;
+
+    // 実現可能性クランプ (種ごと): 0 ≤ rog ≤ roY_w (carrier) / 0.99ρ (pure)、roQn ≥ 0。
+    const bool carrier = (cfg.condGasSpecies >= 0);
+    for (int s = 0; s < var.nCondSpeciesRegistered; ++s) {
+        const std::string i = std::to_string(s);
+        flow_float* roY_w = carrier ? var.c_d["roY" + std::to_string(cfg.condGasSpecies)] : nullptr;
+        cond_realizability_clamp_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+            msh.nCells, var.c_d["ro"], roY_w,
+            var.c_d["rog_"+i], var.c_d["roQ0_"+i], var.c_d["roQ1_"+i], var.c_d["roQ2_"+i]);
+    }
 
     for (const auto& consName : var.condMomentConsNames) {
         const std::string prim = consName.substr(2);

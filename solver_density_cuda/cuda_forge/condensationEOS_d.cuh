@@ -67,15 +67,16 @@ __host__ __device__ inline double cond_T_from_e_carrier(
 //   ⇒ T = (e_in + g L(T))/(c_v + g R_v)  (= Eq.18, Cv0=Cvv=c_v)
 // **L の温度依存は入れる** (n2_latent(T))。g=0 で T=e_in/cv (従来 CPG と一致)。cv=cp/γ, R=(γ-1)cv。
 __host__ __device__ inline double cond_T_from_e_cpg(
-    double e_in, double g_tot, double cv, double R, double T_guess)
+    double e_in, double g_tot, double cv, double R, double T_guess,
+    const CondSpeciesProps& cprops)
 {
     const double a = cv + g_tot*R;   // 実効熱容量 (T に対し一定)
     double T = T_guess;
     if (!(T > 1.0)) T = 1.0;
     #pragma unroll 1
     for (int it = 0; it < 30; ++it) {
-        const double L  = n2_latent(T);
-        const double dL = (n2_latent(T + 0.1) - n2_latent(T - 0.1)) / 0.2;
+        const double L  = cond_latent(cprops, T);
+        const double dL = (cond_latent(cprops, T + 0.1) - cond_latent(cprops, T - 0.1)) / 0.2;
         const double G  = a*T - g_tot*L - e_in;
         const double Gp = a - g_tot*dL;
         const double Gpf = (Gp > 1.0e-2*a) ? Gp : 1.0e-2*a;

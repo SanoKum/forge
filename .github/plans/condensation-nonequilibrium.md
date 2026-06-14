@@ -134,6 +134,23 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 
 ## 9. 変更ログ
 
+- `2026-06-15` — **Phase 3 H2O / Wyslouzil Fig.3 検証成功 + carrier=CPG へ方針変更**。
+  - **発散原因究明**: 当初の Option A (thermalMethod 2 / NASA-9 TP で N2+H2O) は、ノズル膨張で気相が
+    **<200K (NASA-9 フィット下限) まで冷却**し外挿が不安定→初手から発散 (T が 50K フロアに張り付き P が
+    入口の 8 倍へ発散)。dry CPG (run_0001) は同条件で T 163–293K に安定収束することを確認し、**低温域では
+    N2 cp がほぼ一定で CPG (γ=1.4) が正確かつ頑健**と判断。**carrier を CPG で解く方針に変更** (H2O は
+    `species` として移流し vapor budget に使用、潜熱・物性は CPG エネルギー経路へ組込み)。
+  - **CPG carrier path の H2O 対応**: `cond_T_from_e_cpg` / dependentVariables CPG 分岐 / 二相エネルギー流束
+    (SLAU・HLLE・ROE) の潜熱を `n2_latent` 固定から **`cond_latent(condModel)` dispatch** へ一般化
+    (N2/H2O 切替)。CPG では per-cell `cp`/`Rmix` 配列が未充填のため、ソースへは `nullptr` を渡し
+    `cfg.cp`/γ フォールバック (=carrier N2 の cp/R) を使用。
+  - **実現可能性クランプ** (`cond_realizability_clamp_d`): 陰解法の実効 Δt と θ 律速の dt_local 差で僅かに
+    過凝縮 (g/Y1≈1.07) しうるため、毎ステップ `0≤rog≤roY_w` (carrier) と `roQn≥0` を硬クランプ。
+    クランプ後 g/Y1∈[0,1] で physics 不変。
+  - **検証 (case/16, Wyslouzil Fig.3 pv0=1kPa)**: `run_0007`(dry)/`run_0008`(cond) 非粘性。凝縮潜熱で
+    中心線 T 143→185K, p/p0 が dry 比 **1.19〜1.28 倍** (2.5–8cm) に上昇し、Wyslouzil 実験の
+    cond/isentrope 比 1.18〜1.23 と **~5% 以内で一致**。`run_0009`(dry)/`run_0010`(cond) で粘性+SST 乱流版も
+    実施 (ユーザ要望)。Y_H2O=0.01095 は全域保存、全エンタルピー H=cpT−gL+ek 保存。
 - `2026-06-14` — **後処理 3 件 (1 各スキーム展開 / 2 dry baseline / 3 低優先トリオ)**。
   - **1**: 二相エネルギー流束補正を HLLE/ROE へ展開し各スキームで case/34 を実行。全て全エンタルピー保存
     (dev ±0.0%)・過剰凝縮解消 (g mean 0.8–1.1%)・壁圧上昇あり (SLAU 1.33/1.43x = 論文最良、ROE 1.28/1.28x、

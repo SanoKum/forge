@@ -152,13 +152,17 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
         const std::string i = std::to_string(s);
         flow_float* roY_w = nullptr;
         if (carrier) roY_w = var.c_d["roY" + std::to_string(cfg.condGasSpecies)];
+        // CPG (thermalMethod!=2) では per-cell cp/Rmix 配列は未充填。nullptr で cfg.cp/γ フォールバック
+        // (= carrier N2 の cp/R)。TP のみ per-cell 配列を渡す。
+        flow_float* cp_cell   = (cfg.thermalMethod == 2) ? var.c_d["cp"]   : nullptr;
+        flow_float* Rmix_cell = (cfg.thermalMethod == 2) ? var.c_d["Rmix"] : nullptr;
         condensation_source_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
             msh.nCells,
             cfg.condModel, carrier, Rw, M,
             cfg.cp, cfg.gamma,
             Jmax, dg_max, dT_max,
             var.c_d["volume"], var.c_d["dt_local"],
-            var.c_d["T"], var.c_d["P"], var.c_d["ro"], var.c_d["cp"], var.c_d["Rmix"],
+            var.c_d["T"], var.c_d["P"], var.c_d["ro"], cp_cell, Rmix_cell,
             roY_w,
             var.c_d["rog_"+i], var.c_d["roQ0_"+i], var.c_d["roQ1_"+i], var.c_d["roQ2_"+i],
             var.c_d["res_rog_"+i], var.c_d["res_roQ0_"+i], var.c_d["res_roQ1_"+i], var.c_d["res_roQ2_"+i],

@@ -424,10 +424,11 @@ __global__ void SLAU_d
             //   c_hat (音速) は気相近似で単相のまま。g・T はセル値(1次, g は元来1次風上移流で整合)。
             //   g_total==nullptr (凝縮 off) で従来 (ビット不変)。
             if (g_total != nullptr) {
+                const CondSpeciesProps cprC = (condModel == 1) ? condProps_H2O() : condProps_N2();
                 const flow_float gL0 = g_total[ic0], gR0 = g_total[ic1];
                 const flow_float TL0 = T_cell[ic0],  TR0 = T_cell[ic1];
-                h_p += gL0*(cp_cpg*TL0 - (flow_float)n2_latent((double)TL0));
-                h_m += gR0*(cp_cpg*TR0 - (flow_float)n2_latent((double)TR0));
+                h_p += gL0*(cp_cpg*TL0 - (flow_float)cond_latent(cprC, (double)TL0));
+                h_m += gR0*(cp_cpg*TR0 - (flow_float)cond_latent(cprC, (double)TR0));
             }
         }
 
@@ -1385,7 +1386,7 @@ __global__ void HLLE_d
  flow_float ga,
 
  // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正。g_total==nullptr で従来 (ビット不変)。
- flow_float cp_cpg, flow_float* g_total, flow_float* T_cell,
+ flow_float cp_cpg, flow_float* g_total, flow_float* T_cell, int condModel,
 
  // mesh structure
  geom_int nCells,
@@ -1510,8 +1511,9 @@ __global__ void HLLE_d
         // 非平衡凝縮 (二相): 単相 roe/Ht を二相 (内部エネルギー e=(cv+gR)T-gL) に補正。差 g(cpT-L)/質量。
         // HLLE は roe (S_L S_R(roe_R-roe_L)) と Ht (ro Ht U) を両方使うため両方補正。g_total==nullptr で従来。
         if (g_total != nullptr) {
-            const flow_float dL0 = g_total[ic0]*(cp_cpg*T_cell[ic0] - (flow_float)n2_latent((double)T_cell[ic0]));
-            const flow_float dR0 = g_total[ic1]*(cp_cpg*T_cell[ic1] - (flow_float)n2_latent((double)T_cell[ic1]));
+            const CondSpeciesProps cprC = (condModel == 1) ? condProps_H2O() : condProps_N2();
+            const flow_float dL0 = g_total[ic0]*(cp_cpg*T_cell[ic0] - (flow_float)cond_latent(cprC, (double)T_cell[ic0]));
+            const flow_float dR0 = g_total[ic1]*(cp_cpg*T_cell[ic1] - (flow_float)cond_latent(cprC, (double)T_cell[ic1]));
             roe_L += ro_L*dL0;
             roe_R += ro_R*dR0;
         }
@@ -1605,7 +1607,7 @@ __global__ void ROE_d
  const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
 
  // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正。g_total==nullptr で従来 (ビット不変)。
- flow_float cp_cpg, flow_float* g_total, flow_float* T_cell,
+ flow_float cp_cpg, flow_float* g_total, flow_float* T_cell, int condModel,
 
  // mesh structure
  geom_int nCells,
@@ -1766,7 +1768,8 @@ __global__ void ROE_d
             ca_L  = sqrt(max(ga*P_L/ro_L, small_a2));
             // 非平衡凝縮 (二相): roe/Ht を二相に補正 (差 g(cpT-L)/質量)。g_total==nullptr で従来。
             if (g_total != nullptr) {
-                const flow_float dL0 = g_total[ic0]*(cp_cpg*T_cell[ic0] - (flow_float)n2_latent((double)T_cell[ic0]));
+                const CondSpeciesProps cprC = (condModel == 1) ? condProps_H2O() : condProps_N2();
+                const flow_float dL0 = g_total[ic0]*(cp_cpg*T_cell[ic0] - (flow_float)cond_latent(cprC, (double)T_cell[ic0]));
                 roe_L += ro_L*dL0;  Ht_L += dL0;
             }
         }
@@ -1796,7 +1799,8 @@ __global__ void ROE_d
             Ht_R  = roe_R/ro_R + P_R/ro_R;
             ca_R  = sqrt(max(ga*P_R/ro_R, small_a2));
             if (g_total != nullptr) {
-                const flow_float dR0 = g_total[ic1]*(cp_cpg*T_cell[ic1] - (flow_float)n2_latent((double)T_cell[ic1]));
+                const CondSpeciesProps cprC = (condModel == 1) ? condProps_H2O() : condProps_N2();
+                const flow_float dR0 = g_total[ic1]*(cp_cpg*T_cell[ic1] - (flow_float)cond_latent(cprC, (double)T_cell[ic1]));
                 roe_R += ro_R*dR0;  Ht_R += dR0;
             }
         }
@@ -2796,7 +2800,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         HLLE_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.convMethod, cfg.limiter,
             cfg.gamma,
-            cfg.cp, cond_g, var.c_d["T"],
+            cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
 
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
@@ -2846,7 +2850,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.convMethod, cfg.limiter,
             cfg.gamma,
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
-            cfg.cp, cond_g, var.c_d["T"],
+            cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
 
             // mesh structure
             msh.nCells,
