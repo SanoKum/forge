@@ -13,6 +13,7 @@
 | [`.github/forge-solver-settings.md`](.github/forge-solver-settings.md) | `convMethod` / `limiter` などの数値設定リファレンス |
 | [`.github/forge-development-environment.md`](.github/forge-development-environment.md) | 開発環境とビルド (Docker / WSL native) の方針 |
 | [`.github/forge-coding-conventions.md`](.github/forge-coding-conventions.md) | ソース構成・C++/CUDA 命名規約・ビルド/テスト実行手順 |
+| [`.github/forge-divergence-and-startup.md`](.github/forge-divergence-and-startup.md) | 発散の主因と安定起動の手順 (新規計算 / 発散時に必ず参照) |
 | [`.github/forge-verification-cases.md`](.github/forge-verification-cases.md) | コード変更時の検証ケース選定と確認手順 |
 | [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) | 同一メッシュ・同一 BC で SU2 と比較し forge 固有の問題を切り分ける手順 |
 | [`.github/plans/`](.github/plans/README.md) | 機能ごとの実装計画 (着手前に参照する基準文書) |
@@ -30,6 +31,8 @@
 計算の実行方法、ケース準備、メッシュ生成、メッシュ変換、`forge` の起動、Docker 経由の Gmsh/ParaView 利用について回答するときは、まず `.github/forge-calculation-workflow.md` を参照し、その手順に合わせて案内すること。計算手順の本文はこのファイルに重複記載しない。
 
 `solverConfig.yaml` の `convMethod`・`limiter` などの数値設定を変更・確認するときは、必ず `.github/forge-solver-settings.md` を参照すること。設定値の意味を記憶や推測で判断しないこと。
+
+**新規計算の投入時、および計算が発散 (NaN / 残差爆発) したときは、まず [`.github/forge-divergence-and-startup.md`](.github/forge-divergence-and-startup.md) を参照し、そのチェックリストと段階起動手順に従うこと。** 発散の大半は物理やメッシュでなく投入設定 (初期値が入口流れと不整合 / 超音速向け BC を亜音速に使用 / 初手から 2 次移流・乱流・no-slip / 陽解法+定常 / 非直交での free-stream 桁落ち) が原因であり、易しい条件で収束させてから引き継ぎ計算で段階的に上げるのが基本。
 
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。
 また、計算を実行した場合は `residual_history.csv` から `residual_history.png` も生成して残すこと。
