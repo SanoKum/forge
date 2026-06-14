@@ -573,6 +573,133 @@ class ForgeMesh:
                       f"体積/接続は発散定理で正しく計算され解は回るが、forge の"
                       f"結果可視化(output CONNE)はこれらのセルで正しく描画されない。")
 
+    def validate(self, strict=True):
+        """生成した plane/cell の幾何・トポロジーを厳密に検査する。
+
+        検査項目 (forge が前提とする規約):
+          1. 各面 surfArea == |surfVect|。
+          2. 退化面 (面積≈0) が無いこと。
+          3. 内部面の向き: surfVect が iCells[0]->iCells[1] (D=(cc1-cc0)·sv>0)。
+          4. 境界面の向き: surfVect が owner から外向き ((pc-cc0)·sv>0)。
+          5. iPlanesDir 整合: owner=+1, neighbor=-1。
+          6. 隣接整合: 面の節点が両隣セルの節点集合に含まれること (誤接続検出)。
+          7. 各セルの閉性: Σ dir·sv ≈ 0 (free-stream/GCL の必要条件)。
+          8. 体積 > 0、面のセル数 (内部=2, 境界=1)。
+
+        重大な不整合 (向き/隣接/体積/面積) があれば strict 時に例外で停止する。
+        """
+        sv = self.surfVect
+        area = self.surfArea
+        nP = self.nPlanes
+        eps = 1e-12
+        problems = []
+        warns = []
+
+        # 1. area == |surfVect|
+        svmag = np.linalg.norm(sv, axis=1)
+        amax = float(area.max()) if nP else 1.0
+        d_area = float(np.max(np.abs(area - svmag))) if nP else 0.0
+        if d_area > 1e-5 * amax:
+            problems.append(f"surfArea != |surfVect| (max diff {d_area:.2e})")
+
+        # 2. 退化面
+        n_degen = int(np.sum(area < 1e-12 * amax))
+        if n_degen:
+            problems.append(f"退化面 (面積≈0) が {n_degen} 枚")
+
+        # 3/4. 向き
+        nNP = self.nNormalPlanes
+        bad_int = bad_bnd = 0
+        for ip in range(nP):
+            cls = self.pl_cells[ip]
+            if len(cls) == 2:
+                d = self.cell_cent[cls[1]] - self.cell_cent[cls[0]]
+                if np.dot(d, sv[ip]) <= 0.0:
+                    bad_int += 1
+            else:
+                d = self.pl_cent[ip] - self.cell_cent[cls[0]]
+                if np.dot(d, sv[ip]) <= 0.0:
+                    bad_bnd += 1
+        if bad_int:
+            problems.append(f"内部面の向き不整合 (c0->c1 でない) {bad_int} 枚")
+        if bad_bnd:
+            problems.append(f"境界面の向き不整合 (外向きでない) {bad_bnd} 枚")
+
+        # 5. iPlanesDir 整合 + 6. 隣接整合 + 7. 閉性
+        cell_node_sets = [set(int(n) for n in nd) for nd in self.cell_nodes]
+        bad_dir = 0
+        bad_adj = 0
+        closure = np.zeros((self.nCells, 3))
+        for ic in range(self.nCells):
+            for pl, dr in zip(self.cell_planes[ic], self.cell_pdir[ic]):
+                closure[ic] += dr * sv[pl]
+                # owner(iCells[0]) は +1, neighbor は -1 のはず
+                want = 1 if self.pl_cells[pl][0] == ic else -1
+                if dr != want:
+                    bad_dir += 1
+                # 隣接整合: 面節点 ⊂ セル節点
+                if not set(int(n) for n in self.pl_nodes[pl]).issubset(cell_node_sets[ic]):
+                    bad_adj += 1
+        if bad_dir:
+            problems.append(f"iPlanesDir 不整合 {bad_dir} 件")
+        if bad_adj:
+            problems.append(f"隣接整合違反 (面節点が隣接セルに無い) {bad_adj} 件")
+
+        # 7. 閉性
+        mean_area_cell = np.array([np.mean([area[pl] for pl in self.cell_planes[ic]])
+                                   for ic in range(self.nCells)])
+        clo = np.linalg.norm(closure, axis=1) / np.maximum(mean_area_cell, eps)
+        clo_max = float(clo.max()) if self.nCells else 0.0
+        if clo_max > 1e-3:
+            problems.append(f"セル閉性 |Σdir·sv|/面積 が大 (max {clo_max:.2e})")
+        elif clo_max > 1e-5:
+            warns.append(f"セル閉性 max {clo_max:.2e} (float32 丸めとしてはやや大)")
+
+        # 8b. 薄さゼロ壁 (baffle) 検出: 同位置 (重心一致) の境界面が複数あるか。
+        #     forge の境界面は「1 セル + ゲスト」前提で、内部薄板壁 (両側に実セル) は
+        #     想定外。fan のハブ等がこれに当たり、後流が準アーティファクトになりうる。
+        n_baffle = 0
+        bpl = list(range(nNP, nP))
+        if bpl:
+            bc = np.array([self.pl_cent[i] for i in bpl])
+            try:
+                from scipy.spatial import cKDTree
+                tree = cKDTree(bc)
+                pairs = tree.query_pairs(r=1e-9 * max(amax ** 0.5, 1.0))
+                n_baffle = len(pairs)
+            except Exception:
+                n_baffle = -1  # scipy 無し: 未判定
+
+        # 8. 体積・面のセル数
+        n_badvol = int(np.sum(self.cell_vol <= 0.0))
+        if n_badvol:
+            problems.append(f"体積<=0 のセル {n_badvol} 個")
+        n_badpc = sum(1 for ip in range(nP)
+                      if len(self.pl_cells[ip]) not in (1, 2))
+        if n_badpc:
+            problems.append(f"面のセル数が 1/2 でない面 {n_badpc} 枚")
+
+        # レポート
+        self._log("  --- 幾何/トポロジー検証 ---")
+        self._log(f"    surfArea==|surfVect| max diff {d_area:.2e}; 退化面 {n_degen}")
+        self._log(f"    向き不整合 internal={bad_int} boundary={bad_bnd}; iPlanesDir 不整合 {bad_dir}")
+        self._log(f"    隣接整合違反 {bad_adj}; セル閉性 |Σdir·sv|/面積 max {clo_max:.2e}")
+        self._log(f"    体積<=0 {n_badvol}; 面のセル数異常 {n_badpc}")
+        if n_baffle > 0:
+            warns.append(f"薄さゼロ壁(baffle)候補 {n_baffle} 対 (同位置の境界面)。"
+                         f"forge は内部薄板壁を想定設計しておらず、後流が準アーティファクトに"
+                         f"なりうる。透過させたい場合は内部面化が必要。")
+        for w in warns:
+            self._log(f"    [WARN] {w}")
+        if problems:
+            for p in problems:
+                self._log(f"    [FAIL] {p}")
+            if strict:
+                raise RuntimeError("メッシュ検証に失敗: " + " / ".join(problems))
+        else:
+            self._log("    検証 OK")
+        return not problems
+
 
 # --------------------------------------------------------------------------
 # 幾何ユーティリティ
@@ -1146,6 +1273,10 @@ def cmd_convert(args):
 
     fm = ForgeMesh(fl, triangulate=args.triangulate, verbose=True)
 
+    # 生成した plane/cell の幾何・トポロジー (面ベクトル向き・隣接・閉性・体積) を検証。
+    # 重大な不整合があれば例外で停止 (--no-validate で抑止)。
+    fm.validate(strict=not args.no_validate)
+
     # 壁ゾーン = kind が wall で始まるもの
     wall_zone_ids = [zid for zid, k in zone_kind.items() if k.startswith("wall")]
     values = make_initial(fm, args)
@@ -1195,6 +1326,8 @@ def build_argparser():
                     help="geom_float=double ビルド向けに float64 で書く")
     pc.add_argument("--triangulate", action="store_true",
                     help="3D の四角/多角形面を三角形に分割 (非平面面の不整合回避)")
+    pc.add_argument("--no-validate", action="store_true",
+                    help="生成メッシュの幾何/トポロジー検証で停止しない (既定は検証して不整合なら停止)")
     # 初期値
     pc.add_argument("--ro", default=1.225, help="初期密度")
     pc.add_argument("--ux", default=0.0)
