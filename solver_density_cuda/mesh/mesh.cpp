@@ -386,7 +386,11 @@ void mesh::readMesh(string fname)
         {
             this->bconds[ib].iPlanes[ip] = iPlanes[ip];
         }
-        cout << "               ip min=" << iPlanes[0] << ", ip max=" << iPlanes[iPlanes.size()-1]<< endl;
+        // node モードの壁 Dirichlet 等で境界 plane を持たない bcond (iPlanes 空) を許容する。
+        if (!iPlanes.empty())
+            cout << "               ip min=" << iPlanes[0] << ", ip max=" << iPlanes[iPlanes.size()-1]<< endl;
+        else
+            cout << "               (no boundary planes; e.g. node-mode wall Dirichlet)" << endl;
 
         // iBPlanes
         std::vector<geom_int> iBPlanes;
@@ -768,6 +772,20 @@ void mesh::setMeshMap_d()
                 std::abs(this->nodes[ic].coords[1]) < (geom_float)1.0e-9) axf[ic] = 1;
         gpuErrchk(cudaMalloc((void **)&(this->axis_flag_d), sizeof(geom_int)*this->nCells));
         gpuErrchk(cudaMemcpy(this->axis_flag_d, axf.data(),
+                             sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
+    }
+
+    // 壁 CV フラグ: wall 種別 bcond の境界 CV (iCells) を 1 にする (node-centered 壁 Dirichlet 用)。
+    // node モードでは壁 bcond は plane/ghost を持たず iCells のみ保持する (gmshReader 壁優先所有)。
+    // コーナー (壁∩他境界) も壁優先で壁所有なので、ここで壁ノードとしてフラグされる。
+    {
+        std::vector<geom_int> wf(this->nCells, 0);
+        for (bcond& bc : this->bconds)
+            if (bc.bcondKind == "wall" || bc.bcondKind == "wall_isothermal")
+                for (geom_int ic : bc.iCells)
+                    if (ic >= 0 && ic < this->nCells) wf[ic] = 1;
+        gpuErrchk(cudaMalloc((void **)&(this->wall_flag_d), sizeof(geom_int)*this->nCells));
+        gpuErrchk(cudaMemcpy(this->wall_flag_d, wf.data(),
                              sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
     }
 };

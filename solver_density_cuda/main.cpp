@@ -670,6 +670,9 @@ cudaConfig initializeSimulation(
     var.setStructuralVariables(cfg , cuda_cfg , msh);
     speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
+    // node-centered 壁 Dirichlet: IC の壁ノード速度を厳密 0 に初期化 (KE を roe から除去)。
+    // この後 gasProperties が補正 roe から P/T を再計算する。cell/非 node では no-op。
+    enforceWallNoSlip_d_wrapper(cfg , cuda_cfg , msh , var);
     gasProperties_d_wrapper(cfg , cuda_cfg , msh , var);
 
     fluct.allocVariables();
@@ -788,6 +791,9 @@ void assembleResidual(StepContext& s, int stage_index)
     // explicit では ΔroUy=0 になり直接効く (implicit/block-DPLUR では連成 solve が補正を漏らすため Jacobian
     // 整合が別途必要・open issue, docs §7.1)。cell/非軸対称/平面では no-op。
     zeroAxisRadialResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    // node-centered 壁 Dirichlet: 壁ノードの運動量残差を 0 に射影し u=0 を保つ (壁ゴースト撤廃の代替)。
+    // 軸射影の後に置き、コーナー (壁∩軸はまれだが) でも壁 no-slip を最終確定する。cell/非 node では no-op。
+    zeroWallMomentumResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // TODO(dual-time): unsteady のとき addUnsteadyTimeTerm(s) で BDF 物理時間項を res_* と
     // 対角に加える。定常では no-op。本体は次フェーズ。
 }

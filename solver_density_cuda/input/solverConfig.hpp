@@ -105,6 +105,11 @@ public:
     // node-centered 軸対称: 軸上 CV (R=0) の cell 中心に CV 面積加重重心を使うか (1:既定, ゼロ回転体積回避)。
     // 0 で node 座標 (R=0) を使う。0 は軸ソース OFF と併用前提 (converter で消費)。
     int axisCentroidShift = 1;
+
+    // node-centered 壁 Dirichlet 試作 (0:既定 OFF)。1 で init u=0 + 運動量残差射影。
+    // 注: 残差射影は壁圧力寄与も落とすため不正 (検証で壁全域発散)。正解は弱形式半割面 flux (Phase 2,
+    // docs/discretization/implementation.md §7.2)。本フラグは切り分け用に残置、既定 OFF。
+    int nodeWallDirichlet = 0;
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
 

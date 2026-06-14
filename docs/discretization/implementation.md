@@ -203,6 +203,39 @@ Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と�
 - **弱形式境界 (§7) は引き続き粘性 (壁せん断・熱流の正しい評価) で必要**だが、hiM 安定化とは別件として整理する。
   よって `boundaryNode_d.cu` の新規作成は粘性着手時に回す (既存 BC カーネルの Q_b 流用方針は不変)。
 
+### 7.2 node モード: ゴースト全撤廃へ (段階導入)
+
+理論は [theory.md](theory.md) §6.3/§6.4。node-centered は最終的に**境界ゴーストを全撤廃**し、境界ノード/半割面に
+BC を直接課す。段階導入し、まず粘性壁の発散 (case/29 viscous node の exit-lip NaN) を Phase 1 で止める。
+専用計画: [`discretization-node-boundary-ghostless.md`](../../.github/plans/discretization-node-boundary-ghostless.md)。
+
+**Phase 1 — 壁ゴースト撤廃 ＋ 壁 Dirichlet ＋ 壁優先コーナー所有** (流入出/slip/axis はゴースト維持):
+
+1. **壁優先所有・壁 plane 不出力** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp)
+   `buildMedianDual`/`replacePrimalWithDual`): 各境界ノードを優先度 (wall>inlet>outlet>slip/axis) で 1 bcond に
+   所有。**wall 所有ノードは境界 plane を出力しない** (→ ghost 生成されない) が、wall bcond のノード列 (iCells) は
+   h5 に残す。コーナー (wall 所有) は出口 plane を持たない → 出口ゴーストの矛盾消滅。
+2. **wall_flag_d** ([mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp) `setMeshMap_d`,
+   [mesh.hpp](../../solver_density_cuda/mesh/mesh.hpp)): `axis_flag_d` と同パターンで wall 種別 bcond の iCells を 1 に。
+3. **壁 no-slip カーネル** ([axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)
+   に追記、軸カーネルと同型):
+   - `enforceWallNoSlip_d` (一度きり state 初期化): 壁ノードで `roe -= 0.5*(roUx²+roUy²+roUz²)/ro` 後
+     `roU{x,y,z}=0`, `U{x,y,z}=0` (`enforceAxisSymmetry_d` の 3 成分版)。IC 確定後 1 回。
+   - `zeroWallMomentumResidual_d` (毎反復残差射影): 壁ノードで `res_roU{x,y,z}=0` (`zeroAxisRadialResidual_d` の
+     3 成分版)。**残差射影なので block-DPLUR と整合** (state 直書きは Mach1000 発散実績)。
+4. **ディスパッチ/呼び出し**: [boundaryCond.cpp](../../solver_density_cuda/boundaryCond.cpp) は node モードで
+   wall/wall_isothermal を no-op 化。[main.cpp](../../solver_density_cuda/main.cpp) で `enforceWallNoSlip` を IC 後 1 回、
+   `zeroWallMomentumResidual` を `assembleResidual` 末尾 (軸射影 `zeroAxisRadialResidual` の後) に毎反復。
+   全変更を `discretization=="node"` ＋ `wall_flag_d` でゲートし cell モードは無変更。
+
+**なぜ壁ゴーストを消してよいか** (theory §6.3): 断熱壁の壁半割面フラックスは恒等的に 0 (u·n=0、運動量は
+Dirichlet、熱流束 0)、近壁せん断は壁ノード (u=0) と内部ノードを繋ぐ**内部双対面**が担うため。等温壁は壁半割面に
+熱流束項を別途加える (Phase 1 拡張、case/29 は断熱で不要)。
+
+**Phase 2 — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: 半割面ジオメトリ (`dualBnodeId/Vect/Cent`,
+`dualBcondOffset`) を device 転送し、§7 の `boundaryFluxNode_d`/`boundaryGradientNode_d` で半割面上に直接 flux を
+評価、共有 flux ループは node モードで境界 plane をスキップ。implicit 寄与も flux/Jacobian に内在化。
+
 ## 5. 設定
 
 [solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。

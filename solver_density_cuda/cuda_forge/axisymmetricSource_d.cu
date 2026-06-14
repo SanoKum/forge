@@ -155,6 +155,67 @@ void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
     gpuErrchk( cudaDeviceSynchronize() );
 }
 
+// node-centered 壁 Dirichlet (state 初期化): 壁ノードで速度を厳密に 0 にする。除去する運動エネルギー
+// 0.5*(roUx²+roUy²+roUz²)/ro を roe からも引き、内部エネルギー=圧力が過大にならないようにする
+// (enforceAxisSymmetry_d の 3 成分版)。IC 確定後に一度だけ呼ぶ。
+__global__ void enforceWallNoSlip_d
+(
+    geom_int nCells, geom_int* wall_flag,
+    flow_float* ro, flow_float* roUx, flow_float* roUy, flow_float* roUz, flow_float* roe,
+    flow_float* Ux, flow_float* Uy, flow_float* Uz
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells && wall_flag[ic] == 1) {
+        const flow_float r = ro[ic];
+        if (r > (flow_float)0.0) {
+            roe[ic] -= (flow_float)0.5 * (roUx[ic]*roUx[ic] + roUy[ic]*roUy[ic] + roUz[ic]*roUz[ic]) / r;
+        }
+        roUx[ic] = (flow_float)0.0; roUy[ic] = (flow_float)0.0; roUz[ic] = (flow_float)0.0;
+        Ux[ic]   = (flow_float)0.0; Uy[ic]   = (flow_float)0.0; Uz[ic]   = (flow_float)0.0;
+    }
+}
+
+// node-centered 壁 Dirichlet (残差射影): 壁ノードで運動量「残差」を 0 にし、速度を 0 に保つ。
+// 状態やエネルギーをいじらず flux+source 積算後に残差を射影するだけなので block-DPLUR と整合する
+// (zeroAxisRadialResidual_d の 3 成分版)。assembleResidual 末尾 (軸射影の後) で毎反復呼ぶ。
+__global__ void zeroWallMomentumResidual_d
+(
+    geom_int nCells, geom_int* wall_flag,
+    flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roUz
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells && wall_flag[ic] == 1) {
+        res_roUx[ic] = (flow_float)0.0;
+        res_roUy[ic] = (flow_float)0.0;
+        res_roUz[ic] = (flow_float)0.0;
+    }
+}
+
+void enforceWallNoSlip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return;
+    enforceWallNoSlip_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.wall_flag_d,
+        var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"],
+        var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"]
+    );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
+void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return;
+    zeroWallMomentumResidual_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.wall_flag_d,
+        var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"]
+    );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
 void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (cfg.isAxisymmetric != 1) return;

@@ -56,8 +56,11 @@ public:
     std::vector<geom_float> dualBnodeVect;  // [nBHalf*3] 外向き半割面ベクトル
     std::vector<geom_float> dualBnodeCent;  // [nBHalf*3] 半割面の面積加重重心 (境界上, R≥0)。
                                             // 軸対称 r 重みを正しくし、入口/出口 BC が軸近傍 corner CV に届くようにする。
-    std::vector<geom_int>   dualBcondOffset;// [nBconds+1] bcond ごとの dualBnode* への CSR オフセット
+    std::vector<geom_int>   dualBcondOffset;// [nBconds+1] bcond ごとの dualBnode* (emit 済=非壁) への CSR オフセット
     std::vector<geom_int>   dualBcondPhysID;// [nBconds]   各 bcond の physID (順序対応)
+    // [nBconds][各 bcond が所有する境界ノード] (壁優先所有後)。iCells 設定用。壁所有 bcond は plane を emit
+    // しない (ghost 不要・Dirichlet) が、wall_flag 構築のためノード列はここに残し h5 の iCells に書く。
+    std::vector<std::vector<geom_int>> dualBcondNodes;
 
     class lineEnt
     {
@@ -1444,17 +1447,47 @@ public:
         }
 
         // ---- 境界半割双対面: 各 bcond の境界エッジを構成ノードへ midpoint 分配 (各 1/2)。
+        //
+        // Phase 1 (壁ゴースト撤廃): 各境界ノードを優先度 (wall>inlet>outlet>slip/axis) で 1 つの bcond に
+        // 所有させ、各ノードの半割面寄与を所有 bcond に集約する。壁所有ノードは境界 plane を emit しない
+        // (ghost が生成されず Dirichlet で扱う) が、wall_flag 構築用にノード列は dualBcondNodes に残す。
+        // 閉性チェック (bnodeAccum) は幾何量なので所有に依らず全境界半割面を集計する。
         const geom_int nBc = (geom_int)this->bconds.size();
         dualBcondOffset.assign(nBc + 1, 0);
         dualBcondPhysID.assign(nBc, 0);
-        std::vector<geom_float> bnodeAccum(nN * 3, 0.0); // 全体集計 (閉性チェック用)
+        dualBcondNodes.assign(nBc, {});
+        std::vector<geom_float> bnodeAccum(nN * 3, 0.0); // 全体集計 (閉性チェック用、所有非依存)
 
+        auto bcondPriority = [](const std::string& k) -> int {
+            if (k == "wall" || k == "wall_isothermal") return 0;
+            if (k.rfind("inlet", 0) == 0)               return 1;
+            if (k.rfind("outlet", 0) == 0 || k == "outflow") return 2;
+            if (k == "slip" || k == "axis" || k == "symmetry") return 3;
+            return 4;
+        };
+        auto isWallKind = [](const std::string& k) {
+            return k == "wall" || k == "wall_isothermal";
+        };
+
+        // ノード -> 所有 bcond (優先度最小=最優先。同点は低 index)。
+        std::map<geom_int,int> ownerBc;
+        for (geom_int ib = 0; ib < nBc; ++ib) {
+            const int pr = bcondPriority(this->bconds[ib].bcondKind);
+            for (const geom_int ip : this->bconds[ib].iPlanes) {
+                for (const geom_int N : {this->planes[ip].iNodes[0], this->planes[ip].iNodes[1]}) {
+                    auto it = ownerBc.find(N);
+                    if (it == ownerBc.end()
+                        || pr < bcondPriority(this->bconds[it->second].bcondKind))
+                        ownerBc[N] = ib;
+                }
+            }
+        }
+
+        // 所有 bcond ごとに半割面ベクトル+面積加重重心を集計。
+        std::vector<std::map<geom_int, std::array<geom_float,3>>> halfByOwner(nBc);
+        std::vector<std::map<geom_int, std::array<geom_float,4>>> hcentByOwner(nBc);
         for (geom_int ib = 0; ib < nBc; ++ib)
         {
-            dualBcondPhysID[ib] = this->bconds[ib].physID;
-            // この bcond に現れるノードを集め、半割面ベクトルと面積加重重心を accum
-            std::map<geom_int, std::array<geom_float,3>> half;   // node -> outward half vect
-            std::map<geom_int, std::array<geom_float,4>> hcent;  // node -> {Σw·cx, Σw·cy, Σw·cz, Σw}
             for (const geom_int ip : this->bconds[ib].iPlanes)
             {
                 const geom_int A = this->planes[ip].iNodes[0];
@@ -1468,30 +1501,41 @@ public:
                 const geom_float w = 0.5*std::sqrt(sv0*sv0 + sv1*sv1 + sv2*sv2); // 各ノードの半割面積
                 for (const geom_int N : {A, B}) {
                     const geom_int O = (N == A) ? B : A;
-                    auto& h = half[N];
+                    // 閉性は全半割面を集計 (幾何、所有に依らない)
+                    bnodeAccum[3*N + 0] += hx; bnodeAccum[3*N + 1] += hy; bnodeAccum[3*N + 2] += hz;
+                    // 寄与はノード N の所有 bcond へ
+                    const int ow = ownerBc[N];
+                    auto& h = halfByOwner[ow][N];
                     h[0] += hx; h[1] += hy; h[2] += hz;
                     // ノード N の半割 (N→エッジ中点 M) の重心 = (3N+O)/4
-                    auto& c = hcent[N];
+                    auto& c = hcentByOwner[ow][N];
                     c[0] += w * (3.0*nodes[N].coords[0] + nodes[O].coords[0]) * 0.25;
                     c[1] += w * (3.0*nodes[N].coords[1] + nodes[O].coords[1]) * 0.25;
                     c[2] += w * (3.0*nodes[N].coords[2] + nodes[O].coords[2]) * 0.25;
                     c[3] += w;
                 }
             }
-            for (const auto& kv : half) {
+        }
+
+        // emit: 全 bcond が所有ノードの半割面 plane を emit する (ghost を生成し、勾配/粘性の境界閉性を保つ)。
+        // 所有により各ノードは 1 bcond でのみ emit されるため、コーナー (壁∩出口) は所有 bcond (壁) の
+        // ghost だけを持ち、矛盾する 2 重 ghost が生じない。壁ノードの u=0 はさらに Dirichlet (wall_flag +
+        // enforceWallNoSlip/zeroWallMomentumResidual) で厳密化する (壁 ghost は勾配閉性・mirror 用に残す)。
+        (void)isWallKind;
+        for (geom_int ib = 0; ib < nBc; ++ib) {
+            dualBcondPhysID[ib] = this->bconds[ib].physID;
+            for (const auto& kv : halfByOwner[ib]) {
                 const geom_int nd = kv.first;
+                dualBcondNodes[ib].push_back(nd);
                 dualBnodeId.push_back(nd);
                 dualBnodeVect.push_back(kv.second[0]);
                 dualBnodeVect.push_back(kv.second[1]);
                 dualBnodeVect.push_back(kv.second[2]);
-                const auto& c = hcent[nd];
+                const auto& c = hcentByOwner[ib].at(nd);
                 const geom_float invw = (c[3] > 0.0) ? 1.0/c[3] : 0.0;
                 dualBnodeCent.push_back(c[0]*invw);
                 dualBnodeCent.push_back(c[1]*invw);
                 dualBnodeCent.push_back(c[2]*invw);
-                bnodeAccum[3*nd + 0] += kv.second[0];
-                bnodeAccum[3*nd + 1] += kv.second[1];
-                bnodeAccum[3*nd + 2] += kv.second[2];
             }
             dualBcondOffset[ib + 1] = (geom_int)dualBnodeId.size();
         }
@@ -1696,10 +1740,13 @@ public:
             this->bconds[ib].iCells.clear();
             this->bconds[ib].iBPlanes.clear();
             this->bconds[ib].iCells_ghst.clear();
+            // iCells = 所有ノード全て (壁含む。solver の wall_flag 構築用)。
+            // 非壁では emit 順 (dualBnodeId 範囲) と一致するので iPlanes と 1:1 対応する。
+            this->bconds[ib].iCells = dualBcondNodes[ib];
+            // iPlanes/iBPlanes = emit 済境界半割面のみ (壁所有 bcond は空 → readMesh で ghost 生成されない)。
             for (geom_int k = dualBcondOffset[ib]; k < dualBcondOffset[ib+1]; ++k) {
                 const geom_int gp = nDualInternal + k;
                 this->bconds[ib].iPlanes.push_back(gp);
-                this->bconds[ib].iCells.push_back(dualBnodeId[k]);
                 this->bconds[ib].iBPlanes.push_back(gp - this->nNormalPlanes);
             }
         }

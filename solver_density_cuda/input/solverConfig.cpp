@@ -195,6 +195,9 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["axisCentroidShift"]) {
             this->axisCentroidShift = config["mesh"]["axisCentroidShift"].as<int>();
         }
+        if (config["mesh"]["nodeWallDirichlet"]) {
+            this->nodeWallDirichlet = config["mesh"]["nodeWallDirichlet"].as<int>();
+        }
 
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");

@@ -160,6 +160,10 @@ public:
     // 特異点になり半径方向運動量が偽駆動されるのを防ぐため、軸上で roUy=0 (対称条件) を課すのに使う。
     geom_int* axis_flag_d = nullptr;
 
+    // 壁 CV フラグ [nCells] (wall 種別 bcond の CV=1)。node-centered 壁 Dirichlet で、壁ノード速度を
+    // 厳密に 0 に固定する (state 初期化 + 運動量残差射影) のに使う。壁ゴーストを撤廃する代替。
+    geom_int* wall_flag_d = nullptr;
+
     mesh();
     ~mesh();
     mesh(geom_int& , geom_int& ,geom_int& , geom_int& , 

@@ -149,13 +149,15 @@ void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variable
         cerr << "Error: gpu=0 is not supported in applyBconds" << endl;
         exit(EXIT_FAILURE);
     } else if (cfg.gpu ==1) { // gpu
+        // node-centered でも壁 ghost は残す (mirror で u_face=0 を与え、勾配/粘性の境界閉性を保つ)。
+        // 壁ノードの u=0 厳密化は別途 Dirichlet (wall_flag + enforceWallNoSlip/zeroWallMomentumResidual) で行う。
         for (auto& bc : msh.bconds)
         {
-            //if      (bc.bcondKind == "wall_isothermal") { wall_isothermal_d(cfg , bc , msh , var , mat_p); } 
-            if      (bc.bcondKind == "slip") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-            else if (bc.bcondKind == "axis") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-            else if (bc.bcondKind == "wall") wall_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
-            else if (bc.bcondKind == "wall_isothermal") wall_isothermal_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
+            //if      (bc.bcondKind == "wall_isothermal") { wall_isothermal_d(cfg , bc , msh , var , mat_p); }
+            if      (bc.bcondKind == "slip") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p);
+            else if (bc.bcondKind == "axis") slip_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p);
+            else if (bc.bcondKind == "wall") wall_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p);
+            else if (bc.bcondKind == "wall_isothermal") wall_isothermal_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p);
             else if (bc.bcondKind == "inlet_uniformVelocity") { inlet_uniformVelocity_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
             else if (bc.bcondKind == "inlet_fluctVelocity") { inlet_fluctVelocity_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p , fluct); }
             else if (bc.bcondKind == "outlet_statPress") { outlet_statPress_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }

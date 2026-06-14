@@ -17,3 +17,10 @@ void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
 // SU2 流 (MARKER_SYM): node-centered 軸対称で軸上 CV の半径方向運動量「残差」を 0 にし、
 // roUy=0 (対称条件) を保つ。assembleResidual の最後 (全 flux+source 積算後) に呼ぶ。
 void zeroAxisRadialResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// node-centered 壁 Dirichlet: 壁ノード (wall_flag) の速度を厳密に 0 に固定する (壁ゴースト撤廃の代替)。
+// enforceWallNoSlip: 一度きり (IC 確定後) に state を u=0 へ初期化 (KE を roe から除去)。
+// zeroWallMomentumResidual: 毎反復 assembleResidual 末尾で壁ノードの運動量残差を 0 に射影 (陰解法整合)。
+// cell モードや wall_flag 未構築では no-op。
+void enforceWallNoSlip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
