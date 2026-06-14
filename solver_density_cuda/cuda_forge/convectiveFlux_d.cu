@@ -1371,11 +1371,14 @@ __global__ void KEEP_FVS_d
 
 
 __global__ void HLLE_d
-( 
+(
  int conv_scheme, int limit_scheme,
 
  // gas property
  flow_float ga,
+
+ // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正。g_total==nullptr で従来 (ビット不変)。
+ flow_float cp_cpg, flow_float* g_total, flow_float* T_cell,
 
  // mesh structure
  geom_int nCells,
@@ -1497,6 +1500,14 @@ __global__ void HLLE_d
 
         flow_float roe_L = P_L/(ga-1.0) + 0.5*ro_L*velocity2_L;
         flow_float roe_R = P_R/(ga-1.0) + 0.5*ro_R*velocity2_R;
+        // 非平衡凝縮 (二相): 単相 roe/Ht を二相 (内部エネルギー e=(cv+gR)T-gL) に補正。差 g(cpT-L)/質量。
+        // HLLE は roe (S_L S_R(roe_R-roe_L)) と Ht (ro Ht U) を両方使うため両方補正。g_total==nullptr で従来。
+        if (g_total != nullptr) {
+            const flow_float dL0 = g_total[ic0]*(cp_cpg*T_cell[ic0] - (flow_float)n2_latent((double)T_cell[ic0]));
+            const flow_float dR0 = g_total[ic1]*(cp_cpg*T_cell[ic1] - (flow_float)n2_latent((double)T_cell[ic1]));
+            roe_L += ro_L*dL0;
+            roe_R += ro_R*dR0;
+        }
         flow_float Ht_L = (roe_L + P_L)/ro_L;
         flow_float Ht_R = (roe_R + P_R)/ro_R;
 
@@ -1585,6 +1596,9 @@ __global__ void ROE_d
  flow_float ga,
  int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
  const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
+
+ // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正。g_total==nullptr で従来 (ビット不変)。
+ flow_float cp_cpg, flow_float* g_total, flow_float* T_cell,
 
  // mesh structure
  geom_int nCells,
@@ -1743,6 +1757,11 @@ __global__ void ROE_d
             roe_L = P_L/(ga-1.0) + 0.5*ro_L*v2_L;
             Ht_L  = roe_L/ro_L + P_L/ro_L;
             ca_L  = sqrt(max(ga*P_L/ro_L, small_a2));
+            // 非平衡凝縮 (二相): roe/Ht を二相に補正 (差 g(cpT-L)/質量)。g_total==nullptr で従来。
+            if (g_total != nullptr) {
+                const flow_float dL0 = g_total[ic0]*(cp_cpg*T_cell[ic0] - (flow_float)n2_latent((double)T_cell[ic0]));
+                roe_L += ro_L*dL0;  Ht_L += dL0;
+            }
         }
 
         flow_float ro_R  = interp_dispatch(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro_R); 
@@ -1769,6 +1788,10 @@ __global__ void ROE_d
             roe_R = P_R/(ga-1.0) + 0.5*ro_R*v2_R;
             Ht_R  = roe_R/ro_R + P_R/ro_R;
             ca_R  = sqrt(max(ga*P_R/ro_R, small_a2));
+            if (g_total != nullptr) {
+                const flow_float dR0 = g_total[ic1]*(cp_cpg*T_cell[ic1] - (flow_float)n2_latent((double)T_cell[ic1]));
+                roe_R += ro_R*dR0;  Ht_R += dR0;
+            }
         }
 
         flow_float U_L = ((Ux_L)*sxx +(Uy_L)*syy +(Uz_L)*szz)/sss;
@@ -2766,6 +2789,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         HLLE_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.convMethod, cfg.limiter,
             cfg.gamma,
+            cfg.cp, cond_g, var.c_d["T"],
 
             msh.nCells,
             msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
@@ -2815,6 +2839,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.convMethod, cfg.limiter,
             cfg.gamma,
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
+            cfg.cp, cond_g, var.c_d["T"],
 
             // mesh structure
             msh.nCells,
