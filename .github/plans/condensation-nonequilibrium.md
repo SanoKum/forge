@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `condensation`
-- **status**: `in_progress`  <!-- Phase 1 実装中。Phase 2/3 は planned -->
+- **status**: `in_progress`  <!-- Phase 1/2/3 実装・検証済 (N2 Fig.2, H2O Wyslouzil Fig.3)。残: 二温度モデル / TP carrier 低温対応 / μ_n 無次元化は future -->
 - **related_docs**:
   - `docs/condensation/theory.md`
   - `docs/condensation/implementation.md`
