@@ -263,3 +263,70 @@ laminar conical 第一セル `Uy`(x=40mm) が物理値 −15 でなく float 陰
 | `run_0013_float_cf` | **float 閉形式** (R/L 排除) 速度 | 82.8s (×0.90 = 10%速), 数値 legacy 等価 | active |
 | `run_0014_prod_float` | **本番** `implicitSolvePrecision=0` (既定 float) | 82.6s, Uy0=−0.6449 | active |
 | `run_0015_prod_double` | **本番** `implicitSolvePrecision=1` (double solve) | 234.5s, Uy0=**−14.98** (根治) | active |
+
+### 近軸固着の切り分け: 粘性 vs convMethod (2026-06-14)
+
+「近軸 Uy 固着の原因は粘性か 2 次精度 (convMethod) か」を分離する 2×2 マトリクス。**全 run cell・float
+(`implicitSolvePrecision=0`)・conical・cfl=2・blockDPLUR=1・8000 step・同一等エントロピー IC**、変えるのは
+物理 (`viscMethod`/`visc`) と `convMethod` のみ。第一セル Uy(x≈27.8mm) で固着を判定 (物理値 ≈ +13)。
+
+| run_* | 物理 | convMethod | 収束 (check_convergence) | 第一セル Uy | 固着? |
+| --- | --- | --- | --- | --- | --- |
+| `run_disent_eul_cm0` | Euler | 0 (1次) | PASS (rms_roUy 4.6dec) | **+13.6** | なし |
+| `run_disent_eul_cm1` | Euler | 1 (2次) | NOT CONV (rms 2.1dec 停滞) | **+17.9** | なし |
+| `run_disent_lam_cm0` | laminar | 0 (1次) | NOT CONV (rms 1.8dec 停滞) | **+0.86** | **固着** |
+| `run_disent_lam_cm1` | laminar | 1 (2次) | NOT CONV (rms 1.4dec 停滞) | **+1.41** | **固着** |
+
+**結論**: 近軸 Uy 固着の原因は **粘性 (`viscMethod=1`)** であり convMethod ではない。laminar は cm0/cm1 とも
+固着 (第一セル ~+1、第二セルで +110 へ暴騰=偽勾配)、Euler は cm0/cm1 とも健全 (軸から滑らかに立ち上がる)。
+convMethod=1 (2次) は固着とは無関係の**良性の残差プラトー** (リミタのリミットサイクル) を生むだけで、
+Euler cm1 は残差が止まっても場 (Uy=+17.9) は正常。plan [architecture-axisym-axis-singularity.md] の真因
+(粘性が近軸 r→0 で剛性を増し float block-DPLUR の `D⁻¹` が悪条件化、陽解/Euler は `D⁻¹` 不使用で正常) と整合。
+
+### 粘性対角の幾何是正で float のまま固着解消 (2026-06-14, 上記の真因の根治)
+
+上の切り分けで「固着=粘性の LHS 由来」と判明したので、block-DPLUR の**粘性対角の形**を精査したところ、
+`face_area·(2ν/delta)` が `delta=dcc·ss²/dcc_dot_s` (面積) を長さ²扱いして **≈2ν に潰れ**、軸対称近軸で
+r 重みを失い・ゼロ面積(対称)面にもスプリアス項を載せていた (residual 側 [viscousFlux_d.cu] は
+`ip<nNormalPlanes` で軸面を除外)。これを residual の粘性流束 Jacobian と整合する **`2ν·ss²/dcc_dot_s`
+(= `2ν·delta/dcc`、∝r でゼロ面積面では消える)** に是正 (`timeIntegration_d.cu` の scalar/block/precond 3 箇所)。
+
+検証 (基準は `run_disent_lam_cm1`、build-viscfix=是正 float / build-verify=未修正):
+
+| run_* | ビルド・精度 | 収束 | 第一セル Uy | 判定 |
+| --- | --- | --- | --- | --- |
+| `run_disent_lam_cm1` | float 未修正 | NOT CONV (リミタ) | **+1.4** (固着) | baseline |
+| `run_disent_lam_cm1_viscfix` | **float 是正** | NOT CONV (リミタのみ) | **+17.9** | **固着解消** |
+| `run_disent_lam_cm1_double` | float 未修正 + `implicitSolvePrecision=1` | NOT CONV (リミタ) | +18.1 | 参照(double根治) |
+| `run_disent_lam_cm0` | float 未修正 (1次) | NOT CONV (停滞) | +0.86 (固着) | baseline |
+| `run_disent_lam_cm0_viscfix` | **float 是正** (1次) | **PASS (rms_roUy 4.5dec)** | **+12.1** | **固着解消＋収束回復** |
+
+**結論 (旧結論の更新)**: 近軸固着の本質は **float 精度ではなく LHS 粘性対角の幾何不整合**だった。是正後は
+**float のまま** double solve (`run_0015_prod_double`) と一致 (+17.9 vs +18.1、cm1) し、1次では NOT CONV→PASS に回復
+(cm0)。`implicitSolvePrecision=1` は悪条件 LHS を倍精度で押し切る対症療法で、LHS を直せば**追加 FP64 不要・float 速度**で
+根治できる。plan [precision-mixed-axisym.md] / [architecture-axisym-axis-singularity.md] の「double solve が必要」は
+本是正で更新対象 (要 docs/plan 反映・他ケース回帰)。
+
+### 粘性対角是正後の scalar DPLUR CFL スイープ (2026-06-14)
+
+粘性流束 Jacobian 是正後、これまで全く収束しなかった **scalar DPLUR (`blockDPLUR: 0`)** の安定性が
+変わったかを検証。基準 `run_disent_lam_cm1_viscfix` (block DPLUR, cfl 2.0, viscfix float build) の設定を
+そのまま使い `blockDPLUR: 0` のみ変えて CFL をスイープ (全 run: SLAU, 軸対称, laminar, conical メッシュ +
+等エントロピー IC, `timeIntegration: 11`, `nStepInner: 20`, 2 次 + limiter 2, 8000 step, build-viscfix)。
+
+| run_* | CFL | NaN/発散 | 収束 (check_convergence) |
+| --- | --- | --- | --- |
+| `run_disent_scalar_cfl0p1` | 0.1 | NaN なし | NOT CONV (rms_ro/roUx **上昇**, roUy 停滞) |
+| `run_disent_scalar_cfl0p2` | 0.2 | NaN なし | NOT CONV (**全列上昇** — 緩慢発散, roUy +2.9 roe +5460) |
+| `run_disent_scalar_cfl0p5` | 0.5 | **DIVERGED** ~step 557 | NaN |
+| `run_disent_scalar_cfl1`   | 1.0 | **DIVERGED** ~step 246 | NaN |
+| `run_disent_scalar_cfl2`   | 2.0 | **DIVERGED** ~step 85  | NaN |
+| `run_disent_scalar_cfl5`   | 5.0 | **DIVERGED** ~step 35  | NaN |
+| `run_disent_scalar_cfl10`  | 10.0| **DIVERGED** ~step 32  | NaN |
+| `run_disent_lam_cm1_viscfix` (基準) | 2.0 (**block**) | NaN なし | NOT CONV だが安定 (rms_ro 1.3dec/roUx 2.0dec 後プラトー) |
+
+**結論**: 粘性対角の是正をもってしても **scalar DPLUR は依然として収束しない**。CFL≤0.2 で辛うじて NaN を
+免れるが残差は下げ止まり〜上昇 (収束せず)、CFL≥0.5 で完全発散し、発散開始 step は CFL とともに単調に早まる
+(古典的な CFL 安定限界)。一方 **block DPLUR は同 CFL 2.0 で安定**に回り 1〜2 dec 下げてプラトーする。
+よって陰解法の実用パスは引き続き block DPLUR であり、粘性 Jacobian 是正は block の近軸固着を解消したが、
+scalar DPLUR の対角近似 (運動量連成を落とす) の弱さを救うものではない。残差図は各 run の `residual_history.png`。

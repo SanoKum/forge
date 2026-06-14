@@ -3,19 +3,41 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `done`  <!-- 根本原因を特定。安価な根治を実装: 真因は「線形 solve の精度」で、閉形式 FVS +
-                            implicitSolvePrecision フラグ (solve のみ double) で根治。詳細 precision-mixed-axisym.md §13 -->
+- **status**: `done`  <!-- 2026-06-14 真因を更新: 「線形 solve の精度」ではなく **粘性対角の幾何不整合** が真因。
+                            幾何是正で float のまま固着解消 (double solve 不要)。§0 参照。 -->
 - **related_docs**:
   - `docs/turbulence/theory.md` (§7.5)
-  - `docs/time_integration/` (block DPLUR)
+  - `docs/time_integration/implementation.md` (block DPLUR・粘性対角の幾何是正 §)
 - **related_plans**:
   - `architecture-axisymmetric.md` (B 流儀 r 重み実装)
   - `time_integration-implicit-stable-cfl.md` (block DPLUR)
   - `turbulence-kato-launder.md` (← 本件の対処としては**誤り**。下記参照)
 - **related_docs(手順)**: `.github/forge-su2-cross-check.md`
 - **created**: `2026-06-12`
-- **updated**: `2026-06-13`
+- **updated**: `2026-06-14`
 - **owner**: `CFD Dev`
+
+## 0. 真因の更新 (2026-06-14) — 精度ではなく**粘性対角の幾何不整合**
+
+§1 以降は「真因 = float 線形 solve の精度、根治 = `implicitSolvePrecision=1` (double solve)」としていたが、
+**より上流の真因が判明したので更新する**。
+
+- **切り分け (case 29, cell, float, 2×2 物理×convMethod)**: 近軸固着は **粘性 (`viscMethod=1`) のときだけ**生じ、
+  Euler は 1次/2次とも健全。convMethod (2 次) は固着と無関係 (良性のリミタ残差プラトーを生むだけ)。
+  → 固着は**粘性 LHS 由来**であり「float 精度一般」の問題ではない。
+- **真因**: block-DPLUR の**粘性対角** $\Lambda^\nu_f$ が `face_area·(2ν/delta)` と書かれ、`delta`(面積) が約分されて
+  $\approx 2\nu$ に潰れていた。これは (1) 軸対称近軸で本来 $\propto r$ で消える内側面寄与を過大評価し、(2) residual に無い
+  ゼロ面積(軸/対称)面にもスプリアス項を載せる。この幾何的に誤った near-axis 対角が `D^{-1}` を悪条件化し、
+  float で第一セル $u_r$ を固着させていた (double solve はこの悪条件を倍精度で押し切る対症療法だった)。
+- **根治 (安価・float)**: 粘性対角を residual 整合形 $2\nu_f\,|S_f|^2/(\Delta\mathbf{cc}\cdot S_f)$ ($=2\nu\,\delta/|\Delta\mathbf{cc}|$、
+  $\propto r$ でゼロ面積面では消える) に是正。**float のまま固着解消**: case 29 laminar conical 第一セル $u_r$ が
+  $+1.4\to+17.9$ で double solve ($+18.1$) と一致、1 次では未収束→収束 (PASS)。実装は `timeIntegration_d.cu` の
+  scalar/block/precond 3 箇所 (LHS のみ→定常解不変)。検証 run: `case/29.bell_vs_conical/run_disent_*`。
+- **回帰**: planar 粘性 (bump) は base/fix 場が $L2\sim10^{-5}$ 一致、planar RANS (backstep/naca, warm-start) は
+  残差レベル同一・mean flow 一致 (詳細 [precision-mixed-axisym.md](precision-mixed-axisym.md) §更新)。
+- **`implicitSolvePrecision=1` の位置づけ更新**: 根治ではなく**保険/検証手段**として残す。幾何是正後は通常 `0`。
+
+→ 以下 §1〜§4 は経緯として残すが、「根治には double solve が必要 / 安価な根治なし」の記述は本 §0 で**上書き**される。
 
 ## 1. 結論 (根本原因 = float32 の陰解法が近軸を収束させきれない)
 

@@ -668,8 +668,11 @@ __global__ void implicit_defect_correction_d
                 static_cast<flow_float>(1.0e-30)
             );
             const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
-            const flow_float viscous_radius = 2.0 * nu_eff / delta;
-            const flow_float face_coeff = face_area * (advective_radius + viscous_radius);
+            // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる。
+            // 旧 face_area·(2ν/delta) は面積 delta を長さ²扱いし ≈2ν に潰れ、軸対称近軸で r 重みを失い、
+            // ゼロ面積(対称)面にもスプリアス項を載せていた (residual は ip<nNormalPlanes で軸面を除外)。
+            const flow_float viscous_diag = static_cast<flow_float>(2.0) * nu_eff * delta / dcc;
+            const flow_float face_coeff = face_area * advective_radius + viscous_diag;
             const flow_float offdiag_coeff = static_cast<flow_float>(0.5) * face_coeff;
             diag_face_sum += face_coeff;
 
@@ -861,8 +864,10 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
                 static_cast<ST>(1.0e-30)
             );
             const ST delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<ST>(1.0e-30));
-            const ST viscous_radius = static_cast<ST>(2.0) * nu_eff / delta;
-            block_dplur::add_identity_scaled(diag_block, face_area * viscous_radius);
+            // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
+            // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
+            const ST viscous_diag = static_cast<ST>(2.0) * nu_eff * delta / dcc;
+            block_dplur::add_identity_scaled(diag_block, viscous_diag);
         }
 
         #pragma unroll
@@ -1030,8 +1035,10 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             const flow_float dcc = max(sqrt(dcc_x*dcc_x + dcc_y*dcc_y + dcc_z*dcc_z), static_cast<flow_float>(1.0e-30));
             const flow_float dcc_dot_s = max(fabs(dcc_x*sx[ip] + dcc_y*sy[ip] + dcc_z*sz[ip]), static_cast<flow_float>(1.0e-30));
             const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
-            const flow_float viscous_radius = static_cast<flow_float>(2.0) * nu_eff / delta;
-            block_dplur::add_identity_scaled(D0, face_area * viscous_radius);
+            // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
+            // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
+            const flow_float viscous_diag = static_cast<flow_float>(2.0) * nu_eff * delta / dcc;
+            block_dplur::add_identity_scaled(D0, viscous_diag);
 
             // 近傍 += k_off S ΔQ_nbr (= -A_c⁻ S ΔQ_nbr)。
             if (other_ic < nCells) {

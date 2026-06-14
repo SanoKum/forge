@@ -3,11 +3,13 @@
 ## メタ
 
 - **area**: `precision` (time_integration / architecture 横断)
-- **status**: `done`  <!-- 2026-06-14 実装完了: 閉形式 FVS + implicitSolvePrecision フラグ。§13 参照 -->
+- **status**: `superseded`  <!-- 2026-06-14: double solve は根治ではなかった。真因=粘性対角の幾何不整合で、
+                              幾何是正 (float) が根治。本フラグは検証/保険として残す。§0 と
+                              architecture-axisym-axis-singularity.md §0 参照。 -->
 - **related_docs**:
-  - `docs/time_integration/` (block DPLUR)
+  - `docs/time_integration/implementation.md` (block DPLUR・粘性対角の幾何是正 §)
 - **related_plans**:
-  - `architecture-axisym-axis-singularity.md` (**根本原因の確定記録 — 必読**)
+  - `architecture-axisym-axis-singularity.md` (**真因の更新 §0 — 必読**)
   - `time_integration-implicit-stable-cfl.md` (block DPLUR)
 - **reference**: `papers/precision/itref_phys.pdf`
   (Baboulin, Buttari, Dongarra et al., *"Accelerating Scientific Computations with
@@ -15,7 +17,20 @@
 - **created**: `2026-06-13`
 - **owner**: `CFD Dev`
 
-## 1. 背景 (確定済みの根本原因)
+## 0. 更新 (2026-06-14): double solve は根治ではなかった — 真因は粘性対角の幾何不整合
+
+本 plan は「真因 = float 線形 solve の精度、root-fix = `implicitSolvePrecision=1` (double solve)」としたが、
+**より上流の真因が判明し上書きする** (詳細は [architecture-axisym-axis-singularity.md](architecture-axisym-axis-singularity.md) §0)。
+
+- 近軸固着は **粘性のときだけ**生じる (Euler は float でも健全)。真因は block-DPLUR の**粘性対角**
+  $\Lambda^\nu_f$ が `face_area·(2ν/delta)` と書かれ `delta`(面積) が約分されて $\approx 2\nu$ に潰れ、
+  軸対称近軸で $\propto r$ の重みを失い・ゼロ面積(軸)面にスプリアス項を載せ、`D^{-1}` を悪条件化していたこと。
+- **幾何是正** ($\Lambda^\nu_f = 2\nu_f|S_f|^2/(\Delta\mathbf{cc}\cdot S_f)$、residual 整合・$\propto r$) で
+  **float のまま固着解消** (case 29 第一セル $u_r$ $+1.4\to+17.9$、double solve と一致)。double 不要。
+- よって `implicitSolvePrecision=1` は**根治ではなく検証/保険手段**として残す (本 plan の §2 以降「double solve のみ有効」
+  「安価な根治なし」は本 §0 で無効化)。本 plan は `superseded`。
+
+## 1. 背景 (確定済みの根本原因) — ※ §0 で更新済
 
 `architecture-axisym-axis-singularity.md` で確定: case 29 軸対称 SST の「軸中心 k スパイク」は
 **float32 の陰解法 (block-DPLUR) が近軸第一セルの平均速度 `u_r` を収束させきれない**ことが真因。

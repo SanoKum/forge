@@ -139,9 +139,25 @@ rho_phi[ic] = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
 - `solve_5x5` — 部分ピボット付き Gauss 消去（`diag` を破壊して in-place）。`|pivot| < 1e-20` でゼロ解にフォールバック。
 - `multiply_add_5x5_vec` — 行列ベクトル積。
 
-各セルで近傍寄与を集約し、対角 $D_i = V/\Delta\tau\,I + \sum_f A^{+}_f S_f + \sum_f \rho^{\nu}_f S_f\,I$、
+各セルで近傍寄与を集約し、対角 $D_i = V/\Delta\tau\,I + \sum_f A^{+}_f S_f + \sum_f \Lambda^{\nu}_f\,I$、
 RHS = $-\mathbf R + \sum_f K_f S_f \cdot \Delta\mathbf Q_{\text{nbr}}^{\text{old}}$（$K_f=-A^{-}_f$）を構築し、
 $\Delta\mathbf Q_{\text{new}} = D_i^{-1}\,\text{RHS}$ を解く。`cfg.implicitRelax` で $\Delta\mathbf Q$ を緩和。
+
+ここで粘性対角は $\Lambda^{\nu}_f = 2\nu_f\,\dfrac{|S_f|^2}{\Delta\mathbf{cc}_f\cdot S_f}$（$\nu_f=(\mu_{\rm lam}+\mu_t)/\rho$）。
+これは粘性流束 residual ([`viscousFlux_d.cu`](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu)) の
+法線拡散項 $\mu_f(\Delta U/|\Delta\mathbf{cc}|)\,\delta$（$\delta=|\Delta\mathbf{cc}|\,|S_f|^2/(\Delta\mathbf{cc}_f\cdot S_f)$）の
+**Jacobian の大きさと整合**する（$\Lambda^{\nu}_f = 2\nu_f\,\delta/|\Delta\mathbf{cc}|$）。
+
+> **2026-06-14 修正（粘性対角の幾何是正）**: 旧コードは粘性対角を $|S_f|\cdot(2\nu_f/\delta)$ と書いていたが、
+> $\delta$ は**面積次元** ($\approx|S_f|$) なので $|S_f|$ が約分されて $\approx 2\nu_f$ に潰れ、(1) 軸対称近軸で
+> 本来 $\propto r$ で消えるべき内側面の寄与を過大評価し、(2) residual に無いゼロ面積(対称/軸)面にも
+> スプリアス項を載せていた（residual 側は `ip<nNormalPlanes` で境界面を除外）。これが **float block-DPLUR が
+> 軸対称近軸第一セルの $U_r$ を収束させきれず固着する真因**だった。上記の residual 整合形
+> $2\nu_f\,|S_f|^2/(\Delta\mathbf{cc}_f\cdot S_f)$ に是正すると $\propto r$ でゼロ面積面では消え、**float のまま固着が解消**
+> （case 29 laminar conical 第一セル $U_r$: $+1.4\to+17.9$ で double solve と一致、1 次では未収束→収束）。
+> 修正は `timeIntegration_d.cu` の scalar (`implicit_defect_correction_d`) / block (`implicit_defect_correction_block_d`) /
+> precond (`implicit_defect_correction_block_precond_d`) の 3 箇所。**LHS のみの変更**で defect-correction の
+> 定常解は不変（planar 回帰 bump で base/fix 場が $L2\sim10^{-5}$ 一致・RANS で残差レベル同一を確認）。
 
 > **2026-06 修正**: 旧コードは対角に $A^{+}$ ではなく $|\widetilde A|$ を、近傍に $-A^{-}$ ではなく $+|\widetilde A|$ を
 > 使っていた（符号付き分割でなく絶対値の誤用）。対角が upwind 自己 Jacobian と不一致・近傍結合が逆符号となり、
@@ -175,11 +191,13 @@ valid な FVS で defect-correction の定常解は不変)。
 - `1` (double): 状態/残差を **double へキャスト**して Jacobian 構築・5×5 solve・近傍 sweep を **double** で行い、
   補正 $\Delta\mathbf Q$ を float `dq_new` へ書戻す（混合精度 iterative refinement）。
 
-**動機**: float32 の block-DPLUR は軸対称 近軸第一セルで平均速度 `Uy` を収束させきれず偽固着する
-(laminar conical で `Uy` が物理値 $-15$ でなく $-0.6$ に張り付き、SST では偽ひずみが軸中心 k スパイクを駆動)。
-真因は**線形 solve の精度**で、残差は float で良い（itref Algorithm 1 の「状態+残差 double / solve float」とは逆）。
-`implicitSolvePrecision=1` で `Uy` が $-14.98$ に収束し、近軸 float 陰解の発散ケース (例 `case/27` 軸対称陰解) も安定化する。
-RTX 3060 では FP64=FP32 の 1/32 ゆえ ~×2.8 遅い（compensated double-float は ~48bit で精度不足のため不採用）。
+**動機と位置づけ（重要・2026-06-14 更新）**: 当初 float32 の block-DPLUR が軸対称 近軸第一セルで平均速度 `Uy` を
+収束させきれず偽固着する (laminar conical で `Uy` が物理値 $-15$ でなく $-0.6$) 問題に対し、`implicitSolvePrecision=1`
+(線形 solve を double) を root-fix とした。**その後、真因は精度ではなく上記「粘性対角の幾何不整合」であることが判明**
+(粘性が無い Euler は float でも固着せず、固着は粘性 LHS 由来。詳細は本節冒頭「粘性対角の幾何是正」)。
+粘性対角を residual 整合形に直せば **float のまま固着が解消**し double solve は不要。
+したがって `implicitSolvePrecision=1` は**根治ではなく、悪条件 LHS を倍精度で押し切る検証/保険用の手段**として残す
+(幾何是正後は通常 `0` で良い)。RTX 3060 では FP64=FP32 の 1/32 ゆえ ~×2.8 遅い。
 切り分け・速度の詳細は [`.github/plans/precision-mixed-axisym.md`](../../.github/plans/precision-mixed-axisym.md)
 と [`.github/plans/architecture-axisym-axis-singularity.md`](../../.github/plans/architecture-axisym-axis-singularity.md)。
 現状 `blockDPLUR=1`・`lowMachPrecond` 0/1 経路のみ対応 (precond=2 / scalar 版は float のまま)。
