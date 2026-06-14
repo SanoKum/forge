@@ -823,6 +823,7 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         condensationTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 液相モーメント移流残差 (Phase 1)
+        condensationSource_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);     // 核生成+成長ソース (Phase 2)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         ransGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);

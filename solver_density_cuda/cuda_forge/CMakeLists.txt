@@ -30,6 +30,8 @@ add_library(cuda_forge STATIC
     condensationTransport_d.cuh
     condensationProperties_d.cuh
     condensationEOS_d.cuh
+    condensationSource_d.cu
+    condensationSource_d.cuh
     ransSource_d.cu
     ransSource_d.cuh
     axisymmetricSource_d.cu

@@ -119,6 +119,13 @@ H2O モデル (CNT_Kantrowitz + Hertz–Knudsen) + Wyslouzil 検証。詳細は 
 ## 9. 変更ログ
 
 - `2026-06-14` — 初稿。docs (theory/implementation) 作成、Phase 1 (受動スカラー骨格) 着手。
+- `2026-06-14` — **Phase 2 ソース項 初期実装 (bounded 確認)**。核生成 (CNT+Iland)・成長 (Goodheart) を
+  `condensationSource_d.{cu,cuh}` に実装、一温度・rates freeze・明示的ソース+安定化 clamp/limiter
+  ($J$ 上限, $dr/dt\!<\!0\to0$, $\bar r\le r_*$ 成長停止, 非負, $g\le1$, 1step $\Delta g/\Delta T/$蒸気枯渇を
+  $\theta$ 律速)。src_jac はソース由来 0 (時間+移流対角のみ; 完全自己抑制線形化は後続)。**psat を C-C 外挿**
+  (45K クランプだと過飽和が潰れ核生成せず → C-C で物理外挿し onset 復活)。**case/34 run_0006 (CPG, dry
+  restart)**: NaN なし・bounded ($g\in[0,1]$)・最小 T 27.8→34.6K (潜熱)・g=0 域は dry 一致。g 過大 (22%) は
+  一斉 onset アーティファクト=定量一致は後続 (膨張流 onset/レート較正/完全 src_jac)。
 - `2026-06-14` — **Phase 2 着手**: 方針修正 (相=過冷却液 not 固体 / 一温度 $T_v=T_d=T$ /
   $T_d$ は輸送変数にしない / 2 温度・thermally perfect は後続)。N2 物性 device モジュール
   (`condensationProperties_d.cuh`, 液フィット 45K クランプ, anchors 検証) と一温度 二相 EOS

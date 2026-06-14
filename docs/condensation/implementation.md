@@ -78,19 +78,41 @@ $\kappa,\chi,\xi_g$ で変わるため一般 EOS Roe (Vinokur–Montagné 流) �
 
 ---
 
-## 4. ソース項 (Phase 2)
+## 4. ソース項 (Phase 2 — 初期実装済, 安定性優先)
 
-`ransSource_d.cu` の point-implicit パターン (消散ヤコビアン `src_jac` を対角に組む,
-[ransSource_d.cu](../../solver_density_cuda/cuda_forge/ransSource_d.cu)) を手本に
-`condensationSource_d.cu` を新設。device 側で:
+[condensationSource_d.{cu,cuh}](../../solver_density_cuda/cuda_forge/condensationSource_d.cu) に実装。
+device 側で核生成 $J$ (CNT × Iland)・臨界半径 $r_*$・成長 $dr/dt$ (Goodheart) を**現在セル状態から一度だけ
+評価して freeze** (一温度 $T_v=T_d=T$)、相変化ソースを各モーメント残差へ加算する:
 
-- 物性 $p_{sat}(T),\ \rho_l(T),\ L(T),\ \sigma(T)$ を**種ごと構造体** (`condProperties_<sp>`) から評価。
-- 核生成 $J$ (CNT × 種ごと補正 enum: `CNT`/`CNT_Iland`/`CNT_Kantrowitz`) を $T$ で評価、$r_*$ 算出。
-- 成長 $dr/dt$ (enum: `gyarmathy`/`goodheart`/`hertz_knudsen`) を Hill $T_d$ 反復で評価。
-- ソース $S_{Q_n}=J r_*^n + n\rho Q_{n-1}\,dr/dt$、$S_g$ を各モーメント残差へ加算。
-- 源項ヤコビアン $\partial S/\partial U$ を `src_jac` に積み (point-implicit)、stiff を陰化。
+$$
+S_{Q_0}=J,\ S_{Q_1}=Jr_*+\rho Q_0\tfrac{dr}{dt},\ S_{Q_2}=Jr_*^2+2\rho Q_1\tfrac{dr}{dt},\
+S_g=\tfrac{4}{3}\pi\rho_l\big(Jr_*^3+3\rho Q_2\tfrac{dr}{dt}\big)
+$$
 
-モデル選択は **enum + switch (device)**、係数は種ごと構造体。新モデル追加は enum と関数を足すだけ。
+`res_ro<φ> += S_φ·V` で advection 残差へ加算。物性は [condensationProperties_d.cuh](../../solver_density_cuda/cuda_forge/condensationProperties_d.cuh)。
+
+### 安定化 (初期実装の主眼)
+
+- **$p_{sat}$ の Clausius–Clapeyron 外挿**: 液フィットは ~40K 以下で破綻するため $T<50$K は
+  $p_{sat}(T)=p_{sat}(50)\exp(-(L/R)(1/T-1/50))$ で物理外挿 (低温で単調減少)。**45K クランプのまま psat を
+  凍結すると過飽和 $S=p/p_{sat}$ が潰れ核生成が起きない**ため psat だけ C-C 外挿 (σ,ρ_l,L はクランプ)。
+- **clamp/limiter**: $J$ 上限、$dr/dt<0$ は 0 (蒸発なし)、$\bar r\le r_*$ で成長停止、モーメント非負 (floor)、
+  $g\le1$。**1 step の $\Delta g$・潜熱 $\Delta T$・蒸気枯渇を $\theta$ で律速**し全モーメントを同 $\theta$ で
+  縮小 ($g{=}Q_3$ 整合保持)。
+- **src_jac**: 初期実装はソース由来 0。時間項 $V/\Delta\tau$ + 移流 `transport_diag` の対角のみで安定化。
+  ソースの T 依存 ($dJ/dT, d(dr/dt)/dT$) を含む完全自己抑制線形化は**後続**。
+
+### 検証 (case/34 run_0006, CPG)
+
+収束 dry 場から restart、**NaN なし・bounded** ($g\in[0,1]$ max 0.24)・最小 T が dry 27.8→34.6K に上昇
+(潜熱)・**g=0 域は dry と完全一致** (上流 P_cond/P_dry=1.00) を確認。g が過大 (paper ~0.75–2.3% に対し
+22%) なのは収束 dry からの一斉 onset アーティファクト ($S\sim3\times10^4$ で全冷却セルが同時核生成)。
+**定量一致は後続** (膨張流からの physical onset / レート較正 / 完全 src_jac 線形化)。
+
+### モデル切替 (将来)
+
+核生成/成長/補正を **enum + switch (device)**、係数は種ごと構造体に。N2=CNT_Iland+Goodheart /
+H2O=CNT_Kantrowitz+Hertz–Knudsen を同枠で。現状は N2 ハードコード。
 
 ---
 
