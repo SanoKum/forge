@@ -135,6 +135,18 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   r 重み→0 の極小 CV) は多方程式的に ill-posed で、roUy の対称化だけ (外部手術でも in-Jacobian でも) では直らない**。
   → corner は構造的処置が要る可能性 (例: 軸-境界角ノードを隣接へ merge/除外する、専用の角クロージャ)。
   baseline (無介入) が現状ベスト (収束・bulk 正しい・corner は P≤6.8MPa の局所オーバーシュートに留まる)。全フックは既定無効。
+  **SU2 メッシュ/角処理の調査結果 (ユーザ要請, `run_su2cmp_su2_euler`)**:
+  - SU2 メッシュ = forge node メッシュと**同一** (NPOIN=27472、軸-inlet 角は**同じ共有ノード id 2**, x=-0.0587/y=0、
+    marker は inlet101/axis272/wall272/outlet101 で forge bcond と一致)。**トポロジは差が無く、差は BC 処理のみ**。
+  - **SU2 の共有角は clean**: 角で Ux=+54.78 (正常流入, 逆流でない)・**Uy=0 厳密**・P=3.99MPa (=chamber, overshoot 無し)。
+    SU2 は**軸全体で Uy=0 を厳密強制** (max|Uy|=0)。
+  - forge の roUy 対称化 (外部手術 / in-Jacobian 単行 decouple) は**全て発散**。SU2 が clean なのは、SU2 の対称面が
+    **残差 + Jacobian + 解を一体で扱う coherent な対称面演算子 (CSymmetryPlane 相当)** だから。forge の piecemeal な
+    1 行 decouple は、軸 CV の roUy 連成が持つ陰的減衰を壊し、軸方向・密度を不安定化させる (Mach~1000)。
+  - **結論**: corner を SU2 並に clean にするには、**SU2 の対称面演算子を一体移植**する必要がある:
+    (i) 対称面フラックスを圧力のみ (質量/エネルギー流束 0)、(ii) 残差から法線運動量成分を除去、(iii) 同じ射影を
+    block-DPLUR の 5×5 Jacobian へ整合適用 (1 行 hack でなく射影行列 P=I-nn^T で両側変換)、(iv) 解にも v_n=0。
+    SU2 ソースは本リポジトリにバイナリのみで未読。bulk は完成済みのため残作業は corner=この対称面演算子の移植。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
