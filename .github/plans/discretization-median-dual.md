@@ -231,3 +231,12 @@
   - **結論**: case/29 viscous (軸対称) の step5 発散は **壁ではなく軸 (near-axis)** が原因。M3 の残 blocker は
     node-centered の **near-axis (r=0) 処理**であり、これは [[architecture-axisym-axis-singularity]] と同種の難問。
     壁・平面 viscous・Euler (bulk) は node で動く。**次の本丸は near-axis 専用の腰を据えた対策**。
+- `2026-06-14` — **陽解法 + 残差射影 R←R−(R·n)n の検証 (ユーザ要請)**。軸の対称フラックスは現状ゴースト/slip
+  (`replacePrimalWithDual` が軸半割面を 1 セル境界 plane→ゴースト生成、`slip_d` が鏡像、対流カーネルが 1 次で処理)。
+  残差射影 (`zeroAxisRadialResidual`=軸で res_roUy=0=R←R−(R·n)n) は assembleResidual に**常時有効**。
+  - **explicit で射影は完璧に機能**: detectNaN ダンプで **軸ノードの Uy=0 厳密** (271/272 finite, max|Uy|=0、SU2 と同じ)。
+  - **だが explicit は依然発散**: 死因は roUy でなく **exit-axis 角の ro(密度)** (subsonic: step2, CV x≈0.085/r≈0.0004 で ro NaN
+    4 セル; supersonic は exit-wall 角)。**= 射影は必要だが十分でない。corner CV (r≈0 の極小 CV, outlet∩axis) が密度で
+    explicit 不安定 (多方程式)**。implicit の inlet-axis corner オーバーシュートと同根。
+  - **残課題は corner CV の構造/コヒーレント処理**で確定 (roUy 対称は解決済み)。候補: 角 CV を隣接へ merge して極小 CV を
+    作らない / 角専用 dt フロア / SU2 CSymmetryPlane を flux+残差+Jacobian 一体移植。
