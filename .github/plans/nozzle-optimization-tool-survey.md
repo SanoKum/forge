@@ -125,7 +125,7 @@
 
 > **「スロート上流〜スロート〜スロート直下流（壁からの膨張波が、軸で反射した波とまだ重ならない kernel 初期部）をどう作るべきか」への直接の回答。**
 > 結論: この区間は**単一の多項式で壁を直接描かない**のが標準。「収縮曲線 → 上流円弧 $R_u$ → (スロート) → 下流円弧 $R_d$ → 変曲点以降は MOC が決める壁」という**区分構成**が世界標準であり、多項式の正しい置き場所は (i) 亜音速収縮（Bell–Mehta 5 次）と (ii) Sivells 流の**中心線速度分布**（3〜4 次）の 2 箇所である。
-> ステータス注記: 本節の CONTUR 入力仕様・中心線多項式・Bell–Mehta 収縮は **2026-06-14 に一次資料（AEDC-TR-78-63 本文・NASA CR-177488 本文）を入手・精読して確証（◎）**（旧 △ から格上げ。原典 PDF と図版は `nozzle-survey-assets/` に保存）。Rao 円弧慣行は古典 ○、曲率不連続→弱波は CSIR 事例 △。3 票方式の敵対的検証バッチには未投入（付録 9 参照）。
+> ステータス注記: 本節の CONTUR 入力仕様・中心線多項式・Bell–Mehta 収縮は **2026-06-14 に一次資料（AEDC-TR-78-63 本文・NASA CR-177488 本文）を入手・精読して確証（◎）**（旧 △ から格上げ。原典 PDF は `papers/`、抽出図版は `presentations/` のスライドに掲載）。Rao 円弧慣行は古典 ○、曲率不連続→弱波は CSIR 事例 △。3 票方式の敵対的検証バッチには未投入（付録 9 参照）。
 
 #### 区間別の標準形状と慣行値
 
@@ -536,14 +536,14 @@ flowchart LR
 - 【◎】Rao, "Exhaust Nozzle Contour for Optimum Thrust," *Jet Propulsion*, 28(6):377–382, 1958.
 - 【○】Bartz, "A Simple Equation for Rapid Estimation of Rocket Nozzle Convective Heat Transfer Coefficients," *Jet Propulsion*, 27:49–51, 1957.
 - 【◎】Morel, "Comprehensive Design of Axisymmetric Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 97(2):225–233, 1975.
-- 【◎ 一次資料精読 2026-06-14】Bell & Mehta, *Contraction Design for Small Low-Speed Wind Tunnels*, NASA CR-177488 (JIAA-TR-84), 1988（NTRS 19880012661, public）。確認: 壁形状 $Y=H_i-(H_i-H_e)[6\xi^5-15\xi^4+10\xi^3]$、両端で曲率ゼロ／3・5・7 次＋マッチドキュービック比較で**7 次・マッチドキュービックは入口剥離、5 次を採用**。PDF: `nozzle-survey-assets/pdf/bell_mehta_contraction_CR177488.pdf`。
+- 【◎ 一次資料精読 2026-06-14】Bell & Mehta, *Contraction Design for Small Low-Speed Wind Tunnels*, NASA CR-177488 (JIAA-TR-84), 1988（NTRS 19880012661, public）。確認: 壁形状 $Y=H_i-(H_i-H_e)[6\xi^5-15\xi^4+10\xi^3]$、両端で曲率ゼロ／3・5・7 次＋マッチドキュービック比較で**7 次・マッチドキュービックは入口剥離、5 次を採用**。PDF: `papers/contraction design for small low-speed wind tunnels (Bell Mehta NASA CR-177488).pdf`。
 - 【◎】Cuffel, Back, Massier, "Transonic Flowfield in a Supersonic Nozzle with Small Throat Radius of Curvature," *AIAA Journal*, 7(7):1364–1366, 1969.
 - 【◎】Tulapurkara & Bhalla, "Experimental Investigation of Morel's Method for Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 110(1):45–47, 1988.
 - 【◎】Hassan/Zanoun ら, "Flow characteristics in low-speed wind tunnel contractions: Simulation and testing," *Alexandria Engineering Journal*, 2017.
 - 【△】Witoszynski 収縮曲線（古典解析形）／`aldorona/contur`・`noahess/conturpy`（Sivells CONTUR のオープン移植, GitHub）。
 
 **スロート近傍幾何の標準構成 — A2.5(E)（2026-06-12 軽検証追補）**
-- 【◎ 一次資料精読 2026-06-14】Sivells AEDC-TR-78-63 本文（DTIC ADA062944, archive.org, public domain）。確認事項: 中心線**速度**の一般 5 次多項式（Eq.35）が端点 1・2 階微分整合で 3〜4 次に縮退／スロート曲率 `RC`（曲率半径/スロート半径、`ETAD=60°` 時必須、Mach 6 設計で RC≈5.5）／曲率連続は「速度分布の 1・2 階微分を遷音速解・放射流に整合し設計マッハで消失」（B2 モード K の C2 接続根拠）。PDF: `nozzle-survey-assets/pdf/sivells_AEDC-TR-78-63.pdf`。
+- 【◎ 一次資料精読 2026-06-14】Sivells AEDC-TR-78-63 本文（DTIC ADA062944, archive.org, public domain）。確認事項: 中心線**速度**の一般 5 次多項式（Eq.35）が端点 1・2 階微分整合で 3〜4 次に縮退／スロート曲率 `RC`（曲率半径/スロート半径、`ETAD=60°` 時必須、Mach 6 設計で RC≈5.5）／曲率連続は「速度分布の 1・2 階微分を遷音速解・放射流に整合し設計マッハで消失」（B2 モード K の C2 接続根拠）。PDF: `papers/aerodynamic design program for axisymmetric and planar nozzles (CONTUR, Sivells AEDC-TR-78-63).pdf`。
 - 【○】Rao 流 TOC/TOP の円弧慣行（下流円弧 $R_d=0.382\,r^*$ を変曲点 $\theta_n$ まで保持 → MOC 旋回コンタ）: Rao 1958／Sutton & Biblarz, *Rocket Propulsion Elements*（標準教科書慣行）。
 - 【△】"Investigation of nozzle contours in the CSIR supersonic wind tunnel," *R&D Journal of the South African Institution of Mechanical Engineering*, 2017（既存コンタ由来の弱波が試験部流れ品質を劣化させることを実測、Sivells 流の曲率連続設計を採用）。
 
@@ -636,7 +636,7 @@ flowchart LR
 7. **【解決済】古典収縮曲線の粘性比較**: Tulapurkara–Bhalla（Morel 法の実験検証）、Hassan/Zanoun ら 2017（5 次多項式が最も低非一様 <0.5%）を検証済み（◎）。ただし**圧縮性・高総温域での比較**は低速研究が主で要確認。
 8. **【一部解決】モダン最適化の風洞ノズル一様性への適用**: Matsunaga ら 2022（超音速風洞ノズルをサロゲート支援 EA＋CFD で多目的最適化、マッハ偏差 vs 流れ偏向 vs 長さ）を確証（◎）→ 「風洞一様性のモダン最適化」前例は存在。**残る未検証**: SU2 随伴や DL サロゲート（DeepONet 等）を**極超音速**風洞コア一様性に full-RANS in-loop で適用した例。
 9. **【一部解決 2026-06-14】スロート近傍幾何レシピ（A2.5(E)）の一次確認**: (a) **解決** — AEDC-TR-78-63 本文を精読し確証（◎）: 中心線**速度**の一般 5 次多項式（Eq.35, 端点 1・2 階整合で 3〜4 次に縮退）、スロート曲率 `RC`（`ETAD=60°` 時必須、Mach 6 で RC≈5.5）。Bell–Mehta も原典で壁形状式・5 次採用・7次/マッチドキュービック剥離を確認（◎）。(b) 「壁曲率不連続 → 弱波 → 試験部品質劣化」の定量（CSIR 事例の一次資料確認、極超音速域での感度）は未。(c) Bell–Mehta 5 次の端点曲率ゼロとスロート円弧の C2 接続処理に確立標準があるか（原典は収縮→直管用途であり、円弧接続の C2 ブレンドは本ツールの小新規）。(d) 5 次多項式壁スロートの可否を遷音速解／NS で直接比較した前例の有無は未。
-10. **【一部解決 2026-06-13/06-14】機種改訂に伴う未調査領域**: (a) ④デュアルベル — Frey & Hagemann 1999（CP/PP エクステンション分類・遷移条件）ほか DLR 系実験（Stark/Génin）の一次確認、遷移ヒステリシス・横荷重の RANS 妥当性。**2026-06-14 に NASA 系一次資料（高度補償ノズル・デュアルベル飛行研究 NTRS 20140003943/20160008031/19940018584）を入手**し 2 モード作動・高度補償・形状の図版を確保（`nozzle-survey-assets/`）。残: 遷移ヒステリシス幅・横荷重の定量。(b) ②矩形風洞 — 側壁 δ\* を上下コンタへ転嫁する古典手順（CONTUR planar の側壁扱い）の一次確認、角部流の影響定量。(c) ⑤ 3D in-loop の FFD 変数数とサロゲートの実用限界（B4 随伴再考トリガの定量化）。(d) wave-tracing 帰還（B3）の一次文献固め（Shope 2006 ほか風洞補修実務）。
+10. **【一部解決 2026-06-13/06-14】機種改訂に伴う未調査領域**: (a) ④デュアルベル — Frey & Hagemann 1999（CP/PP エクステンション分類・遷移条件）ほか DLR 系実験（Stark/Génin）の一次確認、遷移ヒステリシス・横荷重の RANS 妥当性。**2026-06-14 に NASA 系一次資料（高度補償ノズル・デュアルベル飛行研究 NTRS 20140003943/20160008031/19940018584）を入手**し 2 モード作動・高度補償・形状の図版を確保（PDF は `papers/`）。残: 遷移ヒステリシス幅・横荷重の定量。(b) ②矩形風洞 — 側壁 δ\* を上下コンタへ転嫁する古典手順（CONTUR planar の側壁扱い）の一次確認、角部流の影響定量。(c) ⑤ 3D in-loop の FFD 変数数とサロゲートの実用限界（B4 随伴再考トリガの定量化）。(d) wave-tracing 帰還（B3）の一次文献固め（Shope 2006 ほか風洞補修実務）。
 
 > **2026-06-11 追加調査の実行記録（最終）**: 当初 4 テーマを並行起動 → レート/セッション上限で 3 本空振り。上限回復後に逐次再実行し、**全テーマ完了**: (a) 多目的サロゲート＝co-kriging/GEK/随伴注入を確証（A5）、(b) スロート曲率 $r_c$＝25/25 確証・**多目的最適化前例なしを確定**（A2.5(D)）、(c) 凝縮＋風洞モダン＝24/25 確証（A7）、(d) ②③固有設計＝23/25 確証（A9）。教訓: **大量並行はレート制限を誘発 → 逐次が安全**。
 >
