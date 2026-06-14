@@ -78,9 +78,8 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
 {
     if (cfg.isAxisymmetric != 1) return;
 
-    // 注意: 軸上 CV のソース抑制 (axis_flag 経由) は初期試験で発散した (半径方向圧力ソースは
-    // 軸 CV の釣り合いに load-bearing で、外すと step~51 で破綻)。よって既定では nullptr=ソースを課す。
-    // node-centered の inlet-axis 角オーバーシュートは別アプローチが要る (open issue, docs §7.1)。
+    // SU2 流の軸ソース OFF (axis_flag) は roUy=0 強制と併用しても block-DPLUR では発散した (下記)。
+    // 外部からの roUy 状態手術は implicit と非整合 (SU2 は Jacobian 内で対称化する)。よって既定 nullptr=ソース ON。
     geom_int* axis_flag = nullptr;
     axisymmetricSource_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells,

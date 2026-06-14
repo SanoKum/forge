@@ -120,6 +120,14 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   (P≈4MPa=chamber Pt・軸方向流入正)。異常は **軸-inlet 角 (r<0.002) のみ**: 軸方向**逆流 Ux≈-798**・Uy≈+164・P 6.82MPa。
   → **入口 BC 自体は問題なし。軸特異性が角を多方程式的に汚染** (radial だけでなく axial 逆流・P も)。roUy 単独射影では
   直らず、near-axis は全方程式整合 (対称面 + dt/spectral フロア + 連成 Jacobian) の包括対策が要る。
+  **SU2 処方の全試行 (ユーザ提案: y<EPS で軸ソース OFF + roUy/Uy=0)**: 両処理を実装 (`axisymmetricSource` の
+  `axis_flag` でソース OFF、`enforceAxisSymmetry_d` で roUy=0/Uy=0/roe 整合) し、**併用かつ全配置** (applyBconds
+  =更新前、block-DPLUR commit 内、commit 後 post-update) で試したが、**implicit は全て Mach~1000 に発散**。
+  理由: **block-DPLUR (defect-correction) は solve の外で roUy/roe を手術されると非整合**になり増幅する。SU2 が安定なのは
+  **対称条件を Jacobian (行) の中で課す**から。explicit は recipe 併用でも軸 CV が **step1 で発散** (別系統の near-axis
+  剛性)。**結論: SU2 処方は原理的に正しいが、forge では「外部状態手術」では不可。block-DPLUR の軸ノード 5×5 Jacobian で
+  roUy 行を decouple する実装 (= SU2 と同じ内挿) が必須**。全フック (axis_flag/enforceAxisSymmetry/zeroAxisRadialResidual)
+  は実装済み・既定無効で残置。baseline (無介入・ソース ON) は収束し corner 1 セルのみオーバーシュート。
 - **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
   [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
