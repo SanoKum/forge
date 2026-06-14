@@ -858,6 +858,9 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
             applyScalarImplicitCorrection(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
         }
     });
+    // 注: 軸上 roUy=0 の commit 後強制は block-DPLUR と非整合で Mach~1000 に発散 (外部状態手術不可)。
+    // SU2 流の対称面は Jacobian 内で対称化する必要がある (open issue, docs §7.1)。暫定で無効。
+    // enforceAxisSymmetry_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // SST (k-ω) を segregated point-implicit で更新（凍結解除）。残差・消散ヤコビアンは
     // 直前の assembleResidual (ransSource) で確定済み、dt_local は setDT 済み。
     if (scalarResidualEnabled(s.cfg)) {
@@ -899,6 +902,9 @@ void advanceExplicitRK(StepContext& s)
             speciesTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // ρY_s>=0, ΣρY_s=ρ
         });
+        // 注: explicit 軸対称は軸 CV が step1 で発散するため (recipe 併用でも不変)、enforce は呼んでも
+        // 検証できない。explicit の near-axis 安定化は別途要 (open issue)。暫定で無効。
+        // enforceAxisSymmetry_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     }
 
     s.profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
