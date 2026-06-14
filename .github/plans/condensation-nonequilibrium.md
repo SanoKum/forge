@@ -71,10 +71,22 @@ $\xi_g=\partial p/\partial(\rho g)=-RT+\kappa(L-RT)$ (新規列)、flux Jacobian
    に wrapper 呼出・残差列追加・register 呼出、`setInitial.hpp` に H2D 既定 0・restart フォールバック。
 6. **検証**: case/34 run_0003 複製で dry 回帰一致。
 
-### Phase 2 / Phase 3 (planned)
+### Phase 2 (N2 凝縮物理) — 分解と確定事項
 
-物性構造体・核生成/成長/$T_d$ device 関数・二相 EOS 温度逆算・point-implicit ソース・$\mu_n$
-無次元化 (Phase 2)、H2O モデル + Wyslouzil 検証 (Phase 3)。詳細は implementation.md 4–8 節。
+1. **N2 物性 device モジュール** (`condensationProperties_d.cuh`) — 実装済。$p_{sat},\rho_l,L,\sigma$ を
+   double で評価。**相は過冷却液 (supercooled liquid)、固体ではない** (論文確認: "liquid phase",
+   "liquid droplets"、$r_*$ は $\rho_l$ 使用。固相フィットは図比較用で不使用)。液フィットは ~40K 以下で
+   外挿破綻するため**物性評価温度を $[45\text{K},T_c)$ にクランプ** (`COND_T_PROP_FLOOR`)。anchors 検証済
+   (NBP/三重点/液密度/潜熱/σ が ~1%)。
+2. **二相 EOS** (dependentVariables) — `ρe=ρc_vT-ρg L(T)` から $T$ 逆算、$p=(ρ-ρg)RT$。**気相は
+   `thermalMethod 0` (熱量的完全気体) 必須** (NASA-9/CEA は ~200K 未満で無効、出口 ~27K)。$g=0$ で単相に厳密縮約。
+3. **核生成 $J$** (CNT × Iland 補正)、**成長 $dr/dt$** (Goodheart)、**Hill $T_d$** 反復 — device 関数。
+4. **ソース kernel** $S_{Q_n},S_g$ + point-implicit `src_jac` + $\mu_n$ 無次元化 (float)。
+5. **検証**: case/34 で貯気を振り中心線静圧が dry 等エントロピー線より上振れ (論文 Fig.11)。
+
+### Phase 3 (planned)
+
+H2O モデル (CNT_Kantrowitz + Hertz–Knudsen) + Wyslouzil 検証。詳細は implementation.md 4–8 節。
 
 ## 6. 検証
 

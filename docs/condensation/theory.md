@@ -153,9 +153,40 @@ $$
 $$
 
 $\xi_g$ は二相化で**新規に出る圧力微分**で、「$\rho g$↑ = 蒸気→液化 = 潜熱放出 → $T$↑ → $p$↑」を表す
-(N2 70 K 概算で $\xi_g\approx+5\times10^4>0$、凝縮で昇圧)。単相帰着検算: $g=0$ で $\kappa=\gamma-1$,
-$\chi=0$ となり既存形に一致。保存量での $\partial p/\partial U$ と flux Jacobian への入り方、Roe/SLAU
-への影響は [implementation.md](implementation.md) の対流フラックス節を参照。
+(N2 70 K 概算で $\xi_g\approx+5\times10^4>0$、凝縮で昇圧)。保存量での $\partial p/\partial U$ と flux
+Jacobian への入り方、Roe/SLAU への影響は [implementation.md](implementation.md) の対流フラックス節を参照。
+
+### 保存量での $\partial p/\partial U$ と semi-perfect (TP) 一般化
+
+内部エネルギー密度 $\tilde\epsilon=\rho e=\rho E-\tfrac12|\mathbf m|^2/\rho$ ($\mathbf m=\rho\mathbf u$) の
+全微分 $dp=\chi\,d\rho+\kappa\,d\tilde\epsilon$ と連鎖則
+($\partial\tilde\epsilon/\partial\rho|_{\mathbf m,\rho E}=e_k\equiv\tfrac12|\mathbf u|^2$,
+$\partial\tilde\epsilon/\partial m_k=-u_k$, $\partial\tilde\epsilon/\partial(\rho E)=1$) より、保存量
+$q=(\rho,\rho u,\rho v,\rho w,\rho E)$ に対して
+
+$$
+\frac{\partial p}{\partial q_1}=\chi+\kappa\,e_k,\quad
+\frac{\partial p}{\partial q_{2,3,4}}=-\kappa(u,v,w),\quad
+\frac{\partial p}{\partial q_5}=\kappa
+$$
+
+凝縮種は $\partial p/\partial(\rho g)=\xi_g$ の列が加わる。
+
+**semi-perfect (thermally-perfect) gas**: 比熱が $T$ 依存で $\epsilon(T)=\int_0^T C_v\,dT'\ne C_v(T)\,T$
+のとき、$T,\rho,\tilde\epsilon$ の全微分
+($(\partial T/\partial\rho)|_{\tilde\epsilon}=-\epsilon/(\rho C_v)$,
+$(\partial T/\partial\tilde\epsilon)|_\rho=1/(\rho C_v)$) を用いて
+
+$$
+\chi=R\Big(T-\frac{\epsilon(T)}{C_v(T)}\Big)=\frac{p}{\rho}-(\gamma(T)-1)\epsilon(T),\qquad
+\kappa=\gamma(T)-1
+$$
+
+となり、**$\chi\ne0$** となる (calorically-perfect は $\epsilon=C_v T$ の特殊形で $\chi=0$ に縮約)。
+本書の $\chi=RT-\kappa e_v$ は $e_v$ を**積分内部エネルギー** $\epsilon_v(T)$ と取れば
+($\kappa e_v=(R/C_v)\epsilon_v=(\gamma-1)\epsilon_v$) この一般形と一致する。forge は既に多成分 TP の陰解法
+Jacobian で per-cell $\kappa=\gamma[ic]-1$ を実装済み ([thermophysics plan](../../.github/plans/thermophysics-multicomponent-tpgas.md))
+であり、凝縮 Phase 2 は同枠で $\kappa\to(\rho-\rho g)R/C_v$ (混合) と $(\rho g)$ 列の $\xi_g$ を足す最小拡張となる。
 
 ---
 
@@ -189,3 +220,69 @@ $$
    (論文 Fig.11)。
 3. **H2O 凝縮**: case/16.nozzle_wys + `papers/condensation/wyslouzil2000.pdf` で水蒸気凝縮を検証し、
    N2 と H2O を同じ枠組みで切替できることを実証する。
+
+---
+
+## 8. N2 物性フィット (Lin 2014 Appendix 1)
+
+実装で使う窒素の物性相関。臨界 $T_c=126.192$ K (表面張力は $T_c=126$ K)、臨界密度
+$\rho_c=313.3$ kg/m³、三重点 $T_t=63.15$ K、$R_{N_2}=296.8$ J/(kg·K)。
+
+### 相の方針 — 過冷却液 (supercooled liquid)、固体ではない
+
+**Lin 2014 のモデルは液相 (過冷却液)**。非平衡凝縮は三重点以下でも準安定な**過冷却液滴**を作る
+(均質核生成は液滴を生成、結晶化は膨張時間に対して遅い) ため、本実装も**全域で液相フィットを使う**
+(固相昇華へは切替えない)。論文本文も "conservation of the **liquid** phase", "**liquid** mass
+fraction $g$", "condensation of **liquid droplets**" とし、$r_*=2\sigma/(\rho_l RT\ln(p_v/p_{sat}))$
+は**液密度 $\rho_l$** を使う。Appendix 1 が固相フィット ($p_{sat}^s,\rho_s,L_s,\sigma_s$) も併載するのは
+図 (Fig.9,10) の比較用であり、**シミュレーションでは使わない**。
+
+> **低温外挿の注意 (実装ガード)**: 液相フィット (Jacobsen $p_{sat}$、潜熱多項式) は **~40K 以下に外挿
+> すると破綻**する ($p_{sat}$ が ~33K で非単調、潜熱が崩落)。有効域は概ね **45–126K**。凝縮 ON では
+> 潜熱放出で活性域が ~40K 以上に留まる (論文 Ma6 ノズルで出口 40→56K) が、過渡/dry セルが低温に落ちても
+> 破綻しないよう、**物性評価温度を $[45\text{K}, T_c)$ にクランプ**する (より低温=より低 $p_{sat}$ の
+> 安全側=過剰核生成を起こさない)。既知の近似。実装 `COND_T_PROP_FLOOR`
+> ([condensationProperties_d.cuh](../../solver_density_cuda/cuda_forge/condensationProperties_d.cuh))。
+
+> **気相 thermo の制約**: 凝縮ケースの気相は **`thermalMethod 0` (熱量的完全気体, $c_p/\gamma$ 一定)**
+> を使うこと。NASA-9/CEA は ~200K 未満で無効 (出口 ~27K) で、低温気相物性は CEA に無い。論文も
+> calorically perfect gas。
+
+以下のフィット式は参照用に液・固双方を併記するが、**既定実装は液 (過冷却) のみ**を使う。
+
+### 飽和蒸気圧 $p_{sat}(T)$
+
+- **液 (Jacobsen, 式22)** [atm], $T_c=126.192$:
+$$
+\ln p_{sat}^l = \frac{n_1}{T}+n_2+n_3T+n_4(T_c-T)^{1.95}+n_5T^3+n_6T^4+n_7T^5+n_8T^6+n_9\ln T
+$$
+$n_1=8394.409444,\ n_2=-1890.045259,\ n_3=-7.282229165,\ n_4=0.01022850966,$
+$n_5=5.556063825\times10^{-4},\ n_6=-5.944544662\times10^{-6},\ n_7=2.715433932\times10^{-8},$
+$n_8=-4.879535904\times10^{-11},\ n_9=509.5360824$ (→ ×101325 で Pa)。
+- **固 (Frels, 式23)** [mmHg]: $\log_{10} p_{sat}^s = 7.614676 - 356.281/T$ (→ ×133.322 で Pa)。
+
+### 凝縮相密度 $\rho_l/\rho_s(T)$
+
+- **液 (Nowak, 式24)**, $\tau=1-T/T_c$, $\rho_c=313.3$:
+$$
+\ln(\rho_l/\rho_c)=n_1\tau^{0.3294}+n_2\tau^{4/6}+n_3\tau^{16/6}+n_4\tau^{35/6}
+$$
+$n_1=1.48654237,\ n_2=-0.280476066,\ n_3=0.0894143085,\ n_4=-0.119879866$。
+- **固 (Scott, 式25)** [kg/m³]: $\rho_s = 1068.49 - 1.97830\,T$。
+
+### 潜熱 $L(T)$
+
+- **液 (式26)** [MJ/kg]: $L_l = p_1T^4+p_2T^3+p_3T^2+p_4T+p_5$,
+$p_1=-2.137\times10^{-8},\ p_2=7.18\times10^{-6},\ p_3=-9.142\times10^{-4},\ p_4=0.05069,\ p_5=-0.809$
+(→ ×10⁶ で J/kg)。
+- **固 (昇華, 式27)** [J/kg, 定数]: $L_s = 2.43\times10^{5}$。
+
+### 表面張力 $\sigma(T)$
+
+- **液 (Stansfield, 式28)** [dyn/cm], $T_c=126$, $\sigma_0=29.06$: $\sigma_l=\sigma_0(1-T/T_c)^{1.247}$ (→ ×$10^{-3}$ で N/m)。
+- **固 (Dotson, 式29)** [N/m]: $\sigma_s = 2.0\times10^{-4}(\rho_s)^{2/3}$ ($\rho_s$ は式25)。
+
+### Kelvin 効果と $T_d$ (Appendix 2)
+
+液滴表面蒸気圧 (式32): $p_d=p_\infty(T_d)\exp\{2\sigma/(\rho_l RT_d r)\}$。$T_d$ の Hill 陰的式は
+[4 節](#4-液滴温度-t_d--hill-のエネルギーバランス純蒸気簡約) 参照。$R_{N_2}=296.8$ J/(kg·K)。
