@@ -40,6 +40,8 @@ P.D. Arthur の博士論文 (Caltech/GALCIT, 1952) で用いられた **2 次元
 | `run_0001_slau_dry` | 直線壁(スロート鋭頂点) + cfl_pseudo=5 | step 467 で発散 (スロート上端の凸コーナー膨張特異点; Ux~1.5e8)。`res_nan_467.h5` | 破棄 (コーナー特異点の記録) |
 | `run_0002_slau_dry_cfl1` | 双曲線スロート(滑らか) + cfl_pseudo=1 + **1次精度** (convMethod 0) | **収束** (rms 6.7–6.9 桁低下)。出口 **M=6.75** (等エントロピー 6.93)、A/A*=99.6、P/P0=2.79e-4 (理論 2.58e-4)。`postproc_arthur.png`, `residual_history.png` | active (1次基準) |
 | `run_0003_slau_2nd` | run_0002 の収束場を引き継ぎ **2次精度** (convMethod 1, limiter 2 Venkatakrishnan) | 出口 **M=6.87** (等エントロピー 6.93、誤差 2.5%→**0.8%**)、P/P0=2.71e-4。Mach が A/A*=100 まで等エントロピー線にほぼ完全一致。残差は **~3e-4 でプラトー** (リミタ起因のリミットサイクル; 場は準定常)。`postproc_arthur.png`, `residual_history.png` | active (高精度) |
+| `run_0004_cond_skeleton_dry` | 非平衡凝縮 Phase 1 (`condensation:1, nCondSpecies:1`)。run_0003 と同条件で **4 モーメント (ρg,ρQ2,ρQ1,ρQ0) を受動スカラー (ソース=0) として輸送**する骨格の回帰確認 ([plan](../../.github/plans/condensation-nonequilibrium.md)) | **dry 回帰一致**: 出口 **M=6.874**, P/P0=2.71e-4 で run_0003 と同一。液相モーメントは全セル厳密 0、NaN/Inf なし。cond ON vs OFF の場差 (ro maxrel 9.5e-4) は cond OFF を 2 回回した run-to-run ノイズ (1.0e-3, リミットサイクル+GPU atomic 非決定) **以下**=凝縮スカラーは気相に不干渉。`postproc_arthur.png`, `residual_history.png` | active (Phase 1 骨格) |
+| `run_0005_cond_off_ref` | 上の回帰用 cond OFF 参照 (現行バイナリ, `condensation:0`)。run_0004 とのビット差が plateau ノイズ由来であることの対照 | run_0004 との場差は run-to-run ノイズ内 (上記) | ref (対照, 成果物は破棄可) |
 
 > `run_0002` の VERDICT は形式上 NOT CONVERGED と出るが、これは**面外 z 方向の `rms_roUz`
 > (≈1e-14 のノイズ; 単層押し出しで物理が無い) のみ**による偽陽性。物理 4 残差

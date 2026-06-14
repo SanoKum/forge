@@ -153,6 +153,14 @@ public:
     // 化学種名 (config 由来, index 順)。s 番目の保存質量分率は "roY{s}"。
     std::vector<std::string> speciesVarNames; // ["roY0","roY1",...]
 
+    // 非平衡凝縮 (4 モーメント方程式)。registerCondensation() で登録された凝縮種数。
+    // 0 のときは凝縮変数を一切登録せず従来経路を保つ。docs/condensation/ 参照。
+    int nCondSpeciesRegistered = 0;
+    // 凝縮モーメントの保存量名 (登録順)。1 凝縮種あたり 4 本: "rog_{s}","roQ2_{s}","roQ1_{s}","roQ0_{s}"。
+    // 原始量は ro を外した名前 ("g_{s}" 等)、N/M/res/src_jac/transport_diag も命名規約で導出する
+    // (condensationTransport_d.cu / update_d.cu / main.cpp が参照)。
+    std::vector<std::string> condMomentConsNames;
+
     variables();
 
     //variables(const int& ,  mesh&);
@@ -162,6 +170,11 @@ public:
     // c / c_d マップにも空エントリを作る。allocVariables より前に 1 度だけ呼ぶこと。
     // nSpecies <= 1 のときは何もしない (単成分は M1 経路)。
     void registerSpecies(int nSpecies);
+
+    // 非平衡凝縮 (Phase 1): 凝縮種ごとに 4 モーメント (ρg,ρQ2,ρQ1,ρQ0) の保存量・原始量・RK ステージ・
+    // 残差・point-implicit 対角を cellValNames / c / c_d へ追加する。allocVariables より前に
+    // 1 度だけ呼ぶ。nCondSpecies <= 0 のときは何もしない (従来経路)。
+    void registerCondensation(int nCondSpecies);
 
     void allocVariables(const int &useGPU , mesh& msh);
 

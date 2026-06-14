@@ -26,6 +26,8 @@ add_library(cuda_forge STATIC
     ransTransport_d.cuh
     speciesTransport_d.cu
     speciesTransport_d.cuh
+    condensationTransport_d.cu
+    condensationTransport_d.cuh
     ransSource_d.cu
     ransSource_d.cuh
     axisymmetricSource_d.cu

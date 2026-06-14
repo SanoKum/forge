@@ -2,6 +2,7 @@
 #include <vector>
 #include <list>
 #include <string>
+#include <array>
 #include <algorithm>
 
 #include "flowFormat.hpp"
@@ -70,6 +71,55 @@ void variables::registerSpecies(int nSpecies)
 
     std::cout << "registerSpecies: nSpecies=" << nSpecies
               << " -> registered " << nSpecies*8 << " cell variables\n";
+}
+
+// 非平衡凝縮 (Phase 1): 1 モーメント (保存量名 consName 例 "rog_0") ごとに必要なセル変数名を生成する。
+//   <consName>        : 保存量 ρφ (例 rog_0, roQ0_0)
+//   <prim>            : 原始量 φ = ρφ/ρ。consName の先頭 "ro" を外した名前 (g_0, Q0_0)
+//   <consName>N / M   : RK ステップ始点 / ステージ始点
+//   res_<consName>, res_<consName>_m : 残差 / 4thRunge 累積
+//   src_jac_<prim>        : 源項ヤコビアン対角 (Phase 1 は 0)
+//   transport_diag_<prim> : 輸送 (移流) ヤコビアン対角 [m³/s]
+static std::list<std::string> condMomentCellVarNames(const std::string& consName)
+{
+    const std::string prim = consName.substr(2); // 先頭 "ro" を除去
+    return {
+        consName, prim, consName+"N", consName+"M",
+        "res_"+consName, "res_"+consName+"_m",
+        "src_jac_"+prim, "transport_diag_"+prim
+    };
+}
+
+void variables::registerCondensation(int nCondSpecies)
+{
+    if (nCondSpecies <= 0) {
+        this->nCondSpeciesRegistered = 0;
+        return;
+    }
+
+    this->nCondSpeciesRegistered = nCondSpecies;
+    this->condMomentConsNames.clear();
+
+    // 1 凝縮種あたり 4 モーメント。順序は論文の保存ベクトル後半 (ρg,ρQ2,ρQ1,ρQ0)。
+    const std::array<std::string, 4> bases = {"g", "Q2", "Q1", "Q0"};
+
+    for (int s = 0; s < nCondSpecies; s++) {
+        for (const auto& b : bases) {
+            const std::string consName = "ro" + b + "_" + std::to_string(s);
+            this->condMomentConsNames.push_back(consName);
+            for (const auto& name : condMomentCellVarNames(consName)) {
+                this->cellValNames.push_back(name);
+                this->c.emplace(name, std::vector<flow_float>{});
+                this->c_d.emplace(name, nullptr);
+            }
+            // 原始量・保存量を HDF5 出力対象に加える (可視化)。
+            this->output_cellValNames.push_back(consName);
+            this->output_cellValNames.push_back(consName.substr(2));
+        }
+    }
+
+    std::cout << "registerCondensation: nCondSpecies=" << nCondSpecies
+              << " -> registered " << nCondSpecies*4*8 << " cell variables\n";
 }
 
 variables::~variables() {
@@ -455,5 +505,31 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
             sp_names.push_back(Yname);
         }
         this->copyVariables_cell_H2D(sp_names);
+    }
+
+    // --- 非平衡凝縮 (Phase 1): 液相モーメント ρφ を読み込む ---
+    // 入力 HDF5 に VALUE/<consName> があれば読む。無ければ 0 (dry リスタート)。
+    // 原始量 φ=ρφ/ρ も同時に設定する。
+    if (this->nCondSpeciesRegistered >= 1) {
+        std::list<std::string> cond_names;
+        for (const auto& consName : this->condMomentConsNames) {
+            const std::string primName = consName.substr(2);
+            std::vector<flow_float>& v_cons = this->c.at(consName);
+            std::vector<flow_float>& v_prim = this->c.at(primName);
+
+            std::vector<geom_float> cons_in;
+            const bool has = file.exist("/VALUE/"+consName);
+            if (has) file.getDataSet("/VALUE/"+consName).read(cons_in);
+
+            for (geom_int i=0; i<msh.nCells; i++) {
+                const flow_float roi = this->c.at("ro")[i];
+                const flow_float consi = has ? cons_in[i] : static_cast<flow_float>(0.0);
+                v_cons[i] = consi;
+                v_prim[i] = consi / std::max(roi, static_cast<flow_float>(1.0e-30));
+            }
+            cond_names.push_back(consName);
+            cond_names.push_back(primName);
+        }
+        this->copyVariables_cell_H2D(cond_names);
     }
 }

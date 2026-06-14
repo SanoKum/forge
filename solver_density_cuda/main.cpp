@@ -48,6 +48,7 @@
 #include "cuda_forge/ransTransport_d.cuh"
 #include "cuda_forge/ransSource_d.cuh"
 #include "cuda_forge/speciesTransport_d.cuh"
+#include "cuda_forge/condensationTransport_d.cuh"
 #include "cuda_forge/viscousFlux_d.cuh"
 #include "cuda_forge/updateCenterVelocity_d.cuh"
 #include "cuda_forge/interpVelocity_c2p_d.cuh"
@@ -126,6 +127,27 @@ bool scalarResidualEnabled(const solverConfig& cfg)
     return cfg.LESorRANS == 2 && cfg.RANSmodel == 1;
 }
 
+// 非平衡凝縮 (Phase 1): 4 モーメントの輸送が有効か。
+bool condensationEnabled(const solverConfig& cfg)
+{
+    return cfg.condensation == 1 && cfg.nCondSpecies >= 1;
+}
+
+// 凝縮モーメントの保存量名 (登録順)。variables::registerCondensation と同じ命名規約で cfg のみから導出。
+// 1 凝縮種あたり 4 本: rog_{s}, roQ2_{s}, roQ1_{s}, roQ0_{s}。
+std::vector<std::string> condMomentConsNames(const solverConfig& cfg)
+{
+    std::vector<std::string> names;
+    if (!condensationEnabled(cfg)) return names;
+    const std::array<const char*, 4> bases = {"g", "Q2", "Q1", "Q0"};
+    for (int s = 0; s < cfg.nCondSpecies; ++s) {
+        for (const auto* b : bases) {
+            names.emplace_back(std::string("ro") + b + "_" + std::to_string(s));
+        }
+    }
+    return names;
+}
+
 std::vector<std::string> residualEquationNames(const solverConfig& cfg)
 {
     std::vector<std::string> names;
@@ -137,6 +159,12 @@ std::vector<std::string> residualEquationNames(const solverConfig& cfg)
 
     if (scalarResidualEnabled(cfg)) {
         for (const auto* name : kScalarResidualEquationNames) {
+            names.emplace_back(name);
+        }
+    }
+
+    if (condensationEnabled(cfg)) {
+        for (const auto& name : condMomentConsNames(cfg)) {
             names.emplace_back(name);
         }
     }
@@ -313,6 +341,11 @@ ResidualSnapshot gatherResidualSnapshot(solverConfig& cfg, mesh& msh, variables&
     if (scalarResidualEnabled(cfg)) {
         variable_names.emplace_back("res_roK");
         variable_names.emplace_back("res_roOmega");
+    }
+    if (condensationEnabled(cfg)) {
+        for (const auto& name : condMomentConsNames(cfg)) {
+            variable_names.emplace_back("res_" + name);
+        }
     }
 
     ResidualSnapshot snapshot;
@@ -654,6 +687,9 @@ cudaConfig initializeSimulation(
     // 化学種変数を登録 (allocVariables より前)。nSpecies<=1 では no-op。
     var.registerSpecies(cfg.nSpecies);
 
+    // 非平衡凝縮モーメント変数を登録 (allocVariables より前)。condensation==0 では no-op。
+    var.registerCondensation(cfg.nCondSpecies);
+
     var.allocVariables(cfg.gpu , msh);
 
     // device roY[] ポインタ配列を構築 (c_d 確保後, dependentVariables より前)。
@@ -669,6 +705,7 @@ cudaConfig initializeSimulation(
 
     var.setStructuralVariables(cfg , cuda_cfg , msh);
     speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
+    condensationPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // φ = ρφ/ρ (液相モーメント読込済)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
     // node-centered 壁 Dirichlet: IC の壁ノード速度を厳密 0 に初期化 (KE を roe から除去)。
     // この後 gasProperties が補正 roe から P/T を再計算する。cell/非 node では no-op。
@@ -681,10 +718,12 @@ cudaConfig initializeSimulation(
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
     applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
+    applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
     axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
     updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
     speciesUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);  // roY{s}N/M ベースライン
+    condensationUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);  // 液相モーメント N/M ベースライン
     setDT_d_wrapper(cfg , cuda_cfg , msh , var);
 
     pprobes.init(cfg , cuda_cfg , msh);
@@ -739,6 +778,7 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // Y_s = ρY_s/ρ (混合則 thermo の前)
+        condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // φ = ρφ/ρ (スカラ移流の上流値)
     });
     s.profiler.measureWall(ProfileSection::DependentVariables, [&]() {
         dependentVariables(s.cfg , s.cuda_cfg , s.msh , s.var, s.mat_ns);
@@ -752,6 +792,7 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
         applyRansScalarBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
+        applyCondensationBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
         calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -776,6 +817,9 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         speciesTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 化学種移流残差
+    });
+    s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
+        condensationTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 液相モーメント移流残差 (Phase 1)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         ransGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -885,6 +929,15 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
         speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // Y=roY/ρ (出力/次残差用に同期)
     });
+
+    // 液相モーメント (非平衡凝縮) を segregated point-implicit で更新 (Phase 1 はソース=0 の純移流)。
+    // res_/transport_diag は assembleResidual の condensationTransport で確定済み。各 wrapper は
+    // condensation==0 で no-op。
+    s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+        condensationUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // ro*_N = ro*_M = ro*
+        condensationTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+        condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // φ=ρφ/ρ (出力/次残差用に同期)
+    });
 }
 
 // 陽解法 Runge-Kutta（tI 1/3/4）。steady/unsteady 両対応。
@@ -897,6 +950,7 @@ void advanceExplicitRK(StepContext& s)
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
             speciesUpdateInner_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}M ステージ始点
+            condensationUpdateInner_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // 液相モーメント M ステージ始点
         });
 
         cout << "       " << iteration_label << " : " << iloop+1 << "\n";
@@ -907,6 +961,7 @@ void advanceExplicitRK(StepContext& s)
             ransTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             speciesTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // ρY_s>=0, ΣρY_s=ρ
+            condensationTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);  // 液相モーメント (Phase 1 ソース=0)
         });
         // 注: explicit 軸対称は軸 CV が step1 で発散するため (recipe 併用でも不変)、enforce は呼んでも
         // 検証できない。explicit の near-axis 安定化は別途要 (open issue)。暫定で無効。
@@ -917,6 +972,8 @@ void advanceExplicitRK(StepContext& s)
         updateVariablesOuter(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
         speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}N/M 次ステップ用
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 Y_s を最終 roY_s と同期
+        condensationUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // 液相モーメント N/M 次ステップ用
+        condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 φ を最終 ρφ と同期
     });
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
@@ -999,6 +1056,12 @@ void advanceImplicitDualTime(StepContext& s)
                 applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
             });
         }
+        // 液相モーメント (非平衡凝縮) を segregated point-implicit で更新。condensation==0 で no-op。
+        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+            condensationUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+            condensationTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+            condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        });
     }
 
     s.cfg.unsteadyDiagCoef = 0.0; // 定常側へ影響しないようリセット

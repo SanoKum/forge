@@ -350,6 +350,23 @@ void solverConfig::read(std::string fname)
             this->nSpecies = 1;
         }
 
+        // 非平衡凝縮 (任意セクション)。docs/condensation/ 参照。
+        // Phase 1 は受動スカラー輸送のみ (核生成/成長係数はまだ読まない)。
+        if (config["condensation"]) {
+            auto cond = config["condensation"];
+            this->condensation = getOptionalValidatedValue<int>(cond, "condensation", 0, "condensation");
+            this->nCondSpecies = getOptionalValidatedValue<int>(cond, "nCondSpecies", 0, "condensation");
+        }
+        if (this->condensation != 0 && this->condensation != 1) {
+            throw std::runtime_error("Key 'condensation' in 'condensation' must be 0 or 1.");
+        }
+        if (this->condensation == 1 && this->nCondSpecies < 1) {
+            throw std::runtime_error("Key 'nCondSpecies' in 'condensation' must be >= 1 when condensation == 1.");
+        }
+        if (this->condensation == 0) {
+            this->nCondSpecies = 0; // off のときは登録しない
+        }
+
         // 初期条件
         this->initial = getValidatedValue<std::string>(config, "initial");
 
