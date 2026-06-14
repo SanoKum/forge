@@ -1,0 +1,6 @@
+# Fluent zone -> forge physID 対応表 (本ツール template 出力)
+# 編集して convert --map に渡す。kind は任意 (wall_dist 判定に使用)。
+in1: { physID: 1, kind: inlet_uniformVelocity }  # zone id=12
+in2: { physID: 2, kind: inlet_uniformVelocity }  # zone id=13
+outlet: { physID: 3, kind: outflow }  # zone id=14
+wall: { physID: 4, kind: wall }  # zone id=15
