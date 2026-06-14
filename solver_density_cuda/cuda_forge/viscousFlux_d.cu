@@ -9,7 +9,7 @@ __global__ void viscousFlux_d
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
- flow_float mu ,  flow_float* thermCond,
+ flow_float mu ,  flow_float Prt , flow_float* cp , flow_float* thermCond,
  flow_float* vis_lam   , flow_float* vis_turb  ,
 
  // variables
@@ -27,7 +27,7 @@ __global__ void viscousFlux_d
  flow_float* Ht  ,
  flow_float* sonic,
  flow_float* Ts  ,
- 
+
  flow_float* res_ro   ,
  flow_float* res_roUx  ,
  flow_float* res_roUy  ,
@@ -37,7 +37,11 @@ __global__ void viscousFlux_d
  flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
  flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
  flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
- flow_float* dTdx   , flow_float* dTdy  , flow_float* dTdz
+ flow_float* dTdx   , flow_float* dTdy  , flow_float* dTdz,
+
+ // 軸対称: 完全な発散 ∇·u = ∂xUx+∂yUy+u_r/r (axisym_divU)。-2/3 μ(∇·u) の体積粘性項を
+ // τθθ ソース (axisymmetricSource_d) と整合させるため planar 面でもフープ項込みの divu を使う。
+ int isAxisymmetric, flow_float* axisym_divU
 )
 {
     geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
@@ -88,6 +92,10 @@ __global__ void viscousFlux_d
         flow_float dTdxf = f*dTdx[ic0] + (1.0-f)*dTdx[ic1];
         flow_float dTdyf = f*dTdy[ic0] + (1.0-f)*dTdy[ic1];
         flow_float dTdzf = f*dTdz[ic0] + (1.0-f)*dTdz[ic1];
+#ifdef VISC_DIAG_NOGRAD
+        // 診断: 面勾配 (Green-Gauss) 由来の項 (転置・非直交補正) を 0 にし、over-relaxed 法線 Laplacian のみ残す。
+        dUxdxf=dUxdyf=dUxdzf=0; dUydxf=dUydyf=dUydzf=0; dUzdxf=dUzdyf=dUzdzf=0; dTdxf=dTdyf=dTdzf=0;
+#endif
 
         // implicit 側（timeIntegration_d.cu）と同じ fabs()+下限で分母を保護する
         flow_float D_safe  = max(fabs(dcc_x*sxx +dcc_y*syy +dcc_z*szz), (flow_float)1.0e-30);
@@ -95,10 +103,13 @@ __global__ void viscousFlux_d
         flow_float delta_x = dcc_x*sss*sss/D_safe;
         flow_float delta_y = dcc_y*sss*sss/D_safe;
         flow_float delta_z = dcc_z*sss*sss/D_safe;
-        flow_float k_x = sxx - delta_x; 
-        flow_float k_y = syy - delta_y; 
-        flow_float k_z = szz - delta_z; 
-        flow_float divu = dUxdxf+dUydyf+dUzdzf;
+        flow_float k_x = sxx - delta_x;
+        flow_float k_y = syy - delta_y;
+        flow_float k_z = szz - delta_z;
+        // 軸対称は完全発散 (u_r/r 込み) を面補間。デカルトは従来どおり ∂xUx+∂yUy+∂zUz。
+        flow_float divu = (isAxisymmetric == 1)
+            ? (f*axisym_divU[ic0] + (1.0-f)*axisym_divU[ic1])
+            : (dUxdxf+dUydyf+dUzdzf);
 
         flow_float v_lam  = f*vis_lam [ic0] + (1.0-f)*vis_lam [ic1] ;
         flow_float v_turb = f*vis_turb[ic0] + (1.0-f)*vis_turb[ic1] ;
@@ -122,7 +133,14 @@ __global__ void viscousFlux_d
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
+        // 乱流熱伝導: 有効熱伝導率 k_eff = k_lam + cp*mu_turb/Pr_t。
+        // 応力(摩擦発熱)が mu_total=v_lam+v_turb を使うのに対し従来は層流 k のみで
+        // 熱を運んでいたため、乱流境界層で散逸熱が逃げ場を失い T が全温を超えて
+        // overshoot していた。RANS のエネルギー保存には乱流熱伝導が必須。
+        // cp は thermally-perfect の温度依存を反映するためセル配列を面平均で使う。
+        flow_float cp_face = f*cp[ic0] + (1.0-f)*cp[ic1];
         flow_float tc_face = f*thermCond[ic0] + (1.0-f)*thermCond[ic1];
+        tc_face += cp_face*v_turb/Prt;
         flow_float heatflux = tc_face*((Ts[ic1] -Ts[ic0])/dcc)*delta;
         heatflux += tc_face*(dTdxf*k_x +dTdyf*k_y +dTdzf*k_z);
 
@@ -162,7 +180,7 @@ __global__ void viscousFlux_wall_d
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
 
- flow_float mu ,  flow_float* thermCond,
+ flow_float mu ,  flow_float Prt , flow_float* cp , flow_float* thermCond,
  flow_float* vis_lam   , flow_float* vis_turb  ,
 
  // variables
@@ -180,7 +198,7 @@ __global__ void viscousFlux_wall_d
  flow_float* Ht  ,
  flow_float* sonic,
  flow_float* Ts  ,
- 
+
  flow_float* res_ro   ,
  flow_float* res_roUx  ,
  flow_float* res_roUy  ,
@@ -200,11 +218,13 @@ __global__ void viscousFlux_wall_d
  flow_float* Ux_b ,
  flow_float* Uy_b ,
  flow_float* Uz_b ,
- flow_float* Ts_b 
+ flow_float* Ts_b ,
 //flow_float* sx_b ,
  //flow_float* sy_b ,
- //flow_float* sz_b 
+ //flow_float* sz_b
 
+ // 軸対称: 完全発散 (u_r/r 込み) を体積粘性項に使う (内部面と同趣旨)
+ int isAxisymmetric, flow_float* axisym_divU
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -257,7 +277,8 @@ __global__ void viscousFlux_wall_d
         flow_float v_turb = vis_turb[ic] ;
         flow_float mu_total = vis_lam[ic] + v_turb;
 
-        flow_float divu = dUxdxf+dUydyf+dUzdzf;
+        // 軸対称は完全発散 (u_r/r 込み, セル値)。壁面はセル中心勾配を直接使うため cell の axisym_divU。
+        flow_float divu = (isAxisymmetric == 1) ? axisym_divU[ic] : (dUxdxf+dUydyf+dUzdzf);
 
         // ミラーゴースト (u^g=-u^c) では d∥S なので over-relaxed の delta=sss、k=0。
         // 法線項: 法線勾配 (u^g-u^c)/dcc に面積 sss (成分 s** ではなく)。
@@ -274,7 +295,10 @@ __global__ void viscousFlux_wall_d
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
-        flow_float heatflux = thermCond[ic]*((Ts[ig]- Ts[ic])/dcc)*sss;
+        // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。断熱壁では
+        // ミラーゴーストで Ts[ig]=Ts[ic] のため寄与 0、isothermal 壁では有効。
+        flow_float tc_w = thermCond[ic] + cp[ic]*v_turb/Prt;
+        flow_float heatflux = tc_w*((Ts[ig]- Ts[ic])/dcc)*sss;
 
         flow_float res_ro_temp   = 0.0;
         flow_float res_roUx_temp = tau_x;
@@ -330,7 +354,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
         var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
-        cfg.visc , var.c_d["thermCond"],
+        cfg.visc , cfg.turbulentPrandtl , var.c_d["cp"] , var.c_d["thermCond"],
         var.c_d["vis_lam"], var.c_d["vis_turb"],
 
         // basic variables
@@ -357,7 +381,8 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
         var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
         var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-        var.c_d["dTdx"] , var.c_d["dTdy"] , var.c_d["dTdz"]
+        var.c_d["dTdx"] , var.c_d["dTdy"] , var.c_d["dTdz"],
+        cfg.isAxisymmetric, var.c_d["axisym_divU"]
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
@@ -377,7 +402,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
                 var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
 
-                cfg.visc , var.c_d["thermCond"],
+                cfg.visc , cfg.turbulentPrandtl , var.c_d["cp"] , var.c_d["thermCond"],
                 var.c_d["vis_lam"], var.c_d["vis_turb"],
 
                 // basic variables
@@ -415,11 +440,12 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 bc.bvar_d["Ux"],
                 bc.bvar_d["Uy"],
                 bc.bvar_d["Uz"],
-                bc.bvar_d["Ts"]
- 
+                bc.bvar_d["Ts"],
+
                 //bc.bvar_d["sx"],
                 //bc.bvar_d["sy"],
                 //bc.bvar_d["sz"]
+                cfg.isAxisymmetric, var.c_d["axisym_divU"]
             ) ;
         }
     }

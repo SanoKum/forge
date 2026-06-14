@@ -1,0 +1,34 @@
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 101325.0
+    Tt: 293.15
+    k: 1.0
+    omega: 1000.0
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 2000.0
+    Pt: 101325.0
+    Tt: 293.15
+
+wall:
+  physID: 3
+  kind: wall          # no-slip 断熱壁 (輪郭壁)
+  outputHDFflg: 0
+  ints:
+  floats:
+
+frontback:
+  physID: 4
+  kind: slip          # 擬似2D の対称面 (front/back)
+  outputHDFflg: 0
+  ints:
+  floats:

@@ -403,3 +403,56 @@ scalar/block 選択に依存しない。RANS でも mean-flow を 2次 scalar DP
 
 **実用指針**: 2次精度の陰解法は **block DPLUR** を使う。scalar DPLUR を使うなら **1次** (起動・ロバスト用)
 に限る。残差図は各 run の `residual_history.png`。
+
+### 軸対称 viscous 発散項の整合化 (divu fix) の before/after (2026-06-14, plan [diffusion-viscous-shear-flux.md](../../.github/plans/diffusion-viscous-shear-flux.md))
+
+planar 面の体積粘性 `-2/3 μ divu` がデカルト発散のみで**フープ項 $u_r/r$ を欠落**し、完全発散 `axisym_divU` を使う
+$\tau_{\theta\theta}$ 源項と不整合だった件の修正 ([viscousFlux_d.cu])。**BEFORE=build-viscfix (修正前) / AFTER=build-lsq (修正後)**、
+差分は divu のみ。非軸対称は `isAxisymmetric==1` ガード下でビット不変。
+
+| run_* | mode | ビルド/精度 | 収束 (check_convergence) | divu fix 効果 (vs BEFORE) | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| `run_lsq_gg` | node laminar expl RK3 40k | build-lsq 修正前 (gradLSQ=0) | NOT CONV (rms_ro 5e-8, roUy/roe 低下中) | — (= node BEFORE) | active |
+| `run_divufix_node_after` | node laminar expl RK3 40k | **build-lsq 修正後** | 同上 (rms_ro 5e-8) | **P max 0.001% / 全量 <0.006% / 平均 <0.0003%** | active |
+| `run_divufix_cell_before` | cell laminar impl cfl2 8k | build-viscfix 修正前 | NOT CONV (plateau, 1.3–2.1dec) | baseline | active |
+| `run_divufix_cell_after`  | cell laminar impl cfl2 8k | **build-lsq 修正後** | NOT CONV (plateau) | P max 1.6% / Uy 3.5% (喉部局在) ※**未収束プラトー同士で過大** | active |
+
+**結論**: divu 修正は**正しい整合改善**だが、**層流ノズルの収束場では効果は実質ゼロ** (node 収束比較で P 0.001%)。
+理由は $\tfrac23\mu_{lam}(u_r/r)$ が圧力・対流項に比べ桁違いに小さいため。cell の 1.6% は**未収束プラトー同士の比較**で
+過大評価 (両 run とも NOT CONV)。**乱流 (μ_t ≫ μ_lam) や強圧縮の収束場でこそ効きうる**ため、実害確認は SST 収束ケースの
+before/after が本命 (未実施)。残差図は各 run の `residual_history.png`。
+
+> 関連: 同セッションで LSQ 勾配 (`gradLSQ`, plan [discretization-lsq-gradient.md](../../.github/plans/discretization-lsq-gradient.md)) を
+> node viscous で試行 (`run_lsq_on`/`run_lsq_diag`) → **近壁 M 退化で発散・棄却** (詳細は plan §9)。`run_lsq_gg` は
+> その GG ベースライン (gradLSQ=0) で、本 divu 比較の node BEFORE を兼ねる。
+
+#### SST (乱流) での divu fix 効果
+
+| run_* | mode | ビルド | divu fix 効果 (vs before) |
+| --- | --- | --- | --- |
+| `run_divufix_sst_cell_before` / `_after` | cell SST (impl 20k, **未収束** roe~42) | viscfix / **lsq** | res_20000 (μ_t max 1.05e-3≫μ_lam): **P 1.1% / Uy 4.4% / k 2.6% / vis_turb 1.5%** (喉部局在, 平均<0.02%) |
+| `run_divufix_sst_node_before` | node SST (expl) | viscfix | **step~1300 で NaN 発散** → node SST は検証不可 |
+
+**SST 所見**: cell SST では μ_t 発達後に divu fix が乱流量 (k/vis_turb) を ~1.5–2.6% 動かす (層流より大きいが依然局所・未収束)。
+膨張ノズル核は加速流で乱流が弱く (核 μ_t 小)、フープ膨張粘性の効きは限定的。**node SST は node-viscous の既知脆弱性
+(§7.2)+SST の ω 剛性で baseline build (修正前) から発散**するため、divu/fx いずれの検証も不可。
+
+### node 面補間を中点 fx=0.5 に固定 (median-dual 標準化, 2026-06-14, plan [discretization-median-dual.md](../../.github/plans/discretization-median-dual.md) §9)
+
+node 内部双対面の面補間係数を `dualFaceCent` 射影比でなく **fx=0.5 (ノード間中点 $\phi_f=½(\phi_A+\phi_B)$)** に固定
+([calcStructualVariables_d.cu], cell 不変)。安定な node 層流 (40k) で `run_divufix_node_after` (幾何 fx) vs `run_fx_node` (fx=0.5)、
+差は fx のみ (両者 divu fix 込み, build-lsq vs build-lsqfx)。
+
+| 指標 | 幾何 fx | fx=0.5 |
+| --- | --- | --- |
+| 近壁 dUxdy roughness (median/90/99pct) | 0.98 / 4.75 / **12.84** | 0.78 / 3.81 / **8.23** (−36%) |
+| 場の差 (vs 幾何fx) | — | P 0.14% / ro 0.76% max・平均<0.26% |
+| 局所最大 | — | Ux 出口近傍 near-wall で 1376→430 (敏感域, §7.2 exit-lip) |
+
+**所見**: fx=0.5 は**近壁 checkerboard を全体に低減** (期待どおり標準 median-dual) する一方、**出口リップ近傍 near-wall の解を
+実質的に変更**する (局所 Ux 1376→430)。
+
+**SU2 クロスチェック (壁圧, `run_su2cmp_su2_lam`, axisym laminar 同条件)**: **fx ON/OFF は壁圧で区別不能** (<0.5% 差)、
+両者とも SU2 に平均 **3.2%** 一致 (最大 +15% は未収束の超音速出口 x=85mm)。→ **fx=0.5 は安全** (SU2 一致を悪化させず
+checkerboard を下げる)。局所 Ux 差は圧力場に伝播しない近傍速度の細部で、**SU2/forge とも未収束のため near-wall 速度の
+厳密な是非は未確定**。**フラグ `nodeMidpointFx` (既定 0=OFF) で opt-in 実装** (cell 無関係)。

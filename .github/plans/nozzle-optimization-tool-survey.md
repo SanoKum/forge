@@ -101,7 +101,7 @@
   - R. F. Cuffel, L. H. Back, P. F. Massier, "Transonic Flowfield in a Supersonic Nozzle with Small Throat Radius of Curvature," *AIAA Journal*, 7(7):1364–1366, 1969。**$r_c/r_{th}$ がソニックライン流れ場を支配**: 古典 2D 遷音速理論は $r_c/r_{th}\gtrsim2$ でのみ妥当で、ロケット級の $r_c/r_{th}<1$ では破綻。$r_c/r_{th}=0.625$ では**ソニックラインが強く非一様**（中心線静圧が壁の最大 3 倍、スロート面マッハ数が軸で 0.8・境界層端で 1.4）。
   - Bartz (1957) の対流熱伝達相関で**スロート曲率は $(D^*/r_c)^{0.1}$ で効き、$h_g\propto r_c^{-0.1}$** → **スロートを締める（小 $r_c$）ほど熱流束増**。これが①の「熱流束 vs コンパクト性 vs ソニックライン一様性」を $r_c$ で天秤にかける物理的根拠。
   - L. H. Back, P. F. Massier, R. F. Cuffel, "Flow Phenomena and Convective Heat Transfer in a Conical Supersonic Nozzle," *J. Spacecraft and Rockets*, 4(8):1040–1047, 1967（JPL）。強い順圧力勾配下で**スロート部の乱流境界層が再層流化（reverse transition）**し**壁熱流束が大きく低下**。＝スロート/膨張部の形状が熱負荷を左右する実験的裏付け。
-  - **流量係数 $C_d$ への影響**: A. J. Szaniszlo, NASA TN D-7848, 1975（ソニックライン湾曲 ~1% ＋低 Re で境界層 ~5%）／Alam ら 2016／Li ら 2020。**$C_d$ は $r_c\sim2$–$2.5\,d_{th}$ 付近で最大**、急すぎる曲率は逆圧力勾配で剥離し $C_d$ 低下（ただし ISO-9300 計量ノズル系で、ロケット/極超音速とは間接的）。
+  - **流量係数 $C_d$ への影響**: A. J. Szaniszlo, NASA TN D-7848, 1975 は **$C_d$ を主にスロート Reynolds 数の関数として実測**（2 幾何＝long-radius ASME／連続壁曲率、N₂ 100 atm・実在気体補正・Re 最大 ~8×10⁶、高 Re ほど漸増）。**$C_d$ が $r_c\sim2$–$2.5\,d_{th}$ 付近で最大・急すぎる曲率は逆圧力勾配剥離で $C_d$ 低下、という「曲率スイープ」知見は Alam ら 2016／Li ら 2020（ISO-9300 計量ノズル系）由来**であり、Szaniszlo の図（Cd 対 Re）と取り違えないこと。いずれも計量ノズル系で、ロケット/極超音速とは間接的。【一次精読 2026-06-14, `papers/Szaniszlo...TN D-7848.pdf`】
 - **古典収縮曲線の粘性比較（検証済）**【◎】
   - E. G. Tulapurkara & V. V. K. Bhalla, "Experimental Investigation of Morel's Method for Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 110(1):45–47, 1988, DOI 10.1115/1.3243508。Morel 法の収縮（面積比 12, 3.464）を実験検証 → **剥離なし・薄い出口境界層・低い出口非一様**を確認。
   - Hassan/Zanoun ら, "Flow characteristics in low-speed wind tunnel contractions: Simulation and testing," *Alexandria Engineering Journal*, 2017, DOI 10.1016/j.aej.2017.08.024。**5 次多項式・二重 3 次円弧（Morel 型）・Witoszynski の 3 形状を head-to-head 比較 → 5 次多項式が最も低非一様（<0.5%）**、Witoszynski は壁近傍で圧力勾配が急変。LDA 実験で検証。
@@ -560,7 +560,7 @@ flowchart LR
 **スロート曲率の熱流束・流量係数・侵食（検証済）**
 - 【◎】Back, Massier, Cuffel, "Flow Phenomena and Convective Heat Transfer in a Conical Supersonic Nozzle," *J. Spacecraft and Rockets*, 4(8):1040–1047, 1967（スロート再層流化）.
 - 【◎】Bianchi, Nasuti, Onofri, "Radius of Curvature Effects on Throat Thermochemical Erosion in Solid Rocket Motors," *J. Spacecraft and Rockets*, 52(2):320–330, 2015.
-- 【○】Szaniszlo, NASA TN D-7848, "Experimental and Analytical Sonic Nozzle Discharge Coefficients...," 1975／Alam ら 2016／Li ら 2020（$C_d$ vs 曲率）.
+- 【◎ 一次精読 2026-06-14】Szaniszlo, "Experimental and Analytical Sonic Nozzle Discharge Coefficients...," NASA TN D-7848, 1975（**$C_d$ 対スロート Reynolds 数**を実測; NTRS public, `papers/`）／Alam ら 2016／Li ら 2020（**$C_d$ 対曲率**のスイープは ISO-9300 系のこちら）.
 
 **随伴法・勾配最適化**
 - 【◎】Jameson, "Aerodynamic Design via Control Theory," *J. Scientific Computing*, 3:233–260, 1988.

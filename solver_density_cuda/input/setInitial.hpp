@@ -367,6 +367,58 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roe"][i]  = P/(gam-1.0) + 0.5*ro*(u*u);
         }
 
+    } else if (cfg.initial == "nozzle_wys") {
+        // Wyslouzil supersonic nozzle 用の一様亜音速初期場。
+        // 入口 inlet_Pressure (Pt=101325, Tt=293.15) と総圧をそろえ、起動過渡を抑える。
+        flow_float cp  = cfg.cp;
+        flow_float gam = cfg.gamma;
+        flow_float R   = cp*(gam-1.0)/gam;
+
+        flow_float M  = 0.30;
+        flow_float P0 = 101325.0;
+        flow_float T0 = 293.15;
+
+        flow_float Ps = P0/(pow(1.0+0.5*(gam-1.0)*M*M, gam/(gam-1.0)));
+        flow_float Ts = T0/(1.0+0.5*(gam-1.0)*M*M);
+
+        flow_float ro = Ps/(R*Ts);
+        flow_float c  = sqrt(gam*R*Ts);
+        flow_float u  = c*M;
+
+        for (geom_int i = 0 ; i<msh.nCells ; i++) {
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = ro*u;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
+        }
+
+    } else if (cfg.initial == "arthur_n2") {
+        // Arthur (1952) 2D source-flow ノズルの dry 超音速膨張用一様初期場。
+        // 発散部のみを切り出し、入口 (スロート) の超音速状態 M=1.05 を一様に置く。
+        // 入口 inlet_uniformVelocity (ρ,U,Ps 固定) と同じ状態にして起動過渡を抑える。
+        // 貯気: P0=844037 Pa, T0=290 K (Arthur Run 34-1 / Fig.4,11 の P0=8.33 atm 相当)。N2: γ=1.4。
+        flow_float gam = cfg.gamma;
+        flow_float R   = cfg.cp*(gam-1.0)/gam;
+
+        flow_float M  = 1.05;
+        flow_float P0 = 844037.0;
+        flow_float T0 = 290.0;
+
+        flow_float Ts = T0/(1.0+0.5*(gam-1.0)*M*M);
+        flow_float Ps = P0*pow(Ts/T0, gam/(gam-1.0));
+        flow_float ro = Ps/(R*Ts);
+        flow_float c  = sqrt(gam*R*Ts);
+        flow_float u  = c*M;
+
+        for (geom_int i = 0 ; i<msh.nCells ; i++) {
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = ro*u;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
+        }
+
     } else {
         std::cout << "Error: Unknown initial" << std::endl;
         std::exit(EXIT_FAILURE);

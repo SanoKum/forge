@@ -165,3 +165,11 @@ tau_x += -mu*2.0/3.0*divu*sxx;                       // 発散項
   Ux_wall=0.028 m/s (no-slip)、Uc/Ua=2.11、HP 摩擦則 0.18% 適合、mdot=0.000502 kg/s。
   SU2 参照 (`run_0003_su2_laminar`, 60k): mdot=0.000509、Uc/Ua=2.007。**差 1.42%**。
   commit `abd833d` (branch `fix/viscous-shear-flux`) でソース修正を分離コミット済み。
+- `2026-06-14` — **軸対称の体積粘性発散項を $\tau_{\theta\theta}$ と整合化** (レビュー指摘)。
+  planar 面の `-2/3 μ divu` がデカルト発散 `dUxdxf+dUydyf+dUzdzf` のみで**フープ項 $u_r/r$ を欠落**し、
+  完全発散 `axisym_divU` を使う $\tau_{\theta\theta}$ 源項 ([axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu))
+  と不整合だった ($\tau_{xx},\tau_{rr}$ だけ $u_r/r$ 落ち)。修正: `viscousFlux_d`/`viscousFlux_wall_d` に
+  `isAxisymmetric`・`axisym_divU` を渡し、軸対称時 planar `divu` を `axisym_divU` の面補間 (壁はセル値) に置換。
+  非軸対称はガード下で**ビット不変**。docs/diffusion/implementation.md に追記。検証は case/29 軸対称 viscous の
+  cell (`run_divufix_cell_before` vs `_after`) / node (`run_lsq_gg` vs `run_divufix_node_after`) before/after 比較
+  (定量結果は応答および case/29 README run 表)。

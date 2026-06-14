@@ -1,0 +1,25 @@
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 101325.0
+    Tt: 293.15
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 2000.0      # 超音速流出を狙い十分低く (M~2 で Ps~13kPa のため外挿される)
+    Pt: 101325.0    # 逆流時のバックフロー全圧
+    Tt: 293.15      # 逆流時のバックフロー全温
+
+wall:
+  physID: 3
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:

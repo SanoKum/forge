@@ -39,7 +39,13 @@ CPU 経路の独立実装は無く、GPU 経路のみで運用される。
 6. 粘性係数を面平均: `mu_total = (vis_lam + vis_turb) を f で補間`。
 7. 法線差分 `(U1-U0)/dcc * delta_*` と接線補正 `mu*(dU*df*k_x + ...)`、
    発散項 `-mu*(2/3)*divU*S_*` を合算して `tau_x, tau_y, tau_z` を得る。
-8. 熱伝導束 `heatflux = thermCond*(T1-T0)/dcc * delta + thermCond*(dT*df * k)`。
+8. 熱伝導束 `heatflux = tc_face*(T1-T0)/dcc * delta + tc_face*(dT*df * k)`。
+   有効熱伝導率は **`tc_face = thermCond(層流) + cp_face*vis_turb/Pr_t`** (RANS 乱流熱伝導)。
+   `Pr_t` は `turbulence.turbulentPrandtl` 設定 (既定 0.85)、`cp_face` はセル `cp` 配列の面平均
+   (thermally-perfect の $c_p(T)$ 反映)。
+   応力(摩擦発熱)は `mu_total = vis_lam + vis_turb` を使うので、熱伝導も同じ乱流寄与を
+   含めないとエネルギーが保存せず、乱流境界層で散逸熱が逃げ場を失い静温が全温を超えて
+   overshoot する (2026-06 修正。詳細 [`.github/plans/diffusion-turbulent-thermal-conductivity.md`](../../.github/plans/diffusion-turbulent-thermal-conductivity.md))。
 9. 残差 `res_roUx, res_roUy, res_roUz, res_roe` を両側に符号反転で `atomicAdd`。
 
 エネルギ残差には `tau_x*Uxf + tau_y*Uyf + tau_z*Uzf` (応力仕事) と `heatflux` を加える。
@@ -57,6 +63,18 @@ tau_x += -mu*2.0/3.0*divu*sxx;                      // (4) 発散項 (成分 S_x
 
 (1)+(2) が $\mu\,\nabla u_i\!\cdot\!\mathbf{S}$ の over-relaxed 評価、(3) が転置 $(\nabla u)^T$ 寄与、
 (4) が Stokes 仮定の体積粘性。`tau_y`/`tau_z` は成分を入れ替えて同型。
+
+> **軸対称の発散項 (2026-06-14 修正)** — (4) の体積粘性で使う発散は、軸対称では
+> $\nabla\!\cdot\!\mathbf u = \partial_x u_x + \partial_r u_r + u_r/r$ と**フープ項 $u_r/r$ を含む**形になる。
+> 以前は planar 面の `divu` をデカルト形 `dUxdxf+dUydyf+dUzdzf` のみで評価しており、
+> フープ応力 $\tau_{\theta\theta}=2\mu\,u_r/r-\tfrac23\mu(\nabla\!\cdot\!\mathbf u)$ 
+> ([axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)、完全発散 `axisym_divU` を使用)
+> と**不整合**だった ($\tau_{xx},\tau_{rr}$ の体積項だけ $u_r/r$ を落としていた)。
+> 修正: `isAxisymmetric==1` のとき planar 面は `axisym_divU` を面補間
+> (内部面 `f*axisym_divU[ic0]+(1-f)*axisym_divU[ic1]`、壁面はセル値 `axisym_divU[ic]`) で
+> `divu` を取り、$\tau_{\theta\theta}$ と同一の完全発散に揃える。`axisym_divU` は `axisymmetricGeomTerms_d`
+> が viscousFlux より前に算出済み (main ループ順)。非軸対称は従来どおりデカルト発散で**ビット不変**。
+> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md) §変更ログ。
 
 > **履歴 (2026-06-06 修正)** — 以前は法線項に**成分** `delta_x`(`=dcc_x·β`)を使い、
 > 接線項の勾配添字が転置になっており、(3) の転置項もコメントアウトされていた。このため

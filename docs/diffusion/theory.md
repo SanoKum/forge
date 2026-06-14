@@ -75,7 +75,12 @@ $\kappa (\partial_j T)$ を組み合わせる。
 - 層流粘性 $\mu_{\text{lam}}$: 設定値 (`cfg.visc`、定数) を使用。
 - 乱流粘性 $\mu_{\text{turb}}$: `vis_turb[ic]` (SGS / RANS モデル別ファイルで生成)。
 - 有効粘性 $\mu = \mu_{\text{lam}} + \mu_{\text{turb}}$。
-- 熱伝導率 $\kappa$: 設定値 `cfg.thermCond` を使用 (Pr 数からの導出は呼び出し側)。
+- 熱伝導率 $\kappa$: **有効値 $\kappa_{\text{eff}} = \kappa_{\text{lam}} + c_p\,\mu_{\text{turb}}/Pr_t$**。
+  $Pr_t$ は `turbulence.turbulentPrandtl` で設定 (既定 0.85)。層流 $\kappa_{\text{lam}}$ は設定値
+  `cfg.thermCond`、乱流寄与は $\mu_{\text{turb}}$ から渦熱伝導として加える。$c_p$ は
+  thermally-perfect の温度依存を反映するためセル配列 (`var.c_d["cp"]`、`thermalMethod==2` で $c_p(T)$)
+  を面平均して使う。応力が $\mu=\mu_{\text{lam}}+\mu_{\text{turb}}$ を使う以上、熱伝導も対応する乱流寄与を
+  含めないと乱流境界層でエネルギーが保存せず、断熱壁の静温が回復温度 ($\le$ 全温) を超えて発散的に上昇する。
 
 ## 壁面寄与
 
