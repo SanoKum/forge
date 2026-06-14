@@ -36,6 +36,26 @@ Lin, Cheng, Luo, Qin, *On nitrogen condensation in hypersonic nozzle flows*, Sho
 - **液滴温度 T_d**: Hill のエネルギーバランス (純窒素で β_c 項を落とした陰的式) を反復で解く。
 - **N2 物性**: 飽和蒸気圧・液密度・潜熱・表面張力のフィット (論文 Appendix 1)。
 
+### モデルは凝縮種ごとに切替可能にする (必須要件)
+
+核生成・成長・物性は**固定実装にせず、凝縮種ごとに config で選べるプラグイン構造**にする。
+予定している組み合わせ:
+
+| 種 | 核生成モデル | 成長モデル | 表面張力 | 備考 |
+| --- | --- | --- | --- | --- |
+| N2 | CNT × Iland 経験補正 (A,B) | 修正 Gyarmathy (Goodheart) | N2 σ(T) フィット | 上記 Lin 2014 |
+| H2O | **CNT + Kantrowitz 非等温補正** | **Hertz–Knudsen モデル** | H2O σ(T) | Wyslouzil 検証 (下記) |
+
+- **凝縮種ごとに以下を独立に切替**:① 核生成モデル (`CNT` / `CNT_Iland` / `CNT_Kantrowitz` / …) と
+  その**係数** (補正 A,B 等)、② 成長モデル (`gyarmathy` / `goodheart` / `hertz_knudsen` / …)、
+  ③ 表面張力モデル/係数、④ 飽和圧・液密度・潜熱のフィット。
+- 実装イメージ: 各モデルを**enum + 関数ポインタ/switch (device 側)** で選び、係数は種ごとの
+  物性構造体に持たせる。`bcondConfig`/`solverConfig` か専用 `condensationConfig.yaml` で
+  `species: [{name: N2, nucleation: CNT_Iland, growth: goodheart, ...}, {name: H2O, nucleation: CNT_Kantrowitz, growth: hertz_knudsen, ...}]` のように記述。
+- **Kantrowitz 非等温補正**: 生成中クラスタの自己加熱で J を割り引く補正 (J_noniso = J_iso/(1+b·q²) 系)。
+  N2 では使わず H2O で使う、という**種ごとの選択**をそのまま表現できること。
+- まとめ md の「Kantrowitz との違い」節も参照 (N2 は採用せず成長側 T_d で自己加熱を扱う方式)。
+
 > 物理式・係数・T_d の解き方・「核生成=T / 成長=T_d」の区分け・Kantrowitz との違いは
 > [`papers/on nitrogen condensation in hypersonic nozzle flows_summary.md`](../../papers/on%20nitrogen%20condensation%20in%20hypersonic%20nozzle%20flows_summary.md)
 > に詳細整理済み。まずこれを読むこと。
@@ -91,6 +111,10 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
     でよいが、将来「キャリアガス + 複数凝縮種」へ拡張できるよう既存の多成分 TP (`thermalMethod 2`,
     `nSpecies`, `Y_s`) との関係を整理する (凝縮種 = 気相成分の一部が液化、という対応付け)。
   - **当面の実装は nCondSpecies=1 (N2) で動かす**が、配列・ループ・物性 API は多種前提で書く。
+  - **モデル切替を種ごとに**: 核生成/成長/表面張力/飽和圧などを enum+switch (device 側) で選び、
+    係数は種ごと構造体。N2=CNT_Iland+Goodheart、H2O=CNT_Kantrowitz+Hertz–Knudsen を**同じ枠組みで**
+    表現できること (上の「モデルは凝縮種ごとに切替可能にする」表を参照)。新モデル追加は enum と
+    関数を足すだけで済む形にする。
 
 ### (B) flux Jacobian (対流) が変わる — Roe で強く効く / SLAU は要調査
 
@@ -124,17 +148,50 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
     分離なら、対流側 Jacobian は圧力の g 依存だけ直せばよく、ソースの stiff 性はサブステップ側に閉じる。
     これを既定方針の候補とする。
 
-> まとめ: **(B) 対流 Jacobian (特に Roe)** と **(C) 陰解法の圧力微分 + ソース point-implicit** は
-> 「スカラーを足すだけ」では済まない中核課題。plan の段階で具体的な数式 (∂p/∂rog, ∂S/∂U) と
-> 結合戦略 (疎結合+split を初手とする) を書き下してから実装に入ること。
+### (D) float 精度 — 液滴数密度が巨大化する問題と打ち手
+
+- **懸念は妥当**: 核生成率 J は ~1e20–1e30 個/(m³·s) になり、数密度 n=ρQ0 が ~1e18–1e22 個/m³ に達する。
+  一方 r は nm スケール (~1e-9 m) なので、モーメントは
+  `Q0~1e20`, `Q3~Q0·<r³>~1e20·1e-27~1e-7` と**桁が ~27 オーダー跨ぐ**。float32 (有効 ~7 桁) では
+  Q0 と Q3 を同じスケールで保持できず、平均半径 `r=(Q3/Q0)^{1/3}` や「巨大な累積数に微小増分を足す」
+  操作で**精度が崩壊**する。これは magnitude (1e20 は 3.4e38 内) ではなく**有効桁数の問題**。
+- **打ち手 (plan で方針決定)**:
+  1. **モーメントと凝縮ソース評価を double で持つ** = 最有力。forge は既に
+     `build-double` / `build-mixed` / `build-mixed2` を持ち混合精度運用の実績あり
+     ([[mixed-precision-axisym-refuted]] 系)。**気相対流は float のまま、凝縮の 4 モーメントと
+     核生成/成長の積分だけ double** にする混合精度が現実解。`flow_float` とは別に
+     `cond_float=double` 型を導入する案。
+  2. **無次元化/リスケール**: モーメントを基準量で割って O(1) 化する。
+     `μ_n = Q_n/(N_ref · r_ref^n)` (例 N_ref=1e18, r_ref=1e-9 m=1nm)。これでクロスモーメント比
+     (平均半径) の計算が安定。double と併用するとさらに堅い。
+  3. **質量分率 g は別扱いでよい**: g∈[0,~0.1] は float で十分。エネルギー結合は g が担うので、
+     **g は通常精度、数密度モーメント Q0/Q1/Q2 だけ double+無次元化**という分担が効率的。
+  4. **累積の round-off 対策**: 核生成の時間積分 (巨大数への微小加算) は Kahan 加算や、
+     「新規核生成分」と「既存成長分」を分けて扱うと round-off を抑えられる。
+  5. r=(Q3/Q0)^{1/3} 等のモーメント間演算は必ず double で。
+- 結論として「float では太刀打ちできない」→ **モーメントは double (混合精度) + 無次元化**で対処可能。
+  plan に「cond_float=double, μ_n 無次元化, g は通常精度」を既定方針として明記する。
+
+> まとめ: **(B) 対流 Jacobian (特に Roe)**、**(C) 陰解法の圧力微分 + ソース point-implicit**、
+> **(D) モーメントの double+無次元化** は「スカラーを足すだけ」では済まない中核課題。plan の段階で
+> 具体的な数式 (∂p/∂rog, ∂S/∂U) と戦略 (疎結合+split / cond_float=double / μ_n 無次元化) を
+> 書き下してから実装に入ること。
 
 ## 検証計画
 
 1. まず **dry 一致**: 凝縮ソースを切った状態 (g≡0) で case/34 run_0003 と一致することを確認
    (回帰防止)。
-2. **凝縮 ON**: Arthur ノズルで貯気を下げる/上げて凝縮量を振り、中心線静圧が dry の等エントロピー
-   線より**上振れ**することを示す (論文 Fig.11 / 本文の「凝縮で静圧上昇」)。
-3. 可能なら論文の parametric study (T0 を振って出口 P/T/Ma・凝縮量) の傾向を再現。
+2. **N2 凝縮 ON**: Arthur ノズル (case/34) で貯気を下げる/上げて凝縮量を振り、中心線静圧が dry の
+   等エントロピー線より**上振れ**することを示す (論文 Fig.11 / 本文の「凝縮で静圧上昇」)。
+3. **H2O 凝縮の検証ケースを追加** (要対応):
+   - 既存の **case/16.nozzle_wys** (Wyslouzil 2D ノズル) を水蒸気凝縮の検証に使う。検証データ論文は
+     **`papers/condensation/wyslouzil2000.pdf`**。まずこの論文を読み、ノズル形状・キャリアガス・
+     水蒸気モル分率・貯気条件・測定量 (オンセット位置, 凝縮による圧力/温度, 液滴サイズ/数密度) を
+     summary 化する (`papers/condensation/` に md でまとめる)。
+   - case/16 に水蒸気凝縮の `run_*` を追加し、**H2O = CNT+Kantrowitz + Hertz–Knudsen** モデルで計算、
+     Wyslouzil の実測 (圧力トレース・液滴サイズ等) と比較する。
+   - これにより「**N2 (Arthur) と H2O (Wyslouzil) の 2 種を同じ枠組みで切替**」できることを実証する。
+4. 可能なら Lin 2014 の parametric study (T0 を振って出口 P/T/Ma・凝縮量) の傾向も再現。
 
 ## AGENTS.md 開発フロー (実装前に必須)
 
@@ -171,8 +228,10 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
 > 開発フローに従って (1) docs/condensation/theory.md, (2) docs/condensation/implementation.md,
 > (3) .github/plans/condensation-nonequilibrium.md を作成してから実装に入って。実装は既存の RANS
 > 2 方程式 (roK/roOmega) の追加保存スカラー+ソースの骨格を流用する方針で。ただし「設計上の重要論点」
-> (A) 多成分凝縮 (H2O 等) への一般化 = 凝縮種ごとに 4 モーメント+物性を持てる構造 (当面 N2 1 種で動かす)、
-> (B) 対流 flux Jacobian の変化 (Roe で強く効く・SLAU は要調査、SLAU 優先)、(C) 陰解法の圧力微分
-> ∂p/∂rog とソース point-implicit (疎結合+fractional-step を初手) — の 3 点の方針を plan で先に
-> 数式込みで決めてから着手すること。検証は case/34 の Arthur ノズルで dry 一致 → 凝縮 ON で静圧
-> 上振れ、の順。
+> (A) 多成分凝縮への一般化 = 凝縮種ごとに 4 モーメント+物性を持ち、**核生成/成長/表面張力モデルと
+> 係数を種ごとに config 切替**できる構造 (N2=CNT_Iland+Goodheart, H2O=CNT+Kantrowitz+Hertz–Knudsen を
+> 同枠組みで; 当面 N2 1 種で動かす)、(B) 対流 flux Jacobian の変化 (Roe で強く効く・SLAU は要調査、
+> SLAU 優先)、(C) 陰解法の圧力微分 ∂p/∂rog とソース point-implicit (疎結合+fractional-step を初手)、
+> (D) 液滴数密度の巨大化に対し**モーメントは double(混合精度)+無次元化**、の 4 点の方針を plan で
+> 先に数式込みで決めてから着手すること。検証は case/34 Arthur で dry 一致 → N2 凝縮 ON で静圧上振れ、
+> さらに **H2O は case/16.nozzle_wys + `papers/condensation/wyslouzil2000.pdf`** で水蒸気凝縮を検証。
