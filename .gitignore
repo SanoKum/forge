@@ -12,7 +12,12 @@
 *.bk
 */build/*
 log
+log[0-9]*
 *.log
+*.su2
+*.out
+*.xz
+*.tar.xz
 residual_history.csv
 # ビルド成果物 (native / 各種実験ビルド)
 solver_density_cuda/.build-native/

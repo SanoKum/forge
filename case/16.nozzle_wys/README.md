@@ -75,8 +75,8 @@ Wyslouzil et al. JCP 113, 7317 (2000) **Fig.3 (pv0=1.0 kPa 水)** 条件で、N2
   実験の cond/isentrope 比 1.18〜1.23 と ~5% 以内で一致。**凝縮効果 (比) は定量一致**するが、絶対 p/p0 は
   非粘性 dry が実験等エントロピーよりやや低い (粘性排除厚さ未考慮)。
 - **粘性+SST 乱流 (run_0010 vs run_0009, ユーザ要望)**: 粘性排除厚さで dry baseline が押し上がり、
-  **絶対 p/p0 も実験と一致**する (下表)。凝縮 onset (x≈1.7cm の潜熱スパイク) も再現。x≳6cm は近壁メッシュが
-  Euler デモ解像度のため両曲線が実験より下振れ (既知の課題)。
+  **絶対 p/p0 も実験と一致**する (下表)。凝縮 onset (x≈1.7cm の潜熱スパイク) も再現。x≳6cm の下振れは
+  壁解像不足ではなく (y+ は良好、下記)、2D 近似/ノズル面積比など膨張側のオフセット (dry/cond 共通)。
 
   | x [cm] | SST dry | SST cond | exp isentrope | exp cond |
   | --- | --- | --- | --- | --- |
@@ -87,10 +87,23 @@ Wyslouzil et al. JCP 113, 7317 (2000) **Fig.3 (pv0=1.0 kPa 水)** 条件で、N2
   → **「粘性+乱流で凝縮あり/なしを計算すると Fig.3 の差が出る」というユーザ仮説を定量的に確認**。
   比較図は `fig3_compare_visc.png` (非粘性破線 + 粘性SST実線 + 実験点)。
 
+## 壁面 y+ (SST メッシュ `nozzle_2d_sst.h5`)
+
+`wall_yplus.py` で run_0009/run_0010 の壁第一層 y+ を収束場から実測 (y+=√(u_t·y1/ν), ν=分子粘性):
+
+- 第一セル距離 y1 = **1.6〜9.0 µm** (スロート半高 2.25mm の ~0.1%)。
+- **y+ ≤ 1 が壁面の 98.2%**、mean 0.61、max **1.88**、全面 **y+ ≤ 2**。
+- 1 を超えるのは入口リーディングエッジ (x≈−6.3cm) のごく一部のみ。スロート下流 (超音速・凝縮領域) は
+  y+ ≈ 0.5 で完全に解像 → **低Re SST の壁まで積分が成立**。`wall_yplus.png` に分布。
+- **乱流粘性も正しく作動**: μ_turb/μ_lam は壁第一セルで ≈0 (粘性サブレイヤ、k→0/ω→∞ ゆえ)、対数層で
+  median 4.5・max 29、コアで ~3。場全体で 79% のセルが μ_turb>μ_lam。第一セルが粘性サブレイヤ内ゆえ
+  τ_w を有効粘性 (μ_lam+μ_turb) で評価しても y+ は不変 (= 壁解像が本物である証拠)。
+
+(旧記述「近壁メッシュは Euler デモ用で y+~1 ではない」は、非粘性デモ用 `nozzle_2d.h5` に関するもので、
+SST 専用メッシュ `nozzle_2d_sst.h5` には当てはまらない。上記実測のとおり壁解像済み。)
+
 ## 既知の課題
 
-- 近壁メッシュは Euler デモ用で y+~1 の壁解像ではない。乱流 BL を定量評価するには
-  壁直交方向を細分した専用メッシュが必要 (中心線コア量は妥当)。
 - 本ケース検証中に **RANS エネルギー方程式の乱流熱伝導欠落バグ**を発見・修正
   (`.github/plans/diffusion-turbulent-thermal-conductivity.md`)。修正前は近壁静温が
   449 K (全温 293 K 超過)、修正後 293 K に収束。
@@ -99,4 +112,6 @@ Wyslouzil et al. JCP 113, 7317 (2000) **Fig.3 (pv0=1.0 kPa 水)** 条件で、N2
 
 - `postproc_centerline.py <run> <label>` — 中心線 Mach / 静圧を面積比等エントロピーと比較。
 - `plot_residuals.py <run> <label>` — 全 rms 残差の片対数プロット。
+- `wall_yplus.py <run> [--wall-physid 3]` — SST 壁第一層 y+ を収束場から算出・可視化。
+- `compare_fig3.py` / `compare_fig3_visc.py` — Wyslouzil Fig.3 (凝縮あり/なし) と中心線 p/p0 を比較。
 - `build_restart.py <src_res> <src_mesh> <dst_mesh> [--rok K --roomega W]` — 引き継ぎ初期場生成。
