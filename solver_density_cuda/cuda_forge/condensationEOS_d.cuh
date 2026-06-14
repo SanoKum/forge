@@ -3,6 +3,44 @@
 #include "thermo_d.cuh"
 #include "condensationProperties_d.cuh"
 
+// 一温度 二相 温度反転 (carrier + condensible, thermally perfect; Phase 3 H2O)。
+// 気相 = 全化学種 (蒸気とみなした NASA-9 混合)。凝縮種 (H2O) の液相分率 g。
+//   混合内部エネルギー e_mix(T) = e_gas^全蒸気(Y,T) + g(R_w T - L_w(T))
+//     (液 e_l = e_v + R_w T - L_w、凝縮ぶん g の補正)。
+// e_mix(T)=e_in を Newton で解く。Y は総質量分率 (N2 + 総水)。g≤Y_H2O は呼び出し側で保証。
+//   Rw = R_u/M_H2O (凝縮種の比気体定数)、cprops = 凝縮種物性 (model=H2O)。
+__host__ __device__ inline double cond_T_from_e_carrier(
+    const SpeciesThermo* sp, int nSp, const double* Y,
+    double e_in, double g, double Rw, const CondSpeciesProps& cprops,
+    double T_guess, double T_min, double T_max)
+{
+    const double Rmix = thermo_R_mix(sp, nSp, Y);
+    double T = T_guess;
+    if (!(T > T_min)) T = T_min;
+    if (T > T_max) T = T_max;
+    #pragma unroll 1
+    for (int it = 0; it < 30; ++it) {
+        double cp_T, h_T;
+        thermo_cph_mix(sp, nSp, Y, T, &cp_T, &h_T);          // 全蒸気混合 cp,h
+        const double e_allvap = h_T - Rmix*T;                 // 全蒸気の内部エネルギー
+        const double cv = cp_T - Rmix;
+        const double L  = cond_latent(cprops, T);
+        const double dL = (cond_latent(cprops, T+0.1) - cond_latent(cprops, T-0.1)) / 0.2;
+        const double e_mix = e_allvap + g*(Rw*T - L);
+        const double demix = cv + g*(Rw - dL);
+        const double demf  = (demix > 1.0e-2*cv) ? demix : 1.0e-2*cv;
+        double dT = (e_mix - e_in)/demf;
+        if (dT >  0.5*T) dT =  0.5*T;
+        if (dT < -0.5*T) dT = -0.5*T;
+        T -= dT;
+        if (T < T_min) T = T_min;
+        if (T > T_max) T = T_max;
+        if (dT < 0.0) dT = -dT;
+        if (dT < 1.0e-3 + 1.0e-6*T) break;
+    }
+    return T;
+}
+
 // 非平衡凝縮: 一温度 二相 EOS の温度反転 (Phase 2)。docs/condensation/theory.md 5 節。
 //
 // 【一温度近似】気相温度 T_v と液滴温度 T_d を分けず T_v=T_d=T とする (初期実装)。
