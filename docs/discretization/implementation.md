@@ -175,6 +175,22 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 **検証**: bump hiM (Mach1.65) の node 2 次 MUSCL が**発散しなくなる**ことを `check_convergence.py` で確認
 (M2 で step~400 発散 → M3 で安定収束が目標)。cell モードの全既存ケースが**従来とビット一致**(無変更) を回帰確認。
 
+### 7.0 [解決] node-centered 軸対称の near-axis corner
+
+長く open だった「軸-境界 (inlet/outlet) 角 CV の P オーバーシュート/逆流」を **2 修正の併用で解決** (cell/SU2 一致):
+1. **軸 (R≤eps) で軸対称ソース OFF** (`axisymmetricSource_d` の `axis_flag`、node+axisym のみ)。ソース
+   `res_roUy += P·A_planar` は**唯一 r 重みされない項**で `source/volume = P/r → ∞` (r→0) が発散源。対流項は
+   r_face/r_cell がキャンセルし有限。軸でソースを切るのが本質 (SU2 の y<EPS 相当、ユーザ提案)。
+2. **境界半割面の重心に真の面積加重重心 (R≥0) を使う** (`dualBnodeCent`)。旧 `node+h·n_out` 便宜は pcy≈0/<0 で
+   入口/出口 BC の r 重み実効面積を ~0 にし **BC が軸近傍 corner CV に届いていなかった**。真の重心 (R>0) で入口が
+   コーナーに届き P=chamber に。(`axisCentroidShift=1` で CV セル中心に面積加重重心を使うのも維持: r_cell と r_face を
+   一致させ対流項の r をキャンセルさせるため。)
+
+**検証 (case/29 conical & bell, 軸対称 Euler implicit)**: PASS。corner P=3.99MPa(=chamber, overshoot 0 セル、旧 6.82e6)、
+Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と一致**。near-axis<3% mean|ΔM|=0.016/max0.049
+(旧 max0.95) と中/外帯並み。平面 (bump loM) 無回帰。**explicit は startup の exit-wall 角で依然脆く発散** (cell explicit も
+同様; 軸でなく supersonic-startup ロバスト性) → implicit が実用。
+
 ### 7.1 診断結果 (重要): hiM 発散は「境界値」でなく「壁近傍 2 次再構成」の問題
 弱形式実装の前に切り分け診断を実施 (`bndFirstOrder`: 境界隣接 CV の再構成勾配を 0 にし境界側を 1 次化、
 [calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu) の `zeroBndNodeGradient_d`、

@@ -192,6 +192,9 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["bndFirstOrder"]) {
             this->bndFirstOrder = config["mesh"]["bndFirstOrder"].as<int>();
         }
+        if (config["mesh"]["axisCentroidShift"]) {
+            this->axisCentroidShift = config["mesh"]["axisCentroidShift"].as<int>();
+        }
 
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");

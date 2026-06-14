@@ -41,6 +41,8 @@ public:
     // buildMedianDual() で構築。空なら writeInputH5 は /DUAL を書かない (cell モード)。
     // CV = ノード、双対面 = primal エッジ (2D では plane と 1:1)、CV 重心 = ノード座標。
     bool dualBuilt = false;
+    bool axisCentroidShift = true;  // true: CV 面積加重重心を cell 中心に (軸 R=0 のゼロ体積回避)。
+                                    // false: node 座標 (軸 R=0)。軸ソース OFF と併用前提。convertGmshToForge が cfg から設定。
     std::vector<geom_float> dualVolume;     // [nNodes] 各ノードの双対 CV 体積 (2D は面積×単位厚み)
     std::vector<geom_float> dualCentroid;   // [nNodes*3] 双対 CV の面積加重重心 (FV セル中心)。
                                             // 軸対称で重要: 軸上ノード(R=0)でも CV 重心 R>0 となり
@@ -52,6 +54,8 @@ public:
     // 境界半割双対面: 境界ノードに割り当てる外向き面ベクトル (bcond ごと)。
     std::vector<geom_int>   dualBnodeId;    // [nBHalf]   境界ノード id (bcond 境界順に連結)
     std::vector<geom_float> dualBnodeVect;  // [nBHalf*3] 外向き半割面ベクトル
+    std::vector<geom_float> dualBnodeCent;  // [nBHalf*3] 半割面の面積加重重心 (境界上, R≥0)。
+                                            // 軸対称 r 重みを正しくし、入口/出口 BC が軸近傍 corner CV に届くようにする。
     std::vector<geom_int>   dualBcondOffset;// [nBconds+1] bcond ごとの dualBnode* への CSR オフセット
     std::vector<geom_int>   dualBcondPhysID;// [nBconds]   各 bcond の physID (順序対応)
 
@@ -1448,28 +1452,46 @@ public:
         for (geom_int ib = 0; ib < nBc; ++ib)
         {
             dualBcondPhysID[ib] = this->bconds[ib].physID;
-            // この bcond に現れるノードを集め、半割面ベクトルを accum
-            std::map<geom_int, std::array<geom_float,3>> half; // node -> outward half vect
+            // この bcond に現れるノードを集め、半割面ベクトルと面積加重重心を accum
+            std::map<geom_int, std::array<geom_float,3>> half;   // node -> outward half vect
+            std::map<geom_int, std::array<geom_float,4>> hcent;  // node -> {Σw·cx, Σw·cy, Σw·cz, Σw}
             for (const geom_int ip : this->bconds[ib].iPlanes)
             {
                 const geom_int A = this->planes[ip].iNodes[0];
                 const geom_int B = this->planes[ip].iNodes[1];
-                const geom_float hx = 0.5*this->planes[ip].surfVect[0]; // 外向き (makeMesh で整向済)
-                const geom_float hy = 0.5*this->planes[ip].surfVect[1];
-                const geom_float hz = 0.5*this->planes[ip].surfVect[2];
+                const geom_float sv0 = this->planes[ip].surfVect[0];
+                const geom_float sv1 = this->planes[ip].surfVect[1];
+                const geom_float sv2 = this->planes[ip].surfVect[2];
+                const geom_float hx = 0.5*sv0; // 外向き (makeMesh で整向済)
+                const geom_float hy = 0.5*sv1;
+                const geom_float hz = 0.5*sv2;
+                const geom_float w = 0.5*std::sqrt(sv0*sv0 + sv1*sv1 + sv2*sv2); // 各ノードの半割面積
                 for (const geom_int N : {A, B}) {
+                    const geom_int O = (N == A) ? B : A;
                     auto& h = half[N];
                     h[0] += hx; h[1] += hy; h[2] += hz;
+                    // ノード N の半割 (N→エッジ中点 M) の重心 = (3N+O)/4
+                    auto& c = hcent[N];
+                    c[0] += w * (3.0*nodes[N].coords[0] + nodes[O].coords[0]) * 0.25;
+                    c[1] += w * (3.0*nodes[N].coords[1] + nodes[O].coords[1]) * 0.25;
+                    c[2] += w * (3.0*nodes[N].coords[2] + nodes[O].coords[2]) * 0.25;
+                    c[3] += w;
                 }
             }
             for (const auto& kv : half) {
-                dualBnodeId.push_back(kv.first);
+                const geom_int nd = kv.first;
+                dualBnodeId.push_back(nd);
                 dualBnodeVect.push_back(kv.second[0]);
                 dualBnodeVect.push_back(kv.second[1]);
                 dualBnodeVect.push_back(kv.second[2]);
-                bnodeAccum[3*kv.first + 0] += kv.second[0];
-                bnodeAccum[3*kv.first + 1] += kv.second[1];
-                bnodeAccum[3*kv.first + 2] += kv.second[2];
+                const auto& c = hcent[nd];
+                const geom_float invw = (c[3] > 0.0) ? 1.0/c[3] : 0.0;
+                dualBnodeCent.push_back(c[0]*invw);
+                dualBnodeCent.push_back(c[1]*invw);
+                dualBnodeCent.push_back(c[2]*invw);
+                bnodeAccum[3*nd + 0] += kv.second[0];
+                bnodeAccum[3*nd + 1] += kv.second[1];
+                bnodeAccum[3*nd + 2] += kv.second[2];
             }
             dualBcondOffset[ib + 1] = (geom_int)dualBnodeId.size();
         }
@@ -1600,9 +1622,12 @@ public:
         // ---- 新 cells (CV = ノード) ----
         std::vector<cell> newCells(nN);
         for (geom_int i = 0; i < nN; ++i) {
-            // CV 重心 = 双対 CV の面積加重重心 (FV セル中心)。軸対称で軸上ノード(R=0)でも R>0 となり
-            // 回転体積が非ゼロになる (theory §3.4)。内部ノードでは ≈ ノード座標。
-            newCells[i].centCoords = { dualCentroid[3*i+0], dualCentroid[3*i+1], dualCentroid[3*i+2] };
+            // CV 重心: axisCentroidShift=true なら双対 CV の面積加重重心 (軸上でも R>0 で回転体積を稼ぐ)、
+            // false なら node 座標 (軸上は R=0)。後者は軸ソース OFF と併用前提 (ソースが唯一の r 非重み項)。
+            if (this->axisCentroidShift)
+                newCells[i].centCoords = { dualCentroid[3*i+0], dualCentroid[3*i+1], dualCentroid[3*i+2] };
+            else
+                newCells[i].centCoords = nodes[i].coords;
             newCells[i].volume     = dualVolume[i];
             newCells[i].ieleType   = 2;                     // placeholder (output CONNE 用, viz は M4)
             newCells[i].iNodes      = { i };
@@ -1630,17 +1655,14 @@ public:
             const geom_float vy = dualBnodeVect[3*k+1];
             const geom_float vz = dualBnodeVect[3*k+2];
             const geom_float area = std::sqrt(vx*vx + vy*vy + vz*vz);
-            const geom_float inva = (area > 1e-30) ? 1.0/area : 0.0;
-            const geom_float h = 0.5 * std::sqrt(std::max(dualVolume[nd], (geom_float)1e-30));
             plane p;
             p.iNodes = { nd };
             p.iCells = { nd };  // 1 セルのみ → solver readMesh がゴーストを追加
             p.surfVect = { vx, vy, vz };
             p.surfArea = area;
-            // pc = ノード + h·n_out (ゴースト非退化のため境界外側に少しずらす, M1 便宜)
-            p.centCoords = { nodes[nd].coords[0] + h*vx*inva,
-                             nodes[nd].coords[1] + h*vy*inva,
-                             nodes[nd].coords[2] + h*vz*inva };
+            // pc = 半割面の真の面積加重重心 (境界上, R≥0)。軸対称 r 重みが正しくなり、入口/出口 BC が
+            // 軸近傍 corner CV に届く (旧 node+h·n_out 便宜は pcy≈0/<0 で BC を r 重み消失させていた)。
+            p.centCoords = { dualBnodeCent[3*k+0], dualBnodeCent[3*k+1], dualBnodeCent[3*k+2] };
             newPlanes.push_back(std::move(p));
         }
 
