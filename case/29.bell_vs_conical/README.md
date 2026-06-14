@@ -307,6 +307,22 @@ r 重みを失い・ゼロ面積(対称)面にもスプリアス項を載せて�
 根治できる。plan [precision-mixed-axisym.md] / [architecture-axisym-axis-singularity.md] の「double solve が必要」は
 本是正で更新対象 (要 docs/plan 反映・他ケース回帰)。
 
+#### SST (軸対称 RANS) でも軸中心 k スパイクが float のまま消える (本丸の確認)
+
+本来の調査対象だった軸対称 SST の「軸中心 k スパイク」を、同一 IC (`run_su2cmp_forge_sst` の `nozzle.h5`)・
+同一設定 (cfl_pseudo=2, 20000 step) で baseline(float 未修正) / viscfix(float) / double solve の3者比較:
+
+| run_* | 第一セル Uy | k_axis | k_axis/k_core | スパイク |
+| --- | --- | --- | --- | --- |
+| `run_su2cmp_forge_sst` (baseline float) | +1.06 (固着) | 7.76 | 1.7 | あり |
+| `run_disent_sst_viscfix` (**float 是正**) | **+19.30** | **4.65** | **1.0** | **消失** |
+| `run_disent_sst_double` (`implicitSolvePrecision=1`) | +19.85 | 4.19 | 0.9 | 消失 |
+
+viscfix(float) は Uy 固着解消・k スパイク消失 (k(r) 平坦) で **double solve と一致**。乱流まで含めて float のまま根治。
+注: 3 run とも完全収束ではない (`rms_roUy` rising、`rms_roK/roOmega` は残差ノルムが NaN になる既知アーティファクト=
+場は finite。baseline/double も同挙動)。よって「収束」とは報告せず、同一土俵での k スパイク/Uy 診断の比較として扱う。
+plan の「SST k スパイクは double solve でも縮小・残留 (9.16→7.4)」は、本是正でも近軸では同等に解消することを示す。
+
 ### 粘性対角是正後の scalar DPLUR CFL スイープ (2026-06-14)
 
 粘性流束 Jacobian 是正後、これまで全く収束しなかった **scalar DPLUR (`blockDPLUR: 0`)** の安定性が
