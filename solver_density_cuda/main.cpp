@@ -695,6 +695,9 @@ cudaConfig initializeSimulation(
     // device roY[] ポインタ配列を構築 (c_d 確保後, dependentVariables より前)。
     speciesInit_d(cfg , var);
 
+    // device rog[] ポインタ配列を構築 (二相 EOS が液相質量分率を読む)。condensation==0 で no-op。
+    condensationInit_d(cfg , var);
+
     cout << "Read Initial Values \n";
     var.readValueHDF5(cfg.valueFileName , msh);
 

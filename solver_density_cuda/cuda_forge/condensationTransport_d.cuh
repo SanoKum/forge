@@ -13,6 +13,14 @@
 // Phase 1 は移流のみ (拡散なし・ソース=0)。核生成/成長ソースは Phase 2。docs/condensation/ 参照。
 // 凝縮無効 (var.nCondSpeciesRegistered < 1) のときは全 wrapper が no-op で従来経路を保つ。
 
+// device の rog (液相質量分率の保存量 ρg_sp) ポインタ配列 (flow_float*[nCondSpecies]) を 1 度だけ構築。
+// 二相 EOS (dependentVariables) が液相質量分率 g_sp=ρg_sp/ρ を読むために使う。allocVariables 後に呼ぶ。
+void condensationInit_d(solverConfig& cfg, variables& var);
+
+// 二相 EOS へ渡す device rog 配列ポインタ。凝縮無効時は nullptr。
+flow_float** cond_rog_device_ptr();
+int          cond_num_species();
+
 // 原始量 φ = ρφ/ρ を全セル (ghost 含む) について更新する。スカラ移流の上流値に使う。
 void condensationPrimitive_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 

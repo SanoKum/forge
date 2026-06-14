@@ -78,8 +78,10 @@ $\xi_g=\partial p/\partial(\rho g)=-RT+\kappa(L-RT)$ (新規列)、flux Jacobian
    "liquid droplets"、$r_*$ は $\rho_l$ 使用。固相フィットは図比較用で不使用)。液フィットは ~40K 以下で
    外挿破綻するため**物性評価温度を $[45\text{K},T_c)$ にクランプ** (`COND_T_PROP_FLOOR`)。anchors 検証済
    (NBP/三重点/液密度/潜熱/σ が ~1%)。
-2. **二相 EOS** (dependentVariables) — `ρe=ρc_vT-ρg L(T)` から $T$ 逆算、$p=(ρ-ρg)RT$。**気相は
-   `thermalMethod 0` (熱量的完全気体) 必須** (NASA-9/CEA は ~200K 未満で無効、出口 ~27K)。$g=0$ で単相に厳密縮約。
+2. **一温度 二相 EOS** (dependentVariables, `thermalMethod==2` 分岐) — 実装済。$T_v=T_d=T$、
+   $e=e_v(T)-g L(T)$ ($e_v$ は NASA-9 thermo 再利用、**定比熱近似なし**) から Newton で $T$ 逆算、
+   $p=(1-g)\rho R_v T$。$T_d$ は輸送変数にしない (Hill $T_d$・2 温度は後続)。**凝縮は `thermalMethod 2`
+   必須**。host unit test で (b) g=0 厳密縮約 (diff 0) と (c) g>0 安定・物理 (潜熱で T 上昇, 残差 1e-9) を確認。
 3. **核生成 $J$** (CNT × Iland 補正)、**成長 $dr/dt$** (Goodheart)、**Hill $T_d$** 反復 — device 関数。
 4. **ソース kernel** $S_{Q_n},S_g$ + point-implicit `src_jac` + $\mu_n$ 無次元化 (float)。
 5. **検証**: case/34 で貯気を振り中心線静圧が dry 等エントロピー線より上振れ (論文 Fig.11)。
@@ -115,6 +117,11 @@ H2O モデル (CNT_Kantrowitz + Hertz–Knudsen) + Wyslouzil 検証。詳細は 
 ## 9. 変更ログ
 
 - `2026-06-14` — 初稿。docs (theory/implementation) 作成、Phase 1 (受動スカラー骨格) 着手。
+- `2026-06-14` — **Phase 2 着手**: 方針修正 (相=過冷却液 not 固体 / 一温度 $T_v=T_d=T$ / thermally-perfect
+  定比熱近似なし / $T_d$ は輸送変数にしない / 2 温度は将来)。N2 物性 device モジュール
+  (`condensationProperties_d.cuh`, 液フィット 45K クランプ, anchors 検証) と一温度 二相 EOS
+  (`condensationEOS_d.cuh` + dependentVariables `thermalMethod==2` 分岐, `condensationInit_d` で rog 配列)
+  を実装。host unit test で g=0 厳密縮約・g>0 安定を確認。次: 核生成/成長ソース。
 - `2026-06-14` — **Phase 1 実装・検証完了**。`condensation`/`nCondSpecies` config、`registerCondensation`
   (種ごと ρg,ρQ2,ρQ1,ρQ0 + N/M/残差/point-implicit 対角/primitive)、`condensationTransport_d.{cu,cuh}`
   (ScalarTransportDesc 流用の受動スカラー移流・境界 inlet=0/他 zero-grad・更新・時間積分) を実装。main.cpp の

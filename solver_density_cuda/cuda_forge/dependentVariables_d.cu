@@ -1,6 +1,8 @@
 #include "dependentVariables_d.cuh"
 #include "thermo_d.cuh"
 #include "speciesTransport_d.cuh"  // species_roY_device_ptr() (多成分 thermalMethod==2)
+#include "condensationTransport_d.cuh"  // cond_rog_device_ptr() (二相 EOS)
+#include "condensationEOS_d.cuh"        // cond_T_from_e_onetemp (一温度 二相 温度反転)
 
 // 温度反転のクランプ範囲 (NASA-9 の有効域より広めに取り, 範囲外は外挿)
 #define DEPVAR_TMIN 50.0
@@ -14,6 +16,9 @@ __global__ void dependentVariables_d
 
  // thermally-perfect (thermalMethod==2) 用化学種データ
  const SpeciesThermo* sp , int nSpecies , flow_float** roY ,
+
+ // 非平衡凝縮 (一温度 二相 EOS)。condensation==0 のとき従来経路 (ビット不変)。
+ int condensation , int nCondSpecies , flow_float** rog ,
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -85,24 +90,50 @@ __global__ void dependentVariables_d
 
             const double e_in = (double)intE;
             const double Tg   = ((double)T[ic] > DEPVAR_TMIN) ? (double)T[ic] : 300.0; // warm start
-            const double Tnew = thermo_T_from_e(sp, nSpecies, Y, e_in, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
+
+            // 非平衡凝縮 (一温度 二相 EOS): 総液相質量分率 g を集計。condensation==0 で g=0 (従来経路)。
+            double g_liq = 0.0;
+            if (condensation == 1 && rog != nullptr) {
+                for (int s = 0; s < nCondSpecies; ++s) {
+                    double gs = (double)rog[s][ic] / (double)ro_temp;
+                    if (gs > 0.0) g_liq += gs;
+                }
+                if (g_liq > 0.99) g_liq = 0.99;   // realizability
+                if (g_liq < 0.0)  g_liq = 0.0;
+            }
+
+            // g≈0 は従来 thermo_T_from_e で厳密に単相 TP に縮約。g>0 のみ二相反転。
+            double Tnew;
+            if (g_liq > 1.0e-12) {
+                Tnew = cond_T_from_e_onetemp(sp, nSpecies, Y, e_in, g_liq, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
+            } else {
+                Tnew = thermo_T_from_e(sp, nSpecies, Y, e_in, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
+            }
 
             const double Rmix  = thermo_R_mix (sp, nSpecies, Y);
             double cpmix, hmix;
-            thermo_cph_mix(sp, nSpecies, Y, Tnew, &cpmix, &hmix);  // cp,h を 1 スイープ
+            thermo_cph_mix(sp, nSpecies, Y, Tnew, &cpmix, &hmix);  // cp,h を 1 スイープ (気相)
             const double cvmix = cpmix - Rmix;
             const double gmix  = cpmix / (cvmix > 1.0e-6 ? cvmix : 1.0e-6);
 
-            double Pnew = (double)ro_temp * Rmix * Tnew;
+            // 気相内部エネルギー e_v と混合内部エネルギー e_mix = e_v - g L(T)。
+            const double e_v   = hmix - Rmix*Tnew;
+            const double Lcond = (g_liq > 1.0e-12) ? n2_latent(Tnew) : 0.0;
+            const double e_mix = e_v - g_liq*Lcond;        // g=0 → e_v (従来と一致)
+            const double oneMg = 1.0 - g_liq;
+
+            // 圧力: 液滴は圧力を持たない。p = (1-g)ρ R_v T (g=0 → 従来 ρ R T)。
+            double Pnew = (double)ro_temp * oneMg * Rmix * Tnew;
             if (Pnew < 1.0) Pnew = 1.0;
 
             T[ic]         = (flow_float)Tnew;
             P[ic]         = (flow_float)Pnew;
             ro[ic]        = ro_temp;
-            // roe を (floor 済 ro, 反転 T) と整合させて再構成
-            roe[ic]       = (flow_float)((double)ro_temp * ((hmix - Rmix*Tnew) + (double)ek));
-            Ht[ic]        = (flow_float)(hmix + (double)ek);
-            sonic[ic]     = (flow_float)sqrt(gmix * Rmix * Tnew);
+            // roe を (floor 済 ro, 反転 T, 混合内部エネルギー) と整合させて再構成
+            roe[ic]       = (flow_float)((double)ro_temp * (e_mix + (double)ek));
+            // 総エンタルピー Ht = e_mix + p/ρ + ek (g=0 → hmix+ek と一致)
+            Ht[ic]        = (flow_float)(e_mix + (double)Pnew/(double)ro_temp + (double)ek);
+            sonic[ic]     = (flow_float)sqrt(gmix * Rmix * Tnew);  // 気相 frozen 音速 (loose coupling 近似)
             gam_array[ic] = (flow_float)gmix;
             cp_array[ic]  = (flow_float)cpmix;
             Rmix_array[ic]= (flow_float)Rmix;
@@ -140,6 +171,9 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         // thermally-perfect 用化学種データ。多成分 (M2, nSpecies>=2) では device roY 配列を渡し、
         // 単成分のときは nullptr (混合則は Y={1} に縮退)。
         thermo_species_device_ptr() , cfg.nSpecies , species_roY_device_ptr() ,
+
+        // 非平衡凝縮 (二相 EOS)。condensation==0 で rog=nullptr/g=0 → 従来経路ビット不変。
+        cfg.condensation , var.nCondSpeciesRegistered , cond_rog_device_ptr() ,
 
         // mesh structure
         msh.nCells_all , msh.nCells ,

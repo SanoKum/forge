@@ -3,6 +3,11 @@
 #include "scalarTransport_d.cuh"
 
 #include <string>
+#include <vector>
+
+// device rog (液相質量分率の保存量) ポインタ配列。二相 EOS が読む。condensationInit_d で構築。
+static flow_float** g_rog_dev = nullptr;
+static int          g_nCond   = 0;
 
 namespace {
 
@@ -74,6 +79,31 @@ __global__ void cond_dirichlet_zero_boundary_d(
 }
 
 }  // namespace
+
+void condensationInit_d(solverConfig& cfg, variables& var)
+{
+    (void)cfg;
+    if (!condensationEnabled(var)) {
+        g_rog_dev = nullptr;
+        g_nCond = 0;
+        return;
+    }
+    g_nCond = var.nCondSpeciesRegistered;
+
+    // 各凝縮種の保存量 rog_{s} の device ポインタを集める (registerCondensation の命名規約)。
+    std::vector<flow_float*> hrog(g_nCond);
+    for (int s = 0; s < g_nCond; ++s) {
+        hrog[s] = var.c_d["rog_" + std::to_string(s)];
+    }
+    const size_t pbytes = g_nCond * sizeof(flow_float*);
+    gpuErrchk( cudaMalloc((void**)&g_rog_dev, pbytes) );
+    gpuErrchk( cudaMemcpy(g_rog_dev, hrog.data(), pbytes, cudaMemcpyHostToDevice) );
+
+    std::cout << "condensationInit_d: built device rog[] for nCondSpecies=" << g_nCond << "\n";
+}
+
+flow_float** cond_rog_device_ptr() { return g_rog_dev; }
+int          cond_num_species()    { return g_nCond; }
 
 void condensationPrimitive_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
 {
