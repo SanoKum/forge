@@ -1,6 +1,7 @@
 #include "convectiveFlux_d.cuh"
 #include "lowMachPrecond_d.cuh"
 #include "speciesTransport_d.cuh"  // species_roY_device_ptr()
+#include "condensationProperties_d.cuh"  // n2_latent (二相エネルギー流束の潜熱補正)
 
 // free-stream 保存: 対流流束の圧力項を (p_tilde - d_pRef)*s で組むための基準静圧。
 // wrapper で cfg.pRef を cudaMemcpyToSymbol。既定 0.0 で従来挙動 (ビット不変)。
@@ -239,6 +240,10 @@ __global__ void SLAU_d
  flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
  flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
 
+ // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピー H=cpT-gL+ek に補正する。
+ // g_total==nullptr (凝縮 off) のとき補正せず単相のまま (ビット不変)。cp_cpg は CPG 比熱。
+ flow_float cp_cpg, flow_float* g_total, flow_float* T_cell,
+
  // mesh structure
  geom_int nCells,
  geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,
@@ -407,6 +412,16 @@ __global__ void SLAU_d
         } else {
             h_p = ga*P_L/((ga-1.0)*ro_L) + 0.5*velocity2_L;
             h_m = ga*P_R/((ga-1.0)*ro_R) + 0.5*velocity2_R;
+            // 非平衡凝縮 (二相): 単相 h=cp(1-g)T+ek を二相全エンタルピー h=cpT-gL+ek に補正。
+            //   差 = g(cpT - L)。これを落とすとエネルギー流束が潜熱分を運ばず全エンタルピー非保存になる。
+            //   c_hat (音速) は気相近似で単相のまま。g・T はセル値(1次, g は元来1次風上移流で整合)。
+            //   g_total==nullptr (凝縮 off) で従来 (ビット不変)。
+            if (g_total != nullptr) {
+                const flow_float gL0 = g_total[ic0], gR0 = g_total[ic1];
+                const flow_float TL0 = T_cell[ic0],  TR0 = T_cell[ic1];
+                h_p += gL0*(cp_cpg*TL0 - (flow_float)n2_latent((double)TL0));
+                h_m += gR0*(cp_cpg*TR0 - (flow_float)n2_latent((double)TR0));
+            }
         }
 
         //flow_float Vn_p = ((Ux[ic0])*sxx +(Uy[ic0])*syy +(Uz[ic0])*szz)/sss;
@@ -2682,6 +2697,11 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     // -----------------------
     // *** sum over planes ***
     // -----------------------
+    // 非平衡凝縮: 二相エネルギー流束補正用の総液相分率 g。off / 未登録なら nullptr (補正なし)。
+    // 現状 nCondSpecies=1 (g_0 が総 g)。多成分は総和 g 配列を別途用意する (TODO)。
+    flow_float* cond_g = nullptr;
+    if (cfg.condensation == 1 && var.nCondSpeciesRegistered >= 1) cond_g = var.c_d["g_0"];
+
     if (cfg.solver == "SLAU" || cfg.solver == "SLAU2") {
         int slauVariant = (cfg.solver == "SLAU2") ? 2 : 1;
         SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
@@ -2693,6 +2713,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
             species_roY_device_ptr(),
             var.c_d["Rmix"],
+            cfg.cp, cond_g, var.c_d["T"],
 
             // mesh structure
             msh.nCells,
