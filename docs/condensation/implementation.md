@@ -94,13 +94,26 @@ $\kappa,\chi,\xi_g$ で変わるため一般 EOS Roe (Vinokur–Montagné 流) �
 
 ---
 
-## 5. 一温度 二相 EOS の温度逆算 (Phase 2 — 実装済)
+## 5. 一温度 二相 EOS の温度逆算 (Phase 2)
+
+### 実装ロードマップ
+
+論文 (Lin 2014) は気相を**完全理想気体 (calorically perfect, $c_p$ 一定)** で扱う。これに合わせ:
+
+1. **初期実装 = CPG 一温度 二相 EOS** (既定)。`thermalMethod 0` 分岐に追加。case/34 の既存初期場
+   (CPG 基準 roe) がそのまま使え、TP 初期化問題を回避。**$L(T)$ の温度依存は入れる**。
+2. **後続 A = 液滴温度独立** ($T_d$): Hill のエネルギーバランスで $T_v\ne T_d$ の 2 温度モデル。
+3. **後続 B = thermally perfect 凝縮**: 気相 $e_v(T)$ を NASA-9 thermo で評価する版
+   (`thermalMethod 2` 分岐、`cond_T_from_e_onetemp`、実装・unit 検証済)。$T_d$ 独立と組み合わせ可。
+
+両分岐 (CPG/TP) を [condensationEOS_d.cuh](../../solver_density_cuda/cuda_forge/condensationEOS_d.cuh)
+に持ち、case/34 は CPG (`thermalMethod 0`) で進める。以下は CPG (初期実装) を基準に記述する。
+
+### CPG 一温度 二相 EOS (`thermalMethod 0`, 既定)
 
 [dependentVariables_d.cu](../../solver_density_cuda/cuda_forge/dependentVariables_d.cu) の
-**`thermalMethod==2` (thermally-perfect) 分岐**に二相 EOS を追加した
-([condensationEOS_d.cuh](../../solver_density_cuda/cuda_forge/condensationEOS_d.cuh) の
-`cond_T_from_e_onetemp`)。**凝縮ケースは `thermalMethod 2` が必須** (定比熱近似は使わない。気相
-$e_v(T)$ は NASA-9 thermo を再利用。NASA-9/CEA は ~200K 未満は外挿だが N2 は $c_p$ 平坦で許容)。
+`thermalMethod==0` 分岐に追加 (`cond_T_from_e_cpg`)。気相 $e_v(T)=c_v T$ ($c_v=c_p/\gamma$ 一定)、
+液相 $e_l=e_v-L(T)$ より $e=c_v T - g L(T)$。$T$ を Newton で反転、$p=(1-g)\rho R T$ ($R=(\gamma-1)c_v$)。
 
 ### 一温度近似 (T_v=T_d=T)
 
@@ -110,33 +123,34 @@ T 1 変数 Newton で、拡張時に 2×2 Newton へ置換できる設計。
 
 ### 混合内部エネルギーと温度反転
 
-論文形 $e=(1-g)e_v(T)+g\,e_l(T)$、液相 $e_l(T)=e_v(T)-L(T)$ より $e=e_v(T)-g\,L(T)$。保存量から
-$e_{in}=\rho e/\rho-\tfrac12|\mathbf u|^2$ を作り、
+保存量から $e_{in}=\rho e/\rho-\tfrac12|\mathbf u|^2$ を作り、
 
 $$
-G(T)=e_v(T)-g\,L(T)-e_{in}=0,\quad G'(T)=c_v(T)-g\,L'(T)
+G(T)=c_v T - g\,L(T)-e_{in}=0,\quad G'(T)=c_v - g\,L'(T)
 $$
 
-をセルごとに Newton で解く。$g$ は総液相質量分率 $\sum_s \rho g_s/\rho$ ($g_s$ は device `rog` 配列、
-`condensationInit_d` が構築)。$g=0$ で $G=e_v(T)-e_{in}$ となり `thermo_T_from_e` と一致 → **単相 TP に
-厳密縮約** (実装は $g<10^{-12}$ で従来 `thermo_T_from_e` を呼び bit 同一を保証)。
+をセルごとに Newton で解く ($L'$ は数値微分)。$g$ は総液相質量分率 $\sum_s \rho g_s/\rho$ ($g_s$ は
+device `rog` 配列、`condensationInit_d` が構築)。$g<10^{-12}$ で従来 CPG 経路 ($T=e_{in}/c_v$) を呼び、
+**単相 CPG に bit 同一**を保証 (圧力も $(1-g)=1$ で従来 $\rho R T$ と一致)。$\rho e$・$Ht$ は
+$e_{mix}=c_v T-gL$ で再構成、frozen 音速は気相 $\sqrt{\gamma R T}$ (loose coupling 近似)。
 
-### 圧力 (実在気体補正なし)
-
-液滴は圧力を持たないとして $p=(1-g)\rho R_v T$ (van der Waals 補正は将来オプション)。
-$\rho e$・$Ht$ も $e_{mix}=e_v-gL$ で再構成。frozen 音速は当面気相 $\sqrt{\gamma_v R_v T}$ (loose coupling 近似)。
+TP 版 (`thermalMethod 2`, 後続 B) は $e_v(T)$ を NASA-9 thermo (`thermo_cph_mix`) で評価する以外は同形
+(`cond_T_from_e_onetemp`)、$g=0$ で `thermo_T_from_e` に厳密縮約。
 
 ### 検証 (host unit test 済)
 
-- **(b) g=0 厳密縮約**: `cond_T_from_e_onetemp(g=0)` が `thermo_T_from_e` と T 完全一致 (diff 0、50–300K)。
-- **(c) g>0 安定・物理**: $e_{in}=e_v(50\text{K})$ 固定で $g$ を 0→0.08 に上げると潜熱で $T$ 単調上昇
-  (50→72K、論文 40→56K と同オーダー)、Newton 残差 ~$10^{-9}$、$p=(1-g)\rho RT$ 正。
-- 既存 `thermalMethod 0/2` 単相経路は未改変 (Phase 1 の run_0004=thermalMethod 0 は不変)。
+- **(b) g=0 厳密縮約**: CPG `cond_T_from_e_cpg(g=0)` が $e_{in}/c_v$ と完全一致 (diff 0、40–290K)。
+  TP `cond_T_from_e_onetemp(g=0)` も `thermo_T_from_e` と一致 (diff 0)。
+- **(c) g>0 安定・物理**: $e_{in}=c_v\cdot50\text{K}$ 固定で $g$ を 0→0.08 に上げると潜熱で $T$ 単調上昇
+  (50→72.3K、論文 40→56K と同オーダー)、Newton 残差 ~$10^{-9}$、$p=(1-g)\rho RT$ 正。CPG と TP はほぼ同値
+  (N2 は $c_p$ 平坦)。
+- 既存 `thermalMethod 0/2` 単相経路は未改変 (Phase 1 の run_0004 は不変)。
 
-### 将来 (二温度拡張)
+### 後続拡張
 
-$e=(1-g)e_v(T_v)+g\,e_l(T_d)$ と Hill $T_d$ 式を組み、$(T_v,T_d)$ の 2 変数局所 Newton へ。
-気相は当面 1 成分だが、多成分凝縮では $e=e_v-\sum_s g_s L_s(T)$、圧力の $R_v$ も気相混合で一般化する。
+- **A 液滴温度独立**: $e=(1-g)e_v(T_v)+g\,e_l(T_d)$ と Hill $T_d$ 式を組み、$(T_v,T_d)$ の 2 変数局所
+  Newton へ ($T_d$ は局所量で輸送変数にはしない)。
+- **B thermally perfect**: 上記 TP 版を既定化。多成分凝縮では $e=e_v-\sum_s g_s L_s(T)$、$R_v$ も気相混合で一般化。
 
 ---
 

@@ -138,21 +138,56 @@ __global__ void dependentVariables_d
             cp_array[ic]  = (flow_float)cpmix;
             Rmix_array[ic]= (flow_float)Rmix;
         } else {
-            // ---- calorically perfect gas (従来経路, ビット不変) ----
-            T_temp = max(intE/(cp/gamma), (flow_float)1.0e-4f);
-            P_temp = max((gamma-1.0)*(roe[ic]-ro_temp*ek),(flow_float)1.0f);
+            // ---- calorically perfect gas ----
+            // 非平衡凝縮 (一温度 二相 EOS, CPG): 総液相質量分率 g を集計。condensation==0 で g=0 (従来経路)。
+            double g_liq = 0.0;
+            if (condensation == 1 && rog != nullptr) {
+                for (int s = 0; s < nCondSpecies; ++s) {
+                    double gs = (double)rog[s][ic] / (double)ro_temp;
+                    if (gs > 0.0) g_liq += gs;
+                }
+                if (g_liq > 0.99) g_liq = 0.99;   // realizability
+                if (g_liq < 0.0)  g_liq = 0.0;
+            }
 
-            T[ic] = T_temp;
-            P[ic] = P_temp;
+            const double cv = (double)cp/(double)gamma;            // cv = cp/γ
+            const double Rgas = ((double)gamma - 1.0)*cv;          // R = cp - cv = (γ-1)cv
 
-            ro[ic] = ro_temp;
-            roe[ic] = P_temp/(gamma-1.0) + ro_temp*ek;
+            if (g_liq > 1.0e-12) {
+                // 二相: e = cv T - g L(T) = intE を Newton で反転、p=(1-g)ρRT。
+                const double e_in = (double)intE;
+                const double Tguess = (double)max(intE/(cp/gamma), (flow_float)1.0e-4f);
+                const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Tguess);
+                const double L = n2_latent(Tn);
+                const double e_mix = cv*Tn - g_liq*L;             // = e_in
+                const double oneMg = 1.0 - g_liq;
+                double Pn = oneMg*(double)ro_temp*Rgas*Tn;
+                if (Pn < 1.0) Pn = 1.0;
 
-            Ht[ic] = roe[ic]/ro_temp + P_temp/ro_temp;
+                T[ic]   = (flow_float)Tn;
+                P[ic]   = (flow_float)Pn;
+                ro[ic]  = ro_temp;
+                roe[ic] = (flow_float)((double)ro_temp*(e_mix + (double)ek));
+                Ht[ic]  = (flow_float)(e_mix + Pn/(double)ro_temp + (double)ek);
+                sonic[ic] = (flow_float)sqrt((double)gamma*Rgas*Tn); // 気相 frozen 音速 (loose coupling)
+                Rmix_array[ic] = (flow_float)Rgas;
+            } else {
+                // 単相 CPG (従来経路, ビット不変)
+                T_temp = max(intE/(cp/gamma), (flow_float)1.0e-4f);
+                P_temp = max((gamma-1.0)*(roe[ic]-ro_temp*ek),(flow_float)1.0f);
 
-            sonic[ic] = sqrt(gamma*P_temp/ro_temp);
-            // CPG の混合比気体定数 R = cp - cv = (γ-1)cp/γ (定数。SLAU 単成分経路は未使用だが整合のため埋める)
-            Rmix_array[ic] = (gamma-1.0)*cp/gamma;
+                T[ic] = T_temp;
+                P[ic] = P_temp;
+
+                ro[ic] = ro_temp;
+                roe[ic] = P_temp/(gamma-1.0) + ro_temp*ek;
+
+                Ht[ic] = roe[ic]/ro_temp + P_temp/ro_temp;
+
+                sonic[ic] = sqrt(gamma*P_temp/ro_temp);
+                // CPG の混合比気体定数 R = cp - cv = (γ-1)cp/γ (定数。SLAU 単成分経路は未使用だが整合のため埋める)
+                Rmix_array[ic] = (gamma-1.0)*cp/gamma;
+            }
         }
 
         k[ic] = max(roK[ic]/ro_temp, static_cast<flow_float>(0.0));
