@@ -34,7 +34,7 @@ __host__ __device__ inline void cond_vapor_state(
 __global__ void condensation_source_d(
     geom_int nCells,
     int condModel, int carrier, double Rw, double M,
-    int kantrowitz, int growthModel,
+    int kantrowitz, int growthModel, double gyarC,
     flow_float cp_cpg, flow_float gamma_cpg,
     double Jmax, double dg_max, double dT_max,
     geom_float* vol, flow_float* dt_local,
@@ -84,7 +84,7 @@ __global__ void condensation_source_d(
     double r_bar = (q0 > 1.0e-30) ? (q1/q0) : rstar;
     double drdt = 0.0;
     if (q0 > 1.0e-30 && rstar > 0.0 && r_bar > rstar) {
-        drdt = cond_growth(cprops, Td, pv, r_bar, rstar, growthModel, p_gas);
+        drdt = cond_growth(cprops, Td, pv, r_bar, rstar, growthModel, p_gas, gyarC);
         if (drdt < 0.0) drdt = 0.0;
     }
     const double rho_l = cond_rho_cond(cprops, Td);
@@ -115,7 +115,7 @@ __global__ void condensation_source_d(
         cond_vapor_state(carrier, rod, Pd, Td+dTp, g, Yw, Rw, &pvp, &rvp);
         double a0,a1,a2,ag;
         cond_source_vector(cprops, Td+dTp, pvp, rvp, q0, q1, q2, &a0,&a1,&a2,&ag,
-                           kantrowitz, growthModel, gamma_gas, p_gas);
+                           kantrowitz, growthModel, gamma_gas, p_gas, gyarC);
         if (ag < 0.0) ag = 0.0;
         const double dSgdT  = (ag - Sg)/dTp;
         const double dTdrog = (L - (carrier?Rw:Rg)*Td)/(rod*cvg);
@@ -126,7 +126,7 @@ __global__ void condensation_source_d(
             const double dq1 = (q1 > 0.0 ? 0.01*q1 : 1.0e-3);
             double b0,b1,b2,bg;
             cond_source_vector(cprops, Td, pv, rho_v, q0, q1+dq1, q2, &b0,&b1,&b2,&bg,
-                               kantrowitz, growthModel, gamma_gas, p_gas);
+                               kantrowitz, growthModel, gamma_gas, p_gas, gyarC);
             double sjq1 = -theta*(b1 - SQ1)/dq1;
             if (sjq1 < 0.0) sjq1 = 0.0;
             sj_Q1[ic] = (flow_float)sjq1;
@@ -166,7 +166,7 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
         condensation_source_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
             msh.nCells,
             cfg.condModel, carrier, Rw, M,
-            cfg.condKantrowitz, cfg.condGrowthModel,
+            cfg.condKantrowitz, cfg.condGrowthModel, cfg.condGyarmathyC,
             cfg.cp, cfg.gamma,
             Jmax, dg_max, dT_max,
             var.c_d["volume"], var.c_d["dt_local"],

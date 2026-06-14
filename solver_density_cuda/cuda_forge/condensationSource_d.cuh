@@ -64,7 +64,7 @@ __host__ __device__ inline void cond_nucleation(
 //   p_gas: Kn 用の気相全圧 (<0 で p_v にフォールバック=純蒸気)。k_gas は n2_kgas(T) (キャリア N2 熱伝導率)。
 __host__ __device__ inline double cond_growth(
     const CondSpeciesProps& cp, double T, double p_v, double r_bar, double rstar,
-    int growthModel = 0, double p_gas = -1.0)
+    int growthModel = 0, double p_gas = -1.0, double gyarC = 3.18)
 {
     if (r_bar <= 0.0) return 0.0;
     const double R    = cp.R;
@@ -73,13 +73,14 @@ __host__ __device__ inline double cond_growth(
     const double pK   = (p_gas > 0.0) ? p_gas : p_v;   // Kn 用は全圧 (carrier)、純蒸気では p_v
     if (growthModel == 1) {
         // Gyarmathy 熱伝導律速 (種共通)。過飽和 → 過冷却 ΔT_sub=(R T²/L)ln S を駆動力に。
+        // Knudsen 補正 1/(1+gyarC·Kn): gyarC は Gyarmathy 標準 3.18 (config condGyarmathyC で可変)。
         if (p_v <= psat) return 0.0;
         const double driving = log(p_v / (psat > 1.0e-300 ? psat : 1.0e-300));
         const double L   = cond_latent(cp, T);
         const double k   = n2_kgas(T);                 // キャリア (N2) 熱伝導率
         const double lam = cond_mean_free_path(T, pK, R);
         const double Kn  = lam/(2.0*r_bar);
-        const double fac = (1.0 - rstar/r_bar) / (r_bar*(1.0 + 3.18*Kn));
+        const double fac = (1.0 - rstar/r_bar) / (r_bar*(1.0 + gyarC*Kn));
         return (1.0/rho_l)*fac*(k*R*T*T/(L*L))*driving;
     }
     if (cp.model == COND_MODEL_H2O) {
@@ -104,13 +105,14 @@ __host__ __device__ inline void cond_source_vector(
     const CondSpeciesProps& cp, double T, double p_v, double rho_v,
     double roQ0, double roQ1, double roQ2,
     double* SQ0, double* SQ1, double* SQ2, double* Sg,
-    int kantrowitz = 0, int growthModel = 0, double gamma_gas = 1.4, double p_gas = -1.0)
+    int kantrowitz = 0, int growthModel = 0, double gamma_gas = 1.4, double p_gas = -1.0,
+    double gyarC = 3.18)
 {
     if (rho_v < 0.0) rho_v = 0.0;
     double J, rstar;
     cond_nucleation(cp, T, p_v, rho_v, &J, &rstar, kantrowitz, gamma_gas);
     const double r_bar = (roQ0 > 1.0e-30) ? (roQ1/roQ0) : rstar;
-    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas) : 0.0;
+    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas, gyarC) : 0.0;
     const double rho_l = cond_rho_cond(cp, T);
     *SQ0 = J;
     *SQ1 = J*rstar + roQ0*drdt;
