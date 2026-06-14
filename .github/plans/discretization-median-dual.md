@@ -253,3 +253,18 @@
   `case/29.bell_vs_conical/run_dual_eul_{conical_node_srcoff_keepshift, bell_node_m3, conical_cell_m3}/`。
   **残**: explicit は startup の exit-wall 角で依然脆く発散 (cell explicit も同様、軸でなく supersonic-startup ロバスト性) →
   implicit が実用。viscous (軸対称) を次に検証。
+- `2026-06-14` — **viscous (軸対称) node は exit-lip corner で発散 (node 固有・軸とは別問題)**。corner 修正後に
+  node 粘性 (laminar, viscMethod=1) implicit を再検証 → **step5-8 で `ro` NaN**。detectNaN ダンプの空間特定で
+  **NaN 種は exit 出口リップ角** (x∈[0.073,0.086], 出口 x=0.0862; r∈[0.029,0.033], 壁 rmax=0.0331。最下流 NaN セルは
+  (0.0859,0.0328)=出口リップそのもの。NaN の 292/309 が壁近傍 r>0.9rmax、**軸近傍 r<0.05rmax は 0**)。
+  → **軸 corner 修正は無関係に効いており (軸では発散していない)、これは別の「出口リップ角 CV」問題**。
+  - **node 固有と確定**: 同一メッシュ・同一設定の **cell 粘性は完走・NaN 無し** (`run_dual_visc_conical_cell_m3`,
+    step7999 まで rms_ro=2.1e-5)。node だけ exit-lip で爆発。
+  - **cfl では治らない (構造問題)**: cfl 2.0→0.3 で発散が step5→112 に遅延するだけで最終的に NaN。
+    → startup transient の stiffness でなく、出口リップの極小 CV (vol~2.5e-9) で no-slip 壁ゴースト (Ux=Uy=0) と
+    supersonic outlet ゴースト (外挿) が同一 CV に同居し、粘性応力 (超音速→0 の du/dy を極小 CV 幅で評価) が爆発する
+    構造的問題。inlet-axis corner と同類の「境界∩境界の極小 corner CV」issue (軸でなく壁∩出口版)。
+  - **残課題 (確定)**: 出口リップ等の boundary∩boundary 角 CV のコヒーレント処理。候補 (inlet-axis と共通):
+    角 CV を隣接へ merge して極小 CV を作らない / 角専用の粘性フラックス制限・dt フロア / wall BC と outlet BC の
+    ゴースト整合 (角では wall 優先で no-slip を満たす)。run: `run_dual_visc_conical_node_{cornerfix(o2),cf_o1,cf_cfl03,
+    cf_nan,cf_cfl03_nan}/` (全て発散、NaN 種=exit-lip)、cell 比較 `run_dual_visc_conical_cell_m3/` (収束)。
