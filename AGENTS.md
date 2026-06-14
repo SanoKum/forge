@@ -32,7 +32,7 @@
 
 `solverConfig.yaml` の `convMethod`・`limiter` などの数値設定を変更・確認するときは、必ず `.github/forge-solver-settings.md` を参照すること。設定値の意味を記憶や推測で判断しないこと。
 
-**新規計算の投入時、および計算が発散 (NaN / 残差爆発) したときは、まず [`.github/forge-divergence-and-startup.md`](.github/forge-divergence-and-startup.md) を参照し、そのチェックリストと段階起動手順に従うこと。** 発散の大半は物理やメッシュでなく投入設定 (初期値が入口流れと不整合 / 超音速向け BC を亜音速に使用 / 初手から 2 次移流・乱流・no-slip / 陽解法+定常 / 非直交での free-stream 桁落ち) が原因であり、易しい条件で収束させてから引き継ぎ計算で段階的に上げるのが基本。
+**新規計算の投入時、および計算が発散 (NaN / 残差爆発) したときは、まず [`.github/forge-divergence-and-startup.md`](.github/forge-divergence-and-startup.md) を参照し、そのチェックリストと段階起動手順に従うこと。** 発散の大半は物理やメッシュでなく投入設定 (初期値が入口流れと不整合 / 超音速向け BC を亜音速に使用・出口逆流 Pt/Tt 未設定 / 初手から 2 次移流・乱流・no-slip / 非直交での free-stream 桁落ち) が原因であり、易しい条件で収束させてから引き継ぎ計算で段階的に上げるのが基本。
 
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。
 また、計算を実行した場合は `residual_history.csv` から `residual_history.png` も生成して残すこと。

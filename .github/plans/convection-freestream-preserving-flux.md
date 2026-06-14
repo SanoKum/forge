@@ -74,12 +74,12 @@ forge (float32) は非直交メッシュで一様場 (free-stream) を保持で�
 **backstep の動く実メッシュに同設定を載せても発散** したことで、原因は **実行設定** と確定。
 真因は3つ (いずれも pRef/コンバータ/メッシュとは無関係):
 
-1. **explicit (timeIntegration 3) + 定常 (unsteady=0) は局所時間刻みで不安定**。
-   → 定常は **implicit (11, blockDPLUR, cfl_pseudo≈1, nStepInner≈10)**、explicit なら unsteady=1。
-   (静止場は流れが無いので explicit+定常でも安定 = 当初 free-stream に見えていた)。
-2. **静止場に速度入口を当てると危険**。初期場の流速の向き・速さを入口とおおむね合わせる。
-3. **outlet_statPress は逆流 (Un<0) 分岐で Ptb/Ttb を使う**。Ps のみ指定だと Pt=0→ρ=0→NaN。
+1. **静止場に速度入口を当てると危険**。初期場の流速の向き・速さを入口とおおむね合わせる
+   (最大の主因。fan/StaticMixer の早期発散はこれ)。
+2. **outlet_statPress は逆流 (Un<0) 分岐で Ptb/Ttb を使う**。Ps のみ指定だと Pt=0→ρ=0→NaN。
    逆流用 Pt/Tt を設定する (StaticMixer の混合域過渡逆流での step137 発散はこれが原因)。
+3. **初手から難条件 (2次移流・乱流・no-slip) にしない**。段階起動 (引き継ぎ) で上げる。
+   時間積分は陰解法 (blockDPLUR) が定常収束に有利だが、陽解法+定常も可 (発散主因ではない)。
 
 実証: **fan (Fluent hex) 完全収束** (case/32 run_0011_proper)、
 **StaticMixer (Fluent tet+prism) 300歩健全完走** (case/31 run_0012_backflow)。
@@ -89,8 +89,9 @@ hex/tet/prism の Fluent メッシュが forge で計算可能と実証。レシ
 ## 変更ログ
 
 - 2026-06-14: SLAU に pRef 差分を実装。case/33 (歪みhex 静止) で free-stream を machine zero 化。
-- 2026-06-14: 「流れあり発散」を切り分け、原因は実行設定 (explicit+定常 / 静止IC / 逆流 Pt/Tt 欠落)
-  と確定。pRef は静止場の free-stream にのみ寄与。Fluent メッシュ (fan/StaticMixer) の実行を実証。
+- 2026-06-14: 「流れあり発散」を切り分け、原因は実行設定 (静止IC と入口流れの不整合 / 出口逆流
+  Pt/Tt 欠落 / 初手から難条件) と確定。pRef は静止場の free-stream に寄与。陰解法は収束に有利だが
+  陽解法+定常も可 (発散主因ではない)。Fluent メッシュ (fan/StaticMixer) の実行を実証。
 
 ## 変更ログ
 

@@ -9,8 +9,6 @@
 
 - [ ] **初期値は妥当か**。静止場 (U=0) に速度/圧力入口で流れを当てていないか。初期場の流速の
       向き・大きさを入口流れとおおむね一致させたか (例: 入口 `Ux=50` → 初期場も `U≈(50,0,0)`)。
-- [ ] **定常 (`unsteady: 0`) を陽解法 (`timeIntegration: 3`) で回していないか**。定常は
-      **陰解法 (`timeIntegration: 11`, `blockDPLUR: 1`)** を使う。陽解法は `unsteady: 1` (時間精度) で。
 - [ ] **出口 BC が流れに合っているか**。亜音速出口に `outflow` (超音速向け) を使っていないか →
       **`outlet_statPress`** を使う。`outlet_statPress` には**逆流用 `Pt`/`Tt` を必ず設定**したか
       (`Ps` だけだと逆流発生時に `Pt=0`→密度0→NaN)。
@@ -42,9 +40,10 @@
   初手から使うと、未発達な場で overshoot して発散しやすい。
 - → **段階起動** (下記 §2)。
 
-### (D) 陽解法 + 定常 = 局所時間刻みで不安定
-- `timeIntegration: 3` (陽解法 RK3) + `unsteady: 0` (定常) は局所時間刻みになり、実メッシュで
-  発散しやすい (過去の Fluent メッシュ発散の主因)。**定常は陰解法 `timeIntegration: 11`**。
+### (D) 時間積分の選択 (発散主因ではないが収束効率に効く)
+- 定常は陽解法 (`timeIntegration: 3`)・陰解法 (`timeIntegration: 11`, `blockDPLUR: 1`) のどちらも
+  使える。陰解法 (block-DPLUR) は大きな実効 CFL を取れて定常収束が速い/頑健なことが多いので、
+  難しいケースの収束には陰解法が有利。陽解法でも回る。
 
 ### (E) 非直交メッシュの free-stream 桁落ち
 - 非直交セルでは一様流の圧力流束 Σ(P·s) が float32 で厳密相殺せず偽の運動量源になる。
@@ -55,8 +54,9 @@
 新規ケース、特に複雑形状/非構造メッシュでは、いきなり最終条件で回さず段階的に上げる:
 
 1. **第1段 (起動・易)**: `convMethod: 0` (1 次風上) / 層流 (`LESorRANS: 0`) / 壁は `slip` か
-   gentle / `outlet_statPress`(+逆流 Pt/Tt) / 入口に合う一様初期場 / 陰解法 (`timeIntegration: 11`,
-   `cfl_pseudo`≈1, `nStepInner`≈10) / 非直交なら `pRef`。これで残差を数桁落として安定な場を作る。
+   gentle / `outlet_statPress`(+逆流 Pt/Tt) / 入口に合う一様初期場 / 非直交なら `pRef`。
+   時間積分は陰解法 (`timeIntegration: 11`, `cfl_pseudo`≈1, `nStepInner`≈10) が定常収束に有利
+   (陽解法 `timeIntegration: 3` でも可)。これで残差を数桁落として安定な場を作る。
 2. **第2段 (精度↑)**: 第1段の収束場を**引き継ぎ** (その `res_*.h5` を初期場にする)、
    `convMethod` を 2 次 (1=2ndUp / 2=MUSCL) に上げる。
 3. **第3段 (物理↑)**: さらに引き継ぎ、`LESorRANS: 2` (RANS/SST) や no-slip 壁を入れる。

@@ -23,6 +23,8 @@ def main():
     ap.add_argument("--all", action="store_true", help="phase で絞らず全行")
     ap.add_argument("--cols", nargs="*", default=None,
                     help="描画する列を明示 (既定: 存在する rms_* 全部)")
+    ap.add_argument("--abs", action="store_true",
+                    help="絶対残差を描く (既定は初手残差を基準とした相対残差)")
     args = ap.parse_args()
 
     import matplotlib
@@ -56,10 +58,15 @@ def main():
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
     for c in cols:
-        ys = [v(r.get(c)) + 1e-300 for r in rows]
-        ax.semilogy(xs, ys, marker=".", ms=3, label=c)
+        ys = [v(r.get(c)) for r in rows]
+        if not args.abs:
+            # 相対残差: 初手 (最初の有限・非ゼロ値) を基準に正規化
+            ref = next((y for y in ys if math.isfinite(y) and y > 0.0), None)
+            if ref:
+                ys = [y / ref for y in ys]
+        ax.semilogy(xs, [y + 1e-300 for y in ys], marker=".", ms=3, label=c)
     ax.set_xlabel("step")
-    ax.set_ylabel("rms residual")
+    ax.set_ylabel("rms residual" if args.abs else "rms residual / initial (相対残差)")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
     ax.set_title(str(path.resolve().parent.name))
