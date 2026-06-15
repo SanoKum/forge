@@ -151,6 +151,7 @@ public:
     int condKantrowitz = 0;  // 核生成の Kantrowitz 非等温補正。0: off (等温 CNT, 既定), 1: on
     int condGrowthModel = 0; // 成長則。0: 既定 (H2O=Hertz-Knudsen, N2=Goodheart), 1: Gyarmathy(熱伝導律速)
     double condGyarmathyC = 3.18; // Gyarmathy の Knudsen 補正係数 1/(1+C·Kn)。標準 3.18 (感度評価用に可変)
+    int condTwoTemp = 0;     // 液滴温度 T_d 考慮 (Hertz-Knudsen 経路, 準定常 Hill バランス)。0: 一温度(既定), 1: 二温度
       //          int isCompressible = physProp["isCompressible"].as<int>();
       //          if (isCompressible == 0) flow_float ro = physProp["isCompressible"]["ro"].as<flow_float>();
       //          flow_float visc = physProp["visc"].as<flow_float>();

@@ -121,6 +121,33 @@ $\beta_d$ が $p_d/\sqrt{T_d}$ を通じて $T_d$ に依存し、$p_d$ も $T_d,
 $T_d$ を反復で求める。$T_d$ は成長則 (式 3) と Kelvin 式にのみ入り、**核生成には直接入らない** (核生成は
 バルク $T$ 上昇を介した間接ループでのみ抑制される)。
 
+### 実装した準定常 $T_d$ 閉包 (carrier + Hertz–Knudsen, `condTwoTemp=1`)
+
+上の Hill 式は純蒸気 (N2) 向けの整理である。希薄水/N2 (carrier) では、**準定常の液滴エネルギーバランス**
+「凝縮による潜熱解放 = 液滴から気相 (キャリア) への熱伝導」を直接解く形で実装した。Hertz–Knudsen
+(質量律速) 成長に対し、質量フラックス $j$ と熱フラックスを連立する:
+
+$$
+\underbrace{L\,j(T_d)}_{\text{潜熱解放}} = \underbrace{h\,(T_d-T_g)}_{\text{気相への熱伝導}},\qquad
+j(T_d)=\frac{\alpha\,[\,p_v-p_d(T_d)\,]}{\sqrt{2\pi R T_g}},\qquad
+h=\frac{\lambda_g}{r\,(1+3.18\,Kn)}
+$$
+
+液滴表面の平衡蒸気圧は **液滴温度 $T_d$ で** Kelvin 補正: $p_d(T_d)=p_{sat}(T_d)\exp\!\{2\sigma/(\rho_l R T_d r)\}$。
+$\lambda_g$ はキャリア (N2) の熱伝導率、$Kn=\lambda/2r$ (平均自由行程は全圧基準)。この 1 変数非線形方程式
+$F(T_d)=L\,j(T_d)-h(T_d-T_g)=0$ を **Newton 法** ($\partial p_{sat}/\partial T_d$ と Kelvin 項の微分を含む解析勾配,
+$T_d\ge T_g$ にクランプ) で解き、得た $T_d$ で成長率 $\dot r=j(T_d)/\rho_l$ を評価する。
+
+- **効果**: 自己加熱で $T_d>T_g$ となり $p_d(T_d)>p_d(T_g)$、実効過飽和 $p_v-p_d$ が下がるため**成長が遅くなる**
+  (一温度 $T_d=T_g$ は過冷却を過大評価し成長を過大評価していた)。$Kn$ が大きい (小液滴) ほど $h$ が小さく
+  $T_d$ の上振れが大きい。
+- **適用範囲**: 本フラグは **Hertz–Knudsen 経路 (`condGrowthModel=0`) のみ**に効かせる。Gyarmathy
+  (`condGrowthModel=1`, 熱伝導律速) は元来「液滴が $T_s$ 付近まで自己加熱した極限」を仮定し過冷却
+  $(T_s-T_g)$ を駆動力に使う式なので、$T_d$ を二重計上しないため非適用 (一温度のまま)。
+- **簡約**: $T_d$ は**成長キネティクスのみ**に使う。二相 EOS のバルクエネルギーは液滴を $T_g$ のままとする
+  (液相顕熱差 $\sim g\,c_l\,\Delta T_d \sim 1\%$ オーダーで潜熱 $\sim$ 数% に対し小、既知の近似)。
+- **既定 off** (`condTwoTemp=0`, 一温度 $T_d=T_g$) でビット不変。
+
 ---
 
 ## 5. 二相 EOS と圧力 — 気相分圧近似

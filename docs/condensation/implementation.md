@@ -118,6 +118,8 @@ $$
 | --- | --- | --- |
 | `condKantrowitz` | 0 | 1 で核生成に **Kantrowitz 非等温補正** $J\to J/(1+\theta)$, $\theta=\frac{2(\gamma-1)}{\gamma+1}b(b-\tfrac12)$, $b=L/(R_vT)$ ($\gamma$=気相比熱比)。0 は等温 CNT。|
 | `condGrowthModel` | 0 | 0=既定 (H2O: Hertz–Knudsen 質量律速 / N2: Goodheart)、1=**Gyarmathy** 熱伝導律速 $\frac{dr}{dt}=\frac{kRT^2}{\rho_lL^2}\ln S\frac{1-r_*/r}{r(1+3.18Kn)}$ (極超音速ノズル凝縮で標準)。|
+| `condGyarmathyC` | 3.18 | Gyarmathy の Knudsen 補正係数 $1/(1+C\,Kn)$。小さいほど成長速く onset 早、大きいほど遅。標準 3.18。|
+| `condTwoTemp` | 0 | 1 で **液滴温度 $T_d$** を準定常 Hill バランスで解き Hertz–Knudsen 成長の駆動力 $p_v-p_d(T_d)$ に反映 (自己加熱で成長↓)。theory.md §4 参照。Gyarmathy 経路には非適用。|
 
 実装は [`condensationSource_d.cuh`](../../solver_density_cuda/cuda_forge/condensationSource_d.cuh) の
 `cond_nucleation` (Kantrowitz) と `cond_growth` (Gyarmathy 分岐)。Gyarmathy は N2 Goodheart と前因子

@@ -62,9 +62,14 @@ __host__ __device__ inline void cond_nucleation(
 //     dr/dt = (k R T²/L²) ln(S) /ρ_l · (1-r*/r)/(r(1+3.18 Kn)),  Kn=l/(2r) (キャリア気体の l)。
 //     N2 Goodheart と前因子 (k R T² ln S /ρ_l L²) を共有し、Knudsen 内挿のみ 1/(1+3.18Kn) に差し替えた形。
 //   p_gas: Kn 用の気相全圧 (<0 で p_v にフォールバック=純蒸気)。k_gas は n2_kgas(T) (キャリア N2 熱伝導率)。
+// twoTemp!=0 のとき、Hertz-Knudsen 経路で液滴温度 T_d を準定常エネルギーバランス (Hill) で解き、
+// 平衡蒸気圧 p_d を T_d で評価する (自己加熱で実効過飽和が下がり成長が遅くなる)。
+//   潜熱解放 L·j(T_d) = 気相への熱伝導 h·(T_d−T_g),  j=α(p_v−p_d(T_d))/√(2πR T_g)
+//   p_d(T_d)=p_sat(T_d)·exp(2σ/(ρ_l R T_d r)),  h=λ_g/(r(1+3.18Kn))。
+// Gyarmathy(growthModel=1, 熱伝導律速)は元来 T_d≈T_s を内包するため twoTemp は適用しない。
 __host__ __device__ inline double cond_growth(
     const CondSpeciesProps& cp, double T, double p_v, double r_bar, double rstar,
-    int growthModel = 0, double p_gas = -1.0, double gyarC = 3.18)
+    int growthModel = 0, double p_gas = -1.0, double gyarC = 3.18, int twoTemp = 0)
 {
     if (r_bar <= 0.0) return 0.0;
     const double R    = cp.R;
@@ -84,9 +89,36 @@ __host__ __device__ inline double cond_growth(
         return (1.0/rho_l)*fac*(k*R*T*T/(L*L))*driving;
     }
     if (cp.model == COND_MODEL_H2O) {
+        // Hertz-Knudsen 質量律速。一温度 (twoTemp=0) は T_d=T_g、二温度は T_d を Newton で解く。
         const double sigma = cond_sigma(cp, T);
-        const double pd = psat*exp(2.0*sigma/(rho_l*R*T*r_bar)); // Kelvin 効果
         const double alpha = 1.0; // 質量適応係数
+        double Td = T;
+        if (twoTemp) {
+            const double L  = cond_latent(cp, T);
+            const double kg = n2_kgas(T);                       // キャリア (N2) 熱伝導率
+            const double lam= cond_mean_free_path(T, pK, R);
+            const double Kn = lam/(2.0*r_bar);
+            const double h  = kg/(r_bar*(1.0 + 3.18*Kn));       // 熱伝達係数 [W/m^2/K]
+            const double c  = alpha/sqrt(2.0*COND_PI*R*T);      // 質量フラックス係数
+            for (int it = 0; it < 25; ++it) {
+                const double ps  = cond_psat(cp, Td);
+                const double kel = exp(2.0*sigma/(rho_l*R*Td*r_bar));
+                const double pd  = ps*kel;
+                const double F   = L*c*(p_v - pd) - h*(Td - T); // =0 を解く
+                const double dps = (cond_psat(cp, Td+0.1) - cond_psat(cp, Td-0.1))/0.2;
+                const double dkel= kel*(-2.0*sigma/(rho_l*R*r_bar))/(Td*Td);
+                const double dpd = dps*kel + ps*dkel;
+                const double dF  = -L*c*dpd - h;
+                double dTd = F/dF;
+                if (dTd >  0.5*Td) dTd =  0.5*Td;
+                if (dTd < -0.5*Td) dTd = -0.5*Td;
+                Td -= dTd;
+                if (Td < T) Td = T;                              // 凝縮中は T_d ≥ T_g
+                if (fabs(dTd) < 1.0e-4) break;
+            }
+        }
+        const double ps = cond_psat(cp, Td);
+        const double pd = ps*exp(2.0*sigma/(rho_l*R*Td*r_bar));  // 液滴温度での平衡蒸気圧
         return (alpha/rho_l)*(p_v - pd)/sqrt(2.0*COND_PI*R*T);
     } else {
         const double driving = log(p_v / (psat > 1.0e-300 ? psat : 1.0e-300));
@@ -106,13 +138,13 @@ __host__ __device__ inline void cond_source_vector(
     double roQ0, double roQ1, double roQ2,
     double* SQ0, double* SQ1, double* SQ2, double* Sg,
     int kantrowitz = 0, int growthModel = 0, double gamma_gas = 1.4, double p_gas = -1.0,
-    double gyarC = 3.18)
+    double gyarC = 3.18, int twoTemp = 0)
 {
     if (rho_v < 0.0) rho_v = 0.0;
     double J, rstar;
     cond_nucleation(cp, T, p_v, rho_v, &J, &rstar, kantrowitz, gamma_gas);
     const double r_bar = (roQ0 > 1.0e-30) ? (roQ1/roQ0) : rstar;
-    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas, gyarC) : 0.0;
+    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas, gyarC, twoTemp) : 0.0;
     const double rho_l = cond_rho_cond(cp, T);
     *SQ0 = J;
     *SQ1 = J*rstar + roQ0*drdt;
