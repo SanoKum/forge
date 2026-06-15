@@ -166,6 +166,22 @@ SIGTERM 終了 (`su2.log` に `Exit Success` は出るが `rms[RhoE]≈-0.2` の
 ドリフト <0.2%) させると上記のとおり一致。**SU2 は `Exit Success` でなく iter 数・`rms[RhoE]` で収束判定すること**
 ([.github/forge-su2-cross-check.md](../../.github/forge-su2-cross-check.md) の収束確認節)。
 
+## TP gas (thermalMethod 2) + 凝縮の検証 — 真因 = sub-200K NASA-9 外挿
+
+ユーザ要望で TP 気相 + 凝縮を wys で計算しようとしたが dry TP すら発散。系統的切り分け
+(`run_0025`〜`run_0042`、大半は破棄可の診断用) で**入口/壁/出口 BC・凝縮・種数・粘性・乱流・
+時間積分・convMethod・float 精度・初期値をすべて棄却**。**真因は wys が出口 T≈159K (元の凝縮ゾーン ~27K) で
+NASA-9 有効下限 200K を割り、低温外挿が TP を不安定化**すること。全温 Tt スイープで確定:
+
+| run | 全温 Tt | 出口 T | 結果 |
+| --- | --- | --- | --- |
+| `run_0041_tp_n2_hot500` | 500 K | 278 K (>200K) | **400 step 完走・残差安定** |
+| `run_0042_tp_n2_Tt360` | 360 K | ~194 K | step24 で発散 |
+| (Tt=286.65, 通常) | 286.65 K | 159 K | step12 で発散 |
+
+→ TP 実装は壊れていない (T>200K では wys でも動く)。**wys の極低温凝縮で CPG を強制してきた方針は正しい**。
+詳細・全棄却リストは [`.github/plans/condensation-nonequilibrium.md`](../../.github/plans/condensation-nonequilibrium.md) の 2026-06-16 ログ。
+
 ## 壁面 y+ (SST メッシュ `nozzle_2d_sst.h5`)
 
 `wall_yplus.py` で run_0009/run_0010 の壁第一層 y+ を収束場から実測 (y+=√(u_t·y1/ν), ν=分子粘性):

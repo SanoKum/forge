@@ -134,6 +134,25 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 
 ## 9. 変更ログ
 
+- `2026-06-16` — **TP gas (thermalMethod 2) + 凝縮を wys で検証 → 真因 = sub-200K の NASA-9 外挿不安定**。
+  ユーザ要望で TP 気相 + 凝縮を case/16 wys (`run_0025` 系) で計算しようとしたが、dry TP すら step8-14 で
+  発散。系統的切り分けで以下を**すべて棄却**: 凝縮 ON/OFF・初期値 (CPG 変換 / 一様 / quasi-1D TP 等エントロピー)・
+  種数 (N2+H2O / 単 N2 / O2)・粘性/非粘性・SST/laminar・時間積分 (陰 block-DPLUR / 陽 RK)・出口 BC
+  (statPress / outflow)・convMethod 0/2・入口 BC (多成分 TP 化 + 静圧参照 rf=0.5 ブレンドの 3 方式)・
+  float 精度・no-slip/slip 壁 BC。**毎ステップ追跡で発散起点は超音速出口 (T 最低部) → 全域へ伝播**。
+  - **真因**: wys は出口 T≈159K (元の凝縮ゾーンは ~27K) で **NASA-9 有効下限 200K を割り、`thermo_h_molar` の
+    線形外挿が TP を不安定化**する (精度でなく安定性の問題)。**全温 Tt スイープで確定**:
+    `run_0041` Tt=500K (出口 278K, 全域>200K) は **400 step 完走・残差安定**、`run_0042` Tt=360K (出口~194K) は
+    step24、Tt=286.65K (出口 159K) は step12 で発散 → **200K を割る深さに比例して発散が速い**。
+  - **結論**: TP 実装は壊れていない (T>200K では wys でも動く)。case/13 (最低 T≈195K)・case/28 (暖かい超音速)
+    の TP が動くのも整合。**wys の極低温凝縮で CPG を強制してきた方針は正しい** (docs の「NASA-9 は 200K 未満で
+    無効」と一致)。**ユーザ本来の用途 (>200K の燃焼風洞凝縮) では TP+凝縮は使える見込み**。
+  - **未コミットのコード変更** (要ユーザ判断): `inlet_Pressure` の多成分 TP 対応 (混合則 thermo・`Yb_d` 受け渡し)
+    と TP 亜音速入口の静圧参照 rf=0.5 ブレンド (`inlet_Pressure_dir` と同方式)、`thermo_isentropic_from_total_Ps_mix`
+    追加。Tt=500K run で非破壊と確認済だが wys 発散は直さない (真因が sub-200K のため)。`inlet_uniformVelocity` の
+    亜音速 TP は未対応のまま (別 issue)。
+  - **将来 TP を <200K で使うなら**: NASA-9 低温外挿を安定化 (例: 200K 以下も物理的な cp(T) を保つ低温フィット
+    追加、or 外挿式の見直し)。診断 run は `case/16` `run_0025`〜`run_0042` (大半は破棄可の切り分け用)。
 - `2026-06-16` — **複数 H2O 分圧スイープ (モデル汎化検証)**。Kantrowitz+Gyarmathy 固定で入口 Y_H2O のみ変えて
   pv0 = 1.00 / 0.50 / 0.26 kPa を計算し、Wyslouzil Fig.3 multi-P と中心線 p/p0 を比較
   (`case/16` `run_0013` / `run_0020_h2o_sst_kg_0p50kPa` / `run_0021_h2o_sst_kg_0p26kPa`、`compare_multicond.py`)。
