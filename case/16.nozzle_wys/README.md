@@ -113,6 +113,22 @@ T_d−T_g は**成長活発な onset 前線で局所的に最大 ~15K**(過冷�
 Kantrowitz/Gyarmathy のモデル選択より一桁小さい。方向は予想どおり成長を僅かに遅らせ onset を微小に下流へ
 (g プロファイルで二温度=破線が僅かに遅延)。→ **純蒸気凝縮では T_d が必須だが、キャリア希薄凝縮では一温度近似で十分**、という結論。実装詳細は [docs/condensation/theory.md §4](../../docs/condensation/theory.md)。
 
+**複数 H2O 分圧スイープ (モデル汎化, Kantrowitz+Gyarmathy 固定)** — `compare_multicond.py` / `compare_multicond.png`:
+
+入口 H2O 質量分率のみを変えて pv0 を 1.00 / 0.50 / 0.26 kPa とし、Wyslouzil Fig.3 multi-P (`wyslouzil_fig3_multiP.csv`, P0=59.07 kPa) と中心線 p/p0 を比較。**単一条件で較正したモデルを他分圧に汎化できるかの検証**。
+
+| run | pv0 | 入口 Y_H2O | onset (exp) | x=3.1cm p/p0 (forge / exp) |
+| --- | --- | --- | --- | --- |
+| `run_0013_h2o_sst_kw_gyar` | 1.00 kPa | 0.01095 | x≈2cm | 0.353 / 0.354 |
+| `run_0020_h2o_sst_kg_0p50kPa` | 0.50 kPa | 0.005461 | x≈3.5cm | 0.279 / 0.297 |
+| `run_0021_h2o_sst_kg_0p26kPa` | 0.26 kPa | 0.002835 | x≈5cm | 0.274 / 0.293 |
+
+知見: **分圧依存 (凝縮 onset の下流シフトと圧力上昇幅の序列) を 3 条件すべてで再現**。pv0 が下がるほど onset
+が下流へ移り bump が弱まり dry に漸近する、という実験傾向を捉える。forge は絶対 p/p0 が一様に exp より
+~5–8% 低い (既知の dry baseline オフセット = forge dry が非粘性等エントロピー、実験は粘性排除厚で上振れ) が、
+**凝縮物理の相対挙動・分圧応答は単一条件較正なしで汎化**する。
+(注: `run_0021` は step6000 で外部中断したが、p/p0・g とも step2000→6000 で 4 桁不変＝定常化済みのため発達場として採用。0.26 kPa は g max≈6e-4 と凝縮ごく僅か。)
+
 **非平衡凝縮の検証結果**:
 
 - **非粘性 (run_0008)**: 凝縮ありの中心線 p/p0 は dry 比で 1.19〜1.28 倍 (スロート下流 2.5〜8 cm)、

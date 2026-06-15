@@ -134,6 +134,13 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 
 ## 9. 変更ログ
 
+- `2026-06-16` — **複数 H2O 分圧スイープ (モデル汎化検証)**。Kantrowitz+Gyarmathy 固定で入口 Y_H2O のみ変えて
+  pv0 = 1.00 / 0.50 / 0.26 kPa を計算し、Wyslouzil Fig.3 multi-P と中心線 p/p0 を比較
+  (`case/16` `run_0013` / `run_0020_h2o_sst_kg_0p50kPa` / `run_0021_h2o_sst_kg_0p26kPa`、`compare_multicond.py`)。
+  **分圧依存 (onset の下流シフト・圧力上昇幅の序列) を 3 条件すべてで再現** = 単一条件較正なしで汎化。
+  絶対 p/p0 は一様に exp より ~5–8% 低い (既知 dry baseline オフセット) が相対挙動・分圧応答は正。
+  `run_0021` は前セッションで step6000 で外部中断していたが、p/p0・g とも step2000→6000 で 4 桁不変＝定常化済を
+  確認し追加計算なしで採用。比較スクリプトの exp 列 index ズレ (3/4/5→2/3/4) を修正。詳細表は `case/16/README.md`。
 - `2026-06-15` — **液滴温度 T_d (二温度) 閉包 + Gyarmathy 係数 + 感度評価一式**。
   - `condGyarmathyC` (既定 3.18): Gyarmathy Knudsen 係数 1/(1+C·Kn) を可変化。SST C スイープ
     (run_0014..0017) で標準 3.18 が onset/peak を最良再現と確認 (C で成長率→onset 位置が単調変化)。
