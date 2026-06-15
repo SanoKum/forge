@@ -134,6 +134,13 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 
 ## 9. 変更ログ
 
+- `2026-06-15` — **液滴温度 T_d (二温度) 閉包 + Gyarmathy 係数 + 感度評価一式**。
+  - `condGyarmathyC` (既定 3.18): Gyarmathy Knudsen 係数 1/(1+C·Kn) を可変化。SST C スイープ
+    (run_0014..0017) で標準 3.18 が onset/peak を最良再現と確認 (C で成長率→onset 位置が単調変化)。
+  - `condTwoTemp` (既定 0): Hertz–Knudsen 経路に液滴温度 T_d を準定常 Hill バランス
+    L·j(T_d)=h(T_d−T_g) で Newton 反復し、成長駆動力 p_v−p_d(T_d) に反映。docs/condensation/theory.md §4
+    に実装式を記載。SST 比較 (run_0018/0019 vs run_0010/0011): **希薄水/N2 では影響小** (p/p0 差 <1%、
+    T_d−T_g は onset 前線で局所最大 ~15K だが中央値 ~0.2K、キャリアが潜熱を奪うため)。一温度近似で十分。
 - `2026-06-15` — **核生成/成長モデルの感度スイッチ追加 (Kantrowitz / Gyarmathy)**。ユーザ要望で、
   核生成の **Kantrowitz 非等温補正**と **Gyarmathy 熱伝導律速成長**を config フラグ化:
   - `condKantrowitz` (0/1): $J\to J/(1+\theta)$, $\theta=\frac{2(\gamma-1)}{\gamma+1}b(b-\tfrac12)$, $b=L/(R_vT)$。
