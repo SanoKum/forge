@@ -514,6 +514,19 @@ public:
         // *** Make Grid ***
         geom_int nCells_temp = 0;
 
+        // 大規模メッシュで vector の倍々再確保によるメモリスパイク (OOM 要因) を避けるため、
+        // cells を事前 reserve する (セル数は対象次元の要素数の総和)。
+        {
+            geom_int nCellEst = 0;
+            for (auto &itEnt : elements_summary)
+            {
+                if (is3D == true  && itEnt.dimension != 3) continue;
+                if (is3D == false && itEnt.dimension != 2) continue;
+                nCellEst += itEnt.nEleEnt;
+            }
+            this->cells.reserve(nCellEst);
+        }
+
         // iterate over each Entity.
         for (auto &itEnt : elements_summary)
         {
@@ -563,6 +576,10 @@ public:
         }
 
         // create & merge planes.
+        // planes も倍々再確保を避けるため事前 reserve (hex で ~3.0/cell, tet で ~2.0/cell;
+        // 余裕をみて 3.5*nCells を確保。過不足は正しさに影響せずスパイク回避のみが目的)。
+        this->planes.reserve(this->cells.size() * 3 + this->cells.size() / 2);
+
         geom_int nPlanes_temp = 0;
         geom_int icell = 0;
 
@@ -709,6 +726,10 @@ public:
             }
         }
 
+        // 境界ノードマップを作り終えたら elements_summary は以降不要。大規模メッシュでは
+        // 全要素のノードリストを保持しており大きいので解放する (writeInputH5 まで保持しない)。
+        std::list<elementsOfEntity>().swap(this->elements_summary);
+
         this->nBPlanes = nBPlanes_temp;
         this->nNormalPlanes = this->nPlanes - this->nBPlanes;
         this->nBconds = bcellMap_physTag_nodes.size();
@@ -789,75 +810,49 @@ public:
 
         vector<geom_int> planeIndex_old_to_new(this->nPlanes);
 
+        // 並べ替え: planeIndex は全 plane index の置換 (各 index がちょうど 1 回)。
+        // 旧実装は planes を 2 重・3 重に deep copy しメモリスパイク (OOM) の主因だった。
+        // ここでは sub-vector を move して付け替える (この時点で surfVect/centCoords は
+        // 未計算=空なので iNodes/iCells のみ移送すれば挙動は同一)。
         vector<plane> planes_new(this->nPlanes);
-        planes_new = planes;
 
         ip = 0;
         for (auto &i : planeIndex)
         {
-            planes_new[ip].iNodes = this->planes[i].iNodes;
-            planes_new[ip].iCells = this->planes[i].iCells;
+            planes_new[ip].iNodes = std::move(this->planes[i].iNodes);
+            planes_new[ip].iCells = std::move(this->planes[i].iCells);
             planeIndex_old_to_new[i] = ip;
             ip += 1;
         }
-        this->planes = planes_new;
-        planes_new.clear();
+        this->planes = std::move(planes_new);
 
-        vector<cell> cells_new(this->nCells);
-        cells_new = cells;
-
-        // cell
-        i = 0;
-        for (auto &cell : cells)
+        // cell: iPlanes は「並べ替え」ではなく plane index 値の付け替えのみ。
+        // 旧実装は cells を丸ごと deep copy していたが不要。in-place で remap する。
+        for (auto &cell : this->cells)
         {
-            int j = 0;
             for (auto &pln : cell.iPlanes)
             {
-                cells_new[i].iPlanes[j] = planeIndex_old_to_new[pln];
-                j += 1;
+                pln = planeIndex_old_to_new[pln];
             }
-            i += 1;
         }
 
-        this->cells = cells_new;
-        cells_new.clear();
-
-        vector<node> nodes_new(this->nNodes);
-        nodes_new = nodes;
-
-        // node
-        i = 0;
-        for (auto &node : nodes)
+        // node: 同上 (iPlanes の値のみ remap)。in-place 化で deep copy を排除。
+        for (auto &node : this->nodes)
         {
-            geom_int j = 0;
             for (auto &pln : node.iPlanes)
             {
-                nodes_new[i].iPlanes[j] = planeIndex_old_to_new[pln];
-                j += 1;
+                pln = planeIndex_old_to_new[pln];
             }
-            i += 1;
         }
 
-        this->nodes = nodes_new;
-        nodes_new.clear();
-
-        // boundary cells, bcond
-        map<geom_int,vector<geom_int>> bcellMap_physTag_planes_new;
-        bcellMap_physTag_planes_new = bcellMap_physTag_planes;
-
-        for (const auto &item : bcellMap_physTag_planes) 
+        // boundary cells, bcond: 同上 (各 physTag の plane index を in-place remap)。
+        for (auto &item : bcellMap_physTag_planes)
         {
-            geom_int j = 0;
-            for (const auto &pln : item.second) 
+            for (auto &pln : item.second)
             {
-                bcellMap_physTag_planes_new[item.first][j] = planeIndex_old_to_new[pln];
-                j += 1;
+                pln = planeIndex_old_to_new[pln];
             }
         }
-
-
-        bcellMap_physTag_planes = bcellMap_physTag_planes_new;
-        bcellMap_physTag_planes_new.clear();
 
         for (auto &item : bcellMap_physTag_planes)
         {
