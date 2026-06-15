@@ -79,6 +79,12 @@ SU2 のノズル流は **リミットサイクル**で残差が下げ止まる�
 - `history.csv` の `rms[Rho]`, `rms[Momentum-Y]`, `rms[TKE]`, `rms[Dissipation]` の**トレンド**を見る(単調減 or 振動プラトーか)。
 - 積分量(出口 massflux: `MARKER_ANALYZE_AVERAGE= MASSFLUX`)が定常化しているか。
 - 早期の `rms[Rho]` だけ低くても、運動量・乱流残差が下げ止まり/上昇していれば**未収束**と判断する。
+- **`rms[RhoE]`(エネルギー)が最も遅い**。`rms[Rho]` が数桁落ちても `rms[RhoE]` が 1 桁未満・`rms[w]` が正のままなら未収束。
+- **`su2.log` の `Exit Success` を収束と誤認しない**。セッション中断時の SIGTERM でも SU2 は graceful 終了し
+  `Exit Success` + restart を書く。`history.csv` の **iter 数が `ITER` 上限/収束基準に達したか**を必ず確認すること
+  (実例 2026-06: nozzle 粘性/SST が 975/752 iter で中断され `rms[RhoE]≈-0.2` のまま「完走」扱い → forge と
+  下流で偽の 20-25% 差。`RESTART_SOL=YES`+`READ_BINARY_RESTART=NO`+`SOLUTION_FILENAME` で途中解から継続し
+  `rms[RhoE]≈-1.4`・出口積分量ドリフト <0.2% まで発達させると **forge と全域 ≤0.8% 一致**した)。
 
 ## VTU の読み取り(注意)
 

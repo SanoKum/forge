@@ -147,6 +147,25 @@ Kantrowitz/Gyarmathy のモデル選択より一桁小さい。方向は予想�
   → **「粘性+乱流で凝縮あり/なしを計算すると Fig.3 の差が出る」というユーザ仮説を定量的に確認**。
   比較図は `fig3_compare_visc.png` (非粘性破線 + 粘性SST実線 + 実験点)。
 
+## SU2 クロスチェック (dry, 3 物理モデル) — `compare_su2_forge.py` / `compare_su2_forge.png`
+
+同一ノズルの中心線 p/p0 を forge (SLAU, セル中心) と SU2 v8.5 (ROE, 節点) で比較。
+
+| 物理 | forge run | SU2 run | forge↔SU2 一致 |
+| --- | --- | --- | --- |
+| Euler (非粘性) | `run_0001_slau_2d_imp` | `run_0020_su2_euler` | 全域 ≤0.6% |
+| Laminar (粘性) | `run_0003_slau_2d_visc` | `run_0023_su2_lam_conv` | 全域 ≤0.6% |
+| Turbulent (SST) | `run_0004_slau_2d_sst` | `run_0024_su2_sst_conv` | 全域 ≤0.8% |
+
+→ **forge は 3 モデルとも SU2 と全域 <1% 一致**。粘性/SST は下流で等エントロピー線の上 (境界層排除厚) に乗り、
+forge が SU2 と同等の BL 変位を出していることを確認。
+
+⚠️ **教訓**: SU2 の初回 run (`run_0021_su2_lam` / `run_0022_su2_sst`) は前セッション中断で 975/752 iter で
+SIGTERM 終了 (`su2.log` に `Exit Success` は出るが `rms[RhoE]≈-0.2` の未収束) しており、その未収束場と比べると
+下流で偽の 20-25% 差が出ていた。途中解から継続収束 (`run_0023`/`run_0024`, `rms[RhoE]≈-1.4`, 出口積分量
+ドリフト <0.2%) させると上記のとおり一致。**SU2 は `Exit Success` でなく iter 数・`rms[RhoE]` で収束判定すること**
+([.github/forge-su2-cross-check.md](../../.github/forge-su2-cross-check.md) の収束確認節)。
+
 ## 壁面 y+ (SST メッシュ `nozzle_2d_sst.h5`)
 
 `wall_yplus.py` で run_0009/run_0010 の壁第一層 y+ を収束場から実測 (y+=√(u_t·y1/ν), ν=分子粘性):
