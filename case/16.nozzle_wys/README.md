@@ -83,6 +83,21 @@ bump 位置を外す)。**Gyarmathy(熱伝導律速)は Hertz-Knudsen より成�
 両者を併せた `run_0013` (Kantrowitz+Gyarmathy) が x≈2〜3.5cm の onset/peak を実験と最もよく再現
 (x=3.1cm: forge 0.353 vs exp 0.354)。下流 x≳4cm は全モデルほぼ収束し、実験より ~0.02 低い (膨張側オフセット)。
 
+**Gyarmathy Knudsen 係数 C 感度 (`condGyarmathyC`, base=Kantrowitz+Gyarmathy)** — `compare_gyarC.png`:
+
+| run | C | onset | x=3.1cm p/p0 |
+| --- | --- | --- | --- |
+| `run_0014_h2o_sst_gyarC0p0` | 0 (連続体, Kn 補正なし) | 最も早い (x≈1.3) | 0.342 |
+| `run_0015_h2o_sst_gyarC1p59` | 1.59 | 早い | 0.348 |
+| `run_0013_h2o_sst_kw_gyar` | **3.18 (標準)** | x≈2.0 | **0.353** (exp 0.354) |
+| `run_0016_h2o_sst_gyarC6p36` | 6.36 | 遅い | 0.328 |
+| `run_0017_h2o_sst_gyarC12p72` | 12.72 | 最も遅い (x≈3.5) | 0.284 |
+
+C は成長率の Knudsen 抑制を制御し、**小さいほど成長が速く onset が早まり、大きいほど遅く弱くなる**
+(g プロファイルの立ち上がり位置が C で単調にシフト)。**標準値 3.18 が onset/peak を実験に最も良く再現**し、
+ずらすと悪化 (C<3.18 で早すぎ・C>3.18 で遅すぎ)。下流 x≳5cm は最終的に全量凝縮するため C 依存は小。
+→ **この系では Gyarmathy 標準係数 3.18 がほぼ最適**であることを確認。
+
 **非平衡凝縮の検証結果**:
 
 - **非粘性 (run_0008)**: 凝縮ありの中心線 p/p0 は dry 比で 1.19〜1.28 倍 (スロート下流 2.5〜8 cm)、
