@@ -17,6 +17,11 @@
 #define COND_NA 6.02214076e23     // Avogadro [1/mol]
 #define COND_PI 3.141592653589793
 
+// 核生成は臨界半径 r* ちょうどで生むと成長則の (1-r*/r) が 0 (不安定平衡) になり、
+// 平均半径 r̄ が r* に張り付いて成長が起動しない。わずかに超臨界 r_nuc = COND_RNUC_FAC*r*
+// で生むことで r̄>r* となり成長が立ち上がる (Q1/Q2/g の核生成項に適用)。
+#define COND_RNUC_FAC 1.01
+
 // 核生成 (CNT × 種ごと補正)。J [1/(m^3 s)], r* [m]。過飽和でなければ 0。cprops で N2/H2O を切替。
 //   J_CNT = √(2σ/(π m^3))·(ρ_v²/ρ_l)·exp(-ΔG*/(k_B T)),  ΔG*=(4/3)π r*²σ,  r*=2σ/(ρ_l R T ln S)。
 //   N2: ×exp(A+B/T) [Iland]。H2O: 等温 CNT (キャリア N2 がクラスタを熱平衡化し Kantrowitz 非等温抑制は
@@ -144,10 +149,16 @@ __host__ __device__ inline void cond_source_vector(
     double J, rstar;
     cond_nucleation(cp, T, p_v, rho_v, &J, &rstar, kantrowitz, gamma_gas);
     const double r_bar = (roQ0 > 1.0e-30) ? (roQ1/roQ0) : rstar;
-    double drdt = (roQ0 > 1.0e-30) ? cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas, gyarC, twoTemp) : 0.0;
+    // 成長は r̄>r* のときのみ・蒸発(<0)はしない (本体 kernel と整合; 亜臨界での発散を防ぐ)。
+    double drdt = 0.0;
+    if (roQ0 > 1.0e-30 && rstar > 0.0 && r_bar > rstar) {
+        drdt = cond_growth(cp, T, p_v, r_bar, rstar, growthModel, p_gas, gyarC, twoTemp);
+        if (drdt < 0.0) drdt = 0.0;
+    }
     const double rho_l = cond_rho_cond(cp, T);
+    const double r_nuc = COND_RNUC_FAC*rstar;   // わずかに超臨界で生み成長を起動
     *SQ0 = J;
-    *SQ1 = J*rstar + roQ0*drdt;
-    *SQ2 = J*rstar*rstar + 2.0*roQ1*drdt;
-    *Sg  = (4.0/3.0)*COND_PI*rho_l*(J*rstar*rstar*rstar + 3.0*roQ2*drdt);
+    *SQ1 = J*r_nuc + roQ0*drdt;
+    *SQ2 = J*r_nuc*r_nuc + 2.0*roQ1*drdt;
+    *Sg  = (4.0/3.0)*COND_PI*rho_l*(J*r_nuc*r_nuc*r_nuc + 3.0*roQ2*drdt);
 }

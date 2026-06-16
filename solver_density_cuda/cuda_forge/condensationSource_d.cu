@@ -88,10 +88,11 @@ __global__ void condensation_source_d(
         if (drdt < 0.0) drdt = 0.0;
     }
     const double rho_l = cond_rho_cond(cprops, Td);
+    const double r_nuc = COND_RNUC_FAC*rstar;   // わずかに超臨界で生み成長を起動 (r*ちょうどだと(1-r*/r)=0で停止)
     double SQ0 = J;
-    double SQ1 = J*rstar + q0*drdt;
-    double SQ2 = J*rstar*rstar + 2.0*q1*drdt;
-    double Sg  = (4.0/3.0)*COND_PI*rho_l*(J*rstar*rstar*rstar + 3.0*q2*drdt);
+    double SQ1 = J*r_nuc + q0*drdt;
+    double SQ2 = J*r_nuc*r_nuc + 2.0*q1*drdt;
+    double Sg  = (4.0/3.0)*COND_PI*rho_l*(J*r_nuc*r_nuc*r_nuc + 3.0*q2*drdt);
     if (Sg < 0.0) Sg = 0.0;
 
     // θ 律速: Δg, 潜熱 ΔT, 蒸気枯渇 (carrier は利用可能蒸気=Yw-g)

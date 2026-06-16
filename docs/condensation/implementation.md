@@ -85,9 +85,17 @@ device 側で核生成 $J$ (CNT × Iland)・臨界半径 $r_*$・成長 $dr/dt$ 
 評価して freeze** (一温度 $T_v=T_d=T$)、相変化ソースを各モーメント残差へ加算する:
 
 $$
-S_{Q_0}=J,\ S_{Q_1}=Jr_*+\rho Q_0\tfrac{dr}{dt},\ S_{Q_2}=Jr_*^2+2\rho Q_1\tfrac{dr}{dt},\
-S_g=\tfrac{4}{3}\pi\rho_l\big(Jr_*^3+3\rho Q_2\tfrac{dr}{dt}\big)
+S_{Q_0}=J,\ S_{Q_1}=Jr_{\rm nuc}+\rho Q_0\tfrac{dr}{dt},\ S_{Q_2}=Jr_{\rm nuc}^2+2\rho Q_1\tfrac{dr}{dt},\
+S_g=\tfrac{4}{3}\pi\rho_l\big(Jr_{\rm nuc}^3+3\rho Q_2\tfrac{dr}{dt}\big)
 $$
+
+**核生成半径 $r_{\rm nuc}=C_{\rm nuc}\,r_*$ ($C_{\rm nuc}$=`COND_RNUC_FAC`=1.01)**: 臨界半径 $r_*$ ちょうどで生むと
+全成長則が含む Kelvin 因子 $(1-r_*/\bar r)$ (Hertz–Knudsen では $p_v-p_d$、$p_d$ は Kelvin 平衡蒸気圧) が
+$\bar r=r_*$ で **0 (不安定平衡)** となり、平均半径が $r_*$ に張り付いて成長が起動しない。さらに $\bar r$ が
+$r_*$ を僅かに割ると $dr/dt<0$ → roQ1 が負帰還で 0 へ暴走崩壊し、$\bar r\to0$ で成長則が発散する。
+わずかに超臨界 ($r_{\rm nuc}=1.01r_*$) で生むことで $\bar r>r_*$ から成長が立ち上がる。
+**本体 kernel とヤコビアン (`cond_source_vector`) の両方で同一の成長ガード ($\bar r>r_*$ のみ成長・$dr/dt\ge0$) と
+$r_{\rm nuc}$ を使う** (ヤコビアンだけガード無しだと亜臨界で過大な $\partial S/\partial Q_1$ が出て roQ1 を 0 に潰す)。
 
 `res_ro<φ> += S_φ·V` で advection 残差へ加算。物性は [condensationProperties_d.cuh](../../solver_density_cuda/cuda_forge/condensationProperties_d.cuh)。
 
@@ -108,6 +116,16 @@ $$
 (潜熱)・**g=0 域は dry と完全一致** (上流 P_cond/P_dry=1.00) を確認。g が過大 (paper ~0.75–2.3% に対し
 22%) なのは収束 dry からの一斉 onset アーティファクト ($S\sim3\times10^4$ で全冷却セルが同時核生成)。
 **定量一致は後続** (膨張流からの physical onset / レート較正 / 完全 src_jac 線形化)。
+
+### 検証 (case/16 Wyslouzil H2O, Fig.3 1kPa)
+
+正しい Fig.3 ノズル形状 (`mesh/make_nozzle_fig3.py`, throat 全高 5mm・発散 95mm・壁間 1.8°・A/A\*≈1.6;
+旧 `nozzle_H` は別形状で不一致だった) + SST。dry SST は実験 isentrope と中心線 p/p0 ±1.5% 一致。
+**$r_{\rm nuc}=1.01r_*$ 修正前は液滴が $r_*$ (~0.3nm) に張り付き $g$ が蒸気の <3% で潰れていた** (核生成 $n\sim10^{19}$ は
+出るが成長ゼロ; HK/Gyar が同一結果になるのが兆候)。修正後は **$g\to$ 蒸気のほぼ全量 (~90%)**・$\bar r$ が 5→25nm に
+成長し潜熱バンプが出る。中心線 p/p0 は **下流 (x≳4cm) で全モデル実験 ±数%**。**onset 域 (x≈2cm) は Kantrowitz 無し
+(HK/Gyar) が過早・オーバーシュート (0.44 vs exp 0.36)、Kantrowitz 有り (Kw+HK/Kw+Gyar) が onset を遅らせ実験に最良**
+(Fluent UDF で Kw+HK が最適だった知見と一致)。残課題: x≈3cm のピークが実験よりやや高い (onset レート微調整)。
 
 ### モデル切替 (config フラグ)
 
