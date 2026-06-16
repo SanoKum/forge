@@ -17,12 +17,17 @@ ap = argparse.ArgumentParser()
 ap.add_argument("src_res"); ap.add_argument("src_mesh"); ap.add_argument("dst_mesh")
 ap.add_argument("--rok", type=float, default=None)
 ap.add_argument("--roomega", type=float, default=None)
+ap.add_argument("--copyturb", action="store_true",
+                help="src_res の roK,roOmega 場をそのまま写す (発達済み乱流を引き継ぐ)")
 a = ap.parse_args()
 
 with h5py.File(a.src_mesh, "r") as f:
     src_cc = f["/CELLS/centCoords"][:].reshape(-1, 3)
 with h5py.File(a.src_res, "r") as f:
-    vals = {k: f["/VALUE/"+k][:] for k in ("ro", "roUx", "roUy", "roUz", "roe")}
+    keys = ["ro", "roUx", "roUy", "roUz", "roe"]
+    if a.copyturb:
+        keys += [k for k in ("roK", "roOmega") if "/VALUE/"+k in f]
+    vals = {k: f["/VALUE/"+k][:] for k in keys}
 
 tree = cKDTree(src_cc)
 with h5py.File(a.dst_mesh, "r+") as f:
@@ -31,6 +36,8 @@ with h5py.File(a.dst_mesh, "r+") as f:
     print(f"match: nDst={len(dst_cc)} maxDist={d.max():.3e} meanDist={d.mean():.3e}")
     for k, v in vals.items():
         f["/VALUE/"+k][:] = v[idx]
+    if a.copyturb:
+        print(f"copied developed turbulence fields: {[k for k in ('roK','roOmega') if k in vals]}")
     if a.rok is not None:
         ro = vals["ro"][idx]
         f["/VALUE/roK"][:] = ro * a.rok          # roK = ro * k   (k = TKE [m^2/s^2])

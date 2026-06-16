@@ -17,6 +17,13 @@ Wyslouzil et al., *J. Chem. Phys.* **113**, 7317 (2000)
 
 矩形断面のため 2D 平面近似が妥当 (ユーザ確認済)。
 
+> **⚠️ 重要 (2026-06): `mesh/nozzle_H.geo` は Fig.3 の実験ノズルと別形状**だった
+> (`13.nozzle_H` とバイト同一の別 Wyslouzil 論文ノズル。スロート半 2.25mm・A/A\*=1.69 で過発散)。
+> JCP 113,7317 (2000) Fig.3 の正しいノズルは **スロート全高 5mm・収束 38mm・発散 95mm 直線壁・
+> 壁間 1.8°・A/A\*≈1.58** で `mesh/make_nozzle_fig3.py` が生成する (`nozzle_fig3_2d/3d`)。
+> **凝縮検証は run_0047 以降 (修正形状) を使うこと**。run_0001〜0046 (nozzle_H) は旧形状で、
+> dry が実験より過膨張・凝縮も相殺で「合って見えていた」だけ。詳細は下記「## 修正形状 (Fig.3) run」。
+
 ## 条件
 
 - 入口: `inlet_Pressure`, Pt=101325 Pa, Tt=293.15 K (亜音速圧力入口)。
@@ -210,3 +217,23 @@ SST 専用メッシュ `nozzle_2d_sst.h5` には当てはまらない。上記�
 - `wall_yplus.py <run> [--wall-physid 3]` — SST 壁第一層 y+ を収束場から算出・可視化。
 - `compare_fig3.py` / `compare_fig3_visc.py` — Wyslouzil Fig.3 (凝縮あり/なし) と中心線 p/p0 を比較。
 - `build_restart.py <src_res> <src_mesh> <dst_mesh> [--rok K --roomega W]` — 引き継ぎ初期場生成。
+
+## 修正形状 (Fig.3) run 一覧 — run_0047 以降
+
+正しい Fig.3 ノズル (`mesh/make_nozzle_fig3.py` → `nozzle_fig3_2d.h5`, 2D pseudo, front/back=slip) で再構築。
+SLAU 陰解法 (timeIntegration:11, blockDPLUR, **nStepInner:5, cfl_pseudo:4**)。dry は実験 isentrope、
+凝縮は実験 1kPa と比較。比較図: `dry_vs_exp.png` (laminar/SST vs isentrope)、`cond_models_compare.png` (4モデル vs 1kPa)。
+
+| run | 物理 | 凝縮モデル | 主要結果 | 状態 |
+| --- | --- | --- | --- | --- |
+| `run_0047_fig3_2d_lam_dry` | 2D laminar | off | dry。中心線 p/p0 が実験 isentrope と −2〜5% | active |
+| `run_0048_fig3_2d_sst_dry` | 2D SST | off | dry。**実験 isentrope と ±1.5% (laminar より良)** → 凝縮は SST 上で実施 | active |
+| `run_0049_fig3_2d_sst_hk` | 2D SST | Hertz–Knudsen | 全凝縮 (g~90%)。onset 過早・overshoot (0.44 vs exp 0.36 @2cm) | active |
+| `run_0050_fig3_2d_sst_kwhk` | 2D SST | **Kantrowitz+HK** | **onset 遅延で実験最良** (Fluent UDF 知見と一致) | active |
+| `run_0051_fig3_2d_sst_gyar` | 2D SST | Gyarmathy | 全凝縮。onset 過早・overshoot | active |
+| `run_0052_fig3_2d_sst_kwgyar` | 2D SST | Kantrowitz+Gyarmathy | onset 遅延で実験良好 | active |
+
+知見: **凝縮成長停止バグ修正後** (核生成を $r_{\rm nuc}=1.01r_*$ で生成し液滴を $r_*$ から離脱させる;
+[docs/condensation/implementation.md](../../docs/condensation/implementation.md) §検証 case/16) に全モデルが全凝縮を再現。
+下流 (x≳4cm) は全モデル実験 ±数%。**onset 域は Kantrowitz 有り (Kw+HK/Kw+Gyar) が overshoot を抑え実験に最良**。
+残課題: x≈3cm のピークが実験よりやや高い (onset レート微調整)、3D 壁解像 (`make_nozzle_3d_wallres.py`) は未実施。
