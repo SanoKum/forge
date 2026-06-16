@@ -972,7 +972,12 @@ void inlet_Pressure_d
  flow_float* Ttb ,
  flow_float* Ptb ,
  flow_float* Tsb ,
- flow_float* Psb
+ flow_float* Psb ,
+
+ // 多成分 TP (M5): 入口組成 Y_s^in (device per-face array, [nSpecies])。
+ // nSpecies>=2 かつ Yb!=nullptr のとき混合則 thermo を使う。単成分では nullptr。
+ flow_float** Yb ,
+ int nSpecies
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -998,7 +1003,7 @@ void inlet_Pressure_d
         flow_float ro_new;
         flow_float sonic_new;
 
-        flow_float rf=0.1;
+        flow_float rf=0.5;   // TP 亜音速入口の mach ブレンド緩和係数 (静圧 mach_b と速度 mach_c)
 
         geom_int  ip = bplane_plane[ib];
         geom_int  ic = bplane_cell[ib];
@@ -1020,6 +1025,16 @@ void inlet_Pressure_d
         //Umag_c = sqrt(Ux_c*Ux_c + Uy_c*Uy_c + Uz_c*Uz_c);
         flow_float Un_c = (Ux_c*sxx + Uy_c*syy + Uz_c*szz)/sss;
         mach_c = Un_c/sonic[ic];
+
+        // 多成分 TP: 入口指定組成 Yin を正規化 (nSpecies>=2 のとき混合則 thermo を使う)。
+        const bool mix = (thermalMethod == 2 && Yb != nullptr && nSpecies >= 2);
+        double Yin[THERMO_MAX_SPECIES];
+        if (mix) {
+            double ysum = 0.0;
+            for (int s = 0; s < nSpecies; s++) { double y=(double)Yb[s][ib]; if(y<0.0)y=0.0; Yin[s]=y; ysum+=y; }
+            const double yinv = 1.0/(ysum > 1.0e-30 ? ysum : 1.0e-30);
+            for (int s = 0; s < nSpecies; s++) Yin[s] *= yinv;
+        }
 
         flow_float Ux_new;
         flow_float Uy_new;
@@ -1053,12 +1068,37 @@ void inlet_Pressure_d
             Uz_new = Un_c*szz/sss;
 
             if (thermalMethod == 2) {
-                // TP: 全温・全圧から NASA 等エントロピーで静的状態を反転 (局所マッハ |mach_c|)
-                double Ts_d, Ps_d, ro_d, umag_d;
-                thermo_isentropic_from_total_single(sp, Pt_b, Tt_b, fabs((double)mach_c),
-                                                    &Ts_d, &Ps_d, &ro_d, &umag_d);
+                // TP 亜音速圧力入口 (inlet_Pressure_dir_d と同方式の緩和)。
+                // 内部静圧 P[ic] から mach_b、内部速度から mach_c を作り、mach_new=rf*mach_b+(1-rf)*mach_c
+                // で緩和する (rf=0.5)。純静圧参照 (rf=1) は不足減衰で振動、純速度参照 (rf=0) は静的状態を
+                // 過拘束し P>Pt の反射を生むため、両者の中間で安定化。blend 後マッハで全状態から再構成。
+                // 多成分は混合則、単成分は sp[0]。
+                const double Psc = (double)P[ic];
+                double Ts0_d, ro0_d, um0_d, a0;
+                if (mix) {
+                    thermo_isentropic_from_total_Ps_mix(sp, nSpecies, Yin, Pt_b, Tt_b, Psc, &Ts0_d, &ro0_d, &um0_d);
+                    a0 = sqrt(thermo_gamma_mix(sp, nSpecies, Yin, Ts0_d)*thermo_R_mix(sp, nSpecies, Yin)*Ts0_d);
+                } else {
+                    thermo_isentropic_from_total_Ps_single(sp, Pt_b, Tt_b, Psc, &Ts0_d, &ro0_d, &um0_d);
+                    const double Rs = thermo_R_species(sp[0]), cps = thermo_cp_mass(sp[0], Ts0_d);
+                    a0 = sqrt((cps/((cps-Rs) > 1.0e-6 ? (cps-Rs) : 1.0e-6))*Rs*Ts0_d);
+                }
+                const double mach_bd  = um0_d/(a0 > 1.0e-6 ? a0 : 1.0e-6);
+                const double mach_new = (double)rf*mach_bd + (1.0-(double)rf)*fabs((double)mach_c);
+                double Ts_d, Ps_d, ro_d, um_d;
+                if (mix)
+                    thermo_isentropic_from_total_mix(sp, nSpecies, Yin, Pt_b, Tt_b, mach_new, &Ts_d, &Ps_d, &ro_d, &um_d);
+                else
+                    thermo_isentropic_from_total_single(sp, Pt_b, Tt_b, mach_new, &Ts_d, &Ps_d, &ro_d, &um_d);
                 Ps_new = (flow_float)Ps_d; Ts_new = (flow_float)Ts_d; ro_new = (flow_float)ro_d;
-                sonic_new = sqrt(ga*Ps_new/ro_new);
+                const double gmx = mix ? thermo_gamma_mix(sp, nSpecies, Yin, Ts_d)
+                                       : (thermo_cp_mass(sp[0],Ts_d)/((thermo_cp_mass(sp[0],Ts_d)-thermo_R_species(sp[0])) > 1.0e-6 ? (thermo_cp_mass(sp[0],Ts_d)-thermo_R_species(sp[0])) : 1.0e-6));
+                sonic_new = (flow_float)sqrt(gmx*(double)Ps_new/(double)ro_new);
+                // 流入方向は境界法線の内向き (-n)、大きさ |u| は blend 後マッハから。
+                const flow_float invs = 1.0f/sss;
+                Ux_new = -(flow_float)um_d * sxx*invs;
+                Uy_new = -(flow_float)um_d * syy*invs;
+                Uz_new = -(flow_float)um_d * szz*invs;
             } else {
                 Ps_new = Pt_b/pow(1.0+0.5*(ga-1.0)*mach_c*mach_c, ga/(ga-1.0));
                 Ts_new = Tt_b/(1.0+0.5*(ga-1.0)*mach_c*mach_c);
@@ -1074,7 +1114,7 @@ void inlet_Pressure_d
             Ps_new = Pt_b;
             Ts_new = Tt_b;
             if (thermalMethod == 2) {
-                flow_float R = (flow_float)thermo_R_species(sp[0]);
+                flow_float R = (flow_float)(mix ? thermo_R_mix(sp, nSpecies, Yin) : thermo_R_species(sp[0]));
                 ro_new = Ps_new/(R*Ts_new);
                 sonic_new = sqrt(ga*Ps_new/ro_new);
             } else {
@@ -1086,11 +1126,18 @@ void inlet_Pressure_d
         flow_float ek = 0.5*(Ux_new*Ux_new +Uy_new*Uy_new +Uz_new*Uz_new);
         flow_float roe_new;
         if (thermalMethod == 2) {
-            // TP: roe = ρ(e_NASA(Ts) + ek), sonic = √(γ_mix R Ts) = √(γ_mix Ps/ρ)
-            const double R   = thermo_R_species(sp[0]);
-            const double e_in= thermo_h_mass(sp[0], (double)Ts_new) - R*(double)Ts_new;
-            const double cpv = thermo_cp_mass(sp[0], (double)Ts_new);
-            const double gmx = cpv/((cpv-R) > 1.0e-6 ? (cpv-R) : 1.0e-6);
+            // TP: roe = ρ(e(Ts) + ek), sonic = √(γ Ps/ρ)。多成分は混合則、単成分は sp[0]。
+            const double Tsd = (double)Ts_new;
+            double e_in, gmx;
+            if (mix) {
+                e_in = thermo_e_mix(sp, nSpecies, Yin, Tsd);
+                gmx  = thermo_gamma_mix(sp, nSpecies, Yin, Tsd);
+            } else {
+                const double R   = thermo_R_species(sp[0]);
+                const double cpv = thermo_cp_mass(sp[0], Tsd);
+                e_in = thermo_h_mass(sp[0], Tsd) - R*Tsd;
+                gmx  = cpv/((cpv-R) > 1.0e-6 ? (cpv-R) : 1.0e-6);
+            }
             roe_new   = (flow_float)((double)ro_new*(e_in + (double)ek));
             sonic_new = (flow_float)sqrt(gmx*(double)Ps_new/(double)ro_new);
         } else {
@@ -1129,6 +1176,17 @@ void inlet_Pressure_d
 
 void inlet_Pressure_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var , matrix& mat_p)
 {
+    // 多成分 TP (M5): 入口組成 Y_s^in の device ポインタ配列を遅延構築 (bc.Yb_d にキャッシュ)。
+    // 単成分 (nSpecies<2) では nullptr のままで、カーネルは従来の sp[0] 経路を使う。
+    if (cfg.thermalMethod == 2 && cfg.nSpecies >= 2 && bc.Yb_d == nullptr) {
+        std::vector<flow_float*> hYb(cfg.nSpecies);
+        for (int s = 0; s < cfg.nSpecies; s++) {
+            hYb[s] = bc.bvar_d["Y" + std::to_string(s)];
+        }
+        gpuErrchk( cudaMalloc((void**)&bc.Yb_d, cfg.nSpecies*sizeof(flow_float*)) );
+        gpuErrchk( cudaMemcpy(bc.Yb_d, hYb.data(), cfg.nSpecies*sizeof(flow_float*), cudaMemcpyHostToDevice) );
+    }
+
     inlet_Pressure_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
         cfg.gamma,
         cfg.cp,
@@ -1165,11 +1223,14 @@ void inlet_Pressure_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& 
         bc.bvar_d["Tt"],
         bc.bvar_d["Pt"],
         bc.bvar_d["Ts"],
-        bc.bvar_d["Ps"]
+        bc.bvar_d["Ps"],
+
+        bc.Yb_d,        // 多成分 TP: 入口組成 (単成分では nullptr)
+        cfg.nSpecies
     ) ;
 }
 
-__global__ 
+__global__
 void inlet_Pressure_dir_d
 (
  // gas

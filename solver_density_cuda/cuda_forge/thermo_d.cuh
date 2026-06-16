@@ -425,10 +425,20 @@ THERMO_HD double thermo_s_molar_clamped(const SpeciesThermo& sp, double Tc)
 }
 THERMO_HD double thermo_s0_mass(const SpeciesThermo& sp, double T)
 {
-    double Tc = T;
-    if (Tc < sp.Tlo) Tc = sp.Tlo;
-    if (Tc > sp.Thi) Tc = sp.Thi;
-    return thermo_s_molar_clamped(sp, Tc) / sp.MW;   // [J/(kg·K)]
+    // 域外は cp 一定外挿 (h の線形外挿と整合): ds0/dT = cp/T → s0(T)=s0(Tb)+cp(Tb)·ln(T/Tb)。
+    // 旧実装は s0 をクランプ (=const) しており h/cp の定 cp 外挿と熱力学的に非整合で、
+    // sub-200K (低温ノズル) の等エントロピー関係を破綻させていた (TP 不安定の一因)。
+    if (T < sp.Tlo) {
+        const double s0  = thermo_s_molar_clamped(sp, sp.Tlo);
+        const double cp0 = thermo_cp_molar_clamped(sp, sp.Tlo);
+        return (s0 + cp0*log(T/sp.Tlo)) / sp.MW;
+    }
+    if (T > sp.Thi) {
+        const double s1  = thermo_s_molar_clamped(sp, sp.Thi);
+        const double cp1 = thermo_cp_molar_clamped(sp, sp.Thi);
+        return (s1 + cp1*log(T/sp.Thi)) / sp.MW;
+    }
+    return thermo_s_molar_clamped(sp, T) / sp.MW;   // [J/(kg·K)]
 }
 
 // 単成分 (M1) の等エントロピー total→static 反転。
@@ -539,6 +549,36 @@ THERMO_HD void thermo_isentropic_from_total_Ps_single(
         if (dT < 1.0e-3 + 1.0e-6*Ts) break;
     }
     const double dh = thermo_h_mass(sp[0], Tt) - thermo_h_mass(sp[0], Ts);
+    *umag_out = sqrt(dh > 0.0 ? 2.0*dh : 0.0);
+    *Ts_out   = Ts;
+    *ro_out   = Ps/(R*Ts);
+}
+
+// thermo_isentropic_from_total_Ps_single の sp[0] を混合則 (R_mix/s0_mix/cp_mix/h_mix) に置換。
+//   全温 Tt・全圧 Pt と静圧 Ps から静温 Ts・密度 ρ・速度 |u| を求める (多成分 TP)。
+THERMO_HD void thermo_isentropic_from_total_Ps_mix(
+    const SpeciesThermo* sp, int n, const double* Y, double Pt, double Tt, double Ps,
+    double* Ts_out, double* ro_out, double* umag_out)
+{
+    const double R  = thermo_R_mix(sp, n, Y);
+    const double s_target = thermo_s0_mix(sp, n, Y, Tt) + R*log((Ps > 1.0e-30 ? Ps : 1.0e-30)
+                                                               /(Pt > 1.0e-30 ? Pt : 1.0e-30));
+    double Ts = Tt;
+    if (Ts < 10.0) Ts = 10.0;
+    #pragma unroll 1
+    for (int it=0; it<30; ++it) {
+        const double f  = thermo_s0_mix(sp, n, Y, Ts) - s_target;
+        const double df = thermo_cp_mix(sp, n, Y, Ts)/Ts;
+        double dT = f/(df > 1.0e-12 ? df : 1.0e-12);
+        if (dT >  0.4*Ts) dT =  0.4*Ts;
+        if (dT < -0.4*Ts) dT = -0.4*Ts;
+        Ts -= dT;
+        if (Ts < 10.0) Ts = 10.0;
+        if (Ts > Tt)   Ts = Tt;
+        if (dT < 0.0) dT = -dT;
+        if (dT < 1.0e-3 + 1.0e-6*Ts) break;
+    }
+    const double dh = thermo_h_mix(sp, n, Y, Tt) - thermo_h_mix(sp, n, Y, Ts);
     *umag_out = sqrt(dh > 0.0 ? 2.0*dh : 0.0);
     *Ts_out   = Ts;
     *ro_out   = Ps/(R*Ts);
