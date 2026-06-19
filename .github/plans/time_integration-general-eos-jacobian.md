@@ -112,7 +112,9 @@
 - [x] TP ノズルで cfl 上限が CPG 並みに改善 (cfl≥5 で即発散しない) を実証
 - [x] 残差床トラックの切り分け (EOS 反転床 ~4e-11 が残ると確認)
 - [x] README / plan 同期、`status: done`
-- [ ] (後続) Level3 行列作用の自動テスト・lowMachPrecond=2 経路の一般EOS化・閉形式 L の更なる検証
+- [x] Level3 行列作用の自動テスト (`tools/test_eos_jacobian.cpp`、実 `accumulate_split_jacobian_cf` を共有ヘッダ化して照合)
+- [x] lowMachPrecond=2 経路の一般EOS化 (構築レベル。3 箇所の CPG 仮定を修正・CPG ビット不変・TP↔CPG 挙動一致)
+- [ ] (後続) precond=2 TP の **end-to-end 収束検証** (低マッハ TP ケースが必要。超音速 wys は CPG でも precond=2 発散で不可)・閉形式 L の更なる検証
 
 ## 9. 変更ログ
 
@@ -132,6 +134,19 @@
     は ~atomicAdd 一致 (thermallyPerfect=0 は旧コードと同一)。物理健全 (T∈[296,505]K, 超音速, NaN 無)。
   - **残差床は別トラックと確認**: 新 TP は ~4e-11 で下げ止まり (CPG は 1.4e-12)。これは Jacobian でなく
     NASA Newton 反転・単精度 EOS 評価の床 (レビュー予測どおり「機械ゼロまでは保証しない」)。後続課題。
+- `2026-06-20` — **③ Level3 自動テスト + ② precond=2 経路の一般EOS化**。
+  - **③ (完了)**: `accumulate_split_jacobian_cf` を共有ヘッダ `cuda_forge/block_dplur_jacobian_d.cuh` へ移設
+    (host/device 両対応, `max`→`blkdplur_max` 三元 max でビット不変)。`tools/test_eos_jacobian.cpp` に Level3
+    (実カーネル関数の `diag += face_area·A⁺`・`nbr += (−A⁻)·sdq` を検証済 `eos_split_jacobian_general_closed` と照合)
+    を追加 → **machine 精度一致 (~5e-16) で PASS**。標準経路 (precond=0) は再 run で TP step1 全桁一致 (ビット不変)。
+  - **② (構築レベル完了・end-to-end 未検証)**: lowMachPrecond=2 の precond カーネルが持つ **3 箇所の CPG 仮定**を特定・修正:
+    (i) `build_jacobian_split` の R[4] エンタルピー再構成 → 検証済 `eos_Mg_general` で a_plus/k_off を構築 (TP 分岐),
+    (ii) Γ_c の g ベクトル `Htot=c²/(γ−1)+ek` → 実 `Ht`,
+    (iii) ∂p/∂Q の r ベクトル `rvec[0]=κek` → `χ_eos+κek` (χ_eos=c²−κh)。いずれも `thermallyPerfect` 分岐で
+    **CPG はビット不変** (再 run で確認)。**TP precond=2 は CPG precond=2 と同一挙動** (両者 supersonic wys で step6 発散)
+    = EOS 不整合は解消 (旧 CPG 形なら TP は step3 で早期発散)。**ただし precond=2 の収束を正で示す低マッハ TP ケースが無く、
+    超音速 wys は CPG でも precond=2 発散のため、end-to-end の収束検証は未** (後続課題)。標準経路 (precond=0/1) が TP の
+    検証済・推奨経路。
 - `2026-06-20` — **リネーム整備 (ビット不変)**: `accumulate_split_jacobian_cf` のローカル名を明確化
   (`chi`→`kappa_over_c` (=(γ−1)/c, EOS の χ ではない)・`inv_chi`→`c_over_kappa`・`s2`→`inv_sqrt2`・`is`→`inv_sonic`、
   `kappa=γ−1`/`chi_eos=c²−κh` を明示)、フラグ `generalEOS`→`thermallyPerfect` (κ=γ−1 仮定=TP ideal gas 専用と明記)、

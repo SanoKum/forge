@@ -8,6 +8,7 @@
 #include <algorithm>
 #include "../cuda_forge/thermo_d.cuh"
 #include "../cuda_forge/eos_jacobian_d.cuh"
+#include "../cuda_forge/block_dplur_jacobian_d.cuh"  // Level3: 実カーネル関数 accumulate_split_jacobian_cf
 
 static SpeciesThermo mkN2(){
     const double lo[9]={2.210371497e+04,-3.818461820e+02,6.082738360e+00,-8.530914410e-03,1.384646189e-05,-9.625793620e-09,2.519705809e-12,7.108460860e+02,-1.076003744e+01};
@@ -119,6 +120,32 @@ int main(){
         double flipErr=0; { double M1[5][5]; for(int i=0;i<5;i++)for(int j=0;j<5;j++)M1[i][j]=Bp[i][j]+Am[i][j]; flipErr=fro(M1)/fmax(fro(Aeig),1e-30); }
         if(splitErr>1e-9||flipErr>1e-9){ printf("    Level2: split=%.1e flip=%.1e <-- FAIL\n",splitErr,flipErr); ok=false; }
     }
-    printf("\nLevel1/2 %s\n", ok?"PASS":"FAIL");
+    // ===== Level3: 実カーネル関数 accumulate_split_jacobian_cf の組み立てが解析 A± と一致するか =====
+    // diag += face_area·A⁺,  nbr += (−A⁻)·sdq を複数面で累積し、検証済み eos_split_jacobian_general_closed と照合。
+    {
+        double ro=0.4, T=350.0; ThermoDerivatives D; thermo_derivatives_mix(&N2,1,Y1,T,&D);
+        double e=D.e, ux=480,uy=40,uz=10;
+        double Q[5]={ro, ro*ux, ro*uy, ro*uz, ro*(e+0.5*(ux*ux+uy*uy+uz*uz))};
+        Prim p=prim_from_Q(Q,1);
+        const double gamma=p.kappa+1.0;   // accumulate は kappa=gamma-1 を再構成
+        double faces[2][4]={{0.6,0.7,0.39,1.3},{-0.2,0.5,-0.84,0.8}}; // nx,ny,nz(非正規),area
+        double sdqs[2][5]={{0.01,-0.02,0.03,0.0,5.0},{0.04,0.01,-0.01,0.02,-3.0}};
+        double diag[5][5]={{0}}, nbr[5]={0}, ediag[5][5]={{0}}, enbr[5]={0};
+        for(int f=0;f<2;f++){
+            double n[3]={faces[f][0],faces[f][1],faces[f][2]}; double L=sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]); n[0]/=L;n[1]/=L;n[2]/=L;
+            double fa=faces[f][3]; double* sdq=sdqs[f];
+            block_dplur::accumulate_split_jacobian_cf<double>(gamma,n[0],n[1],n[2],p.ux,p.uy,p.uz,p.c,p.Ht,true,fa,true,sdq,diag,nbr);
+            double Cp[5][5],Cm[5][5]; eos_split_jacobian_general_closed(p.ux,p.uy,p.uz,n[0],n[1],n[2],p.c,p.Ht,p.kappa,p.chi,Cp,Cm);
+            for(int i=0;i<5;i++)for(int j=0;j<5;j++) ediag[i][j]+=fa*Cp[i][j];       // A⁺·face_area
+            for(int i=0;i<5;i++){double s=0;for(int j=0;j<5;j++)s+=-Cm[i][j]*sdq[j]; enbr[i]+=s;} // (−A⁻)·sdq
+        }
+        double derr=frodiff(diag,ediag)/fmax(fro(ediag),1e-30);
+        double nr=0,nd=0; for(int i=0;i<5;i++){double d=nbr[i]-enbr[i];nr+=d*d;nd+=enbr[i]*enbr[i];}
+        double nerr=sqrt(nr)/fmax(sqrt(nd),1e-30);
+        bool l3=(derr<1e-12 && nerr<1e-12);
+        printf("Level3 (assembly): ||diag-face*A+||=%.2e  ||nbr-(-A-)sdq||=%.2e  %s\n", derr, nerr, l3?"PASS":"FAIL");
+        if(!l3) ok=false;
+    }
+    printf("\nLevel1/2/3 %s\n", ok?"PASS":"FAIL");
     return ok?0:1;
 }

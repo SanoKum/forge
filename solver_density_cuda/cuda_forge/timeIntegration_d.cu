@@ -1,5 +1,7 @@
 #include "timeIntegration_d.cuh"
 #include "lowMachPrecond_d.cuh"   // Phase 4: β (lowMachBeta)・c' (lowMachCprime) device ヘルパ
+#include "cuda_forge/eos_jacobian_d.cuh"  // 一般EOS固有系 (eos_Mg_general)。TP の precond 経路で使用
+#include "cuda_forge/block_dplur_jacobian_d.cuh"  // block_dplur::accumulate_split_jacobian_cf (共有ヘッダ)
 
 namespace block_dplur {
 
@@ -21,79 +23,8 @@ __device__ __forceinline__ void add_identity_scaled(T mat[5][5], T scale)
     }
 }
 
-// 閉形式 FVS 蓄積 (R/L 固有分解を作らず音響固有ベクトルの rank-2 外積で A⁺S を diag・k_off·sdq を nbr へ)。
-// double/float 双方で使える (T=scalar)。R/L 5×5×5 三重積と a_plus/k_off 保持を排除し float でも ~10% 高速。
-// 軸対称 (nz=0) で legacy build_jacobian_split (R Λ L) と数値等価 (/tmp/mtest.cpp 検証)。一般 3D は legacy の
-// R/L が厳密逆行列でない (RL≠I) ため僅差だが、固有値を厳密に max(λ,0) とする valid な FVS で定常解は不変。
-//   M(g) = g₂ I + (g₁−g₂) r₁⊗l₁ + (g₅−g₂) r₅⊗l₅,  a_plus=M(λ⁺), k_off=M((−λ)⁺)
-// thermallyPerfect=false: CPG 閉形式 (従来式・ビット不変)。
-// thermallyPerfect=true:  thermally-perfect ideal gas (TP, 固定組成)。音響右固有ベクトルのエネルギーに実全
-//   エンタルピー Htot を、左固有ベクトルの密度成分に EOS の χ_eos=c²−κh (κ=γ−1, h=Htot−ek) を加える。
-//   CPG (χ_eos=0, Htot=ek+c²/κ) に厳密に還元。**注意**: ここで κ=γ−1 を仮定しているので、任意の実在気体 EOS
-//   ではなく thermally-perfect ideal gas 専用 (多成分 TP は κ=γ_mix−1 で成立)。真の一般 EOS では κ を熱力学
-//   ルーチンから受け取る必要がある。導出・検証は docs/time_integration + plan
-//   time_integration-general-eos-jacobian.md。
-//
-// 命名注意: ローカルの `kappa_over_c=(γ−1)/c` は **EOS の χ ではない** (Grüneisen κ を c で割ったもの)。
-//   一般 EOS の χ_eos=∂p/∂ρ|_{ρe}=c²−κh は下の `chi_eos` (TP 補正 dD=χ_eos/c に相当)。
-template<typename T>
-__device__ __forceinline__ void accumulate_split_jacobian_cf(
-    T gamma, T nx, T ny, T nz, T u, T v, T w, T c, T Htot, bool thermallyPerfect,
-    T face_area, bool has_nbr, const T sdq[5], T diag[5][5], T nbr[5])
-{
-    const T sonic = max(c, static_cast<T>(1.0e-8));   // 本番下限 (異常検出は下の FORGE_JACOBIAN_SANITY)
-    const T ek = static_cast<T>(0.5)*(u*u+v*v+w*w);
-    const T V = u*nx+v*ny+w*nz;
-    const T kappa        = gamma - static_cast<T>(1.0);  // Grüneisen κ = γ−1 (TP)
-    const T kappa_over_c = kappa/sonic;                  // κ/c (旧 chi。EOS の χ ではない)
-    const T c_over_kappa = sonic/kappa;                  // c/κ (旧 inv_chi)
-    const T inv_sqrt2    = static_cast<T>(0.7071067811865475244);  // 1/√2 (音響固有ベクトルの双直交正規化)
-    const T inv_sonic    = static_cast<T>(1.0)/sonic;    // 1/c (旧 is)
-#ifdef FORGE_JACOBIAN_SANITY
-    if (!(c > static_cast<T>(0.0)) || !isfinite(c) || kappa < static_cast<T>(1.0e-3) || !isfinite(Htot)) {
-        printf("[jacobian_sanity] c=%g gamma=%g kappa=%g Htot=%g\n",
-               (double)c, (double)gamma, (double)kappa, (double)Htot);
-    }
-#endif
-    // eE = r 音響エネルギー成分 (∓V を除く), dD = l 音響密度成分の TP 補正 (χ_eos·(1/c))。
-    // CPG: eE=ek/c + c/κ (=Htot_cpg/c), dD=0 → 従来式とビット一致。
-    T eE, dD;
-    if (thermallyPerfect) {
-        const T h_real  = Htot - ek;                       // 実エンタルピー h(T)
-        const T chi_eos = sonic*sonic - kappa*h_real;       // χ_eos = c²−κh (EOS の真の χ。CPG で 0)
-        eE = Htot * inv_sonic;                              // = (ek+h)/c
-        dD = chi_eos * inv_sonic;                           // = χ_eos/c
-    } else {
-        eE = ek*inv_sonic + c_over_kappa;
-        dD = static_cast<T>(0.0);
-    }
-    const T r1[5]={ inv_sqrt2*inv_sonic, (u*inv_sonic+nx)*inv_sqrt2, (v*inv_sonic+ny)*inv_sqrt2, (w*inv_sonic+nz)*inv_sqrt2, (eE+V)*inv_sqrt2 };
-    const T r5[5]={ inv_sqrt2*inv_sonic, (u*inv_sonic-nx)*inv_sqrt2, (v*inv_sonic-ny)*inv_sqrt2, (w*inv_sonic-nz)*inv_sqrt2, (eE-V)*inv_sqrt2 };
-    const T l1[5]={ (kappa_over_c*ek-V+dD)*inv_sqrt2, (-kappa_over_c*u+nx)*inv_sqrt2, (-kappa_over_c*v+ny)*inv_sqrt2, (-kappa_over_c*w+nz)*inv_sqrt2, kappa_over_c*inv_sqrt2 };
-    const T l5[5]={ (kappa_over_c*ek+V+dD)*inv_sqrt2, (-kappa_over_c*u-nx)*inv_sqrt2, (-kappa_over_c*v-ny)*inv_sqrt2, (-kappa_over_c*w-nz)*inv_sqrt2, kappa_over_c*inv_sqrt2 };
-    const T lam1=V+sonic, lam2=V, lam5=V-sonic;
-    const T zero=static_cast<T>(0.0);
-    const T p2=max(lam2,zero), pa1=max(lam1,zero)-p2, pa5=max(lam5,zero)-p2;
-    #pragma unroll
-    for (int i=0;i<5;++i){
-        const T c1=pa1*r1[i], c5=pa5*r5[i];
-        #pragma unroll
-        for (int j=0;j<5;++j){
-            T m = c1*l1[j] + c5*l5[j];
-            if (i==j) m += p2;
-            diag[i][j] += face_area * m;
-        }
-    }
-    if (has_nbr){
-        const T n2=max(-lam2,zero), na1=max(-lam1,zero)-n2, na5=max(-lam5,zero)-n2;
-        T l1s=zero, l5s=zero;
-        #pragma unroll
-        for (int j=0;j<5;++j){ l1s+=l1[j]*sdq[j]; l5s+=l5[j]*sdq[j]; }
-        const T cc1=na1*l1s, cc5=na5*l5s;
-        #pragma unroll
-        for (int i=0;i<5;++i) nbr[i] += n2*sdq[i] + cc1*r1[i] + cc5*r5[i];
-    }
-}
+// accumulate_split_jacobian_cf は cuda_forge/block_dplur_jacobian_d.cuh へ移設 (host/device 共有・Level3
+// 単体テスト tools/test_eos_jacobian.cpp から呼ぶため)。block_dplur:: で参照する。
 
 __device__ __forceinline__ void multiply_add_5x5_vec(
     const flow_float mat[5][5],
@@ -223,6 +154,7 @@ __device__ __forceinline__ void build_jacobian_split(
     flow_float w,
     flow_float H,
     flow_float c,
+    int thermallyPerfect,
     flow_float a_plus[5][5],
     flow_float k_off[5][5]
 )
@@ -232,6 +164,29 @@ __device__ __forceinline__ void build_jacobian_split(
     const flow_float U = u * nx + v * ny + w * nz;
     const flow_float chi = (gamma - 1.0) / sonic;
     const flow_float inv_sqrt2 = static_cast<flow_float>(0.7071067811865475244);
+
+    // TP (thermally-perfect): 検証済みの一般EOS閉形式 (eos_Mg_general) で a_plus=M(λ⁺)・k_off=M((−λ)⁺) を作る。
+    // 実 H・χ_eos=c²−κh (κ=γ−1) を使う (この関数の CPG 用 R/L は H を無視し ek+c²/κ を再構成するため TP で誤り)。
+    // double で組み立て float へ格納 (precond カーネルは元々 double 相当の精度で組む)。CPG は下の既存 R/L のまま。
+    if (thermallyPerfect) {
+        const double dUn   = (double)u*nx + (double)v*ny + (double)w*nz;
+        const double dc    = (double)sonic;
+        const double dkap  = (double)gamma - 1.0;
+        const double dh    = (double)H - 0.5*((double)u*u + (double)v*v + (double)w*w);
+        const double dchi  = dc*dc - dkap*dh;                 // χ_eos = c²−κh
+        double Mp[5][5], Mk[5][5];
+        eos_Mg_general((double)u,(double)v,(double)w, (double)nx,(double)ny,(double)nz, dc,
+                       (double)H, dkap, dchi,
+                       fmax(dUn+dc,0.0), fmax(dUn,0.0), fmax(dUn-dc,0.0), Mp);          // M(λ⁺)
+        eos_Mg_general((double)u,(double)v,(double)w, (double)nx,(double)ny,(double)nz, dc,
+                       (double)H, dkap, dchi,
+                       fmax(-(dUn+dc),0.0), fmax(-dUn,0.0), fmax(-(dUn-dc),0.0), Mk);    // M((−λ)⁺)
+        #pragma unroll
+        for (int i=0;i<5;++i)
+            #pragma unroll
+            for (int j=0;j<5;++j){ a_plus[i][j]=(flow_float)Mp[i][j]; k_off[i][j]=(flow_float)Mk[i][j]; }
+        return;
+    }
 
     const flow_float lambda[5] = {
         U + sonic,
@@ -1003,6 +958,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float* dt_local,
  flow_float implicit_relax,
  flow_float* gamma_arr,   // per-cell γ (TP: γ_mix(T), CPG: cfg.gamma)
+ int thermallyPerfect,    // 1: TP 一般EOS固有系 (build_jacobian_split TP 分岐), 0: CPG (従来)
  flow_float precondEps,
 
  geom_int nCells_all , geom_int nCells,
@@ -1081,7 +1037,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             flow_float a_plus[5][5];
             flow_float k_off[5][5];
             block_dplur::build_jacobian_split(gamma, nx, ny, nz, vx, vy, vz,
-                                              local_enthalpy, local_sonic, a_plus, k_off);
+                                              local_enthalpy, local_sonic, thermallyPerfect, a_plus, k_off);
             block_dplur::add_scaled_5x5(D0, a_plus, face_area);
 
             const flow_float dcc_x = ccx[other_ic] - ccx[ic];
@@ -1123,12 +1079,19 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             D0[2][4] += -A_pl * g1;
         }
 
-        // Γ_c のランク1寄与: g=(1,u,v,w,H), r=(γ-1)(ek,-u,-v,-w,1)=∂p/∂Q, γ=(V/Δτ')·(1-β)/(βc²)。
+        // Γ_c のランク1寄与: g=(1,u,v,w,H_t), r=∂p/∂Q=(χ_eos+κek,-κu,-κv,-κw,κ), γ=(V/Δτ')·(1-β)/(βc²)。
+        // CPG では H_t=c²/(γ-1)+ek・χ_eos=0 で従来式に簡約 (ビット不変)。TP は実 H_t(=local_enthalpy) と
+        // χ_eos=c²−κh を使う (build_jacobian_split と同じ一般EOS整合)。κ=γ-1。
         const flow_float ek = static_cast<flow_float>(0.5) * velMag * velMag;
-        const flow_float Htot = local_sonic*local_sonic/(gamma-static_cast<flow_float>(1.0)) + ek;
         const flow_float gm1 = gamma - static_cast<flow_float>(1.0);
+        const flow_float Htot = (thermallyPerfect != 0)
+            ? local_enthalpy
+            : (local_sonic*local_sonic/gm1 + ek);
+        const flow_float chi_eos = (thermallyPerfect != 0)
+            ? (local_sonic*local_sonic - gm1*(local_enthalpy - ek))   // c²−κh (CPG で 0)
+            : static_cast<flow_float>(0.0);
         flow_float gvec[5] = { static_cast<flow_float>(1.0), vx, vy, vz, Htot };
-        const flow_float rvec[5] = { gm1*ek, -gm1*vx, -gm1*vy, -gm1*vz, gm1 };
+        const flow_float rvec[5] = { chi_eos + gm1*ek, -gm1*vx, -gm1*vy, -gm1*vz, gm1 };
         const double dbeta = static_cast<double>(beta);
         const double alpha = (1.0 - dbeta) / (dbeta * static_cast<double>(local_sonic) * static_cast<double>(local_sonic));
         const double gam = static_cast<double>(v_over_dtau) * alpha;   // = (V/Δτ')·α
@@ -1283,7 +1246,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             if (cfg.lowMachPrecond == 2) {
               // Phase 4: 完全 Γ⁻¹A 前処理の倍精度カーネル (dt_local は前処理 Δτ' に拡大済)。
               implicit_defect_correction_block_precond_d<<<block_grid , block_threads>>>(
-                loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, var.c_d["gamma"], cfg.precondEps,
+                loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, var.c_d["gamma"], (cfg.thermalMethod == 2 ? 1 : 0), cfg.precondEps,
                 msh.nCells_all, msh.nCells, var.c_d["volume"],
                 msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
                 var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],

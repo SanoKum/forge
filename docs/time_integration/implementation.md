@@ -212,7 +212,7 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
 根拠・データは [`theory.md`](theory.md#低マッハ前処理固有値-weisssmith--試行したが不採用) と計画
 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
-#### 一般EOS固有系 (TP gas, `thermalMethod==2`) — 実装中 (Method A)
+#### 一般EOS固有系 (TP gas, `thermalMethod==2`) — 実装・検証完了 (閉形式)
 
 閉形式 `accumulate_split_jacobian_cf` は `inv_chi=sonic/(γ-1)` で全エンタルピーを $K+c^2/(\gamma-1)$ と再構成し、
 接触波エネルギー成分に $K$ を使う。これは **CPG 専用**で TP では真の $\partial\mathbf F/\partial\mathbf Q$ と一致しない
@@ -233,6 +233,13 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
   超音速/一般方向)、Level2 split `A⁺+A⁻=A`・法線反転、Level3 DPLUR 行列作用、Level4 ノズル cfl 2/5/20/50/100
   (発散 step・収束率・残差床・出口M・massflux・全エンタルピー・Newton 反転回数)。**残差床は別トラック**で EOS
   反転誤差 ($\max_i|e(T_i)-e_{\text{target},i}|/\max(|e_{\text{target}}|,e_{\rm ref})$) と切り分け、機械ゼロは保証しない。
+- **実装 (閉形式・確定)**: `accumulate_split_jacobian_cf` (共有ヘッダ `block_dplur_jacobian_d.cuh`) の音響右固有ベクトル
+  エネルギーを実 `Ht`、左密度成分に `χ_eos=c²−κh` を加える 3 項改変 (`thermallyPerfect` 分岐、CPG ビット不変)。
+  数値 L=R⁻¹ は検証参照のみ。**結果**: TP cfl 上限 2→≥100・残差 9.6e-8→4e-11、Level1/2/3 PASS (`tools/test_eos_jacobian.cpp`)。
+- **precond=2 経路 (構築レベル対応・end-to-end 未検証)**: `implicit_defect_correction_block_precond_d` も TP では 3 箇所が
+  CPG 仮定 (`build_jacobian_split` の R[4]・Γ_c の g ベクトル `Htot`・∂p/∂Q の `rvec[0]` の χ 欠落) で、いずれも
+  `thermallyPerfect` 分岐で一般EOS化済 (CPG ビット不変、TP↔CPG 挙動一致)。ただし precond=2 の収束を正で示す低マッハ TP
+  ケースが無く (超音速 wys は CPG でも precond=2 発散)、end-to-end 検証は未。**TP は標準経路 (precond=0/1) が検証済・推奨**。
 
 ### `implicit_defect_correction_block_precond_d`（Phase 4: 完全 $\Gamma^{-1}A$ 前処理・`lowMachPrecond=2`）
 
