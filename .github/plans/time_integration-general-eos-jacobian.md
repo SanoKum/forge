@@ -147,6 +147,13 @@
     = EOS 不整合は解消 (旧 CPG 形なら TP は step3 で早期発散)。**ただし precond=2 の収束を正で示す低マッハ TP ケースが無く、
     超音速 wys は CPG でも precond=2 発散のため、end-to-end の収束検証は未** (後続課題)。標準経路 (precond=0/1) が TP の
     検証済・推奨経路。
+- `2026-06-20` — **precond 経路の固有系を統一 (Option A, クリーンアップ)**。`build_jacobian_split` の CPG 専用べた打ち
+  R/L (RL≠I の近似) と TP 分岐を廃止し、検証済み `eos_split_jacobian_general_closed` (eos_jacobian_d.cuh) を呼ぶ
+  薄いラッパに統一 (`a_plus=A⁺`, `k_off=−A⁻`)。H=実 Ht・χ_eos=c²−κh を常に使い、CPG は χ_eos≈0 で簡約。Γ_c の
+  g/r ベクトルも実 Ht・χ_eos に統一し `thermallyPerfect` 分岐を precond カーネルから撤去 (標準経路 accumulate は
+  CPG ビット不変のため分岐維持)。**CPG precond=2 は legacy 近似→厳密 Jacobian に変わる**が収束先不変。
+  **回帰スポット確認** (`case/23.axi_nozzle` CPG inviscid precond=2, eps0.15): step4000 rms_ro 1.60e-5 (旧 legacy 1.38e-5)・
+  NaN 無で同一収束域 = 回帰なし。precond=2 が標準経路と同じ検証済み固有系を共有するようになり保守性向上。
 - `2026-06-20` — **リネーム整備 (ビット不変)**: `accumulate_split_jacobian_cf` のローカル名を明確化
   (`chi`→`kappa_over_c` (=(γ−1)/c, EOS の χ ではない)・`inv_chi`→`c_over_kappa`・`s2`→`inv_sqrt2`・`is`→`inv_sonic`、
   `kappa=γ−1`/`chi_eos=c²−κh` を明示)、フラグ `generalEOS`→`thermallyPerfect` (κ=γ−1 仮定=TP ideal gas 専用と明記)、

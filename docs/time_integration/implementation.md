@@ -236,10 +236,13 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
 - **実装 (閉形式・確定)**: `accumulate_split_jacobian_cf` (共有ヘッダ `block_dplur_jacobian_d.cuh`) の音響右固有ベクトル
   エネルギーを実 `Ht`、左密度成分に `χ_eos=c²−κh` を加える 3 項改変 (`thermallyPerfect` 分岐、CPG ビット不変)。
   数値 L=R⁻¹ は検証参照のみ。**結果**: TP cfl 上限 2→≥100・残差 9.6e-8→4e-11、Level1/2/3 PASS (`tools/test_eos_jacobian.cpp`)。
-- **precond=2 経路 (構築レベル対応・end-to-end 未検証)**: `implicit_defect_correction_block_precond_d` も TP では 3 箇所が
-  CPG 仮定 (`build_jacobian_split` の R[4]・Γ_c の g ベクトル `Htot`・∂p/∂Q の `rvec[0]` の χ 欠落) で、いずれも
-  `thermallyPerfect` 分岐で一般EOS化済 (CPG ビット不変、TP↔CPG 挙動一致)。ただし precond=2 の収束を正で示す低マッハ TP
-  ケースが無く (超音速 wys は CPG でも precond=2 発散)、end-to-end 検証は未。**TP は標準経路 (precond=0/1) が検証済・推奨**。
+- **precond=2 経路 (一般EOS統一・CPG 回帰確認済・TP end-to-end 未検証)**: `implicit_defect_correction_block_precond_d` は
+  TP で 3 箇所 CPG 仮定 (`build_jacobian_split` の R[4]・Γ_c の g ベクトル `Htot`・∂p/∂Q の `rvec[0]` の χ 欠落) だった。
+  **`build_jacobian_split` を検証済み `eos_split_jacobian_general_closed` を呼ぶ薄いラッパに統一** (CPG 専用べた打ち R/L=近似を廃止)、
+  Γ_c の g/r も実 Ht・χ_eos=c²−κh に統一し `thermallyPerfect` 分岐を撤去 (CPG は χ_eos≈0 で簡約)。precond=2 が標準経路と同じ
+  検証済み固有系を共有。**CPG precond=2 回帰確認** (`case/23` inviscid precond=2 eps0.15: step4000 rms_ro 1.60e-5 vs 旧 1.38e-5,
+  NaN 無, 同一収束域)。ただし **TP precond=2 の収束を正で示す低マッハ TP ケースが無く** (超音速 wys は CPG でも precond=2 発散)、
+  TP の end-to-end 検証は未。**TP は標準経路 (precond=0/1) が検証済・推奨**。
 
 ### `implicit_defect_correction_block_precond_d`（Phase 4: 完全 $\Gamma^{-1}A$ 前処理・`lowMachPrecond=2`）
 
