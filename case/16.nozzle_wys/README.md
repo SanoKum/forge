@@ -444,3 +444,32 @@ nStepInner=20・3000step・detectNaN。binary は `.build-native/relwithdebinfo/
 run keeper: run_0121/0126 (inviscid), run_0131/0136 (SST), run_0141/0145 (CPG hot), run_0151 (TP hot プラトー実証)。
 他は cfl 掃引の診断用 (破棄可)。図: 各 keeper の `residual_history.png`。IC 生成: `gen_ic_isentropic_cpg.py`,
 `cpg_to_tpN2_roe.py`。
+
+## 一般EOSヤコビアンで TP 陰解法律速を根治 (run_0161〜0166, 2026-06-20)
+
+上節で「TP の cfl≈2 頭打ち・残差プラトーの真因は block-DPLUR の固有系が CPG 専用 (`h=c²/(γ−1)`,
+`∂P/∂ρ|_e=0` を仮定)」と確定したのを受け、**一般EOS固有系**を実装 (plan
+[`time_integration-general-eos-jacobian.md`](../../.github/plans/time_integration-general-eos-jacobian.md))。
+音響右固有ベクトルのエネルギーに実全エンタルピー `Ht`、左密度成分に `χ=c²−κh` を入れる**閉形式**3項改変
+(`accumulate_split_jacobian_cf`、`generalEOS=thermalMethod==2` で分岐、CPG ビット不変)。閉形式は数値 LU・FD と
+機械精度一致を host 単体テスト (`tools/test_eos_jacobian.cpp`) で確認済。
+
+同一ノズル (`nozzle_2d_sst.h5`)・SST・hot 等エントロピー IC (`ic_isen_tpN2_hot.h5`, Tt=500) で:
+
+| cfl_pseudo | 2 | 5 | 20 | 50 | 100 |
+| --- | --- | --- | --- | --- | --- |
+| **TP 旧** (CPG 形 Jacobian) | 9.6e-8 *(plateau)* | 発散 s14 | 発散 s5 | 発散 s3 | 発散 s3 |
+| **TP 新** (一般EOS, run_0161〜0165) rms_ro | 5.6e-11 | **3.3e-11** | 3.7e-11 | 3.9e-11 | **3.8e-11** |
+
+**結論 (TP 律速を根治)**:
+1. **cfl 上限 2→≥100**: 新 TP は cfl 2/5/20/50/100 すべて 3000step 完走・NaN 無 (旧は cfl5 で step14 発散)。
+2. **残差プラトー突破**: 9.6e-8 → ~4e-11 (**3.6 桁改善**)。rms_roe 3.7 桁・rms_roOmega 5.6 桁低下。物理健全
+   (T∈[296,505]K, 超音速, exitM≈1.15=SST 閉塞)。
+3. **CPG 回帰** (`run_0166` vs 旧 `run_0143`): rms_ro 2.4816e-12 vs 2.4821e-12 = ~atomicAdd 一致
+   (`generalEOS=0` は旧コードと同一・ビット不変)。
+4. **残差床は別トラック**: 新 TP は ~4e-11 で下げ止まり (CPG は 1.4e-12)。これは Jacobian でなく NASA Newton
+   反転・単精度 EOS 評価の床 (レビュー予測どおり)。後続課題。
+
+keeper: run_0161/0163/0165 (TP 新, cfl2/20/100)・run_0166 (CPG 回帰)。図: 各 `residual_history.png`。
+IC: `gen_ic_isentropic_cpg.py` + `cpg_to_tpN2_roe.py`。実装: `cuda_forge/eos_jacobian_d.cuh`,
+`timeIntegration_d.cu`, 検証 `tools/test_eos_jacobian.cpp`。

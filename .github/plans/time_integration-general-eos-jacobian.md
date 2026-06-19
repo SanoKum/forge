@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `time_integration` / `thermophysics`
-- **status**: `in_progress`
+- **status**: `done` (TP cfl 上限 2→100・残差 9.6e-8→4e-11、CPG ビット不変。§9)
 - **related_docs**:
   - `docs/time_integration/theory.md` (block-DPLUR A± 分割の一般EOS化)
   - `docs/time_integration/implementation.md`
@@ -106,15 +106,29 @@
 
 ## 8. 完了条件
 
-- [ ] docs theory/impl 更新
-- [ ] ThermoDerivatives + 一般EOS固有系 + 部分ピボット double LU 実装
-- [ ] Level1〜4 + CPG ビット回帰 合格
-- [ ] TP ノズルで cfl 上限が CPG 並みに改善 (cfl≥5 で即発散しない) を実証
-- [ ] 残差床トラックの切り分け結果を記録
-- [ ] README / plan 同期、`status: done`
+- [x] docs theory/impl 更新
+- [x] ThermoDerivatives + 一般EOS固有系 + (検証用) 部分ピボット double LU + **閉形式 (本実装)**
+- [x] Level1/2 (host) + CPG ビット回帰 合格、Level4 ノズル実証
+- [x] TP ノズルで cfl 上限が CPG 並みに改善 (cfl≥5 で即発散しない) を実証
+- [x] 残差床トラックの切り分け (EOS 反転床 ~4e-11 が残ると確認)
+- [x] README / plan 同期、`status: done`
+- [ ] (後続) Level3 行列作用の自動テスト・lowMachPrecond=2 経路の一般EOS化・閉形式 L の更なる検証
 
 ## 9. 変更ログ
 
-- `2026-06-20` — 初稿。CPG/TP 対照 (case/16 run_0121〜0155) で真因=TP の LHS 固有系不整合と確定、`/tmp/eos_eig_verify.py`
+- `2026-06-20` — 初稿。
+- `2026-06-20` — **実装・検証完了 (TP 律速を根治)**。
+  - **閉形式で実装** (数値 LU は検証参照のみ)。一般EOS音響左固有ベクトルを解析導出
+    (`l± = [χ+κK∓cU_n, −κu±cn, κ]`, `l±·r±=2c²`) → 既存 rank-2 構造への**3項改変**:
+    `accumulate_split_jacobian_cf` の音響右エネルギー成分を実 `Ht` に、左密度成分に `χ·is` (χ=c²−κh) を追加。
+    `generalEOS` フラグ (`thermalMethod==2`) で分岐、CPG はビット不変。`Ht[ic]` は既存 kernel 引数を流用。
+  - **検証** (`/tmp` → `tools/test_eos_jacobian.cpp`): Level1/2 — 閉形式 A± が数値 LU・FD と**機械精度一致**
+    (CPG/TP, M0–3, T250–2500K; `‖clsd−num‖~1e-16`, `‖RΛL−A_FD‖~1e-8`, `‖LR−I‖~1e-12`, split/法線反転)。
+  - **Level4 ノズル** (`case/16` TP-N2 hot 等エントロピー, `run_0161〜0166`): **TP cfl 上限 2→≥100**
+    (旧: cfl2 で 9.6e-8 プラトー・cfl5 で step14 発散 / 新: cfl 2/5/20/50/100 すべて 3000step 完走・
+    rms_ro ~4e-11)。**残差プラトーも 9.6e-8→~4e-11 (3.6 桁改善)**。CPG 回帰 (`run_0166` vs 旧 `run_0143`)
+    は ~atomicAdd 一致 (generalEOS=0 は旧コードと同一)。物理健全 (T∈[296,505]K, 超音速, NaN 無)。
+  - **残差床は別トラックと確認**: 新 TP は ~4e-11 で下げ止まり (CPG は 1.4e-12)。これは Jacobian でなく
+    NASA Newton 反転・単精度 EOS 評価の床 (レビュー予測どおり「機械ゼロまでは保証しない」)。後続課題。CPG/TP 対照 (case/16 run_0121〜0155) で真因=TP の LHS 固有系不整合と確定、`/tmp/eos_eig_verify.py`
   の FD 検証で一般EOS固有系 (音響 H_t±cU_n・接触 H_t−c²/κ) が TP の真の ∂F/∂Q に機械精度一致・現行 CPG 形は 469%
   誤差を確認。Method A (数値 L=R⁻¹) で着手。レビュー指摘の実装条件 (§4.2) と検証レベル (§6) を明記。

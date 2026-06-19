@@ -26,9 +26,13 @@ __device__ __forceinline__ void add_identity_scaled(T mat[5][5], T scale)
 // 軸対称 (nz=0) で legacy build_jacobian_split (R Λ L) と数値等価 (/tmp/mtest.cpp 検証)。一般 3D は legacy の
 // R/L が厳密逆行列でない (RL≠I) ため僅差だが、固有値を厳密に max(λ,0) とする valid な FVS で定常解は不変。
 //   M(g) = g₂ I + (g₁−g₂) r₁⊗l₁ + (g₅−g₂) r₅⊗l₅,  a_plus=M(λ⁺), k_off=M((−λ)⁺)
+// general=false: CPG 閉形式 (従来式・ビット不変)。
+// general=true:  一般EOS (TP gas)。音響右固有ベクトルのエネルギーに実全エンタルピー Htot を、
+//   左固有ベクトルの密度成分に χ=c²−κh (κ=γ−1, h=Htot−ek) を加える。CPG (χ=0, Htot=ek+c²/κ) に厳密に
+//   還元する。導出・検証は docs/time_integration + plan time_integration-general-eos-jacobian.md。
 template<typename T>
 __device__ __forceinline__ void accumulate_split_jacobian_cf(
-    T gamma, T nx, T ny, T nz, T u, T v, T w, T c,
+    T gamma, T nx, T ny, T nz, T u, T v, T w, T c, T Htot, bool general,
     T face_area, bool has_nbr, const T sdq[5], T diag[5][5], T nbr[5])
 {
     const T sonic = max(c, static_cast<T>(1.0e-8));
@@ -38,10 +42,21 @@ __device__ __forceinline__ void accumulate_split_jacobian_cf(
     const T inv_chi = sonic/(gamma-static_cast<T>(1.0));
     const T s2 = static_cast<T>(0.7071067811865475244);
     const T is = static_cast<T>(1.0)/sonic;
-    const T r1[5]={ s2*is, (u*is+nx)*s2, (v*is+ny)*s2, (w*is+nz)*s2, (ek*is+inv_chi+V)*s2 };
-    const T r5[5]={ s2*is, (u*is-nx)*s2, (v*is-ny)*s2, (w*is-nz)*s2, (ek*is+inv_chi-V)*s2 };
-    const T l1[5]={ (chi*ek-V)*s2, (-chi*u+nx)*s2, (-chi*v+ny)*s2, (-chi*w+nz)*s2, chi*s2 };
-    const T l5[5]={ (chi*ek+V)*s2, (-chi*u-nx)*s2, (-chi*v-ny)*s2, (-chi*w-nz)*s2, chi*s2 };
+    // eE = r 音響エネルギー成分 (ーV を除く), dD = l 音響密度成分の一般EOS補正 (χ·is)。
+    // CPG: eE=ek·is+inv_chi (=Htot_cpg·is), dD=0 → 従来式とビット一致。
+    T eE, dD;
+    if (general) {
+        const T h_real = Htot - ek;                                   // 実エンタルピー h(T)
+        eE = Htot * is;                                               // = (ek+h)·is
+        dD = (sonic*sonic - (gamma-static_cast<T>(1.0))*h_real) * is; // χ·is, χ=c²−κh
+    } else {
+        eE = ek*is + inv_chi;
+        dD = static_cast<T>(0.0);
+    }
+    const T r1[5]={ s2*is, (u*is+nx)*s2, (v*is+ny)*s2, (w*is+nz)*s2, (eE+V)*s2 };
+    const T r5[5]={ s2*is, (u*is-nx)*s2, (v*is-ny)*s2, (w*is-nz)*s2, (eE-V)*s2 };
+    const T l1[5]={ (chi*ek-V+dD)*s2, (-chi*u+nx)*s2, (-chi*v+ny)*s2, (-chi*w+nz)*s2, chi*s2 };
+    const T l5[5]={ (chi*ek+V+dD)*s2, (-chi*u-nx)*s2, (-chi*v-ny)*s2, (-chi*w-nz)*s2, chi*s2 };
     const T lam1=V+sonic, lam2=V, lam5=V-sonic;
     const T zero=static_cast<T>(0.0);
     const T p2=max(lam2,zero), pa1=max(lam1,zero)-p2, pa5=max(lam5,zero)-p2;
@@ -744,6 +759,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float* dt_local,
  flow_float implicit_relax,
  flow_float* gamma_arr,   // per-cell γ (TP: γ_mix(T), CPG: cfg.gamma)。frozen-coefficient Jacobian 用
+ int generalEOS,          // 1: TP 一般EOS固有系 (実 Ht・χ), 0: CPG 閉形式 (従来・ビット不変)
 
  geom_int nCells_all , geom_int nCells,
  geom_float* vol,
@@ -826,6 +842,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         const ST velocity_y = static_cast<ST>(Uy[ic]);
         const ST velocity_z = static_cast<ST>(Uz[ic]);
         const ST local_sonic = max(static_cast<ST>(sonic[ic]), static_cast<ST>(1.0e-8));
+        const ST local_Ht = static_cast<ST>(Ht[ic]);   // 一般EOS固有系のエネルギー成分 (TP)
         const ST nu_eff = (static_cast<ST>(laminar_visc) + max(static_cast<ST>(vis_turb[ic]), static_cast<ST>(0.0))) / density;
 
         if (loop == 0) {
@@ -875,7 +892,8 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             }
             block_dplur::accumulate_split_jacobian_cf<ST>(
                 gamma, nx, ny, nz, velocity_x, velocity_y, velocity_z,
-                local_sonic, face_area, has_nbr, sdq, diag_block, neighbor_accum
+                local_sonic, local_Ht, generalEOS != 0,
+                face_area, has_nbr, sdq, diag_block, neighbor_accum
             );
 
             const ST dcc_x = static_cast<ST>(ccx[other_ic]) - static_cast<ST>(ccx[ic]);
@@ -1271,6 +1289,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             // 同じテンプレートカーネルを ST=float/double で起動。引数は共通 (FORGE_BDPLUR_ARGS)。
             #define FORGE_BDPLUR_ARGS \
                 loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, var.c_d["gamma"], \
+                (cfg.thermalMethod == 2 ? 1 : 0), \
                 msh.nCells_all, msh.nCells, var.c_d["volume"], \
                 msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d, \
                 var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"], \
