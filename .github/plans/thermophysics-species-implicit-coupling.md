@@ -110,6 +110,12 @@
   - **回帰**: default 2sp 経路 (=0) が旧バイナリと ~atomicAdd 一致 (run_0116 vs run_0104, step100 同値)、単成分も同様
     (run_0117 vs run_0081)。新経路は `speciesImplicitCoupling==1 && nSpecies>=2` でのみ起動。
   - **処置**: `speciesImplicitCoupling` は既定 0 で温存 (本ケースで無益だが組成勾配の大きいケース向けに flag-gated 残置)。
-    **後続の高優先 = 流れ/SST 陰解法の cfl 上限引き上げ** (cf. `time_integration-implicit-stable-cfl.md` が flat_plate で
-    cfl120 達成。hot ノズルで効かない理由=rms_roOmega 律速 の調査)。要因2 の残ペナルティ恒久修正には EOS cross-Jacobian
-    (案A) が必要だが流れ/SST 上限が先に律速するため優先度は低い。
+- `2026-06-20` — **【上記 §9 2026-06-19 の「流れ/SST 律速」結論を訂正】**。CPG/TP 対照 (case/16 README「ノズル CFL 上限」
+  run_0121〜0155) で**真の cfl 律速は `thermalMethod=2` (TP/NASA-9) 熱力学**と判明。等エントロピー fresh IC で:
+  ① CPG は inviscid/SST どちらも同一ノズルで **cfl 100〜200 まで rms 1e-12 収束** → ノズル形状も乱流モデルも律速でない。
+  ② 同一ノズル・SST・hot 等エントロピー IC で thermalMethod だけ変えると、**CPG=cfl100 収束 / TP=cfl2 でも 1e-7 プラトー・
+  cfl≥5 発散**。前回「単成分 N2 も cfl4 発散=流れ/SST 律速」とした run_0117 はそれ自体 TP だった (誤帰属)。
+  ③ TP cfl2 のプラトーは元の行き詰まり runs と同レベル → **残差プラトーも要因2/SST でなく TP 律速**。
+  機構推定: block-DPLUR 5×5 Jacobian が CPG 閉形式 (`chi=(γ-1)/sonic`) を凍結 γ[ic] で流用 → TP は γ(T) 変動 +
+  NASA-9 Newton 反転で線形化が実 EOS 微分と不整合。**恒久修正の方向 = block-DPLUR Jacobian の TP EOS 微分整合化**
+  (frozen-γ 流用をやめる)。これは要因2 (組成-エネルギー結合) より上位の律速で、新 plan 化が妥当。

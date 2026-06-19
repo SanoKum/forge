@@ -380,8 +380,10 @@ docs `thermophysics/{theory §3.1, implementation §4b}`。全 native full rebui
    (cfl≤2 完走 / cfl3 step20=step20 / cfl4 step7=step7 / cfl5 step4 / cfl8,10 step3)。cfl1/2 の残差プラトーも
    matched≡off (`check_convergence.py`=NOT CONVERGED, rms_roK/roOmega 上昇が律速で単成分と同型)。
 2. **cfl4 の壁は化学種起因ではない**。**単成分 N2 (H2O 完全に無し) も cfl4 で step7** に発散 (run_0117_cflp4)
-   = 2成分と同一。href ON 後の cfl 上限 (~2) は**流れ+SST block-DPLUR 律速**であり、化学種結合は最早ボトルネックでない
-   (rms_roOmega が上昇する SST 残差が律速)。
+   = 2成分と同一。⚠️ **【2026-06-20 訂正】当初ここで「流れ+SST block-DPLUR 律速」と書いたが誤り** — その単成分 N2 も
+   `thermalMethod=2` (TP/NASA-9) だった。後続の CPG/TP 対照 (下節「ノズル CFL 上限」run_0121〜0155) で
+   **真の律速は `thermalMethod=2` (TP) であり、ノズル形状・乱流モデルではない**ことが判明
+   (CPG-SST は同一ノズルで cfl100 まで rms 1e-12 収束)。
 3. **案B が無効な機構**: 本ケースの組成は**完全に一様** (Y_N2=0.98905, Y_H2O=0.010950 が全セル同値, min=max)
    → `res_roY≈0` → 化学種補正は matched/segregated どちらでも ~0。要因2 の H2O ペナルティは化学種**移流**の緩和ではなく、
    **EOS エネルギー再構成** (Newton 反転の組成依存 h_mix) にある。移流緩和をそろえても触れない。
@@ -394,3 +396,51 @@ docs `thermophysics/{theory §3.1, implementation §4b}`。全 native full rebui
 削除せず flag-gated)。matched 経路の commit/再正規化/物理量は健全 (run_0110/0111 で NaN無・ΣY=1・T>200K 実証)。
 **run_0112〜0120 は診断用** (恒久保持不要、結論は本表)。keeper は run_0110/0111 (緩和整合の安定動作例)。
 図: 各 keeper の `residual_history.png`。
+
+## ノズル block-DPLUR CFL 上限 — 真因は thermalMethod (TP) であってノズル/乱流ではない (run_0121〜0155, 2026-06-20)
+
+「多成分/単成分 TP が cfl_pseudo 2〜3 で頭打ち」を、**ノズル形状そのものか・乱流モデルか・thermalMethod(TP)か**で
+切り分けた。**初期値は quasi-1D 等エントロピーで生成** (`gen_ic_isentropic_cpg.py`: 面積-マッハ関係から M(x) を解き
+P,T,ρ,u を等エントロピーで与える。ρuA=const を機械精度で満たし startup ショックが出ない)。1次風上・blockDPLUR・
+nStepInner=20・3000step・detectNaN。binary は `.build-native/relwithdebinfo/forge`。
+
+### Test 1/2: CPG (定数 cp) は乱流の有無に関係なく cfl 100〜200 まで深く収束
+
+| cfl_pseudo | 2 | 5 | 10 | 20 | 50 | 100 | 200 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **inviscid Euler** (run_0121〜0127) rms_ro fin | 5.3e-12 | 2.0e-12 | 1.9e-12 | 2.0e-12 | 2.2e-12 | 2.4e-12 | **2.7e-12** |
+| **SST 粘性乱流** (run_0131〜0136) rms_ro fin | 1.0e-10 | 2.5e-11 | 5.9e-12 | 2.3e-12 | 2.1e-12 | **2.2e-12** | — |
+
+- inviscid (`nozzle_2d.h5` 全slip, `ic_isen_cpg.h5`, Tt=293) は全 cfl で **rms_ro 5 桁低下→1e-12 (float32 floor)・NaN無**。
+  exit M=1.97 (等エントロピー 2.0 と一致)。
+- SST (`nozzle_2d_sst.h5` no-slip, `ic_isen_cpg_sst.h5`) も同様に **cfl100 まで深く収束** (rms_roOmega も 6.3 桁低下)。
+  → **ノズル超音速流も SST 乱流も block-DPLUR の cfl 上限を律速しない**。cfl2-3 の壁は別要因。
+- 注: `check_convergence.py` は floor 到達 (5 桁低下後フラット) を "NOT CONVERGED(plateau)" と誤判定する。
+  実体は機械精度収束 (TP の 0.5 桁プラトーとは別物)。
+
+### 対照 (decisive): 同一ノズル・同一 SST・同一 hot 等エントロピー IC で thermalMethod だけ変える
+
+`nozzle_2d_sst.h5` + SST + hot 等エントロピー IC (Pt=59070, Tt=500 → 全 T>200K で sub-200K 外挿を排除)。
+**唯一の差は `thermalMethod`** (0=CPG / 2=TP NASA-9・単成分 N2)。IC は `ic_isen_cpg_hot.h5` / `ic_isen_tpN2_hot.h5`
+(後者は前者の ρ,u を保ち roe のみ NASA-9 N2 の e(T) に置換、`cpg_to_tpN2_roe.py`)。
+
+| cfl_pseudo | 2 | 5 | 20 | 50 | 100 |
+| --- | --- | --- | --- | --- | --- |
+| **CPG (=0)** (run_0141〜0145) rms_ro fin | 5.4e-11 | 1.3e-11 | 2.5e-12 | 1.5e-12 | **1.4e-12** ✓ |
+| **TP/NASA-9 (=2)** (run_0151〜0155) | 9.6e-8 *(plateau)* | **発散 step14** | 発散 step5 | 発散 step3 | 発散 step3 |
+
+**結論 (真因 = thermalMethod=2 の TP 熱力学が block-DPLUR を律速)**:
+1. **cfl 上限もプラトーも TP 固有**。同一ノズル・SST・IC で CPG は cfl100 まで rms 1e-12 収束、TP は **cfl2 でも
+   1e-7 プラトー (収束しない)・cfl≥5 で発散**。ノズル形状・乱流モデル・初期値 (等エントロピー fresh IC で restart 過渡も排除) は
+   すべて無罪。
+2. **TP cfl2 のプラトー 9.6e-8 は元の「行き詰まり」runs (run_0093/0101 等) と同レベル** → あの残差プラトーも
+   SST ではなく **TP 律速**だった (CPG-SST は機械ゼロまで落ちる)。
+3. **機構 (推定)**: block-DPLUR の 5×5 Jacobian は CPG 閉形式 (`chi=(γ-1)/sonic`) を **per-cell 凍結 γ[ic]=γ_mix(T)** で
+   流用している。CPG は γ 厳密一定ゆえ Jacobian が厳密で機械収束。TP は γ=γ(T) が変動し、かつ T が毎ステップ NASA-9
+   Newton 反転で決まるため、凍結 γ の線形化が実 EOS 微分 (∂P/∂(ρe), ∂P/∂ρ) と不整合 → 線形化誤差が残差プラトーを作り、
+   高 cfl で増幅して発散。**恒久修正の方向 = block-DPLUR Jacobian に TP EOS 微分を整合的に入れる** (frozen-γ 流用をやめ、
+   ∂P/∂(ρe)=γ_eff−1 等を TP の実微分で評価する)。これは要因2 (組成-エネルギー結合) よりも上位の律速。
+
+run keeper: run_0121/0126 (inviscid), run_0131/0136 (SST), run_0141/0145 (CPG hot), run_0151 (TP hot プラトー実証)。
+他は cfl 掃引の診断用 (破棄可)。図: 各 keeper の `residual_history.png`。IC 生成: `gen_ic_isentropic_cpg.py`,
+`cpg_to_tpN2_roe.py`。
