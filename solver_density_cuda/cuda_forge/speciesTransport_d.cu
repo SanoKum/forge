@@ -3,7 +3,9 @@
 #include "scalarTransport_d.cuh"
 #include "thermo_d.cuh"
 
+#include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -227,6 +229,77 @@ __global__ void species_energy_correction_kernel(
     roe[ic] += (flow_float)droe;
 }
 
+// 緩和整合 scalar-DPLUR の 1 Jacobi sweep (speciesImplicitCoupling==1)。
+// 流れ scalar-DPLUR (timeIntegration_d.cu implicit_defect_correction_d) を化学種 1 本にミラーする。
+//   D·δ(ρY_s) = res_roY_s + Σ_f offdiag_f·δ(ρY_s)_old[nbr]
+//   D    = V/Δτ + transport_diag[ic]              (対角=流出質量流束/ρ + 粘性時 Fick 拡散対角)
+//   offdiag_f = max(∓ṁ_f,0)/ρ_nbr                 (非対角=流入質量流束/ρ_nbr, 1次風上の凍結 Jacobian)
+// massflux[ip]>0 は ic0→ic1。ic=ic0 の流入は ṁ<0、ic=ic1 の流入は ṁ>0。ρ_nbr は基準 roN(=ρⁿ) で
+// transport_diag の ρ と整合させる (flow commit 後の ρ ではなく)。dq_old は呼び出し側で memset 済み。
+__global__ void species_dplur_sweep_d(
+    flow_float implicit_relax,
+    flow_float* dt_local,
+    geom_int nCells,
+    geom_float* vol,
+    geom_int* plane_cells,
+    geom_int* cell_planes_index,
+    geom_int* cell_planes,
+    flow_float* massflux,
+    flow_float* roN,
+    flow_float* res_roY,
+    flow_float* transport_diag,
+    flow_float* src_jac,
+    flow_float* dq_old,
+    flow_float* dq_new)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const flow_float dt_l = dt_local[ic];
+        const geom_float v = vol[ic];
+
+        flow_float neighbor = 0.0;
+        const geom_int plane_begin = cell_planes_index[ic];
+        const geom_int plane_end   = cell_planes_index[ic + 1];
+        for (geom_int po = plane_begin; po < plane_end; ++po) {
+            const geom_int ip  = cell_planes[po];
+            const geom_int ic0 = plane_cells[2 * ip + 0];
+            const geom_int ic1 = plane_cells[2 * ip + 1];
+            const geom_int other_ic = (ic0 == ic) ? ic1 : ic0;
+            const flow_float mdot = massflux[ip];
+            // 流入 (other→ic) の質量流束。ic=ic0: ṁ<0 で流入、ic=ic1: ṁ>0 で流入。
+            const flow_float inflow = (ic0 == ic) ? max(-mdot, static_cast<flow_float>(0.0))
+                                                  : max( mdot, static_cast<flow_float>(0.0));
+            if (other_ic < nCells) {
+                const flow_float offdiag = inflow / max(roN[other_ic], static_cast<flow_float>(1.0e-30));
+                neighbor += offdiag * dq_old[other_ic];
+            }
+        }
+
+        // D = V/Δτ + V·src_jac + transport_diag (点陰的対角と同形。src_jac は化学種では 0)。
+        const flow_float diag = max(
+            static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30)))
+                + static_cast<flow_float>(v) * src_jac[ic]
+                + transport_diag[ic],
+            static_cast<flow_float>(1.0e-30));
+
+        dq_new[ic] = implicit_relax * (res_roY[ic] + neighbor) / diag;
+    }
+}
+
+// 緩和整合 scalar-DPLUR の commit: ρY_s = ρY_s^N + δ(ρY_s)。実現可能性フロア (ρY_s>=0)。
+// Σ_s ρY_s = ρ の再正規化は呼び出し側 (speciesRenormalize_d_wrapper) が行う。
+__global__ void species_commit_correction_d(
+    geom_int nCells,
+    flow_float* roY,
+    flow_float* roYN,
+    flow_float* dq)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        roY[ic] = max(roYN[ic] + dq[ic], static_cast<flow_float>(0.0));
+    }
+}
+
 }  // namespace
 
 void speciesInit_d(solverConfig& cfg, variables& var)
@@ -400,6 +473,71 @@ void speciesRenormalize_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
         g_nSpecies,
         g_roY_dev,
         var.c_d["ro"]);
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
+bool speciesImplicitCoupled(solverConfig& cfg, variables& var)
+{
+    return cfg.speciesImplicitCoupling == 1 && speciesEnabled(var);
+}
+
+// 緩和整合 scalar-DPLUR ソルバ (speciesImplicitCoupling==1)。
+// 凍結 res_roY/transport_diag/massflux/dt_local (assembleResidual で確定) に対し、各化学種の補正
+// δ(ρY_s) を dq=0 から nStepInner 回 Jacobi sweep で緩和し (流れ block と同一 implicitRelax/sweep 回数)、
+// ρY_s = ρY_s^N + δ(ρY_s) を commit する。呼び出し前に speciesUpdateOuter で ρY_s^N=ρY_s を取ること。
+// commit 後の Σ_s ρY_s=ρ 再正規化・Y=ρY/ρ 同期は呼び出し側 (main.cpp) で行う。
+void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
+{
+    if (!speciesEnabled(var)) return;
+
+    const int nSpecies = var.nSpeciesRegistered;
+    const size_t bytes = static_cast<size_t>(msh.nCells_all) * sizeof(flow_float);
+
+    // dq (new/old) を 0 初期化 (古典 DPLUR は dq=0 から開始)。
+    for (int s = 0; s < nSpecies; s++) {
+        const std::string i = std::to_string(s);
+        cudaMemset(var.c_d["dq_roY"+i],        0, bytes);
+        cudaMemset(var.c_d["dq_roY"+i+"_old"], 0, bytes);
+    }
+
+    const int nSweep = std::max(1, cfg.nStepInner);
+    for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
+        for (int s = 0; s < nSpecies; s++) {
+            const std::string i = std::to_string(s);
+            species_dplur_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+                cfg.implicitRelax,
+                var.c_d["dt_local"],
+                msh.nCells,
+                var.c_d["volume"],
+                msh.map_plane_cells_d,
+                msh.map_cell_planes_index_d,
+                msh.map_cell_planes_d,
+                var.p_d["massflux"],
+                var.c_d["roN"],
+                var.c_d["res_roY"+i],
+                var.c_d["transport_diag_Y"+i],
+                var.c_d["src_jac_Y"+i],
+                var.c_d["dq_roY"+i+"_old"],
+                var.c_d["dq_roY"+i]);
+        }
+        // sweep 後に old↔new を swap (最終補正は dq_old 側に残る)。
+        for (int s = 0; s < nSpecies; s++) {
+            const std::string i = std::to_string(s);
+            std::swap(var.c_d["dq_roY"+i], var.c_d["dq_roY"+i+"_old"]);
+        }
+    }
+
+    // commit: ρY_s = ρY_s^N + δ(ρY_s) (最終補正は dq_roY{s}_old)。
+    for (int s = 0; s < nSpecies; s++) {
+        const std::string i = std::to_string(s);
+        species_commit_correction_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+            msh.nCells,
+            var.c_d["roY"+i],
+            var.c_d["roY"+i+"N"],
+            var.c_d["dq_roY"+i+"_old"]);
+    }
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );

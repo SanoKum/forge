@@ -48,7 +48,20 @@ L/R 状態の `roe_L/Ht_L/ca_L` (および R 側) を NASA で再構成。Roe �
 
 ## 4. 陰解法 Jacobian (予定)
 
-`timeIntegration_d.cu` の `build_jacobian_split/build_abs_jacobian` は `chi=(γ-1)/sonic` で EOS をパラメータ化する。TP では `gamma` をスカラ→`gamma[ic]` (=γ_mix) 配列読みに変えれば `κ=γ_mix-1` が厳密一致し、`sonic[ic]` は既に混合整合。frozen-coefficient (毎反復凍結再構成) で収束解は不変。M1 の検証は陽解法 RK で行うため Jacobian 変更は後続。
+`timeIntegration_d.cu` の `build_jacobian_split/build_abs_jacobian` は `chi=(γ-1)/sonic` で EOS をパラメータ化する。TP では `gamma` をスカラ→`gamma[ic]` (=γ_mix) 配列読みに変えれば `κ=γ_mix-1` が厳密一致し、`sonic[ic]` は既に混合整合。frozen-coefficient (毎反復凍結再構成) で収束解は不変。**実装済** (per-cell `gamma[ic]`, M1)。
+
+## 4b. 化学種陰解法の緩和整合 (matched-relaxation scalar-DPLUR)
+
+理論は [theory.md §3.1](theory.md)。多成分 TP の陰解法 (block-DPLUR) で、流れ 5 変数 (5×5 block・`nStepInner` sweep・`implicitRelax` 緩和) と化学種 `ρY_s` (従来 commit 後に 1 回だけ点陰的 forward-Euler) の**擬似時間緩和ミスマッチ**を、化学種を流れと同一の緩和で前進させて解消する (要因2 の恒久修正)。
+
+- **設定** (`input/solverConfig.{hpp,cpp}`): `time.deltaT.speciesImplicitCoupling` (既定 0=従来 segregated 点陰的・ビット不変, 1=緩和整合 scalar-DPLUR)。`timeIntegration==11` かつ `nSpecies>=2` でのみ作用。
+- **バッファ** (`variables.cpp registerSpecies`): 化学種ごとに `dq_roY{s}` / `dq_roY{s}_old` を追加登録 (Jacobi sweep の new/old)。
+- **sweep カーネル** (`speciesTransport_d.cu species_dplur_sweep_d`): `implicit_defect_correction_d` (流れ scalar-DPLUR) を化学種 1 本にミラー。セルが面 (`map_cell_planes_index/_d`) を走査し、凍結 `massflux[ip]` から
+  - 対角 `D = V/Δτ + transport_diag_Y{s}`  (`transport_diag` は流出 `max(±ṁ,0)/ρ` + 粘性時 Fick 拡散対角、`speciesTransport_d_wrapper` が確定済)、
+  - 非対角 = 流入 `max(∓ṁ,0)/ρ_nbr` × `dq_old[nbr]` (`ρ_nbr` は基準 `roN`=ρⁿ で `transport_diag` の ρ と整合)、
+  を集め `dq_new = implicitRelax·(res_roY{s}+Σ非対角)/D` を書く。流れと同じ凍結残差・`dt_local`・`implicitRelax`。
+- **ドライバ** (`speciesImplicitDPLURSolve_d_wrapper`): `dq_*` を memset→`nStepInner` 回 sweep (毎回 old↔new swap)→`species_commit_correction_d` で `ρY_s = ρY_s^N + dq` (floor 0) を commit。`main.cpp implicitNonlinearUpdate` は `speciesImplicitCoupling==1` で `speciesUpdateOuter`(ρY_N=ρYⁿ)→本ソルバ→`speciesRenormalize`(ΣρY=ρ)→`speciesPrimitive` を呼ぶ。0 のときは従来経路 (`speciesTimeIntegration(0)`) を維持。
+- **退化**: `nStepInner=1`・`implicitRelax=1`・非対角 0 で従来点陰的に一致。化学種拡散の非対角は省く (点陰的のまま。定常で収束先不変)。**完全結合 (5+N block) ではなく**、緩和率統一だけで安定 `cfl_pseudo` 上限が上がるかを切り分ける段階的打ち手。検証は `case/16.nozzle_wys` hot N2+H2O (plan `thermophysics-species-implicit-coupling.md`)。
 
 ## 5. 設定 `input/solverConfig.{hpp,cpp}`
 

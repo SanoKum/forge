@@ -923,13 +923,18 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
         });
     }
 
-    // 化学種 (多成分 TP) を segregated point-implicit で更新（陰解法での凍結解除）。
-    // res_roY/transport_diag/src_jac は assembleResidual の speciesTransport で確定済み。
-    // baseline roY_N=roY を取り、1 回 point-implicit forward-Euler 更新 → 実現可能性再正規化。
+    // 化学種 (多成分 TP) の陰解法更新（凍結解除）。res_roY/transport_diag/src_jac は assembleResidual の
+    // speciesTransport で確定済み。baseline roY_N=roY を取り、実現可能性再正規化で閉じる。
     // 各 wrapper は nSpecies<2 で no-op (単成分/CPG は不変)。
+    // speciesImplicitCoupling==1: 緩和整合 scalar-DPLUR (流れ block と同一 dt/implicitRelax/nStepInner sweep)。
+    //                          =0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // roY_N = roY_M = roY
-        speciesTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+        if (speciesImplicitCoupled(s.cfg, s.var)) {
+            speciesImplicitDPLURSolve_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        } else {
+            speciesTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+        }
         speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // Y=roY/ρ (出力/次残差用に同期)
     });

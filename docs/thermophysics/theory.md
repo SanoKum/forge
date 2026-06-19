@@ -76,6 +76,18 @@ $$ \frac{\partial (\rho Y_s)}{\partial t} + \nabla\!\cdot(\rho \mathbf{u} Y_s) =
 
 $\mathbf{J}_s$ は化学種拡散流束 (§5)。移流は**連続の式と同じ質量流束** $\dot m$ を再利用して上流化し、$\sum_s$ が連続の式と整合する (質量保存)。実現可能性として $Y_s\ge 0$ をフロアし、各ステージで $\sum_s Y_s = 1$ に再正規化する。
 
+### 3.1 陰解法での緩和整合 (multi-component implicit coupling)
+
+定常陰解法 (block-DPLUR) では流れ 5 変数 $(\rho,\rho u,\rho v,\rho w,\rho e_t)$ を 5×5 ブロックの近似 Jacobian で擬似時間前進する。化学種 $\rho Y_s$ を**別系**として更新すると、両者の**擬似時間緩和速度がミスマッチ**し、状態方程式 $T=T(e,Y)$ の Newton 反転で温度ジャンプを生む。なぜなら $e=\rho e_t/\rho-\tfrac12|\mathbf u|^2=\sum_s Y_s e_s(T)$ であり、$\rho Y_s$ の増分 $\Delta(\rho Y_s)$ と $\rho e_t$ の増分 $\Delta(\rho e_t)$ が**同じ緩和率で進まない**と、各擬似時間ステップで $(e,Y)$ が相互不整合になり、$T$ がそのズレを吸収して跳ねる。増幅率は $|h_s|$ に比例し、生成エンタルピーの大きい $\mathrm{H_2O}$ ($h\approx-13.4$ MJ/kg) で発散を誘発する ($\mathrm{N_2},\mathrm{O_2}$ は無害)。sensible-enthalpy datum (§2.2) は $h_s$ の桁を下げて増幅を**振幅で**抑えるが、緩和ミスマッチという**構造**は残る。
+
+**緩和整合 (matched relaxation)**: 化学種を流れと**同一の擬似時間緩和**で前進させれば、$\Delta(\rho Y_s)$ と $\Delta(\rho e_t)$ が同じ率で進み、各ステップで $(e,Y)$ が整合したまま $T$ が決まる。$\rho Y_s$ は受動移流 (接触波速 $V=\mathbf u\!\cdot\!\mathbf n$ のみで音響波に結合しない) ので、流れの 5×5 ブロックに同梱せずとも、**スカラ DPLUR** で同一の凍結残差・同一局所擬似時間 $\Delta\tau$・同一緩和係数 $\omega$・同一 sweep 回数で緩和すれば緩和率が一致する。1 次風上移流の凍結 Jacobian は
+
+$$ \Big(\tfrac{V}{\Delta\tau}+\!\sum_f \tfrac{\max(\dot m_f,0)}{\rho}\Big)\,\delta(\rho Y_s)_{\text{(自セル)}}\;-\;\sum_f \tfrac{\max(-\dot m_f,0)}{\rho_{\text{nbr}}}\,\delta(\rho Y_s)_{\text{(隣)}}=\mathcal{R}_{\rho Y_s}, $$
+
+すなわち対角=流出質量流束 (連続式と整合)、非対角=流入質量流束で、流れの DPLUR と同じ M 行列構造を持つ。Jacobi sweep を $n_{\text{StepInner}}$ 回反復し $\omega=\texttt{implicitRelax}$ で緩和、最後に $\rho Y_s=\rho Y_s^{\,n}+\delta(\rho Y_s)$ を commit して $\sum_s\rho Y_s=\rho$ へ再正規化する。$n_{\text{StepInner}}=1,\omega=1,$ 非対角無視で従来の点陰的 (segregated) 更新に一致する。
+
+化学種拡散 ($\mathbf J_s$, §5) の非対角は省いて点陰的のまま残す (拡散は剛性が低く、定常 ($\mathcal R\to0$) では $\delta\to0$ ゆえ収束先は不変)。完全結合 (5+$N$ ブロック) は最も根本的だが、まず緩和整合で「緩和率の統一だけで安定 $\Delta\tau$ 上限が上がるか」を切り分ける。実装は [implementation.md §4b](implementation.md)。
+
 ## 4. kinetic theory による輸送係数
 
 ### 4.1 純成分 (Chapman-Enskog)

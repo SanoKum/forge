@@ -40,6 +40,11 @@ public:
     flow_float implicitRelax = 1.0;
     flow_float implicitRelaxSST = -1.0; // -1: implicitRelax に倒置 (既定動作不変)
     int blockDPLUR = 0;
+    int speciesImplicitCoupling = 0; // 多成分 TP 陰解法 (timeIntegration==11, nSpecies>=2) の化学種更新方式。
+                                     // 0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
+                                     // 1: 緩和整合 scalar-DPLUR (流れ block と同一 dt_local/implicitRelax/nStepInner
+                                     //    sweep で ρY_s を緩和し、要因2 の擬似時間緩和ミスマッチを解消)。
+                                     // 詳細: .github/plans/thermophysics-species-implicit-coupling.md。
     int implicitSolvePrecision = 0; // block-DPLUR 線形 solve の内部精度。0: float (既定・高速), 1: double。
                                     // 残差/状態は float のまま、Jacobian 構築+5×5 solve のみ double 化する混合精度
                                     // (iterative refinement)。軸対称 近軸の float 陰解固着 (Uy が −15 でなく

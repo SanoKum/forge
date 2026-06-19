@@ -41,6 +41,14 @@ void speciesEnergyCorrection_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, 
 // 化学種の時間積分 (scalarTimeIntegration_d を化学種ごとに呼ぶ)。
 void speciesTimeIntegration_d_wrapper(int loop, solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
+// 緩和整合 scalar-DPLUR (speciesImplicitCoupling==1 かつ nSpecies>=2) が有効か。
+bool speciesImplicitCoupled(solverConfig& cfg, variables& var);
+
+// 緩和整合 scalar-DPLUR ソルバ。凍結残差に対し δ(ρY_s) を nStepInner 回 Jacobi sweep で緩和し
+// (流れ block と同一 implicitRelax/sweep)、ρY_s=ρY_s^N+δ(ρY_s) を commit する。
+// 呼び出し前に speciesUpdateOuter で ρY_s^N=ρY_s を取り、呼び出し後に renormalize/primitive すること。
+void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+
 // 化学種の実現可能性・再正規化: ρY_s>=0 にクランプし Σ_s ρY_s = ρ となるよう再スケール (ΣY_s=1)。
 void speciesRenormalize_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 

@@ -41,7 +41,10 @@ static std::list<std::string> speciesCellVarNames(int s)
     return {
         "roY"+i, "Y"+i, "roY"+i+"N", "roY"+i+"M",
         "res_roY"+i, "res_roY"+i+"_m",
-        "transport_diag_Y"+i, "src_jac_Y"+i
+        "transport_diag_Y"+i, "src_jac_Y"+i,
+        // 緩和整合 scalar-DPLUR (speciesImplicitCoupling==1) の Jacobi 補正 new/old バッファ。
+        // 既定経路 (=0) では未使用だが確保コストは僅少。
+        "dq_roY"+i, "dq_roY"+i+"_old"
     };
 }
 
@@ -71,7 +74,7 @@ void variables::registerSpecies(int nSpecies)
     }
 
     std::cout << "registerSpecies: nSpecies=" << nSpecies
-              << " -> registered " << nSpecies*8 << " cell variables\n";
+              << " -> registered " << nSpecies*10 << " cell variables\n";
 }
 
 // 非平衡凝縮 (Phase 1): 1 モーメント (保存量名 consName 例 "rog_0") ごとに必要なセル変数名を生成する。

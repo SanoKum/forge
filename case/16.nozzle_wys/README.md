@@ -346,3 +346,51 @@ roe(block-DPLUR)/roY(point-implicit) の擬似時間緩和ミスマッチを増�
 
 図: `thermo_href_compare.png` (cp/h vs T・オフセット効果), `href_cfl_ceiling.png` (cfl 上限比較), 各 run の `residual_history.png`。
 **run_0101〜0109 は診断用** (恒久保持は不要、結論は本表)。
+
+### 化学種陰解法の緩和整合 (案B, matched-relaxation scalar-DPLUR) 検証 — run_0110 以降 (2026-06-19)
+
+**要因2 の恒久修正候補「案B (緩和整合)」の切り分け**。化学種 `ρY_s` を流れ block-DPLUR と**同一緩和**
+(同一凍結残差・`dt_local`・`implicitRelax`・`nStepInner` sweep) のスカラ DPLUR で前進させ、roe(block)/roY(点陰的)
+の擬似時間緩和ミスマッチを解消できるかを検証 (config `time.deltaT.speciesImplicitCoupling`, 既定 0=従来 segregated・
+ビット不変, 1=緩和整合)。実装は plan [`thermophysics-species-implicit-coupling.md`](../../.github/plans/thermophysics-species-implicit-coupling.md)、
+docs `thermophysics/{theory §3.1, implementation §4b}`。全 native full rebuild。hot N2+H2O(1%, href ON)・同一場/BC。
+
+| run | 化学種更新 | cfl_pseudo | 結果 (初 NaN/最終 step) | 判定 |
+| --- | --- | --- | --- | --- |
+| `run_0110_match_cflp1`  | 緩和整合 (=1) | 1 | **400step 完走** (NaN無・T[288,504]・ΣY=1) | active (keeper) |
+| `run_0111_match_cflp2`  | 緩和整合 (=1) | 2 | **400step 完走** | active (keeper) |
+| `run_0112_match_cflp4`  | 緩和整合 (=1) | 4 | step7 発散 | 破棄予定 |
+| `run_0113_match_cflp5`  | 緩和整合 (=1) | 5 | step4 発散 | 破棄予定 |
+| `run_0114_match_cflp8`  | 緩和整合 (=1) | 8 | step3 発散 | 破棄予定 |
+| `run_0115_match_cflp10` | 緩和整合 (=1) | 10 | step3 発散 | 破棄予定 |
+| `run_0116_off_cflp1_regr` | 従来 (=0) | 1 | 400step 完走 (default-path 回帰) | 破棄予定 |
+| `run_0119_match_cflp3`  | 緩和整合 (=1) | 3 | step20 発散 | 破棄予定 |
+| `run_0120_off_cflp3`    | 従来 (=0) | 3 | step20 発散 | 破棄予定 |
+
+**単成分 N2 対照 (H2O 無・案B は構造的に no-op)**:
+
+| run | cfl_pseudo | 結果 | 用途 |
+| --- | --- | --- | --- |
+| `run_0117_1sp_n2_cflp2` | 2 | 400step 完走 | 単成分回帰 (新旧バイナリ ~atomicAdd 一致) |
+| `run_0118_1sp_n2_cflp3` | 3 | step55 発散 | 単成分 cfl3 上限 |
+| `run_0117_1sp_n2_cflp4` | 4 | step7 発散 | **単成分でも cfl4=step7** |
+
+**結論 (案B は要因2 の打ち手として無効 — 切り分け完了)**:
+1. **緩和整合は cfl 上限を一切動かさない**。matched (=1) と off (=0) の発散 step が**全 cfl で完全一致**
+   (cfl≤2 完走 / cfl3 step20=step20 / cfl4 step7=step7 / cfl5 step4 / cfl8,10 step3)。cfl1/2 の残差プラトーも
+   matched≡off (`check_convergence.py`=NOT CONVERGED, rms_roK/roOmega 上昇が律速で単成分と同型)。
+2. **cfl4 の壁は化学種起因ではない**。**単成分 N2 (H2O 完全に無し) も cfl4 で step7** に発散 (run_0117_cflp4)
+   = 2成分と同一。href ON 後の cfl 上限 (~2) は**流れ+SST block-DPLUR 律速**であり、化学種結合は最早ボトルネックでない
+   (rms_roOmega が上昇する SST 残差が律速)。
+3. **案B が無効な機構**: 本ケースの組成は**完全に一様** (Y_N2=0.98905, Y_H2O=0.010950 が全セル同値, min=max)
+   → `res_roY≈0` → 化学種補正は matched/segregated どちらでも ~0。要因2 の H2O ペナルティは化学種**移流**の緩和ではなく、
+   **EOS エネルギー再構成** (Newton 反転の組成依存 h_mix) にある。移流緩和をそろえても触れない。
+4. cfl3 では 2成分 (step20) が単成分 (step55) より早く落ちる=残存する組成-エネルギー結合ペナルティはあるが、
+   **緩和率の統一では消えない** (cross-Jacobian ∂roe/∂roY が必要=案A 領域)。ただし cfl4 で単成分も壁に当たるため、
+   案A の上積み余地は流れ/SST 上限に頭打ち。**次の高優先は流れ/SST 陰解法の cfl 上限引き上げ** (cf.
+   `time_integration-implicit-stable-cfl.md` が flat_plate で cfl120 達成。hot ノズルで効かない理由の調査)。
+
+`speciesImplicitCoupling` は**既定 0 で温存** (本ケースでは無益だが、組成勾配の大きいケースで移流緩和が効く可能性は残すため
+削除せず flag-gated)。matched 経路の commit/再正規化/物理量は健全 (run_0110/0111 で NaN無・ΣY=1・T>200K 実証)。
+**run_0112〜0120 は診断用** (恒久保持不要、結論は本表)。keeper は run_0110/0111 (緩和整合の安定動作例)。
+図: 各 keeper の `residual_history.png`。

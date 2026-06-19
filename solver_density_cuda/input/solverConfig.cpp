@@ -235,6 +235,9 @@ void solverConfig::read(std::string fname)
             this->implicitRelaxSST = (raw < 0.0) ? this->implicitRelax : (flow_float)raw;
         }
         this->blockDPLUR = getOptionalValidatedValue<int>(deltaT, "blockDPLUR", 0, "time.deltaT");
+        // 多成分 TP 陰解法の化学種更新方式: 既定 0 (従来 segregated 点陰的・ビット不変)。
+        // 1 で緩和整合 scalar-DPLUR (流れ block と同一緩和。plan thermophysics-species-implicit-coupling.md)。
+        this->speciesImplicitCoupling = getOptionalValidatedValue<int>(deltaT, "speciesImplicitCoupling", 0, "time.deltaT");
         // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。
         this->implicitSolvePrecision = getOptionalValidatedValue<int>(deltaT, "implicitSolvePrecision", 0, "time.deltaT");
         // NaN 検知診断モード: 既定 0 で従来挙動 (検査なし・ビット不変)。1 で毎ステップ終端に検査。
