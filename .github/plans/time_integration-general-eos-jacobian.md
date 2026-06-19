@@ -116,7 +116,9 @@
 
 ## 9. 変更ログ
 
-- `2026-06-20` — 初稿。
+- `2026-06-20` — 初稿。CPG/TP 対照 (case/16 run_0121〜0155) で真因=TP の LHS 固有系不整合と確定、
+  `/tmp/eos_eig_verify.py` の FD 検証で一般EOS固有系 (音響 H_t±cU_n・接触 H_t−c²/κ) が TP の真の ∂F/∂Q に
+  機械精度一致・現行 CPG 形は 469% 誤差を確認。Method A (数値 L=R⁻¹) で着手。実装条件 (§4.2)・検証レベル (§6) を明記。
 - `2026-06-20` — **実装・検証完了 (TP 律速を根治)**。
   - **閉形式で実装** (数値 LU は検証参照のみ)。一般EOS音響左固有ベクトルを解析導出
     (`l± = [χ+κK∓cU_n, −κu±cn, κ]`, `l±·r±=2c²`) → 既存 rank-2 構造への**3項改変**:
@@ -129,6 +131,8 @@
     rms_ro ~4e-11)。**残差プラトーも 9.6e-8→~4e-11 (3.6 桁改善)**。CPG 回帰 (`run_0166` vs 旧 `run_0143`)
     は ~atomicAdd 一致 (thermallyPerfect=0 は旧コードと同一)。物理健全 (T∈[296,505]K, 超音速, NaN 無)。
   - **残差床は別トラックと確認**: 新 TP は ~4e-11 で下げ止まり (CPG は 1.4e-12)。これは Jacobian でなく
-    NASA Newton 反転・単精度 EOS 評価の床 (レビュー予測どおり「機械ゼロまでは保証しない」)。後続課題。CPG/TP 対照 (case/16 run_0121〜0155) で真因=TP の LHS 固有系不整合と確定、`/tmp/eos_eig_verify.py`
-  の FD 検証で一般EOS固有系 (音響 H_t±cU_n・接触 H_t−c²/κ) が TP の真の ∂F/∂Q に機械精度一致・現行 CPG 形は 469%
-  誤差を確認。Method A (数値 L=R⁻¹) で着手。レビュー指摘の実装条件 (§4.2) と検証レベル (§6) を明記。
+    NASA Newton 反転・単精度 EOS 評価の床 (レビュー予測どおり「機械ゼロまでは保証しない」)。後続課題。
+- `2026-06-20` — **リネーム整備 (ビット不変)**: `accumulate_split_jacobian_cf` のローカル名を明確化
+  (`chi`→`kappa_over_c` (=(γ−1)/c, EOS の χ ではない)・`inv_chi`→`c_over_kappa`・`s2`→`inv_sqrt2`・`is`→`inv_sonic`、
+  `kappa=γ−1`/`chi_eos=c²−κh` を明示)、フラグ `generalEOS`→`thermallyPerfect` (κ=γ−1 仮定=TP ideal gas 専用と明記)、
+  `#ifdef FORGE_JACOBIAN_SANITY` のデバッグ検査 (c≤0/非有限/κ<κ_min) を追加。再 run で TP step1 が全桁一致を確認。
