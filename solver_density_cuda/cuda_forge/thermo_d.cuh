@@ -215,6 +215,44 @@ THERMO_HD double thermo_gamma_mix(const SpeciesThermo* sp, int n, const double* 
 }
 
 // -----------------------------------------------------------------------------
+// 一般EOS陰解法ヤコビアン用の熱力学微分 (plan time_integration-general-eos-jacobian)。
+//   1 セル状態 (組成 Y, 温度 T) から、固有系構築に必要な量を**同一 thermo 評価**でまとめて返す。
+//   sonic[ic]/Ht[ic]/gamma[ic] を別経路で混ぜると今回直す不整合を再導入するため、ここで一括評価する。
+//   κ = ∂p/∂(ρe)|_ρ = R/c_v = γ-1,  c² = γRT,  χ = c² - κ h  (CPG: h=c_pT で χ=0)。
+//   h は NASA 絶対(または datum オフセット済)エンタルピー。e=h-RT, p=ρRT は呼び出し側で ρ を掛ける。
+// -----------------------------------------------------------------------------
+struct ThermoDerivatives {
+    double R;      // 混合気体定数 [J/(kg K)]
+    double cp;     // [J/(kg K)]
+    double cv;     // = cp - R
+    double gamma;  // cp/cv
+    double h;      // 絶対エンタルピー h(T) [J/kg]
+    double e;      // 内部エネルギー e(T) = h - R T [J/kg]
+    double kappa;  // ∂p/∂(ρe)|_ρ = R/cv = γ-1
+    double a2;     // 音速² c² = γ R T [m²/s²]
+    double chi;    // ∂p/∂ρ|_{ρe} = c² - κ h  (CPG で 0)
+};
+
+THERMO_HD void thermo_derivatives_mix(const SpeciesThermo* sp, int n, const double* Y, double T,
+                                      ThermoDerivatives* D)
+{
+    double cp, h;
+    thermo_cph_mix(sp, n, Y, T, &cp, &h);   // cp,h を 1 スイープ (融合評価)
+    const double R  = thermo_R_mix(sp, n, Y);
+    const double cv = cp - R;
+    const double cvs = (cv > 1.0e-6 ? cv : 1.0e-6);
+    D->R     = R;
+    D->cp    = cp;
+    D->cv    = cv;
+    D->gamma = cp / cvs;
+    D->h     = h;
+    D->e     = h - R*T;
+    D->kappa = R / cvs;            // = γ-1
+    D->a2    = D->gamma * R * T;   // c²
+    D->chi   = D->a2 - D->kappa*h; // CPG: h=c_pT → χ=0
+}
+
+// -----------------------------------------------------------------------------
 // 輸送係数 (kinetic theory, M3)。Chapman-Enskog 単成分 + Wilke/Mason-Saxena 混合。
 //   - 衝突積分 Ω(2,2)*, Ω(1,1)* は Neufeld et al. (1972) の閉形式近似 (0.3<=T*<=100)。
 //   - 単位は CGS 換算定数で Pa·s / W·m⁻¹·K⁻¹ / m²·s⁻¹ に整える。

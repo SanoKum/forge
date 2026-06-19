@@ -212,6 +212,28 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
 根拠・データは [`theory.md`](theory.md#低マッハ前処理固有値-weisssmith--試行したが不採用) と計画
 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
 
+#### 一般EOS固有系 (TP gas, `thermalMethod==2`) — 実装中 (Method A)
+
+閉形式 `accumulate_split_jacobian_cf` は `inv_chi=sonic/(γ-1)` で全エンタルピーを $K+c^2/(\gamma-1)$ と再構成し、
+接触波エネルギー成分に $K$ を使う。これは **CPG 専用**で TP では真の $\partial\mathbf F/\partial\mathbf Q$ と一致しない
+(理論は [theory.md](theory.md) 「一般EOS固有系」、FD 検証で TP 誤差 469%)。修正方針 (plan
+[`time_integration-general-eos-jacobian.md`](../../.github/plans/time_integration-general-eos-jacobian.md)):
+
+- **分岐保持**: `thermalMethod==0` は現行閉形式のまま (ビット不変・回帰基準)。`==2` のみ一般EOS固有系へ。
+  数値 LU は閉形式と演算順序が違うため CPG ビット一致は望めない → CPG 経路を残すのが回帰構成。
+- **thermo helper**: `thermo_d.cuh` に `ThermoDerivatives{p,h,cp,cv,R,kappa,chi,a2}` を 1 セル状態から返す
+  `thermo_derivatives_mix` を追加。$c^2=\gamma RT,\ \kappa=\gamma-1,\ h=e+RT$ を**同一 $T$・同一組成・同一 NASA
+  data・同一 datum**で評価 (`sonic[ic]`/`Ht[ic]`/`gamma[ic]` の別経路混在を避ける)。$\chi=c^2-\kappa h$。
+- **固有系+LU**: 一般EOS右固有ベクトル ($\mathbf r_\mp,\mathbf r_c,\mathbf r_{sk}$, 実 $H_t$・接触 $H_t-c^2/\kappa$) を
+  構築し、**部分ピボット付き double 5×5 LU** で $L=R^{-1}$ を解く ($R$ 構築・LU・$R\Lambda L$ 積算は試作段階で
+  double; $H_t-c^2/\kappa=K-\chi/\kappa$ が大きな二数の差で float だと条件数誤差)。$A^\pm=R\Lambda^\pm L$。
+- **セル/面の不混在**: DPLUR の対角・非対角ブロックは同一セル $i$ の $(\rho_i,\mathbf u_i,H_{t,i},c_i,\kappa_i,\chi_i)$ で
+  構築 (RHS 数値流束が面/Roe 平均でも可、LHS は近似ヤコビアン)。$H_t$ だけ面・$c,\kappa$ セルの混成は不可。
+- **検証 (デバイス単体 → ノズル)**: Level1 `‖LR−I‖`/`‖RΛL−A_FD‖` (CPG/TP 250・1000・高温/M=0/亜音速/音速近傍/
+  超音速/一般方向)、Level2 split `A⁺+A⁻=A`・法線反転、Level3 DPLUR 行列作用、Level4 ノズル cfl 2/5/20/50/100
+  (発散 step・収束率・残差床・出口M・massflux・全エンタルピー・Newton 反転回数)。**残差床は別トラック**で EOS
+  反転誤差 ($\max_i|e(T_i)-e_{\text{target},i}|/\max(|e_{\text{target}}|,e_{\rm ref})$) と切り分け、機械ゼロは保証しない。
+
 ### `implicit_defect_correction_block_precond_d`（Phase 4: 完全 $\Gamma^{-1}A$ 前処理・`lowMachPrecond=2`）
 
 上の LHS 固有値前処理 (不採用) と異なり、**前処理を一貫させた別カーネル**。`blockDPLUR==1 && lowMachPrecond==2`

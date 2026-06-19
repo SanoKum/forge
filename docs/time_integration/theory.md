@@ -83,6 +83,40 @@ $$
 > $A^{+}$ 対角・$A^{-}$ 近傍の正しい LU-SGS 分割に置換することで反復行列のスペクトル半径が
 > $\rho \approx \dfrac{V/\Delta\tau}{V/\Delta\tau+\lambda^{+}} < 1$ となり収束する。詳細は [implementation.md](implementation.md)。
 
+### 一般EOS固有系 (TP gas) — 凍結 γ の閉形式は CPG 専用
+
+$\widetilde A = R\Lambda L$ の固有ベクトルは EOS に依存する。閉形式 FVS は EOS を**単一の $\gamma$** で表し、
+音響右固有ベクトルのエネルギー成分に $H_t = K + c^2/(\gamma-1)$（$K=\tfrac12|\mathbf u|^2$）、接触波に $K$ を使う。
+これは **CPG (定数 $c_p$) でのみ厳密**な 2 つの恒等式
+
+$$ \kappa \equiv \left.\frac{\partial p}{\partial(\rho e)}\right|_\rho = \gamma-1,\qquad h = \frac{c^2}{\gamma-1} $$
+
+に依存している。**TP (thermally-perfect, $c_p(T)$) では②が破れる**: $h(T)=h(T_\text{ref})+\int_{T_\text{ref}}^T c_p\,d\theta \ne c_p(T)\,T = c^2/(\gamma(T)-1)$。
+等価に、CPG で恒等的に 0 の項 $\chi \equiv \left.\partial p/\partial\rho\right|_{\rho e}$ が TP では非ゼロになる。一般EOSでは
+
+$$ c^2 = \chi + \kappa\,h,\qquad \chi = c^2 - \kappa\,h,\qquad \kappa = \gamma(T)-1 = \frac{R}{c_v(T)} $$
+
+（固定組成 TP 理想気体）。閉形式は暗黙に $\chi=0$ を仮定するため、TP では $\widetilde A=R\Lambda L$ が
+**真の $\partial\mathbf F/\partial\mathbf Q$ と一致しない**（FD 検証で相対誤差 $\approx 4.7$、すなわち別方程式を線形化している。
+`case/16.nozzle_wys` の CPG/TP 対照で TP のみ $c_{\rm fl}\approx2$ 頭打ち・残差プラトーになる真因）。
+
+**一般EOS右固有ベクトル**（法線 $\mathbf n$、接線 $\mathbf t_1,\mathbf t_2$、$U_n=\mathbf u\cdot\mathbf n$、固有値 $U_n-c,\,U_n,\,U_n,\,U_n,\,U_n+c$）:
+
+$$
+\mathbf r_\mp=\begin{bmatrix}1\\ \mathbf u\mp c\mathbf n\\ H_t\mp cU_n\end{bmatrix},\quad
+\mathbf r_c=\begin{bmatrix}1\\ \mathbf u\\ H_t-\dfrac{c^2}{\kappa}\end{bmatrix},\quad
+\mathbf r_{s k}=\begin{bmatrix}0\\ \mathbf t_k\\ \mathbf u\cdot\mathbf t_k\end{bmatrix}
+$$
+
+ここで $H_t=h(T)+K$ は**実 NASA 全エンタルピー**。接触波のエネルギー成分は $H_t-c^2/\kappa = K-\chi/\kappa$ で、
+CPG では $\chi=0$ ゆえ $K$ に簡約され従来式に戻る。$\Lambda^\pm$ 分割は固有値のみに作用するので不変。
+
+数値検証（`/tmp/eos_eig_verify.py` → plan `time_integration-general-eos-jacobian.md` で恒久化）: 上記固有系は
+**CPG・TP（NASA N2）双方で $\|R\Lambda L - A_\text{FD}\|/\|A_\text{FD}\|\approx 3\times10^{-8}$**（FD 機械精度）に一致。
+実装は $L=R^{-1}$ を**部分ピボット付き double 5×5 LU** で数値的に解く（Method A）。$H_t,c^2,\kappa,\chi$ は
+**同一セル状態・同一 thermo 評価**から作る（$c^2=\gamma RT,\ \kappa=\gamma-1,\ h=e+RT$ を同じ $T$・組成・datum で）。
+CPG 経路は閉形式のまま分岐保持（回帰基準、ビット不変）。実装条件・検証レベルは [implementation.md](implementation.md)。
+
 ### 古典 DPLUR 反復 (残差固定 + 複数 sweep)
 
 非線形残差 $\mathbf{R}(\mathbf{Q}^n)$ と対角ブロック $D_i$ を**1 回の非線形更新あたり 1 度だけ構築**し、
