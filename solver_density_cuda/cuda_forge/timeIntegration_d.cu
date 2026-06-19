@@ -26,37 +26,51 @@ __device__ __forceinline__ void add_identity_scaled(T mat[5][5], T scale)
 // 軸対称 (nz=0) で legacy build_jacobian_split (R Λ L) と数値等価 (/tmp/mtest.cpp 検証)。一般 3D は legacy の
 // R/L が厳密逆行列でない (RL≠I) ため僅差だが、固有値を厳密に max(λ,0) とする valid な FVS で定常解は不変。
 //   M(g) = g₂ I + (g₁−g₂) r₁⊗l₁ + (g₅−g₂) r₅⊗l₅,  a_plus=M(λ⁺), k_off=M((−λ)⁺)
-// general=false: CPG 閉形式 (従来式・ビット不変)。
-// general=true:  一般EOS (TP gas)。音響右固有ベクトルのエネルギーに実全エンタルピー Htot を、
-//   左固有ベクトルの密度成分に χ=c²−κh (κ=γ−1, h=Htot−ek) を加える。CPG (χ=0, Htot=ek+c²/κ) に厳密に
-//   還元する。導出・検証は docs/time_integration + plan time_integration-general-eos-jacobian.md。
+// thermallyPerfect=false: CPG 閉形式 (従来式・ビット不変)。
+// thermallyPerfect=true:  thermally-perfect ideal gas (TP, 固定組成)。音響右固有ベクトルのエネルギーに実全
+//   エンタルピー Htot を、左固有ベクトルの密度成分に EOS の χ_eos=c²−κh (κ=γ−1, h=Htot−ek) を加える。
+//   CPG (χ_eos=0, Htot=ek+c²/κ) に厳密に還元。**注意**: ここで κ=γ−1 を仮定しているので、任意の実在気体 EOS
+//   ではなく thermally-perfect ideal gas 専用 (多成分 TP は κ=γ_mix−1 で成立)。真の一般 EOS では κ を熱力学
+//   ルーチンから受け取る必要がある。導出・検証は docs/time_integration + plan
+//   time_integration-general-eos-jacobian.md。
+//
+// 命名注意: ローカルの `kappa_over_c=(γ−1)/c` は **EOS の χ ではない** (Grüneisen κ を c で割ったもの)。
+//   一般 EOS の χ_eos=∂p/∂ρ|_{ρe}=c²−κh は下の `chi_eos` (TP 補正 dD=χ_eos/c に相当)。
 template<typename T>
 __device__ __forceinline__ void accumulate_split_jacobian_cf(
-    T gamma, T nx, T ny, T nz, T u, T v, T w, T c, T Htot, bool general,
+    T gamma, T nx, T ny, T nz, T u, T v, T w, T c, T Htot, bool thermallyPerfect,
     T face_area, bool has_nbr, const T sdq[5], T diag[5][5], T nbr[5])
 {
-    const T sonic = max(c, static_cast<T>(1.0e-8));
+    const T sonic = max(c, static_cast<T>(1.0e-8));   // 本番下限 (異常検出は下の FORGE_JACOBIAN_SANITY)
     const T ek = static_cast<T>(0.5)*(u*u+v*v+w*w);
     const T V = u*nx+v*ny+w*nz;
-    const T chi = (gamma-static_cast<T>(1.0))/sonic;
-    const T inv_chi = sonic/(gamma-static_cast<T>(1.0));
-    const T s2 = static_cast<T>(0.7071067811865475244);
-    const T is = static_cast<T>(1.0)/sonic;
-    // eE = r 音響エネルギー成分 (ーV を除く), dD = l 音響密度成分の一般EOS補正 (χ·is)。
-    // CPG: eE=ek·is+inv_chi (=Htot_cpg·is), dD=0 → 従来式とビット一致。
+    const T kappa        = gamma - static_cast<T>(1.0);  // Grüneisen κ = γ−1 (TP)
+    const T kappa_over_c = kappa/sonic;                  // κ/c (旧 chi。EOS の χ ではない)
+    const T c_over_kappa = sonic/kappa;                  // c/κ (旧 inv_chi)
+    const T inv_sqrt2    = static_cast<T>(0.7071067811865475244);  // 1/√2 (音響固有ベクトルの双直交正規化)
+    const T inv_sonic    = static_cast<T>(1.0)/sonic;    // 1/c (旧 is)
+#ifdef FORGE_JACOBIAN_SANITY
+    if (!(c > static_cast<T>(0.0)) || !isfinite(c) || kappa < static_cast<T>(1.0e-3) || !isfinite(Htot)) {
+        printf("[jacobian_sanity] c=%g gamma=%g kappa=%g Htot=%g\n",
+               (double)c, (double)gamma, (double)kappa, (double)Htot);
+    }
+#endif
+    // eE = r 音響エネルギー成分 (∓V を除く), dD = l 音響密度成分の TP 補正 (χ_eos·(1/c))。
+    // CPG: eE=ek/c + c/κ (=Htot_cpg/c), dD=0 → 従来式とビット一致。
     T eE, dD;
-    if (general) {
-        const T h_real = Htot - ek;                                   // 実エンタルピー h(T)
-        eE = Htot * is;                                               // = (ek+h)·is
-        dD = (sonic*sonic - (gamma-static_cast<T>(1.0))*h_real) * is; // χ·is, χ=c²−κh
+    if (thermallyPerfect) {
+        const T h_real  = Htot - ek;                       // 実エンタルピー h(T)
+        const T chi_eos = sonic*sonic - kappa*h_real;       // χ_eos = c²−κh (EOS の真の χ。CPG で 0)
+        eE = Htot * inv_sonic;                              // = (ek+h)/c
+        dD = chi_eos * inv_sonic;                           // = χ_eos/c
     } else {
-        eE = ek*is + inv_chi;
+        eE = ek*inv_sonic + c_over_kappa;
         dD = static_cast<T>(0.0);
     }
-    const T r1[5]={ s2*is, (u*is+nx)*s2, (v*is+ny)*s2, (w*is+nz)*s2, (eE+V)*s2 };
-    const T r5[5]={ s2*is, (u*is-nx)*s2, (v*is-ny)*s2, (w*is-nz)*s2, (eE-V)*s2 };
-    const T l1[5]={ (chi*ek-V+dD)*s2, (-chi*u+nx)*s2, (-chi*v+ny)*s2, (-chi*w+nz)*s2, chi*s2 };
-    const T l5[5]={ (chi*ek+V+dD)*s2, (-chi*u-nx)*s2, (-chi*v-ny)*s2, (-chi*w-nz)*s2, chi*s2 };
+    const T r1[5]={ inv_sqrt2*inv_sonic, (u*inv_sonic+nx)*inv_sqrt2, (v*inv_sonic+ny)*inv_sqrt2, (w*inv_sonic+nz)*inv_sqrt2, (eE+V)*inv_sqrt2 };
+    const T r5[5]={ inv_sqrt2*inv_sonic, (u*inv_sonic-nx)*inv_sqrt2, (v*inv_sonic-ny)*inv_sqrt2, (w*inv_sonic-nz)*inv_sqrt2, (eE-V)*inv_sqrt2 };
+    const T l1[5]={ (kappa_over_c*ek-V+dD)*inv_sqrt2, (-kappa_over_c*u+nx)*inv_sqrt2, (-kappa_over_c*v+ny)*inv_sqrt2, (-kappa_over_c*w+nz)*inv_sqrt2, kappa_over_c*inv_sqrt2 };
+    const T l5[5]={ (kappa_over_c*ek+V+dD)*inv_sqrt2, (-kappa_over_c*u-nx)*inv_sqrt2, (-kappa_over_c*v-ny)*inv_sqrt2, (-kappa_over_c*w-nz)*inv_sqrt2, kappa_over_c*inv_sqrt2 };
     const T lam1=V+sonic, lam2=V, lam5=V-sonic;
     const T zero=static_cast<T>(0.0);
     const T p2=max(lam2,zero), pa1=max(lam1,zero)-p2, pa5=max(lam5,zero)-p2;
@@ -759,7 +773,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float* dt_local,
  flow_float implicit_relax,
  flow_float* gamma_arr,   // per-cell γ (TP: γ_mix(T), CPG: cfg.gamma)。frozen-coefficient Jacobian 用
- int generalEOS,          // 1: TP 一般EOS固有系 (実 Ht・χ), 0: CPG 閉形式 (従来・ビット不変)
+ int thermallyPerfect,    // 1: TP 固有系 (実 Ht・χ_eos=c²−κh, κ=γ−1), 0: CPG 閉形式 (従来・ビット不変)
 
  geom_int nCells_all , geom_int nCells,
  geom_float* vol,
@@ -892,7 +906,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             }
             block_dplur::accumulate_split_jacobian_cf<ST>(
                 gamma, nx, ny, nz, velocity_x, velocity_y, velocity_z,
-                local_sonic, local_Ht, generalEOS != 0,
+                local_sonic, local_Ht, thermallyPerfect != 0,
                 face_area, has_nbr, sdq, diag_block, neighbor_accum
             );
 
