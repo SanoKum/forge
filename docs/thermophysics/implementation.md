@@ -19,6 +19,7 @@
 - `thermo_init_db(cfg)`: `cfg.speciesNames` 順に host 配列を構築し、`cfg.speciesDBFile` (yaml) があれば上書き、device global memory (`cudaMalloc`) へアップロード。
 - アクセサ `thermo_species_device_ptr()` / `thermo_num_species()` / `thermo_species_host()`。化学種データは translation unit をまたぐため `__constant__` ではなく device pointer をカーネル引数で渡す (`-rdc` 非依存)。
 - `main.cpp` の `initializeSimulation` で `cfg.read()` 直後に `thermo_init_db(cfg)` を呼ぶ。
+- **エンタルピー基準オフセット** (`physProp.thermoHrefTemp`, >0 で有効・既定 0=従来絶対基準でビット不変): host 配列構築後に、各種の NASA-9 係数 `a[7]` (`low[7]`,`high[7]` の両方) に $\Delta a_7=-h_s(T_{\mathrm{ref}})/R_u$ を加算する。NASA-9 では $h_{\mathrm{molar}}=R_u T(\dots)+R_u a_7$ と $a_7$ が定数項 $R_u a_7$ を与えるため、これで全 $T$ で一定オフセット $c_s=-h_s(T_{\mathrm{ref}})$ を与え $T_{\mathrm{mid}}$ 連続性も保たれる ($h_s(T_{\mathrm{ref}})=0$, sensible enthalpy)。係数に焼き込むので `thermo_h/cph/T_from_e/混合則/SLAU 面エンタルピー/BC` が自動的に同一基準になり**一点改変で全経路整合**、エントロピー $a_8$ は不変。非反応流で物理不変・多成分 implicit の安定化目的 (theory.md「sensible-enthalpy datum」参照)。IC 生成器 (`case/16.nozzle_wys/gen_ic_2sp_from_n2.py` 等) も同一 $T_{\mathrm{ref}}$ でオフセットして整合させること (`roe` 不整合は step0 ジャンプを招く)。検証: `case/16.nozzle_wys` run_0101〜0109 で安定 `cfl_pseudo` 上限 1→2、step0 再構成が絶対基準と機械精度一致 (物理不変)。
 
 ## 2. 従属変数と温度反転 `cuda_forge/dependentVariables_d.cu`
 

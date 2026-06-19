@@ -333,6 +333,7 @@ void solverConfig::read(std::string fname)
         }
         if (physProp["speciesDBFile"])          this->speciesDBFile = physProp["speciesDBFile"].as<std::string>();
         if (physProp["speciesDiffusionMethod"]) this->speciesDiffusionMethod = physProp["speciesDiffusionMethod"].as<int>();
+        if (physProp["thermoHrefTemp"])         this->thermoHrefTemp = physProp["thermoHrefTemp"].as<double>();
         if (physProp["Sc"])                     this->Sc = physProp["Sc"].as<double>();
         if (physProp["Sc_t"])                   this->Sc_t = physProp["Sc_t"].as<double>();
         // 乱流シュミット数は turbulence.turbulentSchmidt でも設定可 (turbulentPrandtl と同じ場所)。

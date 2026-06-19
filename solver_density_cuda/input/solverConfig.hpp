@@ -136,6 +136,11 @@ public:
     std::vector<std::string> speciesNames;     // 混合を構成する化学種名。順序が index s を定義
     std::string speciesDBFile = "";            // 任意: NASA-9/LJ 係数の外部 DB (yaml)。空なら内蔵 DB
     int speciesDiffusionMethod = 1;            // 0: 定数 Schmidt, 1: kinetic theory 混合平均拡散
+    double thermoHrefTemp = 0.0;               // >0: 各化学種のエンタルピー基準を h_s(thermoHrefTemp)=0 へ
+                                               // オフセット (sensible-enthalpy datum)。非反応流では物理不変
+                                               // だが、種ごとに桁違いの生成エンタルピー (H2O≈-13.4MJ/kg) を
+                                               // 除いて多成分 implicit の roe/roY 緩和ミスマッチ起因の T ジャンプ
+                                               // を抑え安定化する。0 (既定) で従来 NASA 絶対基準・ビット不変。
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
                                                // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)

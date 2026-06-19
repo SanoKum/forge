@@ -193,6 +193,29 @@ void thermo_init_db(solverConfig& cfg)
     }
     g_n = static_cast<int>(g_host.size());
 
+    // -------------------------------------------------------------------------
+    // エンタルピー基準オフセット (sensible-enthalpy datum, thermoHrefTemp>0)
+    //   各化学種の絶対 (生成込み) エンタルピー h_s(T) を h_s(Tref) だけ平行移動し
+    //   h_s(Tref)=0 に揃える。NASA-9 では h_molar = Ru*T*(...) + Ru*a7 と a7 が
+    //   定数項 Ru*a7 を与えるので、両温度域の a[7] に Δa7 = -h_ref/Ru を加算すれば
+    //   全 T で一定オフセット c_s=-h_ref を与え Tmid 連続性も保たれる。係数に焼き込む
+    //   ため thermo_h_*/cph/T_from_e/混合則/SLAU 面エンタルピー/BC が自動で同一基準に
+    //   なり (一点改変で全経路整合)、エントロピー a[8] は不変 (基準はエントロピーに無関係)。
+    //   非反応流では支配方程式が不変 (Σh_s J_s* と e_mix の基準移動が連続式で相殺)。
+    //   生成エンタルピーの桁違い (H2O≈-13.4MJ/kg) を除くので、多成分 implicit の
+    //   roe(block-DPLUR)/roY(point-implicit) 緩和ミスマッチによる Newton 温度ジャンプを抑制。
+    if (cfg.thermalMethod == 2 && cfg.thermoHrefTemp > 0.0) {
+        const double Tref = cfg.thermoHrefTemp;
+        for (int i=0;i<g_n;i++) {
+            const double h_ref = thermo_h_molar(g_host[i], Tref);   // 移動前の絶対 h [J/mol]
+            const double da7   = -h_ref / THERMO_RU;
+            g_host[i].low[7]  += da7;
+            g_host[i].high[7] += da7;
+        }
+        std::cout << "[thermo_d] enthalpy datum offset applied: h_s(Tref="
+                  << Tref << "K)=0 for all species" << std::endl;
+    }
+
     // device へアップロード
     if (g_dev) { cudaFree(g_dev); g_dev = nullptr; }
     THERMO_CUDA_CHECK(cudaMalloc((void**)&g_dev, g_n*sizeof(SpeciesThermo)));
@@ -208,6 +231,7 @@ void thermo_init_db(solverConfig& cfg)
                       << " kg/mol, R=" << (THERMO_RU/g_host[i].MW) << " J/kgK"
                       << ", cp(300K)=" << thermo_cp_mass(g_host[i], 300.0) << " J/kgK"
                       << ", cp(1500K)=" << thermo_cp_mass(g_host[i], 1500.0) << " J/kgK"
+                      << ", h(300K)=" << thermo_h_mass(g_host[i], 300.0) << " J/kg"
                       << std::endl;
         }
     }

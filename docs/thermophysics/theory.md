@@ -38,6 +38,12 @@ $$ \frac{S^{\circ}_s}{R_u} = -\frac{a_0}{2} T^{-2} - a_1 T^{-1} + a_2 \ln T + a_
 
 質量基準は $c_{p,s}=C_{p,s}/W_s$、$h_s=H_s/W_s$。
 
+#### エンタルピー基準オフセット (sensible-enthalpy datum, 非反応流)
+
+絶対基準では生成エンタルピーが種ごとに桁違い ($h_{\mathrm{H_2O}}(298\,\mathrm{K})\approx-13.4\,\mathrm{MJ/kg}$ に対し $h_{\mathrm{N_2}},h_{\mathrm{O_2}}\approx0$)。**化学反応が無い流れでは各種のエンタルピー基準を任意の定数 $c_s$ だけ平行移動してよい**。実際、全エネルギー方程式に現れるのは対流・拡散によるエンタルピー輸送 $\rho h_{\mathrm{mix}}\mathbf{u}+\sum_s h_s \mathbf J_s$ と内部エネルギー貯蔵 $\rho e_{\mathrm{mix}}$ であり、$h_s\to h_s-c_s$ とすると流束発散の変化 $+\partial_t(\sum_s c_s\rho Y_s)$ と貯蔵項の変化 $-\partial_t(\sum_s c_s\rho Y_s)$ が (反応が無く種連続式 $\partial_t(\rho Y_s)+\nabla\!\cdot(\rho Y_s\mathbf u+\mathbf J_s)=0$ が成り立つので) **厳密に相殺**する。基準はエントロピー $s^\circ_s$ には影響しない。
+
+そこで $c_s=h_s(T_{\mathrm{ref}})$ を選び全種を $h_s(T_{\mathrm{ref}})=0$ (sensible enthalpy) に揃えると、桁違いの生成エンタルピーが消えて種間のエンタルピーが同程度の大きさになる。これは **多成分 implicit の数値安定化**に効く: $\rho e$ と $\rho Y_s$ を別緩和で解く分離 implicit では緩和ミスマッチが温度反転に伝わるが、その増幅率が $|h_s|$ に比例するため、生成エンタルピーを除くと温度ジャンプが抑えられる (詳細・検証は implementation.md と `case/16.nozzle_wys`)。反応を扱う場合は生成エンタルピー差が物理的に効くためこの平行移動はできない。
+
 ### 2.3 ideal-gas mixing による混合物性
 
 混合比熱・絶対エンタルピーは質量分率重み:

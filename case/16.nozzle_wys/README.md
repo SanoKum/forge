@@ -237,3 +237,112 @@ SLAU 陰解法 (timeIntegration:11, blockDPLUR, **nStepInner:5, cfl_pseudo:4**)�
 [docs/condensation/implementation.md](../../docs/condensation/implementation.md) §検証 case/16) に全モデルが全凝縮を再現。
 下流 (x≳4cm) は全モデル実験 ±数%。**onset 域は Kantrowitz 有り (Kw+HK/Kw+Gyar) が overshoot を抑え実験に最良**。
 残課題: x≈3cm のピークが実験よりやや高い (onset レート微調整)、3D 壁解像 (`make_nozzle_3d_wallres.py`) は未実施。
+
+## 多成分 TP 発散の再検証 run 一覧 — run_0069 以降 (2026-06-18)
+
+「多成分 thermally perfect gas (thermalMethod:2) が収束しない」件の原因切り分け。**結論 (0acca05 の
+「sub-200K のみ・種数無関係」を訂正): 真因は 2 つ**。
+1. **IC 生成器の運動エネルギーバグ**: `gen_ic_2sp_from_n2.py:69` が `ek=0.5*(roUx²+..)/ro` (solver 規約は
+   `/ro²`)。高速域 (出口 |u|~500, ro~0.1) で roe が ~10⁵ J/kg 過小 → 読み戻しで多数セル T<200K に床張り付き。
+2. **nSpecies≥2 コードパス固有の不安定**: ek を修正した整合 IC・全>200K・species 完全保存でも 2 成分は
+   step6-7 で局所 ro<0 → NaN。真の単成分は同条件で安定。Y_H2O≈0 でも発散 (step15)、実 H2O で加速 (step7)。
+3. sub-200K NASA-9 外挿は別の第 3 要因 (cold で全部落ちる。Tt スイープ `run_0041_hot500`[単成分]安定/
+   `run_0042_Tt360`/`run_0043_Tt286` は単成分の話)。
+
+棄却済 (再調査不要): float32 精度 (double 同一)・CFL/剛性 (explicit cfl0.05 でも発散)・implicit 分離更新。
+全 run native ビルド (`.build-native/`)。**全て診断用・破棄予定**。
+
+| run | 変更点 | 結果 (初 NaN) | 判定 |
+| --- | --- | --- | --- |
+| `run_0069_ver_min2sp_float` | 2sp, inviscid+explicit+laminar (最小化) | step4。ro<0・sonic→0 が最冷出口で発生 | 発散機構を特定 |
+| `run_0070_ver_min2sp_double` | =0069 を **double** ビルド | step4、残差軌跡が float と6桁一致 | **①float精度 棄却** |
+| `run_0071_ver_min_n2o2` | =0069 で H2O→O2 (IC不整合, 参考) | step3 | 参考 (IC不整合) |
+| `run_0072_ver_min2sp_implicit` | =0069 を implicit | step4 | **④分離更新 棄却** |
+| `run_0073_ver_2sp_zeroH2O` | 整合IC・**Y_H2O≈0** (実質純N2を2sp機構で) | step5 | **②H2O/種数 棄却** |
+| `run_0074_ver_2sp_realH2O_consistIC` | 整合IC・Y_H2O=0.01095 | step4 | 2sp は発散 |
+| `run_0076_ver_1sp_N2_stablecfg` | **単成分N2**・run_0056 と同一 config | step4 | cold で単成分も発散(交絡: ek+sub200K) |
+| `run_0077_ver_2sp_stablecfg` | =0076 を 2sp に | step4 | cold は交絡で切り分け不可 |
+
+注: cold (Tt=286.65) では sub-200K と ek バグの両方で 1sp も落ちるため切り分け不能。**hot (Tt=500K, 全>200K) が
+クリーンな対照** (下表)。hot で 1sp は安定・2sp は発散し、種数効果が分離できる。
+
+| run (hot Tt=500K) | 変更点 | 結果 | 判定 |
+| --- | --- | --- | --- |
+| `run_0081_ver_1sp_hot500_control` | **単成分N2**, res_400 から restart | **exit0・400step 安定・残差フラット** | 単成分 hot は安定 |
+| `run_0080_ver_2sp_hot500` | N2+H2O, ek バグ IC | step7。res_0 で 9466 セル T<200 (IC破壊) | 要因1顕在 |
+| `run_0083_ver_2sp_n2o2_hot500` | N2+O2 (生成エンタルピー≈0), ek バグ IC | step18 (序盤は残差低下) | O2 でも発散・H2Oより遅い |
+| `run_0084_ver_2sp_hot500_fixedIC` | N2+H2O, **ek 修正 IC** | res_0 整合(全>200K, 残差=1sp並)・なお step7 | **要因2: 修正後も発散** |
+| `run_0085_ver_2sp_hot500_zeroH2O_fixedIC` | **Y_H2O≈0**, ek 修正 IC | step15 (局所 ro<0・species完全保存) | **要因2はコードパス側** |
+
+### 要因2 の特定 (run_0089〜0094, hot Tt=500K, ek修正IC, condensation無)
+
+O2 と H2O の対照で **H2O 固有**と判明、cfl_pseudo 依存で **implicit 緩和ミスマッチ**と確定:
+
+| run | 2nd種/Y | cfl_pseudo | 結果 |
+| --- | --- | --- | --- |
+| `run_0089_cmp_1sp` | なし | 2 | 40step 安定 |
+| `run_0089_cmp_o2_1e6` | O2 / 1e-6 | 2 | **40step 安定** (h_O2−h_N2≈0) |
+| `run_0089_cmp_h2o_1e6` | H2O / 1e-6 | 2 | step13 発散。H2O が入ったセルの T が偽上昇 |
+| `run_0089_cmp_h2o_real` | H2O / 0.01095 | 2 | step5 発散 |
+| `run_0091_fix_*` | (energy補正カーネル配線) | 2 | **悪化** (O2もstep12)=**二重計上**。デッドカーネルは修正でない |
+| `run_0092b_h2o_cflp10` | H2O / 1e-6 | 10 | step2 |
+| `run_0092b_h2o_cflp1` | H2O / 1e-6 | **1** | **60step 安定** |
+| `run_0092b_h2o_cflp0p1` | H2O / 1e-6 | 0.1 | 安定 |
+| `run_0093_h2o_real_cflp1_long` | H2O / 0.01095 | **1** | **400step 完走・T[288,504]・Y1保持** (SST残差はプラトー=単成分と同) |
+| `run_0094_cold_real_fixedIC_cflp1` | H2O / 0.01095 **cold Tt=286** | 1 | step13 発散=**要因3(sub-200K)** が cold で残存 |
+
+**結論 (3 要因)**:
+1. **IC ek バグ** (`gen_ic_2sp_from_n2.py:72` を `/ro²` に修正済)。
+2. **多成分 implicit 結合不安定**: roe は block-DPLUR、roY は別 point-implicit で更新→擬似時間緩和がミスマッチ→roY 変化に roe が対応せず Newton で T ジャンプ。H2O の |h|≈1.3e7 が増幅 (O2 は無害)。**回避策: 多成分 TP は `cfl_pseudo ≤ 1`**。恒久修正は species を block 同梱 or 緩和整合 (未実装)。対流流束自体は整合 (energy 補正配線で二重計上→O2 発散が証拠)。
+3. **sub-200K NASA-9 外挿** (cold 固有): 出口<200K の極低温では CPG を使うか thermo 低温拡張。
+
+`run_0070` 用 double バイナリは `.build-native/double/` (要 `FORGE_CUDA_BLOCKSIZE=128`)。デッド energy 補正カーネルは
+[`.github/plans/thermophysics-multicomponent-tpgas.md`](../../.github/plans/thermophysics-multicomponent-tpgas.md) 参照。
+
+### cfl_pseudo パラスタ + 等エントロピー IC + ramp (run_0095〜0100, hot Tt=500K, N2+H2O 1%)
+
+「cfl を上げても収束するか」「初期値を等エントロピーに」の検証。**結論: cfl_pseudo≤1 は硬い上限**。
+
+- **20step 刻み発達** (`run_0095`, cfl_pseudo=1, 600step): 場は定常・物理的 (T[288,504]・sub-200K=0・Y1=0.01095 保持・ro<0=0)。ただし残差はプラトー (rms_ro~1e-7, rms_roe~8e-3、機械ゼロには落ちない=単成分 run_0056 と同じ既存挙動)。cfl=1 vs 0.5 (`run_0096`) で最終場 max|ΔP|≈3.4kPa(~5%)・max|ΔT|≈13K=厳密収束前。
+- **cfl_pseudo パラスタ** (warm-start IC, `run_0099_ws_cflp*`):
+
+  | cfl_pseudo | 1 | 2 | 4 | 5 | 8 | 10 |
+  |---|---|---|---|---|---|---|
+  | 結果 | **安定(399)** | step6 | step3 | step2 | step2 | step2 |
+
+- **等エントロピー IC** (`gen_ic_isentropic.py`: 混合 R/Cp/s0 から (Pt,Tt) 等エントロピー再構成。T[283,509]・sub-200K=0): 熱力学的には妥当だが **連続の式 (ρuA=const) 非整合** (軸速度を sqrt(2Δh) から出したため)。no-slip 粘性壁では壁せん断ショック、inviscid+slip でも質量不整合で **cfl=1 でも発散** (`run_0097`/`run_0098`)。warm-start (mass-consistent) の方が安定。
+- **cfl ramp** (`run_0100_ramp_cflp*`: cfl=1 で落ち着いた `run_0099_ws_cflp1/res_400` から高 cfl 再起動): **cfl≥2 はやはり発散** (cfl=2→step7)。過渡限定でなく**構造的上限**。
+
+**まとめ**: 多成分 TP は (1) CEA 有効域 (>200K) の高温条件 + (2) `cfl_pseudo≤1` で**安定・物理的な定常場**が得られる (打ち手は有効)。ただし残差はプラトー品質 (厳密収束・高 cfl には要因2の恒久修正=species を block 同梱/緩和整合が必要)。等エントロピー IC を使うなら ρuA 連続を満たす quasi-1D 構成が要る。
+
+### エンタルピー基準オフセット (sensible-enthalpy datum) による安定化 (run_0101〜0109, 2026-06-19)
+
+**要因2 (多成分 implicit 結合不安定) への打ち手**として、各化学種のエンタルピー基準を
+`h_s(Tref=298.15K)=0` へ平行移動する **sensible-enthalpy datum** を実装 (config `physProp.thermoHrefTemp`、
+solver は NASA-9 係数 `a7` に焼き込み・全経路整合、Python IC 生成器は `gen_ic_2sp_from_n2.py` 第6引数で同一基準)。
+**狙い**: H2O の生成エンタルピー `h_H2O(298K)≈−13.4 MJ/kg` (N2/O2 は ≈0、`thermo_href_compare.png` 参照) が
+roe(block-DPLUR)/roY(point-implicit) の擬似時間緩和ミスマッチを増幅して Newton 温度ジャンプを起こすため、
+**桁違いの生成エンタルピーを除いて増幅を抑える**。非反応流では物理不変 (e_mix と Σh_s J_s* の基準移動が連続式で相殺)。
+
+同一 hot N2+H2O(1%) 場 (`run_0081/res_400` 由来、全>200K)・同一メッシュ・同一 BC で、絶対基準 (abs) と
+オフセット基準 (href) を `cfl_pseudo` スイープで比較 (全 native ビルド、要 `solverConfig.hpp` 変更後の full rebuild)。
+
+| run | 基準 | cfl_pseudo | 結果 (初 NaN step) |
+| --- | --- | --- | --- |
+| `run_0101_abs_cflp1`   | 絶対       | 1  | **400step 完走** (control = run_0099 再現) |
+| `run_0102_abs_cflp2`   | 絶対       | 2  | step6 発散 |
+| `run_0103_abs_cflp4`   | 絶対       | 4  | step3 発散 |
+| `run_0104_href_cflp1`  | オフセット | 1  | **400step 完走** |
+| `run_0105_href_cflp2`  | オフセット | 2  | **400step 完走** ← abs は step6 で落ちる cfl で安定化 |
+| `run_0106_href_cflp4`  | オフセット | 4  | step7 発散 (abs step3 より遅延) |
+| `run_0107_href_cflp5`  | オフセット | 5  | step4 発散 |
+| `run_0108_href_cflp8`  | オフセット | 8  | step3 発散 |
+| `run_0109_href_cflp10` | オフセット | 10 | step3 発散 |
+
+**結論 (打ち手は有効だが部分的)**:
+1. **安定 `cfl_pseudo` 上限が 1→2 へ向上** (abs は cfl2 で step6 発散、href は cfl2 で 400step 完走)。高 cfl (4,5,8,10) でも発散ステップが一貫して後退 (cfl4: step3→7 等)。**生成エンタルピーの増幅が安定性に効いている直接証拠**。
+2. **物理不変を確認**: 同一入力場の step0 再構成 (T,P,ρ,Ux) が abs と href で**機械精度一致** (T rel 1.2e-7, P 6.1e-8, ρ/Ux=0)。roe は基準分だけ平行移動 (`roe_abs−roe_href ≈ ρ·Y_H2O·h_ref(H2O)`, 整合 5%)。`roe/ρ` は abs の **−86〜−19 kJ/kg (負・桁落ち)** から href の **+61〜+127 kJ/kg (sensible・良条件)** へ。
+3. **限界**: 上限は 2× 止まりで `cfl_pseudo≥4` は依然発散、残差はプラトー品質 (`check_convergence.py`=NOT CONVERGED、単成分 run_0056 と同等)。**要因2 の構造的ミスマッチ自体は未解消** — オフセットは増幅振幅を下げるだけ。厳密収束・高 cfl には species を 5×5 block 同梱 (full coupling) が引き続き必要。
+
+図: `thermo_href_compare.png` (cp/h vs T・オフセット効果), `href_cfl_ceiling.png` (cfl 上限比較), 各 run の `residual_history.png`。
+**run_0101〜0109 は診断用** (恒久保持は不要、結論は本表)。
