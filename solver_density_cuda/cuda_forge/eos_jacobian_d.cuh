@@ -82,6 +82,47 @@ THERMO_HD void eos_eigvecs_general(double ux,double uy,double uz,
     lambda[0]=Un-c; lambda[1]=Un; lambda[2]=Un; lambda[3]=Un; lambda[4]=Un+c;
 }
 
+// ---- 閉形式 (Method B, 数値逆行列なし) ----------------------------------------
+// 一般EOS音響右/左固有ベクトル (r±,l±) の rank-2 外積で M(g)=Σ_k g_k P_k を構成する。
+// 接触・せん断 (λ=U_n) は g2 で I−P1−P5 に縮約されるので明示不要。
+//   r± = [1, u±cn, Ht±cU_n],  l± = [χ+κK∓cU_n, −κu±cn, κ],  l±·r± = 2c²
+//   M(g) = g2·I + (g1−g2)·r+ l+ᵀ/(2c²) + (g5−g2)·r- l-ᵀ/(2c²)
+// g1=g(U_n+c), g2=g(U_n), g5=g(U_n−c)。CPG (χ=0, Ht=K+c²/κ) で閉形式 FVS と厳密一致。
+THERMO_HD void eos_Mg_general(double ux,double uy,double uz,
+                              double nx,double ny,double nz,
+                              double c, double Ht, double kappa, double chi,
+                              double g1, double g2, double g5,
+                              double M[5][5])
+{
+    const double Un = ux*nx+uy*ny+uz*nz;
+    const double K  = 0.5*(ux*ux+uy*uy+uz*uz);
+    const double inv2c2 = 1.0/(2.0*c*c);
+    // r+ (λ=Un+c), l+
+    const double rp[5]={1.0, ux+c*nx, uy+c*ny, uz+c*nz, Ht+c*Un};
+    const double lp[5]={chi+kappa*K-c*Un, -kappa*ux+c*nx, -kappa*uy+c*ny, -kappa*uz+c*nz, kappa};
+    // r- (λ=Un-c), l-
+    const double rm[5]={1.0, ux-c*nx, uy-c*ny, uz-c*nz, Ht-c*Un};
+    const double lm[5]={chi+kappa*K+c*Un, -kappa*ux-c*nx, -kappa*uy-c*ny, -kappa*uz-c*nz, kappa};
+    const double a1=(g1-g2)*inv2c2, a5=(g5-g2)*inv2c2;
+    for (int i=0;i<5;i++)
+        for (int j=0;j<5;j++)
+            M[i][j] = (i==j?g2:0.0) + a1*rp[i]*lp[j] + a5*rm[i]*lm[j];
+}
+
+// 閉形式 A± (FVS 分割)。g=λ⁺=max(λ,0) で A+、g=λ⁻=min(λ,0) で A-。
+THERMO_HD void eos_split_jacobian_general_closed(double ux,double uy,double uz,
+                                                 double nx,double ny,double nz,
+                                                 double c, double Ht, double kappa, double chi,
+                                                 double Aplus[5][5], double Aminus[5][5])
+{
+    const double Un = ux*nx+uy*ny+uz*nz;
+    const double l1=Un+c, l2=Un, l5=Un-c;
+    if (Aplus)  eos_Mg_general(ux,uy,uz,nx,ny,nz,c,Ht,kappa,chi,
+                               fmax(l1,0.0),fmax(l2,0.0),fmax(l5,0.0), Aplus);
+    if (Aminus) eos_Mg_general(ux,uy,uz,nx,ny,nz,c,Ht,kappa,chi,
+                               fmin(l1,0.0),fmin(l2,0.0),fmin(l5,0.0), Aminus);
+}
+
 // A± = R Λ± L (Λ+ = max(λ,0), Λ- = min(λ,0))。Aplus/Aminus に書く。
 // 戻り値 = LU 最小ピボット (診断用)。Aminus が nullptr なら A+ のみ。
 THERMO_HD double eos_split_jacobian_general(double ux,double uy,double uz,

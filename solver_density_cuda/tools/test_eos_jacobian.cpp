@@ -20,7 +20,7 @@ static SpeciesThermo mkN2(){
 static SpeciesThermo N2 = mkN2();
 static const double Y1[1]={1.0};
 
-struct Prim { double ro,ux,uy,uz,P,T,c,h,Ht,kappa,e; };
+struct Prim { double ro,ux,uy,uz,P,T,c,h,Ht,kappa,chi,e; };
 
 // mode: 0=CPG (gamma,cp), 1=TP (NASA N2)
 static Prim prim_from_Q(const double Q[5], int mode){
@@ -36,6 +36,7 @@ static Prim prim_from_Q(const double Q[5], int mode){
         p.P=p.ro*D.R*p.T; p.h=D.h; p.c=sqrt(D.a2); p.kappa=D.kappa;
     }
     p.Ht = p.h + ek;
+    p.chi = p.c*p.c - p.kappa*p.h;   // = ∂P/∂ρ|_{ρe} (CPG で 0)
     return p;
 }
 static void Fn(const double Q[5], const double n[3], int mode, double F[5]){
@@ -83,7 +84,7 @@ int main(){
         {"TP  T1200 M1.5",     1,1200,1.5,1},  // hi 係数側 (Tmid=1000 の seam は FD 基準が不連続なので避ける)
         {"TP  T2500 M1.5",     1,2500,1.5,1},  // 高温 NASA 区間 (hi 係数)
     };
-    printf("%-22s %12s %14s %10s\n","case","||LR-I||","||RLL-Afd||rel","minpiv");
+    printf("%-22s %12s %14s %14s %10s\n","case","||LR-I||","||RLL-Afd||rel","||clsd-num||","minpiv");
     bool ok=true;
     for(auto&c:cs){
         // build Q
@@ -99,15 +100,21 @@ int main(){
         double Aeig[5][5]; double lrerr=build_A_and_LRerr(p,n,Aeig);
         double Afd[5][5]; A_fd(Q,n,c.mode,Afd);
         double rel=frodiff(Aeig,Afd)/fro(Afd);
-        // minpiv
+        // numerical split A± (verified vs FD)
         double Ap[5][5],Am[5][5]; double mp=eos_split_jacobian_general(p.ux,p.uy,p.uz,n[0],n[1],n[2],p.c,p.Ht,p.kappa,Ap,Am);
-        printf("%-22s %12.2e %14.2e %10.2e %s\n",c.name,lrerr,rel,mp,(rel<1e-5&&lrerr<1e-9)?"":" <-- FAIL");
-        if(!(rel<1e-5&&lrerr<1e-9)) ok=false;
-        // Level2: A+ + A- = A,  flip
-        double Asum[5][5]; for(int i=0;i<5;i++)for(int j=0;j<5;j++)Asum[i][j]=Ap[i][j]+Am[i][j];
+        // closed-form split A± (Method B, no LU)
+        double Cp[5][5],Cm[5][5];
+        eos_split_jacobian_general_closed(p.ux,p.uy,p.uz,n[0],n[1],n[2],p.c,p.Ht,p.kappa,p.chi,Cp,Cm);
+        // closed A+ vs numerical A+, closed A- vs numerical A-
+        double clsdErr = (frodiff(Cp,Ap)+frodiff(Cm,Am))/fmax(fro(Ap)+fro(Am),1e-30);
+        bool pass = (rel<1e-5 && lrerr<1e-9 && clsdErr<1e-9);
+        printf("%-22s %12.2e %14.2e %14.2e %10.2e %s\n",c.name,lrerr,rel,clsdErr,mp,pass?"":" <-- FAIL");
+        if(!pass) ok=false;
+        // Level2: A+ + A- = A,  flip (closed form)
+        double Asum[5][5]; for(int i=0;i<5;i++)for(int j=0;j<5;j++)Asum[i][j]=Cp[i][j]+Cm[i][j];
         double splitErr=frodiff(Asum,Aeig)/fro(Aeig);
         double nn[3]={-n[0],-n[1],-n[2]}; double Bp[5][5],Bm[5][5];
-        eos_split_jacobian_general(p.ux,p.uy,p.uz,nn[0],nn[1],nn[2],p.c,p.Ht,p.kappa,Bp,Bm);
+        eos_split_jacobian_general_closed(p.ux,p.uy,p.uz,nn[0],nn[1],nn[2],p.c,p.Ht,p.kappa,p.chi,Bp,Bm);
         // A_{-n}^+ = -A_n^-
         double flipErr=0; { double M1[5][5]; for(int i=0;i<5;i++)for(int j=0;j<5;j++)M1[i][j]=Bp[i][j]+Am[i][j]; flipErr=fro(M1)/fmax(fro(Aeig),1e-30); }
         if(splitErr>1e-9||flipErr>1e-9){ printf("    Level2: split=%.1e flip=%.1e <-- FAIL\n",splitErr,flipErr); ok=false; }
