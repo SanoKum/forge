@@ -65,7 +65,8 @@ void variables::registerSpecies(int nSpecies)
             this->c.emplace(name, std::vector<flow_float>{});
             this->c_d.emplace(name, nullptr);
         }
-        // 原始質量分率 Y{s} は HDF5 出力対象に加える。
+        // 保存質量分率 roY{s} と原始 Y{s} を HDF5 出力対象に加える (roY はリスタートに必須)。
+        this->output_cellValNames.push_back("roY"+std::to_string(s));
         this->output_cellValNames.push_back("Y"+std::to_string(s));
     }
 
@@ -477,8 +478,9 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
     this->copyVariables_cell_H2D(names);
 
     // --- 化学種 (M2): 保存質量分率 ρY_s を読み込む ---
-    // 入力 HDF5 に VALUE/roY{s} があれば読む。無ければ s==0 を ρ (Y0=1)、他を 0 とする
-    // (= 第 1 化学種のみの単純初期値)。原始 Y{s}=ρY_s/ρ も同時に設定する。
+    // 優先順: (1) VALUE/roY{s} (保存量) → (2) VALUE/Y{s} (原始量) から roY=ro*Y を復元
+    // → (3) デフォルト: s==0 を ρ (Y0=1)、他を 0。
+    // 旧出力 (roY 未保存・Y のみ) のリスタートも (2) で吸収する。
     if (this->nSpeciesRegistered >= 2) {
         std::list<std::string> sp_names;
         for (int s = 0; s < this->nSpeciesRegistered; s++) {
@@ -489,13 +491,25 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
             std::vector<flow_float>& v_Y   = this->c.at(Yname);
 
             std::vector<geom_float> roY_in;
-            const bool has = file.exist("/VALUE/"+roYname);
-            if (has) file.getDataSet("/VALUE/"+roYname).read(roY_in);
+            bool has_roY = file.exist("/VALUE/"+roYname);
+            bool has_Y   = file.exist("/VALUE/"+Yname);
+            if (has_roY) {
+                file.getDataSet("/VALUE/"+roYname).read(roY_in);
+            } else if (has_Y) {
+                // 旧ファイル互換: Y (原始) → roY = ro * Y
+                std::vector<geom_float> Y_in;
+                file.getDataSet("/VALUE/"+Yname).read(Y_in);
+                roY_in.resize(Y_in.size());
+                for (std::size_t k = 0; k < Y_in.size(); k++) {
+                    roY_in[k] = static_cast<geom_float>(this->c.at("ro")[k]) * Y_in[k];
+                }
+                has_roY = true;  // フォールバック成功
+            }
 
             for (geom_int i=0; i<msh.nCells; i++) {
                 const flow_float roi = this->c.at("ro")[i];
                 flow_float roYi;
-                if (has)            roYi = roY_in[i];
+                if (has_roY)        roYi = roY_in[i];
                 else if (s == 0)    roYi = roi;        // 既定: 第 1 化学種のみ
                 else                roYi = 0.0;
                 v_roY[i] = roYi;

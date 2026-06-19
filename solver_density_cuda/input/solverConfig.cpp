@@ -230,6 +230,10 @@ void solverConfig::read(std::string fname)
         this->cfl = getValidatedValue<double>(deltaT, "cfl", "time.deltaT");
         this->cfl_pseudo = getValidatedValue<double>(deltaT, "cfl_pseudo", "time.deltaT");
         this->implicitRelax = getOptionalValidatedValue<double>(deltaT, "implicitRelax", 1.0, "time.deltaT");
+        {
+            double raw = getOptionalValidatedValue<double>(deltaT, "implicitRelaxSST", -1.0, "time.deltaT");
+            this->implicitRelaxSST = (raw < 0.0) ? this->implicitRelax : (flow_float)raw;
+        }
         this->blockDPLUR = getOptionalValidatedValue<int>(deltaT, "blockDPLUR", 0, "time.deltaT");
         // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。
         this->implicitSolvePrecision = getOptionalValidatedValue<int>(deltaT, "implicitSolvePrecision", 0, "time.deltaT");

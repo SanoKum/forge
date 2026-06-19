@@ -1073,7 +1073,9 @@ void inlet_Pressure_d
                 // で緩和する (rf=0.5)。純静圧参照 (rf=1) は不足減衰で振動、純速度参照 (rf=0) は静的状態を
                 // 過拘束し P>Pt の反射を生むため、両者の中間で安定化。blend 後マッハで全状態から再構成。
                 // 多成分は混合則、単成分は sp[0]。
-                const double Psc = (double)P[ic];
+                // P[ic] > Pt は等エントロピー計算で M²<0 → NaN になるため Pt*(1-ε) でクランプ。
+                // 起動過渡期の圧力反射で静圧が全圧を超えるときに発生し、mach_bd→0 として処理する。
+                const double Psc = fmin((double)P[ic], (double)Pt_b * (1.0 - 1.0e-6));
                 double Ts0_d, ro0_d, um0_d, a0;
                 if (mix) {
                     thermo_isentropic_from_total_Ps_mix(sp, nSpecies, Yin, Pt_b, Tt_b, Psc, &Ts0_d, &ro0_d, &um0_d);

@@ -33,6 +33,11 @@ void applySpeciesBoundaries(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, 
 // 粘性 (viscMethod!=0) かつ nSpecies>=2 のとき M4 の Fick 拡散 + ΣJ=0 補正 + エンタルピー拡散も加える。
 void speciesTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
+// TP 多成分気体の組成-エネルギー整合補正 (speciesTimeIntegration 直後に呼ぶ)。
+// roe[ic] += Σ_s (roY_s[ic] - roYN_s[ic]) * h_s(T[ic]) により組成変化に伴う roe ずれを補正し、
+// speciesPrimitive (Newton 反転) が発散しないようにする。thermalMethod!=2 / 単成分では no-op。
+void speciesEnergyCorrection_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+
 // 化学種の時間積分 (scalarTimeIntegration_d を化学種ごとに呼ぶ)。
 void speciesTimeIntegration_d_wrapper(int loop, solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 

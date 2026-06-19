@@ -11,6 +11,7 @@ namespace {
 // device の roY / res_roY / transport_diag ポインタ配列 (flow_float*[nSpecies])。
 // speciesInit_d で 1 度だけ構築 (kinetic 拡散カーネルが化学種ループするため)。
 flow_float** g_roY_dev = nullptr;
+flow_float** g_roYN_dev = nullptr;   // roYN: species ステップ始点ベースライン (speciesUpdateOuter で roY に一致)
 flow_float** g_resroY_dev = nullptr;
 flow_float** g_transdiag_dev = nullptr;
 int          g_nSpecies = 0;
@@ -195,6 +196,37 @@ __global__ void species_diffusion_d(
     if (ic1 < nCells) atomicAdd(&res_roe[ic1], -(flow_float)q);
 }
 
+// TP 多成分気体の組成-エネルギー整合補正 (M-stagger 修正)。
+// speciesTimeIntegration で roY が更新されたとき、roe を同じ温度が維持されるよう補正する:
+//   roe[ic] += Σ_s (roY_s[ic] - roYN_s[ic]) * h_s(T[ic])
+// 背景: roY が変化しても T 一定を保つには roe を Σ_s Δ(roY_s)*h_s(T) だけ変化させる必要がある
+// (等温条件下でのエンタルピー差)。staggered update では roe が未補正のまま speciesPrimitive
+// の Newton 反転に入るため、TP h_mix が大きく負の成分 (H2O: ~-13.4 MJ/kg) では T が不物理的
+// にジャンプし発散を引き起こす。本カーネルはその inconsistency を 1 次で除去する。
+// 適用条件: thermalMethod==2 (TP) かつ nSpecies>=2。単成分/CPG では no-op。
+__global__ void species_energy_correction_kernel(
+    geom_int nCells,
+    int nSpecies,
+    flow_float* const* roY_dev,
+    flow_float* const* roYN_dev,
+    const flow_float* T,
+    flow_float* roe,
+    const SpeciesThermo* sp)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+
+    const double Tic = (double)T[ic];
+    double droe = 0.0;
+    for (int s = 0; s < nSpecies; s++) {
+        const double droY_s = (double)roY_dev[s][ic] - (double)roYN_dev[s][ic];
+        if (droY_s != 0.0) {
+            droe += droY_s * thermo_h_mass(sp[s], Tic);
+        }
+    }
+    roe[ic] += (flow_float)droe;
+}
+
 }  // namespace
 
 void speciesInit_d(solverConfig& cfg, variables& var)
@@ -207,27 +239,49 @@ void speciesInit_d(solverConfig& cfg, variables& var)
     }
     g_nSpecies = var.nSpeciesRegistered;
 
-    std::vector<flow_float*> hroY(g_nSpecies), hres(g_nSpecies), htd(g_nSpecies);
+    std::vector<flow_float*> hroY(g_nSpecies), hroYN(g_nSpecies), hres(g_nSpecies), htd(g_nSpecies);
     for (int s = 0; s < g_nSpecies; s++) {
         const std::string i = std::to_string(s);
-        hroY[s] = var.c_d["roY"+i];
-        hres[s] = var.c_d["res_roY"+i];
-        htd[s]  = var.c_d["transport_diag_Y"+i];
+        hroY[s]  = var.c_d["roY"+i];
+        hroYN[s] = var.c_d["roY"+i+"N"];
+        hres[s]  = var.c_d["res_roY"+i];
+        htd[s]   = var.c_d["transport_diag_Y"+i];
     }
     const size_t pbytes = g_nSpecies*sizeof(flow_float*);
-    gpuErrchk( cudaMalloc((void**)&g_roY_dev, pbytes) );
-    gpuErrchk( cudaMalloc((void**)&g_resroY_dev, pbytes) );
+    gpuErrchk( cudaMalloc((void**)&g_roY_dev,      pbytes) );
+    gpuErrchk( cudaMalloc((void**)&g_roYN_dev,     pbytes) );
+    gpuErrchk( cudaMalloc((void**)&g_resroY_dev,   pbytes) );
     gpuErrchk( cudaMalloc((void**)&g_transdiag_dev, pbytes) );
-    gpuErrchk( cudaMemcpy(g_roY_dev, hroY.data(), pbytes, cudaMemcpyHostToDevice) );
-    gpuErrchk( cudaMemcpy(g_resroY_dev, hres.data(), pbytes, cudaMemcpyHostToDevice) );
-    gpuErrchk( cudaMemcpy(g_transdiag_dev, htd.data(), pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(g_roY_dev,       hroY.data(),  pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(g_roYN_dev,      hroYN.data(), pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(g_resroY_dev,    hres.data(),  pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(g_transdiag_dev, htd.data(),   pbytes, cudaMemcpyHostToDevice) );
 
-    std::cout << "speciesInit_d: built device roY/res/diag[] for nSpecies=" << g_nSpecies << "\n";
+    std::cout << "speciesInit_d: built device roY/roYN/res/diag[] for nSpecies=" << g_nSpecies << "\n";
 }
 
 flow_float** species_roY_device_ptr()
 {
     return g_roY_dev;
+}
+
+void speciesEnergyCorrection_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
+{
+    if (cfg.thermalMethod != 2) return;
+    if (!speciesEnabled(var) || g_roY_dev == nullptr || g_roYN_dev == nullptr) return;
+
+    dim3 dimGrid_c = dim3((geom_int)ceil(msh.nCells / (flow_float)cuda_cfg.blocksize));
+    species_energy_correction_kernel<<<dimGrid_c, cuda_cfg.dimBlock>>>(
+        msh.nCells,
+        g_nSpecies,
+        g_roY_dev,
+        g_roYN_dev,
+        var.c_d["T"],
+        var.c_d["roe"],
+        thermo_species_device_ptr());
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 }
 
 void speciesPrimitive_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)

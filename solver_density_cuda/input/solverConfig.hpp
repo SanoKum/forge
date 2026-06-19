@@ -38,6 +38,7 @@ public:
     flow_float cfl;
     flow_float cfl_pseudo;
     flow_float implicitRelax = 1.0;
+    flow_float implicitRelaxSST = -1.0; // -1: implicitRelax に倒置 (既定動作不変)
     int blockDPLUR = 0;
     int implicitSolvePrecision = 0; // block-DPLUR 線形 solve の内部精度。0: float (既定・高速), 1: double。
                                     // 残差/状態は float のまま、Jacobian 構築+5×5 solve のみ double 化する混合精度
