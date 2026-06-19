@@ -21,6 +21,29 @@
 - `main.cpp` の `initializeSimulation` で `cfg.read()` 直後に `thermo_init_db(cfg)` を呼ぶ。
 - **エンタルピー基準オフセット** (`physProp.thermoHrefTemp`, >0 で有効・既定 0=従来絶対基準でビット不変): host 配列構築後に、各種の NASA-9 係数 `a[7]` (`low[7]`,`high[7]` の両方) に $\Delta a_7=-h_s(T_{\mathrm{ref}})/R_u$ を加算する。NASA-9 では $h_{\mathrm{molar}}=R_u T(\dots)+R_u a_7$ と $a_7$ が定数項 $R_u a_7$ を与えるため、これで全 $T$ で一定オフセット $c_s=-h_s(T_{\mathrm{ref}})$ を与え $T_{\mathrm{mid}}$ 連続性も保たれる ($h_s(T_{\mathrm{ref}})=0$, sensible enthalpy)。係数に焼き込むので `thermo_h/cph/T_from_e/混合則/SLAU 面エンタルピー/BC` が自動的に同一基準になり**一点改変で全経路整合**、エントロピー $a_8$ は不変。非反応流で物理不変・多成分 implicit の安定化目的 (theory.md「sensible-enthalpy datum」参照)。IC 生成器 (`case/16.nozzle_wys/gen_ic_2sp_from_n2.py` 等) も同一 $T_{\mathrm{ref}}$ でオフセットして整合させること (`roe` 不整合は step0 ジャンプを招く)。検証: `case/16.nozzle_wys` run_0101〜0109 で安定 `cfl_pseudo` 上限 1→2、step0 再構成が絶対基準と機械精度一致 (物理不変)。
 
+### 内蔵 species DB の一覧と出典
+
+内蔵 species と各定数の一次情報は `builtinDB()` ([`thermo_d.cu:53`](../../solver_density_cuda/cuda_forge/thermo_d.cu#L53)) にベタ書きされている。各値の出典は下表の通り (NASA-9 係数 / Lennard-Jones パラメータで出典が異なる)。外部 yaml (`physProp.speciesDBFile`, [`thermo_d.cu:142`](../../solver_density_cuda/cuda_forge/thermo_d.cu#L142)) で上書き/追加できる。温度域は全種共通で $T_{\mathrm{lo}}/T_{\mathrm{mid}}/T_{\mathrm{hi}}=200/1000/6000$ K。
+
+| species (別名) | MW [kg/mol] | $\sigma_{LJ}$ [Å] | $\varepsilon/k_B$ [K] | NASA-9 出典 | LJ 出典 | 備考 |
+| --- | --- | --- | --- | --- | --- | --- |
+| N2 | 0.0280134 | 3.621 | 97.53 | CEA [1] | [2] 系 | — |
+| O2 | 0.0319988 | 3.458 | 107.4 | CEA [1] | [2] 系 | — |
+| Ar (`AR`/`Ar`) | 0.039948 | 3.330 | 136.5 | 単原子理想 [†] | [2] 系 | NASA-9 は $a_2=c_p/R=5/2$ のみ・$a_7,a_8$ は CEA 基準定数 |
+| CO2 | 0.0440095 | 3.763 | 244.0 | CEA [1] | [2] 系 | — |
+| He (`HE`/`He`) | 0.0040026 | 2.551 | 10.22 | 単原子理想 [†] | [2] | 単原子 (Ar と同形)。$\varepsilon/k_B$ は Svehla [2] に一致 |
+| H2O (`h2o`/`WATER`) | 0.0180153 | 2.605 | 572.4 | CEA [1] | [2] 系 | 非平衡凝縮 (Wyslouzil) のキャリア + 凝縮種 |
+| AIR (`Air`/`air`) | 0.0289647 | 3.711 | 78.6 | **forge 擬似種 [‡]** | 空気の標準 LJ [2] 系 | 単成分擬似空気。$c_p/R=7/2$ 一定 ($\gamma=1.4$)、CEA 種ではない |
+
+出典記号:
+
+- **[1] CEA**: B. J. McBride, M. J. Gordon, *NASA Glenn Coefficients for Calculating Thermodynamic Properties of Individual Species*, NASA/TP-2002-211556 (2002)。NASA Glenn CEA データベース (`thermo.inp`) の 2 区間 (200–1000–6000 K) 係数。N2/O2/CO2/H2O は published CEA 値そのまま。
+- **[†] 単原子理想**: Ar/He は理想単原子気体として $c_p/R=5/2$ を厳密値で与える ($a_0{=}a_1{=}a_3{\dots}{=}0,\ a_2{=}2.5$)。エンタルピー基準定数 $a_7=-745.375$ (生成エンタルピー 0 の単原子基準)・エントロピー定数 $a_8$ は CEA に一致。
+- **[‡] forge 擬似種 (AIR)**: CEA の Air 混合に近い熱力学を**単成分**で近似するための簡便種。$c_p/R=3.5$ 一定の擬似多項式 ($a_2{=}3.5$, $a_7=-1043.1$, $a_8=3.0$) で、低温で $c_p\approx1004.5$ J/(kg·K)・$\gamma=1.4$ となる。**CEA 由来ではない** ので、空気を厳密に扱う場合は N2/O2 混合か外部 DB を使う。
+- **[2] LJ パラメータ**: R. A. Svehla, *Estimated Viscosities and Thermal Conductivities of Gases at High Temperatures*, NASA TR R-132 (1962) ほか標準の動力学理論輸送データ集に基づく。各 $\sigma_{LJ}$/$\varepsilon/k_B$ は広く使われる輸送データ集 (例: CHEMKIN transport database) とも整合する。He の $\varepsilon/k_B$ は Svehla 値に一致。「[2] 系」は文献単位での整合を意味し、**species ごとの該当表・行レベルの個別照合までは未追跡** — 厳密な監査が必要な場合は一次文献の該当表と突き合わせること。
+
+> 衝突積分の近似式 ($\Omega^{(2,2)*},\Omega^{(1,1)*}$) は Neufeld et al. (1972) 閉形式 (§5c)。理論的背景と全参考文献は [`theory.md` 参考文献](theory.md) を参照。
+
 ## 2. 従属変数と温度反転 `cuda_forge/dependentVariables_d.cu`
 
 `dependentVariables_d` に `thermalMethod`・化学種ポインタ・`gam_array/cp_array` を追加。`thermalMethod==2` では:
