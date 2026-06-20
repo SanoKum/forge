@@ -153,6 +153,20 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
 - [ ] `.github/plans/README.md` 同期、本 plan `status` 更新、§10 に変更ログ。
 - [ ] **コード変更後は自動で PEP 実装へ進まず、結果と解釈を先に報告する。**
 
+## 11. 実装ログ (S2/S3 face 整合再構成)
+
+- **periodic_d 修正 (commit 9ff8471)**: ghost を partner セル全状態 (roY/TP thermo 含む) でコピー。
+  多成分 periodic の seam 破綻 (12%) を解消 → 壁反射なしのクリーン moving-contact ベンチ。
+- **Phase A+B (commit 7ceaade)**: ∇Y_s (Green-Gauss) + config `speciesFaceReconstruction` (既定0=ビット不変)。
+  flux TP 分岐で Y_L/Y_R を ρ と同じ limiter (limiter_ro) で face 再構成 (clamp+正規化) し thermo (R_mix,T,h) に使用。
+  - **結果**: thermo-only S2 は contact 圧力振動を**減らさない** (periodic He/N2, ε_p 比 ~1.1-1.33 で僅悪化、
+    中心補間 S2 と同様)。ΣY=1 維持。**これは thermo だけで、energy 流束は再構成 Y・species 質量流束は 1 次 Y の
+    不整合を生む**ため。完全な判定には Phase C (S3) が必要。
+- **Phase C (S3) の設計課題 (未実装)**: species 流束も同一 face 組成にするには ① res_roY の zero/集計が
+  `speciesTransport` (convectiveFlux の後) にあるため、flux 内集計は上書きされる → 残差組立順の再構成が要、
+  または ② scalar advection 側で同一再構成を複製 (interp_dispatch が convectiveFlux ローカル) が要。
+  どちらも中規模。thermo-S2 が効かない現状を踏まえ、S3 実装の是非を判断ポイントとする。
+
 ## 10. 変更ログ
 
 - `2026-06-20` — 初稿。診断フラグ (`FORGE_CONTACT_1ST/BLEND/LOG`, commit `5dcdc80`) と既存切り分け結果
