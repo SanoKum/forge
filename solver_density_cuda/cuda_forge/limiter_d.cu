@@ -315,7 +315,7 @@ void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , va
 
     // 多成分 face 整合再構成: 各化学種 Y_s に Venkat リミタ ψ_Y を計算 (∇Y は speciesGradient 済)。
     // speciesFaceReconstruction==1 のみ。flux では min(ψ_ρ, ψ_Y) を Y 再構成に使う (boundedness)。
-    if (cfg.speciesFaceReconstruction == 1 && var.nSpeciesRegistered >= 2) {
+    if (cfg.speciesFaceReconstruction >= 1 && var.nSpeciesRegistered >= 2) {
         for (int s = 0; s < var.nSpeciesRegistered; ++s) {
             const std::string i = std::to_string(s);
             fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_Y"+i], msh.nCells_all, 1.0);

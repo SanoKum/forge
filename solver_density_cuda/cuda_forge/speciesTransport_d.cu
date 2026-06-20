@@ -25,6 +25,9 @@ flow_float** g_dYdx_dev = nullptr;
 flow_float** g_dYdy_dev = nullptr;
 flow_float** g_dYdz_dev = nullptr;
 flow_float** g_limiterY_dev = nullptr;   // ψ_Y[s] (Venkat on Y) ポインタ配列
+// S3: convectiveFlux が書き出す upwind 再構成 face 組成 (layout [ip*nSpecies+s])。species 移流が同一面組成で読む。
+flow_float*  g_Yface_dev = nullptr;
+int          g_Yface_nPlanes = 0;
 
 // 案C 用 scratch: dq_roY{s}_old のポインタ配列 (sweep の swap でポインタが変わるため毎回再構築) と
 // セルごとの δp_Y [Pa]。speciesInit_d でなく案C 経路の初回に遅延確保。
@@ -456,6 +459,51 @@ flow_float** species_dYdy_device_ptr() { return g_dYdy_dev; }
 flow_float** species_dYdz_device_ptr() { return g_dYdz_dev; }
 flow_float** species_limiterY_device_ptr() { return g_limiterY_dev; }
 
+// S3: convectiveFlux 用 face 組成バッファを確保し device ポインタを返す。
+flow_float* species_Yface_alloc(int nPlanes)
+{
+    if (g_nSpecies < 2) return nullptr;
+    if (g_Yface_dev == nullptr || g_Yface_nPlanes < nPlanes) {
+        if (g_Yface_dev) cudaFree(g_Yface_dev);
+        gpuErrchk( cudaMalloc((void**)&g_Yface_dev, (size_t)nPlanes*g_nSpecies*sizeof(flow_float)) );
+        g_Yface_nPlanes = nPlanes;
+    }
+    return g_Yface_dev;
+}
+
+// S3: species 移流流束を **convectiveFlux が書いた face 組成** で組む (energy 流束と同一面組成)。
+// 対角 transport_diag は 1 次風上のまま (defect-correction)。ΣY_face=1 なので Σ res_roY = res_ro。
+__global__ void species_advection_faceY_d(
+    geom_int nCells, geom_int nNormalHaloPlanes, geom_int* normal_halo_planes, geom_int* plane_cells,
+    flow_float* ro, flow_float* massflux, int nSpecies, flow_float* Yface,
+    flow_float** res_roY, flow_float** transport_diag)
+{
+    geom_int ih = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ih < nNormalHaloPlanes) {
+        const geom_int ip  = normal_halo_planes[ih];
+        const geom_int ic0 = plane_cells[2*ip+0];
+        const geom_int ic1 = plane_cells[2*ip+1];
+        const flow_float mdot = massflux[ip];
+        const flow_float d0 = max(mdot, (flow_float)0.0) / max(ro[ic0], (flow_float)1.0e-30);
+        const flow_float d1 = max(-mdot,(flow_float)0.0) / max(ro[ic1], (flow_float)1.0e-30);
+        for (int s = 0; s < nSpecies; ++s) {
+            const flow_float flux = mdot * Yface[(size_t)ip*nSpecies + s];   // upwind は convectiveFlux 側で確定済み
+            if (ic0 < nCells) { atomicAdd(&res_roY[s][ic0], -flux); atomicAdd(&transport_diag[s][ic0], d0); }
+            if (ic1 < nCells) { atomicAdd(&res_roY[s][ic1],  flux); atomicAdd(&transport_diag[s][ic1], d1); }
+        }
+    }
+}
+
+void speciesAdvectionFaceY_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
+{
+    if (!speciesEnabled(var) || g_Yface_dev == nullptr) return;
+    dim3 dimGrid_nh = dim3(ceil(msh.nNormal_halo_Planes / (flow_float)cuda_cfg.blocksize));
+    species_advection_faceY_d<<<dimGrid_nh, cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.nNormal_halo_Planes, msh.normal_halo_planes_d, msh.map_plane_cells_d,
+        var.c_d["ro"], var.p_d["massflux"], g_nSpecies, g_Yface_dev, g_resroY_dev, g_transdiag_dev);
+    gpuErrchk( cudaPeekAtLastError() );
+}
+
 // 化学種セル勾配 ∇Y{s} を Green-Gauss で計算する (calcGradient と同形)。speciesFaceReconstruction==1 のみ。
 // 境界は Neumann ghost (applySpeciesBoundaries 済) を用い、内部面と同様に集計する。
 __global__ void species_gradient_d(
@@ -607,9 +655,14 @@ void speciesTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& m
         CHECK_CUDA_ERROR(cudaMemset(var.c_d["src_jac_Y"+i], 0, msh.nCells * sizeof(flow_float)));
     }
 
-    for (int s = 0; s < var.nSpeciesRegistered; s++) {
-        const ScalarTransportDesc desc = buildSpeciesDesc(var, s);
-        scalarTransportResidual_d(cfg, cuda_cfg, msh, var, desc);
+    if (cfg.speciesFaceReconstruction >= 2 && g_Yface_dev != nullptr) {
+        // S3: convectiveFlux が書いた同一 face 組成で移流 (energy 流束と整合)。diag は 1 次のまま。
+        speciesAdvectionFaceY_d_wrapper(cfg, cuda_cfg, msh, var);
+    } else {
+        for (int s = 0; s < var.nSpeciesRegistered; s++) {
+            const ScalarTransportDesc desc = buildSpeciesDesc(var, s);
+            scalarTransportResidual_d(cfg, cuda_cfg, msh, var, desc);
+        }
     }
 
     // M4: 粘性ケースのみ Fick 拡散 + ΣJ=0 補正 + エンタルピー拡散 (res_roe へ加算)。

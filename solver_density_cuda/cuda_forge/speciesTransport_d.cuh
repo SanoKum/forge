@@ -27,6 +27,9 @@ flow_float** species_dYdy_device_ptr();
 flow_float** species_dYdz_device_ptr();
 flow_float** species_limiterY_device_ptr();
 void speciesGradient_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+// S3: convectiveFlux 用 face 組成バッファ確保 + 同一面組成での species 移流。
+flow_float* species_Yface_alloc(int nPlanes);
+void speciesAdvectionFaceY_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
 // 原始質量分率 Y_s = ρY_s/ρ を全セル (ghost 含む) について更新する。
 void speciesPrimitive_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);

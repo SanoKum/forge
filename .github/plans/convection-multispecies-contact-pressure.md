@@ -182,6 +182,43 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
 - **判断**: thermo-only が一貫して悪化する一方 global 残差は下がる両義性。S3 を実装して完全整合で判定するか、
   シグナルを受け 別路線 (Gate 2 double-flux / Gate 4 高 CFL implicit) へ倒すか、要判断。
 
+## 13. 自走セッション結果 (2026-06-20, S2/S3 + ψ_Y 実装・検証)
+
+ユーザ就寝中の自走で実装・検証。**結論: S2 (thermo 整合) は case/28 で効く。S3 (移流整合) は flux は正しいが
+高 CFL で LHS 不整合により発散 → species LHS の 2 次化が次の鍵。**
+
+### 大発見: S2 は長時間 settled では効く (前の「悪化」は restart 過渡だった)
+case/28 cfl=4, settled (step 5000-10000), `speciesFaceReconstruction:1` (S2 thermo, ρ-limiter):
+- S0: rms_ro=4.36e-6, A_ur=2.9, A_P=1252
+- **S2: rms_ro=2.64e-6 (-40%), A_ur=2.2, A_P=638 (-50%)** ← 圧力振動が半減・残差も低下
+- bounded: max|ΣY-1|=1.2e-7, Ymin=0, Ymax=0.767。**= mixed-order 30K 補正が実問題で効く。**
+- 1D explicit synthetic は依然 S2 僅悪化 (高 CFL implicit 多次元の case/28 を代表しない)。
+
+### ψ_Y リミタ: min(ψ_ρ,ψ_Y) は発散 → ρ-limiter (同一リミタ) が正しい
+- ユーザ指摘どおり ψ_Y (`limiter_Y`, Venkat on ∇Y) を実装 (`limiter_d.cu` で limiter_r1_d 流用)。
+- だが Y 再構成に **min(ψ_ρ,ψ_Y)** を使うと case/28 で step~1141 発散。理由: ρ は ψ_ρ・Y は min(<ψ_ρ) で
+  **ρ-Y のリミタが食い違い再び mixed-order**。→ **Y にも ψ_ρ を使う (ρと同次数=consistent) が正解**で安定+有効。
+  case/28 では ρ-limiter でも Y は bounded のまま (overshoot 顕在化せず)。robust な代替は全変数共通
+  min(ψ_ρ,ψ_p,ψ_u,ψ_Y) (faceLimiterCoupling=2, flow 再構成も変える大改修) で将来課題。ψ_Y は診断用に残置。
+
+### S3 (移流も同一 face 組成): flux は正・高 CFL で LHS 発散 (AI 予言的中)
+- 実装: convectiveFlux が upwind 再構成 face 組成を `Yface[ip*nSpecies+s]` へ書き出し (ΣY_f=1)、
+  `species_advection_faceY_d` がそれで移流。res_roY zero/diag 順は不変 (clean)。config
+  `speciesFaceReconstruction:2` = S2+S3。
+- **保存 OK** (1D: ΣY=1 を 6e-8 で維持), **低 CFL 安定** (1D + case/28 cfl1,2 NaN なし)。
+- **だが case/28 cfl=4 で発散** (step~1289)。原因 = **2 次 species 流束 (RHS) と 1 次 upwind の
+  transport_diag (LHS) の defect-correction 不整合**。AI の警告どおり。→ **species LHS を 2 次/整合化**すれば
+  高 CFL も通る見込み。現状は **S3 は cfl≤2 専用**、S2 は cfl=4 で production 可。
+
+### production 推奨
+- **`speciesFaceReconstruction:1` (S2, ρ-limiter)** = cfl=4 で安定・圧力振動半減。**実用候補。** 既定 0 でビット不変。
+- `:2` (S2+S3) は cfl≤2 か、species LHS 2 次化後に高 CFL。
+- commit: 7ceaade (A+B) / 21b92f5 (ψ_Y+settled 発見) / [S3 commit]。
+
+### 起きたら見るべき (走らせ中の run)
+- `run_s2b` (cfl4 S2, 10000): production 候補の settled 確認。
+- `run_c2_s0/s2/s3` (cfl2, 6000): S0/S2/S3 比較 — S3 が S2 を更に改善するか (cfl2 で全安定)。
+
 ## 10. 変更ログ
 
 - `2026-06-20` — 初稿。診断フラグ (`FORGE_CONTACT_1ST/BLEND/LOG`, commit `5dcdc80`) と既存切り分け結果

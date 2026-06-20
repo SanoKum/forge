@@ -263,6 +263,7 @@ __global__ void SLAU_d
  flow_float** Yd_recon,                       // face 整合再構成用 Y{s} とセル勾配 ∇Y{s} (g_speciesFaceRecon 時)
  flow_float** dYdx_recon, flow_float** dYdy_recon, flow_float** dYdz_recon,
  flow_float** limiterY_recon,                 // ψ_Y[s] (Venkat on Y)。Y 再構成は min(ψ_ρ,ψ_Y) を使う。
+ flow_float* Yface_out,                       // S3: upwind 再構成 face 組成を書き出す [ip*nSpecies+s] (g_speciesFaceRecon 時)
  flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
 
  // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正する。g_total==nullptr で従来 (ビット不変)。
@@ -425,6 +426,8 @@ __global__ void SLAU_d
         flow_float velocity2_L = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;
         flow_float velocity2_R = Ux_R*Ux_R + Uy_R*Uy_R + Uz_R*Uz_R;
         flow_float h_p, h_m;
+        double YLf_s3[THERMO_MAX_SPECIES], YRf_s3[THERMO_MAX_SPECIES];   // S3: 再構成 face 組成の保存
+        bool haveYf_s3 = false;
         if (thermalMethod == 2) {
             // TP gas: 被移流全エンタルピーを NASA 絶対エンタルピーで再構成する。
             //   ga/(ga-1)·P/ρ = cp·T であって h(T)=∫cp dT' ではないため誤り。
@@ -449,8 +452,11 @@ __global__ void SLAU_d
                     // positivity は clamp([0,1])+正規化 (ΣY=1) で閉じる。clamp 前に overshoot をカウント。
                     double sLr=0.0, sRr=0.0;
                     for (int s=0;s<nSpecies;s++){
-                        const flow_float limL = min(limiter_ro[ic0], limiterY_recon[s][ic0]);
-                        const flow_float limR = min(limiter_ro[ic1], limiterY_recon[s][ic1]);
+                        // ρ と同一リミタ (limiter_ro) を使う = ρ と Y が常に同次数 (consistent)。
+                        // min(ψ_ρ,ψ_Y) は Y を ρ より強く落とし ρ-Y 不整合を生み case/28 で発散したため不採用。
+                        // overshoot 監視は限り (clamp) で閉じる。limiterY_recon は診断用に保持。
+                        const flow_float limL = limiter_ro[ic0];
+                        const flow_float limR = limiter_ro[ic1];
                         flow_float ylr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic0], Yd_recon[s][ic1],
                             dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
                             dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
@@ -468,6 +474,9 @@ __global__ void SLAU_d
                     for (int s=0;s<nSpecies;s++){ YL[s]*=iLr; YR[s]*=iRr; }
                     RgL = thermo_R_mix(sp, nSpecies, YL);
                     RgR = thermo_R_mix(sp, nSpecies, YR);
+                    // S3: 正規化済み再構成 face 組成 (ΣY=1) を保存し、mdot 確定後に upwind を Yface_out へ。
+                    for (int s=0;s<nSpecies;s++){ YLf_s3[s]=YL[s]; YRf_s3[s]=YR[s]; }
+                    haveYf_s3 = true;
                 } else if (g_faceThermoY) {
                     // S2: 整合 face 組成 Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) を L/R thermo に使い、
                     // ρ_L,P_L (2次) と同じ face 位置の組成に揃える。R_mix も Y_face から作る。
@@ -616,6 +625,13 @@ __global__ void SLAU_d
 
         flow_float mdot = sss*0.5*((ro_L*(Vn_p+Vn_hat_p_abs)+ro_R*(Vn_m-Vn_hat_m_abs)) -chi/(c_diss)*P_del);
         massflux[ip] = mdot;
+
+        // S3: 同一の再構成 face 組成 (upwind) を Yface_out[ip*nSpecies+s] へ書き出す。species 移流がこれを読む。
+        // → energy 流束と species 流束が同一 face 組成 (ΣY=1) を共有し thermo/advection mismatch を解消。
+        if (g_speciesFaceRecon >= 2 && Yface_out != nullptr && haveYf_s3) {
+            const bool up0 = (mdot >= (flow_float)0.0);
+            for (int s = 0; s < nSpecies; ++s) Yface_out[(size_t)ip*nSpecies + s] = (flow_float)(up0 ? YLf_s3[s] : YRf_s3[s]);
+        }
 
         flow_float res_ro_temp   = mdot;
         flow_float p_tilde_r = p_tilde - d_pRef;   // free-stream 保存: 基準静圧を差し引いて float32 桁落ちを抑制
@@ -2886,6 +2902,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             species_roY_device_ptr(),
             species_Y_device_ptr(), species_dYdx_device_ptr(), species_dYdy_device_ptr(), species_dYdz_device_ptr(),
             species_limiterY_device_ptr(),
+            (cfg.speciesFaceReconstruction >= 2) ? species_Yface_alloc(msh.nPlanes) : nullptr,
             var.c_d["Rmix"],
             cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
 
