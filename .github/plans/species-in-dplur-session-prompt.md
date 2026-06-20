@@ -140,7 +140,26 @@ TP の高音速は不整合を低 CFL で露呈させる増幅器、という位
 → **TP-SST 安定 CFL が ~1 → 4+** に上昇。機構を確定。ただし crude 対角は roUy を per-equation 過減衰し
 残差フロアが高め (cfl4 で rms_ro~4e-6 vs cfl1 の 3e-7)。
 
-### production 形 = setDT 軸スペクトル半径 (次 commit で実装)
+### production 形 = setDT 軸スペクトル半径 (実装済 commit, config `axisTimestepBeta`)
+
+**実装** (`time.deltaT.axisTimestepBeta`, 既定0=ビット不変): `setCFL_cell_d` で軸対称セルの cfl に
+`dt·β·(|u_r|+c)·A_planar/V` を加算 (face 項と同無次元化)。V=r·A_planar より近軸で Δτ∝CFL·r/(|u_r|+c)。
+DPLUR 時間項 v/Δτ が全保存式で自動的に強まる (per-equation 過減衰なし)。**結果** (run_axdt_*, α off):
+
+| CFL | β=1 | β=2 |
+| --- | --- | --- |
+| 2 | **安定** | — |
+| 4 | step88 死 | **安定** (6000步級, physical) |
+
+β は CFL に応じスケール (Θ=cfl_pseudo/β 近軸; cfl4 は β≈2)。検証: 近軸 **Θ=Δτ(|u_r|+c)/r ≈ 0.5–1.3 (mean 1.02)**
+= 設計目標 (半径音響 CFL≈1)。**遠方セル dt 不変** (near-axis dt~6.9e-8≈r/c vs far-field 5.6e-7, 軸項は 1/r で
+近軸のみ効く)。残差フロアは α 対角版とほぼ同 (~4e-6 @ cfl4 = 高 CFL の limit-cycle floor, fix 由来でない)。
+CPG β=0 既定はビット不変 (gating)・CPG cfl2 安定を確認。field 物理 (ro>0, He コア保持, ΣY=1)。
+
+> production 既定: `axisTimestepBeta=0` (opt-in)。軸対称ケースで CFL を上げたいとき β≈cfl_pseudo/2 を設定。
+> α 対角診断 (`FORGE_AXIS_DIAG_ALPHA`) は既定0/デバッグ専用に残置 (production には使わない)。
+
+#### (旧メモ) production 形 = setDT 軸スペクトル半径 (設計)
 
 人工対角でなく、**通常のスペクトル半径に軸項を足す** (単一式の人工項→全保存式整合の擬似時間スケールへ):
 
