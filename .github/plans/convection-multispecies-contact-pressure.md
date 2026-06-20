@@ -162,13 +162,32 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
   - **stationary contact**: 両スキームとも完全保持 (ε_p ~ round-off 7.8e-8, ε_u=0, ε_ΣY=0)。
   - **moving contact (u0=100)**: contact 近傍の ΔP は小さく**減衰** (377→45 Pa, ~0.4%, 1次 Case D も同程度)。
     大きな ε_p≈0.2 は **slip 壁反射の人工物** (max|dP| が x=0.94-0.98 の壁、contact x~0.53 ではない)。
-  - **判定**: forge SLAU は 1D 多成分 contact を **flux レベルでよく保持** (既存の TP 面エンタルピー再構成
-    `T_face→h_mix(T_face)+ek` が古典 Abgrall 振動を緩和済)。**Gate 1 (mixed-order) も Gate 2 (flux PEP) も発火せず**。
-  - **含意**: case/28 の contact limit-cycle は **flux レベルの 1D contact PEP/再構成問題ではない** →
-    助言の §4.2 (species 2 次整合) / double-flux は case/28 を直さない見込み。**多成分 2 次再構成は本課題の
-    根治としては実装しない** (一般精度向上として別途検討は可)。
-  - **残る本命 = Gate 4 (defect-correction) + 多次元**: case/28 は高 pseudo-CFL implicit (Test4: 振幅が CFL に
-    ~100×) + relax 感受性 (D3: 0.7→0.4 で振幅低減) で、純 1D explicit では再現不能 (1D は維持された組成勾配の
-    through-flow を持てない)。→ 次は **implicit LHS / defect-correction の contact 扱い** (高次 RHS-近似 LHS の
-    限界環) か **運用回避 (末端 CFL ダウン, 検証済)**。double-flux は棚上げ。
-  - status: 1D ゲートで flux 仮説を反証。plan の §4.2 実装は**保留** (Gate 4 へ軸足を移す)。
+  - **正しい判定 (限定的)**: 「**鋭い 1D He/N2 material-contact では現行 SLAU が大きな古典 pressure
+    oscillation を発生させない**」ことのみ確認。**mixed-order 仮説は反証していない** (重要訂正):
+    sharp contact 近傍では limiter が強く効き flow MUSCL も実質 1 次化 (`ψ_ρ,ψ_p,ψ_u≈0`) していた可能性が
+    高く、Baseline A も contact では実質 1 次 → Case D と同程度なのは当然。**この試験は mixed-order を励起
+    できていない**。
+  - **再評価が必要 (§4.3 へ)**: 有限厚さ smooth composition layer (∇Y≠0, ψ>0) で **S0(現行 mixed-order)/
+    S1(全 1 次)/ S2(thermo 用 Y のみ face 整合)/ S3(species も 2 次)** を比較し、face で `ΔT_f^MO=
+    T_f^mixed-T_f^consistent` を直接計測して、pressure/energy-flux 振動と同位相か確認する。case/28 でも
+    D2a を 1 本残す (実混合層は ∇Y≠0・ψ>0)。
+  - **現時点で言えること**: double-flux を**直ちに必要とする根拠は弱まった**が、**species face 再構成 /
+    thermo face 整合化が無効とはまだ言えない**。Gate 4 (高 CFL implicit defect-correction; Test4+D3) も
+    並行候補だが、mixed-order の励起試験 (smooth layer S0-S3) を先に決着させる。
+  - status: 1D sharp は負結果だが mixed-order 未反証。§4.3 (smooth layer 再評価) を追加し継続。
+- `2026-06-20` — **smooth layer 再評価 (訂正)。mixed-order を「反証」とした前項を撤回**:
+  - **sharp contact の confound を実測確認**: contact 面で `ψ_ρ(limRo)=0` (Venkat が密度再構成を抹消) →
+    Baseline A も実質 1 次 → Case D と同等で当然。**sharp 試験は mixed-order を励起できていなかった**。
+  - **smooth layer (δ≈4 セル, ∇Y≠0) では `ψ_ρ=1`** (再構成 active)。ここで **mixed-order の face 温度誤差
+    `ΔT_f^MO = T_f(R_mix(Y_cell)) - T_f(R_mix(Y_face))` を直接計測 → 最大 30K (T~300K の 10%)**、
+    \|ΔT_f^MO\|>10K の face が多数。**mixed-order 誤差は大きく、無視できない** (前回の「反証」は誤り)。
+  - **S0 (mixed) vs S1 (all-1次) @ smooth moving**: S0 は ε_p 1.5e-3→**2e-4 に減衰**、S1 は ε_p~1.8e-3
+    **持続**・ε_u が ~1.05 に増大。→ S0 (2次 flow) は S1 より良い (case/28 D2a が悪化したのと整合) が、
+    S0 にも残差床 ~2e-4 (round-off 2.3e-7 の ~1000倍) が残り、これが mixed-order 由来かは S2/S3 で要検証。
+  - **正しい現在地**: mixed-order face-state 誤差は**実在し大きい (30K)**。ただし S0(2次 flow) は all-1次より
+    良いので「flow を 1 次へ落とす」方向 (D2a) は逆効果。**正しい修正方向は S2/S3 = species/組成を flow と
+    **同じ face 位置へ整合再構成**して 30K の誤差を消すこと**。これは未実装・未検証。double-flux を直ちに要する
+    根拠は弱いが、species face 再構成/thermo face 整合化が無効とは**言えない** (むしろ最有力候補に復帰)。
+  - **次**: S2/S3 実装 (`calcGradient_d.cu` に ∇Y 追加 + Venkat ψ_Y + flux で Y_L/R 整合再構成 +
+    positivity/simplex + thermo/flow/species 流束で同一 face 組成)。smooth layer で S0/S1/S2/S3 比較 +
+    case/28 で D2a(off/on) と S2 を比較。診断: `FORGE_CONTACT_LOG` に `ψ_ρ,ψ_p,ψ_u` と `ΔT_f^MO` 追加済 (commit 後続)。

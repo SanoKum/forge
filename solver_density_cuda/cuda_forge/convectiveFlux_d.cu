@@ -493,11 +493,26 @@ __global__ void SLAU_d
             const flow_float RgR = (nSpecies > 1 && Rmix_cell != nullptr) ? Rmix_cell[ic1] : (flow_float)0.0;
             const flow_float TL  = (RgL > 0.0) ? P_L / (ro_L * RgL) : (flow_float)0.0;
             const flow_float TR  = (RgR > 0.0) ? P_R / (ro_R * RgR) : (flow_float)0.0;
-            printf("CLOG ip=%d ic0=%d ic1=%d sY=%.4f roL=%.5f roR=%.5f PL=%.1f PR=%.1f UyL=%.4f UyR=%.4f limP=%.4f RgL=%.2f RgR=%.2f TL=%.2f TR=%.2f hL=%.6e hR=%.6e cL=%.2f cR=%.2f\n",
+            // mixed-order 誤差: 整合 face 組成 (面平均 Y) で R_mix を作った場合の T との差 ΔT_f^MO。
+            flow_float Rmix_face = 0.0;
+            if (nSpecies > 1 && roY != nullptr) {
+                const flow_float ro0c = max(ro[ic0],(flow_float)1e-30), ro1c = max(ro[ic1],(flow_float)1e-30);
+                for (int s = 0; s < nSpecies; ++s) {
+                    const flow_float yf = (flow_float)0.5*(roY[s][ic0]/ro0c + roY[s][ic1]/ro1c);
+                    Rmix_face += yf * (flow_float)thermo_R_species(sp[s]);
+                }
+            }
+            const flow_float TL_cons = (Rmix_face > 0.0) ? P_L/(ro_L*Rmix_face) : (flow_float)0.0;
+            const flow_float dT_MO   = TL - TL_cons;
+            // limiter (ψ_ρ,ψ_p,ψ_u) と cell 値も出し、再構成が実際に効いていたか (sharp で ψ≈0 か) を判定可能に。
+            printf("CLOG ip=%d ic0=%d ic1=%d sY=%.4f roL=%.5f roR=%.5f PL=%.1f PR=%.1f UxL=%.4f UxR=%.4f limP=%.4f limRo=%.4f limUx=%.4f roC=%.5f PC=%.1f UxC=%.4f RgL=%.2f RgR=%.2f TL=%.2f TR=%.2f hL=%.6e cL=%.2f\n",
                    (int)ip, (int)ic0, (int)ic1, (double)sY_dbg, (double)ro_L, (double)ro_R,
-                   (double)P_L, (double)P_R, (double)Uy_L, (double)Uy_R, (double)limiter_P[ic0],
-                   (double)RgL, (double)RgR, (double)TL, (double)TR, (double)h_p, (double)h_m,
-                   (double)sonic[ic0], (double)sonic[ic1]);
+                   (double)P_L, (double)P_R, (double)Ux_L, (double)Ux_R, (double)limiter_P[ic0],
+                   (double)limiter_ro[ic0], (double)limiter_Ux[ic0],
+                   (double)ro[ic0], (double)Ps[ic0], (double)Ux[ic0],
+                   (double)RgL, (double)RgR, (double)TL, (double)TR, (double)h_p, (double)sonic[ic0]);
+            printf("CMO ip=%d sY=%.4f TL=%.3f TLcons=%.3f dT_MO=%.4f RgL=%.2f Rmix_face=%.2f\n",
+                   (int)ip, (double)sY_dbg, (double)TL, (double)TL_cons, (double)dT_MO, (double)RgL, (double)Rmix_face);
         }
 
         flow_float M_p = Vn_p/c_hat;
