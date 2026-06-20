@@ -419,6 +419,32 @@ void setInitial(solverConfig& cfg , mesh& msh , variables& v)
             v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
         }
 
+    } else if (cfg.initial == "passive_pseudoshock") {
+        // case/36 多孔壁パッシブコントロール (Matsuo et al. 1988) の超音速吹き抜け起動用。
+        // 入口 (助走領域) の超音速状態 M=1.689 を一様に置き、inlet_uniformVelocity
+        // (ρ,U,Ps 固定) と同じ状態で起動過渡を抑える。
+        // 貯気: P0=3 MPa, T0=288.15 K (空気 CPG γ=1.4)。面積比から M_in=1.689。
+        flow_float gam = cfg.gamma;
+        flow_float R   = cfg.cp*(gam-1.0)/gam;
+
+        flow_float M  = 1.689;
+        flow_float P0 = 3.0e6;
+        flow_float T0 = 288.15;
+
+        flow_float Ts = T0/(1.0+0.5*(gam-1.0)*M*M);
+        flow_float Ps = P0*pow(Ts/T0, gam/(gam-1.0));
+        flow_float ro = Ps/(R*Ts);
+        flow_float c  = sqrt(gam*R*Ts);
+        flow_float u  = c*M;
+
+        for (geom_int i = 0 ; i<msh.nCells ; i++) {
+            v.c["ro"][i]   = ro;
+            v.c["roUx"][i] = ro*u;
+            v.c["roUy"][i] = 0.0;
+            v.c["roUz"][i] = 0.0;
+            v.c["roe"][i]  = Ps/(gam-1.0) + 0.5*ro*(u*u);
+        }
+
     } else {
         std::cout << "Error: Unknown initial" << std::endl;
         std::exit(EXIT_FAILURE);

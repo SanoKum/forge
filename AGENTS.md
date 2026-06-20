@@ -67,6 +67,8 @@
 - **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
 - 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) を参照。
 
+**メッシュ品質チェック (計算前・必須)**: メッシュを HDF5 化したら計算投入前に必ず `solver_density_cuda/tools/check_mesh_quality.py <mesh.h5>` で品質を確認する。**アスペクト比 ≤ 1000、スキューネス ≤ 0.9 を目標**とし、`VERDICT: FAIL` のメッシュは投入しない。近壁細分化で AR が増えやすいので接線長と第一セル厚のバランスを取る (高 Re では y+~1 と AR≤1000 が両立しないことがあり、その場合 y+~30-80 + `wallTreatmentSST=1` を選ぶ)。詳細は [`.github/forge-calculation-workflow.md`](.github/forge-calculation-workflow.md) の「メッシュ品質チェック」。「メッシュできた/収束した」と報告する応答には品質 VERDICT も併記する。
+
 forge の結果が「軸対称・乱流・近軸で forge だけ妙な値になる」ようなときは、推測で結論づけず [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) の手順で **同一メッシュ・同一 BC の SU2 と比較**して切り分けること。
 
 開発環境に関する既定ルールは `.github/forge-development-environment.md` を参照すること。通常の開発は Docker コンテナを基本とし、NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う場合は、Docker 内でうまくいかないケースを想定して WSL native または Linux native の手順を優先する。さらに、**計算速度の評価・比較・プロファイル作業は原則 native で行う** (Docker は計測値が不安定でツールも揃わないため、速度評価の基準環境としない)。詳細は `.github/forge-development-environment.md` の「速度評価・ベンチマークは native を既定とする」を参照。
