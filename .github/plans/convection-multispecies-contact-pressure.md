@@ -167,6 +167,21 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
   または ② scalar advection 側で同一再構成を複製 (interp_dispatch が convectiveFlux ローカル) が要。
   どちらも中規模。thermo-S2 が効かない現状を踏まえ、S3 実装の是非を判断ポイントとする。
 
+## 12. case/28 検証 + S3 判断 (2026-06-20)
+
+- **1D 再評価 (sin でなく tanh smooth contact, 5-10 セル, 周期, periodic_d 修正後)**: S2 (thermo 整合) は
+  contact 振動を**減らさない**(ε_p 比 ~1.1-1.4, 一貫)。
+- **case/28 cfl=4 で S0 vs S2 直接検証**:
+  - S0: rms_ro=4.63e-6, A_YHe=2.8e-2, A_ur=7.6, A_P=2808
+  - S2: rms_ro=**3.23e-6 (↓30%)** だが A_YHe=7.6e-2, A_ur=19.7, A_P=6094 (**contact 振幅は↑**)
+  - → S2-thermo は global 残差を下げるが contact 振動を上げる = **thermo/advection 不整合**(energy 流束は再構成 Y・
+    species 質量流束は 1 次 Y)を生む。1D と整合。**S3 (移流も同一 face 組成) が必須。**
+- **S3 の restructure コスト**: species 移流と implicit `transport_diag` が `scalarTransportResidual_d` で
+  一体。flux 内で advection を組む (exact consistency) には res_roY zero 順 + diag 温存の再構成が要
+  (case/28 は speciesImplicitCoupling:1 で diag 必要)。中規模。
+- **判断**: thermo-only が一貫して悪化する一方 global 残差は下がる両義性。S3 を実装して完全整合で判定するか、
+  シグナルを受け 別路線 (Gate 2 double-flux / Gate 4 高 CFL implicit) へ倒すか、要判断。
+
 ## 10. 変更ログ
 
 - `2026-06-20` — 初稿。診断フラグ (`FORGE_CONTACT_1ST/BLEND/LOG`, commit `5dcdc80`) と既存切り分け結果
