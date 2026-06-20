@@ -9,7 +9,7 @@ import sys, numpy as np, h5py, shutil
 mesh, dst, gasL, gasR = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 p0 = float(sys.argv[5]); u0 = float(sys.argv[6]); T0 = float(sys.argv[7])
 smooth = float(sys.argv[8]) if len(sys.argv) > 8 else 0.0
-xdia = 0.5
+xdia = float(sys.argv[9]) if len(sys.argv) > 9 else 0.5
 RU = 8.314462618; TMID = 1000.0
 
 # NASA-9 (CEA) DB: MW [kg/mol], low[9], high[9] (thermo_d.cu と一致)

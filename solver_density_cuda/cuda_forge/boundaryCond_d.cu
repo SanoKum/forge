@@ -1633,7 +1633,11 @@ void periodic_d
  flow_float* P   ,
  flow_float* T   ,
  flow_float* Ht  ,
- flow_float* sonic, 
+ flow_float* sonic,
+
+ // 多成分: 化学種 ρY_s (flow_float*[nSpecies], 単成分時 nullptr)
+ flow_float** roY,
+ int nSpecies,
 
  // bvar
  flow_float* rob ,
@@ -1653,8 +1657,10 @@ flow_float* Psb
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ib < nb) {
-        geom_int  ic         = bplane_cell[ib];
         geom_int  ig         = bplane_cell_ghst[ib];
+        // periodic: ghost には自セルでなく **partner セル** の状態を写す (zero-gradient は誤り)。
+        // 速度ベクトルのみ回転 periodic (dtheta) で座標変換。Cartesian は dtheta=0 で恒等。
+        geom_int  ic         = bplane_partnerCellID[ib];
 
         ro[ig]   = ro[ic];
         P[ig]    = P[ic];
@@ -1665,10 +1671,12 @@ flow_float* Psb
         roUy[ig] = roUy[ic]*cos(-dtheta) -roUz[ic]*sin(-dtheta);
         roUz[ig] = roUy[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
         roe[ig]  = roe[ic];
-        T[ig]    = P[ic]*ga/(ro[ig]*(ga-1.0)*cp);
-
-        Ht[ig]   = (roe[ig] + P[ig])/ro[ig];
-        sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
+        // T/Ht/sonic は partner から直接コピー (多成分 TP 整合; 旧 CPG 再計算 P·ga/(ρ(ga-1)cp) は誤り)。
+        T[ig]    = T[ic];
+        Ht[ig]   = Ht[ic];
+        sonic[ig]= sonic[ic];
+        // 多成分: 化学種 ρY_s も partner からコピー (未コピーだと seam で組成・R_mix が壊れる)。単成分は roY=nullptr。
+        if (roY != nullptr) { for (int s = 0; s < nSpecies; ++s) roY[s][ig] = roY[s][ic]; }
 
         rob[ib]   = ro[ic];
         Psb[ib]   = P[ic];
@@ -1679,7 +1687,7 @@ flow_float* Psb
         roUyb[ib] = roUy[ic]*cos(-dtheta) -roUz[ic]*sin(-dtheta);
         roUzb[ib] = roUy[ic]*sin(-dtheta) +roUz[ic]*cos(-dtheta);
         roeb[ib]  = roe[ic];
-        Tsb[ib]   = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+        Tsb[ib]   = T[ic];
     }
 };
 
@@ -1713,10 +1721,13 @@ void periodic_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , m
         var.c_d["Ux"] ,
         var.c_d["Uy"] ,
         var.c_d["Uz"] ,
-        var.c_d["P"], 
-        var.c_d["T"], 
-        var.c_d["Ht"], 
+        var.c_d["P"],
+        var.c_d["T"],
+        var.c_d["Ht"],
         var.c_d["sonic"],
+
+        species_roY_device_ptr(),
+        cfg.nSpecies,
 
         bc.bvar_d["ro"],
         bc.bvar_d["roUx"],
