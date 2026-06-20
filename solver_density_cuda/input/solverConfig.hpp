@@ -46,6 +46,10 @@ public:
     // 多成分 face 整合再構成: 0 (既定・ビット不変, 組成は owner セル 1 次=mixed-order)、
     // 1: Y_s を ρ と同じ勾配+limiter で face へ 2 次再構成し thermo/species 流束で同一 face 組成を使う。
     int speciesFaceReconstruction = 0;
+    // multispeciesRhoYCommonLimiter: opt-in 診断。0 (既定・ビット不変)、
+    // 1: ρ と全 species に共通リミタ ψ_ρY=min(ψ_ρ, min_s ψ_Y_s) を適用し ρ_f=ρ(Y_f) 整合だけを切り分ける
+    //    (p・速度は各自のリミタのまま)。nSpecies>1 かつ speciesFaceReconstruction>=1 で有効。
+    int multispeciesRhoYCommonLimiter = 0;
     int speciesImplicitCoupling = 0; // 多成分 TP 陰解法 (timeIntegration==11, nSpecies>=2) の化学種更新方式。
                                      // 0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
                                      // 1: 緩和整合 scalar-DPLUR (流れ block と同一 dt_local/implicitRelax/nStepInner

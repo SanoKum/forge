@@ -281,3 +281,74 @@ time:
   - **次**: S2/S3 実装 (`calcGradient_d.cu` に ∇Y 追加 + Venkat ψ_Y + flux で Y_L/R 整合再構成 +
     positivity/simplex + thermo/flow/species 流束で同一 face 組成)。smooth layer で S0/S1/S2/S3 比較 +
     case/28 で D2a(off/on) と S2 を比較。診断: `FORGE_CONTACT_LOG` に `ψ_ρ,ψ_p,ψ_u` と `ΔT_f^MO` 追加済 (commit 後続)。
+- `2026-06-20` — **`multispeciesRhoYCommonLimiter` opt-in 診断を追加** (S3 を救えるか切り分け):
+  - 動機: S3 (mode 2) は cfl=2 で A_P が S2 より ~10x 悪化したが、ρ と Y の再構成強度
+    (ψ_ρ vs ψ_Y) が異なると有限厚さ混合層で `ρ_f ≠ ρ(Y_f)` の熱力学不整合が残る。
+    p・速度を巻き込まず **ρ-Y の再構成整合だけ**で S3 を安定化できるかを見る最小診断。
+  - 実装 (`convectiveFlux_d.cu`, `solverConfig.{hpp,cpp}`): 新 config `multispeciesRhoYCommonLimiter`
+    (既定 0・ビット不変、`nSpecies>1 && speciesFaceReconstruction>=1` で有効)。
+    `ψ_ρY = min(ψ_ρ, min_s ψ_{Y_s})` を **ρ と全 species へ共通適用** (p,u は各自のリミタ)。
+    以前棄却した非対称 min (Y だけ min・ρ は ψ_ρ) は禁止 = 必ず対称共通化。
+    boundedness: face 組成が `[0,1]` を外れた face-side は Y だけ clamp せず **side 全体 (ρ+全Y) を
+    セル値へ fallback** し ρ-Y 整合を保持 (fallback 数を記録)。S3 では同一 face 組成を thermo と
+    species 移流の両方に使用 → `ΣF_ρYs=F_ρ` は Yface 正規化により構成上保証。
+  - 診断出力 (`RHOYLIM` 行, 200 call 毎): `min ψ_ρY` / `ψ_ρY<0.01,<0.1` の face-side 数 /
+    min を決めたのが ρ か species か / `Yface` の min,max / overshoot / fallback 数。
+  - 比較 (case/28, 同一 restart=run_s2b restart.h5): A=S2(sfr1,common0) / B=S3(sfr2,common0) /
+    C=S3+common(sfr2,common1) を cfl=2,4 で。run dirs:
+    `run_0049_rycl_A_s2_cfl2` `run_0050_rycl_A_s2_cfl4` `run_0051_rycl_B_s3_cfl2`
+    `run_0052_rycl_B_s3_cfl4` `run_0053_rycl_C_s3common_cfl2` `run_0054_rycl_C_s3common_cfl4`。
+  - 判定基準: C が B より安定かつ S2 より良ければ S3 production 候補へ; C が S2 同等/より拡散的なら
+    S3 を局所 1 次化しただけ → S2 を production 推奨で維持; C でも高 CFL 発散/大振幅なら LHS(1次)/RHS(2次)
+    defect-correction か 1 次 species 散逸除去が支配 → S3 は experimental 棚上げ。
+    **結果が出るまで S2 を production 候補とする結論は維持**。
+
+## 14. rho-Y 共通リミタ診断結果 (2026-06-20, `multispeciesRhoYCommonLimiter`)
+
+S3 を「p・u を巻き込まず ρ-Y の再構成整合だけ」で救えるか切り分けた最小診断。同一 restart
+(`run_s2b/restart.h5`) から A=S2 / B=S3 / C=S3+共通リミタ を比較。
+
+**共通リミタは実際に効いている** (post-divergence の NaN 行に騙されないこと): pre-divergence の
+`RHOYLIM` 診断で **species が min を決める face-side が ~16%** (per-cell でも ψ_Y<ψ_ρ が ~12%)、
+`ψ_ρ` は shear 層で 0 まで落ちる (frac<0.1=1.5%)。**fallback (非実現可能 Y→cell 値) が ~5%/step** 発生。
+
+### cfl=2 settled (有効 step 6750-8000, 時間差混合層 std = 限界サイクル振幅)
+| mode | rms_ro | A_P | A_ur | A_YHe | A_T |
+| --- | --- | --- | --- | --- | --- |
+| **A: S2** (sfr1,common0) | **9.47e-7** | **382** | **1.15** | **1.08e-3** | **0.28** |
+| B: S3 (sfr2,common0) | 2.32e-6 | 2473 | 6.04 | 9.74e-3 | 2.51 |
+| C: S3+common (sfr2,common1) | 1.56e-6 | 1585 | 2.73 | 1.21e-2 | 2.65 |
+
+- **C は B を大きく改善** (rms_ro -33%, A_P -36%, A_ur -55%) → **ρ-Y 再構成不整合は S3 悪化の実在する一因**
+  (ユーザの物理直観は正しい)。
+- **だが C は依然 S2 より明確に悪い** (A_P 1585 vs 382 = 4×, rms_ro 1.6×)。しかも **A_YHe は C が最悪**
+  (1.21e-2): 共通 min が Y 再構成を強く押して overshoot→fallback churn (~5%/step) を生み、圧力は B より
+  下がっても組成自体の振動はむしろ増える。
+- 過剰拡散は無し (A/B/C とも YHe_max=0.704, 混合層厚 frac(0.1<Y<0.9)=0.297 でほぼ同一)。
+
+### cfl=4
+- A: S2 安定 (完走)。 B: S3 **発散 step 433**。 C: S3+common **発散 step 550** (僅かに遅いが救えていない)。
+- → ρ-Y 整合だけでは高 CFL の S3 発散を止められない。残る支配因は **LHS(1次 transport_diag)/RHS(2次 species
+  流束) の defect-correction** と **1次 species 散逸の除去 + fallback churn**。
+
+run dirs: `run_0049..0054_rycl_{A,B,C}_{cfl2,cfl4}` / `run_0055..0057_rycl_{A,B,C}_cfl1`。
+解析: `case/28.cutler_coaxial_jet/analyze_limitcycle.py`。
+
+### 判定 (ユーザ決定木に対応)
+- 「C は安定するが S2 同等/より拡散的」+「C でも高 CFL 発散」の**両方**に該当。
+- **S2 (`speciesFaceReconstruction:1`) を production 推奨で維持**。`multispeciesRhoYCommonLimiter` は
+  ρ-Y 整合の寄与を定量化できたが S3 を production 化するには不十分 → **S3 は experimental 棚上げ**
+  (LHS 2次化が次の鍵)。`multispeciesRhoYCommonLimiter` は診断オプションとして残置 (既定0・ビット不変)。
+
+### cfl=1 settled (有効 step ~4750-6000) — 限界サイクルがほぼ消滅
+| mode | rms_ro | A_P | A_ur | A_YHe | A_T |
+| --- | --- | --- | --- | --- | --- |
+| A: S2 | 2.51e-7 | 44.6 | 0.065 | 1.63e-4 | 0.044 |
+| B: S3 | 2.52e-7 | 41.8 | 0.073 | 1.86e-4 | 0.038 |
+| C: S3+common | 3.01e-7 | 53.2 | 0.109 | 2.33e-4 | 0.047 |
+
+- **cfl1 では A≈B≈C** (A_P 42-53, cfl2 の 382-2473 から 1-2 桁低下) = 限界サイクルは高 CFL の
+  defect-correction 現象で **cfl1 で消滅** (既知の「振幅は pseudo-CFL に ~100×依存」と整合)。
+- cfl1 では C が僅かに最悪 (fallback churn の小ノイズ)。→ **共通リミタは低 CFL では無益〜微害**。
+- **総合**: ρ-Y 整合は実在するが二次的因子。限界サイクルの本質は **高 CFL の LHS(1次)/RHS(2次)
+  defect-correction**。S2 が全 CFL で最良〜同等、S3 は共通リミタを足しても production には届かない。

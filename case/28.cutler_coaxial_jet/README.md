@@ -18,6 +18,7 @@ thermally-perfect gas + 組成依存入口 BC + 乱流化学種拡散の検証�
 
 | `run_0039_tp_sst_cfl1` | TP-SST 継続 (0038 から) cfl=1.0 | **安定** (8000步 NaN なし)。残差は 0038 のフロア(rms_ro~3e-7)に張り付き横ばい | active |
 | `run_0040..0044_tp_sst_cfl{2,4,8,1p5,1p2}` | TP-SST 継続 CFL 上限探索 (0038 から) | **全て発散** (cfl2=step50, 4=step1, 8=step9, 1.5=step116, 1.2=step247)。res 出力なし | 破棄予定 |
+| `run_0049..0057_rycl_{A,B,C}_{cfl1,2,4}` | **rho-Y 共通リミタ診断** (`multispeciesRhoYCommonLimiter`)。A=S2 / B=S3 / C=S3+共通 min を同一 restart で比較。解析 `analyze_limitcycle.py` | cfl2 settled: A 最良(A_P=382), C は B 改善(2473→1585)も S2 に届かず, B 最悪。cfl4: B step433/C step550 発散, A 安定。**S2 維持・S3 棚上げ** ([plan §14](../../.github/plans/convection-multispecies-contact-pressure.md)) | 破棄予定 |
 
 **TP-SST 継続の CFL 上限 (run_0039〜0044, 発達場 0038 から)**: **cfl=1.0 が安定上限** (1.2 以上は発散)。ただし場は cfl=0.5/20000步 で既に残差フロア(限界周期)に達しており、cfl を上げても収束は速くならない (律速はステップ数でなく**安定性**)。冷流 TP ジェットは剛性が高く、層流時の cfl≤0.5 に対し発達 SST 場でも継続上限は ~1.0。
 

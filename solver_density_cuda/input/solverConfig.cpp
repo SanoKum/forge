@@ -246,6 +246,8 @@ void solverConfig::read(std::string fname)
         this->speciesImplicitCoupling = getOptionalValidatedValue<int>(deltaT, "speciesImplicitCoupling", 0, "time.deltaT");
         // 多成分 face 整合再構成: 既定 0 (mixed-order・ビット不変)。1 で Y を ρ と同じ再構成し thermo/species 流束整合。
         this->speciesFaceReconstruction = getOptionalValidatedValue<int>(deltaT, "speciesFaceReconstruction", 0, "time.deltaT");
+        // multispeciesRhoYCommonLimiter: opt-in 診断 (既定 0・ビット不変)。1 で ρ と全 species に共通 min リミタ。
+        this->multispeciesRhoYCommonLimiter = getOptionalValidatedValue<int>(deltaT, "multispeciesRhoYCommonLimiter", 0, "time.deltaT");
         // 軸対称 near-axis 安定化係数 β_axis: 既定 0 (不変)。擬似時間スペクトル半径に λ_axis=β(|u_r|+c)A_planar を加える。
         this->axisTimestepBeta = getOptionalValidatedValue<flow_float>(deltaT, "axisTimestepBeta", 0.0, "time.deltaT");
         // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。

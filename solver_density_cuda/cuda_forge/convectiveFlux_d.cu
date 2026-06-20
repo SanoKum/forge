@@ -30,6 +30,19 @@ __device__ int g_faceThermoY = 0;
 __device__ int g_speciesFaceRecon = 0;
 // 再構成 Y が [0,1] を外れた face 数のカウンタ (診断; clamp 前に atomicAdd)。
 __device__ unsigned long long g_speciesOvershoot = 0;
+// multispeciesRhoYCommonLimiter==1 (opt-in 診断): ρ と全 species に共通リミタ
+//   ψ_ρY = min(ψ_ρ, min_s ψ_Y_s) を適用し、ρ_f=ρ(Y_f) の熱力学整合だけを切り分ける。
+//   p・速度は従来どおり各自のリミタ。default 0 でビット不変。
+__device__ int g_rhoYCommonLim = 0;
+// rho-Y 共通リミタ診断カウンタ (すべて g_rhoYCommonLim 時のみ更新)。
+__device__ int g_psiRhoY_min_scaled = 2000000;          // min(ψ_ρY)·1e6 (atomicMin)
+__device__ unsigned long long g_psiRhoY_lt001 = 0;      // ψ_ρY<0.01 の face-side 数
+__device__ unsigned long long g_psiRhoY_lt01  = 0;      // ψ_ρY<0.1  の face-side 数
+__device__ unsigned long long g_rhoYMinByRho     = 0;   // min を ρ が決めた face-side 数
+__device__ unsigned long long g_rhoYMinBySpecies = 0;   // min を species が決めた face-side 数
+__device__ unsigned long long g_rhoYFallback = 0;       // 非実現可能で cell 値へ fallback した face-side 数
+__device__ int g_Yface_min_scaled =  2000000;           // min(Y_face)·1e6 (atomicMin)
+__device__ int g_Yface_max_scaled = -2000000;           // max(Y_face)·1e6 (atomicMax)
 
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
@@ -384,7 +397,29 @@ __global__ void SLAU_d
         //flow_float lim_Uz = min(limiter_Uz[ic0], limiter_Uz[ic1]);
         //flow_float lim_P  = min(limiter_P [ic0], limiter_P[ic1]);
 
-        flow_float ro_L = interp_dispatch(conv_scheme, limit_scheme, ro[ic0] , ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], drodx[ic1], drody[ic1], drodz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_ro[ic0]);
+        // rho-Y 共通リミタ (opt-in 診断): ψ_ρY = min(ψ_ρ, min_s ψ_Y_s) を ρ と全 species へ共通適用。
+        //   off (default) では lim_rho_* = limiter_ro[*] となりビット不変。p・速度は各自のリミタのまま。
+        flow_float lim_rho_L = limiter_ro[ic0];
+        flow_float lim_rho_R = limiter_ro[ic1];
+        if (g_rhoYCommonLim && g_speciesFaceRecon && nSpecies > 1 && limiterY_recon != nullptr) {
+            flow_float minY_L = limiter_ro[ic0], minY_R = limiter_ro[ic1];
+            for (int s = 0; s < nSpecies; ++s) {
+                minY_L = min(minY_L, limiterY_recon[s][ic0]);
+                minY_R = min(minY_R, limiterY_recon[s][ic1]);
+            }
+            lim_rho_L = minY_L;
+            lim_rho_R = minY_R;
+            // 診断: min を決めたのが ρ か species か / バケット集計 / 最小値。
+            if (lim_rho_L < limiter_ro[ic0]) atomicAdd(&g_rhoYMinBySpecies, 1ULL); else atomicAdd(&g_rhoYMinByRho, 1ULL);
+            if (lim_rho_R < limiter_ro[ic1]) atomicAdd(&g_rhoYMinBySpecies, 1ULL); else atomicAdd(&g_rhoYMinByRho, 1ULL);
+            if (lim_rho_L < 0.01f) atomicAdd(&g_psiRhoY_lt001, 1ULL);
+            if (lim_rho_R < 0.01f) atomicAdd(&g_psiRhoY_lt001, 1ULL);
+            if (lim_rho_L < 0.1f)  atomicAdd(&g_psiRhoY_lt01, 1ULL);
+            if (lim_rho_R < 0.1f)  atomicAdd(&g_psiRhoY_lt01, 1ULL);
+            atomicMin(&g_psiRhoY_min_scaled, (int)(min(lim_rho_L, lim_rho_R)*1.0e6f));
+        }
+
+        flow_float ro_L = interp_dispatch(conv_scheme, limit_scheme, ro[ic0] , ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], drodx[ic1], drody[ic1], drodz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, lim_rho_L);
         flow_float Ux_L = interp_dispatch(conv_scheme, limit_scheme, Ux[ic0] , Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Ux[ic0]);
         flow_float Uy_L = interp_dispatch(conv_scheme, limit_scheme, Uy[ic0] , Uy[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Uy[ic0]);
         flow_float Uz_L = interp_dispatch(conv_scheme, limit_scheme, Uz[ic0] , Uz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Uz[ic0]);
@@ -394,7 +429,7 @@ __global__ void SLAU_d
         //flow_float Uz_L = roUz_L/ro_L;
         // velocity2_L / h_p はブレンド後に算出するため後段へ移動 (lowMachThornber 対応)。
 
-        flow_float ro_R  = interp_dispatch(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro[ic1]); 
+        flow_float ro_R  = interp_dispatch(conv_scheme, limit_scheme, ro[ic1], ro[ic0], drodx[ic1], drody[ic1], drodz[ic1], drodx[ic0], drody[ic0], drodz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, lim_rho_R);
         flow_float Ux_R  = interp_dispatch(conv_scheme, limit_scheme, Ux[ic1], Ux[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Ux[ic1]);
         flow_float Uy_R  = interp_dispatch(conv_scheme, limit_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uy[ic1]);
         flow_float Uz_R  = interp_dispatch(conv_scheme, limit_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uz[ic1]);
@@ -447,14 +482,48 @@ __global__ void SLAU_d
                 const double iL=1.0/(sL>1.0e-30?sL:1.0e-30), iR=1.0/(sR>1.0e-30?sR:1.0e-30);
                 for (int s=0;s<nSpecies;s++){ YL[s]*=iL; YR[s]*=iR; }
                 double RgL, RgR;
-                if (g_speciesFaceRecon && Yd_recon != nullptr) {
-                    // proper S2/S3: Y_s を min(ψ_ρ,ψ_Y) で face へ再構成 (ρ と整合 + Y の boundedness)。
+                if (g_speciesFaceRecon && Yd_recon != nullptr && g_rhoYCommonLim) {
+                    // rho-Y 共通リミタ (opt-in 診断): ρ と同一の ψ_ρY=min(ψ_ρ,min_s ψ_Y) (lim_rho_L/R) で Y を再構成。
+                    //   → ρ_f と Y_f が常に同次数 = ρ_f=ρ(Y_f) の熱力学整合だけを切り分ける。
+                    //   boundedness: Y∉[0,1] の face-side は Y だけ clamp せず、その side 全体 (ρ と全 Y) を
+                    //   セル値 (1次) へ fallback して ρ-Y 整合を保つ (fallback 数を記録)。
+                    double cellYL[THERMO_MAX_SPECIES], cellYR[THERMO_MAX_SPECIES];
+                    for (int s=0;s<nSpecies;s++){ cellYL[s]=YL[s]; cellYR[s]=YR[s]; }
+                    bool ovL=false, ovR=false;
+                    for (int s=0;s<nSpecies;s++){
+                        flow_float ylr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic0], Yd_recon[s][ic1],
+                            dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
+                            dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
+                            dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, lim_rho_L);
+                        flow_float yrr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic1], Yd_recon[s][ic0],
+                            dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
+                            dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
+                            -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, lim_rho_R);
+                        if (ylr < 0.0 || ylr > 1.0) ovL = true;
+                        if (yrr < 0.0 || yrr > 1.0) ovR = true;
+                        if (ylr < 0.0 || ylr > 1.0 || yrr < 0.0 || yrr > 1.0) atomicAdd(&g_speciesOvershoot, 1ULL);
+                        YL[s]=(double)ylr; YR[s]=(double)yrr;
+                    }
+                    if (ovL) { ro_L = ro[ic0]; for (int s=0;s<nSpecies;s++) YL[s]=cellYL[s]; atomicAdd(&g_rhoYFallback, 1ULL); }
+                    else { double sLr=0.0; for(int s=0;s<nSpecies;s++) sLr+=YL[s]; const double iLr=1.0/(sLr>1.0e-30?sLr:1.0e-30); for(int s=0;s<nSpecies;s++) YL[s]*=iLr; }
+                    if (ovR) { ro_R = ro[ic1]; for (int s=0;s<nSpecies;s++) YR[s]=cellYR[s]; atomicAdd(&g_rhoYFallback, 1ULL); }
+                    else { double sRr=0.0; for(int s=0;s<nSpecies;s++) sRr+=YR[s]; const double iRr=1.0/(sRr>1.0e-30?sRr:1.0e-30); for(int s=0;s<nSpecies;s++) YR[s]*=iRr; }
+                    for (int s=0;s<nSpecies;s++){
+                        atomicMin(&g_Yface_min_scaled, (int)(min(YL[s],YR[s])*1.0e6));
+                        atomicMax(&g_Yface_max_scaled, (int)(max(YL[s],YR[s])*1.0e6));
+                    }
+                    RgL = thermo_R_mix(sp, nSpecies, YL);
+                    RgR = thermo_R_mix(sp, nSpecies, YR);
+                    for (int s=0;s<nSpecies;s++){ YLf_s3[s]=YL[s]; YRf_s3[s]=YR[s]; }
+                    haveYf_s3 = true;
+                } else if (g_speciesFaceRecon && Yd_recon != nullptr) {
+                    // proper S2/S3: Y_s を ρ と同一リミタ (limiter_ro) で face へ再構成 (ρ と整合 + Y の boundedness)。
                     // positivity は clamp([0,1])+正規化 (ΣY=1) で閉じる。clamp 前に overshoot をカウント。
                     double sLr=0.0, sRr=0.0;
                     for (int s=0;s<nSpecies;s++){
                         // ρ と同一リミタ (limiter_ro) を使う = ρ と Y が常に同次数 (consistent)。
                         // min(ψ_ρ,ψ_Y) は Y を ρ より強く落とし ρ-Y 不整合を生み case/28 で発散したため不採用。
-                        // overshoot 監視は限り (clamp) で閉じる。limiterY_recon は診断用に保持。
+                        // 共通 min を試すには multispeciesRhoYCommonLimiter=1 (上の分岐)。
                         const flow_float limL = limiter_ro[ic0];
                         const flow_float limR = limiter_ro[ic1];
                         flow_float ylr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic0], Yd_recon[s][ic1],
@@ -2853,6 +2922,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_faceThermoY,      &fthy, sizeof(int)));
             const int sfr = cfg.speciesFaceReconstruction;   // config 由来 (env でない)
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesFaceRecon, &sfr,  sizeof(int)));
+            const int rycl = cfg.multispeciesRhoYCommonLimiter;   // config 由来 (opt-in 診断)
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_rhoYCommonLim,    &rycl, sizeof(int)));
             const unsigned long long zero = 0ULL;
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesOvershoot, &zero, sizeof(unsigned long long)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contact1st,       &c1,   sizeof(int)));
@@ -2862,6 +2933,40 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactBlend,     &blend,sizeof(flow_float)));
             s_init = true;
         }
+    }
+
+    // rho-Y 共通リミタ診断: 一定間隔で device カウンタを読み出して 1 行印字しリセット (opt-in 時のみ)。
+    if (cfg.multispeciesRhoYCommonLimiter == 1) {
+        static int s_rycl_call = 0;
+        const int interval = 200;
+        if ((s_rycl_call % interval) == 0) {
+            int psimin=0, ymin=0, ymax=0;
+            unsigned long long lt001=0, lt01=0, byrho=0, bysp=0, fb=0, ovs=0;
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&psimin, g_psiRhoY_min_scaled, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&lt001,  g_psiRhoY_lt001, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&lt01,   g_psiRhoY_lt01,  sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&byrho,  g_rhoYMinByRho,  sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&bysp,   g_rhoYMinBySpecies, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&fb,     g_rhoYFallback,  sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&ovs,    g_speciesOvershoot, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&ymin,   g_Yface_min_scaled, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyFromSymbol(&ymax,   g_Yface_max_scaled, sizeof(int)));
+            printf("RHOYLIM call=%d minPsiRhoY=%.4f lt0.01=%llu lt0.1=%llu minBy[rho=%llu sp=%llu] overshoot=%llu fallback=%llu Yface=[%.5f,%.5f]\n",
+                   s_rycl_call, (double)psimin*1e-6, lt001, lt01, byrho, bysp, ovs, fb,
+                   (double)ymin*1e-6, (double)ymax*1e-6);
+            // 次区間用にリセット (min/max は両端へ)。
+            const int big=2000000, nbig=-2000000; const unsigned long long z=0ULL;
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_psiRhoY_min_scaled, &big, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_Yface_min_scaled,   &big, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_Yface_max_scaled,   &nbig, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_psiRhoY_lt001, &z, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_psiRhoY_lt01,  &z, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_rhoYMinByRho,  &z, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_rhoYMinBySpecies, &z, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_rhoYFallback,  &z, sizeof(unsigned long long)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesOvershoot, &z, sizeof(unsigned long long)));
+        }
+        s_rycl_call++;
     }
 
     // initialize
