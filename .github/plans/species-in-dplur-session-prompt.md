@@ -118,6 +118,46 @@ TP の高音速は不整合を低 CFL で露呈させる増幅器、という位
    `V_i/Δτ_i` が DPLUR 対角の流束スペクトル半径と同じ桁か比較。Δτ 異常増大/スペクトル半径ゼロ・負/体積・面積
    不正のいずれかを特定する。
 
+### 機構確定 (発散セル時系列トレース) + α 診断 (2026-06-20)
+
+近軸セル (r=0.04mm, x/D19) を step45→51 で追跡 (frozen species, cfl=2):
+- **半径方向運動量 Uy が振動・増大** (−16→+103→+215→+300 m/s, step45-48) → **密度崩壊** (ro 0.46→0.28→step50 で負)
+  → catastrophe。駆動 = 軸対称圧力ソース `res_roUy += P·A_pl` の半径加速度 **P/(ρr)≈7e9 m/s²**
+  (dt_local=1.2e-7 で ~800 m/s/step のキック)。`max cfl=2e9` は ro<0 後の garbage (発散後値, 幾何 dt エラーでない)。
+- **TP が CPG より早く死ぬのは音速でなく密度**: 物理的に正しい冷 He コア ρ~0.42 < CPG 誤熱化 0.68 →
+  P/(ρr) が ~1.6倍。音速は setDT で dt を縮めるので逆に安定化側 (先の「音速 40% 説」は撤回)。
+- 根本: dt_local が **近軸半径音響タイムスケール r/c≈6.7e-8 を超過**。block 対角の軸対称ソース Jacobian は
+  ∝(γ-1)u_y で小さく不足。revolved 軸面積 (r_f·S→0) が半径音響スペクトル半径を落としている。
+
+**α 診断 (env `FORGE_AXIS_DIAG_ALPHA`, timeIntegration_d.cu, 既定0=不変)**: roUy 対角に `α·A_planar·c` を追加:
+
+| CFL | baseline | α=1 | α=5/10 |
+| --- | --- | --- | --- |
+| 2 | step50 死 | step278 | **安定** (limit cycle) |
+| 4 | step1 死 | step115 | **安定** (6000步, ro>0/He コア保持) |
+| 8 | step9 死 | — | step160 (不足) |
+
+→ **TP-SST 安定 CFL が ~1 → 4+** に上昇。機構を確定。ただし crude 対角は roUy を per-equation 過減衰し
+残差フロアが高め (cfl4 で rms_ro~4e-6 vs cfl1 の 3e-7)。
+
+### production 形 = setDT 軸スペクトル半径 (次 commit で実装)
+
+人工対角でなく、**通常のスペクトル半径に軸項を足す** (単一式の人工項→全保存式整合の擬似時間スケールへ):
+
+  λ_i^total = λ_i^faces + λ_i^axis,  λ_i^axis = β_axis·(|u_r|+c)·A_planar
+  Δτ_i = CFL·V_i^axi / (λ_i^faces + β_axis·(|u_r|+c)·A_planar)
+
+近軸では V_i^axi = r_i·A_planar (per-radian) なので Δτ_i ∝ CFL·r_i/(|u_r|+c) が自然に出る。利点: 通常セルは
+軸項が相対的に小さく不変、近軸だけ制限、CFL の意味維持、face spectral radius と同構造。
+**DPLUR 時間項が V_i/Δτ_i·I なら setDT 短縮で LHS 対角が全式について自動で強まる** (α 対角の per-equation
+過減衰を避けられる)。**二重計上注意**: setDT の軸補正と DPLUR 対角の軸補正を同時に入れない (DPLUR が
+setDT とは別の独立スペクトル半径を使っていないか確認)。
+- 診断値 `Θ_i = Δτ_i(|u_r|+c)/r_i` を出し、近軸で 1 を大きく超えないことを確認。
+- 検証: 対角補強版 vs setDT 版を CFL sweep (1,2,4,8) で比較 — 初 NaN step / 最小 ρ / max|u_r| / Θ /
+  rms_ro / rms_roUy / 残差フロア / massflux / 軸上 P,T / He コア半径対称性。
+- 期待: setDT 版で cfl2,4 安定 & ρu_r 振動消失 & α 対角版より残差フロア低 & 遠方セル dt/収束率ほぼ不変
+  → production 候補。config 化 (β_axis)、α 診断は既定0/デバッグ専用に。
+
 **次の手 (要判断)**:
 - **本筋**: 軸対称 near-axis の flow-block 安定化 (局所 dt 制限 / 近軸 block-DPLUR ジオメトリ補正)。
   既存の [[architecture-axisym-axis-singularity]] 系の課題に合流する。TP は音速が高いぶん厳しいだけ。
