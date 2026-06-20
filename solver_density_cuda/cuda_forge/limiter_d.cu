@@ -313,6 +313,22 @@ void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , va
         var.c_d["dPdx"] , var.c_d["dPdy"] , var.c_d["dPdz"]
     ) ;
 
+    // 多成分 face 整合再構成: 各化学種 Y_s に Venkat リミタ ψ_Y を計算 (∇Y は speciesGradient 済)。
+    // speciesFaceReconstruction==1 のみ。flux では min(ψ_ρ, ψ_Y) を Y 再構成に使う (boundedness)。
+    if (cfg.speciesFaceReconstruction == 1 && var.nSpeciesRegistered >= 2) {
+        for (int s = 0; s < var.nSpeciesRegistered; ++s) {
+            const std::string i = std::to_string(s);
+            fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_Y"+i], msh.nCells_all, 1.0);
+            limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> (
+                cfg.limiter, msh.nCells, msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
+                msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
+                var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+                var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+                var.c_d["Y"+i] , var.c_d["limiter_Y"+i] ,
+                var.c_d["dY"+i+"dx"] , var.c_d["dY"+i+"dy"] , var.c_d["dY"+i+"dz"]
+            ) ;
+        }
+    }
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );

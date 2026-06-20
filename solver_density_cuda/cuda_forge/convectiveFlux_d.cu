@@ -25,9 +25,11 @@ __device__ flow_float g_contactBlend = 0.0f;
 // R_mix/T/h を **face 補間組成** Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) で評価し、ρ_L,P_L (2次再構成) と
 // 同じ face 位置の組成に整合させる (現行は owner セル組成=1次 → ΔT_f^MO~30K)。species 流束は不変。
 __device__ int g_faceThermoY = 0;
-// speciesFaceReconstruction==1: Y_s を ρ と同じ勾配+limiter で face へ再構成し thermo/species 流束で
+// speciesFaceReconstruction==1: Y_s を ρ/Y 勾配 + min(ψ_ρ,ψ_Y) で face へ再構成し thermo/species 流束で
 // 同一 face 組成を使う (proper S2/S3)。wrapper で cfg.speciesFaceReconstruction を設定。
 __device__ int g_speciesFaceRecon = 0;
+// 再構成 Y が [0,1] を外れた face 数のカウンタ (診断; clamp 前に atomicAdd)。
+__device__ unsigned long long g_speciesOvershoot = 0;
 
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
@@ -260,6 +262,7 @@ __global__ void SLAU_d
  flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
  flow_float** Yd_recon,                       // face 整合再構成用 Y{s} とセル勾配 ∇Y{s} (g_speciesFaceRecon 時)
  flow_float** dYdx_recon, flow_float** dYdy_recon, flow_float** dYdz_recon,
+ flow_float** limiterY_recon,                 // ψ_Y[s] (Venkat on Y)。Y 再構成は min(ψ_ρ,ψ_Y) を使う。
  flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
 
  // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正する。g_total==nullptr で従来 (ビット不変)。
@@ -442,19 +445,23 @@ __global__ void SLAU_d
                 for (int s=0;s<nSpecies;s++){ YL[s]*=iL; YR[s]*=iR; }
                 double RgL, RgR;
                 if (g_speciesFaceRecon && Yd_recon != nullptr) {
-                    // proper S2/S3: Y_s を ρ と同じ勾配+limiter (limiter_ro) で face へ再構成。
-                    // positivity は clamp(≥0)+正規化 (ΣY=1) で閉じる (簡易版; 共通 θ_Y は今後)。
+                    // proper S2/S3: Y_s を min(ψ_ρ,ψ_Y) で face へ再構成 (ρ と整合 + Y の boundedness)。
+                    // positivity は clamp([0,1])+正規化 (ΣY=1) で閉じる。clamp 前に overshoot をカウント。
                     double sLr=0.0, sRr=0.0;
                     for (int s=0;s<nSpecies;s++){
+                        const flow_float limL = min(limiter_ro[ic0], limiterY_recon[s][ic0]);
+                        const flow_float limR = min(limiter_ro[ic1], limiterY_recon[s][ic1]);
                         flow_float ylr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic0], Yd_recon[s][ic1],
                             dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
                             dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
-                            dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_ro[ic0]);
+                            dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limL);
                         flow_float yrr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic1], Yd_recon[s][ic0],
                             dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
                             dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
-                            -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro[ic1]);
-                        if (ylr < 0.0) ylr = 0.0; if (yrr < 0.0) yrr = 0.0;
+                            -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limR);
+                        if (ylr < 0.0 || ylr > 1.0 || yrr < 0.0 || yrr > 1.0) atomicAdd(&g_speciesOvershoot, 1ULL);
+                        ylr = min(max(ylr,(flow_float)0.0),(flow_float)1.0);
+                        yrr = min(max(yrr,(flow_float)0.0),(flow_float)1.0);
                         YL[s]=(double)ylr; YR[s]=(double)yrr; sLr+=(double)ylr; sRr+=(double)yrr;
                     }
                     const double iLr=1.0/(sLr>1.0e-30?sLr:1.0e-30), iRr=1.0/(sRr>1.0e-30?sRr:1.0e-30);
@@ -2830,6 +2837,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_faceThermoY,      &fthy, sizeof(int)));
             const int sfr = cfg.speciesFaceReconstruction;   // config 由来 (env でない)
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesFaceRecon, &sfr,  sizeof(int)));
+            const unsigned long long zero = 0ULL;
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesOvershoot, &zero, sizeof(unsigned long long)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contact1st,       &c1,   sizeof(int)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactThresh,    &th,   sizeof(flow_float)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactLog,       &clog, sizeof(int)));
@@ -2876,6 +2885,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
             species_roY_device_ptr(),
             species_Y_device_ptr(), species_dYdx_device_ptr(), species_dYdy_device_ptr(), species_dYdz_device_ptr(),
+            species_limiterY_device_ptr(),
             var.c_d["Rmix"],
             cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
 

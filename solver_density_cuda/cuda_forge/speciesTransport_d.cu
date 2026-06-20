@@ -24,6 +24,7 @@ flow_float** g_Y_dev    = nullptr;
 flow_float** g_dYdx_dev = nullptr;
 flow_float** g_dYdy_dev = nullptr;
 flow_float** g_dYdz_dev = nullptr;
+flow_float** g_limiterY_dev = nullptr;   // ψ_Y[s] (Venkat on Y) ポインタ配列
 
 // 案C 用 scratch: dq_roY{s}_old のポインタ配列 (sweep の swap でポインタが変わるため毎回再構築) と
 // セルごとの δp_Y [Pa]。speciesInit_d でなく案C 経路の初回に遅延確保。
@@ -441,8 +442,11 @@ void speciesInit_d(solverConfig& cfg, variables& var)
     gpuErrchk( cudaMalloc((void**)&g_dYdx_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_dYdx_dev, hdx.data(), pbytes, cudaMemcpyHostToDevice) );
     gpuErrchk( cudaMalloc((void**)&g_dYdy_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_dYdy_dev, hdy.data(), pbytes, cudaMemcpyHostToDevice) );
     gpuErrchk( cudaMalloc((void**)&g_dYdz_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_dYdz_dev, hdz.data(), pbytes, cudaMemcpyHostToDevice) );
+    std::vector<flow_float*> hlim(g_nSpecies);
+    for (int s = 0; s < g_nSpecies; s++) hlim[s] = var.c_d["limiter_Y"+std::to_string(s)];
+    gpuErrchk( cudaMalloc((void**)&g_limiterY_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_limiterY_dev, hlim.data(), pbytes, cudaMemcpyHostToDevice) );
 
-    std::cout << "speciesInit_d: built device roY/roYN/res/diag/Y/dY[] for nSpecies=" << g_nSpecies << "\n";
+    std::cout << "speciesInit_d: built device roY/roYN/res/diag/Y/dY/limiterY[] for nSpecies=" << g_nSpecies << "\n";
 }
 
 // face 整合再構成用アクセサ
@@ -450,6 +454,7 @@ flow_float** species_Y_device_ptr()    { return g_Y_dev; }
 flow_float** species_dYdx_device_ptr() { return g_dYdx_dev; }
 flow_float** species_dYdy_device_ptr() { return g_dYdy_dev; }
 flow_float** species_dYdz_device_ptr() { return g_dYdz_dev; }
+flow_float** species_limiterY_device_ptr() { return g_limiterY_dev; }
 
 // 化学種セル勾配 ∇Y{s} を Green-Gauss で計算する (calcGradient と同形)。speciesFaceReconstruction==1 のみ。
 // 境界は Neumann ghost (applySpeciesBoundaries 済) を用い、内部面と同様に集計する。
