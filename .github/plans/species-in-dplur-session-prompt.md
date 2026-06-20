@@ -159,6 +159,41 @@ CPG β=0 既定はビット不変 (gating)・CPG cfl2 安定を確認。field �
 > production 既定: `axisTimestepBeta=0` (opt-in)。軸対称ケースで CFL を上げたいとき β≈cfl_pseudo/2 を設定。
 > α 対角診断 (`FORGE_AXIS_DIAG_ALPHA`) は既定0/デバッグ専用に残置 (production には使わない)。
 
+### 最終ステータス (2026-06-20): production 確定 + contact 混合層モードを別 issue に分離
+
+**production 形を additive fixed-β に確定** (`time.deltaT.axisTimestepBeta`, 既定0)。`axisAcousticCFLMax`
+(min-clamp / 目標Θ) は試したが棄却: min-clamp は最内セルしか触れず CFL≳4 で不足、目標Θ形 (係数=cfl_pseudo/C)
+は face 項のぶん実効 Θ が C/2 になり C=1 で過減衰発散。**設定値と実効 Θ が一対一でない**ため名称を約束しない。
+docs に「`axisTimestepBeta` は数値スペクトル半径の重み・Θ≈CFL/β は厳密保証でない・β≈CFL/2 は case/28 経験則」を明記
+([docs/axisymmetric/theory.md](../../docs/axisymmetric/theory.md) / [implementation.md](../../docs/axisymmetric/implementation.md))。
+
+**CFL4 長時間 + down-test (検証完了)**: β=2 で CFL4 安定 (8000步, 残差 5.4e-6→4.5e-6 緩やか低下)。
+質量流量 in/out 比 1.362 (baseline 1.363 と一致)、ΣY=1, He コア保持。**CFL4→1 down-test で残差再低下**
+(rms_ro 4.5e-6→5e-7) し近軸 |u_r| 174→4.4・軸上 P スパイク消失で **baseline 低 CFL 解に一致** → 高 CFL 残差床は
+擬似時間 limit cycle、**定常解は不変**。
+
+**catastrophic divergence と residual floor は別機構 (確定)**:
+- catastrophic = near-axis 半径運動量不安定 → `axisTimestepBeta` で CFL4 まで解消。
+- residual floor (~4e-6 @ CFL4) = **He/air contact 混合層モード**。スナップショット差分で contact の
+  |Δu_r|・|ΔY_He|・|Δp| が軸近傍より大、最大は軸と組成勾配が交わる下流。
+- **Test 4 (pseudo-CFL 依存性) で数値 limit cycle と確定**: contact 振幅が CFL に強依存
+  (A_YHe 1.7e-4→9.6e-3→2.5e-2 @ cfl1/2/4, ~100×)。CFL1 でほぼ消滅 → **物理非定常でなく定常反復の数値 limit cycle**。
+- 化学種移流は既に 1 次風上 (`scalar_advection_first_order_d`) なので **species 高次再構成ではない** (Test1 無効)。
+  flow 2次再構成と低次 LHS の不整合 (defect-correction limit cycle) / limiter chatter が候補。flow 1次化は
+  別の発散を起こし切り分け不能だった (transient 再平衡)。
+
+**case/28 への影響 (engineering 量)**: massflux・軸上 p,T・組成場は baseline 低 CFL 解と一致 (down-test)。
+field 物理。**CFL8 は現 production 要件としない** (まだ near-axis inlet で発散)。
+
+**案A (5+nSpecies full block) には着手しない**: species/SST freeze でも catastrophic 継続・案C JVP は FD 一致だが
+CFL 無影響・catastrophic は軸 flow モード・floor は contact モード、が確定済み。contact が `A_YQ`/同期 LHS 不足と
+明示されたときのみ再判断。
+
+**別 issue として分離**: 「多成分 TP 高 CFL の contact 混合層 数値 limit cycle」(flow 高次再構成 / limiter / 高次RHS-低次LHS)。
+
+**merge 可否**: near-axis 安定化 (`axisTimestepBeta`) は production 候補として確定・既定0でビット不変・docs 整備済。
+merge 可。contact 混合層 limit cycle は独立 issue として継続。
+
 #### (旧メモ) production 形 = setDT 軸スペクトル半径 (設計)
 
 人工対角でなく、**通常のスペクトル半径に軸項を足す** (単一式の人工項→全保存式整合の擬似時間スケールへ):
