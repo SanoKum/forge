@@ -157,3 +157,18 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
 
 - `2026-06-20` — 初稿。診断フラグ (`FORGE_CONTACT_1ST/BLEND/LOG`, commit `5dcdc80`) と既存切り分け結果
   (mixed-order をこの方向では反証, Gate 2/4 示唆) を反映。助言からの差分は §4.1 (1D ゲートを §4.2 実装の前に置く)。
+- `2026-06-20` — **1D ゲート実施・結論 (§4.1 ステップ3)**: `case/05` に He/N2 material-contact ベンチ
+  (`gen_contact_ic.py`, p,u 一様・組成のみ界面) を追加し Baseline A (2次) / Case D (1次) を比較。
+  - **stationary contact**: 両スキームとも完全保持 (ε_p ~ round-off 7.8e-8, ε_u=0, ε_ΣY=0)。
+  - **moving contact (u0=100)**: contact 近傍の ΔP は小さく**減衰** (377→45 Pa, ~0.4%, 1次 Case D も同程度)。
+    大きな ε_p≈0.2 は **slip 壁反射の人工物** (max|dP| が x=0.94-0.98 の壁、contact x~0.53 ではない)。
+  - **判定**: forge SLAU は 1D 多成分 contact を **flux レベルでよく保持** (既存の TP 面エンタルピー再構成
+    `T_face→h_mix(T_face)+ek` が古典 Abgrall 振動を緩和済)。**Gate 1 (mixed-order) も Gate 2 (flux PEP) も発火せず**。
+  - **含意**: case/28 の contact limit-cycle は **flux レベルの 1D contact PEP/再構成問題ではない** →
+    助言の §4.2 (species 2 次整合) / double-flux は case/28 を直さない見込み。**多成分 2 次再構成は本課題の
+    根治としては実装しない** (一般精度向上として別途検討は可)。
+  - **残る本命 = Gate 4 (defect-correction) + 多次元**: case/28 は高 pseudo-CFL implicit (Test4: 振幅が CFL に
+    ~100×) + relax 感受性 (D3: 0.7→0.4 で振幅低減) で、純 1D explicit では再現不能 (1D は維持された組成勾配の
+    through-flow を持てない)。→ 次は **implicit LHS / defect-correction の contact 扱い** (高次 RHS-近似 LHS の
+    限界環) か **運用回避 (末端 CFL ダウン, 検証済)**。double-flux は棚上げ。
+  - status: 1D ゲートで flux 仮説を反証。plan の §4.2 実装は**保留** (Gate 4 へ軸足を移す)。
