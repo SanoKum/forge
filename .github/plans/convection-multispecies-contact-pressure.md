@@ -215,9 +215,33 @@ case/28 cfl=4, settled (step 5000-10000), `speciesFaceReconstruction:1` (S2 ther
 - `:2` (S2+S3) は cfl≤2 か、species LHS 2 次化後に高 CFL。
 - commit: 7ceaade (A+B) / 21b92f5 (ψ_Y+settled 発見) / [S3 commit]。
 
-### 起きたら見るべき (走らせ中の run)
-- `run_s2b` (cfl4 S2, 10000): production 候補の settled 確認。
-- `run_c2_s0/s2/s3` (cfl2, 6000): S0/S2/S3 比較 — S3 が S2 を更に改善するか (cfl2 で全安定)。
+### 最終比較 (完走済み) → 決定的結論
+**cfl=2 settled (step 3000-6000):**
+| mode | rms_ro | A_YHe | A_ur | A_P |
+| --- | --- | --- | --- | --- |
+| S0 | 1.64e-6 | 7.1e-3 | 3.44 | 1465 |
+| **S2** | **9.4e-7** | **3.4e-3** | **0.88** | **344 (-77%)** |
+| S2+S3 | 2.45e-6 | 2.0e-2 | 8.57 | 3221 (×2.2 悪化!) |
+
+**cfl=4 S2 settled**: rms_ro=2.63e-6, A_P=651 (S0 の 1252 比 -48%)。
+
+### 決定的結論 (handoff)
+- **S2 (`speciesFaceReconstruction:1`) が production の答え。** mixed-order の 30K 面温度誤差を消すことで
+  contact 圧力振動を **cfl2 で -77%・cfl4 で -48%**、残差も低下。安定・bounded(ΣY=1, Ymin=0)・既定0でビット不変。
+- **S3 (移流 2 次化, mode 2) は棄却。** A_P が ~10× 悪化(cfl2 でも)。理由: **1 次 species 移流の散逸が
+  limit-cycle を減衰させており、2 次化(+1 次 LHS diag)はその散逸を奪い defect-correction で大振動**。
+  → **species 移流は 1 次のままが良い**。「移流も同じ処理を」は本ケースでは不要かつ有害だった
+  (= thermo の整合だけが効き、移流次数は上げない)。
+- mode 2 のコードは gated・残置(species LHS を 2 次整合化すれば将来 high CFL で再評価可)だが、現状の推奨は **mode 1**。
+- ψ_Y は実装したが Y 再構成には ρ-limiter (同次数=consistent) が正解。min(ψ_ρ,ψ_Y) は発散。ψ_Y は診断用残置。
+
+### production 設定例
+```yaml
+time:
+  deltaT:
+    speciesFaceReconstruction: 1   # 多成分 TP の face thermo 組成を ρ と同次数で整合 (mixed-order 解消)
+```
+既定 0 でビット不変。多成分 TP の contact/混合層がある計算で圧力振動・残差床を下げたいとき 1。
 
 ## 10. 変更ログ
 
