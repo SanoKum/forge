@@ -21,6 +21,10 @@ __device__ flow_float g_contactLogThresh = 0.3f;
 // 連続ブレンド版 (chatter-free): ω_Y=min(1, s_Y/g_contactBlend) で flow 再構成を 2次→1次 へ滑らかに寄せる。
 // 0=off。hard 切替 (FORGE_CONTACT_1ST) と違いセンサ閾値の bang-bang chatter を起こさない (D2a 清浄版/製品候補)。
 __device__ flow_float g_contactBlend = 0.0f;
+// S2 診断 (FORGE_FACE_THERMOY=1, 既定0): TP face thermo の組成 mixed-order を解消。
+// R_mix/T/h を **face 補間組成** Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) で評価し、ρ_L,P_L (2次再構成) と
+// 同じ face 位置の組成に整合させる (現行は owner セル組成=1次 → ΔT_f^MO~30K)。species 流束は不変。
+__device__ int g_faceThermoY = 0;
 
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
@@ -431,10 +435,20 @@ __global__ void SLAU_d
                 }
                 const double iL=1.0/(sL>1.0e-30?sL:1.0e-30), iR=1.0/(sR>1.0e-30?sR:1.0e-30);
                 for (int s=0;s<nSpecies;s++){ YL[s]*=iL; YR[s]*=iR; }
-                // R_mix はセル組成のみの定数。dependentVariables で計算済の per-cell 値を読む
-                // (毎面で thermo_R_mix の種ループを回さない。正規化済 Y なので ρ に依らず一致)。
-                const double RgL = (double)Rmix_cell[ic0];
-                const double RgR = (double)Rmix_cell[ic1];
+                double RgL, RgR;
+                if (g_faceThermoY) {
+                    // S2: 整合 face 組成 Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) を L/R thermo に使い、
+                    // ρ_L,P_L (2次) と同じ face 位置の組成に揃える。R_mix も Y_face から作る。
+                    double Yf[THERMO_MAX_SPECIES], sf=0.0;
+                    for (int s=0;s<nSpecies;s++){ Yf[s] = (double)f*YL[s] + (1.0-(double)f)*YR[s]; sf+=Yf[s]; }
+                    const double inv = 1.0/(sf>1.0e-30?sf:1.0e-30);
+                    for (int s=0;s<nSpecies;s++){ Yf[s]*=inv; YL[s]=Yf[s]; YR[s]=Yf[s]; }
+                    RgL = RgR = thermo_R_mix(sp, nSpecies, Yf);
+                } else {
+                    // R_mix はセル組成のみの定数 (現行 mixed-order)。dependentVariables で計算済の per-cell 値。
+                    RgL = (double)Rmix_cell[ic0];
+                    RgR = (double)Rmix_cell[ic1];
+                }
                 const double Tl = (double)P_L/((double)ro_L*RgL);
                 const double Tr = (double)P_R/((double)ro_R*RgR);
                 h_p = (flow_float)(thermo_h_mix(sp, nSpecies, YL, Tl) + 0.5*(double)velocity2_L);
@@ -2786,6 +2800,9 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             if (const char* e = getenv("FORGE_CONTACT_LOG"))       clog = atoi(e);
             if (const char* e = getenv("FORGE_CONTACT_LOG_THRESH"))lth  = (flow_float)atof(e);
             if (const char* e = getenv("FORGE_CONTACT_BLEND"))     blend= (flow_float)atof(e);
+            int fthy = 0;
+            if (const char* e = getenv("FORGE_FACE_THERMOY"))      fthy = atoi(e);
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_faceThermoY,      &fthy, sizeof(int)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contact1st,       &c1,   sizeof(int)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactThresh,    &th,   sizeof(flow_float)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactLog,       &clog, sizeof(int)));
