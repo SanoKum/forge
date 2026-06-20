@@ -19,6 +19,12 @@ flow_float** g_resroY_dev = nullptr;
 flow_float** g_transdiag_dev = nullptr;
 int          g_nSpecies = 0;
 
+// face 整合再構成 (speciesFaceReconstruction==1) 用: Y{s} と セル勾配 ∇Y{s} のポインタ配列。
+flow_float** g_Y_dev    = nullptr;
+flow_float** g_dYdx_dev = nullptr;
+flow_float** g_dYdy_dev = nullptr;
+flow_float** g_dYdz_dev = nullptr;
+
 // 案C 用 scratch: dq_roY{s}_old のポインタ配列 (sweep の swap でポインタが変わるため毎回再構築) と
 // セルごとの δp_Y [Pa]。speciesInit_d でなく案C 経路の初回に遅延確保。
 flow_float** g_dqYold_dev = nullptr;   // device 上の flow_float*[nSpecies]
@@ -424,7 +430,81 @@ void speciesInit_d(solverConfig& cfg, variables& var)
     gpuErrchk( cudaMemcpy(g_resroY_dev,    hres.data(),  pbytes, cudaMemcpyHostToDevice) );
     gpuErrchk( cudaMemcpy(g_transdiag_dev, htd.data(),   pbytes, cudaMemcpyHostToDevice) );
 
-    std::cout << "speciesInit_d: built device roY/roYN/res/diag[] for nSpecies=" << g_nSpecies << "\n";
+    // face 整合再構成用 Y / ∇Y ポインタ配列。
+    std::vector<flow_float*> hY(g_nSpecies), hdx(g_nSpecies), hdy(g_nSpecies), hdz(g_nSpecies);
+    for (int s = 0; s < g_nSpecies; s++) {
+        const std::string i = std::to_string(s);
+        hY[s]  = var.c_d["Y"+i];
+        hdx[s] = var.c_d["dY"+i+"dx"]; hdy[s] = var.c_d["dY"+i+"dy"]; hdz[s] = var.c_d["dY"+i+"dz"];
+    }
+    gpuErrchk( cudaMalloc((void**)&g_Y_dev,    pbytes) ); gpuErrchk( cudaMemcpy(g_Y_dev,    hY.data(),  pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMalloc((void**)&g_dYdx_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_dYdx_dev, hdx.data(), pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMalloc((void**)&g_dYdy_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_dYdy_dev, hdy.data(), pbytes, cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMalloc((void**)&g_dYdz_dev, pbytes) ); gpuErrchk( cudaMemcpy(g_dYdz_dev, hdz.data(), pbytes, cudaMemcpyHostToDevice) );
+
+    std::cout << "speciesInit_d: built device roY/roYN/res/diag/Y/dY[] for nSpecies=" << g_nSpecies << "\n";
+}
+
+// face 整合再構成用アクセサ
+flow_float** species_Y_device_ptr()    { return g_Y_dev; }
+flow_float** species_dYdx_device_ptr() { return g_dYdx_dev; }
+flow_float** species_dYdy_device_ptr() { return g_dYdy_dev; }
+flow_float** species_dYdz_device_ptr() { return g_dYdz_dev; }
+
+// 化学種セル勾配 ∇Y{s} を Green-Gauss で計算する (calcGradient と同形)。speciesFaceReconstruction==1 のみ。
+// 境界は Neumann ghost (applySpeciesBoundaries 済) を用い、内部面と同様に集計する。
+__global__ void species_gradient_d(
+    geom_int nCells, geom_int nPlanes, geom_int* plane_cells,
+    geom_float* vol, geom_float* fx, geom_float* sx, geom_float* sy, geom_float* sz,
+    int nSpecies, flow_float** Y, flow_float** dYdx, flow_float** dYdy, flow_float** dYdz)
+{
+    geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ip < nPlanes) {
+        geom_int ic0 = plane_cells[2*ip+0];
+        geom_int ic1 = plane_cells[2*ip+1];
+        geom_float f = fx[ip];
+        const geom_float sxx = sx[ip], syy = sy[ip], szz = sz[ip];
+        for (int s = 0; s < nSpecies; ++s) {
+            const flow_float Yf = f*Y[s][ic0] + (1.0-f)*Y[s][ic1];
+            atomicAdd(&dYdx[s][ic0],  sxx*Yf); atomicAdd(&dYdy[s][ic0],  syy*Yf); atomicAdd(&dYdz[s][ic0],  szz*Yf);
+            if (ic1 < nCells) { atomicAdd(&dYdx[s][ic1], -sxx*Yf); atomicAdd(&dYdy[s][ic1], -syy*Yf); atomicAdd(&dYdz[s][ic1], -szz*Yf); }
+        }
+    }
+}
+
+__global__ void species_gradient_normalize_d(
+    geom_int nCells, geom_float* vol, int nSpecies,
+    flow_float** dYdx, flow_float** dYdy, flow_float** dYdz)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const flow_float invv = 1.0/max(vol[ic], (flow_float)1.0e-30);
+        for (int s = 0; s < nSpecies; ++s) {
+            dYdx[s][ic] *= invv; dYdy[s][ic] *= invv; dYdz[s][ic] *= invv;
+        }
+    }
+}
+
+void speciesGradient_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
+{
+    if (!speciesEnabled(var)) return;
+    const int n = var.nSpeciesRegistered;
+    for (int s = 0; s < n; ++s) {
+        const std::string i = std::to_string(s);
+        cudaMemset(var.c_d["dY"+i+"dx"], 0, msh.nCells*sizeof(flow_float));
+        cudaMemset(var.c_d["dY"+i+"dy"], 0, msh.nCells*sizeof(flow_float));
+        cudaMemset(var.c_d["dY"+i+"dz"], 0, msh.nCells*sizeof(flow_float));
+    }
+    flow_float* gvol = (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"];
+    flow_float* gsx = (cfg.isAxisymmetric == 1) ? var.p_d["sx_planar"] : var.p_d["sx"];
+    flow_float* gsy = (cfg.isAxisymmetric == 1) ? var.p_d["sy_planar"] : var.p_d["sy"];
+    flow_float* gsz = (cfg.isAxisymmetric == 1) ? var.p_d["sz_planar"] : var.p_d["sz"];
+    species_gradient_d<<<cuda_cfg.dimGrid_plane, cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.nPlanes, msh.map_plane_cells_d, gvol, var.p_d["fx"], gsx, gsy, gsz,
+        n, g_Y_dev, g_dYdx_dev, g_dYdy_dev, g_dYdz_dev);
+    species_gradient_normalize_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+        msh.nCells, gvol, n, g_dYdx_dev, g_dYdy_dev, g_dYdz_dev);
+    gpuErrchk( cudaPeekAtLastError() );
 }
 
 flow_float** species_roY_device_ptr()

@@ -779,6 +779,12 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
     });
+    // node-centered 壁 Dirichlet (クリーン射影): 更新後の壁ノード保存量を毎ステージ u=0 へ射影する
+    // (roe から KE を除去し ρu=0)。P/T は直後の gasProperties が内部エネルギーから一貫再計算する。
+    // これにより、運動量「残差」のみ 0 にしていた旧 zeroWallMomentumResidual で生じた KE 移流由来の
+    // エネルギー膨張 (roe 先頭発散) を防ぐ。壁せん断は内部双対面 (壁ノード u=0 ↔ 内部ノード) が担う。
+    // cell / 非 node / nodeWallDirichlet=0 では no-op。
+    enforceWallNoSlip_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // Y_s = ρY_s/ρ (混合則 thermo の前)
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // φ = ρφ/ρ (スカラ移流の上流値)
@@ -799,6 +805,11 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
         calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        // 多成分 face 整合再構成 (speciesFaceReconstruction==1): ∇Y_s を Green-Gauss で計算。
+        // species ghost は直前の applySpeciesBoundaries で Neumann 充填済み。既定 0 で no-op。
+        if (s.cfg.speciesFaceReconstruction == 1) {
+            speciesGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        }
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
         axisymmetricGeomTerms_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);

@@ -204,6 +204,12 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["nodeMidpointFx"]) {
             this->nodeMidpointFx = config["mesh"]["nodeMidpointFx"].as<int>();
         }
+        if (config["mesh"]["nodeWallViscGradFlux"]) {
+            this->nodeWallViscGradFlux = config["mesh"]["nodeWallViscGradFlux"].as<int>();
+        }
+        if (config["mesh"]["nodeWallDistFloorCoef"]) {
+            this->nodeWallDistFloorCoef = config["mesh"]["nodeWallDistFloorCoef"].as<flow_float>();
+        }
 
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");
@@ -238,6 +244,8 @@ void solverConfig::read(std::string fname)
         // 多成分 TP 陰解法の化学種更新方式: 既定 0 (従来 segregated 点陰的・ビット不変)。
         // 1 で緩和整合 scalar-DPLUR (流れ block と同一緩和。plan thermophysics-species-implicit-coupling.md)。
         this->speciesImplicitCoupling = getOptionalValidatedValue<int>(deltaT, "speciesImplicitCoupling", 0, "time.deltaT");
+        // 多成分 face 整合再構成: 既定 0 (mixed-order・ビット不変)。1 で Y を ρ と同じ再構成し thermo/species 流束整合。
+        this->speciesFaceReconstruction = getOptionalValidatedValue<int>(deltaT, "speciesFaceReconstruction", 0, "time.deltaT");
         // 軸対称 near-axis 安定化係数 β_axis: 既定 0 (不変)。擬似時間スペクトル半径に λ_axis=β(|u_r|+c)A_planar を加える。
         this->axisTimestepBeta = getOptionalValidatedValue<flow_float>(deltaT, "axisTimestepBeta", 0.0, "time.deltaT");
         // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。

@@ -43,6 +43,9 @@ public:
     // 近軸 (r→0) で Δτ∝CFL·r/(|u_r|+c) を自然に与え半径運動量不安定を抑える。0=不変 (既定)。
     flow_float axisTimestepBeta = 0.0;
     int blockDPLUR = 0;
+    // 多成分 face 整合再構成: 0 (既定・ビット不変, 組成は owner セル 1 次=mixed-order)、
+    // 1: Y_s を ρ と同じ勾配+limiter で face へ 2 次再構成し thermo/species 流束で同一 face 組成を使う。
+    int speciesFaceReconstruction = 0;
     int speciesImplicitCoupling = 0; // 多成分 TP 陰解法 (timeIntegration==11, nSpecies>=2) の化学種更新方式。
                                      // 0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
                                      // 1: 緩和整合 scalar-DPLUR (流れ block と同一 dt_local/implicitRelax/nStepInner
@@ -131,6 +134,23 @@ public:
     // 低減するが、出口リップ近傍 near-wall の解を変えるため SU2 検証まで既定 OFF。cell モードは無関係。
     // docs/discretization/implementation.md §7.4。
     int nodeMidpointFx = 0;
+
+    // node-centered 粘性壁 flux の法線距離 dcc 退化対策 (0:従来ミラーゴースト距離そのまま,
+    // 1:既定 退化 dcc をフロアで平滑化)。node モードの壁ノードは壁面上に乗るため、ミラーゴースト
+    // cc_ghost=cc+2((pc-cc)·n)n は (pc-cc)·n が雑音 (|dn|∈[1e-8,3e-4], 符号反転) で dcc=2|dn| が
+    // 4〜5 桁ばらつき、法線項 (U[ig]-U[ic])/dcc が近壁 twall の特異スパイク・偶奇振動を生む。
+    // 1 で dcc_eff=max(dcc, nodeWallDistFloorCoef·vol/sss) と下限クリップする。
+    // 【検証所見 2026-06-20】強 no-slip ドラッグ (小 dcc) は安定性に必須だが同時に twall 振動の源でも
+    // あり、局所的な距離操作 (純勾配 ∇u·S / 滑らか距離 / floor 大 / 残差射影 Dirichlet) では両者を
+    // 分離できない (弱めると no-slip を失い energy が先頭発散; 強いままだと振動が残る)。バルク解
+    // (中心線 Mach) は元スキームで Euler/cell と一致し健全。よって既定は 0 (元挙動を保持) とし、
+    // 本フラグ+floor は切り分け/将来の正攻法 (内部隣接ノード距離を使うコンパクト法線作用素) 用に
+    // 残置する。docs/diffusion/implementation.md, .github/plans/diffusion-node-wall-viscous-distance.md。
+    int nodeWallViscGradFlux = 0;
+
+    // 上記フロア係数 c: dcc_eff=max(dcc, c·vol/sss)。小さいほど元挙動に近い (大半の dcc を温存)。
+    // 既定 0.05。0 で実質フロア無効 (nodeWallViscGradFlux=0 と同等)。docs/diffusion/implementation.md。
+    flow_float nodeWallDistFloorCoef = 0.05;
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
 

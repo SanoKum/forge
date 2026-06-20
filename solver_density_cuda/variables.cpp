@@ -44,7 +44,9 @@ static std::list<std::string> speciesCellVarNames(int s)
         "transport_diag_Y"+i, "src_jac_Y"+i,
         // 緩和整合 scalar-DPLUR (speciesImplicitCoupling==1) の Jacobi 補正 new/old バッファ。
         // 既定経路 (=0) では未使用だが確保コストは僅少。
-        "dq_roY"+i, "dq_roY"+i+"_old"
+        "dq_roY"+i, "dq_roY"+i+"_old",
+        // 質量分率セル勾配 (speciesFaceReconstruction==1 の face 整合再構成用、Green-Gauss)。
+        "dY"+i+"dx", "dY"+i+"dy", "dY"+i+"dz"
     };
 }
 

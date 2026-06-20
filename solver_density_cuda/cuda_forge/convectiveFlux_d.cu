@@ -25,6 +25,9 @@ __device__ flow_float g_contactBlend = 0.0f;
 // R_mix/T/h を **face 補間組成** Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) で評価し、ρ_L,P_L (2次再構成) と
 // 同じ face 位置の組成に整合させる (現行は owner セル組成=1次 → ΔT_f^MO~30K)。species 流束は不変。
 __device__ int g_faceThermoY = 0;
+// speciesFaceReconstruction==1: Y_s を ρ と同じ勾配+limiter で face へ再構成し thermo/species 流束で
+// 同一 face 組成を使う (proper S2/S3)。wrapper で cfg.speciesFaceReconstruction を設定。
+__device__ int g_speciesFaceRecon = 0;
 
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
@@ -255,6 +258,8 @@ __global__ void SLAU_d
  int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
  const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
  flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
+ flow_float** Yd_recon,                       // face 整合再構成用 Y{s} とセル勾配 ∇Y{s} (g_speciesFaceRecon 時)
+ flow_float** dYdx_recon, flow_float** dYdy_recon, flow_float** dYdz_recon,
  flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
 
  // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正する。g_total==nullptr で従来 (ビット不変)。
@@ -436,7 +441,27 @@ __global__ void SLAU_d
                 const double iL=1.0/(sL>1.0e-30?sL:1.0e-30), iR=1.0/(sR>1.0e-30?sR:1.0e-30);
                 for (int s=0;s<nSpecies;s++){ YL[s]*=iL; YR[s]*=iR; }
                 double RgL, RgR;
-                if (g_faceThermoY) {
+                if (g_speciesFaceRecon && Yd_recon != nullptr) {
+                    // proper S2/S3: Y_s を ρ と同じ勾配+limiter (limiter_ro) で face へ再構成。
+                    // positivity は clamp(≥0)+正規化 (ΣY=1) で閉じる (簡易版; 共通 θ_Y は今後)。
+                    double sLr=0.0, sRr=0.0;
+                    for (int s=0;s<nSpecies;s++){
+                        flow_float ylr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic0], Yd_recon[s][ic1],
+                            dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
+                            dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
+                            dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_ro[ic0]);
+                        flow_float yrr = interp_dispatch(conv_scheme, limit_scheme, Yd_recon[s][ic1], Yd_recon[s][ic0],
+                            dYdx_recon[s][ic1], dYdy_recon[s][ic1], dYdz_recon[s][ic1],
+                            dYdx_recon[s][ic0], dYdy_recon[s][ic0], dYdz_recon[s][ic0],
+                            -dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_ro[ic1]);
+                        if (ylr < 0.0) ylr = 0.0; if (yrr < 0.0) yrr = 0.0;
+                        YL[s]=(double)ylr; YR[s]=(double)yrr; sLr+=(double)ylr; sRr+=(double)yrr;
+                    }
+                    const double iLr=1.0/(sLr>1.0e-30?sLr:1.0e-30), iRr=1.0/(sRr>1.0e-30?sRr:1.0e-30);
+                    for (int s=0;s<nSpecies;s++){ YL[s]*=iLr; YR[s]*=iRr; }
+                    RgL = thermo_R_mix(sp, nSpecies, YL);
+                    RgR = thermo_R_mix(sp, nSpecies, YR);
+                } else if (g_faceThermoY) {
                     // S2: 整合 face 組成 Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) を L/R thermo に使い、
                     // ρ_L,P_L (2次) と同じ face 位置の組成に揃える。R_mix も Y_face から作る。
                     double Yf[THERMO_MAX_SPECIES], sf=0.0;
@@ -2803,6 +2828,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             int fthy = 0;
             if (const char* e = getenv("FORGE_FACE_THERMOY"))      fthy = atoi(e);
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_faceThermoY,      &fthy, sizeof(int)));
+            const int sfr = cfg.speciesFaceReconstruction;   // config 由来 (env でない)
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesFaceRecon, &sfr,  sizeof(int)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contact1st,       &c1,   sizeof(int)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactThresh,    &th,   sizeof(flow_float)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactLog,       &clog, sizeof(int)));
@@ -2848,6 +2875,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.gamma,
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
             species_roY_device_ptr(),
+            species_Y_device_ptr(), species_dYdx_device_ptr(), species_dYdy_device_ptr(), species_dYdz_device_ptr(),
             var.c_d["Rmix"],
             cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
 

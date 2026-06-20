@@ -20,6 +20,13 @@ void speciesInit_d(solverConfig& cfg, variables& var);
 // 単成分時は nullptr (混合則 thermo は Y={1} に縮退)。
 flow_float** species_roY_device_ptr();
 
+// face 整合再構成 (speciesFaceReconstruction==1) 用: Y{s}/∇Y{s} の device ポインタ配列と勾配計算。
+flow_float** species_Y_device_ptr();
+flow_float** species_dYdx_device_ptr();
+flow_float** species_dYdy_device_ptr();
+flow_float** species_dYdz_device_ptr();
+void speciesGradient_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+
 // 原始質量分率 Y_s = ρY_s/ρ を全セル (ghost 含む) について更新する。
 void speciesPrimitive_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
