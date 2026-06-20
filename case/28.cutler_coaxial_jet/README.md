@@ -3,6 +3,29 @@
 NASA Langley の超音速同軸ジェット (Cutler 他, AIAA-99-3588, NTRS 20040086859) を、多成分
 thermally-perfect gas + 組成依存入口 BC + 乱流化学種拡散の検証ケースとして構築する。
 
+## 計算 run 一覧
+
+過去の run (run_0001〜0032) の詳細は `## 進捗` を参照。以下は DPLUR×(CPG/TP)×SST 検証 (2026-06-20)。
+
+| run_* | 目的・主要設定差分 | 主要結果・成果物 | 状態 |
+| --- | --- | --- | --- |
+| `run_0033_he_o2_n2_cpg_dplur` | CPG 層流 block-DPLUR 2次, cfl=0.5 (cfl=5 は初手発散) | 残差プラトー (限界周期, NOT CONVERGED)。`res_20000.h5` を SST のリスタート元に使用 | ref |
+| `run_0034_he_o2_n2_tp_dplur`  | TP 層流 block-DPLUR 2次, cfl=0.5 (cfl=5 は step67 発散) | 残差プラトー (NOT CONVERGED)。SST リスタート元 | ref |
+| `run_0035_he_o2_n2_cpg_dplur_cfl2` | CPG 層流 cfl=2 継続 (0033 から) | cfl=2 で安定 (NaN なし)。SST 要請で中断 | 破棄予定 |
+| `run_0036_he_o2_n2_tp_dplur_cfl2`  | TP 層流 cfl=2 継続 (0034 から) | **cfl=2 で発散** (TP は cfl≤0.5 必須)。SST 要請で中断 | 破棄予定 |
+| `run_0037_he_o2_n2_cpg_sst` | **CPG + RANS-SST**, 2次, block-DPLUR, cfl=2 (0033 から k/ω seed) | 安定・残差 2.5 桁低下 (`residual_history.png`)。但し **He コア T≈1007K (非物理)**。`cutler_profiles.png` 核長 x/D≈17 | active |
+| `run_0038_he_o2_n2_tp_sst`  | **TP + RANS-SST**, 2次, block-DPLUR, cfl=0.5 (cfl=2 は step1 発散) | 安定・残差 2.6〜3.3 桁低下 (まだ降下中)。**He コア T≈300K (物理的)**。核長 x/D≈21 | active |
+
+| `run_0039_tp_sst_cfl1` | TP-SST 継続 (0038 から) cfl=1.0 | **安定** (8000步 NaN なし)。残差は 0038 のフロア(rms_ro~3e-7)に張り付き横ばい | active |
+| `run_0040..0044_tp_sst_cfl{2,4,8,1p5,1p2}` | TP-SST 継続 CFL 上限探索 (0038 から) | **全て発散** (cfl2=step50, 4=step1, 8=step9, 1.5=step116, 1.2=step247)。res 出力なし | 破棄予定 |
+
+**TP-SST 継続の CFL 上限 (run_0039〜0044, 発達場 0038 から)**: **cfl=1.0 が安定上限** (1.2 以上は発散)。ただし場は cfl=0.5/20000步 で既に残差フロア(限界周期)に達しており、cfl を上げても収束は速くならない (律速はステップ数でなく**安定性**)。冷流 TP ジェットは剛性が高く、層流時の cfl≤0.5 に対し発達 SST 場でも継続上限は ~1.0。
+
+**結論 (CPG vs TP, DPLUR, SST)**:
+- **TP は剛性が高く cfl=2 で発散** (層流・SST とも), cfl≤0.5 が必要。**CPG は cfl=2 で安定**。
+- **SST 投入で収束が劇的に改善** (層流はプラトー/限界周期 → SST で残差 2.5〜3.3 桁低下)。せん断層の非定常を渦粘性が抑える。
+- **CPG は He ジェットを物理的に表現できない**: 単一 γ/cp (空気値) では He の高 R を表せず、He コア温度が ~1007K に誤熱化する (本来 ~300K の冷流)。**TP は He コア ~300K を正しく再現**。多成分混合では TP が必須であることの明確な実例。
+
 ## 実験条件 (AIAA-99-3588)
 
 | | 中心ジェット | coflow |

@@ -49,6 +49,19 @@ bool speciesImplicitCoupled(solverConfig& cfg, variables& var);
 // 呼び出し前に speciesUpdateOuter で ρY_s^N=ρY_s を取り、呼び出し後に renormalize/primitive すること。
 void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
+// 案C: block-triangular roe↔roY coupling (speciesImplicitCoupling==2 かつ nSpecies>=2) が有効か。
+bool speciesEOSCoupled(solverConfig& cfg, variables& var);
+
+// 案C 予測+移項: species scalar-DPLUR で δ(ρY_s)* を予測 → 組成接空間 z_s=ρδY_s へ射影
+// (Σz_s=0) → 解析 EOS-JVP δp_Y を評価 → flow エネルギー残差 res_roe へクロス作用 A_QY δY を
+// 移項する。flow block 解 (blockDPLURSolve) の直前に呼ぶ。commit はしない (z_s を dq_roY{s}_old に残す)。
+// 呼び出し前に speciesUpdateOuter で ρY_s^N=ρY_s を取ること。
+void speciesEOSCrossPredictInject_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+
+// 案C 最終 commit: flow 密度更新 δρ=ρ-ρ^N も含め ρY_s = ρY_s^N + z_s + Y_s^N δρ (Σδ(ρY_s)=δρ)。
+// flow commit (applyBlockImplicitCorrection) の直後に呼ぶ。呼び出し後 renormalize/primitive すること。
+void speciesEOSFinalCommit_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+
 // 化学種の実現可能性・再正規化: ρY_s>=0 にクランプし Σ_s ρY_s = ρ となるよう再スケール (ΣY_s=1)。
 void speciesRenormalize_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 

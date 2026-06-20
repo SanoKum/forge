@@ -896,6 +896,18 @@ void blockDPLURSolve(StepContext& s)
 }
 
 // 1 回の非線形（擬似時間）更新。定常・dual-time 共有の核。
+// 診断用 freeze フラグ (環境変数ゲート, 既定 off, 構造体非変更)。CFL 律速の切り分け専用。
+//   FORGE_FREEZE_SPECIES=1 : 化学種 ρY_s を更新しない (組成を凍結, flow だけ TP で解く → H1 切り分け)
+//   FORGE_FREEZE_TURB=1    : SST k-ω を更新しない (μ_t は凍結 k,ω から再計算され実質固定 → H3 切り分け)
+static bool freezeSpeciesEnabled() {
+    static const bool v = [](){ const char* e = getenv("FORGE_FREEZE_SPECIES"); return e && atoi(e) != 0; }();
+    return v;
+}
+static bool freezeTurbEnabled() {
+    static const bool v = [](){ const char* e = getenv("FORGE_FREEZE_TURB"); return e && atoi(e) != 0; }();
+    return v;
+}
+
 // 残差 1 回構築 → 局所擬似時間 dτ → 古典 DPLUR 線形解 → Q への commit。
 void implicitNonlinearUpdate(StepContext& s, int inner_index)
 {
@@ -904,6 +916,20 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
         setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
     });
+    const bool freezeSpecies = freezeSpeciesEnabled();
+    const bool freezeTurb    = freezeTurbEnabled();
+    // 案C (speciesImplicitCoupling==2): block-triangular roe↔roY coupling。
+    // flow block 解の前に species 仮更新 δ(ρY)* を予測 → 接空間射影 z → 解析 EOS-JVP δp_Y を
+    // res_roe へ移項し、flow が組成変化 (T,p,h への影響) を同一 block 解の中で見るようにする。
+    // freezeSpecies 時は予測/移項もしない (組成完全凍結)。
+    const bool eosCoupled = speciesEOSCoupled(s.cfg, s.var) && !freezeSpecies;
+    if (eosCoupled) {
+        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+            speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // roY_N = roY
+            speciesEOSCrossPredictInject_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        });
+    }
+
     blockDPLURSolve(s);
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         if (s.cfg.blockDPLUR == 1) {
@@ -917,7 +943,7 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     // enforceAxisSymmetry_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // SST (k-ω) を segregated point-implicit で更新（凍結解除）。残差・消散ヤコビアンは
     // 直前の assembleResidual (ransSource) で確定済み、dt_local は setDT 済み。
-    if (scalarResidualEnabled(s.cfg)) {
+    if (scalarResidualEnabled(s.cfg) && !freezeTurb) {
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
         });
@@ -926,18 +952,27 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     // 化学種 (多成分 TP) の陰解法更新（凍結解除）。res_roY/transport_diag/src_jac は assembleResidual の
     // speciesTransport で確定済み。baseline roY_N=roY を取り、実現可能性再正規化で閉じる。
     // 各 wrapper は nSpecies<2 で no-op (単成分/CPG は不変)。
+    // speciesImplicitCoupling==2: 案C block-triangular。予測 δ(ρY)* は上で済んでいるので、ここでは
+    //   flow 密度更新 δρ を含めた最終 commit ρY_s=ρY_s^N+z_s+Y_s^N δρ を行う。
     // speciesImplicitCoupling==1: 緩和整合 scalar-DPLUR (流れ block と同一 dt/implicitRelax/nStepInner sweep)。
     //                          =0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
-    s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
-        speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // roY_N = roY_M = roY
-        if (speciesImplicitCoupled(s.cfg, s.var)) {
-            speciesImplicitDPLURSolve_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
-        } else {
-            speciesTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
-        }
-        speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
-        speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // Y=roY/ρ (出力/次残差用に同期)
-    });
+    // freezeSpecies 時は化学種更新を完全にスキップ (ρY_s 凍結)。EOS は凍結 ρY/ρ で評価される。
+    if (!freezeSpecies) {
+        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+            if (eosCoupled) {
+                speciesEOSFinalCommit_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+            } else {
+                speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // roY_N = roY_M = roY
+                if (speciesImplicitCoupled(s.cfg, s.var)) {
+                    speciesImplicitDPLURSolve_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+                } else {
+                    speciesTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+                }
+            }
+            speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+            speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // Y=roY/ρ (出力/次残差用に同期)
+        });
+    }
 
     // 液相モーメント (非平衡凝縮) を segregated point-implicit で更新 (Phase 1 はソース=0 の純移流)。
     // res_/transport_diag は assembleResidual の condensationTransport で確定済み。各 wrapper は

@@ -2,6 +2,7 @@
 
 #include "scalarTransport_d.cuh"
 #include "thermo_d.cuh"
+#include "species_eos_coupling_d.cuh"   // 案C EOS クロス応答 (解析 JVP)
 
 #include <algorithm>
 #include <string>
@@ -17,6 +18,13 @@ flow_float** g_roYN_dev = nullptr;   // roYN: species ステップ始点ベー�
 flow_float** g_resroY_dev = nullptr;
 flow_float** g_transdiag_dev = nullptr;
 int          g_nSpecies = 0;
+
+// 案C 用 scratch: dq_roY{s}_old のポインタ配列 (sweep の swap でポインタが変わるため毎回再構築) と
+// セルごとの δp_Y [Pa]。speciesInit_d でなく案C 経路の初回に遅延確保。
+flow_float** g_dqYold_dev = nullptr;   // device 上の flow_float*[nSpecies]
+flow_float*  g_dpY_eos    = nullptr;   // device 上の flow_float[nCells_all]
+int          g_dqYold_cap = 0;         // 確保済みポインタ数
+geom_int     g_dpY_cap    = 0;         // 確保済みセル数
 
 constexpr flow_float kSmall = static_cast<flow_float>(1.0e-30);
 
@@ -300,6 +308,92 @@ __global__ void species_commit_correction_d(
     }
 }
 
+// ===== 案C: block-triangular roe↔roY coupling (EOS クロス応答) =====
+
+// 組成接空間への射影: z_s = δz*_s - Y_s Σ_r δz*_r (Σ_s z_s = 0)。dq[s] を in-place で z_s に書換える。
+// Y_s = ρY_s^N/ρ^N (現組成で補正を分配; 単純等配分でない)。
+__global__ void species_eos_project_tangent_d(
+    geom_int nCells, int nSpecies,
+    flow_float** dq, flow_float** roYN, flow_float* roN)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const double roc = max((double)roN[ic], (double)kSmall);
+        double sumdq = 0.0;
+        for (int s = 0; s < nSpecies; ++s) sumdq += (double)dq[s][ic];
+        for (int s = 0; s < nSpecies; ++s) {
+            const double Ys = (double)roYN[s][ic] / roc;
+            dq[s][ic] = (flow_float)((double)dq[s][ic] - Ys * sumdq);
+        }
+    }
+}
+
+// セルごとの解析 EOS-JVP δp_Y = Σ_s (∂p/∂(ρY_s)) z_s を評価して dpY[ic] に格納。
+// Y は ρY_s^N/ρ^N の正規化, T は現状態, ρ は ρ^N, z は射影済み dq。
+__global__ void species_eos_dp_cell_d(
+    geom_int nCells, int nSpecies, const SpeciesThermo* sp,
+    flow_float** dq, flow_float** roYN, flow_float* roN, flow_float* T,
+    flow_float* dpY)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const double roc = max((double)roN[ic], (double)kSmall);
+        double Y[THERMO_MAX_SPECIES];
+        double z[THERMO_MAX_SPECIES];
+        double ysum = 0.0;
+        for (int s = 0; s < nSpecies; ++s) {
+            double y = (double)roYN[s][ic] / roc;
+            if (y < 0.0) y = 0.0;
+            Y[s] = y; ysum += y;
+            z[s] = (double)dq[s][ic];
+        }
+        const double inv = 1.0 / (ysum > (double)kSmall ? ysum : (double)kSmall);
+        for (int s = 0; s < nSpecies; ++s) Y[s] *= inv;
+        double dp = 0.0, dT = 0.0;
+        species_eos_cross_response(sp, nSpecies, Y, (double)T[ic], roc, z, &dp, &dT);
+        dpY[ic] = (flow_float)dp;
+    }
+}
+
+// クロスエネルギー流束 A_QY δY を res_roe へ移項する。エネルギー流束 mdot·H に対し
+// δH = δp_Y/ρ (保存 ρe・ρ 固定) を上流差分で載せる (対流流束 res_roe_temp と同符号規約)。
+__global__ void species_eos_cross_flux_d(
+    geom_int nNormalPlanes, geom_int* plane_cells,
+    flow_float* massflux, flow_float* dpY, flow_float* roN,
+    flow_float* res_roe)
+{
+    const geom_int ip = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ip < nNormalPlanes) {
+        const geom_int ic0 = plane_cells[2*ip+0];
+        const geom_int ic1 = plane_cells[2*ip+1];
+        const flow_float mdot = massflux[ip];
+        const flow_float dH0  = dpY[ic0] / max(roN[ic0], kSmall);
+        const flow_float dH1  = dpY[ic1] / max(roN[ic1], kSmall);
+        const flow_float cross = 0.5f*(mdot + fabsf(mdot))*dH0
+                               + 0.5f*(mdot - fabsf(mdot))*dH1;
+        atomicAdd(&res_roe[ic0], -cross);
+        atomicAdd(&res_roe[ic1],  cross);
+    }
+}
+
+// 案C 最終 commit: ρY_s = ρY_s^N + z_s + Y_s^N δρ (δρ=ρ-ρ^N)。Σ_s δ(ρY_s)=δρ を満たす。
+__global__ void species_eos_final_commit_d(
+    geom_int nCells, int nSpecies,
+    flow_float** roY, flow_float** roYN, flow_float** dq,
+    flow_float* ro, flow_float* roN)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const flow_float dro = ro[ic] - roN[ic];
+        const flow_float roc = max(roN[ic], kSmall);
+        for (int s = 0; s < nSpecies; ++s) {
+            const flow_float Ys = roYN[s][ic] / roc;
+            const flow_float v  = roYN[s][ic] + dq[s][ic] + Ys * dro;
+            roY[s][ic] = max(v, static_cast<flow_float>(0.0));
+        }
+    }
+}
+
 }  // namespace
 
 void speciesInit_d(solverConfig& cfg, variables& var)
@@ -539,6 +633,94 @@ void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg
             var.c_d["dq_roY"+i+"_old"]);
     }
 
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
+// ===== 案C: block-triangular roe↔roY coupling のオーケストレーション =====
+
+bool speciesEOSCoupled(solverConfig& cfg, variables& var)
+{
+    return cfg.speciesImplicitCoupling == 2 && speciesEnabled(var);
+}
+
+// dq_roY{s}_old のポインタ配列を (再)構築する。sweep の swap でポインタが変わるため毎回呼ぶ。
+static void rebuildDqYoldPtrs(variables& var, int nSpecies)
+{
+    if (g_dqYold_cap < nSpecies) {
+        if (g_dqYold_dev) cudaFree(g_dqYold_dev);
+        gpuErrchk( cudaMalloc((void**)&g_dqYold_dev, nSpecies*sizeof(flow_float*)) );
+        g_dqYold_cap = nSpecies;
+    }
+    std::vector<flow_float*> h(nSpecies);
+    for (int s = 0; s < nSpecies; ++s) h[s] = var.c_d["dq_roY"+std::to_string(s)+"_old"];
+    gpuErrchk( cudaMemcpy(g_dqYold_dev, h.data(), nSpecies*sizeof(flow_float*), cudaMemcpyHostToDevice) );
+}
+
+void speciesEOSCrossPredictInject_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
+{
+    if (!speciesEnabled(var)) return;
+    const int nSpecies = var.nSpeciesRegistered;
+    const size_t bytes = static_cast<size_t>(msh.nCells_all) * sizeof(flow_float);
+
+    // --- species scalar-DPLUR sweep で δ(ρY_s)* を予測 (dq=0 から, commit しない) ---
+    for (int s = 0; s < nSpecies; ++s) {
+        const std::string i = std::to_string(s);
+        cudaMemset(var.c_d["dq_roY"+i],        0, bytes);
+        cudaMemset(var.c_d["dq_roY"+i+"_old"], 0, bytes);
+    }
+    const int nSweep = std::max(1, cfg.nStepInner);
+    for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
+        for (int s = 0; s < nSpecies; ++s) {
+            const std::string i = std::to_string(s);
+            species_dplur_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+                cfg.implicitRelax, var.c_d["dt_local"], msh.nCells, var.c_d["volume"],
+                msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
+                var.p_d["massflux"], var.c_d["roN"],
+                var.c_d["res_roY"+i], var.c_d["transport_diag_Y"+i], var.c_d["src_jac_Y"+i],
+                var.c_d["dq_roY"+i+"_old"], var.c_d["dq_roY"+i]);
+        }
+        for (int s = 0; s < nSpecies; ++s) {
+            const std::string i = std::to_string(s);
+            std::swap(var.c_d["dq_roY"+i], var.c_d["dq_roY"+i+"_old"]);
+        }
+    }
+    // 最終補正 δ(ρY_s)* は dq_roY{s}_old に残る。ポインタ配列を再構築。
+    rebuildDqYoldPtrs(var, nSpecies);
+
+    // --- 接空間射影 z_s = δz*_s - Y_s Σδz* (dq_old を in-place で z に) ---
+    species_eos_project_tangent_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+        msh.nCells, nSpecies, g_dqYold_dev, g_roYN_dev, var.c_d["roN"]);
+
+    // --- 解析 δp_Y をセルごとに評価 ---
+    if (g_dpY_cap < msh.nCells_all) {
+        if (g_dpY_eos) cudaFree(g_dpY_eos);
+        gpuErrchk( cudaMalloc((void**)&g_dpY_eos, bytes) );
+        g_dpY_cap = msh.nCells_all;
+    }
+    cudaMemset(g_dpY_eos, 0, bytes);
+    species_eos_dp_cell_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+        msh.nCells, nSpecies, thermo_species_device_ptr(),
+        g_dqYold_dev, g_roYN_dev, var.c_d["roN"], var.c_d["T"], g_dpY_eos);
+
+    // --- クロスエネルギー流束を res_roe へ移項 (内部 normal plane のみ) ---
+    species_eos_cross_flux_d<<<cuda_cfg.dimGrid_plane, cuda_cfg.dimBlock>>>(
+        msh.nNormalPlanes, msh.map_plane_cells_d,
+        var.p_d["massflux"], g_dpY_eos, var.c_d["roN"], var.c_d["res_roe"]);
+
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
+void speciesEOSFinalCommit_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
+{
+    (void)cfg;
+    if (!speciesEnabled(var)) return;
+    const int nSpecies = var.nSpeciesRegistered;
+    rebuildDqYoldPtrs(var, nSpecies);   // PredictInject 後と同じ z (dq_old) を指す
+    species_eos_final_commit_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+        msh.nCells, nSpecies, g_roY_dev, g_roYN_dev, g_dqYold_dev,
+        var.c_d["ro"], var.c_d["roN"]);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
