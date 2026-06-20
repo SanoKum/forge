@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "convectiveFlux_d.cuh"
 #include "lowMachPrecond_d.cuh"
 #include "speciesTransport_d.cuh"  // species_roY_device_ptr()
@@ -8,6 +9,18 @@
 // 非直交メッシュで大きな p*s を float32 加算する際の桁落ち(metric closure 由来の
 // 偽運動量源)を抑える。詳細: .github/plans/freestream-preserving-flux.md
 __constant__ flow_float d_pRef;
+
+// D2a/D4 診断 (env ゲート, 既定 off = ビット不変): 多成分 TP の contact 混合層 limit-cycle 切り分け。
+//   FORGE_CONTACT_1ST=1 : 面組成センサ s_Y=max_s|Y_sR-Y_sL|/(Y_sR+Y_sL+ε) が g_contactThresh を超える
+//                         内部面で flow(ρ,p,u) の MUSCL 再構成を無効化し1次 (セル値) にする (D2a)。species は不変。
+//   FORGE_CONTACT_LOG=1 : s_Y>g_contactLogThresh の面で L/R 状態を printf (mixed-order/limiter chatter 観察, D4)。
+__device__ int        g_contact1st = 0;
+__device__ flow_float g_contactThresh = 0.05f;
+__device__ int        g_contactLog = 0;
+__device__ flow_float g_contactLogThresh = 0.3f;
+// 連続ブレンド版 (chatter-free): ω_Y=min(1, s_Y/g_contactBlend) で flow 再構成を 2次→1次 へ滑らかに寄せる。
+// 0=off。hard 切替 (FORGE_CONTACT_1ST) と違いセンサ閾値の bang-bang chatter を起こさない (D2a 清浄版/製品候補)。
+__device__ flow_float g_contactBlend = 0.0f;
 
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
@@ -309,6 +322,20 @@ __global__ void SLAU_d
             conv_scheme = -1;
         }
 
+        // D2a/D4 診断: 多成分 TP 内部面の組成センサ s_Y = max_s|Y_sR-Y_sL|/(Y_sR+Y_sL+ε)。
+        flow_float sY_dbg = 0.0;
+        if ((g_contact1st || g_contactLog || g_contactBlend > 0.0) && nSpecies > 1 && roY != nullptr && ic1 < nCells) {
+            const flow_float ro0 = max(ro[ic0], (flow_float)1.0e-30);
+            const flow_float ro1 = max(ro[ic1], (flow_float)1.0e-30);
+            for (int s = 0; s < nSpecies; ++s) {
+                const flow_float yl = roY[s][ic0] / ro0;
+                const flow_float yr = roY[s][ic1] / ro1;
+                sY_dbg = max(sY_dbg, fabsf(yr - yl) / (yr + yl + (flow_float)1.0e-12));
+            }
+            // D2a: 組成勾配が強い面で flow(ρ,p,u) を1次化 (既存 ghost 用 conv_scheme=-1 を流用)。species 流束は不変。
+            if (g_contact1st && sY_dbg > g_contactThresh) conv_scheme = -1;
+        }
+
         //__syncthreads();
 
         geom_float f = fx[ip];
@@ -359,6 +386,16 @@ __global__ void SLAU_d
         flow_float Uy_R  = interp_dispatch(conv_scheme, limit_scheme, Uy[ic1], Uy[ic0], dUydx[ic1], dUydy[ic1], dUydz[ic1], dUydx[ic0], dUydy[ic0], dUydz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uy[ic1]);
         flow_float Uz_R  = interp_dispatch(conv_scheme, limit_scheme, Uz[ic1], Uz[ic0], dUzdx[ic1], dUzdy[ic1], dUzdz[ic1], dUzdx[ic0], dUzdy[ic0], dUzdz[ic0],-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_Uz[ic1]);
         flow_float P_R   = interp_dispatch(conv_scheme, limit_scheme, Ps[ic1], Ps[ic0], dPdx[ic1] , dPdy[ic1] , dPdz[ic1] , dPdx[ic0] , dPdy[ic0] , dPdz[ic0] ,-dcc_x, -dcc_y, -dcc_z, dc1p_x, dc1p_y, dc1p_z, 1.0-f, limiter_P[ic1]);
+
+        // D2a 連続ブレンド (chatter-free): 強組成勾配ほど flow 再構成をセル値(1次)へ滑らかに寄せる。
+        if (g_contactBlend > 0.0 && sY_dbg > 0.0) {
+            const flow_float w = min((flow_float)1.0, sY_dbg / g_contactBlend);
+            if (w > (flow_float)0.0) {
+                const flow_float w1 = (flow_float)1.0 - w;
+                ro_L = w1*ro_L + w*ro[ic0]; Ux_L = w1*Ux_L + w*Ux[ic0]; Uy_L = w1*Uy_L + w*Uy[ic0]; Uz_L = w1*Uz_L + w*Uz[ic0]; P_L = w1*P_L + w*Ps[ic0];
+                ro_R = w1*ro_R + w*ro[ic1]; Ux_R = w1*Ux_R + w*Ux[ic1]; Uy_R = w1*Uy_R + w*Uy[ic1]; Uz_R = w1*Uz_R + w*Uz[ic1]; P_R = w1*P_R + w*Ps[ic1];
+            }
+        }
         // 低マッハ Thornber 再構成補正: L/R 速度ジャンプを z=min(M,1) で縮約し、低マッハで
         // O(1/M) に増大する速度ジャンプ由来の散逸を抑える。lowMachThornber==0 で恒等 (ビット不変)、
         // M>=1 で z=1 (超音速域不変)。圧力 P_L/R・密度 ro_L/R は不変。理論は docs/convection/theory.md。
@@ -448,6 +485,20 @@ __global__ void SLAU_d
 
 //TODO: change c
         flow_float c_hat = 0.5*(sonic[ic0] + sonic[ic1]);
+
+        // D4 診断: 強組成勾配面の L/R 状態を出力 (mixed-order face-state / limiter chatter 観察)。
+        // 一面=一行/step。後処理で ip でフィルタすれば pseudo-step 時系列になる。
+        if (g_contactLog && sY_dbg > g_contactLogThresh) {
+            const flow_float RgL = (nSpecies > 1 && Rmix_cell != nullptr) ? Rmix_cell[ic0] : (flow_float)0.0;
+            const flow_float RgR = (nSpecies > 1 && Rmix_cell != nullptr) ? Rmix_cell[ic1] : (flow_float)0.0;
+            const flow_float TL  = (RgL > 0.0) ? P_L / (ro_L * RgL) : (flow_float)0.0;
+            const flow_float TR  = (RgR > 0.0) ? P_R / (ro_R * RgR) : (flow_float)0.0;
+            printf("CLOG ip=%d ic0=%d ic1=%d sY=%.4f roL=%.5f roR=%.5f PL=%.1f PR=%.1f UyL=%.4f UyR=%.4f limP=%.4f RgL=%.2f RgR=%.2f TL=%.2f TR=%.2f hL=%.6e hR=%.6e cL=%.2f cR=%.2f\n",
+                   (int)ip, (int)ic0, (int)ic1, (double)sY_dbg, (double)ro_L, (double)ro_R,
+                   (double)P_L, (double)P_R, (double)Uy_L, (double)Uy_R, (double)limiter_P[ic0],
+                   (double)RgL, (double)RgR, (double)TL, (double)TR, (double)h_p, (double)h_m,
+                   (double)sonic[ic0], (double)sonic[ic1]);
+        }
 
         flow_float M_p = Vn_p/c_hat;
         flow_float M_m = Vn_m/c_hat;
@@ -2708,6 +2759,25 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     {
         flow_float pRef_h = static_cast<flow_float>(cfg.pRef);
         CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_pRef, &pRef_h, sizeof(flow_float)));
+    }
+
+    // D2a/D4 診断フラグを env から 1 度だけ device へ設定 (既定 off = ビット不変)。
+    {
+        static bool s_init = false;
+        if (!s_init) {
+            int c1 = 0, clog = 0; flow_float th = 0.05f, lth = 0.3f, blend = 0.0f;
+            if (const char* e = getenv("FORGE_CONTACT_1ST"))       c1   = atoi(e);
+            if (const char* e = getenv("FORGE_CONTACT_THRESH"))    th   = (flow_float)atof(e);
+            if (const char* e = getenv("FORGE_CONTACT_LOG"))       clog = atoi(e);
+            if (const char* e = getenv("FORGE_CONTACT_LOG_THRESH"))lth  = (flow_float)atof(e);
+            if (const char* e = getenv("FORGE_CONTACT_BLEND"))     blend= (flow_float)atof(e);
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contact1st,       &c1,   sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactThresh,    &th,   sizeof(flow_float)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactLog,       &clog, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactLogThresh, &lth,  sizeof(flow_float)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_contactBlend,     &blend,sizeof(flow_float)));
+            s_init = true;
+        }
     }
 
     // initialize
