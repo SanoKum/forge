@@ -308,6 +308,13 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'katoLaunder' in 'turbulence' must be 0 or 1.");
         }
 
+        // SST 壁処理 (docs/turbulence §6.5): 0=low-Re 壁解像 (60ν/β₁y², 既定), 1=automatic (y⁺ 非依存)
+        this->wallTreatmentSST = getOptionalValidatedValue<int>(turb, "wallTreatmentSST", 0, "turbulence");
+
+        if (this->wallTreatmentSST < 0 || this->wallTreatmentSST > 1) {
+            throw std::runtime_error("Key 'wallTreatmentSST' in 'turbulence' must be 0 or 1.");
+        }
+
         // 乱流プラントル数 Pr_t (乱流熱伝導 k_t = cp*mu_t/Pr_t)。既定 0.9。
         this->turbulentPrandtl = getOptionalValidatedValue<flow_float>(turb, "turbulentPrandtl", 0.85, "turbulence");
         if (this->turbulentPrandtl <= 0.0) {

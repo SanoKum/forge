@@ -269,6 +269,70 @@ $$
 を使う。
 したがって、壁条件は source よりも先に正しく閉じる必要がある。
 
+### 6.5 automatic (enhanced / y⁺ 非依存) wall treatment
+
+§6.1 の `\omega_w = 60\nu/(\beta_1 y^2)`, `k_w = 0` は **第一セルが粘性低層 (y⁺≲1) に
+ある**ことを前提とした wall-resolved 型である。第一セルがバッファ層 (y⁺≈5〜30) や
+対数層 (y⁺≳30) に落ちると、この `\omega_w` は過大評価になり、壁せん断応力 $\tau_w$ を
+分子勾配 $\mu\,\partial U/\partial n$ から評価する運動量境界も $\tau_w$ を過小評価する。
+
+automatic wall treatment は、粘性低層・バッファ層・対数層を **1 つの定式で滑らかに繋ぎ**、
+第一セルの y⁺ 位置に依存せず妥当な $\tau_w$, $\omega_w$ を与える (Menter, *automatic
+near-wall treatment*)。forge では opt-in (`wallTreatmentSST = 1`) とし、既定 `0` は §6.1 の
+wall-resolved 型を保つ。
+
+#### (a) 摩擦速度 $u_\tau$ — Reichardt 普遍速度則の逆解き
+
+粘性低層・バッファ・対数を 1 式で繋ぐ Reichardt 則を用いる。
+
+$$
+u^+ = \frac{1}{\kappa}\ln(1+\kappa y^+)
+      + 7.8\left[1 - e^{-y^+/11} - \tfrac{y^+}{11}e^{-y^+/3}\right]
+$$
+
+ここで $u^+ = U_t/u_\tau$, $y^+ = u_\tau y/\nu$, $U_t$ は壁接線速度の大きさ
+(no-slip 壁では $U_t = |\mathbf{U}_c - (\mathbf{U}_c\cdot\hat{\mathbf n})\hat{\mathbf n}|$)、
+$y$ は第一セル中心-壁距離 (`wall_dist`)、$\kappa = 0.41$。
+$U_t$, $y$, $\nu$ は既知なので、
+
+$$
+f(u_\tau) = \frac{U_t}{u_\tau} - u^+\!\big(y^+(u_\tau)\big) = 0
+$$
+
+を Newton 法数回 (初期値 $u_\tau^{(0)} = \sqrt{\nu U_t / y}$、粘性則) で解く。
+$y^+\to 0$ では $u^+ = y^+$ (粘性解) に、大 $y^+$ では対数則に自動収束する。
+
+#### (b) $\omega$ 壁面境界 — Menter automatic ブレンド
+
+粘性低層の解析漸近と対数層の値を二乗和の平方根で滑らかに繋ぐ。
+
+$$
+\omega_{vis} = \frac{6\nu}{\beta_1 y^2},
+\qquad
+\omega_{log} = \frac{u_\tau}{\sqrt{\beta^*}\,\kappa\,y},
+\qquad
+\omega_w = \sqrt{\omega_{vis}^2 + \omega_{log}^2}
+$$
+
+粘性低層では $\omega_{vis}$、対数層では $\omega_{log}$ が支配する。§6.1 の係数 60 ではなく
+解析漸近の係数 6 を用いる ($y^+\to0$ の厳密漸近に一致させるため)。$k_w = 0$ と
+ghost 反射 $\omega_g = 2\omega_w - \omega_c$ は §6.1 と同じ。
+
+#### (c) 運動量壁せん断 — 有効壁粘性
+
+第一セルが粗いと分子勾配は $\tau_w$ を過小評価するため、モデル化した壁せん断
+$\boldsymbol{\tau}_w = \rho u_\tau^2\,\hat{\mathbf e}_t$ ($\hat{\mathbf e}_t$ は接線速度方向)
+を運動量残差に直接課す。等価な有効壁粘性は
+
+$$
+\mu_{eff} = \frac{\rho u_\tau^2\, y}{U_t}
+$$
+
+であり、$y^+\to0$ では $u_\tau^2 = \nu U_t/y$ より $\mu_{eff}\to\mu$ (wall-resolved に一致)、
+対数層では $\mu_{eff} > \mu$ (wall function 化) となり、全層で連続に繋がる。
+no-slip 壁では壁せん断は仕事をしない ($\boldsymbol{\tau}_w\cdot\mathbf{U}_w = 0$) ため、
+エネルギー方程式の壁せん断仕事項と熱流束は不変である。
+
 ## 7. 2D / 3D / 軸対称
 
 2D と 3D は、既存ソルバと同様に同一の離散化カーネルを共有する。

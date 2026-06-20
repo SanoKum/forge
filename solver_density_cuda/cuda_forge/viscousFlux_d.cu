@@ -1,4 +1,7 @@
 #include "convectiveFlux_d.cuh"
+#include <cstdlib>
+#include <cstdio>
+#include <vector>
 
 __global__ void viscousFlux_d
 ( 
@@ -224,7 +227,11 @@ __global__ void viscousFlux_wall_d
  //flow_float* sz_b
 
  // 軸対称: 完全発散 (u_r/r 込み) を体積粘性項に使う (内部面と同趣旨)
- int isAxisymmetric, flow_float* axisym_divU
+ int isAxisymmetric, flow_float* axisym_divU,
+
+ // SST automatic wall treatment (docs/turbulence §6.5 (c)):
+ //   wallTreatment==1 で接線せん断を modeled τ_w=ρu_τ² に置換。utau_b は事前算出済み u_τ。
+ int wallTreatment, flow_float* utau_b
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -281,8 +288,9 @@ __global__ void viscousFlux_wall_d
         flow_float divu = (isAxisymmetric == 1) ? axisym_divU[ic] : (dUxdxf+dUydyf+dUzdzf);
 
         // ミラーゴースト (u^g=-u^c) では d∥S なので over-relaxed の delta=sss、k=0。
-        // 法線項: 法線勾配 (u^g-u^c)/dcc に面積 sss (成分 s** ではなく)。
-        // 転置項: セル中心勾配にフル S を内積。発散項のみ成分 s**。
+        // 法線項: 法線勾配 (u^g-u^c)/dcc に面積 sss。転置項: セル中心勾配にフル S。発散項: 成分 s**。
+        // 注: dcc フロア等で物理 flux をマスクしない方針 (退化 dcc はメッシュ/境界クロージャの欠陥であり、
+        // 直すべきはメッシュとゴーストレス弱形式。診断は viscousWallDiag_d で別途行う)。
         flow_float tau_x = mu_total*((Ux[ig] - Ux[ic])/dcc)*sss;
         tau_x += mu_total*(dUxdxf*sxx +dUydxf*syy +dUzdxf*szz);
         tau_x += -mu_total*2.0/3.0*(divu)*sxx;
@@ -295,8 +303,34 @@ __global__ void viscousFlux_wall_d
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
-        // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。断熱壁では
-        // ミラーゴーストで Ts[ig]=Ts[ic] のため寄与 0、isothermal 壁では有効。
+        // SST automatic wall treatment (docs/turbulence §6.5 (c)): 粗メッシュで分子勾配が τ_w を
+        // 過小評価するため、接線せん断を modeled τ_w=ρu_τ² (有効壁粘性) に置換する。u_τ は壁関数で
+        // 事前算出済み (ransWallFunction)。法線は単位法線 n、接線方向 ê_t はセル接線速度から取る。
+        // y⁺→0 では u_τ²=νU_t/y より分子勾配に縮退、対数層では壁関数化し、全層で連続。
+        if (wallTreatment == 1) {
+            const flow_float n_x = sxx / sss;
+            const flow_float n_y = syy / sss;
+            const flow_float n_z = szz / sss;
+            const flow_float uc = Ux[ic];
+            const flow_float vc = Uy[ic];
+            const flow_float wc = Uz[ic];
+            const flow_float un = uc*n_x + vc*n_y + wc*n_z;
+            const flow_float utx = uc - un*n_x;
+            const flow_float uty = vc - un*n_y;
+            const flow_float utz = wc - un*n_z;
+            const flow_float Ut = sqrt(utx*utx + uty*uty + utz*utz);
+            const flow_float utau_w = utau_b[ib];
+            const flow_float tauw = ro[ic]*utau_w*utau_w;   // modeled 壁せん断応力の大きさ
+            flow_float etx = 0.0, ety = 0.0, etz = 0.0;
+            if (Ut > 1.0e-12) { etx = utx/Ut; ety = uty/Ut; etz = utz/Ut; }
+            // 流れを減速させる向き (-ê_t) に τ_w·面積 を課す。法線粘性・体積項は落とす (壁関数)。
+            tau_x = -tauw*etx*sss;
+            tau_y = -tauw*ety*sss;
+            tau_z = -tauw*etz*sss;
+        }
+
+        // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。断熱壁ではミラーゴーストで
+        // Ts[ig]=Ts[ic] のため寄与 0、isothermal 壁では有効。
         flow_float tc_w = thermCond[ic] + cp[ic]*v_turb/Prt;
         flow_float heatflux = tc_w*((Ts[ig]- Ts[ic])/dcc)*sss;
 
@@ -327,7 +361,11 @@ __global__ void viscousFlux_wall_d
         flow_float twall = sqrt(tau_x*tau_x + tau_y*tau_y + tau_z*tau_z)/sss;
         flow_float utau = sqrt(twall/ro[ic]);
 
-        ypls_b[ib] = ro[ic]*utau*dcc/mu_total;
+        // mode 1 では壁関数カーネル (ransWallFunction) が y⁺=u_τ y/ν_lam を既に格納済み。
+        // ここで dcc/mu_total ベースの値で上書きすると定義が不整合になるため mode 0 のみ更新する。
+        if (wallTreatment != 1) {
+            ypls_b[ib] = ro[ic]*utau*dcc/mu_total;
+        }
         //if (ib == 1) {
         //    printf("ib = %d\n", ib);
         //    printf("ip = %d\n", ip);
@@ -341,8 +379,86 @@ __global__ void viscousFlux_wall_d
     __syncthreads();
 }
 
+// ---- 壁粘性 flux の距離診断 (env FORGE_VISC_WALL_DIAG=1 で 1 回だけ実行) ----
+// 壁半割面ごとに、signed wall distance dn=(pc-cc)·n、ミラーゴースト距離 dcc=|cc_ghost-cc|、
+// 接線オフセット |(pc-cc)-dn n| を書き出す。node-centered で dcc≈0 (壁ノードが壁面上) に
+// 退化しているか、cell-centered で dcc≈2dn が成立しているかを切り分けるための診断。
+__global__ void viscousWallDiag_d
+(
+ geom_int nb,
+ geom_int* bplane_plane, geom_int* bplane_cell, geom_int* bplane_cell_ghst,
+ geom_float* ccx, geom_float* ccy, geom_float* ccz,
+ geom_float* pcx, geom_float* pcy, geom_float* pcz,
+ geom_float* sx , geom_float* sy , geom_float* sz, geom_float* ss,
+ flow_float* dn_o, flow_float* dcc_o, flow_float* tang_o
+)
+{
+    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ib < nb) {
+        geom_int ip = bplane_plane[ib];
+        geom_int ic = bplane_cell[ib];
+        geom_int ig = bplane_cell_ghst[ib];
+        flow_float nx = sx[ip]/ss[ip], ny = sy[ip]/ss[ip], nz = sz[ip]/ss[ip];
+        flow_float dx = pcx[ip]-ccx[ic], dy = pcy[ip]-ccy[ic], dz = pcz[ip]-ccz[ic];
+        flow_float dn = dx*nx + dy*ny + dz*nz;
+        flow_float tx = dx - dn*nx, ty = dy - dn*ny, tz = dz - dn*nz;
+        flow_float gx = ccx[ig]-ccx[ic], gy = ccy[ig]-ccy[ic], gz = ccz[ig]-ccz[ic];
+        dn_o[ib]   = dn;
+        dcc_o[ib]  = sqrt(gx*gx + gy*gy + gz*gz);
+        tang_o[ib] = sqrt(tx*tx + ty*ty + tz*tz);
+    }
+}
+
 void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_ns)
 {
+    // 距離診断 (1 回限り)。FORGE_VISC_WALL_DIAG=1 のとき壁半割面の dn/dcc/tangential を集計表示。
+    static bool diag_done = false;
+    if (!diag_done && getenv("FORGE_VISC_WALL_DIAG") && atoi(getenv("FORGE_VISC_WALL_DIAG")) != 0) {
+        diag_done = true;
+        for (auto& bc : msh.bconds) {
+            if (!(bc.bcondKind == "wall" || bc.bcondKind == "wall_isothermal")) continue;
+            geom_int nbf = (geom_int)bc.iPlanes.size();
+            if (nbf == 0) { printf("[viscWallDiag] bcond '%s' (physID %d): node 壁 plane なし\n",
+                                    bc.bcondKind.c_str(), bc.physID); continue; }
+            flow_float *dn_d, *dcc_d, *tang_d;
+            gpuErrchk(cudaMalloc(&dn_d , sizeof(flow_float)*nbf));
+            gpuErrchk(cudaMalloc(&dcc_d, sizeof(flow_float)*nbf));
+            gpuErrchk(cudaMalloc(&tang_d,sizeof(flow_float)*nbf));
+            viscousWallDiag_d<<<cuda_cfg.dimGrid_bplane, cuda_cfg.dimBlock>>>(
+                nbf, bc.map_bplane_plane_d, bc.map_bplane_cell_d, bc.map_bplane_cell_ghst_d,
+                var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+                var.p_d["pcx"], var.p_d["pcy"], var.p_d["pcz"],
+                var.p_d["sx"], var.p_d["sy"], var.p_d["sz"], var.p_d["ss"],
+                dn_d, dcc_d, tang_d);
+            gpuErrchk(cudaDeviceSynchronize());
+            std::vector<flow_float> dn(nbf), dcc(nbf), tang(nbf);
+            gpuErrchk(cudaMemcpy(dn.data() , dn_d , sizeof(flow_float)*nbf, cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(dcc.data(), dcc_d, sizeof(flow_float)*nbf, cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMemcpy(tang.data(),tang_d,sizeof(flow_float)*nbf, cudaMemcpyDeviceToHost));
+            // 統計
+            double dn_mn=1e30,dn_mx=-1e30,dn_amn=1e30, dcc_mn=1e30,dcc_mx=-1e30;
+            double tang_mx=-1e30, ratio_mn=1e30, ratio_mx=-1e30; int nFlip=0;
+            for (geom_int i=0;i<nbf;i++){
+                double adn=fabs(dn[i]);
+                dn_mn=fmin(dn_mn,dn[i]); dn_mx=fmax(dn_mx,dn[i]); dn_amn=fmin(dn_amn,adn);
+                dcc_mn=fmin(dcc_mn,dcc[i]); dcc_mx=fmax(dcc_mx,dcc[i]);
+                tang_mx=fmax(tang_mx,tang[i]);
+                double r = dcc[i]/fmax(2.0*adn,1e-30);
+                ratio_mn=fmin(ratio_mn,r); ratio_mx=fmax(ratio_mx,r);
+                if (dn[i]<0) nFlip++;
+            }
+            printf("[viscWallDiag] bcond '%s' physID %d nFaces=%ld disc=%s\n",
+                   bc.bcondKind.c_str(), bc.physID, (long)nbf, cfg.discretization.c_str());
+            printf("  dn (signed): min=%.3e max=%.3e | |dn| min=%.3e | dn<0 count=%d\n",
+                   dn_mn, dn_mx, dn_amn, nFlip);
+            printf("  dcc=|cc_ghost-cc|: min=%.3e max=%.3e\n", dcc_mn, dcc_mx);
+            printf("  dcc/(2|dn|): min=%.3e max=%.3e (cell では ~1, node 退化なら ~0/大ばらつき)\n",
+                   ratio_mn, ratio_mx);
+            printf("  tangential offset |(pc-cc)-dn n|: max=%.3e (node 壁ノードでは支配的のはず)\n", tang_mx);
+            cudaFree(dn_d); cudaFree(dcc_d); cudaFree(tang_d);
+        }
+    }
+
     // ------------------------------
     // *** sum over normal planes ***
     // ------------------------------
@@ -445,7 +561,11 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 //bc.bvar_d["sx"],
                 //bc.bvar_d["sy"],
                 //bc.bvar_d["sz"]
-                cfg.isAxisymmetric, var.c_d["axisym_divU"]
+                cfg.isAxisymmetric, var.c_d["axisym_divU"],
+
+                // SST automatic wall treatment: modeled τ_w 用の flag と u_τ (ransWallFunction で算出済み)
+                (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) ? cfg.wallTreatmentSST : 0,
+                bc.bvar_d["utau"]
             ) ;
         }
     }

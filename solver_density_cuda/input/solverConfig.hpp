@@ -106,6 +106,7 @@ public:
     int scalarDiffusion = 1; // 0:advection-only 1:advection+diffusion
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (docs/turbulence §7.5)
+    int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (docs/turbulence §6.5)
     flow_float turbulentPrandtl = 0.85; // 乱流プラントル数 Pr_t。乱流熱伝導 k_t=cp*mu_t/Pr_t に使用 (既定 0.85)
 
     int isCompressible;

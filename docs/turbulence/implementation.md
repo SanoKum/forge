@@ -120,6 +120,31 @@ ghost セル側へ反射して入れる。
 `gatherResidualSnapshot` は現状 5 方程式固定なので、初回段階では既存の
 主流れ residual を壊さないことを優先し、必要なら scalar residual は別ログで扱う。
 
+### 3.7 automatic (enhanced / y⁺ 非依存) wall treatment
+
+理論は [`theory.md`](theory.md) §6.5。`wallTreatmentSST`
+(`solverConfig` の `turbulence.wallTreatmentSST`, 0:wall-resolved[既定] / 1:automatic)で
+opt-in する。既定 0 では §6.1 の wall-resolved 型 (`60ν/β₁y²`) を保ち、既存結果は不変。
+
+責務分担とソース対応:
+
+- **`ransWallFunction_d.*` (新設)**: 壁面ごとに Reichardt 則の逆解き (Newton 数回) で
+	摩擦速度 $u_\tau$ を解き、`bc.bvar_d` の `utau` / `ypls` / `twall_*` を埋める。
+	$u_\tau$ は速度・`wall_dist`・$\nu$ のみで決まるため勾配計算前に評価でき、後段の
+	$\omega$ 壁 BC と運動量壁せん断の両方で共有する。`applyRansScalarBoundaries`
+	(=`ransBoundary_d_wrapper`) の壁ループ直前で `wallTreatmentSST==1` 時のみ呼ぶ。
+- **`ransBoundary_d.*` の wall scalar カーネル**: `wallTreatmentSST` と `utau` を引数で受け、
+	mode 1 で $\omega_w = \sqrt{\omega_{vis}^2 + \omega_{log}^2}$
+	($\omega_{vis} = 6\nu/\beta_1 y^2$, $\omega_{log} = u_\tau/(\sqrt{\beta^*}\kappa y)$)、
+	mode 0 で現行 $60\nu/\beta_1 y^2$。`k_w = 0` と ghost 反射は共通。
+- **`viscousFlux_d.*` の `viscousFlux_wall_d`**: `wallTreatmentSST` と `utau` を受け、
+	mode 1 で接線せん断を modeled $\boldsymbol{\tau}_w = \rho u_\tau^2 \hat{\mathbf e}_t$ に
+	置換 (法線粘性項・熱流束は不変、no-slip なので壁せん断仕事 0)。`twall_*_b` / `ypls_b` は
+	この modeled 値で上書き出力。mode 0 は現行の分子勾配式。
+
+`utau` は `wall` / `wall_isothermal` の `bvar` 初期化リストに追加する
+(`ypls`, `twall_x/y/z` は既存)。
+
 ## 4. Generic Scalar Transport 基盤
 
 `k`, `omega` の輸送は、将来の passive scalar や species でも再利用できる

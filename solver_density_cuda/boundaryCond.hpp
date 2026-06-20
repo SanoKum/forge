@@ -50,9 +50,10 @@ struct bcondConfFormat{
               {"twall_x",0},
               {"twall_y",0},
               {"twall_z",0},
+              {"utau",0},
           }},
 
-          {"wall_isothermal", { 
+          {"wall_isothermal", {
               {"ro"  ,0},
               {"roUx",0},
               {"roUy",0},
@@ -71,10 +72,11 @@ struct bcondConfFormat{
               {"twall_x",0},
               {"twall_y",0},
               {"twall_z",0},
+              {"utau",0},
 
           }},
 
-          {"inlet_uniformVelocity", { 
+          {"inlet_uniformVelocity", {
               {"ro"  ,1},
               {"roUx",0},
               {"roUy",0},
