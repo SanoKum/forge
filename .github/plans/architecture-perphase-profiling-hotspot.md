@@ -59,7 +59,7 @@
 
 ### Phase B: 打ち手 (確定した overhead の大きい順に、各々 A/B)
 - **setDT**: ① `dtControl==1` の dt 適応と `max cfl` 表示を毎 step ではなく N step ごとにする
-  (`cflReportInterval` 等, 既定で従来挙動)。② max を device に置き必要時のみ host 読み。
+  (`monitorInterval` 等, 既定で従来挙動)。② max を device に置き必要時のみ host 読み。
   ③ 定常経路の 2 回呼び出しを 1 回へ統合できるか確認。
 - **小カーネル融合 / launch 削減**: ncu の per-step 列で 1-3µs の極小カーネル (fill_limiter×5, BC 群) を
   融合候補として評価。
@@ -127,22 +127,27 @@
   - **Phase B の優先度**: ① SetDt の host 読み出し除去 (低リスク, ~0.4ms/step 見込み) → ② CUDA Graph (高リスク高リターン,
     分散 overhead ~1.3ms/step の大半) → ③ 小カーネル融合 (BC/grad)。各々 A/B 実測で採否。
 - 2026-06-21: **Phase B-1 完了 (SetDt host 読み出し除去)**。
-  - **実装**: `solverConfig` に `cflReportInterval` (既定 1) 追加。`setDT_d_wrapper` に `bool reportCfl=true` を追加し、
-    `false` 時は `thrust::max_element` (D2H+同期)・dt 適応・printf を丸ごとスキップ (host 同期ゼロ)。中間
-    `cudaDeviceSynchronize`×2 と末尾の冗長 sync も撤去 (同一 default stream で順序保証)。`main.cpp` の**定常 implicit
-    経路の 2 箇所のみ** (`implicitNonlinearUpdate` と `advanceImplicitSteady` 末尾) で `reportCfl=(unsteady!=0)||(iStep%interval==0)`
-    を渡す。explicit (`advanceExplicitRK`)・dual-time・初期化は既定 true で必ず report。
-  - **重要バグの修正**: 初版で explicit と steady の関数末尾が酷似していたため throttle が誤って `advanceExplicitRK`
-    側に入っていた (explicit は unsteady で cfg.dt を物理時間前進に使うため致命的)。正しい steady 末尾へ移し、
-    両 throttle に **`unsteady!=0 → 常に true` ガード** を追加 (将来 unsteady 経路で再利用されても間引かない防御)。
-  - **設計根拠**: 定常 (unsteady=0) では `dt_local = cfl_pseudo·dx/λ` で cfg.dt が打ち消され、max cfl の host 読み出しは
-    診断のみで解に不影響 → 安全に間引ける。
+  - **実装 (最終形)**: `setDT_d_wrapper` の制御を **`adaptDt` と `printCfl` の 2 引数に分離** (「dt を変える」と「出力する」を
+    束ねない)。host 読み出し (`thrust::max_element` の D2H+同期) は `adaptDt&&dtControl==1 || printCfl` のときだけ発生。
+    中間 `cudaDeviceSynchronize`×2 + 末尾の冗長 sync を撤去 (同一 default stream で順序保証)。
+  - **出力間隔の統一**: `residualFlushInterval`/`cflReportInterval` を廃し **`monitorInterval` に統合** (残差 CSV flush と
+    `max cfl`/`dt` console 出力の共通頻度。既定 1=従来)。dt 適応はこれと**独立**。
+  - **dt 適応の方針 (経路別)**:
+    - 定常 implicit: `dt_local=cfl_pseudo·dx/λ` で cfg.dt が打ち消され dt 適応は診断のみ (解に不影響) → adaptDt も printCfl も
+      `monitorInterval` ごと。
+    - explicit: cfg.dt が時間前進に効くため **dt 適応は毎ステップ** (`adaptDt=true`)、表示のみ間引く。
+    - dual-time: pseudo/physical とも CFL に基づき時間を変えうる設計なので **dt 適応は毎サブ反復** (`adaptDt=true`、
+      dtControl==1 で cfg.dt 適応)、表示のみ間引く。**※当初 dual-time を「dtControl=0 固定で適応不要」と誤って adaptDt=false に
+      していたのを修正** (pseudo の CFL ベース dt_local は setCFL カーネルが無条件に毎回計算するため元から有効)。
+  - **重要バグの修正**: 初版で explicit と steady の関数末尾が酷似し throttle が誤って `advanceExplicitRK` 側へ入っていた
+    (explicit は unsteady で cfg.dt を物理時間前進に使うため致命的) → 正しい steady 末尾へ移設。
   - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
     - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
       Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。
     - 正しさ: residual CSV の差は 2000 step の solver 非決定性ノイズ床 (rms_roOmega で同一バイナリ 2 回 0.13–0.17)
       と同等 (interval=50 vs interval=1 = 0.18) → 間引きは非決定性以上の差を生まない。
-    - **非定常安全性 (実証)**: explicit unsteady (timeIntegration=1, unsteady=1) + cflReportInterval=50 で 10 step 実行 →
-      `max cfl` print=11 (毎ステップ+init)、dt 毎ステップ適応。**間引かれないことを確認**。
+    - **非定常安全性 (実証)**: explicit unsteady (timeIntegration=1, unsteady=1) で `monitorInterval` 1 vs 50 を比較 →
+      **残差 CSV 最大相対差 4e-5 ≈ 0** (dt は毎ステップ適応され結果不変)、`max cfl` print は 11 vs 2 (表示のみ間引き)。
+      dt 適応と出力の分離が正しく効くことを確認。
   - **残課題**: Phase B-2 (CUDA Graph で分散 overhead ~1.3ms/step を一括回収) / B-3 (小カーネル融合) は未着手。
     定常末尾 setDt の冗長な setCFL カーネル再計算 (~80µs/step) も削減余地 (別途)。

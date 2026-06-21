@@ -241,13 +241,16 @@ GPU 計算中でも、出力前には必要なセル変数を `copyVariables_cel
 
 `residual_history.csv` への残差 RMS 出力は `main.cpp` の `ResidualCsvLogger` が担い、reduction 本体は
 `cuda_forge/residualMonitor_d.cu` にある。GPU 経路では残差二乗和を **fused 1 カーネルで全保存量一括に取り、
-device バッファに常駐**させる (`DeviceResidualReducer` / `residualSumSq_d`)。host へは `residualFlushInterval`
+device バッファに常駐**させる (`DeviceResidualReducer` / `residualSumSq_d`)。host へは `monitorInterval`
 ステップごとに 1 回だけまとめて D2H 転送し CSV へ書き出す。これにより毎ステップの値は保ったまま、
 変数ごとの `thrust::transform_reduce` (host スカラ返り = `cudaStreamSynchronize`) による per-step 同期を除く。
+`monitorInterval` は `max cfl`/`dt` の console 出力頻度も兼ねる (モニタリング出力の共通間隔)。
+dt 適応 (`setDT` の `thrust::max_element`→`cfg.dt`) はこれとは独立に制御する (定常では間引き可・解に不影響、
+explicit/dual-time は必要に応じ毎ステップ適応; 表示のみ `monitorInterval` で間引く)。
 
 > 背景: 定常 implicit (timeIntegration=11) は 1 step の GPU 実働が wall の約半分しかなく、残り半分は
 > launch/host 同期だった。毎 step の残差 RMS と detectNaN がその主因。`detectNaN` も fused な device int
-> フラグ化し、`detectNaNInterval` ステップごとにのみフラグを host 読み出しする。`residualFlushInterval` /
+> フラグ化し、`detectNaNInterval` ステップごとにのみフラグを host 読み出しする。`monitorInterval` /
 > `detectNaNInterval` の既定は 1 で従来挙動。設計詳細は
 > [`.github/plans/architecture-residual-monitor-async.md`](../../.github/plans/architecture-residual-monitor-async.md)。
 

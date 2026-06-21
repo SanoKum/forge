@@ -84,7 +84,11 @@ __global__ void setCFL_cell_d
  //flow_float* cfl_pseudo_pln 
 );
 
-// reportCfl=true (既定): `max cfl` を host 読み出し (thrust::max_element)・dt 適応 (dtControl==1)・表示する。
-// false: それらを丸ごとスキップ (per-step host 同期を避ける)。定常 implicit では dt_local が cfg.dt に依らないため
-// 解に不影響。explicit / dual-time では cfg.dt が効くので必ず true で呼ぶこと。
-void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , bool reportCfl = true);
+// dt 適応と console 出力は独立に制御する (両者を束ねない)。
+//   adaptDt : dtControl==1 のとき cfg.dt を max cfl から適応する (時間精度に効く)。explicit unsteady では毎ステップ要。
+//             定常 implicit では dt_local=cfl_pseudo·dx/λ で cfg.dt が打ち消され不影響なので間引いてよい。
+//   printCfl: `max cfl`/`dt` を console に表示する (診断のみ)。
+// host 読み出し (thrust::max_element の D2H+同期) は adaptDt||printCfl のときだけ発生する。両 false なら同期ゼロ。
+// 既定は両 true (従来挙動)。
+void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var ,
+                     bool adaptDt = true , bool printCfl = true);

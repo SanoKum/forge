@@ -258,11 +258,10 @@ void solverConfig::read(std::string fname)
         this->detectNaNInterval = getOptionalValidatedValue<int>(deltaT, "detectNaNInterval", 1, "time.deltaT");
         if (this->detectNaNInterval < 1) this->detectNaNInterval = 1;
         // 残差 RMS の device バッファ flush 間隔 [step]: 既定 1 (毎ステップ書き出し=従来挙動)。
-        this->residualFlushInterval = getOptionalValidatedValue<int>(deltaT, "residualFlushInterval", 1, "time.deltaT");
-        if (this->residualFlushInterval < 1) this->residualFlushInterval = 1;
-        // 定常 implicit の max cfl 報告/dt 適応間隔 [step]: 既定 1 (毎ステップ=従来)。大で per-step 同期を間引く。
-        this->cflReportInterval = getOptionalValidatedValue<int>(deltaT, "cflReportInterval", 1, "time.deltaT");
-        if (this->cflReportInterval < 1) this->cflReportInterval = 1;
+        // モニタリング出力 (残差 CSV flush + max cfl/dt console 出力) の共通間隔 [step]: 既定 1 (毎ステップ=従来)。
+        // 大で per-step の host 同期 (残差 D2H・max cfl 読み出し) をまとめて間引く。dt 適応とは独立。
+        this->monitorInterval = getOptionalValidatedValue<int>(deltaT, "monitorInterval", 1, "time.deltaT");
+        if (this->monitorInterval < 1) this->monitorInterval = 1;
         // 低マッハ前処理 (Weiss-Smith): 既定 0 で従来挙動 (ビット不変)。
         this->lowMachPrecond = getOptionalValidatedValue<int>(deltaT, "lowMachPrecond", 0, "time.deltaT");
         this->precondEps = getOptionalValidatedValue<double>(deltaT, "precondEps", 0.15, "time.deltaT");

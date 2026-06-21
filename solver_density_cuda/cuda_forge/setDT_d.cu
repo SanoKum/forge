@@ -223,7 +223,7 @@ __global__ void setDTlocal_precond_scale_d
 }
 
 
-void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , bool reportCfl)
+void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , bool adaptDt , bool printCfl)
 {
     setCFL_pln_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
         cfg.dt,
@@ -329,14 +329,16 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         gpuErrchk( cudaDeviceSynchronize() );
     }
 
-    // max cfl の host 読み出し (thrust::max_element は D2H + 同期) と dt 適応・表示は reportCfl 時のみ。
-    // 定常 implicit では dt_local=cfl_pseudo·dx/λ で cfg.dt が打ち消されるため、これらは診断のみ (解に不影響)。
-    // スキップ時は host 同期が一切発生しない (後続カーネルは同一 stream で順序保証)。
-    if (reportCfl) {
+    // max cfl の host 読み出し (thrust::max_element は D2H + 同期) は dt 適応か表示が要るときだけ行う。
+    // dt 適応 (dtControl==1) と console 表示は独立。両方不要なら host 同期は一切発生しない
+    // (後続カーネルは同一 default stream で順序保証)。定常 implicit では dt_local=cfl_pseudo·dx/λ で
+    // cfg.dt が打ち消されるため、adaptDt を間引いても解に不影響。
+    const bool needHostRead = (adaptDt && cfg.dtControl == 1) || printCfl;
+    if (needHostRead) {
         thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(var.c_d["cfl"]);
         const flow_float cfl_max = *(thrust::max_element(d_ptr, d_ptr + msh.nCells));
 
-        if (cfg.dtControl == 1) { // cfl based time control
+        if (adaptDt && cfg.dtControl == 1) { // cfl based time control
             flow_float cfl_target = cfg.cfl;
             cfg.dt = cfg.dt*cfl_target/cfl_max;
 
@@ -344,8 +346,10 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
             cfg.dt = min(cfg.dt, cfg.dt_max);
         }
 
-        printf("  max cfl : %f    \n", cfl_max);
-        printf("  dt      : %e [s]\n", cfg.dt);
+        if (printCfl) {
+            printf("  max cfl : %f    \n", cfl_max);
+            printf("  dt      : %e [s]\n", cfg.dt);
+        }
     }
 
     gpuErrchk( cudaPeekAtLastError() );

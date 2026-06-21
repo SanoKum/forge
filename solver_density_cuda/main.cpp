@@ -191,7 +191,7 @@ struct ImplicitDiagSnapshot {
 };
 
 // 残差 RMS を CSV (residual_history.csv) へ書き出すロガー。
-// GPU 経路 (cfg.gpu==1) では残差二乗和を device 常駐バッファに async 集約し、residualFlushInterval
+// GPU 経路 (cfg.gpu==1) では残差二乗和を device 常駐バッファに async 集約し、monitorInterval
 // ステップごとに 1 回だけ D2H 転送してまとめて書き出す (per-step host 同期を避ける)。CPU 経路は
 // 従来通り即時計算・即時書き出し。CSV の列・行構成・値 (毎ステップ・3 行/step・rms_dq_*=0) は不変。
 // 設計: .github/plans/architecture-residual-monitor-async.md
@@ -233,7 +233,7 @@ public:
                     "ResidualCsvLogger: device residual arrays (res_*) do not match active equations; "
                     "found " + std::to_string(reducer_.nVar) + " of " + std::to_string(nVar_));
             }
-            capacity_ = std::max(1, cfg.residualFlushInterval);
+            capacity_ = std::max(1, cfg.monitorInterval);
             // 1 step に複数回 gather する経路 (RK/dual-time) の余裕として margin を足す。
             buf_capacity_ = capacity_ + kIntraStepMargin;
             d_rms_buf_ = allocDeviceRmsBuffer(buf_capacity_, reducer_.nVar);
@@ -1042,12 +1042,14 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
 {
     assembleResidual(s, 1);
     logResidualSnapshot(s, inner_index);
-    // 定常 (unsteady==0) では cfg.dt が dt_local に効かない (dt_local=cfl_pseudo·dx/λ) ため、max cfl の
-    // host 読み出し/dt 適応/表示は cflReportInterval ごとでよい (per-step 同期回避)。
-    // unsteady では cfg.dt が物理時間前進に効くので必ず毎ステップ report する (間引かない)。
-    const bool reportCfl = (s.cfg.unsteady != 0) || (s.iStep % s.cfg.cflReportInterval == 0);
+    // 定常 (unsteady==0) implicit では dt_local=cfl_pseudo·dx/λ で cfg.dt が打ち消され、dt 適応も表示も
+    // monitorInterval ごとで足りる (per-step host 同期を回避)。dt 適応と表示は同一 (monitor 時のみ host 読み)。
+    // unsteady でここに来る経路は無い (implicit unsteady は dual-time) が、防御的に毎ステップ adapt にする。
+    const bool onMonitor = (s.iStep % s.cfg.monitorInterval == 0);
+    const bool adaptDt  = (s.cfg.unsteady != 0) || onMonitor;
+    const bool printCfl = onMonitor;
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, reportCfl);
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, adaptDt, printCfl);
     });
     const bool freezeSpecies = freezeSpeciesEnabled();
     const bool freezeTurb    = freezeTurbEnabled();
@@ -1155,9 +1157,10 @@ void advanceExplicitRK(StepContext& s)
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
     });
-    // explicit (陽解法) は unsteady で cfg.dt を物理時間前進に使うため、必ず report する (間引かない)。
+    // explicit (陽解法) は cfg.dt を時間前進に使うため dt 適応は毎ステップ行う。表示のみ monitorInterval で間引く。
+    const bool printCflExp = (s.iStep % s.cfg.monitorInterval == 0);
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, /*adaptDt=*/true, /*printCfl=*/printCflExp);
     });
     s.residual_logger.logOuterEnd(s.iStep);
     if (s.cfg.unsteady == 1) {
@@ -1177,10 +1180,12 @@ void advanceImplicitSteady(StepContext& s)
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
     });
-    // 定常 (unsteady==0) のみ cflReportInterval で間引く。unsteady ガードは defense-in-depth。
-    const bool reportCflEnd = (s.cfg.unsteady != 0) || (s.iStep % s.cfg.cflReportInterval == 0);
+    // 定常末尾も同様: dt 適応・表示とも monitorInterval ごと (host 読み出しを間引く)。
+    const bool onMonitorEnd = (s.iStep % s.cfg.monitorInterval == 0);
+    const bool adaptDtEnd  = (s.cfg.unsteady != 0) || onMonitorEnd;
+    const bool printCflEnd = onMonitorEnd;
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, reportCflEnd);
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, adaptDtEnd, printCflEnd);
     });
     s.residual_logger.logOuterEnd(s.iStep);
 }
@@ -1223,8 +1228,12 @@ void advanceImplicitDualTime(StepContext& s)
         // 残差に物理時間 BDF 項を加える: res* = res - (V/Δt)(a Q - b Q^n + c Q^{n-1})。
         addUnsteadyTimeTerm_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var, a, b, c, include_scalar);
         logResidualSnapshot(s, m);
+        // dual-time も pseudo/physical の時間を CFL に基づき変えうるため、dt 適応は毎サブ反復で行う
+        // (adaptDt=true → dtControl==1 のとき cfg.dt を適応; host 読み出しもそのとき発生)。表示のみ
+        // monitorInterval で間引く。
+        const bool printCflDt = (s.iStep % s.cfg.monitorInterval == 0);
         s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-            setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+            setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, /*adaptDt=*/true, /*printCfl=*/printCflDt);
         });
         blockDPLURSolve(s);
         // dual-time の commit は in-place（roN=Q^n は BDF 基準で固定のため roN+dq は使えない）。

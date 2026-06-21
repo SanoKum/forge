@@ -67,17 +67,13 @@ public:
                                    // ステップごとにのみ host へ読み出す (per-step 同期を避ける)。
     int detectNaNInterval = 1;     // detectNaN==1 時にフラグを host 読み出しする間隔 [step] (既定 1=毎ステップ)。
                                    // 大きくすると per-step 同期が減るが NaN 検知が最大 (interval-1) step 遅れる。
-    // 残差 RMS を device バッファに常駐させ、この間隔 [step] ごとに 1 回だけ D2H 転送して
-    // residual_history.csv へ一括書き出しする。既定 1=毎ステップ flush (従来挙動)。>1 で per-step の
-    // 残差 reduction 同期を間引く (毎ステップの値・行構成は不変)。詳細:
-    // .github/plans/architecture-residual-monitor-async.md。
-    int residualFlushInterval = 1;
-    // 定常 (unsteady=0) implicit 経路で `max cfl` の host 読み出し (`thrust::max_element`)・dt 適応・
-    // 表示を行う間隔 [step] (既定 1=毎ステップ=従来挙動)。定常では dt_local=cfl_pseudo·dx/λ で cfg.dt が
-    // 打ち消され、この host 読み出しは診断のみ (解に不影響) なので >1 で per-step 同期を間引ける。
-    // explicit / dual-time 経路には適用しない (cfg.dt が物理的に効くため)。詳細:
-    // .github/plans/architecture-perphase-profiling-hotspot.md。
-    int cflReportInterval = 1;
+    // モニタリング出力 (= 残差 CSV の device→host flush と、`max cfl`/`dt` の console 出力) を行う共通間隔 [step]。
+    // 既定 1=毎ステップ (従来挙動)。>1 で per-step の host 同期 (残差 reduction の D2H・max cfl の thrust::max_element)
+    // をまとめて間引く。残差は毎ステップ device バッファに記録され、この間隔ごとに一括 D2H+CSV 書き出しされる
+    // (毎ステップの値・行構成は不変)。`max cfl`/`dt` は console にこの間隔ごとに表示される。
+    // 注意: dt 適応 (dtControl==1) はこの間隔とは独立 (下記)。詳細:
+    // .github/plans/architecture-residual-monitor-async.md, architecture-perphase-profiling-hotspot.md。
+    int monitorInterval = 1;
     int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
     flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
                                    // ε 小ほど低マッハ振動を強く減衰するが ε≲0.1 は発散 (ε=0.05 で NaN)。
