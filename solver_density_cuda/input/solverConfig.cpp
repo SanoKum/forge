@@ -325,6 +325,17 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'wallTreatmentSST' in 'turbulence' must be 0 or 1.");
         }
 
+        // SST-DES length scale 修正 (docs/turbulence §8): 0=RANS(既定・ビット不変)/1=DDES/2=IDDES
+        this->DESmode = getOptionalValidatedValue<int>(turb, "DESmode", 0, "turbulence");
+        if (this->DESmode < 0 || this->DESmode > 2) {
+            throw std::runtime_error("Key 'DESmode' in 'turbulence' must be one of 0, 1, or 2.");
+        }
+        this->C_DES_kw = getOptionalValidatedValue<flow_float>(turb, "C_DES_kw", 0.78, "turbulence");
+        this->C_DES_ke = getOptionalValidatedValue<flow_float>(turb, "C_DES_ke", 0.61, "turbulence");
+        if (this->C_DES_kw <= 0.0 || this->C_DES_ke <= 0.0) {
+            throw std::runtime_error("Keys 'C_DES_kw'/'C_DES_ke' in 'turbulence' must be positive.");
+        }
+
         // 乱流プラントル数 Pr_t (乱流熱伝導 k_t = cp*mu_t/Pr_t)。既定 0.9。
         this->turbulentPrandtl = getOptionalValidatedValue<flow_float>(turb, "turbulentPrandtl", 0.85, "turbulence");
         if (this->turbulentPrandtl <= 0.0) {

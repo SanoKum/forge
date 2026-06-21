@@ -584,7 +584,98 @@ rms_roK 1e11 爆発)。機構: 半径方向は近軸で深い低 Mach ($u_r\to0$
 - `dilatationCorrection` と**直交・併用可** (等方分は除いた上で $S\to\sqrt{S^2_{\rm corr}}$ と
   $\Omega$ の積を取る)。
 
-## 8. 初期実装の範囲外
+## 8. DES / DDES (Detached-Eddy Simulation)
+
+剥離支配の非定常流 (SBLI・ピントルバルブ・後退段) を RANS より高精度・wall-resolved LES より
+低コストで解くため、SST に **DDES (Delayed DES, Spalart et al. 2006)** の length scale 修正を加える。
+付着境界層は RANS のまま保護し、剥離せん断層・自由せん断層でのみ LES へ切り替える。
+実装は [`implementation.md` §3.8](implementation.md) と plan
+[`turbulence-iddes-sst.md`](../../.github/plans/turbulence-iddes-sst.md) を参照。
+
+### 8.1 RANS length scale と k 消滅項の整合
+
+SST の k 方程式の消滅項は
+$$
+D_k = \beta^{*}\rho k\omega = \frac{\rho k^{3/2}}{l_\mathrm{RANS}}
+$$
+である。この恒等式から RANS length scale は
+$$
+l_\mathrm{RANS} = \frac{\sqrt{k}}{\beta^{*}\omega}\qquad(\beta^{*}=0.09)
+$$
+**でなければならない**。$\rho k^{3/2}/l_\mathrm{RANS} = \rho k^{3/2}\cdot\beta^{*}\omega/\sqrt{k} = \beta^{*}\rho k\omega$
+と一致する。これは Strelets (2001) / Gritskevich (2012) の SST-DES で用いられる定義であり、
+DES は **この $l_\mathrm{RANS}$ を $l_\mathrm{DDES}$ に置換するだけ**で、$f_d=0$ の完全シールド域では
+$l_\mathrm{DDES}=l_\mathrm{RANS}$ となり $D_k$ が標準 SST に厳密に戻る。
+
+> **注意 (実装で判明した落とし穴)**: $l_\mathrm{RANS}=\sqrt{k}/(\beta^{*1/4}\omega)$ と書くと上の恒等式を
+> 満たさず、$D_k=\beta^{*1/4}\rho k\omega$ となって標準 SST より係数が $\beta^{*-3/4}\approx 6.1$ 倍
+> 大きい消滅項になる。この場合 $f_d=0$ の付着 BL でも mode1 が標準 SST に縮退せず、
+> **モデル応力枯渇 (Modeled Stress Depletion)** で BL の $k$ が崩壊する (検証で `roK` が ~100% 変化)。
+> 必ず $\beta^{*}$ (=0.09) を使うこと。
+
+### 8.2 LES グリッドスケール $\Delta_\mathrm{max}$
+
+$$
+\Delta = \Delta_\mathrm{max} = \max_{\text{隣接面}} |\mathbf{cc}_{ic} - \mathbf{cc}_{jc}|
+$$
+
+隣接 CV 重心間距離の最大値。等方メッシュなら $V^{1/3}$ で代用できるが、**境界層の高アスペクト比
+セル**では $V^{1/3}$ が接線スケールを大幅に過小評価し、シールドがあっても DES リミッタが
+BL 内で誤発火しうる。$\Delta_\mathrm{max}$ は Spalart 系で標準。幾何セットアップ時に実行時の
+`volume`/`ccx` (= CV 重心) から 1 回だけ計算するので、cell / node (median-dual) 双方で自動的に
+双対 CV の $\Delta$ になる。
+
+### 8.3 DDES シールド関数 (Spalart et al. 2006)
+
+$$
+r_d = \frac{\nu_t + \nu}{\kappa^2 d^2\,\sqrt{\partial U_i/\partial x_j\,\partial U_i/\partial x_j}}\qquad(\kappa=0.41)
+$$
+$$
+f_d = 1 - \tanh\!\bigl([8\,r_d]^3\bigr)
+$$
+
+| $r_d$ | 物理的意味 | $f_d$ | 動作 |
+|-------|-----------|-------|------|
+| $\gtrsim 1$ | BL 内部 (渦粘性大 / 近壁 $d^2$ 小) | $\approx 0$ | 純 RANS (保護) |
+| $\to 0$ | 剥離域・自由せん断層 | $\to 1$ | DES limiter 有効 |
+
+分子の $(\nu_t+\nu)$ により、対数層では $\nu_t\!\sim\!\kappa u_\tau y$, $S\!\sim\!u_\tau/(\kappa y)$ から
+$r_d\!\to\!1$ となり付着 BL が保護される。粘性低層では $\nu$ 項により $r_d\!\sim\!1/(\kappa^2 y^{+2})$ で
+やはり保護される。
+
+### 8.4 ハイブリッド length scale
+
+$$
+l_\mathrm{DDES} = l_\mathrm{RANS} - f_d\cdot\max\!\bigl(0,\; l_\mathrm{RANS} - C_\mathrm{DES}\Delta\bigr)
+$$
+$$
+D_k^\mathrm{DDES} = \frac{\rho k^{3/2}}{l_\mathrm{DDES}},\qquad C_\mathrm{DES}=0.78\ (\text{初版 }k\text{-}\omega\text{ 固定})
+$$
+
+リミッタは **2 重に保護**される: ① シールド $f_d\approx 0$、または ② $l_\mathrm{RANS}<C_\mathrm{DES}\Delta$
+(グリッドが BL 長スケールに対して粗い near-wall) で $\max(0,\cdot)=0$ となり、どちらでも
+$l_\mathrm{DDES}=l_\mathrm{RANS}$ に戻る。これにより付着 BL は $f_d$ が多少立っても撹乱されない。
+$\omega$ 方程式・渦粘性式は **変更しない** (標準 SST-DES は $k$ 消滅項のみ修正)。
+
+$C_\mathrm{DES}$ は本来 $F_1$ ブレンド $C_\mathrm{DES}=F_1 C_{\mathrm{DES},k\omega}+(1-F_1)C_{\mathrm{DES},k\varepsilon}$
+($0.78/0.61$) だが、渦粘性カーネルが $F_1$ を持たないため初版は $C_{\mathrm{DES},k\omega}=0.78$ 固定とする。
+
+### 8.5 float32 ガード
+
+forge は float32。$r_d$ は $d^2$ で効くため近壁・よどみ・一様流で飽和しやすい。
+勾配大きさ・分母に floor を入れて 0 割を防ぎ ($\nabla u\to 0$ の一様流で $r_d\to$ 大 $\to f_d\to 0$ =
+RANS が正しい極限)、$r_d$ を $[0,10]$ に clamp して $f_d$ の 0/1 張り付きを抑える。
+診断のため `r_d`・`f_d`・`l_des`・`delta_les` を HDF5 出力する (一様な $f_d$ 張り付きは NaN より
+発見しにくい DES 不全の兆候)。
+
+### 8.6 IDDES (Phase 2・未実装)
+
+$f_B$, $f_e$, $f_{dt}$ を加えた $l_\mathrm{IDDES}$ で WMLES モードへ自動切替する Shur et al. (2008) の
+拡張は Phase 2。WMLES モードの定量評価には流入乱流生成が前提のため別 plan とする。
+
+---
+
+## 9. 初期実装の範囲外
 
 次は本章の対象外とする。
 

@@ -40,7 +40,10 @@ __global__ void rans_sst_source_d(
     flow_float* res_roOmega,
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
     flow_float* src_jac_k,
-    flow_float* src_jac_omega)
+    flow_float* src_jac_omega,
+    // SST-DES (docs/turbulence §8): DESmode>0 で k 消滅項を ρk^{3/2}/l_des に切替える。
+    int DESmode,
+    flow_float* l_des)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -136,8 +139,20 @@ __global__ void rans_sst_source_d(
         Pk = wf_pk[ic];
     }
 
-    // k 消滅項
-    const flow_float Dk = kBetaStar * rho * k_c * w_c;
+    // k 消滅項。標準 SST は D_k = β* ρ k ω = ρ k^{3/2}/l_RANS。
+    // SST-DES (DESmode>0) では l_RANS を l_DDES に置換: D_k = ρ k^{3/2}/l_des (docs/turbulence §8)。
+    // 剥離域 (l_des < l_RANS) で消滅が強まり渦粘性が下がる。ω 方程式・渦粘性式は不変。
+    // DESmode==0 では従来式そのまま (係数・順序・キャスト一致) = ビット不変。
+    flow_float Dk;
+    flow_float jac_k;  // 陰解法ヤコビアン対角 ∂Dk/∂(ρk)
+    if (DESmode > 0) {
+        const flow_float l_hyb = max(l_des[ic], static_cast<flow_float>(1.0e-20));
+        Dk    = rho * pow(k_c, static_cast<flow_float>(1.5)) / l_hyb;
+        jac_k = static_cast<flow_float>(1.5) * sqrt(k_c) / l_hyb;
+    } else {
+        Dk    = kBetaStar * rho * k_c * w_c;
+        jac_k = kBetaStar * w_c;
+    }
 
     // omega 生産項
     const flow_float Pw = alpha * rho * S_prod;
@@ -159,7 +174,7 @@ __global__ void rans_sst_source_d(
     // 生産項は limiter 付きで bounded のため lagged（陰化しない）。生産振幅を正の対角に足す
     // under-relaxation も試したが、安定 cfl_pseudo を一切上げず（律速は k/ω 輸送項の陽的扱い）
     // 不採用。輸送項の point-implicit 化は scalarTransport_d.cu（transport_diag）を参照。
-    src_jac_k[ic]     = kBetaStar * w_c;
+    src_jac_k[ic]     = jac_k;  // DESmode==0: β* ω (従来式と一致), DESmode>0: 1.5 √k / l_des
     src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
 
     // automatic wall treatment: wall-adjacent セルは ω をピン留め (Dirichlet, ransBoundary) する。
@@ -203,7 +218,9 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["res_roK"],
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],
-        var.c_d["src_jac_omega"]);
+        var.c_d["src_jac_omega"],
+        cfg.DESmode,
+        var.c_d["l_des"]);
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchkKernelSync();

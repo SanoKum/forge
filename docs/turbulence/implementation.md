@@ -159,6 +159,44 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
 3 点が揃うと、$k$ は生産・消滅平衡 $P_k=\beta^*\rho k\omega_w$ から平衡値 $u_\tau^2/\sqrt{\beta^*}$
 に収束し暴走しない。いずれか欠けると k 暴走 (zero-grad 単独) または過小 (P_k 解像勾配のまま) になる。
 
+### 3.8 SST-DES (DDES) length scale 修正
+
+理論は [`theory.md`](theory.md) §8、計画は
+[`turbulence-iddes-sst.md`](../../.github/plans/turbulence-iddes-sst.md)。`DESmode`
+(`solverConfig` の `turbulence.DESmode`, 0:RANS[既定] / 1:DDES / 2:IDDES[Phase 2 未実装]) で
+opt-in する。**`DESmode==0` では DES カーネルを一切呼ばず、`ransSource` も従来 $D_k$ 分岐を
+通るため既存 SST とビット不変** (検証で確認済み)。
+
+設定・変数・ソース対応:
+
+- **`solverConfig.hpp/.cpp`**: `DESmode` (0..2 検証)、`C_DES_kw=0.78`, `C_DES_ke=0.61` を追加。
+	`wallTreatmentSST` のパターンに倣い `getOptionalValidatedValue` で読む。
+- **`variables.hpp`**: `cellValNames` に静的量 `delta_les` (Δmax) と毎 step 診断 `l_des` /
+	`fd_shield` / `rd_des` を追加 (自動確保)。`output_cellValNames` にも 4 つ追加し HDF5 出力する
+	(診断必須・float32 で $f_d$ の 0/1 張り付きは NaN より危険)。
+- **`variables.cpp` (`setStructuralVariables_d`)**: 幾何セットアップ時に host で
+	$\Delta_\mathrm{max}=\max_{隣接面}|\mathbf{cc}_{ic}-\mathbf{cc}_{jc}|$ を面ループで 1 回計算し
+	`delta_les` へ H2D 転送。実行時 `ccx`/`ccy`/`ccz` (= CV 重心) のみ使い primal mesh を直接
+	参照しないので node-centered でも双対 CV の Δ が得られる。
+- **`turbulent_viscosity_d.cu` (新カーネル `compute_des_length_d` + device 関数
+	`compute_rd_ddes`/`compute_fd_ddes`)**: $r_d$, $f_d$, $l_\mathrm{DDES}$ を計算し
+	`l_des`/`fd_shield`/`rd_des` に書く。**依存順が最重要**: $r_d$ は $\nu_t=$`vis_turb`/ρ を
+	読むため、`turbulent_viscosity_d_wrapper` 内で `sst_eddy_viscosity_d` (vis_turb 計算) の
+	**直後**に `DESmode>0` でのみ呼ぶ。$l_\mathrm{RANS}=\sqrt{k}/(\beta^{*}\omega)$ ($\beta^{*}=0.09$,
+	§8.1 の整合)。float32 ガード (grad/分母 floor + $r_d$ clamp[0,10]) を内蔵。
+	カーネルは `cfg.discretization` を参照せず CV 抽象 (volume/wall_dist/勾配/vis_turb) のみに
+	依存させ、node 化を検証だけで済むようにする。
+- **`ransSource_d.cu` (`rans_sst_source_d`)**: 引数に `int DESmode`, `flow_float* l_des` を追加。
+	`DESmode>0` で $D_k=\rho k^{3/2}/l_\mathrm{des}$, 陰解法対角 $\partial D_k/\partial(\rho k)=1.5\sqrt{k}/l_\mathrm{des}$
+	に分岐。`DESmode==0` は従来 $\beta^{*}\rho k\omega$ / $\beta^{*}\omega$ をそのまま (ビット不変)。
+	$\omega$ 方程式・wall-function P_k 置換・ω ピン留めは DES と独立に不変。
+
+呼び出しフロー (main.cpp): `calcGradient` → `turbulent_viscosity` (vis_turb→l_des) →
+`ransTransport` → `ransSource` (l_des を読む)。
+
+> **build 注意**: `solverConfig.hpp` に `DESmode` を追加したため、差分ビルドだと CUDA obj を
+> 取りこぼし step0 で dt=0/NaN 凍結することがある (既知の罠)。config 変更後は full rebuild する。
+
 ## 4. Generic Scalar Transport 基盤
 
 `k`, `omega` の輸送は、将来の passive scalar や species でも再利用できる

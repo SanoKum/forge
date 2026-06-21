@@ -415,6 +415,29 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         cudaMemcpy(c_A_planar , A_planar_h , msh.nCells_all*sizeof(geom_float) , cudaMemcpyHostToDevice);
     }
 
+    // SST-DES グリッドスケール Δmax (docs/turbulence §8, plan §4.3)。
+    // 各 CV について隣接面を介した重心間距離の最大を取る。BL の高アスペクト比セルで V^{1/3} が
+    // 接線スケールを過小評価し DES リミッタが誤発火するのを避けるため、Δmax を採用する。
+    // 実行時の重心 (ccx/ccy/ccz = CV 中心) と面接続のみから計算するので、node-centered (median-dual)
+    // でも双対 CV の Δ が自動的に得られる (plan §5.6: primal mesh の volume を直接参照しない)。
+    // 静的量ゆえ幾何セットアップ時に host で 1 回計算し H2D 転送する。
+    {
+        geom_float* delta_les_h = (geom_float*)malloc(sizeof(geom_float)*msh.nCells_all);
+        for (geom_int ic=0; ic<msh.nCells_all; ic++) delta_les_h[ic] = 0.0;
+        for (geom_int ip=0; ip<msh.nPlanes; ip++) {
+            const geom_int ic1 = msh.planes[ip].iCells[0];
+            const geom_int ic2 = msh.planes[ip].iCells[1];
+            const geom_float dx = ccx[ic1] - ccx[ic2];
+            const geom_float dy = ccy[ic1] - ccy[ic2];
+            const geom_float dz = ccz[ic1] - ccz[ic2];
+            const geom_float d  = sqrt(dx*dx + dy*dy + dz*dz);
+            if (ic1 < msh.nCells && d > delta_les_h[ic1]) delta_les_h[ic1] = d;
+            if (ic2 < msh.nCells && d > delta_les_h[ic2]) delta_les_h[ic2] = d;
+        }
+        cudaMemcpy(this->c_d.at("delta_les"), delta_les_h, msh.nCells_all*sizeof(geom_float), cudaMemcpyHostToDevice);
+        free(delta_les_h);
+    }
+
     calcStructualVariables_d_wrapper(cfg , cuda_cfg , msh , *this);
 
     free(sx) ; free(sy) ; free(sz) ; free(ss);

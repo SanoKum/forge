@@ -125,6 +125,18 @@ public:
     int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (docs/turbulence §6.5)
     flow_float turbulentPrandtl = 0.85; // 乱流プラントル数 Pr_t。乱流熱伝導 k_t=cp*mu_t/Pr_t に使用 (既定 0.85)
 
+    // SST-DES (Detached-Eddy Simulation) length scale 修正。SST k 消滅項を
+    //   D_k = β* ρ k ω = ρ k^{3/2}/l_RANS  →  ρ k^{3/2}/l_DDES
+    // へ切り替え、剥離域のみ LES、付着 BL は RANS のままにする (docs/turbulence §8)。
+    //   0: RANS (既定・既存 SST とビット不変)
+    //   1: DDES (Spalart 2006 シールド f_d で BL を保護)
+    //   2: IDDES (Phase 2・未実装、現状は範囲のみ受理)
+    int DESmode = 0;
+    // DES グリッドスケール係数 C_DES (l_LES = C_DES·Δmax)。SST は k-ω/k-ε ブレンドで
+    //   C_DES = F1·C_DES_kw + (1-F1)·C_DES_ke (Strelets 2001)。
+    flow_float C_DES_kw = 0.78;
+    flow_float C_DES_ke = 0.61;
+
     int isCompressible;
     int isAxisymmetric = 0;
 

@@ -96,7 +96,14 @@ public:
         // D_φ = V/Δτ + V·src_jac + transport_diag に加える。壁近傍の細セルで陽的輸送 stiff 性を
         // 陰化し安定 cfl_pseudo を一桁以上引き上げる。defect-correction なので定常解は不変。
         "transport_diag_k",
-        "transport_diag_omega"
+        "transport_diag_omega",
+        // SST-DES (DESmode>0) 用 (docs/turbulence §8)。delta_les は幾何セットアップ時に 1 回計算する
+        // 静的量、他 3 つは毎 step の診断量。float32 で f_d が 0/1 へ張り付くのは NaN より危険なため
+        // r_d / f_d は必ず出力する (plan §4.2)。
+        "delta_les",   // per-cell グリッドスケール Δmax (隣接重心距離の最大)
+        "l_des",       // per-step l_DDES = l_RANS - f_d·max(0, l_RANS - C_DES·Δ)
+        "fd_shield",   // per-step シールド関数 f_d (0=RANS 保護, 1=LES limiter 有効)
+        "rd_des"       // per-step r_d (シールドの素。clamp[0,10] 上限張り付き=飽和診断)
     };
 
     const std::list<std::string> planeValNames = 
@@ -141,7 +148,10 @@ public:
 
         "axisym_divU",
 
-        "vis_lam" , "vis_turb" , "wall_dist" , "thermCond"
+        "vis_lam" , "vis_turb" , "wall_dist" , "thermCond" ,
+
+        // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
+        "delta_les" , "l_des" , "fd_shield" , "rd_des"
     };
 
     //not yet implemented

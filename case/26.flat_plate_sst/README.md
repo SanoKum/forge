@@ -85,6 +85,14 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0016_ewt_fine_wf`  | **full WF** (ω pin + k zero-grad + P_k log則化): 細 y⁺₁≈0.35 回帰 | Cf/Schl 0.89/0.92/0.95 (=壁解像), Cf_molec≈Cf_model → 壁解像極限を保持 | active |
 | `run_0017_ewt_yp30_wf`  | **full WF**: 対数帯 y⁺₁≈30 | Cf/Schl 0.92/0.94/0.97, u_τ≈2.5–2.6 | active |
 | `run_0018_ewt_yp10_wf`  | **full WF**: バッファ帯 y⁺₁≈10 | Cf/Schl 0.95/0.98/1.01 (ω-blend単独の過大を解消) | active |
+| `run_0019_des_regr_mode0` | **SST-DES T1-A 回帰**: 発達場(run_0007/res_120000)から `DESmode:0` 1000 step。新旧バイナリ比較 | DESmode:0 は baseline と atomicAdd 床内で一致 (1 step base–base ≡ base–des: ro 1.19e-7/roe 1.56e-2/roK 3.73e-9) → **ビット不変**。plan [turbulence-iddes-sst.md](../../.github/plans/turbulence-iddes-sst.md) | active |
+| `run_0020_des_mode1` | **SST-DES T1-A シールド (wall-resolved y+1)**: 同場から `DESmode:1` 1000 step | mode1 vs mode0 `roUx` relL2 **5.7e-7**≪Cf 0.1%, `roK` 1.8e-5。付着 BL シールド (DES 発火は外縁 3%)、NaN なし | active |
+| `run_0021_des_ewt_yp30_mode0` | SST-DES T1-A: y+30 wall-modeled 場 (run_0011) から `DESmode:0` 1000 step (mode1 比較基準) | NaN なし | ref |
+| `run_0022_des_ewt_yp30_mode1` | **SST-DES T1-A シールド (wall-modeled y+30)**: 同場 `DESmode:1` 1000 step | mode1 vs mode0 `roUx` relL2 4.7e-5, `roK` 9.3e-4、付着 BL シールド (frac f_d<0.05=0.92)、NaN なし | active |
+
+> **SST-DES (DDES) T1-A** の合否: `DESmode:0` ビット不変 + `DESmode:1` で付着 BL が RANS から
+> 不変 (Cf 差≪0.1%)。**発達乱流場 (nut/nu≫1) から restart すること** (`run_regr_cf` 等 nut/nu≤1 の
+> 未発達場では νt≈0 で rd 小→シールドが効かない)。詳細 plan [turbulence-iddes-sst.md](../../.github/plans/turbulence-iddes-sst.md)。
 
 > EWT (enhanced wall treatment) 検証の詳細は plan [turbulence-enhanced-wall-treatment.md](../../.github/plans/turbulence-enhanced-wall-treatment.md)。
 > まとめ図は `ewt_comparison.png` (壁処理進化の Cf 比較) と `ewt_uplus_yplus.png` (u⁺-y⁺ collapse)。
