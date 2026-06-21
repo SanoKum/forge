@@ -141,6 +141,10 @@
       していたのを修正** (pseudo の CFL ベース dt_local は setCFL カーネルが無条件に毎回計算するため元から有効)。
   - **重要バグの修正**: 初版で explicit と steady の関数末尾が酷似し throttle が誤って `advanceExplicitRK` 側へ入っていた
     (explicit は unsteady で cfg.dt を物理時間前進に使うため致命的) → 正しい steady 末尾へ移設。
+  - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独): setDt 前 9.37s → 最終 8.14s (−13%)。残差差は solver
+    非決定性ノイズ床内 (interval=50 vs 1 = 0.18, 床 0.13–0.17)。**非定常安全性 (実証)**: explicit unsteady で
+    `monitorInterval` 1 vs 50 → 残差最大相対差 4e-5 ≈ 0 (dt は毎ステップ適応で結果不変)・`max cfl` print 11→2
+    (表示のみ間引き) → dt 適応と出力の分離が正しく効くことを確認。
 - 2026-06-21: **Phase B-2 ステップ① 完了 (per-kernel sync の peek 化)**。
   - **監査**: cuda_forge 全カーネルが default (legacy) stream、`cudaMemcpyAsync`/明示 stream 無し (residualMonitor の
     memsetAsync は同 stream で順序付き＋flush で同期)。→ per-kernel `cudaDeviceSynchronize` は正しさに不要
@@ -194,17 +198,13 @@
   し face |c0−c1| を 120→4 に改善 → **しかし wall は 6.0→6.5s と +8% 悪化**。
   **原因 (診断で確定)**: 元メッシュは **連続 plane の owner-cell index 差 = median 1 (100%≤8)** で face ループが
   owner セルを連番ストリーミング済み・境界 plane も末尾に partition 済み = **コンバータが既に最適順序**。cell だけ
-  並べ替えてこのストリーミングを壊した。cell+plane 整合並べ替えでも「連続 plane owner 差=1」を超えられない
-  (2D 格子の帯域下限 ~Nx を元が既に達成) ため改善余地なし。低 L2 ヒットは ordering でなく FV neighbor gather +
-  小 working set の compulsory miss が主因で reorder では消せない。**結論: structured メッシュでは reorder 不要
-  (raw tet 等ランダム番号の非構造向け)。本 case では棄却。**
-  - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
-    - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
-      Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。
-    - 正しさ: residual CSV の差は 2000 step の solver 非決定性ノイズ床 (rms_roOmega で同一バイナリ 2 回 0.13–0.17)
-      と同等 (interval=50 vs interval=1 = 0.18) → 間引きは非決定性以上の差を生まない。
-    - **非定常安全性 (実証)**: explicit unsteady (timeIntegration=1, unsteady=1) で `monitorInterval` 1 vs 50 を比較 →
-      **残差 CSV 最大相対差 4e-5 ≈ 0** (dt は毎ステップ適応され結果不変)、`max cfl` print は 11 vs 2 (表示のみ間引き)。
-      dt 適応と出力の分離が正しく効くことを確認。
-  - **残課題**: Phase B-2 (CUDA Graph で分散 overhead ~1.3ms/step を一括回収) / B-3 (小カーネル融合) は未着手。
-    定常末尾 setDt の冗長な setCFL カーネル再計算 (~80µs/step) も削減余地 (別途)。
+  並べ替えてこのストリーミングを壊した (cell だけ並べ替え plane を据え置いたのが原因)。
+  - **結論 (cell のみ Morton)**: 棄却。現 mesh は owner-cell streaming が既に最適で、単純 renumbering は逆効果。
+  - **cell+plane 整合 reorder を実装・試験** (`/tmp/mz/reorder_cellplane.py`: cell Morton + 内部 plane を新 owner 順に
+    sort、境界 plane は末尾ブロックを位置・順序とも保持。CELLS/STRUCT の iPlanes は invp、PLANES の iCells は invc で remap)。
+    **両立メトリクス達成**: face |c0−c1| median 120→**4** (local≤8 49.8→64.8%) かつ **連続 plane owner 差 median 1 (100%≤8) を維持**。
+    残差はノイズ床内 (0.14) = 物理中立で正しい。**しかし wall は 6.0→6.0s (≒0%, ノイズ内) で改善せず**。
+  - **最終結論**: neighbor |c0−c1| を縮めても wall 不変 = **neighbor cache 局所性はボトルネックでない** (owner streaming は元から最適・
+    working set が L2 に収まり ±120 stride でも実質キャッシュ済み・残りは compute/compulsory traffic)。**structured な
+    case/36 では cell-only/cell+plane どちらも reorder の効果なし → 棄却**。reorder は raw tet 等 **番号が本当にランダムな
+    非構造メッシュ向けの将来レバー**と位置づける (本 case 不要)。
