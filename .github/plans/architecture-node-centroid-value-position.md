@@ -80,3 +80,13 @@ node-centered で未知量の位置は**ノード**だが、現状 `CELLS/centCo
 ## 9. 変更ログ
 
 - `2026-06-22` — 起案。ユーザー提案 (centCoords=値の位置, 軸半径は専用量, ncx 別定義を作らず cell/node 同一処理) を受け、`diffusion-node-scalar-nonortho-limit.md` の ncx 案を置換。検証: 内部面 dcc を node 座標化で case/36 SST step3→1657 改善 (ncx 実験)、`centCoords=node`(axisCentroidShift=0) は壁退化 dcc で NaN (132/132 壁) を確認 → 境界弱形式が前提と判明。
+- `2026-06-22` — **Stage 1+2 実装 (commit 5c22025, 6a7a21d)**。node モードの境界スカラ (k/ω) 拡散を ghost dcc でなく **∇φ·S 弱形式** (calcGradient が bvar+内部隣接で閉包) に。Stage1=壁のみ→Stage2=全境界 (ghost 検出 `ic>=nCells`、periodic は実 partner で除外)。gated node-only で cell ビット不変。case/29 node SST 回帰 OK (rms_ro 7.95e-5→3.84e-6 収束)。隣接ノード保有確認 (全壁ノード内部隣接 2-3 個)。
+- `2026-06-22` — **`centCoords=node` の連鎖ブロッカーを段階的に発見** (`axisCentroidShift=1` が複数問題を同時に masking していた)。case/36 で axisShift=0 を試すたびに次の masked 問題が露出:
+  1. 内部面 dcc 非直交 (1.46e6) → centCoords=node で解消。
+  2. 境界スカラ ghost dcc 退化 → Stage1+2 で解消。
+  3. **(未解決) SST 壁 omega BC `ω=6ν/(β·y_w²)` が wall_dist=0 (壁ノードは壁面上) で overflow→inf** ([ransBoundary_d.cu:41,50](../../solver_density_cuda/cuda_forge/ransBoundary_d.cu#L41))。axisShift=1 は重心を内側にずらし wall_dist>0 にしてこれも隠していた。**node-centered では壁 omega を「壁ノード(y=0)」でなく「第一内部ノードの距離」で定式化する必要**があり、SST 壁処理の設計判断を要する (誤ると乱流が狂う) ため次段でユーザーと方針決定。
+  4. **(未解決) エネルギー(roe)・運動量の境界拡散 dcc 退化**。層流(SST なし)でも centCoords=node で step0 roe=NaN を確認 (roUx/roUy は健全)。`nodeWallViscGradFlux` は**壁**の運動量/熱流束を ∇u·S/∇T·S 化するが、**非壁境界(inlet/outlet/slip)の運動量・エネルギー粘性**は ghost dcc のまま退化する。
+  5. (未着手) 軸対称 r_eff 分離 (case/29 軸対称回帰用)、ghost 生成停止 (`nCells_all=nCells`)、convert で centCoords=node 本実装。
+
+  **連鎖の総括**: `axisCentroidShift=1`(重心を内側にずらす)は、**全境界・全方程式(スカラ/運動量/エネルギー)の境界拡散 dcc 退化**と**SST 壁 omega の y=0 overflow**を**一括で masking**していた。centCoords=node を成立させるには、これら全部を ghostless 化(= node-boundary-ghostless Phase 2 の全方程式版)+ omega BC 再定式化 + r_eff 分離、が必要。**Stage1+2 (境界スカラ) のみ完了**。残りは大規模で omega BC は設計判断 (node-centered SST 壁の y 定義) を要するため、ユーザーと方針確定後に段階実装する。
+  **現状到達点**: Stage1+2 commit 済 (5c22025, 6a7a21d)。centCoords=node 本フリップは残りの ghostless 化 + omega BC 定式化が揃ってから。
