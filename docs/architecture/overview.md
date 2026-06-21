@@ -237,6 +237,23 @@ GPU 計算中でも、出力前には必要なセル変数を `copyVariables_cel
 
 `probe/` の `point_probes` は、指定点に対応する情報を初期化し、各ステップで `outputProbes()` により時系列出力を行う。
 
+### 8.4 残差モニタと host-device 同期
+
+`residual_history.csv` への残差 RMS 出力は `main.cpp` の `ResidualCsvLogger` が担い、reduction 本体は
+`cuda_forge/residualMonitor_d.cu` にある。GPU 経路では残差二乗和を **fused 1 カーネルで全保存量一括に取り、
+device バッファに常駐**させる (`DeviceResidualReducer` / `residualSumSq_d`)。host へは `residualFlushInterval`
+ステップごとに 1 回だけまとめて D2H 転送し CSV へ書き出す。これにより毎ステップの値は保ったまま、
+変数ごとの `thrust::transform_reduce` (host スカラ返り = `cudaStreamSynchronize`) による per-step 同期を除く。
+
+> 背景: 定常 implicit (timeIntegration=11) は 1 step の GPU 実働が wall の約半分しかなく、残り半分は
+> launch/host 同期だった。毎 step の残差 RMS と detectNaN がその主因。`detectNaN` も fused な device int
+> フラグ化し、`detectNaNInterval` ステップごとにのみフラグを host 読み出しする。`residualFlushInterval` /
+> `detectNaNInterval` の既定は 1 で従来挙動。設計詳細は
+> [`.github/plans/architecture-residual-monitor-async.md`](../../.github/plans/architecture-residual-monitor-async.md)。
+
+GPU 計算結果をホストで使う一般則は変わらない: 出力・監視のために値を host で読む箇所は同期点になるため、
+頻度を必要最小限にするか device 常駐＋まとめ転送にするのが基本方針。
+
 ## 9. CUDA 側実装の見取り図
 
 `cuda_forge/` には、GPU 側の主要計算がまとめられている。役割ごとに見ると次のように整理できる。

@@ -252,8 +252,14 @@ void solverConfig::read(std::string fname)
         this->axisTimestepBeta = getOptionalValidatedValue<flow_float>(deltaT, "axisTimestepBeta", 0.0, "time.deltaT");
         // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。
         this->implicitSolvePrecision = getOptionalValidatedValue<int>(deltaT, "implicitSolvePrecision", 0, "time.deltaT");
-        // NaN 検知診断モード: 既定 0 で従来挙動 (検査なし・ビット不変)。1 で毎ステップ終端に検査。
+        // NaN 検知診断モード: 既定 0 で従来挙動 (検査なし・ビット不変)。1 で検査 (fused device フラグ)。
         this->detectNaN = getOptionalValidatedValue<int>(deltaT, "detectNaN", 0, "time.deltaT");
+        // detectNaN フラグの host 読み出し間隔 [step]: 既定 1 (毎ステップ)。大で per-step 同期を間引く。
+        this->detectNaNInterval = getOptionalValidatedValue<int>(deltaT, "detectNaNInterval", 1, "time.deltaT");
+        if (this->detectNaNInterval < 1) this->detectNaNInterval = 1;
+        // 残差 RMS の device バッファ flush 間隔 [step]: 既定 1 (毎ステップ書き出し=従来挙動)。
+        this->residualFlushInterval = getOptionalValidatedValue<int>(deltaT, "residualFlushInterval", 1, "time.deltaT");
+        if (this->residualFlushInterval < 1) this->residualFlushInterval = 1;
         // 低マッハ前処理 (Weiss-Smith): 既定 0 で従来挙動 (ビット不変)。
         this->lowMachPrecond = getOptionalValidatedValue<int>(deltaT, "lowMachPrecond", 0, "time.deltaT");
         this->precondEps = getOptionalValidatedValue<double>(deltaT, "precondEps", 0.15, "time.deltaT");

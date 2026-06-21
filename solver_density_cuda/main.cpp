@@ -190,11 +190,17 @@ struct ImplicitDiagSnapshot {
     double mean_dt_local = 0.0;
 };
 
+// 残差 RMS を CSV (residual_history.csv) へ書き出すロガー。
+// GPU 経路 (cfg.gpu==1) では残差二乗和を device 常駐バッファに async 集約し、residualFlushInterval
+// ステップごとに 1 回だけ D2H 転送してまとめて書き出す (per-step host 同期を避ける)。CPU 経路は
+// 従来通り即時計算・即時書き出し。CSV の列・行構成・値 (毎ステップ・3 行/step・rms_dq_*=0) は不変。
+// 設計: .github/plans/architecture-residual-monitor-async.md
 class ResidualCsvLogger {
 public:
-    ResidualCsvLogger(const std::string& file_name, const solverConfig& cfg)
+    ResidualCsvLogger(const std::string& file_name, const solverConfig& cfg, mesh& msh, variables& var)
         : residual_names_(residualEquationNames(cfg)),
-          stream_(file_name, std::ios::out | std::ios::trunc)
+          stream_(file_name, std::ios::out | std::ios::trunc),
+          gpu_(cfg.gpu == 1)
     {
         if (!stream_) {
             throw std::runtime_error("Failed to open residual log file: " + file_name);
@@ -209,9 +215,57 @@ public:
         }
         stream_ << "\n";
 
+        nVar_ = static_cast<int>(residual_names_.size());
+        nDq_ = static_cast<int>(kResidualEquationNames.size());
         last_snapshot_.rms.assign(residual_names_.size(), static_cast<flow_float>(0.0));
+
+        if (gpu_) {
+            // 残差配列名は "res_" + 方程式名 (gatherResidualSnapshot と同じ)。
+            std::vector<std::string> dev_names;
+            dev_names.reserve(residual_names_.size());
+            for (const auto& name : residual_names_) {
+                dev_names.emplace_back("res_" + name);
+            }
+            std::vector<std::string> resolved;
+            reducer_ = makeDeviceResidualReducer(msh, var, dev_names, resolved);
+            if (reducer_.nVar != nVar_) {
+                throw std::runtime_error(
+                    "ResidualCsvLogger: device residual arrays (res_*) do not match active equations; "
+                    "found " + std::to_string(reducer_.nVar) + " of " + std::to_string(nVar_));
+            }
+            capacity_ = std::max(1, cfg.residualFlushInterval);
+            // 1 step に複数回 gather する経路 (RK/dual-time) の余裕として margin を足す。
+            buf_capacity_ = capacity_ + kIntraStepMargin;
+            d_rms_buf_ = allocDeviceRmsBuffer(buf_capacity_, reducer_.nVar);
+            host_rms_.resize(static_cast<size_t>(buf_capacity_) * reducer_.nVar);
+            rows_.reserve(static_cast<size_t>(buf_capacity_) * 3);
+        }
     }
 
+    ~ResidualCsvLogger()
+    {
+        if (gpu_) {
+            flushDevice();
+            freeDeviceRmsBuffer(d_rms_buf_);
+            freeDeviceResidualReducer(reducer_);
+        }
+    }
+
+    // ---- GPU 経路: device へ async reduce し行を buffer する (同期しない) ----
+    void recordGpu(int step, int inner_index, mesh& /*msh*/, variables& /*var*/)
+    {
+        const int slot = device_count_++;
+        reduceResidualToSlot(reducer_, d_rms_buf_, slot);
+        last_slot_ = slot;
+        if (inner_index == 0) {
+            rows_.push_back({step, -1, ResidualPhase::OuterBegin, slot});
+            rows_.push_back({step, inner_index, ResidualPhase::InnerBegin, slot});
+        } else {
+            rows_.push_back({step, inner_index, ResidualPhase::InnerIter, slot});
+        }
+    }
+
+    // ---- CPU 経路: 即時書き出し (従来挙動) ----
     void logOuterBegin(
         int step,
         int inner,
@@ -221,8 +275,8 @@ public:
         last_snapshot_ = snapshot;
         last_correction_snapshot_ = correction_snapshot;
 
-        writeRow(step, -1, ResidualPhase::OuterBegin, snapshot, correction_snapshot);
-        writeRow(step, inner, ResidualPhase::InnerBegin, snapshot, correction_snapshot);
+        writeRowImmediate(step, -1, ResidualPhase::OuterBegin, snapshot, correction_snapshot);
+        writeRowImmediate(step, inner, ResidualPhase::InnerBegin, snapshot, correction_snapshot);
     }
 
     void logInnerIter(
@@ -233,24 +287,48 @@ public:
     {
         last_snapshot_ = snapshot;
         last_correction_snapshot_ = correction_snapshot;
-        writeRow(step, inner_index, ResidualPhase::InnerIter, snapshot, correction_snapshot);
+        writeRowImmediate(step, inner_index, ResidualPhase::InnerIter, snapshot, correction_snapshot);
     }
 
+    // outer_end 行。GPU 経路は last_slot_ を参照する行を buffer し、batch が満ちたら flush。
     void logOuterEnd(
         int step,
         const ResidualSnapshot* snapshot = nullptr,
         const CorrectionSnapshot* correction_snapshot = nullptr)
     {
+        if (gpu_) {
+            rows_.push_back({step, -1, ResidualPhase::OuterEnd, last_slot_});
+            if (device_count_ >= capacity_) {
+                flushDevice();
+            }
+            return;
+        }
         if (snapshot != nullptr) {
             last_snapshot_ = *snapshot;
         }
         if (correction_snapshot != nullptr) {
             last_correction_snapshot_ = *correction_snapshot;
         }
-        writeRow(step, -1, ResidualPhase::OuterEnd, last_snapshot_, last_correction_snapshot_);
+        writeRowImmediate(step, -1, ResidualPhase::OuterEnd, last_snapshot_, last_correction_snapshot_);
+    }
+
+    // buffer に残った残差を強制 flush する (停止前などに使用)。
+    void flush()
+    {
+        if (gpu_) {
+            flushDevice();
+        }
     }
 
 private:
+    struct RowDesc {
+        int step;
+        int inner;
+        ResidualPhase phase;
+        int slot;
+    };
+    static constexpr int kIntraStepMargin = 1024;
+
     static const char* phaseName(ResidualPhase phase)
     {
         switch (phase) {
@@ -263,7 +341,7 @@ private:
         return "unknown";
     }
 
-    void writeRow(
+    void writeRowImmediate(
         int step,
         int inner,
         ResidualPhase phase,
@@ -281,10 +359,46 @@ private:
         stream_.flush();
     }
 
+    // device buffer を host へ一括転送し、buffer 済みの全行を書き出して reset する (同期点はここだけ)。
+    void flushDevice()
+    {
+        if (device_count_ <= 0) {
+            return;
+        }
+        downloadRmsBuffer(d_rms_buf_, host_rms_.data(), device_count_, reducer_.nVar);
+        for (const RowDesc& rd : rows_) {
+            stream_ << rd.step << ',' << rd.inner << ',' << phaseName(rd.phase);
+            const flow_float* v = &host_rms_[static_cast<size_t>(rd.slot) * reducer_.nVar];
+            for (int i = 0; i < reducer_.nVar; ++i) {
+                stream_ << ',' << std::setprecision(16) << v[i];
+            }
+            for (int i = 0; i < nDq_; ++i) {
+                stream_ << ',' << std::setprecision(16) << static_cast<flow_float>(0.0);  // rms_dq_* は常に 0
+            }
+            stream_ << "\n";
+        }
+        stream_.flush();
+        rows_.clear();
+        device_count_ = 0;
+    }
+
     std::ofstream stream_;
     std::vector<std::string> residual_names_;
+    bool gpu_ = false;
+    int nVar_ = 0;
+    int nDq_ = 0;
     ResidualSnapshot last_snapshot_{};
     CorrectionSnapshot last_correction_snapshot_{};
+
+    // GPU buffering 状態
+    DeviceResidualReducer reducer_{};
+    flow_float* d_rms_buf_ = nullptr;
+    std::vector<flow_float> host_rms_;
+    std::vector<RowDesc> rows_;
+    int capacity_ = 1;
+    int buf_capacity_ = 1;
+    int device_count_ = 0;
+    int last_slot_ = 0;
 };
 
 class ImplicitDiagLogger {
@@ -779,6 +893,11 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
     });
+    // node-centered 壁 Dirichlet (SU2 SetVelocity_Old 相当): 更新後の壁ノード保存量を毎ステージ u=0 へ
+    // 射影 (roe から KE 除去 + ρu=0)。運動量残差ゼロ (zeroWallMomentumResidual) だけでは ρ 変化で
+    // u=ρu/ρ がドリフトするため状態再設定が必須。マルチマーカー emit (コーナー出口流出) と併用。
+    // nodeWallDirichlet=0 / cell / 非 node では no-op。
+    enforceWallNoSlip_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // Y_s = ρY_s/ρ (混合則 thermo の前)
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // φ = ρφ/ρ (スカラ移流の上流値)
@@ -854,11 +973,16 @@ void assembleResidual(StepContext& s, int stage_index)
 // 残差スナップショットを CSV へ記録（inner_index==0 で outer_begin、それ以外で inner_iter）。
 void logResidualSnapshot(StepContext& s, int inner_index)
 {
-    const ResidualSnapshot residual_snapshot = gatherResidualSnapshot(s.cfg, s.msh, s.var);
-    if (inner_index == 0) {
-        s.residual_logger.logOuterBegin(s.iStep, inner_index, residual_snapshot);
+    if (s.cfg.gpu == 1) {
+        // GPU: device へ async reduce し行を buffer する (同期しない)。flush は logOuterEnd で行う。
+        s.residual_logger.recordGpu(s.iStep, inner_index, s.msh, s.var);
     } else {
-        s.residual_logger.logInnerIter(s.iStep, inner_index, residual_snapshot);
+        const ResidualSnapshot residual_snapshot = gatherResidualSnapshot(s.cfg, s.msh, s.var);
+        if (inner_index == 0) {
+            s.residual_logger.logOuterBegin(s.iStep, inner_index, residual_snapshot);
+        } else {
+            s.residual_logger.logInnerIter(s.iStep, inner_index, residual_snapshot);
+        }
     }
     if (s.implicit_diag_logger.enabled() && s.cfg.timeIntegration == 11) {
         s.implicit_diag_logger.log(s.iStep, inner_index, gatherImplicitDiagSnapshot(s.cfg, s.msh, s.var));
@@ -1122,9 +1246,11 @@ void advanceImplicitDualTime(StepContext& s)
     s.residual_logger.logOuterEnd(s.iStep);
 }
 
-// detectNaN==1 のときのみ毎ステップ終端で呼ぶ診断ルーチン。保存量 (ro,roUx,roUy,roUz,roe) と圧力 P
+// detectNaN==1 のときのみ呼ぶ診断ルーチン。保存量 (ro,roUx,roUy,roUz,roe) と圧力 P
 // (RANS 時は roK,roOmega も) を内部セルにわたって検査し、NaN/Inf があれば解を res_nan_<step>.h5 に
 // 強制ダンプして即停止する。off のときは一切呼ばれないので通常実行の性能・結果には影響しない。
+// GPU 経路は fused 1 カーネルで device int フラグへ集約し、detectNaNInterval ステップごとにのみ
+// フラグを host 読み出しする (per-step 同期を避ける)。検知時のみ重い per-var 特定経路に入る。
 void checkNonFiniteAndHalt(StepContext& s)
 {
     std::vector<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "P"};
@@ -1136,7 +1262,27 @@ void checkNonFiniteAndHalt(StepContext& s)
     std::string offending;
     bool bad = false;
     if (s.cfg.gpu == 1) {
+        // detectNaNInterval ステップごとにのみ device フラグを host 読み出し (それ以外は同期しない)。
+        if (((s.iStep + 1) % s.cfg.detectNaNInterval) != 0) {
+            return;
+        }
+        static DeviceResidualReducer nanReducer;
+        static bool nanReducerInited = false;
+        if (!nanReducerInited) {
+            std::vector<std::string> resolved;
+            nanReducer = makeDeviceResidualReducer(s.msh, s.var, names, resolved);
+            nanReducerInited = true;
+        }
+        scanNonFiniteToFlag(nanReducer);
+        if (downloadNonFiniteFlag(nanReducer) == 0) {
+            return;   // 非有限なし: 高頻度で通る軽量経路 (kernel 1 + memcpy 1 のみ)
+        }
+        // 非有限あり (低頻度): どの変数かを per-var 特定してダンプ・停止する。
         bad = hasNonFiniteCellValue_d(s.msh, s.var, names, offending);
+        if (!bad) {
+            offending = "(unknown)";   // フラグは立ったが特定できない稀ケースも停止扱い
+            bad = true;
+        }
     } else {
         for (const std::string& name : names) {
             auto it = s.var.c.find(name);
@@ -1150,6 +1296,7 @@ void checkNonFiniteAndHalt(StepContext& s)
 
     if (!bad) return;
 
+    s.residual_logger.flush();   // buffer 済みの残差を失わないよう停止前に書き出す
     const int dumpStep = s.iStep + 1;
     std::cerr << "[detectNaN] Non-finite value detected in '" << offending
               << "' at step " << dumpStep
@@ -1215,7 +1362,7 @@ int main(void) {
     ImplicitDiagLogger implicit_diag_logger;
 
     cudaConfig cuda_cfg = initializeSimulation(cfg, msh, mat_ns, var, fluct, pprobes);
-    ResidualCsvLogger residual_logger("residual_history.csv", cfg);
+    ResidualCsvLogger residual_logger("residual_history.csv", cfg, msh, var);
 
     writeInitialOutputs(cfg , msh , var);
 

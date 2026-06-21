@@ -60,9 +60,18 @@ public:
                                     // (iterative refinement)。軸対称 近軸の float 陰解固着 (Uy が −15 でなく
                                     // −0.6 固着) を根治するが double は遅い (RTX で ~×2.6)。詳細:
                                     // .github/plans/precision-mixed-axisym.md。blockDPLUR==1・lowMachPrecond 0/1 でのみ有効。
-    int detectNaN = 0;             // 0: off (既定), 1: 毎ステップ終端で保存量+P の非有限値を検査し、
+    int detectNaN = 0;             // 0: off (既定), 1: 保存量+P の非有限値を検査し、
                                    // 見つけたら res_nan_<step>.h5 をダンプして即停止する診断モード。
                                    // off のときは検査を一切行わないため通常実行はビット不変。
+                                   // 検査は fused 1 カーネルで device フラグへ集約し、detectNaNInterval
+                                   // ステップごとにのみ host へ読み出す (per-step 同期を避ける)。
+    int detectNaNInterval = 1;     // detectNaN==1 時にフラグを host 読み出しする間隔 [step] (既定 1=毎ステップ)。
+                                   // 大きくすると per-step 同期が減るが NaN 検知が最大 (interval-1) step 遅れる。
+    // 残差 RMS を device バッファに常駐させ、この間隔 [step] ごとに 1 回だけ D2H 転送して
+    // residual_history.csv へ一括書き出しする。既定 1=毎ステップ flush (従来挙動)。>1 で per-step の
+    // 残差 reduction 同期を間引く (毎ステップの値・行構成は不変)。詳細:
+    // .github/plans/architecture-residual-monitor-async.md。
+    int residualFlushInterval = 1;
     int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
     flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
                                    // ε 小ほど低マッハ振動を強く減衰するが ε≲0.1 は発散 (ε=0.05 で NaN)。
