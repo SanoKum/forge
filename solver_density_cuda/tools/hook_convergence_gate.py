@@ -23,6 +23,8 @@ for rh in glob.glob(os.path.join(ROOT, "case", "*", "run_*", "residual_history.c
         continue
     if now - m > RECENT_SEC:
         continue  # 旧 run は対象外 (このセッションの活動のみ強制)
+    if now - m < 120:
+        continue  # forge 実行中 (residual を書き込み中) はスキップ。完了時に wrapper が VERDICT を書く
     v = os.path.join(os.path.dirname(rh), "CONVERGENCE_VERDICT.txt")
     if (not os.path.exists(v)) or (os.path.getmtime(v) < m):
         bad.append(os.path.relpath(os.path.dirname(rh), ROOT))
