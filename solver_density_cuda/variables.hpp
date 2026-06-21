@@ -56,6 +56,9 @@ public:
         "limiter_T" , 
         "vis_lam" ,
         "vis_turb" , "wall_dist" ,
+        // node-centered: 壁ノードは壁面上 (wall_dist=0) で SST 壁 omega BC 6ν/βy² が overflow する。
+        // 壁ノードの y を内部隣接ノード (壁面ノード除く) の wall_dist 平均に置換した量 (node のみ算出; cell=wall_dist)。
+        "wall_y_eff" ,
         "thermCond" ,  // 熱伝導率 λ [W/(m·K)] セル毎 (M3 kinetic theory / 定数)
 
         "gamma" , "cp" , "Rmix" ,  // Rmix: 混合比気体定数 R [J/(kg·K)] セル毎 (M6 TP 流束キャッシュ用; CPG は (γ-1)cp/γ)

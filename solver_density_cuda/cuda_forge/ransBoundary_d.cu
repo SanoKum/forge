@@ -110,10 +110,39 @@ __global__ void rans_neumann_scalar_boundary_d(
 
 }
 
+// node-centered: 壁ノードは壁面上 (wall_dist=0) なので SST 壁 omega BC が overflow する。
+// 各壁ノードの実効 y を「内部隣接ノード (壁面ノードを除く) の wall_dist 平均」に置換する。
+// cell モード・非壁ノードは wall_dist をそのままコピーする (挙動不変)。
+__global__ void compute_wall_y_eff_d(
+    geom_int nCells, geom_int* wall_flag, flow_float* wall_dist,
+    geom_int* cell_planes_index, geom_int* cell_planes, geom_int* plane_cells,
+    flow_float* wall_y_eff)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        if (wall_flag != nullptr && wall_flag[ic] == 1) {
+            flow_float sum = static_cast<flow_float>(0.0);
+            int cnt = 0;
+            for (geom_int j = cell_planes_index[ic]; j < cell_planes_index[ic + 1]; ++j) {
+                const geom_int ip = cell_planes[j];
+                const geom_int a = plane_cells[2 * ip + 0];
+                const geom_int b = plane_cells[2 * ip + 1];
+                const geom_int other = (a == ic) ? b : a;
+                if (other < nCells && wall_flag[other] == 0) {
+                    sum += wall_dist[other];
+                    ++cnt;
+                }
+            }
+            wall_y_eff[ic] = (cnt > 0) ? (sum / static_cast<flow_float>(cnt))
+                                       : max(wall_dist[ic], kSmall);
+        } else {
+            wall_y_eff[ic] = wall_dist[ic];
+        }
+    }
+}
+
 void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var)
 {
-    (void)msh;
-
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1)) {
         return;
     }
@@ -127,13 +156,24 @@ void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc
         // 求め bc.bvar_d["utau"] に格納する。ω 壁 BC と viscousFlux 壁せん断が同じ u_τ を共有する。
         computeWallFrictionSST_d_wrapper(cfg , cuda_cfg , bc , msh , var);
 
+        // node-centered: 壁ノードの y=wall_dist=0 で omega 壁 BC が overflow するため、内部隣接ノードの
+        // wall_dist 平均 (wall_y_eff) を omega BC の y に使う。cell モードは wall_dist をそのまま使う。
+        flow_float* y_for_omega = var.c_d["wall_dist"];
+        if (cfg.discretization == "node" && msh.wall_flag_d != nullptr) {
+            compute_wall_y_eff_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+                msh.nCells, msh.wall_flag_d, var.c_d["wall_dist"],
+                msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.map_plane_cells_d,
+                var.c_d["wall_y_eff"]);
+            y_for_omega = var.c_d["wall_y_eff"];
+        }
+
         rans_wall_scalar_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
             static_cast<geom_int>(bc.iPlanes.size()),
             bc.map_bplane_cell_d,
             bc.map_bplane_cell_ghst_d,
             var.c_d["ro"],
             var.c_d["vis_lam"],
-            var.c_d["wall_dist"],
+            y_for_omega,
             var.c_d["k"],
             var.c_d["omega"],
             bc.bvar_d["kb"],
