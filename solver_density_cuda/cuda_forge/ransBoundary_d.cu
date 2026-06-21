@@ -39,6 +39,12 @@ __global__ void rans_wall_scalar_boundary_d(
         const flow_float nu_c = vis_lam[ic] / rho_c;
         const flow_float y_w = max(wall_dist[ic], kSmall);
 
+        // k は mode に関わらず k_w = 0 (Dirichlet)。教科書的には wall-function では k を
+        // zero-gradient にするが、それは近壁 P_k も log則 τ_w から計算し第一セル k を平衡値
+        // u_τ²/√β* に固定する整合とセットで成立する。forge は P_k が解像勾配のままなので
+        // (plan §10 将来課題)、k を zero-gradient にすると誤った解像生産で近壁 k が暴走し
+        // μ_t 過大 → u_τ 過大 → Cf 過大になる (検証: y⁺30 で 0.89→1.80, y⁺10 で 1.10→1.68)。
+        // P_k の wall-function 化までは k=0 Dirichlet の方が良い (docs/turbulence §6.5 (b'))。
         kb[ib] = static_cast<flow_float>(0.0);
 
         if (wallTreatment == 1) {

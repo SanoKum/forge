@@ -315,8 +315,34 @@ $$
 $$
 
 粘性低層では $\omega_{vis}$、対数層では $\omega_{log}$ が支配する。§6.1 の係数 60 ではなく
-解析漸近の係数 6 を用いる ($y^+\to0$ の厳密漸近に一致させるため)。$k_w = 0$ と
+解析漸近の係数 6 を用いる ($y^+\to0$ の厳密漸近に一致させるため)。
 ghost 反射 $\omega_g = 2\omega_w - \omega_c$ は §6.1 と同じ。
+
+#### (b') $k$ 壁面境界 — なぜ automatic でも $k_w = 0$ を保つか
+
+教科書的には、wall-function では $k$ を **zero-gradient (Neumann, $\partial k/\partial n = 0$)**
+とするのが標準である (OpenFOAM `kqRWallFunction`、ANSYS automatic の $k$ zero-flux 条件)。
+これは、第一セルがバッファ・対数層にあるとき、その点の $k$ が有限の対数層平衡値
+$k \approx u_\tau^2/\sqrt{\beta^*}$ を取るべきだからである。
+
+**ただしこれは近壁の生産項 $P_k$ も wall-function 化することとセットで初めて成立する。**
+すなわち wall-adjacent セルで $P_k = \tau_w\,(\partial U/\partial y)_{\text{log}}$ (log 則の壁せん断
+から評価) とし、$k$ を平衡値 $u_\tau^2/\sqrt{\beta^*}$ に固定/制限する必要がある。
+
+forge は現状 $P_k$ を標準 SST のまま**解像速度勾配**から計算する (§7 系、plan §10 の将来課題)。
+粗メッシュではこの解像勾配が誤っているため、$k$ を zero-gradient にすると誤った生産で近壁 $k$
+が暴走し、$\mu_t$ 過大 → $u_\tau$ 過大 → $C_f$ 過大になる。実測 (`case/26`, modeled $C_f$):
+
+| 帯 | $k_w=0$ Dirichlet | $k$ zero-gradient |
+|---|---|---|
+| y⁺≈30 | 0.89–0.93 | 1.80–1.92 (悪化) |
+| y⁺≈10 | 1.05–1.14 | 1.64–1.79 (悪化) |
+
+$k_w = 0$ Dirichlet は近壁 $k$ を抑えることで、この未整合な解像生産を**部分的に相殺**しており、
+$P_k$ の wall-function 化が入るまでは $k_w = 0$ の方が良い。したがって automatic モードでも
+$k_w = 0$, $k_g = -k_c$ を保ち、$\omega$ のみ §6.5(b) のブレンドに切り替える。
+**真の automatic wall treatment ($k$ zero-gradient + $P_k$ の log則化 + $k$ 平衡固定) は
+plan §10 の将来課題**とする。
 
 #### (c) 運動量壁せん断 — 有効壁粘性
 

@@ -133,8 +133,20 @@ u_τ は速度・y・ν のみで算出可 → **`applyRansScalarBoundaries` 直
     (`tools/wall_law_modeled.py`) で評価 (分子勾配は粗メッシュ対数層で過小評価のため不適)。
   - 残差は block-DPLUR 構造事情でプラトー (本ケース既知) だが Cf ドリフト ≤0.06% で定常。
   - 将来課題 §10: 近壁 P_k/μ_t の wall-function 整合化、wall-function 項の implicit Jacobian。
+- `2026-06-21` — k 壁 BC の検討 (レビュー指摘: k は zero-gradient にすべきでは):
+  教科書どおり mode1 で k を zero-gradient (Neumann) に変えて再検証 (`run_0014`/`run_0015`)。
+  **結果は悪化** — y⁺30 Cf/corr 0.89→1.80, y⁺10 1.10→1.68。原因: zero-gradient k BC は
+  近壁 P_k の wall-function 化 (P_k=τ_w·(∂U/∂y)_log, k を u_τ²/√β* に固定) とセットで成立するが、
+  forge は P_k が解像勾配のままで粗メッシュでは誤り → k 暴走 → μ_t 過大 → u_τ/Cf 過大。
+  k=0 Dirichlet はこの未整合生産を部分相殺するため現状実装では良い。**コードは k=0 Dirichlet に
+  戻し** (docs §6.5(b') に機序を明記)、真の automatic (k zero-grad + P_k log則化 + k 平衡固定) は §10。
 
 ## 10. 将来課題 (本 plan 外)
 
-- 近壁第一セルの P_k / μ_t を wall-function 整合化 (現状は標準 SST 式のまま)。
+- **真の automatic wall treatment** (本 plan は ω blend + modeled τ_w まで): 近壁第一セルの
+  P_k を log 則の壁せん断から計算 (`P_k = τ_w·(∂U/∂y)_log`)、k を平衡値 `u_τ²/√β*` に固定/制限、
+  その上で k 壁 BC を zero-gradient 化する。この 3 点セットで初めて k zero-gradient が成立する
+  (単独では k 暴走、§9 の `2026-06-21` 検証参照)。これが入れば y⁺10/30 の残差 (現状 ±10–15%) が
+  詰まる見込み。
+- 近壁第一セルの μ_t を wall-function 整合化 (現状は標準 SST 式のまま)。
 - 陰解法 (block-DPLUR) で wall-function 項の Jacobian 整合 (現状は陽的に評価)。
