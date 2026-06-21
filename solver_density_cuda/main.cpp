@@ -1180,13 +1180,9 @@ void advanceImplicitSteady(StepContext& s)
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
     });
-    // 定常末尾も同様: dt 適応・表示とも monitorInterval ごと (host 読み出しを間引く)。
-    const bool onMonitorEnd = (s.iStep % s.cfg.monitorInterval == 0);
-    const bool adaptDtEnd  = (s.cfg.unsteady != 0) || onMonitorEnd;
-    const bool printCflEnd = onMonitorEnd;
-    s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, adaptDtEnd, printCflEnd);
-    });
+    // 末尾の setDT は撤去 (冗長): 定常では dt_local は次ステップ冒頭の implicitNonlinearUpdate→setDT で
+    // 再計算され、ここで計算した cfl/dt_local は使われる前に上書きされる純粋な無駄 (~80µs/step の setCFL
+    // カーネル×3)。cfg.dt も dt_local に効かず cosmetic。max cfl/dt 表示は冒頭 setDT が monitorInterval ごとに行う。
     s.residual_logger.logOuterEnd(s.iStep);
 }
 

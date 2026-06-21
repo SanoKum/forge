@@ -182,6 +182,12 @@
     (定常末尾 setDT の setCFL 再計算 ~80µs/step=次step で上書き) → ④ SLAU カーネル最適化 (occupancy/メモリ, 重い) →
     ⑤ Graph (launch latency ~0.46ms/step, 重い割に小) → ⑥ residual 案3 (72µs)。
     **以前の主役だった setDt host読み・per-kernel sync は解消済み (set_dt 13.6%→6.9% で大半が実カーネル)**。
+- 2026-06-21: **③ setCFL 冗長除去 完了**。`advanceImplicitSteady` 末尾の setDT 呼び出しを撤去
+  (その cfl/dt_local は次ステップ冒頭 setDT で上書きされ使われない純粋な無駄=setCFL カーネル×3 ~80µs/step)。
+  explicit/dual-time は唯一の setDT なので不変。max cfl/dt 表示は冒頭 setDT が担う (prints 80→41/2000step)。
+  **検証** (run_0050, 2000 step, GPU 単独, 他forge無し確認): 6.30→**6.18s (~−2%)**、残差差 0.125 (非決定性ノイズ床内=解不変)。
+  **累計 13.38→6.18s (−54%)**。性能フェーズはここで一区切り (残: limiter/SLAU カーネル最適化・Graph・nStepInner study は
+  compute 律速向けの重い/トレードオフ案件として保留)。
   - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
     - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
       Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。
