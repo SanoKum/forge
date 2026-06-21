@@ -159,6 +159,29 @@
   - 注: FORGE_PROFILE の `measureWall` セクションは sync OFF だと kernel 実行を待たず過少計測になる (profiling 時のみの
     注意点・正しさには無関係)。`measureCuda` は cudaEvent 同期で正確。
   - 残: Graph (②) / 小カーネル融合 (③) / device-resident dt (explicit・dual-time 向け) は未着手。
+- 2026-06-21: **再計測 (Phase A', peek化後の状態)**。同 case/36 run_0050 (solid 79.4k, GPU 単独)。
+  wall **3.15 ms/step** (2000-step clean), GPU 実働 (ncu) **2.69 ms/step** → **GPU が wall の ~85%** (host overhead は
+  ~0.46ms/step・~15% に低下; 初回 Phase A は ~42%)。**ボトルネックは host/sync 律速から GPU 計算律速へ移行**。
+  - **profiler(event) vs ncu**: 大カーネル単独 section (TimeIntegration/Limiter/Viscous/SetDt/Conv) は prof≈ncu
+    (overhead≈0=peek 効果確認)。残る overhead は **小カーネル多数の section に集中** (TurbulenceModel +0.106, CalcGradient
+    +0.106, Conv +0.054, ApplyBconds +0.038) = カーネル間 launch latency = Graph が消す領域。
+  - **GPU 実働の新ボトルネック (ncu, %GPU)**:
+    | kernel/phase | us/step | %GPU |
+    |---|--:|--:|
+    | implicit_defect_correction_block (DPLUR×5 inner) | 664 | **24.7** |
+    | limiter_r1 (Venkatakrishnan ×5 var) | 565 | **21.4** |
+    | SLAU (対流) | 378 | **14.1** |
+    | viscousFlux | 230 | 8.6 |
+    | setCFL_pln (×2/step) | 161 | 6.0 |
+    | turbulence scalars (×9 小カーネル) | 166 | 6.2 |
+    | gradients (×4) | 139 | 5.2 |
+    | gasProperties | 104 | 3.9 |
+    | residualSumSq (残差reduce) | 72 | 2.7 |
+  - **次レバー (compute 律速向け、効果順)**: ① **nStepInner 5→4/3** (DPLUR 24.7%・config だけ、要収束検証) →
+    ② **limiter** (cheaper scheme or 5変数カーネル融合; 113µs/var は高い) → ③ **setCFL 冗長除去**
+    (定常末尾 setDT の setCFL 再計算 ~80µs/step=次step で上書き) → ④ SLAU カーネル最適化 (occupancy/メモリ, 重い) →
+    ⑤ Graph (launch latency ~0.46ms/step, 重い割に小) → ⑥ residual 案3 (72µs)。
+    **以前の主役だった setDt host読み・per-kernel sync は解消済み (set_dt 13.6%→6.9% で大半が実カーネル)**。
   - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
     - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
       Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。
