@@ -88,15 +88,15 @@ wall=2274, 最小辺 ~0.087mm。`med_to_gmsh.py` の変換ロジックは合成�
 | `run_0012_lam_bp2p0_chain` | 層流・Ps=2.0 (run_0011 から chain) | **衝撃波 x129mm=多孔壁上流端 (x_f≈0)**。ただし中心軸静圧は**波状 (shock train)**=ショックレス化せず。層流BL薄すぎが原因 | ref |
 | `run_0013_sst_wt1_ti1pct` | SST・**wallTreatmentSST=1**・入口乱流 μt/μ=1,TI=1% (k=31.5,ω=3e7)。y+~1200メッシュ | 安定だが **BL過厚** (cavity M 1.63, δ99 4.2mm=34%半高, μt/μ~37000)。y+~1200 で壁関数不成立が主因 | superseded |
 | `run_0014_sst_wt1_wallres` | SST・wt=1・**wall-resolved メッシュ (NY120, 第一セル~5μm, y+~77)** で確立 | **BL適正化**: cavity M **1.81** (←1.63), δ99 **2.11mm=17%** (←34%), μt/μ **7558** (←37000)。メッシュ品質 AR202/skew SOFT-PASS | active (SST anchor) |
-| `run_0018_sst_wt1_porous_bp2p06` | SST wall-res・**多孔壁**・Ps=Pt=2.06 (seed) | 衝撃波 x165mm (収束)。中心軸波状 ~0.12 | active |
-| `run_0019_sst_wt1_solid_bp2p06` | SST wall-res・**固体壁**・Ps=2.06 (比較) | 衝撃波 x129mm (上流・未収束ドリフト)。同Psで porous より上流 | active |
-| `run_0020_sst_wt1_porous_bp2p08` | SST wall-res・多孔壁・Ps=2.08 (x_f≈0狙い) | 衝撃波 x141mm。中心軸波状 0.117=ショックレス化せず | active |
+| `run_0018_sst_wt1_porous_bp2p06` | SST wall-res・**多孔壁**・Ps=Pt=2.06 (seed) | **NOT CONVERGED** (roUx/roUy/roK 上昇・他プラトー)。衝撃波 x~165mm だが非収束スナップショット値 | 非収束 |
+| `run_0019_sst_wt1_solid_bp2p06` | SST wall-res・**固体壁**・Ps=2.06 (比較) | **NOT CONVERGED** (roUx 上昇)。衝撃波 x~129mm (ドリフト中) | 非収束 |
+| `run_0020_sst_wt1_porous_bp2p08` | SST wall-res・多孔壁・Ps=2.08 (x_f≈0狙い) | **NOT CONVERGED** (roOmega 上昇・他低下中)。衝撃波 x~141mm | 非収束 |
 
 ### 現時点の所見 (2026-06-21 自走セッション)
 
-- **メッシュ/手法は確立**: 2D wall-resolved SST (y+~77, AR≤1000, skew≤0.9 ゲート通過)、cfl_pseudo=5 陰解法安定、背圧で擬似衝撃波を seeding→chain で位置決め可能。
-- **物理メカニズムの再現は未達**: 層流(BL薄すぎ)も wall-resolved SST(BL適正)も、衝撃波を多孔壁上に置いても**中心軸静圧の波状変化 (shock train) が残り、論文の「ショックレス化」は明確に再現できていない** (中心軸波状 ~0.12 が porous/solid/位置によらず同程度)。porous と solid の主差は衝撃波**位置** (同Psで porous=x165, solid=x129) であって波状振幅ではない。
-- **未収束性**: 擬似衝撃波位置は Ps に非常に敏感 (~-570mm/MPa) で、高Ps側ではドリフト/上流マーチ。完全収束は困難 (擬似衝撃波の本質的非定常/limit cycle の可能性)。
-- **推定原因と次手**: ① 2D スリット近似 vs 3D 丸穴 (吸込/吹出分布が違う) → **3D 化が要かも**、② 完全な matched-x_f 比較 (porous/solid を同一衝撃波位置で収束) 未達、③ y+~77→より細かく / `katoLaunder` で μt 過大抑制、④ 出口チャンバ追加で背圧条件を物理的に。
+- **メッシュ/手法は確立**: 2D wall-resolved SST (y+~77, AR≤1000, skew≤0.9 ゲート通過)、cfl_pseudo=5 陰解法は establish では安定。背圧で擬似衝撃波を seeding→chain で形成可能。
+- **⚠ 背圧 run はいずれも未収束 (`check_convergence.py` で全列確認)**: run_0016/0018/0019/0020 とも残差が plateau または**上昇 (発散的)**。**衝撃波＋剥離＋キャビティ循環が本質的に非定常 (limit cycle / 振動)** のため、定常 RANS (unsteady=0) では収束しない。→ **報告した衝撃波位置・中心軸波状振幅は非収束スナップショット値であり信頼できない**。位置安定だけを見て「収束」と判断したのは誤りだった。
+- **物理メカニズムの再現は未達 (かつ未収束で判定不能)**: 層流(run_0012, BL薄すぎ)も SST(非収束)も、現時点で論文の「ショックレス化」を確認できていない。
+- **次手 (収束問題の解決が先決)**: ① **URANS (unsteady=1, dual-time) で時間平均**するか、定常で収束する条件/手法を探す (擬似衝撃波の非定常性が主問題)、② 3D 丸穴化 (2Dスリットの吸込/吹出分布が論文と異なる疑い)、③ matched-x_f 比較、④ `katoLaunder` で μt 過大抑制、⑤ 出口チャンバ追加。
 
 > 注: 領域は x=690 出口の簡略版 (10°ディフューザ+チャンバ未追加)。run_0003-0007 は旧SST(y+~1200)/手法確立途中の探索 run、run_0009-0010 は超音速ロックインで棄却、run_0015-0017 は中間 (seed/establish)。

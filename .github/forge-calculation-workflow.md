@@ -238,6 +238,12 @@ python3 solver_density_cuda/tools/fluent_h5_to_forge.py convert mesh.cas.h5 mesh
 5. **出口は `outlet_statPress`** (静圧指定)。`outflow` は超音速用なので亜音速には使わない。
 6. **`outlet_statPress` には逆流用の `Pt`/`Tt` も必ず設定する**。逆流 (出口で内向き) が生じた面では `Pt`/`Tt` から逆流ガスの静的状態を作るため、`Ps` だけだと `Pt=0`→密度 0→NaN になる。混合・剥離など出口で逆流が出うる流れでは必須。
 
+## forge は run_case.sh 経由で実行する (収束チェック強制)
+
+forge を直接 `build/forge` で起動せず、**`solver_density_cuda/tools/run_case.sh <run_dir>`** 経由で実行する。ラッパーが実行後に必ず `check_convergence.py` を走らせ、VERDICT を `<run_dir>/CONVERGENCE_VERDICT.txt` に残し残差プロットも生成する。長時間 run は `nohup solver_density_cuda/tools/run_case.sh <run_dir> &`。
+
+`.claude/settings.json` のフックでこれを強制する: **PreToolUse** が直接 `build/forge` 実行を deny、**Stop** が「最近 forge を回したのに収束チェックしていない run」があるとターン終了を block する (実行方法に依らずファイル状態で検査)。これにより「衝撃波位置の安定や `rms_ro` 単独で収束と判断する」近道を構造的に防ぐ。**収束/一致を主張する応答では VERDICT 行を引用する**。
+
 ## メッシュ品質チェック (計算前・必須)
 
 メッシュを `convertGmshToForge` で HDF5 化したら、**計算を投入する前に必ずメッシュ品質を確認する**。歪んだ/極端に細長いセルは発散・精度劣化・非物理解の原因になる。専用ツールで判定する:
