@@ -133,17 +133,31 @@ opt-in する。既定 0 では §6.1 の wall-resolved 型 (`60ν/β₁y²`) �
 	$u_\tau$ は速度・`wall_dist`・$\nu$ のみで決まるため勾配計算前に評価でき、後段の
 	$\omega$ 壁 BC と運動量壁せん断の両方で共有する。`applyRansScalarBoundaries`
 	(=`ransBoundary_d_wrapper`) の壁ループ直前で `wallTreatmentSST==1` 時のみ呼ぶ。
-- **`ransBoundary_d.*` の wall scalar カーネル**: `wallTreatmentSST` と `utau` を引数で受け、
+	`ransWallFunction_d.*` はあわせて新セル変数 `wf_pk`
+	(wall-function 生産 $P_k = \rho u_\tau^4/\nu\cdot g(1-g)$, $g=du^+/dy^+(y^+_1)$) を
+	wall-adjacent セルに書く (非 wall セルは `-1`)。
+- **`ransBoundary_d.*` の wall scalar カーネル**: `wallTreatmentSST`, `utau`, `roOmega` を受け、
 	mode 1 で $\omega_w = \sqrt{\omega_{vis}^2 + \omega_{log}^2}$
-	($\omega_{vis} = 6\nu/\beta_1 y^2$, $\omega_{log} = u_\tau/(\sqrt{\beta^*}\kappa y)$)、
-	mode 0 で現行 $60\nu/\beta_1 y^2$。`k_w = 0` と ghost 反射は共通。
+	($\omega_{vis} = 6\nu/\beta_1 y^2$, $\omega_{log} = u_\tau/(\sqrt{\beta^*}\kappa y)$) を
+	**wall-adjacent セル値 `omega[ic]`/`roOmega[ic]` にピン留め** (§6.5(b)) し、$k$ は
+	zero-gradient ($k_g=k_c$, §6.5(b'))。mode 0 は現行 $60\nu/\beta_1 y^2$ と $k_w=0$ Dirichlet。
+- **`ransSource_d.*`**: `wallTreatmentSST` と `wf_pk` を受け、mode 1 かつ `wf_pk>=0` のセルで
+	標準 P_k を `wf_pk` に置換 (§6.5(d))。さらに ω ピン留めセルの `res_roOmega`/`src_jac_omega` を
+	0 化 (Dirichlet セルの残差は 0; `rms_roOmega` 汚染回避)。
 - **`viscousFlux_d.*` の `viscousFlux_wall_d`**: `wallTreatmentSST` と `utau` を受け、
 	mode 1 で接線せん断を modeled $\boldsymbol{\tau}_w = \rho u_\tau^2 \hat{\mathbf e}_t$ に
 	置換 (法線粘性項・熱流束は不変、no-slip なので壁せん断仕事 0)。`twall_*_b` / `ypls_b` は
 	この modeled 値で上書き出力。mode 0 は現行の分子勾配式。
 
-`utau` は `wall` / `wall_isothermal` の `bvar` 初期化リストに追加する
-(`ypls`, `twall_x/y/z` は既存)。
+`utau` は `wall` / `wall_isothermal` の `bvar` 初期化リスト (`boundaryCond.hpp`) と
+`mesh.hpp` の `bplaneValNames` マスターリストの**両方**に追加する (片方だと device 未確保で
+illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登録し、
+`boundaryCond.cpp` の `applyRansScalarBoundaries` が bc ループ前に
+`initWallFunctionPk_d_wrapper` で全セル `-1` に初期化する。`ypls`, `twall_x/y/z` は既存。
+
+`wallTreatmentSST==1` の自律収束: ω ピン留め (μ_t 上限) + wall-function P_k + k zero-gradient の
+3 点が揃うと、$k$ は生産・消滅平衡 $P_k=\beta^*\rho k\omega_w$ から平衡値 $u_\tau^2/\sqrt{\beta^*}$
+に収束し暴走しない。いずれか欠けると k 暴走 (zero-grad 単独) または過小 (P_k 解像勾配のまま) になる。
 
 ## 4. Generic Scalar Transport 基盤
 

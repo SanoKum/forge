@@ -81,23 +81,48 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0010_ewt_yp30_mode0` | EWT 検証: 粗メッシュ y⁺₁≈30, mode0(low-Re)。cold start→MUSCL | **Cf 崩壊** Cf_model/Schl 0.13/0.13/0.14 (low-Re BC が粗メッシュで破綻) | active |
 | `run_0011_ewt_yp30_mode1` | EWT 検証: 粗メッシュ y⁺₁≈30, mode1(enhanced) | **Cf 回復** Cf_model/Schl 0.89/0.91/0.93、u_τ≈細メッシュ一致 → y⁺ 非依存 | active |
 | `run_0012_ewt_yp10_mode0` | EWT 検証: バッファ帯 y⁺₁≈10, mode0(low-Re) | Cf_model/Schl 0.51/0.56/0.60 (過小) | active |
-| `run_0013_ewt_yp10_mode1` | EWT 検証: バッファ帯 y⁺₁≈10, mode1(enhanced) | Cf_model/Schl 1.05/1.10/1.14 (相関一致) | active |
+| `run_0013_ewt_yp10_mode1` | EWT 検証: バッファ帯 y⁺₁≈10, mode1(ω-blend+τ_w, k=0 Dir) | Cf_model/Schl 1.05/1.10/1.14 (過大) → full WF で改善 | ref |
+| `run_0016_ewt_fine_wf`  | **full WF** (ω pin + k zero-grad + P_k log則化): 細 y⁺₁≈0.35 回帰 | Cf/Schl 0.89/0.92/0.95 (=壁解像), Cf_molec≈Cf_model → 壁解像極限を保持 | active |
+| `run_0017_ewt_yp30_wf`  | **full WF**: 対数帯 y⁺₁≈30 | Cf/Schl 0.92/0.94/0.97, u_τ≈2.5–2.6 | active |
+| `run_0018_ewt_yp10_wf`  | **full WF**: バッファ帯 y⁺₁≈10 | Cf/Schl 0.95/0.98/1.01 (ω-blend単独の過大を解消) | active |
 
 > EWT (enhanced wall treatment) 検証の詳細は plan [turbulence-enhanced-wall-treatment.md](../../.github/plans/turbulence-enhanced-wall-treatment.md)。
+> まとめ図は `ewt_comparison.png` (壁処理進化の Cf 比較) と `ewt_uplus_yplus.png` (u⁺-y⁺ collapse)。
+> 再生成: `python3 tools/plot_ewt_summary.py`。
 
 ## EWT 検証結果 (`wallTreatmentSST`, 3 帯の y⁺ 非依存性)
 
-`wallTreatmentSST:1` (automatic / Menter ω blend + Reichardt 逆解き u_τ + modeled 壁せん断) を
-第一セル高さの異なる 3 メッシュで mode0(low-Re)/mode1(enhanced) 比較。壁関数 run の Cf は分子勾配
-ではなく **modeled τ_w=ρu_τ²** で測る (`tools/wall_law_modeled.py`、x=0.6 station)。
+`wallTreatmentSST:1` を第一セル高さの異なる 3 メッシュ (y⁺₁≈0.35/10/30) で検証。壁関数 run の Cf は
+分子勾配ではなく壁関数整合の **modeled τ_w=ρu_τ²** で測る (`tools/wall_law_modeled.py`、x=0.6)。
+実装は 3 段階で進化した:
 
-| 帯 | y⁺₁ | mode0 Cf/Schl | mode1 Cf/Schl | mode1 u_τ |
-|---|---|---|---|---|
-| 細 (壁解像) | ≈0.35 | 0.92 (=mode1) | 0.96 | 2.63 |
-| バッファ | ≈10 | 0.56 | **1.10** | 2.80 |
-| 対数 | ≈30 | 0.13 | **0.91** | 2.54 |
+1. **mode0 (low-Re, 既定 0)**: 粗メッシュで Cf 崩壊 (y⁺30 で相関の 13%)。
+2. **ω-blend のみ (k=0 Dirichlet)**: ω は Menter ブレンド+modeled τ_w。改善するが y⁺10 で 1.10 と過大、
+   y⁺30 で 0.91。k=0 が近壁 k を潰し非整合 ([architecture-rans-sst] / theory §6.5(b'))。
+3. **full WF (本番)**: ω を wall-adjacent セルにピン留め + k zero-gradient + 近壁 P_k を wall-function 値
+   `ρu_τ⁴/ν·g(1-g)` に置換。3 点セットで k が平衡値 u_τ²/√β* に自律収束し全帯で相関に乗る。
 
-- **mode0 (low-Re)** は粗メッシュで Cf が崩壊 (y⁺30 で相関の 13%)。
-- **mode1 (enhanced)** は全帯で相関 ±15% 以内、u_τ≈2.5–2.8 に揃う → **第一セルの y⁺ 位置に依存しない**。
-- 細メッシュでは mode1 ≈ mode0 (壁解像に縮退) で回帰一致、既定 `wallTreatmentSST:0` は従来と不変。
-- 残差は block-DPLUR の構造的事情でプラトー (本ケース既知) だが、Cf ドリフトは res_25000→30000 で ≤0.06% で定常。
+| 帯 | y⁺₁ | mode0 | ω-blend(k=0) | **full WF** | full WF u_τ |
+|---|---|---|---|---|---|
+| 細 (壁解像) | ≈0.35 | 0.92 | — | **0.89–0.95** | 2.50–2.69 |
+| バッファ | ≈10 | 0.51–0.60 | 1.05–1.14 | **0.95–1.01** | 2.57–2.79 |
+| 対数 | ≈30 | 0.13–0.14 | 0.89–0.93 | **0.92–0.97** | 2.51–2.73 |
+
+(数値は x=0.30/0.60/0.89 の Cf/Schlichting。full WF は全帯で相関 ±8% 以内、u_τ≈2.5–2.8 に揃い
+**第一セルの y⁺ 位置に依存しない**。細メッシュでは Cf_molec≈Cf_model で wall-resolved 極限に縮退し、
+既定 `wallTreatmentSST:0` は従来と完全不変。)
+
+### 収束判定 (VERDICT 引用)
+
+本ケースは block-DPLUR の近似ヤコビアン由来で残差が**構造的にプラトー**する (受理済み本番
+`run_0007` も同様)。`tools/check_convergence.py` の VERDICT は full WF 3 run とも:
+
+```
+run_0016_ewt_fine_wf / run_0017_ewt_yp30_wf / run_0018_ewt_yp10_wf
+  -> NOT CONVERGED (stalled/plateau)   # 各 run の CONVERGENCE_VERDICT.txt
+```
+
+で、参照の `run_0007` (120000 step) も `NOT CONVERGED (plateau)`。**運用判定 A** に従い、
+「全残差列が低レベルで横ばい (NaN/上昇なし) **かつ** 着目積分量 Cf のドリフト <0.3% (res_15000→20000)」
+を満たすため **実用上 OK (発達・定常)** と判断する。リミットサイクルでないことは Cf 定常で担保。
+(`rms_roOmega` は ω ピン留めセルの残差を 0 化したため 1e-3 台で正常。)

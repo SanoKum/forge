@@ -35,6 +35,13 @@ __device__ inline flow_float reichardt_duplus_dyp(flow_float yp)
     return dlg + dtr;
 }
 
+// wf_pk を全セル -1 (inactive) に初期化する。
+__global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells) wf_pk[ic] = static_cast<flow_float>(-1.0);
+}
+
 __global__ void compute_wall_friction_sst_d(
     geom_int nb,
     geom_int* bplane_plane,
@@ -45,7 +52,8 @@ __global__ void compute_wall_friction_sst_d(
     flow_float* wall_dist,
     flow_float* Ux, flow_float* Uy, flow_float* Uz,
     flow_float* utau_b,
-    flow_float* ypls_b)
+    flow_float* ypls_b,
+    flow_float* wf_pk)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
     if (ib >= nb) return;
@@ -74,9 +82,10 @@ __global__ void compute_wall_friction_sst_d(
     const flow_float Ut  = sqrt(utx * utx + uty * uty + utz * utz);
 
     if (Ut <= kSmall) {
-        // 淀み域: せん断なし → u_τ=0 (ω 壁 BC は ω_vis に縮退)
+        // 淀み域: せん断なし → u_τ=0 (ω 壁 BC は ω_vis に縮退), 生産なし
         utau_b[ib] = static_cast<flow_float>(0.0);
         ypls_b[ib] = static_cast<flow_float>(0.0);
+        wf_pk[ic]  = static_cast<flow_float>(0.0);
         return;
     }
 
@@ -92,10 +101,26 @@ __global__ void compute_wall_friction_sst_d(
     }
     utau = max(utau, static_cast<flow_float>(0.0));
 
+    // wall-function 生産 P_k = (τ_w - τ_visc)·∂U/∂y = ρu_τ⁴/ν · g(1-g), g = du⁺/dy⁺(y⁺₁)
+    // (docs/turbulence §6.5(d))。粘性低層 g→1 で P_k→0 (壁解像極限を保つ)、対数層 g→1/(κy⁺) で
+    // P_k→ρu_τ³/(κy)。これと ω ピン留めで k が平衡値 u_τ²/√β* に収束し runaway を断つ。
+    const flow_float yp1 = utau * y / nu;
+    const flow_float g   = reichardt_duplus_dyp(yp1);
+    wf_pk[ic] = max(rho * utau * utau * utau * utau / nu * g * (static_cast<flow_float>(1.0) - g),
+                    static_cast<flow_float>(0.0));
+
     utau_b[ib] = utau;
     ypls_b[ib] = utau * y / nu;
 }
 
+}
+
+void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
+        return;
+    }
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"]);
 }
 
 void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var)
@@ -122,5 +147,6 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         var.c_d["wall_dist"],
         var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
         bc.bvar_d["utau"],
-        bc.bvar_d["ypls"]);
+        bc.bvar_d["ypls"],
+        var.c_d["wf_pk"]);
 }

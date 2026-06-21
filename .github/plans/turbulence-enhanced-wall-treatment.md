@@ -138,15 +138,29 @@ u_τ は速度・y・ν のみで算出可 → **`applyRansScalarBoundaries` 直
   **結果は悪化** — y⁺30 Cf/corr 0.89→1.80, y⁺10 1.10→1.68。原因: zero-gradient k BC は
   近壁 P_k の wall-function 化 (P_k=τ_w·(∂U/∂y)_log, k を u_τ²/√β* に固定) とセットで成立するが、
   forge は P_k が解像勾配のままで粗メッシュでは誤り → k 暴走 → μ_t 過大 → u_τ/Cf 過大。
-  k=0 Dirichlet はこの未整合生産を部分相殺するため現状実装では良い。**コードは k=0 Dirichlet に
-  戻し** (docs §6.5(b') に機序を明記)、真の automatic (k zero-grad + P_k log則化 + k 平衡固定) は §10。
+  k=0 Dirichlet はこの未整合生産を部分相殺するため (この時点の実装では) 良い。いったん k=0 Dirichlet に
+  戻し、真の automatic (k zero-grad + P_k log則化 + ω ピン留め) を次項で実装した。
+- `2026-06-21` — **真の automatic wall treatment を実装** (旧 §10 を本体に取込み, docs §6.5(b')(c)(d) 改訂):
+  - **ω ピン留め**: wall-adjacent セルの `omega`/`roOmega` を Menter ブレンド ω_w に毎評価ピン留め
+    (`ransBoundary_d.cu`)。全 y⁺ で妥当 (y⁺→0 で ω_vis 支配) なので μ_t を上限し k 暴走を断つ。
+  - **k zero-gradient** (mode1): `k_g=k_c`。
+  - **P_k の wall-function 化**: 新セル変数 `wf_pk` を `ransWallFunction_d.cu` で wall-adjacent セルに
+    `P_k=ρu_τ⁴/ν·g(1-g)`, g=du⁺/dy⁺(y⁺₁) と算出 (Reichardt 微分)。`ransSource_d.cu` が標準 P_k を
+    この値に置換。粘性低層 g→1 で P_k→0 (壁解像極限), 対数層で ρu_τ³/(κy)。これと ω ピン留めで
+    k が平衡値 u_τ²/√β* に自律収束。
+  - ω ピン留めセルの `res_roOmega`/`src_jac_omega` を 0 化 (Dirichlet セルの残差は 0; rms_roOmega 汚染回避)。
+  - 新変数 `wf_pk` は `variables.hpp` cellValNames に登録。`boundaryCond.cpp` が bc ループ前に
+    `initWallFunctionPk_d_wrapper` で -1 初期化。
+  - 検証 (`case/26`, full WF, modeled Cf, x=0.30/0.60/0.89): 細 y⁺0.35 `run_0016` 0.89/0.92/0.95 (=壁解像),
+    バッファ y⁺10 `run_0018` 0.95/0.98/1.01 (ω-blend 単独の 1.05–1.14 過大を解消), 対数 y⁺30 `run_0017`
+    0.92/0.94/0.97。u_τ≈2.5–2.8 で **y⁺ 非依存**。u⁺-y⁺ も 3 帯で普遍プロファイルに collapse
+    (`ewt_uplus_yplus.png`)。既定 0 はビット不変。
+  - 収束: VERDICT は 3 run とも `NOT CONVERGED (plateau)` (本番 `run_0007` も同様の block-DPLUR 構造的
+    プラトー)。**運用判定 A** (全残差列が低レベル横ばい かつ Cf ドリフト <0.3%) で実用上 OK と判断。
 
 ## 10. 将来課題 (本 plan 外)
 
-- **真の automatic wall treatment** (本 plan は ω blend + modeled τ_w まで): 近壁第一セルの
-  P_k を log 則の壁せん断から計算 (`P_k = τ_w·(∂U/∂y)_log`)、k を平衡値 `u_τ²/√β*` に固定/制限、
-  その上で k 壁 BC を zero-gradient 化する。この 3 点セットで初めて k zero-gradient が成立する
-  (単独では k 暴走、§9 の `2026-06-21` 検証参照)。これが入れば y⁺10/30 の残差 (現状 ±10–15%) が
-  詰まる見込み。
-- 近壁第一セルの μ_t を wall-function 整合化 (現状は標準 SST 式のまま)。
-- 陰解法 (block-DPLUR) で wall-function 項の Jacobian 整合 (現状は陽的に評価)。
+- 近壁第一セルの μ_t を wall-function 整合化 (現状は標準 SST 式のまま; ω ピン留めで実効的に上限済み)。
+- 陰解法 (block-DPLUR) で wall-function 項の Jacobian 整合 (現状は陽的評価 + ω ピン留めセルは残差 0 化)。
+  block-DPLUR の残差プラトーを解消できれば VERDICT を PASS にできる見込み。
+- 多成分・軸対称との組合せ (axisymmetricSource が res_roOmega を足す経路で ω ピン留めセルの再零化が要る)。

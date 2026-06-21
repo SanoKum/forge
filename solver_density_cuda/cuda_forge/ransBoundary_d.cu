@@ -27,7 +27,8 @@ __global__ void rans_wall_scalar_boundary_d(
     flow_float* kb,
     flow_float* omegab,
     int wallTreatment,
-    flow_float* utau)
+    flow_float* utau,
+    flow_float* roOmega)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -39,24 +40,29 @@ __global__ void rans_wall_scalar_boundary_d(
         const flow_float nu_c = vis_lam[ic] / rho_c;
         const flow_float y_w = max(wall_dist[ic], kSmall);
 
-        // k は mode に関わらず k_w = 0 (Dirichlet)。教科書的には wall-function では k を
-        // zero-gradient にするが、それは近壁 P_k も log則 τ_w から計算し第一セル k を平衡値
-        // u_τ²/√β* に固定する整合とセットで成立する。forge は P_k が解像勾配のままなので
-        // (plan §10 将来課題)、k を zero-gradient にすると誤った解像生産で近壁 k が暴走し
-        // μ_t 過大 → u_τ 過大 → Cf 過大になる (検証: y⁺30 で 0.89→1.80, y⁺10 で 1.10→1.68)。
-        // P_k の wall-function 化までは k=0 Dirichlet の方が良い (docs/turbulence §6.5 (b'))。
-        kb[ib] = static_cast<flow_float>(0.0);
-
         if (wallTreatment == 1) {
+            // automatic wall treatment (docs/turbulence §6.5):
+            //   ω: Menter ブレンド ω_w=√(ω_vis²+ω_log²) を **wall-adjacent セル値にピン留め**する。
+            //      ω_w は全 y⁺ で妥当 (y⁺→0 で ω_vis 支配=壁解像値) なので μ_t=ρa₁k/max(a₁ω,SF₂) を
+            //      適切に上限し、k runaway を断つ。conserved roOmega も合わせて更新する。
+            //   k: zero-gradient (Neumann)。近壁 P_k は wall-function 値 (ransSource の wf_pk) に
+            //      置換済みなので、k は平衡値 u_τ²/√β* に自律収束する (b' の runaway は起きない)。
             const flow_float omega_vis = static_cast<flow_float>(6.0) * nu_c / (kSstBeta1 * y_w * y_w);
             const flow_float omega_log = utau[ib] / (sqrt(kSstBetaSt) * kKappa * y_w);
-            omegab[ib] = max(sqrt(omega_vis * omega_vis + omega_log * omega_log), kOmegaMin);
+            const flow_float omega_w   = max(sqrt(omega_vis * omega_vis + omega_log * omega_log), kOmegaMin);
+            omegab[ib]  = omega_w;
+            omega[ic]   = omega_w;                       // wall-adjacent セルにピン留め
+            roOmega[ic] = rho_c * omega_w;               // conserved も整合
+            kb[ib] = k[ic];
+            k[ig]     = k[ic];                           // ∂k/∂n = 0 (zero-gradient)
+            omega[ig] = static_cast<flow_float>(2.0) * omega_w - omega[ic];
         } else {
+            // wall-resolved (low-Re): k_w = 0 Dirichlet, ω_w = 60ν/(β₁ y²)。
+            kb[ib] = static_cast<flow_float>(0.0);
             omegab[ib] = max(static_cast<flow_float>(60.0) * nu_c / (kSstBeta1 * y_w * y_w), kOmegaMin);
+            k[ig]     = static_cast<flow_float>(2.0) * kb[ib] - k[ic];
+            omega[ig] = static_cast<flow_float>(2.0) * omegab[ib] - omega[ic];
         }
-
-        k[ig] = static_cast<flow_float>(2.0) * kb[ib] - k[ic];
-        omega[ig] = static_cast<flow_float>(2.0) * omegab[ib] - omega[ic];
     }
 }
 
@@ -133,7 +139,8 @@ void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc
             bc.bvar_d["kb"],
             bc.bvar_d["omegab"],
             cfg.wallTreatmentSST,
-            bc.bvar_d["utau"]);
+            bc.bvar_d["utau"],
+            var.c_d["roOmega"]);
         return;
     }
 

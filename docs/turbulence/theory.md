@@ -315,34 +315,28 @@ $$
 $$
 
 粘性低層では $\omega_{vis}$、対数層では $\omega_{log}$ が支配する。§6.1 の係数 60 ではなく
-解析漸近の係数 6 を用いる ($y^+\to0$ の厳密漸近に一致させるため)。
-ghost 反射 $\omega_g = 2\omega_w - \omega_c$ は §6.1 と同じ。
+解析漸近の係数 6 を用いる ($y^+\to0$ の厳密漸近に一致させるため)。$\omega_w$ は全 $y^+$ で
+妥当 ($y^+\to0$ で $\omega_{vis}$ 支配=壁解像値) なので、ghost 反射に加えて
+**wall-adjacent セル値そのものを $\omega_c = \omega_w$ にピン留め**する (conserved $\rho\omega$ も整合)。
+これにより渦粘性 $\mu_t = \rho a_1 k/\max(a_1\omega, S F_2)$ が近壁で適切に上限され、$k$ の暴走
+(後述 (b')) を断つ。
 
-#### (b') $k$ 壁面境界 — なぜ automatic でも $k_w = 0$ を保つか
+#### (b') $k$ 壁面境界 — zero-gradient ($P_k$ の wall-function 化とセット)
 
-教科書的には、wall-function では $k$ を **zero-gradient (Neumann, $\partial k/\partial n = 0$)**
-とするのが標準である (OpenFOAM `kqRWallFunction`、ANSYS automatic の $k$ zero-flux 条件)。
-これは、第一セルがバッファ・対数層にあるとき、その点の $k$ が有限の対数層平衡値
-$k \approx u_\tau^2/\sqrt{\beta^*}$ を取るべきだからである。
+wall-function では $k$ を **zero-gradient (Neumann, $\partial k/\partial n = 0$)** とするのが標準
+(OpenFOAM `kqRWallFunction`、ANSYS automatic の $k$ zero-flux)。第一セルがバッファ・対数層に
+あるとき $k$ は有限の対数層平衡値 $k \approx u_\tau^2/\sqrt{\beta^*}$ を取るべきだからである。
 
-**ただしこれは近壁の生産項 $P_k$ も wall-function 化することとセットで初めて成立する。**
-すなわち wall-adjacent セルで $P_k = \tau_w\,(\partial U/\partial y)_{\text{log}}$ (log 則の壁せん断
-から評価) とし、$k$ を平衡値 $u_\tau^2/\sqrt{\beta^*}$ に固定/制限する必要がある。
-
-forge は現状 $P_k$ を標準 SST のまま**解像速度勾配**から計算する (§7 系、plan §10 の将来課題)。
-粗メッシュではこの解像勾配が誤っているため、$k$ を zero-gradient にすると誤った生産で近壁 $k$
-が暴走し、$\mu_t$ 過大 → $u_\tau$ 過大 → $C_f$ 過大になる。実測 (`case/26`, modeled $C_f$):
-
-| 帯 | $k_w=0$ Dirichlet | $k$ zero-gradient |
-|---|---|---|
-| y⁺≈30 | 0.89–0.93 | 1.80–1.92 (悪化) |
-| y⁺≈10 | 1.05–1.14 | 1.64–1.79 (悪化) |
-
-$k_w = 0$ Dirichlet は近壁 $k$ を抑えることで、この未整合な解像生産を**部分的に相殺**しており、
-$P_k$ の wall-function 化が入るまでは $k_w = 0$ の方が良い。したがって automatic モードでも
-$k_w = 0$, $k_g = -k_c$ を保ち、$\omega$ のみ §6.5(b) のブレンドに切り替える。
-**真の automatic wall treatment ($k$ zero-gradient + $P_k$ の log則化 + $k$ 平衡固定) は
-plan §10 の将来課題**とする。
+**ただし $k$ zero-gradient は近壁の生産項 $P_k$ の wall-function 化 (下記 (d)) とセットで初めて
+成立する。** $P_k$ を標準 SST のまま**解像速度勾配**から計算したまま $k$ を zero-gradient にすると、
+粗メッシュでは誤った解像生産で近壁 $k$ が暴走し $\mu_t$ 過大 → $u_\tau$/$C_f$ 過大になる
+(実測 `case/26`: $k$ zero-gradient 単独で y⁺≈30 が $C_f/C_{f,\text{corr}}$ 0.91→1.80, y⁺≈10 が
+1.10→1.68 と悪化した)。(d) の $P_k$ 置換と (b) の $\omega$ ピン留めを同時に入れると、$k$ は
+自律的に平衡値へ収束し暴走しない。したがって automatic モードでは
+$$
+k_w = k_c,\qquad k_g = k_c \quad(\partial k/\partial n = 0)
+$$
+とする (wall-resolved モード=既定 0 は $k_w = 0$, $k_g = -k_c$ を保つ)。
 
 #### (c) 運動量壁せん断 — 有効壁粘性
 
@@ -358,6 +352,29 @@ $$
 対数層では $\mu_{eff} > \mu$ (wall function 化) となり、全層で連続に繋がる。
 no-slip 壁では壁せん断は仕事をしない ($\boldsymbol{\tau}_w\cdot\mathbf{U}_w = 0$) ため、
 エネルギー方程式の壁せん断仕事項と熱流束は不変である。
+
+#### (d) wall-adjacent セルの乱流生産 $P_k$ — wall-function 値への置換
+
+(b') の $k$ zero-gradient を成立させる要。wall-adjacent セルでは標準 SST の解像勾配生産
+$P_k = \mu_t S^2$ を、普遍速度則から評価した wall-function 生産に置換する。乱流応力 (= 全応力
+− 粘性応力) と壁面速度勾配の積として
+$$
+P_k = (\tau_w - \tau_{vis})\,\frac{\partial U}{\partial y}
+    = \rho\frac{u_\tau^4}{\nu}\,g\,(1-g),
+\qquad
+g \equiv \left.\frac{du^+}{dy^+}\right|_{y^+_1}
+$$
+ここで $\partial U/\partial y = (u_\tau^2/\nu)\,g$, $\tau_w = \rho u_\tau^2$, $\tau_{vis} = \mu\,\partial U/\partial y
+= \tau_w\,g$ を用いた。$g$ は (a) の Reichardt 則の微分 $du^+/dy^+$ を第一セル $y^+_1$ で評価。
+
+- **粘性低層** ($y^+\to0$): $g\to1$ より $P_k\to0$ — せん断は全て分子粘性が担い乱流生産ゼロ。
+  標準 SST の wall-resolved 極限に一致する (細メッシュで既定 0 と同結果)。
+- **対数層** ($y^+\gg1$): $g\to 1/(\kappa y^+)$ より $P_k\to \rho u_\tau^3/(\kappa y)$ — 標準的な log 則生産。
+
+この $P_k$ と (b) の $\omega$ ピン留めにより、$k$ 方程式の生産・消滅平衡
+$P_k = \beta^*\rho k\,\omega_w$ から $k\to u_\tau^2/\sqrt{\beta^*}$ (対数層平衡値) へ自律収束し、
+$k$ を直接固定せずとも暴走しない。検証は plan / `case/26` を参照 (3 帯 y⁺≈0.35/10/30 で
+$C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
 
 ## 7. 2D / 3D / 軸対称
 

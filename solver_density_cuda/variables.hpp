@@ -87,6 +87,10 @@ public:
         //   src_jac_omega = ∂Dω/∂(ρω)   = 2 β ω
         "src_jac_k",
         "src_jac_omega",
+        // SST automatic wall treatment (wallTreatmentSST==1) 用: wall-adjacent セルの
+        // wall-function 生産 P_k = ρu_τ⁴/ν·g(1-g) (g=du⁺/dy⁺) を格納。非 wall セルは -1
+        // (inactive)。ransSource が >=0 のセルで標準 P_k をこの値に置換する (docs/turbulence §6.5(d))。
+        "wf_pk",
         // SST 陰解法用: k/ω 輸送項（移流+拡散）のヤコビアン対角（point-implicit）[m³/s]。
         // 1次風上移流の Σ_f max(±ṁ,0)/ρ と拡散 Σ_f (μ_face/ρ)(|δ|/dcc) を面ループで集計し、
         // D_φ = V/Δτ + V·src_jac + transport_diag に加える。壁近傍の細セルで陽的輸送 stiff 性を

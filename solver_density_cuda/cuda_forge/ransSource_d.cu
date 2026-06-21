@@ -34,6 +34,8 @@ __global__ void rans_sst_source_d(
     flow_float* axisym_uy_over_r,
     int dilatationCorrection,
     int katoLaunder,
+    int wallTreatment,
+    flow_float* wf_pk,
     flow_float* res_roK,
     flow_float* res_roOmega,
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
@@ -127,6 +129,13 @@ __global__ void rans_sst_source_d(
         Pk = max(Pk, static_cast<flow_float>(0.0));
     }
 
+    // automatic wall treatment (docs/turbulence §6.5(d)): wall-adjacent セル (wf_pk>=0) では
+    // 解像勾配ベースの P_k を wall-function 生産 P_k=ρu_τ⁴/ν·g(1-g) に置換する。ω はピン留め済み
+    // (ransBoundary) なので k は平衡値 u_τ²/√β* に自律収束する。非 wall セルは wf_pk<0 で不変。
+    if (wallTreatment == 1 && wf_pk[ic] >= static_cast<flow_float>(0.0)) {
+        Pk = wf_pk[ic];
+    }
+
     // k 消滅項
     const flow_float Dk = kBetaStar * rho * k_c * w_c;
 
@@ -152,6 +161,15 @@ __global__ void rans_sst_source_d(
     // 不採用。輸送項の point-implicit 化は scalarTransport_d.cu（transport_diag）を参照。
     src_jac_k[ic]     = kBetaStar * w_c;
     src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
+
+    // automatic wall treatment: wall-adjacent セルは ω をピン留め (Dirichlet, ransBoundary) する。
+    // Dirichlet セルの残差は 0 が正しい。res_roOmega を 0 にし (transport+source 込みを上書き)、
+    // 無駄な update と rms_roOmega の汚染 (ピン留めの巨大残差) を防ぐ。k は解くので残差は残す。
+    // 注: 非軸対称ケース前提 (axisymmetricSource が後段で res_roOmega を足す場合は別途零化が要る)。
+    if (wallTreatment == 1 && wf_pk[ic] >= static_cast<flow_float>(0.0)) {
+        res_roOmega[ic]   = static_cast<flow_float>(0.0);
+        src_jac_omega[ic] = static_cast<flow_float>(0.0);
+    }
 }
 
 }
@@ -180,6 +198,8 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["axisym_uy_over_r"],
         cfg.dilatationCorrection,
         cfg.katoLaunder,
+        cfg.wallTreatmentSST,
+        var.c_d["wf_pk"],
         var.c_d["res_roK"],
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],

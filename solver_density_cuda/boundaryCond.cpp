@@ -4,6 +4,7 @@
 #include "cuda_forge/boundaryCond_d.cuh"
 #include "cuda_forge/axisymmetricSource_d.cuh"
 #include "cuda_forge/ransBoundary_d.cuh"
+#include "cuda_forge/ransWallFunction_d.cuh"
 #include "cuda_forge/fluct_variables_d.cuh"
 
 using namespace std;
@@ -178,6 +179,12 @@ void applyRansScalarBoundaries(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
 {
     if (!(cfg.gpu == 1 && cfg.LESorRANS == 2 && cfg.RANSmodel == 1)) {
         return;
+    }
+
+    // automatic wall treatment: wall-function 生産 wf_pk を bc ループ前に全セル -1 (inactive) 化。
+    // 各 wall bc の computeWallFrictionSST が自分の wall-adjacent セルだけ >=0 に埋める。
+    if (cfg.wallTreatmentSST == 1) {
+        initWallFunctionPk_d_wrapper(cfg , cuda_cfg , msh , var);
     }
 
     for (auto& bc : msh.bconds)
