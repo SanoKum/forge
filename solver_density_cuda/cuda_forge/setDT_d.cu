@@ -329,10 +329,14 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         gpuErrchk( cudaDeviceSynchronize() );
     }
 
-    // max cfl の host 読み出し (thrust::max_element は D2H + 同期) は dt 適応か表示が要るときだけ行う。
-    // dt 適応 (dtControl==1) と console 表示は独立。両方不要なら host 同期は一切発生しない
-    // (後続カーネルは同一 default stream で順序保証)。定常 implicit では dt_local=cfl_pseudo·dx/λ で
-    // cfg.dt が打ち消されるため、adaptDt を間引いても解に不影響。
+    // max cfl の host 読み出し (thrust::max_element は D2H + 同期)。
+    //  - printCfl: printf が値を host で要するため、本質的に host read が必要。
+    //  - dt 適応 (adaptDt && dtControl==1): 原理的には device 上で完結できる (cfl_max も cfg.dt も device 化すれば
+    //    host 同期不要) が、現状 cfg.dt が host スカラ (多数カーネルに値渡し・dual-time BDF 係数等で host 使用) の
+    //    ため host で計算している。よってこの条件は「現実装の都合」であり本質的要請ではない。
+    //    device-resident dt 化は explicit/dual-time の毎ステップ適応 (dtControl==1) で per-step 同期を消せるが、
+    //    定常 implicit は dt_local=cfl_pseudo·dx/λ で cfg.dt が打ち消され不影響なので利得なし (別 plan 候補)。
+    // 両条件とも false なら host 同期は一切発生しない (後続カーネルは同一 default stream で順序保証)。
     const bool needHostRead = (adaptDt && cfg.dtControl == 1) || printCfl;
     if (needHostRead) {
         thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(var.c_d["cfl"]);
