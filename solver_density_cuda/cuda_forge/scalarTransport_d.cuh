@@ -13,6 +13,10 @@
 // RANS k/ω への適用は ransTransport_d.* が ScalarTransportDesc を構築して呼び出す。
 struct ScalarTransportDesc {
     flow_float* phi;
+    // φ の勾配 (node 壁の ghostless 弱形式拡散 ∇φ·S で使用; 内部面・cell では未使用で nullptr 可)。
+    flow_float* dphidx;
+    flow_float* dphidy;
+    flow_float* dphidz;
     flow_float* rho_phi;
     flow_float* rho_phi_N;
     flow_float* rho_phi_M;

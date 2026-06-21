@@ -83,8 +83,8 @@ __global__ void calc_scalar_gradient_div_vol_d(
 std::array<ScalarTransportDesc, 2> buildScalarDescs(variables& var)
 {
     return {{
-        {var.c_d["k"], var.c_d["roK"], var.c_d["roKN"], var.c_d["roKM"], var.c_d["res_roK"], var.c_d["res_roK_m"], var.c_d["src_jac_k"], var.c_d["transport_diag_k"], static_cast<flow_float>(0.0), static_cast<flow_float>(0.85), 1},
-        {var.c_d["omega"], var.c_d["roOmega"], var.c_d["roOmegaN"], var.c_d["roOmegaM"], var.c_d["res_roOmega"], var.c_d["res_roOmega_m"], var.c_d["src_jac_omega"], var.c_d["transport_diag_omega"], static_cast<flow_float>(1.0e-20), static_cast<flow_float>(0.5), 1}
+        {var.c_d["k"],     var.c_d["dKdx"],     var.c_d["dKdy"],     var.c_d["dKdz"],     var.c_d["roK"], var.c_d["roKN"], var.c_d["roKM"], var.c_d["res_roK"], var.c_d["res_roK_m"], var.c_d["src_jac_k"], var.c_d["transport_diag_k"], static_cast<flow_float>(0.0), static_cast<flow_float>(0.85), 1},
+        {var.c_d["omega"], var.c_d["dOmegadx"], var.c_d["dOmegady"], var.c_d["dOmegadz"], var.c_d["roOmega"], var.c_d["roOmegaN"], var.c_d["roOmegaM"], var.c_d["res_roOmega"], var.c_d["res_roOmega_m"], var.c_d["src_jac_omega"], var.c_d["transport_diag_omega"], static_cast<flow_float>(1.0e-20), static_cast<flow_float>(0.5), 1}
     }};
 }
 

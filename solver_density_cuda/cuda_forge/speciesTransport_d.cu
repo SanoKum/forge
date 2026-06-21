@@ -49,7 +49,8 @@ ScalarTransportDesc buildSpeciesDesc(variables& var, int s)
 {
     const std::string i = std::to_string(s);
     return ScalarTransportDesc{
-        var.c_d["Y"+i], var.c_d["roY"+i], var.c_d["roY"+i+"N"], var.c_d["roY"+i+"M"],
+        var.c_d["Y"+i], nullptr, nullptr, nullptr,  // dphidx/y/z: 化学種は汎用拡散(diffusion=0)未使用
+        var.c_d["roY"+i], var.c_d["roY"+i+"N"], var.c_d["roY"+i+"M"],
         var.c_d["res_roY"+i], var.c_d["res_roY"+i+"_m"],
         var.c_d["src_jac_Y"+i], var.c_d["transport_diag_Y"+i],
         static_cast<flow_float>(0.0), static_cast<flow_float>(0.0),

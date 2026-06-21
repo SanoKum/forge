@@ -107,6 +107,59 @@ tau_x += -mu*2.0/3.0*divu*sxx;                      // 発散項
 > 修正後は壁隣接セル Ux≈0.24 m/s・中心/平均比 1.53・流量 SU2 比約9%差・`twall_x` 非ゼロ。
 > 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md)。
 
+### node-centered の壁法線項 (`nodeWallViscGradFlux`, 2026-06-20)
+
+上記の法線項 `mu*((Ux[ig]-Ux[ic])/dcc)*sss` は **cell-centered** を前提とする。cell では
+ゴースト中心が `cc_ghost = cc + 2((pc-cc)·n) n` で生成され、cell 中心が壁面から法線距離 $d_n$
+だけ内側にあるため `dcc = |cc_ghost-cc| = 2 d_n`。ミラー (`Ux[ig]=-Ux[ic]`) と合わせると
+法線項は $(U_{wall}-U_{cell})/d_n$ ($U_{wall}=0$) に一致し、正しい片側壁勾配になる。
+
+**node-centered (median-dual)** では境界 CV 代表点 (=ノード) が**壁面上に乗る**。半割面重心
+`pc` も壁面上にあるため $(pc-cc)\cdot n \approx 0$、すなわち `cc_ghost ≈ cc` で **`dcc ≈ 0`** に
+退化する。残る微小な `dcc` は壁の曲率に由来し符号も面ごとにばらつくため、法線項
+`(Ux[ig]-Ux[ic])/dcc` は $0/0$ 的に爆発し、近壁で偶奇振動・implicit 不安定を引き起こす。
+勾配計算 ([`calcGradient_d.cu`](../../solver_density_cuda/cuda_forge/calcGradient_d.cu)) は既に
+この退化を認識し、壁半割面を cellgather から外して **bvar 弱形式**で閉じている。
+
+そこで `cfg.discretization=="node"` かつ `nodeWallViscGradFlux==1` (既定) のとき、壁法線項を
+**node セル勾配ベース** $\mu\,\nabla u_i\cdot\mathbf{S}$ に置換する。$\nabla u_i$ は calcGradient で
+bvar 弱形式により壁面で正しく閉じているので、退化距離 `dcc` に依存しない:
+
+```cpp
+// node: 法線項 = μ ∇u_i·S (cell 勾配は bvar 弱形式で壁閉包済み)
+tnx = mu*(dUxdx[ic]*sxx + dUxdy[ic]*syy + dUxdz[ic]*szz);
+// 転置項 μ ∂u_j/∂x_i S_j と体積粘性項 -2/3 μ divu S_i は cell/node 共通で不変。
+hflux = (k_lam + cp*mu_turb/Prt)*(dTdx[ic]*sxx + dTdy[ic]*syy + dTdz[ic]*szz);
+```
+
+転置項・発散項はもともと node セル勾配にフル `S` を内積する形なので変更不要 (置換は法線項
+のみ)。cell モードでは `nodeWallGradFlux=0` を渡し従来挙動をビット不変で維持する。
+診断は env `FORGE_VISC_WALL_DIAG=1` で壁半割面の $d_n$, `dcc`, `dcc/(2d_n)`, 接線オフセットを
+集計表示する (`viscousWallDiag_d`)。計画は
+[`.github/plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md)。
+
+### node-centered の内部面 dcc に node 座標を使う (2026-06-22)
+
+内部面の over-relaxed 拡散/粘性係数は `delta = |dcc|·|S|²/(dcc·S) = |S|/cosθ` で、`dcc` (CV 間
+ベクトル) と面ベクトル `S` の非直交角 `θ` が大きいと `1/cosθ` で発散する。**node-centered では
+flux の `dcc` に `ccx`(=`CELLS/centCoords`=双対 CV 面積加重重心, `axisCentroidShift`) を使うと、
+近壁の半割双対 CV で重心がノードから最大 ~0.0075 ずれ、見かけの非直交 `1/cosθ` が実測 max
+1.46e6 に発散**する。median-dual の双対面は**ノードエッジに直交**するので、`dcc` に**ノード座標**を
+使えば `1/cosθ`=1.00 (厳密直交) になる (検証: case/36)。
+
+この見かけ非直交が μ_t × 近壁 omega 勾配 (restart で壁近傍 ω~4.3e8) を増幅し、**SST omega 拡散
+flux を爆発**させる (case/36 node SST が step3 で roOmega→1e22)。検証: `dcc` を node 座標で測ると
+`1/cosθ`=1.00、内部面拡散/粘性を node 座標 dcc にすると case/36 node SST が step3→1657 へ改善
+(ncx 試作で確認、撤去済)。
+
+**根治方針 (採用)**: node 専用配列 (ncx 等) で分岐するのでなく、**`CELLS/centCoords` 自体を「値の位置」=
+ノード座標に統一**し、cell/node で同一処理にする。双対 CV 重心は別量に分離し、軸対称の r 重み/source
+だけが参照する (`axisCentroidShift` 撤去)。これで内部面は自動で直交化する。ただし `centCoords=node` は
+**壁ノードが壁面に乗り ghost mirror の dcc が退化** (検証: NaN 132/132 が壁) するため、**node モードの
+境界を完全 ghostless 化** (境界半割面を bvar + 内部隣接ノードの `∇φ·S` 弱形式で評価) するのが前提。
+計画: [`.github/plans/architecture-node-centroid-value-position.md`](../../.github/plans/architecture-node-centroid-value-position.md)
+(旧 [`diffusion-node-scalar-nonortho-limit.md`](../../.github/plans/diffusion-node-scalar-nonortho-limit.md) は superseded)。
+
 ## 入出力
 
 入力: セル中心保存量・原始量 (`ro, roUx, …, Ts`)、勾配 (`dUxd*, dUyd*, dUzd*, dTd*`)、

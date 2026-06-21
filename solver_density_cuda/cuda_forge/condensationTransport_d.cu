@@ -25,7 +25,8 @@ ScalarTransportDesc buildCondMomentDesc(variables& var, const std::string& consN
 {
     const std::string prim = consName.substr(2); // 先頭 "ro" を除去 ("g_0","Q0_0")
     return ScalarTransportDesc{
-        var.c_d[prim], var.c_d[consName], var.c_d[consName+"N"], var.c_d[consName+"M"],
+        var.c_d[prim], nullptr, nullptr, nullptr,  // dphidx/y/z: 凝縮モーメントは汎用拡散(diffusion=0)未使用
+        var.c_d[consName], var.c_d[consName+"N"], var.c_d[consName+"M"],
         var.c_d["res_"+consName], var.c_d["res_"+consName+"_m"],
         var.c_d["src_jac_"+prim], var.c_d["transport_diag_"+prim],
         static_cast<flow_float>(0.0), static_cast<flow_float>(0.0),

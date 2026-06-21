@@ -41,6 +41,8 @@ __global__ void scalar_advection_first_order_d(
 __global__ void scalar_diffusion_first_order_d(
     geom_int nCells,
     geom_int nNormalHaloPlanes,
+    geom_int nWallHaloPlanes,
+    int isNode,
     geom_int* normal_halo_planes,
     geom_int* plane_cells,
     geom_float* ccx,
@@ -52,6 +54,9 @@ __global__ void scalar_diffusion_first_order_d(
     geom_float* sz,
     geom_float* ss,
     flow_float* phi,
+    flow_float* dphidx,
+    flow_float* dphidy,
+    flow_float* dphidz,
     flow_float* ro,
     flow_float* vis_lam,
     flow_float* vis_turb,
@@ -71,6 +76,19 @@ __global__ void scalar_diffusion_first_order_d(
         const geom_float syy = sy[ip];
         const geom_float szz = sz[ip];
         const geom_float sss = ss[ip];
+
+        // node モードの壁半割面 (normal_halo_planes 末尾 nWallHaloPlanes 個) は ghost を使わず、
+        // 壁ノードのセル勾配 ∇φ (calcGradient が bvar で境界閉包・内部隣接ノード由来) を用いた弱形式
+        // ∇φ·S で評価する。ghost mirror の退化 dcc (壁ノードが壁面に乗り dcc≈0) を完全に回避する。
+        if (isNode != 0 && ih >= nNormalHaloPlanes - nWallHaloPlanes) {
+            const geom_int icw = (ic0 < nCells) ? ic0 : ic1;
+            if (icw < nCells && dphidx != nullptr) {
+                const flow_float mu = vis_lam[icw] + sigma * max(vis_turb[icw], static_cast<flow_float>(0.0));
+                const flow_float flux = mu * (dphidx[icw]*sxx + dphidy[icw]*syy + dphidz[icw]*szz);
+                atomicAdd(&res_rho_phi[icw], flux);  // S 外向き → ∇·(μ∇φ) の発散形寄与
+            }
+            return;
+        }
 
         const flow_float dcc_x = ccx[ic1] - ccx[ic0];
         const flow_float dcc_y = ccy[ic1] - ccy[ic0];
@@ -192,6 +210,8 @@ void scalarTransportResidual_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         scalar_diffusion_first_order_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>>(
             msh.nCells,
             msh.nNormal_halo_Planes,
+            (cfg.discretization == "node") ? msh.nWallHaloPlanes : 0,
+            (cfg.discretization == "node") ? 1 : 0,
             msh.normal_halo_planes_d,
             msh.map_plane_cells_d,
             var.c_d["ccx"],
@@ -203,6 +223,9 @@ void scalarTransportResidual_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
             var.p_d["sz"],
             var.p_d["ss"],
             desc.phi,
+            desc.dphidx,
+            desc.dphidy,
+            desc.dphidz,
             var.c_d["ro"],
             var.c_d["vis_lam"],
             var.c_d["vis_turb"],
