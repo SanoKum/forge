@@ -94,7 +94,7 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     );
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 // node-centered 軸対称: 軸上 CV (R=0) で半径方向運動量を 0 に (軸対称の対称条件)。
@@ -139,7 +139,7 @@ void zeroAxisRadialResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         msh.nCells, msh.axis_flag_d, var.c_d["res_roUy"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
@@ -152,7 +152,7 @@ void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
         var.c_d["ro"], var.c_d["roUy"], var.c_d["roe"], var.c_d["Uy"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 // node-centered 壁 Dirichlet (state 初期化): 壁ノードで速度を厳密に 0 にする。除去する運動エネルギー
@@ -202,7 +202,7 @@ void enforceWallNoSlip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh
         var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
@@ -213,7 +213,7 @@ void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg
         var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
@@ -232,5 +232,5 @@ void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
     );
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }

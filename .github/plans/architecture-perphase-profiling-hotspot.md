@@ -141,6 +141,24 @@
       していたのを修正** (pseudo の CFL ベース dt_local は setCFL カーネルが無条件に毎回計算するため元から有効)。
   - **重要バグの修正**: 初版で explicit と steady の関数末尾が酷似し throttle が誤って `advanceExplicitRK` 側へ入っていた
     (explicit は unsteady で cfg.dt を物理時間前進に使うため致命的) → 正しい steady 末尾へ移設。
+- 2026-06-21: **Phase B-2 ステップ① 完了 (per-kernel sync の peek 化)**。
+  - **監査**: cuda_forge 全カーネルが default (legacy) stream、`cudaMemcpyAsync`/明示 stream 無し (residualMonitor の
+    memsetAsync は同 stream で順序付き＋flush で同期)。→ per-kernel `cudaDeviceSynchronize` は正しさに不要
+    (same-stream 順序保証、host 読みは cudaMemcpy/thrust が intrinsic に同期)。撤去で失うのは実行エラーの即時・行単位検知のみ。
+  - **実装**: `cudaWrapper.cuh` に env ゲート `forgeKernelSyncEnabled()` (既定 false=peek化) と
+    `gpuErrchkKernelSync()` を追加。従来の `gpuErrchk(cudaDeviceSynchronize())` 計 54 箇所 (cuda_forge/*.cu + boundaryCond.cpp)
+    を一括置換。`gpuErrchk(cudaPeekAtLastError())` は残置 (起動エラー検知は維持)。**`FORGE_KERNEL_SYNC=1` で従来同期に復帰**
+    (デバッグ用)。
+  - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
+    - 速度: sync ON 8.05–8.27s → **sync OFF (peek化) 6.30s (−22%)**。per-step 4.05→3.15ms。
+    - 正しさ: 残差 CSV sync-OFF vs ON = 0.128 (非決定性ノイズ床 0.13–0.17 内)。run 完走・GPUassert/NaN 無し。
+    - **累計**: 開始時 OLD (毎step残差+detectNaN per-var, sync毎カーネル) 13.38s → **6.30s (−53%)**。
+  - **Graph (B-2 ②) の伸びしろ確定**: peek化後 3.15ms/step に対し GPU 実働床 ~2.6ms/step → Graph の残り上限は
+    ~0.55ms/step (per-launch CPU コスト) = 最大 −17%・現実 −10〜15%。**peek化が回収可能分の大半を取ったため、
+    Graph は高コスト高リスクの割に増分小 → 現時点では見送り推奨**。
+  - 注: FORGE_PROFILE の `measureWall` セクションは sync OFF だと kernel 実行を待たず過少計測になる (profiling 時のみの
+    注意点・正しさには無関係)。`measureCuda` は cudaEvent 同期で正確。
+  - 残: Graph (②) / 小カーネル融合 (③) / device-resident dt (explicit・dual-time 向け) は未着手。
   - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
     - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
       Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。

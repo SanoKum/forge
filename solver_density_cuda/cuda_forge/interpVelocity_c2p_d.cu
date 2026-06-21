@@ -221,7 +221,7 @@ void interpVelocity_c2p_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
 {
     cudaMemset(var.c_d["divU*vol"] , 0.0, msh.nCells *sizeof(flow_float));
     cudaMemset(var.p_d["US"]       , 0.0, msh.nPlanes*sizeof(flow_float));
-    CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+    gpuErrchkKernelSync();
     
     // rhi-chow interpolation
     interpVelocity_c2p_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 

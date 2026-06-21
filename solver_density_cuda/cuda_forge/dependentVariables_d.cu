@@ -241,5 +241,5 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         var.c_d["gamma"] , var.c_d["cp"] , var.c_d["Rmix"]
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }

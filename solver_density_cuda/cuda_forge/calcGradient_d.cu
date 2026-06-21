@@ -696,7 +696,7 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
             var.c_d["dTdx"],var.c_d["dTdy"],var.c_d["dTdz"],
             var.c_d["divU"]);
         gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        gpuErrchkKernelSync();
         return;   // LSQ は正規化不要 (直接勾配を解く)。GG 経路はスキップ。
     }
 
@@ -746,7 +746,7 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
             ) ;
         }
         gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        gpuErrchkKernelSync();
     }
 
 
@@ -797,6 +797,6 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     }
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 
 }

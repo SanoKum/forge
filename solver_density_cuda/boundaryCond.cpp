@@ -168,7 +168,7 @@ void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variable
             else if (bc.bcondKind == "periodic") { periodic_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); }
         }
         gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        gpuErrchkKernelSync();
     } else {
         cerr << "Error: unsupported gpu flag " << cfg.gpu << endl;
         exit(EXIT_FAILURE);
@@ -193,7 +193,7 @@ void applyRansScalarBoundaries(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
     }
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 //void copyBcondsGradient(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p)
@@ -208,7 +208,7 @@ void applyRansScalarBoundaries(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
 //            copyBcondsGradient_d_wrapper(cfg , cuda_cfg , bc , msh , var , mat_p); 
 //        }
 //        gpuErrchk( cudaPeekAtLastError() );
-//        gpuErrchk( cudaDeviceSynchronize() );
+//        gpuErrchkKernelSync();
 //
 //    }
 //}

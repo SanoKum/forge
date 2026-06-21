@@ -326,7 +326,7 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
             var.c_d["dt_local"]
         );
         gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        gpuErrchkKernelSync();
     }
 
     // max cfl の host 読み出し (thrust::max_element は D2H + 同期)。

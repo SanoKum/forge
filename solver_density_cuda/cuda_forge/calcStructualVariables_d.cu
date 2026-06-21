@@ -85,7 +85,7 @@ void calcStructualVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
     //}
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 
 };
 

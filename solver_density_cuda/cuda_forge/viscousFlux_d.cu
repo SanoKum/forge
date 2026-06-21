@@ -430,7 +430,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 var.p_d["pcx"], var.p_d["pcy"], var.p_d["pcz"],
                 var.p_d["sx"], var.p_d["sy"], var.p_d["sz"], var.p_d["ss"],
                 dn_d, dcc_d, tang_d);
-            gpuErrchk(cudaDeviceSynchronize());
+            gpuErrchkKernelSync();
             std::vector<flow_float> dn(nbf), dcc(nbf), tang(nbf);
             gpuErrchk(cudaMemcpy(dn.data() , dn_d , sizeof(flow_float)*nbf, cudaMemcpyDeviceToHost));
             gpuErrchk(cudaMemcpy(dcc.data(), dcc_d, sizeof(flow_float)*nbf, cudaMemcpyDeviceToHost));
@@ -502,7 +502,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 
     for (auto& bc : msh.bconds)
     {
@@ -571,5 +571,5 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
     }
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }

@@ -100,7 +100,7 @@ void ransTransport_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& ms
 
     if (!ransTransportEnabled(cfg)) {
         gpuErrchk( cudaPeekAtLastError() );
-        gpuErrchk( cudaDeviceSynchronize() );
+        gpuErrchkKernelSync();
         return;
     }
 
@@ -111,7 +111,7 @@ void ransTransport_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& ms
     }
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 void ransTimeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
@@ -127,7 +127,7 @@ void ransTimeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cu
     }
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 void ransGradient_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
@@ -165,5 +165,5 @@ void ransGradient_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, 
         var.c_d["dOmegadx"], var.c_d["dOmegady"], var.c_d["dOmegadz"]);
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }

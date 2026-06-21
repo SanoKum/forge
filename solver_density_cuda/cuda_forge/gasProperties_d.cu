@@ -104,5 +104,5 @@ void gasProperties_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& ms
         var.c_d["vis_lam"] , var.c_d["thermCond"] , var.c_d["gamma"] , var.c_d["cp"]
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }

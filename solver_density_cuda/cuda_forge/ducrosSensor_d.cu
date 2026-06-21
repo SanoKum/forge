@@ -95,6 +95,6 @@ void ducrosSensor_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 
 }

@@ -69,7 +69,7 @@ void updateVariablesOuter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , m
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 __global__ void updateVariablesInner_d
@@ -123,7 +123,7 @@ void updateVariablesInner_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , m
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 __global__ void applyScalarImplicitCorrection_d
@@ -182,7 +182,7 @@ void applyScalarImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cud
     );
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 __global__ void applyBlockImplicitCorrection_d
@@ -250,7 +250,7 @@ void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda
     );
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 // SST (k-ω) の segregated point-implicit 更新。
@@ -318,7 +318,7 @@ void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
     );
 
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 // dual-time: 物理時間 BDF 項を残差に加える（assembleResidual の末尾で呼ぶ）。
@@ -378,7 +378,7 @@ void addUnsteadyTimeTerm_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
         var.c_d["res_roK"], var.c_d["res_roOmega"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 // dual-time: 擬似時間サブ反復の commit。roN=Q^n は BDF 基準として固定するため、
@@ -409,7 +409,7 @@ void applyBlockImplicitCorrectionInPlace_d_wrapper(solverConfig& cfg , cudaConfi
         var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
 
 // dual-time の物理時間レベルシフト: roNN ← roN, roN ← ro（mean flow 5 + scalar 2）。
@@ -445,5 +445,5 @@ void shiftDualTimeLevels_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
         var.c_d["roKNN"], var.c_d["roOmegaNN"]
     );
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchkKernelSync();
 }
