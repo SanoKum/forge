@@ -47,9 +47,9 @@ RANS より高精度に、wall-resolved LES より低コストで行えるよう
 - `case/18.backstep`（3D）で**機能**動作確認（f_d 分布・NaN なし）
 
 **やる（Phase 1.5: DES 用低散逸 flux — SBLI 物理検証の前提）**:
-- 「衝撃波近傍は風上、渦領域は低散逸」の flux blending を導入（§4.8）。
-- 既存 Ducros は **limiter を落とす**（再構成を1次化＝散逸を増やす）方向なので DES には逆。
-  **数値粘性係数を f_d / Ducros 連動で下げる**側の機構を新設する。
+- 「LES 域は KE 保存中心差分、RANS と衝撃波は風上」の flux blending を導入（§4.8）。
+- **既存 `solver: KEEP_SLAU` の中心↔風上 blend 係数 `duc` に f_d を注入する**のが本命
+  （`duc=max(1-f_d, 1-ψ_limiter)`）。Ducros センサは排除済みなので使わない（§4.8）。
 - これなしでは backstep は見えても SBLI でせん断層 KH 成長が遅れる（レビュー指摘）。
 
 **やる（Phase 2: IDDES）**:
@@ -381,29 +381,57 @@ main.cpp:954  ransSource_d_wrapper           … Dk 計算（ここで l_des を
 LES 領域（f_d≈1）で対流スキームの数値散逸が強いと解像乱流が育たず、SBLI で
 「剥離せん断層の KH 成長が遅れ、剥離泡が短く、非定常圧力変動が弱い」結果になる。
 
-**現状の forge**:
-- 対流は SLAU/Roe 系の風上（散逸はリーマン解に内在）。
-- 既存 Ducros（`apply_ducros_limiter`, [convectiveFlux_d.cu:236](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu)）は
-  **Ducros>0.8 で MUSCL limiter を下げる**＝再構成を1次寄りにする処理。これは衝撃波ロバスト化で
-  あり、**渦領域の散逸を下げる仕掛けではない**（むしろ上げる方向）。DES には不適。
+**現状の forge（2026-06-21 前提更新）**:
+- `solver: SLAU/SLAU2/ROE/HLLE` は全面風上（散逸はリーマン解に内在）。
+- **Ducros センサは実質排除**。`apply_ducros_limiter` / `ducrosSensor_d.*` は残置するが、SLAU では
+  1 次化 ON/OFF で場の差 <0.1%（SLAU 自身の散逸が支配）で**センサとして当てにならない**ことが
+  判明し `ducrosLimiter` 既定 0。→ **DES 低散逸 flux を Ducros に依存させてはいけない。**
+- **重要: forge は既に「中心基本＋センサで風上」を実装している**。`solver: KEEP_SLAU`
+  ([`KEEP_SLAU_d`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu), L2210–) は
+  $\mathbf{F} = (1-\mathrm{duc})\mathbf{F}_\mathrm{KEEP} + \mathrm{duc}\,\mathbf{F}_\mathrm{SLAU}$,
+  $\mathrm{duc}=\max(\text{ducros},1-\psi_\mathrm{lim})$ の blend（L2452–2456）。$\mathrm{duc}=0$ で
+  **KEEP（運動エネルギー保存中心差分・無散逸）**、$\mathrm{duc}=1$ で SLAU（風上）。圧縮性 LES/DES の
+  定石（KE 保存中心を基本に、不連続のみ風上へセンサ切替）そのもの。
 
-**Phase 1.5 で入れる機構（設計候補・実装は Phase 1 検証後）**:
-- 案1（推奨・低リスク）: **f_d / 渦センサ連動の数値粘性スケーリング**。SLAU/Roe の散逸項に
-  係数 $\sigma \in [\sigma_\mathrm{min}, 1]$ を掛け、「渦領域（f_d≈1 かつ Ducros 小＝非衝撃）」で
-  $\sigma$ を下げる。衝撃波近傍（Ducros 大）では $\sigma=1$ に戻して風上散逸を維持。
-  既存 Ducros を「limiter を落とす」用途から「散逸係数を下げる」用途へ流用する向きに変える。
-- 案2: 渦領域で **KEEP/central + shock sensor blend**（`convMethod: KEEP` が既存）。
-  低散逸だが衝撃捕獲には別途センサが要る。実装コスト大。
-- 案3: Travin らの DES 専用 blending function（風上↔中心を $f_d$ と grid で連続切替）。
+**Phase 1.5 の設計（KEEP_SLAU の blend に f_d を注入＝推奨・本命）**:
 
-**config**: `desLowDissipation`（0:off 既定 / 1:on）等を新設。Phase 1 検証（機能）は off で、
-Phase 1.5 で on にして backstep のスペクトル・剥離泡で効果を確認してから SBLI へ。
+LES は KE 保存中心差分を基本にして渦を保存し、RANS と衝撃波でのみ風上にするのが正しい。
+σ で SLAU の散逸を薄める（旧案＝下記案B）より、**既存 `KEEP_SLAU` の blend 係数 `duc` に f_d を
+入れる**方が KE 保存性で優れ新規コードもほぼ不要：
+
+```cpp
+// 旧: duc = max(ducros, 1-lim)
+// 新 (DESmode>0 かつ desLowDissipation=1):
+flow_float fd_face = 0.5*(fd_shield[ic0] + fd_shield[ic1]);  // f_d を面へ補間
+duc = max(1.0 - fd_face, 1.0 - lim);   // ducros は排除して落とす
+```
+
+| 領域 | f_d | limiter ψ | duc | 実効スキーム |
+|------|-----|-----------|-----|-------------|
+| 付着 BL（RANS） | ≈0 | 1 | **1** | SLAU（風上・頑健） |
+| 剥離 LES（滑らか） | ≈1 | 1 | **0** | **KEEP（中心・低散逸 → 渦が生きる）** |
+| 衝撃波・不連続 | — | →0 | **1** | SLAU（捕獲） |
+
+DES の主制御は f_d（RANS↔LES）。衝撃波保護は **既存 MUSCL リミタ ψ が肩代わり**（不連続で
+ψ→0 → duc→1 → SLAU 復帰）ので、排除した Ducros を復活させる必要はない。RANS 域を中心化しない
+（f_d≈0→duc=1）のは意図的（モデルが効くので風上で頑健性優先）。
+
+**代替案（本命が不調なら）**:
+- 案B: SLAU 散逸項に係数 $\sigma\in[\sigma_\mathrm{min},1]$。KEEP を使わず最小改修だが KE 非保存で渦保存に劣る。
+- 案C: Travin らの DES 専用 blending（風上↔中心を $f_d$ と grid で連続切替）。本命はその簡約版。
+
+**config**: `desLowDissipation`（0:off 既定 / 1:on）を新設。**前提: `solver: KEEP_SLAU`**（SLAU 単独
+では KEEP 経路が無いので無効）。Phase 1 機能検証は off（SLAU）で実施済み、Phase 1.5 で
+KEEP_SLAU + on にして効果確認。
 
 **判定**: backstep でこの機構 on/off の解像乱流（速度変動 RMS・スペクトル傾き）を比較し、
 on で −5/3 慣性域が伸びること。off では「f_d は立つが乱流が死ぬ」灰色領域になりやすい。
+backstep は亜音速・衝撃波なしなので、まず **f_d 単独 blend**（ψ の衝撃寄与は出ない）で −5/3 を
+確認し、衝撃波保護（ψ）は T3（SBLI）で初めて効かせる。
 
-> 触るファイル: `convectiveFlux_d.cu`（散逸係数に σ を導入）、`ducrosSensor_d.cu`（センサ流用）、
-> config。**§7 影響範囲の「影響なし: convectiveFlux」は Phase 1.5 で覆る**点に注意。
+> 触るファイル: `convectiveFlux_d.cu`（`KEEP_SLAU_d` の `duc` に f_d を注入・`fd_shield` を引数追加）、
+> config（`desLowDissipation`）。**§7 影響範囲の「影響なし: convectiveFlux」は Phase 1.5 で覆る**。
+> `ducrosSensor_d.*` には触らない（排除済みのため流用しない）。
 
 ---
 
@@ -851,6 +879,13 @@ T4     case/01.cavity or 新規            IDDES   高        Rossiter 振動・
   剥離再付着・スパン相関、§6 T1-B/T3）。⑥ **IDDES 簡略版は定量評価不可**＝完全関数群＋
   流入乱流が前提（§4.6/§2）。⑦ **時間積分**は陽的 RK3 基準解→dual-time 再現確認の順（§6）。
   ⑧ **失敗予測**節を新設（§5.7）。
+- `2026-06-21` — **§4.8 (Phase 1.5 設計) 改訂**: ① Ducros センサは SLAU で実質排除 (`ducrosLimiter`
+  既定 0・場差<0.1%) のため、低散逸 flux を Ducros に依存させない方針に変更。② forge は既に
+  `solver: KEEP_SLAU` で「KE 保存中心 (KEEP) を基本にセンサ `duc` で SLAU 風上へ切替」を実装済みと
+  判明 ([`KEEP_SLAU_d`] L2452 の `(1-duc)·KEEP + duc·SLAU`)。本命設計を **σ-scaling SLAU (旧案1) から
+  「KEEP_SLAU の `duc` に f_d を注入」(`duc=max(1-f_d, 1-ψ_limiter)`) に変更** — KE 保存性で優れ
+  新規コードもほぼ不要。衝撃波保護は既存 MUSCL リミタ ψ が肩代わりし排除した Ducros は不要。
+  `desLowDissipation` は `solver: KEEP_SLAU` 前提。σ-scaling は案 B (代替) へ降格。
 - `2026-06-21` — **Phase 1 (DDES) 実装・検証完了** (status → `in_progress`、Phase 1.5/2 継続)。
   - **実装**: config (`DESmode`/`C_DES_kw`/`C_DES_ke`)、診断 4 変数 (`delta_les`/`l_des`/`fd_shield`/
     `rd_des`, HDF5 出力)、Δmax 事前計算 (`variables.cpp`, 実行時重心+面接続から host 1 回)、
