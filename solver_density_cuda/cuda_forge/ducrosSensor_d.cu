@@ -21,13 +21,19 @@ __global__ void ducrosSensor_d
  flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
  flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
  flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
- flow_float* ducros
+ flow_float* ducros,
+ int enable
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
 
     //https://doi.org/10.2514/6.2018-3710
     if (ic < nCells ) {
+        // ducrosLimiter==0: センサを 0 に潰し、apply_ducros_limiter のリミタ素通し (1 次化無効) を得る。
+        if (enable == 0) {
+            ducros[ic] = 0.0;
+            return;
+        }
         flow_float Ux_0 = Ux[ic];
         flow_float Uy_0 = Uy[ic];
         flow_float Uz_0 = Uz[ic];
@@ -91,7 +97,8 @@ void ducrosSensor_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
         var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
         var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
         var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-        var.c_d["ducros"]  
+        var.c_d["ducros"]  ,
+        cfg.ducrosLimiter
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );

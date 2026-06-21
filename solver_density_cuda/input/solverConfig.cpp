@@ -252,6 +252,8 @@ void solverConfig::read(std::string fname)
         this->axisTimestepBeta = getOptionalValidatedValue<flow_float>(deltaT, "axisTimestepBeta", 0.0, "time.deltaT");
         // block-DPLUR 線形 solve の内部精度: 既定 0 (float・従来高速)。1 で double 化 (軸対称近軸の根治用)。
         this->implicitSolvePrecision = getOptionalValidatedValue<int>(deltaT, "implicitSolvePrecision", 0, "time.deltaT");
+        // Ducros リミタ 1 次化: 既定 0 (off・使わない; MUSCL 2 次のまま)。1 で衝撃近傍の強制 1 次化 (従来挙動)。
+        this->ducrosLimiter = getOptionalValidatedValue<int>(deltaT, "ducrosLimiter", 0, "time.deltaT");
         // NaN 検知診断モード: 既定 0 で従来挙動 (検査なし・ビット不変)。1 で検査 (fused device フラグ)。
         this->detectNaN = getOptionalValidatedValue<int>(deltaT, "detectNaN", 0, "time.deltaT");
         // detectNaN フラグの host 読み出し間隔 [step]: 既定 1 (毎ステップ)。大で per-step 同期を間引く。

@@ -60,6 +60,11 @@ public:
                                     // (iterative refinement)。軸対称 近軸の float 陰解固着 (Uy が −15 でなく
                                     // −0.6 固着) を根治するが double は遅い (RTX で ~×2.6)。詳細:
                                     // .github/plans/precision-mixed-axisym.md。blockDPLUR==1・lowMachPrecond 0/1 でのみ有効。
+    // Ducros センサによる衝撃近傍の MUSCL リミタ強制 1 次化。0: off (既定・1 次化を使わない;
+    // 衝撃近傍も MUSCL 2 次のまま)、1: on (衝撃近傍でリミタを強制 1 次化する従来挙動)。
+    // off のときは ducros センサ配列を 0 に潰すため duc≤0.8 で apply_ducros_limiter がリミタを素通しする。
+    // 検証 (case36/SLAU): on/off で場の差<0.1% (SLAU 自身の散逸が支配し 1 次化はほぼ冗長)。
+    int ducrosLimiter = 0;
     int detectNaN = 0;             // 0: off (既定), 1: 保存量+P の非有限値を検査し、
                                    // 見つけたら res_nan_<step>.h5 をダンプして即停止する診断モード。
                                    // off のときは検査を一切行わないため通常実行はビット不変。

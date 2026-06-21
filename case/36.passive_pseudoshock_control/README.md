@@ -144,6 +144,28 @@ wall=2274, 最小辺 ~0.087mm。`med_to_gmsh.py` の変換ロジックは合成�
 - **= Matsuo et al. の「多孔壁パッシブコントロールで擬似衝撃波が弱化する」を 2D で定性再現**。ユーザが指摘した「1.8-1.85 の良い領域」と一致。
 - 注意 (誠実な留保): 各 run は残差フロアの steady 状態 (擬似衝撃波 limit-cycle), 流れは物理的に上下非対称 (中心軸指標), 2D スリット (3D 丸穴でない)。Ps=1.80/1.90 では porous≈solid (効果は Ps 窓依存=衝撃波が多孔壁と相互作用する位置のときのみ)。
 
+### Ducros 1次化 ON/OFF 比較 (2026-06-21, 固体壁 Ps=1.84)
+
+衝撃近傍で MUSCL リミタを強制 1 次化する Ducros センサ寄与を `ducrosLimiter` config フラグ
+(**既定 0=off で 1 次化を使わない**, 1=on で従来の強制 1 次化) で切り替えられるようにし
+(`solverConfig.hpp`/`.cpp`, `ducrosSensor_d.cu`)、固体壁 Ps=1.84 で ON/OFF を**同一バイナリ・
+同一 restart 場 (run_0046 発達場)・30000 step**で比較。解析 `analyze_ducros.py` → `compare_ducros_centerline.png`/`ducros_summary.txt`。
+
+| run_* | ducrosLimiter | 結果 | 状態 |
+|---|---|---|---|
+| `run_0052_solid_ducrosON_bp1p84` | 1 (1次化あり) | ducros 計算正常: max 0.9996, duc>0.8 発火 1.79% (x169-260mm=衝撃波フロントに局在)。中心軸 ripple std 8.76kPa | active (比較基準) |
+| `run_0053_solid_ducrosOFF_bp1p84` | 0 (1次化なし) | ducros 一様 0。**ON とほぼ完全一致** (中心軸 ripple std 8.76kPa, OFF/ON 比 1.000, 衝撃波フロント 189mm 同一) | active |
+
+- **結論: Ducros 1 次化を切っても場の差は <0.1% (中心軸 P 差 max 1.3kPa, ducros 発火セルに局在)。
+  衝撃波列 ripple 振幅・フロント位置・limit-cycle 変動はいずれも不変**。ユーザ予想の「変動が激しく
+  なる」は**起きなかった**。
+- 理由: 基底フラックスが SLAU (上流型) で、衝撃捕捉はフラックス自身の散逸が支配する。~1.8% の衝撃
+  セルで MUSCL 再構成次数 (1 次/2 次) を変えても結果はほぼ変わらない。SLAU+Venkatakrishnan では
+  Ducros 1 次化は**ほぼ冗長な保険**。低散逸の中央/KEEP フラックス (再構成次数が散逸を直接支配) では
+  効くはずで、それが本来の用途。
+- ducros が計算できているかの確認: ON では衝撃波フロント (x~190mm) に正しく発火 (median 197mm)、
+  OFF ではフラグで一様 0 化。センサ自体は正常動作。
+
 ### 現時点の所見 (2026-06-21 自走セッション)
 
 - **メッシュ/手法は確立**: 2D wall-resolved SST (y+~77, AR≤1000, skew≤0.9 ゲート通過)、cfl_pseudo=5 陰解法は establish では安定。背圧で擬似衝撃波を seeding→chain で形成可能。
