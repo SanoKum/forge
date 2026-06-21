@@ -188,6 +188,16 @@
   **検証** (run_0050, 2000 step, GPU 単独, 他forge無し確認): 6.30→**6.18s (~−2%)**、残差差 0.125 (非決定性ノイズ床内=解不変)。
   **累計 13.38→6.18s (−54%)**。性能フェーズはここで一区切り (残: limiter/SLAU カーネル最適化・Graph・nStepInner study は
   compute 律速向けの重い/トレードオフ案件として保留)。
+- 2026-06-21: **メッシュ renumbering を試験 → 効果なし (棄却)**。動機: ncu で多くのカーネルが低 L2 ヒット
+  (SLAU 39%/viscous 45%/setCFL 19%/scalar_diff 33%)、face→cell の index 距離 median 120 (=Nx ストライド, 50%が>100)
+  → 並び替えで局所性改善を期待。**単発スクリプトで cell を Morton (Z-order) 並べ替え** (`/tmp/mz/reorder_morton.py`)
+  し face |c0−c1| を 120→4 に改善 → **しかし wall は 6.0→6.5s と +8% 悪化**。
+  **原因 (診断で確定)**: 元メッシュは **連続 plane の owner-cell index 差 = median 1 (100%≤8)** で face ループが
+  owner セルを連番ストリーミング済み・境界 plane も末尾に partition 済み = **コンバータが既に最適順序**。cell だけ
+  並べ替えてこのストリーミングを壊した。cell+plane 整合並べ替えでも「連続 plane owner 差=1」を超えられない
+  (2D 格子の帯域下限 ~Nx を元が既に達成) ため改善余地なし。低 L2 ヒットは ordering でなく FV neighbor gather +
+  小 working set の compulsory miss が主因で reorder では消せない。**結論: structured メッシュでは reorder 不要
+  (raw tet 等ランダム番号の非構造向け)。本 case では棄却。**
   - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
     - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
       Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。
