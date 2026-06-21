@@ -244,6 +244,22 @@ forge を直接 `build/forge` で起動せず、**`solver_density_cuda/tools/run
 
 `.claude/settings.json` のフックでこれを強制する: **PreToolUse** が直接 `build/forge` 実行を deny、**Stop** が「最近 forge を回したのに収束チェックしていない run」があるとターン終了を block する (実行方法に依らずファイル状態で検査)。これにより「衝撃波位置の安定や `rms_ro` 単独で収束と判断する」近道を構造的に防ぐ。**収束/一致を主張する応答では VERDICT 行を引用する**。
 
+## メッシュ変更後の restart (cross-mesh interpolation)
+
+メッシュを変えた (quad↔tri↔構造化, 解像度変更, スロット数変更など) ときは、**uniform 初期値から計算を始めない**。超音速/衝撃波/SST は uniform IC から数ステップで発散する (実例: tri 化したメッシュを uniform から起動し step 4 で `res_nan` ダンプ)。
+
+過去の収束済み場を新メッシュへ移植してから計算する:
+
+```bash
+# 新メッシュを convert した直後の入力 h5 に、過去 run の res を最近傍interpolateして貼る
+python3 solver_density_cuda/tools/interp_field.py <past_run>/res_NNNN.h5 <new_run>/mesh.h5
+```
+
+- 保存量 (ro,roUx,roUy,roUz,roe)・乱流 (roK,roOmega)・スカラー輸送 (roY*) を移植。
+- **wall_dist は移植しない** (新メッシュで convert 時に計算された値を使う; 別メッシュの距離は不整合)。
+- SRC は res (primitives) でも入力 h5 (conserved) でも可。scipy `cKDTree` 最近傍。
+- 同一メッシュ内での restart (背圧変更など) は同ケースの `restart_field.py` を使う。
+
 ## メッシュ品質チェック (計算前・必須)
 
 メッシュを `convertGmshToForge` で HDF5 化したら、**計算を投入する前に必ずメッシュ品質を確認する**。歪んだ/極端に細長いセルは発散・精度劣化・非物理解の原因になる。専用ツールで判定する:

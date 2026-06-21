@@ -67,6 +67,8 @@
 - **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
 - 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) を参照。
 
+**メッシュ変更後の restart (必須)**: メッシュを変えた (quad↔tri↔構造化, 解像度変更) ときは **uniform 初期値から計算を始めない** (超音速/衝撃波/SST は uniform IC から step 数回で発散する)。`solver_density_cuda/tools/interp_field.py SRC.h5 新メッシュ入力.h5` で過去の収束済み場を**最近傍interpolateして cross-mesh restart** する (保存量+roK/roOmega+スカラー輸送を移植、wall_dist は移植せず新メッシュの値を使う)。同一メッシュの restart は `restart_field.py`。
+
 **メッシュ品質チェック (計算前・必須)**: メッシュを HDF5 化したら計算投入前に必ず `solver_density_cuda/tools/check_mesh_quality.py <mesh.h5>` で品質を確認する。**アスペクト比 ≤ 1000、スキューネス ≤ 0.9 を目標**とし、`VERDICT: FAIL` のメッシュは投入しない。近壁細分化で AR が増えやすいので接線長と第一セル厚のバランスを取る (高 Re では y+~1 と AR≤1000 が両立しないことがあり、その場合 y+~30-80 + `wallTreatmentSST=1` を選ぶ)。詳細は [`.github/forge-calculation-workflow.md`](.github/forge-calculation-workflow.md) の「メッシュ品質チェック」。「メッシュできた/収束した」と報告する応答には品質 VERDICT も併記する。
 
 forge の結果が「軸対称・乱流・近軸で forge だけ妙な値になる」ようなときは、推測で結論づけず [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) の手順で **同一メッシュ・同一 BC の SU2 と比較**して切り分けること。
