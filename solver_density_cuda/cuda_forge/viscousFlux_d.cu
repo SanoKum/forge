@@ -231,7 +231,10 @@ __global__ void viscousFlux_wall_d
 
  // SST automatic wall treatment (docs/turbulence §6.5 (c)):
  //   wallTreatment==1 で接線せん断を modeled τ_w=ρu_τ² に置換。utau_b は事前算出済み u_τ。
- int wallTreatment, flow_float* utau_b
+ int wallTreatment, flow_float* utau_b,
+ // node-centered (1): 壁法線 Laplacian/熱流束を ghost+dcc でなくセル勾配 ∇φ·S (bvar 壁閉包) で評価。
+ // 壁ノードが壁面に乗り dcc≈0 に退化するのを回避する。cell (0) は従来の (φ[ig]-φ[ic])/dcc。
+ int isNode
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -291,15 +294,19 @@ __global__ void viscousFlux_wall_d
         // 法線項: 法線勾配 (u^g-u^c)/dcc に面積 sss。転置項: セル中心勾配にフル S。発散項: 成分 s**。
         // 注: dcc フロア等で物理 flux をマスクしない方針 (退化 dcc はメッシュ/境界クロージャの欠陥であり、
         // 直すべきはメッシュとゴーストレス弱形式。診断は viscousWallDiag_d で別途行う)。
-        flow_float tau_x = mu_total*((Ux[ig] - Ux[ic])/dcc)*sss;
+        // 法線 Laplacian 項: node は ∇U·S (セル勾配, bvar 壁閉包) で退化 dcc を回避、cell は従来の法線差分。
+        flow_float tau_x = (isNode != 0) ? mu_total*(dUxdxf*sxx +dUxdyf*syy +dUxdzf*szz)
+                                         : mu_total*((Ux[ig] - Ux[ic])/dcc)*sss;
         tau_x += mu_total*(dUxdxf*sxx +dUydxf*syy +dUzdxf*szz);
         tau_x += -mu_total*2.0/3.0*(divu)*sxx;
 
-        flow_float tau_y = mu_total*((Uy[ig] - Uy[ic])/dcc)*sss;
+        flow_float tau_y = (isNode != 0) ? mu_total*(dUydxf*sxx +dUydyf*syy +dUydzf*szz)
+                                         : mu_total*((Uy[ig] - Uy[ic])/dcc)*sss;
         tau_y += mu_total*(dUxdyf*sxx +dUydyf*syy +dUzdyf*szz);
         tau_y += -mu_total*2.0/3.0*(divu)*syy;
 
-        flow_float tau_z = mu_total*((Uz[ig] - Uz[ic])/dcc)*sss;
+        flow_float tau_z = (isNode != 0) ? mu_total*(dUzdxf*sxx +dUzdyf*syy +dUzdzf*szz)
+                                         : mu_total*((Uz[ig] - Uz[ic])/dcc)*sss;
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
@@ -332,7 +339,9 @@ __global__ void viscousFlux_wall_d
         // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。断熱壁ではミラーゴーストで
         // Ts[ig]=Ts[ic] のため寄与 0、isothermal 壁では有効。
         flow_float tc_w = thermCond[ic] + cp[ic]*v_turb/Prt;
-        flow_float heatflux = tc_w*((Ts[ig]- Ts[ic])/dcc)*sss;
+        // 熱流束法線項: node は ∇T·S (セル勾配) で退化 dcc を回避。cell は従来の (Ts[ig]-Ts[ic])/dcc。
+        flow_float heatflux = (isNode != 0) ? tc_w*(dTdx[ic]*sxx +dTdy[ic]*syy +dTdz[ic]*szz)
+                                            : tc_w*((Ts[ig]- Ts[ic])/dcc)*sss;
 
         flow_float res_ro_temp   = 0.0;
         flow_float res_roUx_temp = tau_x;
@@ -565,7 +574,8 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
 
                 // SST automatic wall treatment: modeled τ_w 用の flag と u_τ (ransWallFunction で算出済み)
                 (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) ? cfg.wallTreatmentSST : 0,
-                bc.bvar_d["utau"]
+                bc.bvar_d["utau"],
+                (cfg.discretization == "node") ? 1 : 0   // node: 壁法線/熱流束を ∇φ·S で評価 (ghostless)
             ) ;
         }
     }
