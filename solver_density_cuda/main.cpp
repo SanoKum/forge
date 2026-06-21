@@ -1042,8 +1042,12 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
 {
     assembleResidual(s, 1);
     logResidualSnapshot(s, inner_index);
+    // 定常 (unsteady==0) では cfg.dt が dt_local に効かない (dt_local=cfl_pseudo·dx/λ) ため、max cfl の
+    // host 読み出し/dt 適応/表示は cflReportInterval ごとでよい (per-step 同期回避)。
+    // unsteady では cfg.dt が物理時間前進に効くので必ず毎ステップ report する (間引かない)。
+    const bool reportCfl = (s.cfg.unsteady != 0) || (s.iStep % s.cfg.cflReportInterval == 0);
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, reportCfl);
     });
     const bool freezeSpecies = freezeSpeciesEnabled();
     const bool freezeTurb    = freezeTurbEnabled();
@@ -1151,6 +1155,7 @@ void advanceExplicitRK(StepContext& s)
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
     });
+    // explicit (陽解法) は unsteady で cfg.dt を物理時間前進に使うため、必ず report する (間引かない)。
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
         setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
     });
@@ -1172,8 +1177,10 @@ void advanceImplicitSteady(StepContext& s)
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
     });
+    // 定常 (unsteady==0) のみ cflReportInterval で間引く。unsteady ガードは defense-in-depth。
+    const bool reportCflEnd = (s.cfg.unsteady != 0) || (s.iStep % s.cfg.cflReportInterval == 0);
     s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
-        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);
+        setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, reportCflEnd);
     });
     s.residual_logger.logOuterEnd(s.iStep);
 }

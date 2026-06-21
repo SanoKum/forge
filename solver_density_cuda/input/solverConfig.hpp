@@ -72,6 +72,12 @@ public:
     // 残差 reduction 同期を間引く (毎ステップの値・行構成は不変)。詳細:
     // .github/plans/architecture-residual-monitor-async.md。
     int residualFlushInterval = 1;
+    // 定常 (unsteady=0) implicit 経路で `max cfl` の host 読み出し (`thrust::max_element`)・dt 適応・
+    // 表示を行う間隔 [step] (既定 1=毎ステップ=従来挙動)。定常では dt_local=cfl_pseudo·dx/λ で cfg.dt が
+    // 打ち消され、この host 読み出しは診断のみ (解に不影響) なので >1 で per-step 同期を間引ける。
+    // explicit / dual-time 経路には適用しない (cfg.dt が物理的に効くため)。詳細:
+    // .github/plans/architecture-perphase-profiling-hotspot.md。
+    int cflReportInterval = 1;
     int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
     flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
                                    // ε 小ほど低マッハ振動を強く減衰するが ε≲0.1 は発散 (ε=0.05 で NaN)。

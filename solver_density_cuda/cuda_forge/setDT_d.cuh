@@ -84,4 +84,7 @@ __global__ void setCFL_cell_d
  //flow_float* cfl_pseudo_pln 
 );
 
-void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+// reportCfl=true (既定): `max cfl` を host 読み出し (thrust::max_element)・dt 適応 (dtControl==1)・表示する。
+// false: それらを丸ごとスキップ (per-step host 同期を避ける)。定常 implicit では dt_local が cfg.dt に依らないため
+// 解に不影響。explicit / dual-time では cfg.dt が効くので必ず true で呼ぶこと。
+void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , bool reportCfl = true);

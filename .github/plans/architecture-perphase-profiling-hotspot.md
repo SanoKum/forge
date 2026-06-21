@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `draft`
+- **status**: `in_progress`
 - **related_docs**:
   - `docs/architecture/overview.md`
 - **related_plans**:
@@ -126,3 +126,23 @@
   - GPU 実働 (ncu) ~2.6ms/step に対し overhead ~1.8ms/step (wall ~4.4–4.8)。残差モニタは 0.074ms/step まで縮小済み (前 plan)。
   - **Phase B の優先度**: ① SetDt の host 読み出し除去 (低リスク, ~0.4ms/step 見込み) → ② CUDA Graph (高リスク高リターン,
     分散 overhead ~1.3ms/step の大半) → ③ 小カーネル融合 (BC/grad)。各々 A/B 実測で採否。
+- 2026-06-21: **Phase B-1 完了 (SetDt host 読み出し除去)**。
+  - **実装**: `solverConfig` に `cflReportInterval` (既定 1) 追加。`setDT_d_wrapper` に `bool reportCfl=true` を追加し、
+    `false` 時は `thrust::max_element` (D2H+同期)・dt 適応・printf を丸ごとスキップ (host 同期ゼロ)。中間
+    `cudaDeviceSynchronize`×2 と末尾の冗長 sync も撤去 (同一 default stream で順序保証)。`main.cpp` の**定常 implicit
+    経路の 2 箇所のみ** (`implicitNonlinearUpdate` と `advanceImplicitSteady` 末尾) で `reportCfl=(unsteady!=0)||(iStep%interval==0)`
+    を渡す。explicit (`advanceExplicitRK`)・dual-time・初期化は既定 true で必ず report。
+  - **重要バグの修正**: 初版で explicit と steady の関数末尾が酷似していたため throttle が誤って `advanceExplicitRK`
+    側に入っていた (explicit は unsteady で cfg.dt を物理時間前進に使うため致命的)。正しい steady 末尾へ移し、
+    両 throttle に **`unsteady!=0 → 常に true` ガード** を追加 (将来 unsteady 経路で再利用されても間引かない防御)。
+  - **設計根拠**: 定常 (unsteady=0) では `dt_local = cfl_pseudo·dx/λ` で cfg.dt が打ち消され、max cfl の host 読み出しは
+    診断のみで解に不影響 → 安全に間引ける。
+  - **検証** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独):
+    - 速度: setDt 前 9.37s → interval=1 (sync 撤去のみ) 9.09s → **interval=50 8.14s (setDt 前比 −13%)**。
+      Phase A 予測 (setDt overhead 0.51ms/step) どおり ~0.5ms/step 回収。開始時 OLD 13.38s からは **累計 −39%**。
+    - 正しさ: residual CSV の差は 2000 step の solver 非決定性ノイズ床 (rms_roOmega で同一バイナリ 2 回 0.13–0.17)
+      と同等 (interval=50 vs interval=1 = 0.18) → 間引きは非決定性以上の差を生まない。
+    - **非定常安全性 (実証)**: explicit unsteady (timeIntegration=1, unsteady=1) + cflReportInterval=50 で 10 step 実行 →
+      `max cfl` print=11 (毎ステップ+init)、dt 毎ステップ適応。**間引かれないことを確認**。
+  - **残課題**: Phase B-2 (CUDA Graph で分散 overhead ~1.3ms/step を一括回収) / B-3 (小カーネル融合) は未着手。
+    定常末尾 setDt の冗長な setCFL カーネル再計算 (~80µs/step) も削減余地 (別途)。

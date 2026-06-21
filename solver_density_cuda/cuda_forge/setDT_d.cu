@@ -223,7 +223,7 @@ __global__ void setDTlocal_precond_scale_d
 }
 
 
-void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , bool reportCfl)
 {
     setCFL_pln_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
         cfg.dt,
@@ -253,13 +253,14 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         var.c_d["Uy"]  , 
         var.c_d["Uz"]  ,
 
-        var.p_d["cfl_pln"] 
-        //var.p_d["cfl_pseudo_pln"]  
+        var.p_d["cfl_pln"]
+        //var.p_d["cfl_pseudo_pln"]
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    // 注: 同一 default stream なので後続カーネルは順序保証される。per-step 同期削減のため
+    // 中間の cudaDeviceSynchronize は撤去し peek のみとする (誤差チェックは末尾/次同期点で担保)。
 
-    setCFL_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
+    setCFL_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
         cfg.dtControl, cfg.cfl, cfg.cfl_pseudo,
         cfg.dualTime, cfg.unsteady,
         cfg.dt,
@@ -296,7 +297,6 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         cfg.axisTimestepBeta
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
 
     if (cfg.dualTime == 1 or cfg.unsteady == 0) {
         setDTlocal_pseudo_cell_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
@@ -329,26 +329,24 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         gpuErrchk( cudaDeviceSynchronize() );
     }
 
-    flow_float cfl_max;
+    // max cfl の host 読み出し (thrust::max_element は D2H + 同期) と dt 適応・表示は reportCfl 時のみ。
+    // 定常 implicit では dt_local=cfl_pseudo·dx/λ で cfg.dt が打ち消されるため、これらは診断のみ (解に不影響)。
+    // スキップ時は host 同期が一切発生しない (後続カーネルは同一 stream で順序保証)。
+    if (reportCfl) {
+        thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(var.c_d["cfl"]);
+        const flow_float cfl_max = *(thrust::max_element(d_ptr, d_ptr + msh.nCells));
 
-    thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(var.c_d["cfl"]);
-    cfl_max = *(thrust::max_element(d_ptr, d_ptr + msh.nCells));
+        if (cfg.dtControl == 1) { // cfl based time control
+            flow_float cfl_target = cfg.cfl;
+            cfg.dt = cfg.dt*cfl_target/cfl_max;
 
-    if (cfg.dtControl == 1) { // cfl based time control
-        flow_float cfl_target = cfg.cfl;
-        cfg.dt = cfg.dt*cfl_target/cfl_max;
+            cfg.dt = max(cfg.dt, cfg.dt_min);
+            cfg.dt = min(cfg.dt, cfg.dt_max);
+        }
 
-        cfg.dt = max(cfg.dt, cfg.dt_min);
-        cfg.dt = min(cfg.dt, cfg.dt_max);
+        printf("  max cfl : %f    \n", cfl_max);
+        printf("  dt      : %e [s]\n", cfg.dt);
     }
 
-    printf("  max cfl : %f    \n", cfl_max);
-    printf("  dt      : %e [s]\n", cfg.dt);
-
-
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
-
-
-
 }
