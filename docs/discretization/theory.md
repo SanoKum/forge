@@ -162,6 +162,14 @@ cell-centered ではセル中心が壁から半セル内側にあり、壁面で
 > 圧力のみ・せん断は内部双対面が担う、を満たす)。さらに**近壁極小 CV の粘性は陰解法では十分 implicit 化されず
 > explicit (cfl≤0.1) が安定**。詳細・検証は [implementation.md](implementation.md) §7.2。
 
+#### 6.3.1 陰解法での Dirichlet 整合 (Jacobian 行 decouple)
+
+壁 $\mathbf{u}_p=\mathbf{0}$ を**残差射影だけ** ($\mathbf{res}_{\rho\mathbf{u}}=0$) で課すと、explicit では $\Delta(\rho\mathbf{u})=0$ になり厳密に効くが、**implicit (block-DPLUR) では不十分**である。block-DPLUR の対角 5×5 ブロックは壁ノードの運動量を連続・エネルギーと連成したままなので、線形 solve は残差 0 でも $\Delta(\rho\mathbf{u})\neq0$ を返し、**壁速度が drift する** (実測: 壁 $|\rho u_x|$ が時間発展で増大、状態射影 `enforceWallNoSlip` が毎ステージ余分な KE を剥ぐ持続的エネルギーシンク化)。
+
+SU2 (同じ vertex-centered median-dual) はこれを **`Jacobian.DeleteValsRowi`** で解決する: 壁ノードの**運動量行を単位行に置換** ($\Delta(\rho u)=\Delta(\rho v)=\Delta(\rho w)=0$ を solve から直接得る)。連続・エネルギー行は保存式のまま残し、$u=0$ より $\rho e = \rho e_\text{int}$、圧力は EOS が復元する (CPG: $P=(\gamma-1)\rho e$、TP: $\rho e_\text{int}\to T\to P=\rho R_\text{mix}T$)。decouple は運動量行のみを触り thermo 行に依らないので **CPG/TP 共通** に動く。forge では既存の軸 `axis_flag` 行 decouple 機構を**壁の運動量3行へ拡張**して実装する。計画: [`discretization-node-wall-implicit-dirichlet.md`](../../.github/plans/discretization-node-wall-implicit-dirichlet.md)。
+
+> 軸 (§7.1) の `roUy` 単行 decouple は r=0 の極小 CV が多方程式的に ill-posed なため単独では発散したが、**壁は r=0 特異点を持たない**ので、運動量3行 decouple が drift 機構を直接除去できる。
+
 ### 6.4 コーナー所有優先 (boundary∩boundary)
 
 2 つの境界に同時に乗るノード (例: 壁∩出口の出口リップ) は、ゴースト法では**境界ごとに別々のゴースト**が

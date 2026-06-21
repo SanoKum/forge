@@ -725,7 +725,12 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 
  // node-centered 軸対称: 軸上 CV で半径方向運動量 (roUy, index2) 行を decouple する (nullptr 可)。
  // SU2 流の対称面を Jacobian 内で課す = solve の外で状態を手術せず一貫して dq_roUy=0 を得る。
- geom_int* axis_flag
+ geom_int* axis_flag,
+
+ // node-centered 壁 no-slip: 壁ノードで運動量3行 (index1=roUx,2=roUy,3=roUz) を decouple する (nullptr 可)。
+ // SU2 `DeleteValsRowi` 相当。残差射影だけでは block-DPLUR が壁運動量を連成したまま dq≠0 を返し速度 drift
+ // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。docs/discretization/implementation.md §7.2.1。
+ geom_int* wall_flag
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -838,6 +843,18 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             for (int jj = 0; jj < 5; ++jj) diag_block[2][jj] = static_cast<ST>(0.0);
             diag_block[2][2] = static_cast<ST>(1.0);
             rhs[2] = static_cast<ST>(0.0);
+        }
+
+        // SU2 `DeleteValsRowi` 相当の壁 no-slip Dirichlet: 壁ノードで運動量3行 (index 1,2,3) を単位行に
+        // 置換し rhs=0 → solve が一貫して dq_roUx=dq_roUy=dq_roUz=0 を返す。連続(0)・エネルギー(4)行は
+        // 保持され ρ,ρe は保存式で発展、圧力は EOS が復元 (CPG/TP 共通)。残差射影だけでは block-DPLUR が
+        // 壁運動量を連成し dq≠0 を返して壁速度が drift する問題を Jacobian 整合で根治する。
+        if (wall_flag != nullptr && wall_flag[ic] == 1) {
+            for (int row = 1; row <= 3; ++row) {
+                for (int jj = 0; jj < 5; ++jj) diag_block[row][jj] = static_cast<ST>(0.0);
+                diag_block[row][row] = static_cast<ST>(1.0);
+                rhs[row] = static_cast<ST>(0.0);
+            }
         }
 
         // diag_block を破壊して in-place で解く (solve_mat コピー排除)。
@@ -1218,7 +1235,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"], \
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
                 cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
-                nullptr  /* axis_flag: in-Jacobian roUy decouple は corner を直さず (corner は多方程式不良) 既定無効 */
+                nullptr,  /* axis_flag: in-Jacobian roUy decouple は corner を直さず (corner は多方程式不良) 既定無効 */ \
+                ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr)  /* wall_flag: 壁運動量3行 decouple */
             if (cfg.implicitSolvePrecision == 1)
                 implicit_defect_correction_block_d<double><<<block_grid , block_threads>>>(FORGE_BDPLUR_ARGS);
             else

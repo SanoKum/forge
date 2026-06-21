@@ -238,6 +238,37 @@ P≤Pt/ro>0/T>0; 高 Re 層流で BL は微小厚=未解像のため場は概ね
 不正で壁全域発散 (ユーザ指摘どおり)。既定 OFF で残置。壁 plane 不出力 (ghost 完全撤廃) は勾配閉性を壊し悪化したため
 不採用 (壁 ghost は勾配/粘性 mirror 用に残す)。
 
+#### 7.2.1 陰解法での壁 Dirichlet 整合: Jacobian 行 decouple (SU2 `DeleteValsRowi` 相当)
+
+専用計画: [`discretization-node-wall-implicit-dirichlet.md`](../../.github/plans/discretization-node-wall-implicit-dirichlet.md)。
+
+**症状**: `nodeWallDirichlet=1` + implicit (block-DPLUR) で壁ノード速度が drift する。残差射影 (`zeroWallMomentumResidual_d`)
+は RHS を 0 にするが、block-DPLUR の対角 5×5 は壁運動量を連続・エネルギーと連成したまま (`wall_flag` が Jacobian に
+出てこない) なので、solve が $\Delta(\rho\mathbf{u})\neq0$ を返す。状態射影 `enforceWallNoSlip` が毎ステージ再射影して
+KE を剥ぐが、これは持続的なエネルギーシンクになり、近壁圧力場を蹴る (実測 case/36 node 層流 implicit: 壁
+$|\rho u_x|$ mean 5.6→34 に増大、KE 除去 mean ~4000/stage)。**explicit (RK3) は残差 0 → 更新で $\Delta(\rho u)=0$ なので
+drift しない**ので、本症状は implicit 特有。
+
+**処方 (SU2 と同じ in-Jacobian)**: `implicit_defect_correction_block_d` ([timeIntegration_d.cu](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu))
+の既存 `axis_flag` 行 decouple 機構を**壁の運動量3行 (index 1=roUx, 2=roUy, 3=roUz) へ拡張**する:
+
+```cpp
+if (wall_flag != nullptr && wall_flag[ic] == 1) {
+    for (int row = 1; row <= 3; ++row) {
+        for (int jj = 0; jj < 5; ++jj) diag_block[row][jj] = 0;
+        diag_block[row][row] = 1; rhs[row] = 0;   // Δ(ρu_i)=0
+    }
+}
+```
+
+連続 (行0)・エネルギー (行4) は不変なので $\rho,\rho e$ は保存式で発展し、圧力復元 thermo (CPG/TP) も無変更。
+起動側で `(discretization=="node" && nodeWallDirichlet==1) ? msh.wall_flag_d : nullptr` を渡す (現状 `nullptr`)。
+
+> **軸 (§7.1) との違い**: 軸 `roUy` 単行 decouple は r=0 の極小 CV が多方程式的に ill-posed (Mach~1000 発散) で
+> 単独では効かなかったが、**壁は r=0 特異点を持たず**、運動量3行 decouple が drift 機構を直接除去する。decouple 後は
+> `enforceWallNoSlip`/`zeroWallMomentumResidual` は実質 no-op (剥ぐ KE→0) になり、保存性も回復する見込み。検証は
+> case/36 node (壁 $|\rho u_x|$ 非増大) + case/29 回帰 (デグレ無し) + cell ビット不変。
+
 **Phase 2 (後続) — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: `convectiveFlux_boundary_d` を SLAU 等価にした上で
 半割面弱形式へ、スカラ輸送 (rans/species) も境界カーネル化、その後 node モードで ghost 生成停止。
 
