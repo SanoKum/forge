@@ -14,6 +14,8 @@ inline bool ransTransportEnabled(const solverConfig& cfg)
 // SST k/ω の Green-Gauss 勾配 (源項の交差拡散・F1 ブレンドで使用)。
 __global__ void calc_scalar_gradient_face_d(
     geom_int nPlanes,
+    geom_int nCells,
+    int isNode,
     geom_int* plane_cells,
     geom_float* fx,
     geom_float* sx,
@@ -34,9 +36,17 @@ __global__ void calc_scalar_gradient_face_d(
     const geom_int ic0 = plane_cells[2 * ip + 0];
     const geom_int ic1 = plane_cells[2 * ip + 1];
 
-    const geom_float f   = fx[ip];
-    const flow_float kf  = f * k[ic0]     + (1.0 - f) * k[ic1];
-    const flow_float wf  = f * omega[ic0] + (1.0 - f) * omega[ic1];
+    geom_float f   = fx[ip];
+    flow_float kf, wf;
+    // node 境界面 (ic1=ghost) は fx=dc2p/dcc が ghost mirror dcc≈0 で退化し、コーナーで φ_f が overflow
+    // する。境界ノードは境界上に乗るので、面値 = ノード値 (= 境界値) を使い退化 fx を回避する (ghostless)。
+    if (isNode != 0 && ic1 >= nCells) {
+        kf = k[ic0];
+        wf = omega[ic0];
+    } else {
+        kf = f * k[ic0]     + (1.0 - f) * k[ic1];
+        wf = f * omega[ic0] + (1.0 - f) * omega[ic1];
+    }
     const geom_float sxx = sx[ip];
     const geom_float syy = sy[ip];
     const geom_float szz = sz[ip];
@@ -150,6 +160,8 @@ void ransGradient_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, 
 
     calc_scalar_gradient_face_d<<<cuda_cfg.dimGrid_plane, cuda_cfg.dimBlock>>>(
         msh.nPlanes,
+        msh.nCells,
+        (cfg.discretization == "node") ? 1 : 0,
         msh.map_plane_cells_d,
         var.p_d["fx"],
         grad_sx, grad_sy, grad_sz,
