@@ -189,6 +189,88 @@ __global__ void limiter_r1_d
 }
 
 
+// limiter_r1_d の 5 変数 (ro,Ux,Uy,Uz,P) 融合版。connectivity/geometry を 1 回読み・plane ループを共有して
+// 5 変数の min/max と limiter を同時計算する (per-variable 5 回 launch の冗長 geometry 読みを除去)。
+// 数式は limiter_r1_d と同一 (#pragma unroll で k は定数化 → Qk 等は constant param のまま, ポインタ配列は消える)。
+__global__ void limiter_r1_fused5_d
+(
+ int limiter_scheme,
+ geom_int nCells,
+ geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,
+ geom_int* cell_planes_index, geom_int* cell_planes,
+ geom_float* vol, geom_float* ccx, geom_float* ccy, geom_float* ccz,
+ geom_float* pcx, geom_float* pcy, geom_float* pcz, geom_float* fx,
+ flow_float* Q0, flow_float* Q1, flow_float* Q2, flow_float* Q3, flow_float* Q4,
+ flow_float* L0, flow_float* L1, flow_float* L2, flow_float* L3, flow_float* L4,
+ flow_float* d0x, flow_float* d0y, flow_float* d0z,
+ flow_float* d1x, flow_float* d1y, flow_float* d1z,
+ flow_float* d2x, flow_float* d2y, flow_float* d2z,
+ flow_float* d3x, flow_float* d3y, flow_float* d3z,
+ flow_float* d4x, flow_float* d4y, flow_float* d4z
+)
+{
+    geom_int ic0 = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic0 >= nCells) return;
+
+    flow_float* Q[5]   = {Q0,Q1,Q2,Q3,Q4};
+    flow_float* Lim[5] = {L0,L1,L2,L3,L4};
+    flow_float* dQx[5] = {d0x,d1x,d2x,d3x,d4x};
+    flow_float* dQy[5] = {d0y,d1y,d2y,d3y,d4y};
+    flow_float* dQz[5] = {d0z,d1z,d2z,d3z,d4z};
+
+    if (limiter_scheme == 0) {
+        #pragma unroll
+        for (int k=0;k<5;k++) Lim[k][ic0] = 1.0;
+        return;
+    }
+
+    flow_float (*limiter_function)(flow_float, flow_float, flow_float, flow_float);
+    if (limiter_scheme == 1) {                       // barth
+        limiter_function = barth_Jespersen_limiter;
+    } else {                                         // venkata (2 or -1)
+        limiter_function = venkata_limiter;
+    }
+
+    const geom_int index_st = cell_planes_index[ic0];
+    const geom_int index_en = cell_planes_index[ic0+1];
+    const flow_float volume  = vol[ic0];
+    const geom_float cx0 = ccx[ic0], cy0 = ccy[ic0], cz0 = ccz[ic0];
+
+    flow_float qc[5], qmax[5], qmin[5], gx[5], gy[5], gz[5], ltmp[5];
+    #pragma unroll
+    for (int k=0;k<5;k++){
+        qc[k]=Q[k][ic0]; qmax[k]=qc[k]; qmin[k]=qc[k];
+        gx[k]=dQx[k][ic0]; gy[k]=dQy[k][ic0]; gz[k]=dQz[k][ic0]; ltmp[k]=1.0;
+    }
+
+    // pass1: neighbor min/max (geometry/connectivity を 1 回だけ読む)
+    for (geom_int ilp=index_st; ilp<index_en; ilp++) {
+        geom_int ip = cell_planes[ilp];
+        if (ip >= nNormalPlanes) continue;
+        geom_int ic1 = plane_cells[2*ip+0] + plane_cells[2*ip+1] - ic0;
+        #pragma unroll
+        for (int k=0;k<5;k++){ flow_float qn=Q[k][ic1]; qmax[k]=max(qmax[k],qn); qmin[k]=min(qmin[k],qn); }
+    }
+
+    // pass2: limiter
+    for (geom_int ilp=index_st; ilp<index_en; ilp++) {
+        geom_int ip = cell_planes[ilp];
+        if (ip >= nNormalPlanes) continue;
+        flow_float dcp_x = pcx[ip]-cx0;
+        flow_float dcp_y = pcy[ip]-cy0;
+        flow_float dcp_z = pcz[ip]-cz0;
+        #pragma unroll
+        for (int k=0;k<5;k++){
+            flow_float Qt = qc[k] + gx[k]*dcp_x + gy[k]*dcp_y + gz[k]*dcp_z;
+            ltmp[k] = min(ltmp[k], limiter_function(qmax[k]-qc[k], qmin[k]-qc[k], Qt-qc[k], volume));
+        }
+    }
+
+    #pragma unroll
+    for (int k=0;k<5;k++) Lim[k][ic0] = min(max(ltmp[k], (flow_float)0.0), (flow_float)1.0);
+}
+
+
 void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_ro"], msh.nCells_all, 1.0);
@@ -203,113 +285,20 @@ void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , va
         return;
     }
 
-    // ro
-    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
+    // ro,Ux,Uy,Uz,P を 1 カーネルに融合 (connectivity/geometry の 5 重読みを除去)。数式は per-variable と同一。
+    limiter_r1_fused5_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> (
         cfg.limiter,
-        // mesh structure
         msh.nCells,
         msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
         msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
         var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
         var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-
-        // basic variables
-        var.c_d["ro"] ,
-        var.c_d["limiter_ro"] ,
-
-        // gradient
-        var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"]
-    ) ;
-
-    // Ux
-    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
-        cfg.limiter,
-        // mesh structure
-        msh.nCells,
-        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
-        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-
-        // basic variables
-        var.c_d["Ux"] ,
-        var.c_d["limiter_Ux"] ,
-
-        // gradient
-        var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"]
-    ) ;
-
-    // Uy
-    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
-        cfg.limiter,
-        // mesh structure
-        msh.nCells,
-        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
-        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-
-        // basic variables
-        var.c_d["Uy"] ,
-        var.c_d["limiter_Uy"] ,
-
-        // gradient
-        var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"]
-    ) ;
-
-    // Uz
-    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
-        cfg.limiter,
-        // mesh structure
-        msh.nCells,
-        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
-        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-
-        // basic variables
-        var.c_d["Uz"] ,
-        var.c_d["limiter_Uz"] ,
-
-        // gradient
-        var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"]
-    ) ;
-
-
-    // Ht
-    //CHECK_CUDA_ERROR(cudaMemset(var.c_d["limiter_Ht"] , 1.0, msh.nCells_all*sizeof(flow_float)));
-    //limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
-    //    cfg.limiter,
-    //    // mesh structure
-    //    msh.nCells,
-    //    msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-    //    msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
-    //    var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-    //    var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-
-    //    // basic variables
-    //    var.c_d["Ht"] ,
-    //    var.c_d["limiter_Ht"] ,
-
-    //    // gradient
-    //    var.c_d["dHtdx"] , var.c_d["dHtdy"] , var.c_d["dHtdz"]
-    //) ;
-
-    // P
-    limiter_r1_d<<<cuda_cfg.dimGrid_normalcell_small , cuda_cfg.dimBlock_small>>> ( 
-        cfg.limiter,
-        // mesh structure
-        msh.nCells,
-        msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-        msh.map_cell_planes_index_d , msh.map_cell_planes_d ,
-        var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-        var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-
-        // basic variables
-        var.c_d["P"] ,
-        var.c_d["limiter_P"] ,
-
-        // gradient
+        var.c_d["ro"], var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"], var.c_d["P"],
+        var.c_d["limiter_ro"], var.c_d["limiter_Ux"], var.c_d["limiter_Uy"], var.c_d["limiter_Uz"], var.c_d["limiter_P"],
+        var.c_d["drodx"], var.c_d["drody"], var.c_d["drodz"],
+        var.c_d["dUxdx"], var.c_d["dUxdy"], var.c_d["dUxdz"],
+        var.c_d["dUydx"], var.c_d["dUydy"], var.c_d["dUydz"],
+        var.c_d["dUzdx"], var.c_d["dUzdy"], var.c_d["dUzdz"],
         var.c_d["dPdx"] , var.c_d["dPdy"] , var.c_d["dPdz"]
     ) ;
 

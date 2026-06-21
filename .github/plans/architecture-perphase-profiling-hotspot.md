@@ -208,3 +208,12 @@
     working set が L2 に収まり ±120 stride でも実質キャッシュ済み・残りは compute/compulsory traffic)。**structured な
     case/36 では cell-only/cell+plane どちらも reorder の効果なし → 棄却**。reorder は raw tet 等 **番号が本当にランダムな
     非構造メッシュ向けの将来レバー**と位置づける (本 case 不要)。
+- 2026-06-21: **① limiter 5変数融合 完了**。`limiter_r1_fused5_d` を追加し ro/Ux/Uy/Uz/P の 5 回 launch を 1 回へ
+  (connectivity/geometry を 5→1 回読み)。数式は per-variable と同一 (`limiter_r1_d` は species 用に残置)。
+  - **結果** (case/36 run_0050 solid 79.4k, 2000 step, GPU 単独): limiter カーネル **565→513µs/step (−9%, ncu)**・launch 5→1。
+    wall ~6.05→**5.86–5.95s (~−3%, ノイズ込)**。残差 0.134 (非決定性ノイズ床内=数式不変)。
+  - **頭打ちの原因**: 5 変数分 temp + ポインタ配列で **register 64→111・occupancy 55→30%** に悪化し geometry 読み削減の
+    利得を一部相殺。`__launch_bounds__(256,4)` は spill が勝って逆効果 (5.86→5.91s)→不採用。block size 掃引も 256 vs 512
+    ノイズ内 → occupancy 律速でない再確認。
+  - **性能フェーズ総括**: 13.38s → **~5.9s (−56%)**。残るレバー (DPLUR 帯域/SLAU 演算/CUDA Graph) は algorithmic で
+    コスパ低 → 性能はここで一区切り推奨。
