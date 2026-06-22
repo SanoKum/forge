@@ -44,7 +44,13 @@ void compute_bruteforce(const std::vector<Point> &walls,
 } // namespace
 
 void calcWallDistance_kdtree(solverConfig &cfg, mesh &msh, variables &var) {
-    (void)cfg; // currently unused
+    // node-centered (median-dual): 壁ノードが CV 中心 (=壁面上) で、off-wall ノードはその直上に並ぶ。
+    // 壁点集合に「壁半割面の重心」を使うと重心が壁ノードから x 方向に dx/8 ずれており、近壁ノードの
+    // 最近接壁点距離が法線距離 y でなく x ずれ (≈dx/8, 下流で増大) に支配され wall_dist が大きく誤る
+    // (壁ノード自身も 0 にならない)。→ ω_w=60ν/(β·wall_dist²) 過小→過剰乱流。node では壁点に「壁ノード
+    // 座標 (bc.iCells の CV 中心)」を使う。直下の壁ノードが最近接になり wall_dist=y を正しく返す。
+    // cell モードは従来どおり壁面の plane 重心 (セル中心の直下に整列) を使う (挙動不変)。
+    const bool nodeMode = (cfg.discretization == "node");
 
     std::vector<Point> wall_points;
     std::vector<Point> cell_points;
@@ -53,11 +59,21 @@ void calcWallDistance_kdtree(solverConfig &cfg, mesh &msh, variables &var) {
     int wall_count = 0;
     for (auto &bc : msh.bconds) {
         if (bc.bcondKind == "wall_isothermal" || bc.bcondKind == "wall") {
-            for (auto &ip : bc.iPlanes) {
-                geom_float x = msh.planes[ip].centCoords[0];
-                geom_float y = msh.planes[ip].centCoords[1];
-                geom_float z = msh.planes[ip].centCoords[2];
-                wall_points.emplace_back(x, y, z);
+            if (nodeMode) {
+                for (auto &ic : bc.iCells) {
+                    if (ic < 0 || ic >= static_cast<geom_int>(msh.cells.size())) continue;
+                    geom_float x = msh.cells[ic].centCoords[0];
+                    geom_float y = msh.cells[ic].centCoords[1];
+                    geom_float z = msh.cells[ic].centCoords[2];
+                    wall_points.emplace_back(x, y, z);
+                }
+            } else {
+                for (auto &ip : bc.iPlanes) {
+                    geom_float x = msh.planes[ip].centCoords[0];
+                    geom_float y = msh.planes[ip].centCoords[1];
+                    geom_float z = msh.planes[ip].centCoords[2];
+                    wall_points.emplace_back(x, y, z);
+                }
             }
             ++wall_count;
         }
