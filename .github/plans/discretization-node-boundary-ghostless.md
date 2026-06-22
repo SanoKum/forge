@@ -212,3 +212,13 @@ flux 寄与は不要。
     `case/08.bump` cell SLAU が NaN なし正常。検証A: `conv main planes=42691(internal 42691+periodic 0), boundary weak
     planes=659(wall 200+non-wall 459)` を起動ログ確認。
   - **残**: 5c (壁せん断 u_τ 精度)、SST roK 収束、検証B (境界別 flux 積分)。次フェーズ。
+- `2026-06-22` — **検証D (u_τ) で 5c の前提が崩れる重要発見**。5a+5b+5e 後の SST (`run_node_sst_5e_long`, 40000 step)
+  で u_τ を cell baseline (run_0001, **u_τ≈1.97**) と比較: node u_τ≈**1.33–1.43** (旧 1.24 から微改善も依然 ~30% 過小)。
+  原因を切り分けたところ **5c (viscous flux 離散化) ではなく SST 壁での乱流粘性の非減衰**だった:
+  - node 壁ノードで **k=66.8 (本来 0)**, omega=4.2e5 (`wall_y_eff`=6.1e-5 由来で有限), **vis_turb/μ≈10** (cell は近壁で 0)。
+  - `rans_wall_scalar_boundary_d` (wall-resolved) は `kb=0` と**ゴースト** `k[ig]=2kb−k[ic]` を設定するが、node モード
+    では壁ノードが CV 中心 `ic` で、**`k[ic]=0` をピン留めする機構が無い** (速度は `enforceWallNoSlip` で u=0 を
+    ピン留めするが k には無い)。→ 壁ノード k が 67 に発達し near-wall vis_turb が過大 → BL が過拡散し u_τ 過小。
+  - **結論: 5c は u_τ を直さない。正しい修正は「node モードの SST k=0 壁 Dirichlet」** (enforceWallNoSlip の k 版:
+    壁ノードで k 状態=0 ＋ roK 残差=0、必要なら omega も壁ノードでピン)。handoff の ④ (∇u·S 平滑化) 仮説は外れ。
+  - 検証データ: `case/26.flat_plate_sst/run_node_sst_5e_long/` (res_40000), cell 比較 `run_0001_slau_rans_implicit/`。
