@@ -732,11 +732,11 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。docs/discretization/implementation.md §7.2.1。
  geom_int* wall_flag,
 
- // node-centered 弱形式 (Phase 2, 5e): node モードでは境界半割面 (has_nbr=false=ゴースト側) の粘性対角
- // viscous_diag をスキップする。境界ノードは物理境界上に乗り境界半割面の幾何が退化 (dcc∥境界, dcc·S≈0)
- // するため delta=dcc·ss²/|dcc·S| が爆発し viscous_diag が巨大化、対角支配で dq≈0 となり境界ノードが
- // 凍結する (出口列 BL 崩壊の真因)。境界の対流/粘性は弱形式カーネルが残差側で担うので Jacobian から外す。
- // cell モードは境界ゴーストが法線方向に正しく置かれ退化しないので従来どおり (isNode=0)。
+ // node-centered 弱形式 (Phase 2, 5e): node モードはゴーストセルを使わない。境界半割面 (has_nbr=false=ゴースト
+ // 側) をこの node-to-node Jacobian ループから完全に除外する (continue)。境界ノードは物理境界上に乗るため
+ // node→ghost が退化 (dcc≈0) し粘性対角 2ν·delta/dcc が爆発→対角巨大→dq≈0 で境界ノードが凍結する (出口 BL
+ // 崩壊・残差プラトーの真因)。境界の対流/粘性は弱形式カーネルが残差側で担う。cell (isNode=0) は境界ゴースト
+ // が法線方向に正しく置かれ非退化なので従来どおり境界面も処理する。
  int isNode
 )
 {
@@ -791,6 +791,9 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             const ST nz = nsign * static_cast<ST>(sz[ip]) / face_area;
 
             // 閉形式 FVS (R/L を作らず rank-2 外積で A⁺S を diag・k_off·sdq を nbr へ)。
+            // 対流項: has_nbr=false (境界半割面) のとき自セル状態+面法線から A⁺S を対角に積むだけで、ゴースト
+            // セルの状態/中心は一切読まない (ghostless)。よって node モードでもこの対流寄与は残す (境界ノードの
+            // 流出 Jacobian=陰的安定化に必要。除くと rms_roUy 等が発散した)。
             const bool has_nbr = (other_ic < nCells);
             ST sdq[5] = {static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0), static_cast<ST>(0.0)};
             if (has_nbr) {
@@ -806,17 +809,20 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
                 face_area, has_nbr, sdq, diag_block, neighbor_accum
             );
 
-            const ST dcc_x = static_cast<ST>(ccx[other_ic]) - static_cast<ST>(ccx[ic]);
-            const ST dcc_y = static_cast<ST>(ccy[other_ic]) - static_cast<ST>(ccy[ic]);
-            const ST dcc_z = static_cast<ST>(ccz[other_ic]) - static_cast<ST>(ccz[ic]);
-            const ST dcc = max(sqrt(dcc_x * dcc_x + dcc_y * dcc_y + dcc_z * dcc_z), static_cast<ST>(1.0e-30));
-            const ST dcc_dot_s = max(
-                fabs(dcc_x * static_cast<ST>(sx[ip]) + dcc_y * static_cast<ST>(sy[ip]) + dcc_z * static_cast<ST>(sz[ip])),
-                static_cast<ST>(1.0e-30)
-            );
-            // node 弱形式 (5e): 境界半割面 (has_nbr=false) は幾何退化で delta が爆発するため粘性対角を課さない
-            // (境界粘性は弱形式カーネルが残差側で担う)。cell は境界ゴーストが非退化なので従来どおり課す。
+            // 粘性対角: node モードはゴーストセルを使わない。境界半割面 (has_nbr=false=ゴースト側) では
+            // dcc 計算 (ccx[ghost] 読み) も viscous_diag も行わない。境界ノードは境界面上に乗るため node→ghost が
+            // 退化 (dcc≈0) し 2ν·delta/dcc が爆発→対角巨大→dq≈0 で境界ノードが凍結する (出口 BL 崩壊・残差
+            // プラトーの真因)。境界粘性は弱形式カーネルが残差側で担う。内部 node-to-node 面のみ粘性対角を課す。
+            // cell モード (isNode=0) は境界ゴーストが法線方向に正しく置かれ非退化なので従来どおり境界面も課す。
             if (!(isNode != 0 && !has_nbr)) {
+                const ST dcc_x = static_cast<ST>(ccx[other_ic]) - static_cast<ST>(ccx[ic]);
+                const ST dcc_y = static_cast<ST>(ccy[other_ic]) - static_cast<ST>(ccy[ic]);
+                const ST dcc_z = static_cast<ST>(ccz[other_ic]) - static_cast<ST>(ccz[ic]);
+                const ST dcc = max(sqrt(dcc_x * dcc_x + dcc_y * dcc_y + dcc_z * dcc_z), static_cast<ST>(1.0e-30));
+                const ST dcc_dot_s = max(
+                    fabs(dcc_x * static_cast<ST>(sx[ip]) + dcc_y * static_cast<ST>(sy[ip]) + dcc_z * static_cast<ST>(sz[ip])),
+                    static_cast<ST>(1.0e-30)
+                );
                 const ST delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<ST>(1.0e-30));
                 // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
                 // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
