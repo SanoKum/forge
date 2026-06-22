@@ -2726,6 +2726,7 @@ __global__ void convectiveFlux_boundary_d // slau
  geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
  geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
  geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
+ flow_float* massflux,  // node 弱形式境界の質量流束を書き戻す (スカラ移流 k/ω/species が境界で読む)
 
  // variables
  flow_float* ro   ,
@@ -2877,6 +2878,12 @@ __global__ void convectiveFlux_boundary_d // slau
         flow_float p_tilde = P_R;
 
         flow_float mdot = sss*(ro_R*Vn_m);
+
+        // 質量流束を書き戻す: node 弱形式では主ループが境界半割面を除外する (5a) ため massflux[ip]=0 のまま残り、
+        // スカラ移流 (k/ω/species, scalar_advection_first_order_d) が境界で流出入を 0 と誤認して k 等が出口で
+        // 流出できず蓄積→過剰乱流になる。境界の mdot をここで書き戻し正しく移流させる (符号は ic0→ghost 外向き)。
+        // cell モードは主ループが境界 massflux を書くので二重書き回避のため nullptr (書かない)。
+        if (massflux != nullptr) massflux[ip] = mdot;
 
         flow_float res_ro_temp   = mdot;
         flow_float p_tilde_r = p_tilde - d_pRef;   // free-stream 保存: 基準静圧を差し引く (境界面)
@@ -3216,7 +3223,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
             var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
             var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],  
+            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
+            (nodeMode ? var.p_d["massflux"] : nullptr),   // node 弱形式境界のみ massflux 書き戻し (cell は主ループが書く)
 
             // basic variables
             var.c_d["ro"] ,
@@ -3224,13 +3232,13 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             var.c_d["roUy"] ,
             var.c_d["roUz"] ,
             var.c_d["roe"] ,
-            var.c_d["Ux"]  , 
-            var.c_d["Uy"]  , 
-            var.c_d["Uz"]  , 
-            var.c_d["P"]  , 
-            var.c_d["Ht"]  , 
-            var.c_d["sonic"]  , 
-            var.c_d["T"]  , 
+            var.c_d["Ux"]  ,
+            var.c_d["Uy"]  ,
+            var.c_d["Uz"]  ,
+            var.c_d["P"]  ,
+            var.c_d["Ht"]  ,
+            var.c_d["sonic"]  ,
+            var.c_d["T"]  ,
 
             bc.bvar_d["ro"],
             bc.bvar_d["roUx"],
