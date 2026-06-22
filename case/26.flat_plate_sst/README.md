@@ -90,6 +90,19 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0021_des_ewt_yp30_mode0` | SST-DES T1-A: y+30 wall-modeled 場 (run_0011) から `DESmode:0` 1000 step (mode1 比較基準) | NaN なし | ref |
 | `run_0022_des_ewt_yp30_mode1` | **SST-DES T1-A シールド (wall-modeled y+30)**: 同場 `DESmode:1` 1000 step | mode1 vs mode0 `roUx` relL2 4.7e-5, `roK` 9.3e-4、付着 BL シールド (frac f_d<0.05=0.92)、NaN なし | active |
 
+### node-centered (median-dual) 検証 run
+
+| run_* | 目的・設定 | 主要結果 | 状態 |
+| --- | --- | --- | --- |
+| `run_node_lam_cont` | node モード層流平板 (visc=4e-4, Re_L≈1e5, M=0.2) | Blasius BL 再現 (δ99=0.99×, 形状誤差 3.3%)、図 `blasius_validation.png` | active |
+| `run_node_sst_fine` | node モード SST (cell run_0001 から cross-mesh restart, 20000 step) | omega/k 6 桁収束だが u_τ 過小 (node 1.24 vs cell 1.97)。残差プラトー (rms_roUx≈0.23)。図 `uplus_yplus_node_vs_cell.png` | active |
+| `run_node_corner_verify` | コーナー BC (壁∩出口) 検証: `ow=ib` マルチマーカ emit 後の fresh convert + run_node_sst_fine からの restart 500 step | **コーナー node 2 (x=1,y=0) Ux=Uy=0**、全壁ノード \|U\|=0、NaN なし、コーナーが wall+outlet 両 iCells に出現。残差プラトー (corner BC とは別問題) | active |
+
+> **node コーナー BC**: 壁∩出口コーナーは `gmshReader buildMedianDual` の `ow=ib` (マルチマーカ emit) で
+> 壁・出口の双方から半割面 ghost を得てコーナー CV が閉じる。壁 no-slip は `wall_flag` (壁 iCells、コーナー含む)
+> + `enforceWallNoSlip`/`zeroWallMomentumResidual` の Dirichlet で u=0 を厳密化。plan
+> [discretization-node-boundary-ghostless.md](../../.github/plans/discretization-node-boundary-ghostless.md)。
+
 > **SST-DES (DDES) T1-A** の合否: `DESmode:0` ビット不変 + `DESmode:1` で付着 BL が RANS から
 > 不変 (Cf 差≪0.1%)。**発達乱流場 (nut/nu≫1) から restart すること** (`run_regr_cf` 等 nut/nu≤1 の
 > 未発達場では νt≈0 で rd 小→シールドが効かない)。詳細 plan [turbulence-iddes-sst.md](../../.github/plans/turbulence-iddes-sst.md)。

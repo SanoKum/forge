@@ -46,17 +46,23 @@ node-centered (median-dual) の境界はcell-centered 用の**ミラーゴース
 壁せん断は、壁ノード (u=0) と内部ノードを繋ぐ**内部双対面**の粘性フラックスが担う。よって壁ゴースト/壁半割面の
 flux 寄与は不要。
 
-**コーナー所有優先** (theory §6.4): 壁∩出口のリップは物理的に壁点。優先度 wall>inlet>outlet>slip/axis で壁が所有し、
-当該ノードを壁 Dirichlet として扱い出口 bcond から除外 → 矛盾ゴースト消滅。
+**コーナー処理 (マルチマーカ emit, 2026-06-22 改訂)** (theory §6.4): 当初は優先度 (wall>inlet>outlet>slip/axis) で
+コーナーを 1 bcond に所有させる方式だったが、これは**非所有側の半割面 flux が欠落しコーナー CV が未閉**になる
+(壁所有コーナーで出口流出が消える→出口で壁面速度が 0 にならない等の症状)。改めて **SU2 流のマルチマーカ emit
+(`ow=ib`)** を採用: 各 bcond は自分の境界面に属するノードの半割面を emit し、コーナーは incident する全 bcond から
+半割面 ghost を 1 枚ずつ得る (壁側 mirror ghost + 出口側 ghost)。両半割面ベクトル総和でコーナー CV が閉じ、出口/
+入口 BC がコーナーに正しく届く。壁 no-slip はコーナー含め `wall_flag` (壁 iCells) + `enforceWallNoSlip`/
+`zeroWallMomentumResidual` の Dirichlet が u=0 を厳密化する (壁優先は所有でなく Dirichlet の上書きで実現)。
 
 **実装上の Dirichlet** = state を一度 0 初期化 ＋ 毎反復で運動量残差を射影してゼロ (陰解法整合)。
 
 ## 5. 実装ステップ
 
-1. **壁優先所有・壁 plane 不出力** — [gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp)
-   (`buildMedianDual`/`replacePrimalWithDual`)。各境界ノードを優先度で 1 bcond に所有。wall 所有ノードは境界
-   plane を出力しない (ghost 生成されない)。wall bcond の iCells (ノード列) は h5 に残す。非 wall 所有ノードは
-   所有 bcond にのみ半割面 plane 出力 (コーナーは出口 plane を持たない)。空 plane bcond を h5 writer が許容するか確認。
+1. **マルチマーカ半割面 emit** — [gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp)
+   (`buildMedianDual`/`replacePrimalWithDual`)。`ow=ib` で各 bcond は自分の境界面に属するノードの半割面を emit する
+   (全 bcond が ghost を持つ。壁も mirror ghost を持つ)。コーナーは incident する全 bcond の iCells/iPlanes に重複出現し、
+   それぞれの半割面 ghost を得る。wall bcond の iCells (コーナー含む) は h5 に残し solver の wall_flag 構築に使う。
+   〔旧方式 (優先度所有・壁 plane 不出力) はコーナー CV 未閉のため廃止。〕
 2. **wall_flag_d** — [mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp) `setMeshMap_d` /
    [mesh.hpp](../../solver_density_cuda/mesh/mesh.hpp)。`axis_flag_d` と同パターンで wall 種別 bcond の iCells を 1 に。
    空 plane bcond でも readMesh が落ちないことを確認。
@@ -113,3 +119,10 @@ flux 寄与は不要。
     `case/29.bell_vs_conical/run_expl_test/` (residual_history.png), 長 run `run_dual_visc_conical_node_expl_long/`。
   - **残**: 陰解法 viscous node (近壁粘性 Jacobian 強化=gpu-implicit-plan 後続)、Phase 2 (inlet/outlet/slip/axis +
     スカラ輸送のゴースト撤廃)、bell viscous explicit, より深い収束。
+- `2026-06-22` — **コーナー所有を優先度方式からマルチマーカ emit (`ow=ib`) に変更**。優先度所有は壁所有コーナーで
+  出口半割面 flux が欠落しコーナー CV が未閉だった (出口で壁面速度が 0 にならない症状)。`gmshReader buildMedianDual` で
+  各 bcond が自境界面ノードの半割面を emit し、コーナーは全 incident bcond から半割面 ghost を 1 枚ずつ得る形に。
+  dead code (`ownerBc`/`bcondPriority`/`isWallKind` 優先度ロジック) を撤去、`gmshReader.hpp`/`mesh.cpp` の旧コメント
+  も是正。検証 `case/26.flat_plate_sst/run_node_corner_verify/` (fresh convert→restart 500 step): closure 3e-6、
+  コーナー node 2 (x=1,y=0) Ux=Uy=0、全壁ノード \|U\|=0、NaN なし、コーナーが wall+outlet 両 iCells に出現。
+  〔別問題として残差プラトー rms_roUx≈0.23 (checkerboard 疑い) は未解決〕。

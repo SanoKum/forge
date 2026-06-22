@@ -792,8 +792,9 @@ void mesh::setMeshMap_d()
     }
 
     // 壁 CV フラグ: wall 種別 bcond の境界 CV (iCells) を 1 にする (node-centered 壁 Dirichlet 用)。
-    // node モードでは壁 bcond は plane/ghost を持たず iCells のみ保持する (gmshReader 壁優先所有)。
-    // コーナー (壁∩他境界) も壁優先で壁所有なので、ここで壁ノードとしてフラグされる。
+    // node モードはマルチマーカ emit なので、コーナー (壁∩出口 等) は壁・他境界の双方の iCells に出現する
+    // (gmshReader buildMedianDual, ow=ib)。ここで wall bcond の iCells を走査すれば、そのコーナーも
+    // 壁ノードとして確実にフラグされる (壁優先で no-slip を効かせる)。壁 bcond も自分の半割面 ghost を持つ。
     {
         std::vector<geom_int> wf(this->nCells, 0);
         for (bcond& bc : this->bconds)
