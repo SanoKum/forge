@@ -98,7 +98,8 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_node_sst_fine` | node モード SST (cell run_0001 から cross-mesh restart, 20000 step) | omega/k 6 桁収束だが u_τ 過小 (node 1.24 vs cell 1.97)。残差プラトー (rms_roUx≈0.23)。図 `uplus_yplus_node_vs_cell.png` | active |
 | `run_node_lam_5e_long` | **node 弱形式境界 (Phase 2: 5a+5b+5e)** 層流 (40000 step, run_node_lam_cont 崩壊場から restart) | **出口 BL 崩壊解消** (δ99(x) 単調・Blasius 一致, x=1.0 δ99=0.0114 vs 旧 1e-5)。**残差プラトー打破** rms_roUx 0.214→3.08e-5 (3.8桁), rms_ro 1.04e-7。NaN なし | active |
 | `run_node_sst_5e_long` | **node 弱形式境界 (5a+5b+5e)** SST (40000 step) — 過剰乱流の「before」 | プラトー打破 (rms_roUx 0.597→1.3e-3) だが **過剰乱流**: peak mut/μ=375, Cf≈3×Schl。真因=壁 ω 非ピン (下行で解消) | ref(before) |
-| `run_node_sst_omegapin2` | **壁 ω Dirichlet ピン修正** (massflux 書込 + wall_y_eff MIN + omega/roOmega ピン + ω decouple + res_roOmega 壁ゼロ)。SST 30000 step | **過剰乱流解消: Cf/Schl 1.03/1.21/1.54** (旧 3×)、壁 mut/μ≈0 (旧 10)、peak mut/μ 367 (cell 199)。残差低位 (rms_roUx 3e-5)。x=0.89 ~1.5× は follow-up | active |
+| `run_node_sst_omegapin2` | **壁 ω Dirichlet ピン修正** (massflux 書込 + wall_y_eff MIN + omega/roOmega ピン + ω decouple + res_roOmega 壁ゼロ)。SST 30000 step | 過剰乱流解消: Cf/Schl 1.03/1.21/1.54 (旧 3×)、壁 mut/μ≈0、peak mut/μ 367。x=0.89 ~1.5× 残 (→ wall_dist 修正で解消) | ref |
+| `run_node_sst_wdist` | **+ wall_dist 修正** (node で壁点に壁ノード座標)。SST restart | **cell 基準と一致: Cf/Schl 0.89/0.91/0.93, peak mut/μ 202 (cell 199), k_wall=0, δ99 cell 一致**。SST node 完成 | active |
 
 > **node 弱形式境界 (Phase 2)**: node モードで inlet/outlet/slip も ghostless 弱形式化。(5a) 主対流ループを内部+periodic
 > のみに、(5b) 全境界を `convectiveFlux_boundary_d` の bvar 弱形式に、(5e) **block-DPLUR Jacobian の境界半割面で
@@ -111,7 +112,13 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 > (出口で k が移流流出できず蓄積するバグ)、(ii) `wall_y_eff` MEAN→MIN (正しい ω_w)、(iii) 壁ノードで omega/roOmega を
 > 直接ピン (保存変数 Dirichlet)、(iv) point-implicit で ω 行 decouple (dω=0)、(v) res_roOmega 壁ゼロ化。
 > 結果 [run_node_sst_omegapin2](run_node_sst_omegapin2/): **Cf/Schl 1.03/1.21/1.54** (旧 ~3×)、壁 mut/μ≈0 (旧 10)、
-> peak mut/μ 367 (cell 199)。残: x=0.89 が ~1.5× (出口域)・peak mut/μ がやや高い、は follow-up。
+> peak mut/μ 367 (cell 199)。
+>
+> **さらに wall_dist バグを修正 (commit 8b60f2c) → cell 基準と一致**: `calcWallDistance_kdtree` が node で壁点に
+> 半割面重心 (壁ノードから x に ~dx/8 ずれ) を使い、近壁 wall_dist が法線距離 y でなく x ずれ (≈1e-4·x, 下流で増大)
+> になっていた → ω_w 過小 → 過剰乱流 (下流ほど)。node では壁点に**壁ノード座標**を使うよう修正。結果
+> [run_node_sst_wdist](run_node_sst_wdist/): **Cf/Schl 0.89/0.91/0.93**, peak mut/μ **202** (cell 199), k_wall=0,
+> δ99 が cell 一致。**massflux + omega pin + wall_dist の 3 点で SST node が cell 基準に一致**。
 
 > **SST-DES (DDES) T1-A** の合否: `DESmode:0` ビット不変 + `DESmode:1` で付着 BL が RANS から
 > 不変 (Cf 差≪0.1%)。**発達乱流場 (nut/nu≫1) から restart すること** (`run_regr_cf` 等 nut/nu≤1 の

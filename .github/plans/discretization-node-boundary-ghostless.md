@@ -248,3 +248,12 @@ flux 寄与は不要。
     (出口域・peak mut/μ がやや高い) は follow-up。
   - 〔反省: 「壁 BC でない/k 過生成」と早合点したのは、保存変数 roOmega の Dirichlet 整合 (ρ 変化後の再ピン) と
     omega 値 (MIN) を同時に満たさず単独で試したため。レビューAI の "omega は保存変数 Dirichlet" 指摘が決定打。〕
+- `2026-06-22` — **残課題 (x=0.89 過剰乱流) の真因 = wall_dist バグを修正、SST node が cell 基準と一致 (commit 8b60f2c)**。
+  ユーザ指摘「wdist はちゃんと入ってるか」が的中。`calcWallDistance_kdtree` が壁点集合に**壁半割面の重心**を使って
+  おり、node では重心が壁ノードから x 方向に ~dx/8 ずれている (off-wall ノードは壁ノードの直上に整列)。近壁ノードの
+  最近接壁点距離が法線距離 y でなく x ずれ (≈dx/8, 下流でメッシュ粗化に伴い増大) に支配され、**wall_dist≈1e-4·x
+  (壁ノード自身も 0 でなく 8.9e-5、出口で 5e-3)** と大誤り → ω_w=60ν/(β·wall_dist²) 過小 (下流ほど) → 過剰乱流。
+  修正: node では壁点に**壁ノード座標 (bc.iCells の CV 中心, 壁面上で off-wall ノードの直下)** を使う。cell は plane
+  重心のまま (セル中心の直下に整列, 不変)。検証 (`run_node_sst_wdist`, 再 convert): wall_dist=0 (壁), =y (第1オフ壁)
+  が全 x で成立。**SST node が cell 基準 (run_0009) と一致: Cf/Schlichting 0.89/0.91/0.93 (旧 3×), peak mut/μ 202
+  (cell 199), k_wall=0, δ99 が cell 一致**。massflux(0f6d53d)+omega pin(2b19d1d)+wall_dist(8b60f2c) の 3 点で完結。
