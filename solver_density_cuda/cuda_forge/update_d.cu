@@ -275,20 +275,26 @@ __global__ void applySSTPointImplicit_d
  flow_float* src_jac_omega,
  flow_float* transport_diag_k,
  flow_float* transport_diag_omega,
- flow_float unsteady_diag
+ flow_float unsteady_diag,
+ // node-centered 壁 ω Dirichlet: 壁ノードで dω=0 にし rans_wall_scalar_boundary_d がピンした ω_w を保つ
+ // (point-implicit の行=1/他=0)。k はノイマンなので通常更新。nullptr/0 で無効 (cell 不変)。
+ geom_int* wall_flag, int decouple_wall_omega
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic < nCells) {
         const flow_float v    = vol[ic];
         const flow_float dt_l = max(dt_local[ic], static_cast<flow_float>(1.0e-30));
+        const bool omegaWall = (decouple_wall_omega != 0 && wall_flag != nullptr && wall_flag[ic] == 1);
         // D_φ = V/Δτ + V·src_jac（消散）+ transport_diag（移流+拡散、既に [m³/s]）+ V·unsteady_diag。
         // transport_diag は壁近傍の陽的 k/ω 輸送 stiff 性を陰化し安定 cfl_pseudo を一桁以上引き上げる。
         const flow_float Dk = v / dt_l + v * src_jac_k[ic]     + transport_diag_k[ic]     + v * unsteady_diag;
         const flow_float Dw = v / dt_l + v * src_jac_omega[ic] + transport_diag_omega[ic] + v * unsteady_diag;
 
         const flow_float dk = implicit_relax * res_roK[ic]     / max(Dk, static_cast<flow_float>(1.0e-30));
-        const flow_float dw = implicit_relax * res_roOmega[ic] / max(Dw, static_cast<flow_float>(1.0e-30));
+        // 壁 ω decouple: 壁ノードでは dω=0 とし、ピンした roOmega=ρ·ω_w を保つ (k はノイマンで通常更新)。
+        const flow_float dw = omegaWall ? static_cast<flow_float>(0.0)
+                                        : implicit_relax * res_roOmega[ic] / max(Dw, static_cast<flow_float>(1.0e-30));
 
         // realizability: ρk ≥ 0, ρω > 0。dual-time でも正しいよう現在反復値への in-place 加算
         // （定常では roKN==roK のため roKN+dk と等価）。dual-time の roKN/roKNN は BDF 残差項側で使用。
@@ -314,7 +320,9 @@ void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["src_jac_omega"],
         var.c_d["transport_diag_k"],
         var.c_d["transport_diag_omega"],
-        cfg.unsteadyDiagCoef
+        cfg.unsteadyDiagCoef,
+        (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
+        (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0
     );
 
     gpuErrchk( cudaPeekAtLastError() );

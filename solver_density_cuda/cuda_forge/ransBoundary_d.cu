@@ -28,7 +28,8 @@ __global__ void rans_wall_scalar_boundary_d(
     flow_float* omegab,
     int wallTreatment,
     flow_float* utau,
-    flow_float* roOmega)
+    flow_float* roOmega,
+    int isNode)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -62,6 +63,14 @@ __global__ void rans_wall_scalar_boundary_d(
             omegab[ib] = max(static_cast<flow_float>(60.0) * nu_c / (kSstBeta1 * y_w * y_w), kOmegaMin);
             k[ig]     = static_cast<flow_float>(2.0) * kb[ib] - k[ic];
             omega[ig] = static_cast<flow_float>(2.0) * omegab[ib] - omega[ic];
+            // node-centered: 壁ノードが CV 中心 (ic) なので、ゴーストミラー (dcc≈0 退化) では ω[ic] が
+            // ω_w にピン留めされない → ω が過小 → k 過小消散 → 過剰乱流。ω[ic] を直接 ω_w に固定し、
+            // 保存量 roOmega も ρ·ω_w に整合させる (point-implicit で dω=0 decouple して保持)。cell は
+            // ゴーストで正しくピンされるので変更しない。
+            if (isNode != 0) {
+                omega[ic]   = omegab[ib];
+                roOmega[ic] = rho_c * omegab[ib];
+            }
         }
     }
 }
@@ -121,7 +130,9 @@ __global__ void compute_wall_y_eff_d(
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic < nCells) {
         if (wall_flag != nullptr && wall_flag[ic] == 1) {
-            flow_float sum = static_cast<flow_float>(0.0);
+            // 最近接の内部隣接ノードの wall_dist = 壁→第1オフ壁点の法線距離 Δy。ω_w=60ν/(β₁Δy²) の正しい値。
+            // (平均は Δy を 1 桁過大評価し ω を ~100x 過小→k 過小消散→過剰乱流。最近接が物理的に正しい。)
+            flow_float ymin = static_cast<flow_float>(1.0e30);
             int cnt = 0;
             for (geom_int j = cell_planes_index[ic]; j < cell_planes_index[ic + 1]; ++j) {
                 const geom_int ip = cell_planes[j];
@@ -129,12 +140,11 @@ __global__ void compute_wall_y_eff_d(
                 const geom_int b = plane_cells[2 * ip + 1];
                 const geom_int other = (a == ic) ? b : a;
                 if (other < nCells && wall_flag[other] == 0) {
-                    sum += wall_dist[other];
+                    ymin = min(ymin, max(wall_dist[other], kSmall));
                     ++cnt;
                 }
             }
-            wall_y_eff[ic] = (cnt > 0) ? (sum / static_cast<flow_float>(cnt))
-                                       : max(wall_dist[ic], kSmall);
+            wall_y_eff[ic] = (cnt > 0) ? ymin : max(wall_dist[ic], kSmall);
         } else {
             wall_y_eff[ic] = wall_dist[ic];
         }
@@ -180,7 +190,8 @@ void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc
             bc.bvar_d["omegab"],
             cfg.wallTreatmentSST,
             bc.bvar_d["utau"],
-            var.c_d["roOmega"]);
+            var.c_d["roOmega"],
+            (cfg.discretization == "node") ? 1 : 0);
         return;
     }
 

@@ -182,7 +182,11 @@ __global__ void enforceWallNoSlip_d
 __global__ void zeroWallMomentumResidual_d
 (
     geom_int nCells, geom_int* wall_flag,
-    flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roUz
+    flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roUz,
+    // SST: 壁ノードで ω は Dirichlet ピン (rans_wall_scalar_boundary_d) なので残差を 0 に射影する。
+    // Dirichlet ノードの残差は BC 強制であり物理的不均衡でない → rms_roOmega の汚染 (収束判定の誤検出) を防ぐ。
+    // nullptr で無効 (非 SST)。k はノイマンなので res_roK は触らない。
+    flow_float* res_roOmega
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -190,6 +194,7 @@ __global__ void zeroWallMomentumResidual_d
         res_roUx[ic] = (flow_float)0.0;
         res_roUy[ic] = (flow_float)0.0;
         res_roUz[ic] = (flow_float)0.0;
+        if (res_roOmega != nullptr) res_roOmega[ic] = (flow_float)0.0;
     }
 }
 
@@ -208,9 +213,11 @@ void enforceWallNoSlip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh
 void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return;
+    const bool sst = (cfg.LESorRANS == 2 && cfg.RANSmodel == 1);
     zeroWallMomentumResidual_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells, msh.wall_flag_d,
-        var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"]
+        var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"],
+        sst ? var.c_d["res_roOmega"] : nullptr
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
