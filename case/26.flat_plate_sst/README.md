@@ -96,12 +96,16 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | --- | --- | --- | --- |
 | `run_node_lam_cont` | node モード層流平板 (visc=4e-4, Re_L≈1e5, M=0.2) | Blasius BL 再現 (δ99=0.99×, 形状誤差 3.3%)、図 `blasius_validation.png` | active |
 | `run_node_sst_fine` | node モード SST (cell run_0001 から cross-mesh restart, 20000 step) | omega/k 6 桁収束だが u_τ 過小 (node 1.24 vs cell 1.97)。残差プラトー (rms_roUx≈0.23)。図 `uplus_yplus_node_vs_cell.png` | active |
-| `run_node_corner_verify` | コーナー BC (壁∩出口) 検証: `ow=ib` マルチマーカ emit 後の fresh convert + run_node_sst_fine からの restart 500 step | **コーナー node 2 (x=1,y=0) Ux=Uy=0**、全壁ノード \|U\|=0、NaN なし、コーナーが wall+outlet 両 iCells に出現。残差プラトー (corner BC とは別問題) | active |
+| `run_node_lam_5e_long` | **node 弱形式境界 (Phase 2: 5a+5b+5e)** 層流 (40000 step, run_node_lam_cont 崩壊場から restart) | **出口 BL 崩壊解消** (δ99(x) 単調・Blasius 一致, x=1.0 δ99=0.0114 vs 旧 1e-5)。**残差プラトー打破** rms_roUx 0.214→3.08e-5 (3.8桁), rms_ro 1.04e-7。NaN なし | active |
+| `run_node_sst_5e` | **node 弱形式境界 (5a+5b+5e)** SST (10000 step, run_node_sst_fine から restart) | プラトー打破: rms_roUx 0.597→2.14e-3 (2.4桁 falling, 旧 0.23 STALLED)。mean flow 全列 falling。roK は微増 (壁せん断=5c 課題) | active |
 
-> **node コーナー BC**: 壁∩出口コーナーは `gmshReader buildMedianDual` の `ow=ib` (マルチマーカ emit) で
-> 壁・出口の双方から半割面 ghost を得てコーナー CV が閉じる。壁 no-slip は `wall_flag` (壁 iCells、コーナー含む)
-> + `enforceWallNoSlip`/`zeroWallMomentumResidual` の Dirichlet で u=0 を厳密化。plan
-> [discretization-node-boundary-ghostless.md](../../.github/plans/discretization-node-boundary-ghostless.md)。
+> **node 弱形式境界 (Phase 2)**: node モードで inlet/outlet/slip も ghostless 弱形式化。(5a) 主対流ループを内部+periodic
+> のみに、(5b) 全境界を `convectiveFlux_boundary_d` の bvar 弱形式に、(5e) **block-DPLUR Jacobian の境界半割面で
+> 退化粘性対角 `viscous_diag` をスキップ** (境界ノードが境界上で `dcc·S≈0`→delta 爆発→dq≈0 で凍結し出口 BL 崩壊・
+> 残差プラトーを生んでいた真因)。**出口 BL 崩壊と残差プラトーの双方を解消**。plan
+> [discretization-node-boundary-ghostless.md](../../.github/plans/discretization-node-boundary-ghostless.md)。コーナー BC
+> (壁∩出口) は `ow=ib` マルチマーカ emit + `wall_flag` Dirichlet で別途解決済み (commit 5ce92dc)。
+> 残: 壁せん断精度 5c (u_τ 過小)、SST roK 収束。
 
 > **SST-DES (DDES) T1-A** の合否: `DESmode:0` ビット不変 + `DESmode:1` で付着 BL が RANS から
 > 不変 (Cf 差≪0.1%)。**発達乱流場 (nut/nu≫1) から restart すること** (`run_regr_cf` 等 nut/nu≤1 の

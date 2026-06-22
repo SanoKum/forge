@@ -730,7 +730,14 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  // node-centered 壁 no-slip: 壁ノードで運動量3行 (index1=roUx,2=roUy,3=roUz) を decouple する (nullptr 可)。
  // SU2 `DeleteValsRowi` 相当。残差射影だけでは block-DPLUR が壁運動量を連成したまま dq≠0 を返し速度 drift
  // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。docs/discretization/implementation.md §7.2.1。
- geom_int* wall_flag
+ geom_int* wall_flag,
+
+ // node-centered 弱形式 (Phase 2, 5e): node モードでは境界半割面 (has_nbr=false=ゴースト側) の粘性対角
+ // viscous_diag をスキップする。境界ノードは物理境界上に乗り境界半割面の幾何が退化 (dcc∥境界, dcc·S≈0)
+ // するため delta=dcc·ss²/|dcc·S| が爆発し viscous_diag が巨大化、対角支配で dq≈0 となり境界ノードが
+ // 凍結する (出口列 BL 崩壊の真因)。境界の対流/粘性は弱形式カーネルが残差側で担うので Jacobian から外す。
+ // cell モードは境界ゴーストが法線方向に正しく置かれ退化しないので従来どおり (isNode=0)。
+ int isNode
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -807,11 +814,15 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
                 fabs(dcc_x * static_cast<ST>(sx[ip]) + dcc_y * static_cast<ST>(sy[ip]) + dcc_z * static_cast<ST>(sz[ip])),
                 static_cast<ST>(1.0e-30)
             );
-            const ST delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<ST>(1.0e-30));
-            // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
-            // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
-            const ST viscous_diag = static_cast<ST>(2.0) * nu_eff * delta / dcc;
-            block_dplur::add_identity_scaled(diag_block, viscous_diag);
+            // node 弱形式 (5e): 境界半割面 (has_nbr=false) は幾何退化で delta が爆発するため粘性対角を課さない
+            // (境界粘性は弱形式カーネルが残差側で担う)。cell は境界ゴーストが非退化なので従来どおり課す。
+            if (!(isNode != 0 && !has_nbr)) {
+                const ST delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<ST>(1.0e-30));
+                // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
+                // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
+                const ST viscous_diag = static_cast<ST>(2.0) * nu_eff * delta / dcc;
+                block_dplur::add_identity_scaled(diag_block, viscous_diag);
+            }
         }
 
         #pragma unroll
@@ -1236,7 +1247,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
                 cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
                 nullptr,  /* axis_flag: in-Jacobian roUy decouple は corner を直さず (corner は多方程式不良) 既定無効 */ \
-                ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr)  /* wall_flag: 壁運動量3行 decouple */
+                ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag: 壁運動量3行 decouple */ \
+                ((cfg.discretization == "node") ? 1 : 0)  /* isNode: 5e 境界半割面の粘性対角スキップ */
             if (cfg.implicitSolvePrecision == 1)
                 implicit_defect_correction_block_d<double><<<block_grid , block_threads>>>(FORGE_BDPLUR_ARGS);
             else

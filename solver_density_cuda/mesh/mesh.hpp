@@ -129,6 +129,8 @@ public:
     geom_int nCells , nCells_halo, nCells_ghst , nCells_all;
     geom_int nBPlanes;
     geom_int nWallHaloPlanes = 0; // normal_halo_planes_d 末尾に並ぶ壁境界 plane 数 (node 弱形式で主ループから除外)
+    geom_int nBoundaryHaloPlanes = 0; // 非 periodic 境界 plane 総数 (wall+inlet+outlet+slip...)。node 弱形式 (Phase 2) で
+                                      // 主対流ループから全境界を外し convPlaneBound=内部+periodic にするのに使う
     geom_int nBconds;
 
     std::vector<node> nodes;

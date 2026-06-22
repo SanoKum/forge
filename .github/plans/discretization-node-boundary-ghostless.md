@@ -72,8 +72,60 @@ flux 寄与は不要。
 4. **ディスパッチ/呼び出し** — [boundaryCond.cpp](../../solver_density_cuda/boundaryCond.cpp) で node 時 wall/
    wall_isothermal を no-op 化。[main.cpp](../../solver_density_cuda/main.cpp) で `enforceWallNoSlip` を IC 後 1 回、
    `zeroWallMomentumResidual` を `assembleResidual` 末尾 (軸射影の後) に毎反復。
-5. **(Phase 2)** 半割面ジオメトリの device 転送＋`boundaryFluxNode_d`/`boundaryGradientNode_d`＋共有 flux ループの
-   境界 plane スキップ。
+5. **(Phase 2 — inlet/outlet/slip 弱形式化 + 壁粘性 ghostless 化, 2026-06-22 設計)**
+
+   **背景 (バグ実証)**: node モードの出口は依然 ghost+主ループ処理で、境界ノードが境界上に乗る退化幾何
+   (`d_along_n=0`、節点=半割面重心) のため、急勾配域 (壁近傍) で ghost flux が破綻する。`case/26.flat_plate_sst`
+   層流 node (`run_node_lam_cont`) で実証: BL は x≤0.94 では Blasius どおりだが **x≥0.98 で壁せん断が消え、出口列
+   (x=1.0) で BL 完全崩壊** (第1オフ壁 Ux=32→68=自由流、dUxdy が 9e3→7.8e6 に爆発)。出口自由流圧 (97250) は
+   正しく届くのでバルクは健全、壊れるのは退化幾何×急勾配の近壁のみ。`ow=ib` のコーナー修正とは独立の既存問題。
+
+   **方針**: 壁と同様に inlet/outlet/slip も ghostless 弱形式にし、node 主ループを内部面のみに限定する。
+
+   - **5a. 主対流ループを内部(+periodic)のみに**: 現行 node は `convPlaneBound = nNormal_halo_Planes - nWallHaloPlanes`
+     で壁 plane だけ除外し、inlet/outlet/slip の ghost plane は主ループに残っている (これが崩壊の原因)。非 periodic
+     境界 plane 総数 `nBoundaryHaloPlanes` を `setMeshMap_d` で数え (plane 並びは [内部][periodic][非壁境界][壁]
+     なので末尾連続)、node では `convPlaneBound = nNormal_halo_Planes - nBoundaryHaloPlanes` (=内部+periodic) とする。
+     viscous 主ループは既に `ip<nNormalPlanes` で内部限定なので変更不要。
+   - **5b. 全境界の弱形式対流**: [convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu)
+     `convectiveFlux_boundary_d` (bvar を R 状態とする単純 FVS、pRef 控除済) を node では**壁だけでなく全非 periodic
+     bcond**で起動する (現状 `nodeMode && !isWallKind` で非壁を除外している分岐を撤去)。bvar は既に各 BC kernel が
+     設定済み (inlet=固定状態, outlet=`Uxb`/`Psb`, slip=`Uxb=0`+`Psb=P[ic]`→ mdot=0 pressure-only)。退化 ghost を
+     一切使わずコーナーも各 incident bcond の半割面ごとに弱形式で閉じる。
+   - **5c. 壁→隣接内部ノード隣接マップ + node 版 viscousFlux_wall_d** (ユーザ設計):
+     - **マップ構築** (`setMeshMap_d`): 内部双対面 (`ip<nNormalPlanes`) を走査し、片側が壁ノード (`wall_flag`)・他方が
+       非壁ノードの面を「壁-流体面」として CSR (`wallAdj_offset[壁ノード]`, `wallAdj_face[]`, `wallAdj_other[]`,
+       面の向き符号) に収集する。**1 壁ノードが複数の内部隣接を持つ**ので CSR で集約する。
+     - **新カーネル** `viscousFlux_wall_node_d`: 壁ノードごとにこのマップを回し、各隣接内部ノード M との
+       **コンパクト法線差分** `μ (u_t,M - 0)/d` で壁せん断を計算。**粘性 flux は流体側ノード M にのみ加え
+       (`-flux`)、壁ノード N 自身の運動量 flux は 0 にする** (N は Dirichlet=運動量方程式を解かないのでペア保存は
+       不要・後段 `zeroWallMomentumResidual` とも整合)。τ_w は面積加重で**壁ノードに集約** (utau/y⁺ も)。退化 ghost も
+       壁ノードの平滑化勾配も使わない (これが ④ の u_τ 過小=∇u·S 平滑化を解消する)。粘性発熱・isothermal 熱流束も
+       流体側に扱う。
+     - **二重計上の回避**: 壁-流体面 (N↔M) は内部 viscous 主ループも処理しているため、**内部 viscous ループは
+       壁-流体面 (片側が壁ノードの内部面) をスキップ**し、当該面の流体側 M への粘性寄与は `viscousFlux_wall_node_d`
+       が一手に担う (壁面を壁カーネルが単独所有)。これで M は壁せん断を 1 回だけ受け、N は運動量 flux 0 で確定する。
+     - 旧 `viscousFlux_wall_d` (ghost+`bplane_cell_ghst` 前提) は node 経路から外し、cell モード専用に残す。
+   - **5d. 残差順序の確認**: 既に `assembleResidual` は updateVariablesInner→`enforceWallNoSlip`(Dirichlet state)→
+     境界 flux で res 設定→`zeroAxisRadialResidual`→`zeroWallMomentumResidual`(運動量のみ)→(blockDPLURSolve+
+     applyBlockImplicitCorrection=update) の順。ユーザ提案の順序と一致しており変更不要 (確認のみ)。
+   - **5e. block-DPLUR Jacobian の境界半割面スキップ (実装で判明した真因・必須)** —
+     [timeIntegration_d.cu](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu) `implicit_defect_correction_block_d`。
+     5a+5b だけでは出口 BL 崩壊が直らなかった。調査で **出口境界ノードが implicit で凍結 (dq≈0)** しており、それは
+     block-DPLUR 対角組立が `cell_planes` (境界半割面を含む) を回り、境界半割面 (`has_nbr=false`) でも粘性対角
+     `viscous_diag = 2ν·delta/dcc` (`delta = dcc·ss²/|dcc·S|`) を課すため。**node は境界ノードが境界上に乗り
+     `dcc∥境界・dcc·S≈0` で delta が爆発→対角巨大→dq≈0→境界ノード凍結** (= 出口列 BL 崩壊 = 残差プラトーの正体)。
+     これは残差側の 5a+5b とは別経路なので 5a+5b だけでは効かない。**node では境界半割面の viscous_diag を
+     スキップ** (`int isNode` 追加、`!(isNode && !has_nbr)` でゲート)。対流 A⁺S 対角は弱形式流出 Jacobian の近似
+     として残す。cell は境界ゴーストが法線方向に非退化なので従来どおり (isNode=0、ビット不変)。
+
+   **段階規律 (codex 指摘)**: **5a+5b は「境界対流の責務変更」なので独立に小検証して一度 commit で区切る**。5c の壁粘性
+   まで一気に入れると「出口 BL 崩壊の改善」と「u_τ 補正」の効果が混ざり原因切り分けが困難になる。順序は
+   **5a+5b → 検証/commit → 5c → 検証/commit**。
+
+   **5b の注意 (codex 指摘)**: 既存 `convectiveFlux_boundary_d` は「壁 pressure-only」前提の符号・面法線・左右状態に
+   なっていないかを丁寧に確認する。入口で bvar を R 状態にしたとき SLAU/ROE の流入 flux と既存 ghost 方式が
+   どの程度一致するかを、まず **1 次精度 (convMethod=0) の短い run** で確認してから本検証に進む。
 
 ## 6. 検証
 
@@ -83,6 +135,22 @@ flux 寄与は不要。
 - **判定基準**: step5-8 で落ちず完走、全残差列 (rms_ro/roUx/roUy/roUz/roe) 低下、NaN/Inf=0、`res_*.h5` で
   P≤Pt・ro>0・T>0、**壁ノードで Ux=Uy=Uz=0 を数値確認**。cell viscous (`run_dual_visc_conical_cell_m3`) と場比較。
   Euler conical/bell node (corner 修正済み) と平面 bump loM node が無回帰。`residual_history.png` 生成。
+
+### Phase 2 専用の検証 (codex 追加 3 項 + 段階)
+
+- **検証ケース**: `case/26.flat_plate_sst` の **新規 run** (層流 `run_node_lam_*`、SST `run_node_sst_*`)。`ow=ib` 修正済み
+  メッシュを fresh convert し、収束場から restart。cell モードはビット不変 (全変更を node ゲート、`case/08.bump` で確認)。
+- **(検証A, 5a+5b 後) 主ループに境界 ghost plane が残っていないことを数える**: 起動ログに `node conv main planes =
+  internal + periodic` と `boundary weak planes = Σ(inlet/outlet/slip/wall)` の個数を出し、主ループ面数 = nNormalPlanes
+  (+periodic) になっていること、弱形式面数 = 全境界半割面数になっていることを確認する。
+- **(検証B, 5b 後) 境界ごとの mass flux / pressure flux 積分を出す**: 特に **outlet で `Psb=97250` が ghost/bvar だけ
+  でなく実際の flux に効いている**こと (出口圧が場に伝播し自由流が加速する) を確認。まず convMethod=0 の短い run で
+  既存 ghost 方式との一致度を見る。
+- **(検証C, 5a+5b の主目的) 出口 BL 崩壊の解消**: δ99(x) が x で単調増加 (x≥0.98 で崩れない)、第1オフ壁 Ux と dUxdy が
+  出口列で爆発しない (層流 run で `run_node_lam_cont` の dUxdy 9e3→7.8e6 爆発が消えること)。
+- **(検証D, 5c 前後) 壁せん断精度を cell と比較**: `u_τ`, `Cf`, `y⁺`, wall shear 積分を cell baseline と並べる。
+  既知の `u_τ node 1.24 vs cell 1.97` がどこまで近づいたかを数値で示す。**5c は 5a+5b の commit 後に単独で入れ、
+  効果 (BL 崩壊解消 vs u_τ 補正) を分離する**。
 
 ## 7. 影響範囲
 
@@ -126,3 +194,21 @@ flux 寄与は不要。
   も是正。検証 `case/26.flat_plate_sst/run_node_corner_verify/` (fresh convert→restart 500 step): closure 3e-6、
   コーナー node 2 (x=1,y=0) Ux=Uy=0、全壁ノード \|U\|=0、NaN なし、コーナーが wall+outlet 両 iCells に出現。
   〔別問題として残差プラトー rms_roUx≈0.23 (checkerboard 疑い) は未解決〕。
+- `2026-06-22` — **Phase 2 着手 (設計確定)**。出口 ghost+主ループの退化幾何で近壁 BL が崩壊するバグを
+  `case/26.flat_plate_sst/run_node_lam_cont` で実証 (x≥0.98 で壁せん断消失→出口列 BL 崩壊、dUxdy 9e3→7.8e6)。
+  §5 Phase 2 に設計を記載: (5a) node 主対流ループを内部+periodic のみに (`nBoundaryHaloPlanes` 導入)、(5b) 全非
+  periodic 境界を `convectiveFlux_boundary_d` の bvar 弱形式に、(5c) **壁ノード→隣接内部ノード CSR 隣接マップ +
+  node 版 `viscousFlux_wall_node_d`** (コンパクト法線差分で τ_w 集約、流体側 M のみに flux・壁ノード運動量 flux=0、
+  内部 viscous ループは壁-流体面をスキップ)、(5d) 残差順序は現行で要件充足 (確認のみ)。勾配は既に ghostless
+  (`calcGradient_cellgather_d` の境界スキップ + `calcGradient_b_d`/LSQ bvar) なので Phase 2 対象外。実装はこれから。
+- `2026-06-22` — **5a+5b+5e 実装・検証完了 (出口 BL 崩壊 + 残差プラトーを解消)**。5a+5b だけでは効かず、真因が
+  **block-DPLUR Jacobian の境界半割面・退化粘性対角による境界ノード凍結** と判明 → **5e** (node で境界半割面の
+  `viscous_diag` をスキップ) を追加。検証 (`case/26.flat_plate_sst`):
+  - 層流 `run_node_lam_5e_long` (40000 step, 旧崩壊場から restart): 出口 node242 Ux 32.27→0.058、dUxdy 7.8e6→1.4e4、
+    **δ99(x) 単調で Blasius 一致** (x=1.0 δ99=0.0114, 旧 1e-5 崩壊)。**rms_roUx 0.214→3.08e-5 (3.8桁)**, rms_ro 1.04e-7。NaN なし。
+  - SST `run_node_sst_5e` (10000 step): rms_roUx 0.597→2.14e-3 (2.4桁 falling, 旧 0.23 STALLED)、mean flow 全列 falling。
+    roK 微増は壁せん断精度 (5c) 課題。
+  - cell: 全変更 node ゲート (convPlaneBound cell 分岐不変・診断 log node 限定・isNode=0 で viscous_diag 従来通り)、
+    `case/08.bump` cell SLAU が NaN なし正常。検証A: `conv main planes=42691(internal 42691+periodic 0), boundary weak
+    planes=659(wall 200+non-wall 459)` を起動ログ確認。
+  - **残**: 5c (壁せん断 u_τ 精度)、SST roK 収束、検証B (境界別 flux 積分)。次フェーズ。

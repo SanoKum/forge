@@ -656,12 +656,14 @@ void mesh::setMeshMap_d()
     // 壁だけ別途 pressure-only の境界 flux (convectiveFlux_boundary_d) で扱える。
     // cell モードは従来どおり全 plane (壁含む) を主ループでゴースト処理する (順序は無影響)。
     auto isWallKind = [](const std::string& k){ return k == "wall" || k == "wall_isothermal"; };
+    this->nBoundaryHaloPlanes = 0;  // 非 periodic 境界 plane 総数 (非壁 + 壁)
     for (auto& bc : this->bconds)
     {
         if (bc.bcondKind != "periodic" && !isWallKind(bc.bcondKind)) {
             for (auto& ip : bc.iPlanes){
                 normal_halo_planes[ip_sum] = ip;
                 ip_sum += 1;
+                this->nBoundaryHaloPlanes += 1;
             }
         }
     }
@@ -673,6 +675,7 @@ void mesh::setMeshMap_d()
                 normal_halo_planes[ip_sum] = ip;
                 ip_sum += 1;
                 this->nWallHaloPlanes += 1;
+                this->nBoundaryHaloPlanes += 1;
             }
         }
     }

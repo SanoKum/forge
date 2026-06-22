@@ -2979,13 +2979,28 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     dim3 dimGrid_normal_halo = dim3(ceil(msh.nNormal_halo_Planes / (flow_float)cuda_cfg.blocksize));
 
-    // node-centered 弱形式 (壁のみ): 主対流ループは「内部 + 非壁境界(ゴースト)」を処理し、末尾に並ぶ壁境界 plane
-    // (nWallHaloPlanes) を除外する。壁は別途 pressure-only の convectiveFlux_boundary_d (bvar u=0) で扱う
-    // (壁ノードは壁上に乗りミラーゴーストの幾何が退化=fx≠0.5 で質量貫通し発散するため)。
-    // inlet/outlet/axis は従来どおり主ループ+ゴーストで処理し既存の near-axis corner 修正を保つ。
-    // cell モードは全 plane を主ループで処理 (従来どおり)。
+    // node-centered 弱形式 (Phase 2): 主対流ループは「内部 + periodic」のみを処理し、末尾に並ぶ全非 periodic 境界 plane
+    // (nBoundaryHaloPlanes = wall+inlet+outlet+slip...) を除外する。全境界は別途 convectiveFlux_boundary_d が bvar を
+    // R 状態とする弱形式で担う。これは境界ノードが物理境界上に乗る node-centered で ghost を主ループの右状態に食わせる
+    // と退化幾何 (d_along_n=0) により出口列/コーナーで近壁 BL が崩壊するため (case/26 で実証)。
+    // cell モードは全 plane を主ループでゴースト処理 (従来どおり)。
     const geom_int convPlaneBound = (cfg.discretization == "node")
-                                  ? (msh.nNormal_halo_Planes - msh.nWallHaloPlanes) : msh.nNormal_halo_Planes;
+                                  ? (msh.nNormal_halo_Planes - msh.nBoundaryHaloPlanes) : msh.nNormal_halo_Planes;
+
+    // (検証A) node 弱形式の plane 振り分けを 1 度だけログ: 主ループ面 = 内部(+periodic)、弱形式面 = 全境界半割面。
+    if (cfg.discretization == "node") {
+        static bool s_planeLogDone = false;
+        if (!s_planeLogDone) {
+            s_planeLogDone = true;
+            const geom_int mainPlanes = convPlaneBound;
+            const geom_int periodicInMain = mainPlanes - msh.nNormalPlanes;  // 主ループのうち内部以外 = periodic
+            printf("[node weak-form] conv main planes = %ld (internal %ld + periodic %ld), "
+                   "boundary weak planes = %ld (wall %ld + non-wall %ld)\n",
+                   (long)mainPlanes, (long)msh.nNormalPlanes, (long)periodicInMain,
+                   (long)msh.nBoundaryHaloPlanes, (long)msh.nWallHaloPlanes,
+                   (long)(msh.nBoundaryHaloPlanes - msh.nWallHaloPlanes));
+        }
+    }
 
     // -----------------------
     // *** sum over planes ***
@@ -3173,16 +3188,15 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     // cell モード: SLAU/ROE/HLLE は主ループが normal_halo_planes_d 経由で全境界 plane をゴースト処理するため、
     // この dedicated 境界カーネルは二重計上になるのでスキップする。
-    // node モード (弱形式・壁のみ): 主ループは壁 plane を除外した (convPlaneBound) ので、壁の境界寄与を
-    // この convectiveFlux_boundary_d が bvar (u=0 → mdot=0, pressure-only) から担う。非壁 (inlet/outlet/axis)
-    // は主ループ+ゴーストのままなので本カーネルからは除外する。
+    // node モード (弱形式・Phase 2): 主ループは全非 periodic 境界 plane を除外した (convPlaneBound=内部+periodic) ので、
+    // 全境界 (wall/inlet/outlet/slip...) の境界寄与を本 convectiveFlux_boundary_d が bvar を R 状態とする弱形式で担う。
+    // (壁: bvar u=0 → mdot=0, pressure-only。出口: bvar Uxb/Psb。slip: Uxb=0+Psb=P[ic]。入口: 固定状態。)
     const bool nodeMode = (cfg.discretization == "node");
     bool skipBoundaryFluxKernel = (!nodeMode)
                                && (cfg.solver == "SLAU"
                                 || cfg.solver == "SLAU2"
                                 || cfg.solver == "ROE"
                                 || cfg.solver == "HLLE");
-    auto isWallKind = [](const std::string& k){ return k == "wall" || k == "wall_isothermal"; };
 
     for (auto& bc : msh.bconds)
     {
@@ -3190,10 +3204,6 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             continue;
         }
         if (skipBoundaryFluxKernel) {
-            continue;
-        }
-        // node モードでは壁 bcond のみ弱形式境界 flux を適用 (非壁は主ループで処理済み)。
-        if (nodeMode && !isWallKind(bc.bcondKind)) {
             continue;
         }
         convectiveFlux_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
