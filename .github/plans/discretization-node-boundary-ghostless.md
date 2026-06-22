@@ -222,3 +222,14 @@ flux 寄与は不要。
   - **結論: 5c は u_τ を直さない。正しい修正は「node モードの SST k=0 壁 Dirichlet」** (enforceWallNoSlip の k 版:
     壁ノードで k 状態=0 ＋ roK 残差=0、必要なら omega も壁ノードでピン)。handoff の ④ (∇u·S 平滑化) 仮説は外れ。
   - 検証データ: `case/26.flat_plate_sst/run_node_sst_5e_long/` (res_40000), cell 比較 `run_0001_slau_rans_implicit/`。
+- `2026-06-22` — **上記 u_τ 診断を再訂正 (有効な乱流基準で確認)**。`run_0001` は Ps=99303 の**低速ほぼ層流** (U=34,
+  peak mut/μ≈1) で基準にならなかった。同条件の有効基準 = **`run_0009_ewt_fine_mode1`** (cell, Ps=97250, U≈67,
+  automatic WT, peak mut/μ=199, **Cf≈Schlichting (0.94–1.0)**, k_wall≈0)。これと node を突き合わせると:
+  - **node はむしろ過剰乱流**: peak mut/μ=375 (cell 199), **Cf ≈ 3× Schlichting**, δ99 ≈ 1.5–2× 過厚。
+  - 壁ノード k=67 は**過生成された内部 k をノイマンで追随しただけの症状**で、根本ではない (ユーザ指摘: k は
+    automatic WT でノイマン=処理不要、ω こそ壁で値固定+residual0+陰解 decouple)。
+  - **試した壁 BC 修正は無効/悪化 → revert 済み**: (wallTreatmentSST=1 + ω point-implicit decouple dω=0 +
+    `wall_y_eff` を MEAN→MIN で ω 値是正)。過渡では壁 vis_turb≈0 になったが収束させると過剰乱流が再発・悪化
+    (peak mut/μ=909, Cf 3.5×)。→ 根本は**壁 BC でなく BL 全体の k 過生成** (node 固有, おそらく歪み速度/生成項 or
+    convMethod=0)。別途の SST 生成項調査が必要 (本 plan の範囲外, 次フェーズ)。
+  - **確定済み (commit 1ac6a57/50867a5) の 5a+5b+5e=mean-flow の出口 BL 崩壊+残差プラトー解消はこの乱流件と独立**。
