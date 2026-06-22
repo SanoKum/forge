@@ -233,3 +233,18 @@ flux 寄与は不要。
     (peak mut/μ=909, Cf 3.5×)。→ 根本は**壁 BC でなく BL 全体の k 過生成** (node 固有, おそらく歪み速度/生成項 or
     convMethod=0)。別途の SST 生成項調査が必要 (本 plan の範囲外, 次フェーズ)。
   - **確定済み (commit 1ac6a57/50867a5) の 5a+5b+5e=mean-flow の出口 BL 崩壊+残差プラトー解消はこの乱流件と独立**。
+- `2026-06-22` — **過剰乱流を解消 (ユーザ+レビューAI の指摘が的中)**。「k 過生成」と片付けたのは誤りで、真因は
+  **node モードで壁 ω が Dirichlet ピンされていない**ことだった (ghost BC `omega[ig]=2ω_w-omega[ic]` は壁ノードが
+  CV 中心・dcc≈0 退化で omega[ic] を ω_w に固定できない → ω 過小 → k 消散 Dk=β*ρkω 不足 → 過生成 runaway。壁 k=67 は
+  その症状で k=0 Dirichlet は誤り)。修正 (node 限定, commit 2b19d1d / massflux は 0f6d53d):
+  - **出口で massflux=0 バグ** (5a/5b で `convectiveFlux_boundary_d` が massflux 未書込→スカラが境界で移流せず k が
+    出口で蓄積) を修正: 境界 mdot を massflux に書き戻す。
+  - `compute_wall_y_eff` を MEAN→**MIN** (最近接オフ壁ノード距離=正しい Δy。MEAN は Δy 過大評価で ω_w ~200x 過小)。
+  - `rans_wall_scalar_boundary_d` wall-resolved 分岐で node は **omega[ic]=ω_w・roOmega[ic]=ρω_w を直接ピン** (保存変数)。
+  - `applySSTPointImplicit` で壁 ω 行を **decouple (dω=0)**、k はノイマンで通常更新。
+  - `zeroWallMomentumResidual` で **res_roOmega も壁で 0** に (Dirichlet 残差で rms 汚染を除去)。
+  - 結果 (`run_node_sst_omegapin2`, wallTreatmentSST=0): **Cf/Schlichting 1.03/1.21/1.54 (旧 ~3.0–3.4)**、壁 mut/μ≈0
+    (旧 10)、peak mut/μ 367 (旧 375–470, cell 199)、δ99 上流で cell 近接。rms_roOmega 1.1e6→0.14。x=0.89 が依然 ~1.5x
+    (出口域・peak mut/μ がやや高い) は follow-up。
+  - 〔反省: 「壁 BC でない/k 過生成」と早合点したのは、保存変数 roOmega の Dirichlet 整合 (ρ 変化後の再ピン) と
+    omega 値 (MIN) を同時に満たさず単独で試したため。レビューAI の "omega は保存変数 Dirichlet" 指摘が決定打。〕
