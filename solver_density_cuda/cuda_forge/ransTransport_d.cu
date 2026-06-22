@@ -38,12 +38,12 @@ __global__ void calc_scalar_gradient_face_d(
 
     geom_float f   = fx[ip];
     flow_float kf, wf;
-    // node 境界面 (ic1=ghost) は fx=dc2p/dcc が ghost mirror dcc≈0 で退化し、コーナーで φ_f が overflow
-    // する。ghost は mirror (φ[ig]=2·bvar−φ[ic]) なので (φ[ic]+φ[ig])/2 = bvar。f=0.5 で退化 fx を使わず
-    // 境界値 bvar を厳密に復元する (velocity/P/T が calcGradient_b_d で bvar 閉包するのと同一の結果)。
+    // node 境界面 (ic1=ghost): fx=dc2p/dcc が ghost mirror dcc≈0 で退化する。ghost を一切参照せず、
+    // 境界ノード自身の値 (=境界上の値) を面値に使う (ghostless)。壁では omega[ic0]=omegab (ピン留め)・
+    // k[ic0]=kb (zero-grad) なので実質 kb/omegab。Dirichlet/Neumann いずれも境界ノード値が境界値。
     if (isNode != 0 && ic1 >= nCells) {
-        kf = static_cast<flow_float>(0.5) * (k[ic0]     + k[ic1]);
-        wf = static_cast<flow_float>(0.5) * (omega[ic0] + omega[ic1]);
+        kf = k[ic0];
+        wf = omega[ic0];
     } else {
         kf = f * k[ic0]     + (1.0 - f) * k[ic1];
         wf = f * omega[ic0] + (1.0 - f) * omega[ic1];
