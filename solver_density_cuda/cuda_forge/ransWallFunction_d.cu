@@ -53,7 +53,14 @@ __global__ void compute_wall_friction_sst_d(
     flow_float* Ux, flow_float* Uy, flow_float* Uz,
     flow_float* utau_b,
     flow_float* ypls_b,
-    flow_float* wf_pk)
+    flow_float* wf_pk,
+    // node-centered (isNode=1): bplane_cell は壁ノード W (u=0,Dirichlet)。代表内部点を選ぶための
+    // CV 座標と CSR 隣接。SU2 Normal_Neighbor 流。cell モード (isNode=0) では未使用 (nullptr 可)。
+    int isNode,
+    geom_int nNormalPlanes,
+    geom_int* cell_planes_index, geom_int* cell_planes, geom_int* plane_cells,
+    geom_int* wall_flag,
+    geom_float* ccx, geom_float* ccy, geom_float* ccz)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
     if (ib >= nb) return;
@@ -61,20 +68,57 @@ __global__ void compute_wall_friction_sst_d(
     const geom_int ip = bplane_plane[ib];
     const geom_int ic = bplane_cell[ib];
 
-    const flow_float rho = max(ro[ic], kSmall);
-    const flow_float nu  = vis_lam[ic] / rho;
-    const flow_float y   = max(wall_dist[ic], kSmall);
-
-    // 壁単位法線
+    // 壁単位法線 (外向き)
     const flow_float sss = max(ss[ip], kSmall);
     const flow_float nx = sx[ip] / sss;
     const flow_float ny = sy[ip] / sss;
     const flow_float nz = sz[ip] / sss;
 
-    // 壁接線速度の大きさ U_t = |U_c - (U_c·n)n| (no-slip 壁基準)
-    const flow_float uc = Ux[ic];
-    const flow_float vc = Uy[ic];
-    const flow_float wc = Uz[ic];
+    // 代表点 irep と壁法線距離 y。
+    //   cell: irep=ic (壁隣接内部セル), y=wall_dist[ic]  … 従来挙動 (ビット不変)。
+    //   node: ic=壁ノード W は u=0/wall_dist≈0 で退化するため、W の入射内部双対面から壁内向き法線 -n
+    //         との cos 最大の内部ノード I を SU2 Normal_Neighbor として選び irep=I, y=(x_I-x_W)·(-n)。
+    geom_int irep = ic;
+    flow_float y  = max(wall_dist[ic], kSmall);
+    if (isNode != 0) {
+        flow_float best_cos = static_cast<flow_float>(-2.0);
+        geom_int   bestI = -1;
+        flow_float bestDn = kSmall;
+        const flow_float xw = ccx[ic], yw = ccy[ic], zw = ccz[ic];
+        for (geom_int j = cell_planes_index[ic]; j < cell_planes_index[ic + 1]; ++j) {
+            const geom_int ipn = cell_planes[j];
+            if (ipn >= nNormalPlanes) continue;                 // 内部双対面のみ
+            const geom_int a = plane_cells[2 * ipn + 0];
+            const geom_int b = plane_cells[2 * ipn + 1];
+            const geom_int cand = (a == ic) ? b : a;
+            if (wall_flag[cand] != 0) continue;                 // 内部ノードのみ
+            const flow_float dx = ccx[cand] - xw;
+            const flow_float dy = ccy[cand] - yw;
+            const flow_float dz = ccz[cand] - zw;
+            const flow_float dist = sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist <= kSmall) continue;
+            const flow_float dn_in = -(dx * nx + dy * ny + dz * nz);  // 壁内向き距離 (>0 が内部側)
+            if (dn_in <= static_cast<flow_float>(0.0)) continue;
+            const flow_float cosv = dn_in / dist;               // 内向き法線との cos
+            if (cosv > best_cos) { best_cos = cosv; bestI = cand; bestDn = dn_in; }
+        }
+        if (bestI < 0) {                                        // 代表点なし: 退避
+            utau_b[ib] = static_cast<flow_float>(0.0);
+            ypls_b[ib] = static_cast<flow_float>(0.0);
+            wf_pk[ic]  = static_cast<flow_float>(0.0);
+            return;
+        }
+        irep = bestI;
+        y    = max(bestDn, kSmall);
+    }
+
+    const flow_float rho = max(ro[irep], kSmall);
+    const flow_float nu  = vis_lam[irep] / rho;
+
+    // 壁接線速度の大きさ U_t = |U_c - (U_c·n)n| (代表点 irep の速度)
+    const flow_float uc = Ux[irep];
+    const flow_float vc = Uy[irep];
+    const flow_float wc = Uz[irep];
     const flow_float un = uc * nx + vc * ny + wc * nz;
     const flow_float utx = uc - un * nx;
     const flow_float uty = vc - un * ny;
@@ -137,6 +181,7 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         return;
     }
 
+    const int isNode = (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0;
     compute_wall_friction_sst_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
         static_cast<geom_int>(bc.iPlanes.size()),
         bc.map_bplane_plane_d,
@@ -148,5 +193,11 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
         bc.bvar_d["utau"],
         bc.bvar_d["ypls"],
-        var.c_d["wf_pk"]);
+        var.c_d["wf_pk"],
+        // node: SU2 Normal_Neighbor 代表内部点選択用 (cell では未使用)
+        isNode,
+        msh.nNormalPlanes,
+        msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.map_plane_cells_d,
+        msh.wall_flag_d,
+        var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"]);
 }
