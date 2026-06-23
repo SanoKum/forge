@@ -204,11 +204,8 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["nodeMidpointFx"]) {
             this->nodeMidpointFx = config["mesh"]["nodeMidpointFx"].as<int>();
         }
-        if (config["mesh"]["nodeWallViscGradFlux"]) {
-            this->nodeWallViscGradFlux = config["mesh"]["nodeWallViscGradFlux"].as<int>();
-        }
-        if (config["mesh"]["nodeWallDistFloorCoef"]) {
-            this->nodeWallDistFloorCoef = config["mesh"]["nodeWallDistFloorCoef"].as<flow_float>();
+        if (config["mesh"]["nodeWallStressEdgeKernel"]) {
+            this->nodeWallStressEdgeKernel = config["mesh"]["nodeWallStressEdgeKernel"].as<int>();
         }
 
         // solver関連

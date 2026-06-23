@@ -168,22 +168,15 @@ public:
     // docs/discretization/implementation.md §7.4。
     int nodeMidpointFx = 0;
 
-    // node-centered 粘性壁 flux の法線距離 dcc 退化対策 (0:従来ミラーゴースト距離そのまま,
-    // 1:既定 退化 dcc をフロアで平滑化)。node モードの壁ノードは壁面上に乗るため、ミラーゴースト
-    // cc_ghost=cc+2((pc-cc)·n)n は (pc-cc)·n が雑音 (|dn|∈[1e-8,3e-4], 符号反転) で dcc=2|dn| が
-    // 4〜5 桁ばらつき、法線項 (U[ig]-U[ic])/dcc が近壁 twall の特異スパイク・偶奇振動を生む。
-    // 1 で dcc_eff=max(dcc, nodeWallDistFloorCoef·vol/sss) と下限クリップする。
-    // 【検証所見 2026-06-20】強 no-slip ドラッグ (小 dcc) は安定性に必須だが同時に twall 振動の源でも
-    // あり、局所的な距離操作 (純勾配 ∇u·S / 滑らか距離 / floor 大 / 残差射影 Dirichlet) では両者を
-    // 分離できない (弱めると no-slip を失い energy が先頭発散; 強いままだと振動が残る)。バルク解
-    // (中心線 Mach) は元スキームで Euler/cell と一致し健全。よって既定は 0 (元挙動を保持) とし、
-    // 本フラグ+floor は切り分け/将来の正攻法 (内部隣接ノード距離を使うコンパクト法線作用素) 用に
-    // 残置する。docs/diffusion/implementation.md, .github/plans/diffusion-node-wall-viscous-distance.md。
-    int nodeWallViscGradFlux = 0;
-
-    // 上記フロア係数 c: dcc_eff=max(dcc, c·vol/sss)。小さいほど元挙動に近い (大半の dcc を温存)。
-    // 既定 0.05。0 で実質フロア無効 (nodeWallViscGradFlux=0 と同等)。docs/diffusion/implementation.md。
-    flow_float nodeWallDistFloorCoef = 0.05;
+    // node-centered 壁摩擦応力 (twall) を「壁ノードに接続する内部双対面 (壁ノード↔内部ノード) の粘性力
+    // 集約」で算出する (1:既定, 0:旧=壁ノード勾配 ∇U[W]·S・退化ミラーゴースト dcc ベース)。node の壁ノードは
+    // 壁面上に乗り wall_dist=0/dcc 退化のため旧法の twall は近壁で特異スパイク・偶奇振動する。新法は
+    // 壁端を no-slip 値 Uxb=0、面勾配を 1/2(∇[W]+∇[I]) として viscousFlux_d と同形の over-relaxed で
+    // 各内部双対面の粘性運動量 flux を壁ノード CV に集約し、壁半割面積で割って twall とする (= 流体が
+    // 壁 CV に及ぼす粘性 traction; magnitude=τ_w)。運動量残差・y+ には触れない (内部ノード運動量は
+    // viscousFlux_d が担うため二重計上回避; twall は出力専用で場は不変)。cell モードは無関係 (従来どおり
+    // viscousFlux_wall_d が res+twall を算出)。docs/diffusion/implementation.md, plans/diffusion-node-wall-viscous-distance.md §11。
+    int nodeWallStressEdgeKernel = 1;
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
 

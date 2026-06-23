@@ -388,6 +388,136 @@ __global__ void viscousFlux_wall_d
     __syncthreads();
 }
 
+// ============================================================================
+// node-centered 壁摩擦応力 (twall) の専用算出カーネル (cfg.nodeWallStressEdgeKernel==1)
+// ----------------------------------------------------------------------------
+// 動機: node の壁ノード W は壁面上に乗るため、viscousFlux_wall_d の twall は退化ミラーゴースト dcc /
+//   壁ノード勾配 ∇U[W]·S で評価され近壁で特異スパイク・偶奇振動する (plan §2.1/§6.2)。
+// 方針 (plan §11, ユーザー確認済 案 A): 壁ノード W に接続する「内部双対面 (W↔内部ノード I)」の粘性
+//   運動量 flux を W の CV に集約し、壁半割面積で割って twall とする。W は Dirichlet (u≈0) なので、これは
+//   流体が壁 CV に及ぼす粘性 traction (magnitude=τ_w)。**運動量残差・y+ には触れない** (内部ノード I の
+//   運動量は viscousFlux_d の内部双対面が既に担うため、ここで res に足すと二重計上になる; twall は
+//   出力専用で場は不変)。壁端の速度は no-slip 値 Uxb=0 を使い (ghost 不使用)、面勾配は 1/2(∇[W]+∇[I])。
+//   over-relaxed 分解は viscousFlux_d と同形だが、距離は退化 dcc でなく W-I 間の物理距離 |cc[I]-cc[W]|。
+// 1 スレッド = 1 壁半割面 ib。W=bplane_cell[ib] の入射内部面を CSR (cell_planes) で走査して集約する。
+__global__ void viscousFlux_wall_node_d
+(
+ geom_int nb,
+ geom_int* bplane_plane,
+ geom_int* bplane_cell,            // node: 壁ノード W
+ geom_int  nNormalPlanes,
+ geom_int* cell_planes_index, geom_int* cell_planes, geom_int* plane_cells,
+ geom_int* wall_flag,
+
+ geom_float* ccx , geom_float* ccy , geom_float* ccz,
+ geom_float* sx  , geom_float* sy  , geom_float* sz , geom_float* ss,
+
+ flow_float* vis_lam , flow_float* vis_turb,
+ flow_float* Ux , flow_float* Uy , flow_float* Uz,
+ flow_float* Ux_b , flow_float* Uy_b , flow_float* Uz_b,   // 壁面値 (no-slip=0)
+
+ flow_float* dUxdx , flow_float* dUxdy , flow_float* dUxdz,
+ flow_float* dUydx , flow_float* dUydy , flow_float* dUydz,
+ flow_float* dUzdx , flow_float* dUzdy , flow_float* dUzdz,
+
+ int isAxisymmetric, flow_float* axisym_divU,
+
+ flow_float* twall_x_b , flow_float* twall_y_b , flow_float* twall_z_b
+)
+{
+    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+
+    if (ib < nb) {
+        const geom_int W   = bplane_cell[ib];
+        const geom_int ipw = bplane_plane[ib];
+        const flow_float ss_wall = ss[ipw];
+
+        // 壁面値 (no-slip では 0)。ghost は使わない。
+        const flow_float Uwx = Ux_b[ib];
+        const flow_float Uwy = Uy_b[ib];
+        const flow_float Uwz = Uz_b[ib];
+
+        // W の CV に内部双対面から入る粘性運動量 flux の総和 (= 流体が壁 CV に及ぼす粘性力)
+        flow_float fX = 0.0, fY = 0.0, fZ = 0.0;
+
+        for (geom_int j = cell_planes_index[W]; j < cell_planes_index[W+1]; ++j) {
+            const geom_int ip = cell_planes[j];
+            if (ip >= nNormalPlanes) continue;          // 内部双対面のみ (境界半割面は skip)
+            const geom_int a = plane_cells[2*ip+0];
+            const geom_int b = plane_cells[2*ip+1];
+            const geom_int I = (a == W) ? b : a;        // 相手ノード
+            if (wall_flag[I] != 0) continue;            // 内部ノードのみ (壁-壁エッジ除外, 寄与≈0)
+
+            // 面法線 S を W->I 向きへ揃える (格納は a->b)。
+            const flow_float sgn = (a == W) ? (flow_float)1.0 : (flow_float)-1.0;
+            const flow_float sxx = sgn*sx[ip];
+            const flow_float syy = sgn*sy[ip];
+            const flow_float szz = sgn*sz[ip];
+            const flow_float sss = ss[ip];
+
+            // W->I の物理距離ベクトル (退化ミラーゴースト dcc は使わない)。
+            const flow_float dcx = ccx[I] - ccx[W];
+            const flow_float dcy = ccy[I] - ccy[W];
+            const flow_float dcz = ccz[I] - ccz[W];
+            const flow_float dcc = sqrt(dcx*dcx + dcy*dcy + dcz*dcz);
+
+            // over-relaxed 分解 (viscousFlux_d と同形)。
+            const flow_float D_safe  = max(fabs(dcx*sxx + dcy*syy + dcz*szz), (flow_float)1.0e-30);
+            const flow_float delta   = dcc*sss*sss/D_safe;
+            const flow_float delta_x = dcx*sss*sss/D_safe;
+            const flow_float delta_y = dcy*sss*sss/D_safe;
+            const flow_float delta_z = dcz*sss*sss/D_safe;
+            const flow_float k_x = sxx - delta_x;
+            const flow_float k_y = syy - delta_y;
+            const flow_float k_z = szz - delta_z;
+
+            // 面勾配 = 1/2(∇[W]+∇[I]) (dual 平均, plan §11.3)。
+            const flow_float dUxdxf = (flow_float)0.5*(dUxdx[W]+dUxdx[I]);
+            const flow_float dUxdyf = (flow_float)0.5*(dUxdy[W]+dUxdy[I]);
+            const flow_float dUxdzf = (flow_float)0.5*(dUxdz[W]+dUxdz[I]);
+            const flow_float dUydxf = (flow_float)0.5*(dUydx[W]+dUydx[I]);
+            const flow_float dUydyf = (flow_float)0.5*(dUydy[W]+dUydy[I]);
+            const flow_float dUydzf = (flow_float)0.5*(dUydz[W]+dUydz[I]);
+            const flow_float dUzdxf = (flow_float)0.5*(dUzdx[W]+dUzdx[I]);
+            const flow_float dUzdyf = (flow_float)0.5*(dUzdy[W]+dUzdy[I]);
+            const flow_float dUzdzf = (flow_float)0.5*(dUzdz[W]+dUzdz[I]);
+
+            const flow_float divu = (isAxisymmetric == 1)
+                ? (flow_float)0.5*(axisym_divU[W]+axisym_divU[I])
+                : (dUxdxf + dUydyf + dUzdzf);
+
+            const flow_float mu_total = (flow_float)0.5*
+                ((vis_lam[W]+vis_turb[W]) + (vis_lam[I]+vis_turb[I]));
+
+            // 法線 Laplacian は壁端 no-slip 値 Uw を使う: (U[I]-Uw)/dcc。W=ic0(from) なので符号は
+            // viscousFlux_d の「ic0 に +tau」と同じ (= W の CV に入る力)。
+            flow_float tx = mu_total*((Ux[I]-Uwx)/dcc)*delta;
+            tx += mu_total*(dUxdxf*k_x + dUxdyf*k_y + dUxdzf*k_z);
+            tx += mu_total*(dUxdxf*sxx + dUydxf*syy + dUzdxf*szz);
+            tx += -mu_total*(flow_float)(2.0/3.0)*divu*sxx;
+
+            flow_float ty = mu_total*((Uy[I]-Uwy)/dcc)*delta;
+            ty += mu_total*(dUydxf*k_x + dUydyf*k_y + dUydzf*k_z);
+            ty += mu_total*(dUxdyf*sxx + dUydyf*syy + dUzdyf*szz);
+            ty += -mu_total*(flow_float)(2.0/3.0)*divu*syy;
+
+            flow_float tz = mu_total*((Uz[I]-Uwz)/dcc)*delta;
+            tz += mu_total*(dUzdxf*k_x + dUzdyf*k_y + dUzdzf*k_z);
+            tz += mu_total*(dUxdzf*sxx + dUydzf*syy + dUzdzf*szz);
+            tz += -mu_total*(flow_float)(2.0/3.0)*divu*szz;
+
+            fX += tx; fY += ty; fZ += tz;
+        }
+
+        // 壁半割面積で割って traction (応力) に。res には一切加算しない。
+        twall_x_b[ib] = fX/ss_wall;
+        twall_y_b[ib] = fY/ss_wall;
+        twall_z_b[ib] = fZ/ss_wall;
+    }
+
+    __syncthreads();
+}
+
 // ---- 壁粘性 flux の距離診断 (env FORGE_VISC_WALL_DIAG=1 で 1 回だけ実行) ----
 // 壁半割面ごとに、signed wall distance dn=(pc-cc)·n、ミラーゴースト距離 dcc=|cc_ghost-cc|、
 // 接線オフセット |(pc-cc)-dn n| を書き出す。node-centered で dcc≈0 (壁ノードが壁面上) に
@@ -582,4 +712,39 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
+
+    // node-centered の壁摩擦応力 (twall) を、退化ミラーゴースト dcc/壁ノード勾配ベース (上の
+    // viscousFlux_wall_d が書いた値) から「壁ノード↔内部ノードの内部双対面集約」ベースに上書きする
+    // (plan §11, 案 A)。出力専用で res/y+ には触れないため場は不変。cell モードと flag=0 では何もしない。
+    if (cfg.discretization == "node" && cfg.nodeWallStressEdgeKernel == 1 && msh.wall_flag_d != nullptr) {
+        for (auto& bc : msh.bconds) {
+            if (!(bc.bcondKind == "wall" || bc.bcondKind == "wall_isothermal")) continue;
+            if (bc.iPlanes.empty()) continue;
+            viscousFlux_wall_node_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
+                bc.iPlanes.size(),
+                bc.map_bplane_plane_d,
+                bc.map_bplane_cell_d,
+                msh.nNormalPlanes,
+                msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.map_plane_cells_d,
+                msh.wall_flag_d,
+
+                var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+                var.p_d["sx"] , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
+
+                var.c_d["vis_lam"], var.c_d["vis_turb"],
+                var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
+                bc.bvar_d["Ux"], bc.bvar_d["Uy"], bc.bvar_d["Uz"],
+
+                var.c_d["dUxdx"], var.c_d["dUxdy"], var.c_d["dUxdz"],
+                var.c_d["dUydx"], var.c_d["dUydy"], var.c_d["dUydz"],
+                var.c_d["dUzdx"], var.c_d["dUzdy"], var.c_d["dUzdz"],
+
+                cfg.isAxisymmetric, var.c_d["axisym_divU"],
+
+                bc.bvar_d["twall_x"], bc.bvar_d["twall_y"], bc.bvar_d["twall_z"]
+            ) ;
+        }
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchkKernelSync();
+    }
 }

@@ -107,7 +107,7 @@ tau_x += -mu*2.0/3.0*divu*sxx;                      // 発散項
 > 修正後は壁隣接セル Ux≈0.24 m/s・中心/平均比 1.53・流量 SU2 比約9%差・`twall_x` 非ゼロ。
 > 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md)。
 
-### node-centered の壁法線項 (`nodeWallViscGradFlux`, 2026-06-20)
+### node-centered の壁法線項 (`isNode`=`discretization=="node"`, 2026-06-20)
 
 上記の法線項 `mu*((Ux[ig]-Ux[ic])/dcc)*sss` は **cell-centered** を前提とする。cell では
 ゴースト中心が `cc_ghost = cc + 2((pc-cc)·n) n` で生成され、cell 中心が壁面から法線距離 $d_n$
@@ -121,7 +121,7 @@ tau_x += -mu*2.0/3.0*divu*sxx;                      // 発散項
 勾配計算 ([`calcGradient_d.cu`](../../solver_density_cuda/cuda_forge/calcGradient_d.cu)) は既に
 この退化を認識し、壁半割面を cellgather から外して **bvar 弱形式**で閉じている。
 
-そこで `cfg.discretization=="node"` かつ `nodeWallViscGradFlux==1` (既定) のとき、壁法線項を
+そこで `cfg.discretization=="node"` のとき (`viscousFlux_wall_d` に渡す `isNode==1`)、壁法線項を
 **node セル勾配ベース** $\mu\,\nabla u_i\cdot\mathbf{S}$ に置換する。$\nabla u_i$ は calcGradient で
 bvar 弱形式により壁面で正しく閉じているので、退化距離 `dcc` に依存しない:
 
@@ -133,10 +133,40 @@ hflux = (k_lam + cp*mu_turb/Prt)*(dTdx[ic]*sxx + dTdy[ic]*syy + dTdz[ic]*szz);
 ```
 
 転置項・発散項はもともと node セル勾配にフル `S` を内積する形なので変更不要 (置換は法線項
-のみ)。cell モードでは `nodeWallGradFlux=0` を渡し従来挙動をビット不変で維持する。
+のみ)。cell モードでは `isNode=0` で従来挙動をビット不変で維持する。
+> 注 (2026-06-24): 当初この切替に試作した `nodeWallViscGradFlux` / `nodeWallDistFloorCoef` (dcc floor)
+> は不採用となり**撤去済み** (plan §8.2.5)。現在 node の壁法線項置換は `discretization=="node"` のみで
+> 決まる (専用フラグは無い)。
 診断は env `FORGE_VISC_WALL_DIAG=1` で壁半割面の $d_n$, `dcc`, `dcc/(2d_n)`, 接線オフセットを
 集計表示する (`viscousWallDiag_d`)。計画は
 [`.github/plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md)。
+
+### node-centered の壁摩擦応力 twall = 内部双対面集約 (`viscousFlux_wall_node_d`, `nodeWallStressEdgeKernel`, 2026-06-24)
+
+node の壁ノード $W$ は壁面上に乗るため、`viscousFlux_wall_d` が出力する `twall` は退化ミラーゴースト
+`dcc` / 壁ノード勾配 $\nabla U[W]\cdot\mathbf{S}$ ベースで、近壁で特異スパイク・偶奇振動する (上記 §)。
+
+**離散化の非対称性 (重要)**: cell モードでは壁境界面は内部セル $ic$ の CV に属し、`viscousFlux_wall_d`
+の残差加算が壁せん断の**唯一の供給源**なので必須。一方 node モードでは、壁せん断は**内部双対面**
+$W\leftrightarrow I$ (内部ノード) を介して `viscousFlux_d` (内部カーネル, `ip<nNormalPlanes`) が既に
+保存形で内部ノード $I$ の運動量に加算しており ($U[W]\approx0$ Dirichlet で $(U_I-0)/dcc$ が no-slip
+せん断)、`viscousFlux_wall_d` の残差加算は**壁ノード $W$ (Dirichlet で破棄) へ捨てるだけ**。よって
+node での `viscousFlux_wall_d` の実効的役割は `twall`/`y+` 出力のみで、それが上記退化で不正確。
+
+`cfg.nodeWallStressEdgeKernel==1` (既定) のとき、node の `twall` を `viscousFlux_wall_node_d` で
+**置換**する (`viscousFlux_d.cu`)。1 スレッド = 1 壁半割面 $ib$ で、$W=$`bplane_cell[ib]` の入射内部
+双対面 (CSR `cell_planes`) を走査し、各面の粘性運動量 flux を $W$ の CV に集約して壁半割面積で割る:
+
+$$\boldsymbol{\tau}_w(W)=\frac{1}{A_{wall}(W)}\sum_{I:\,W\text{-}I\,\text{内部面}}\Big[\mu_f\frac{U_I-U_{wb}}{|dcc|}\,\delta\;+\;\mu_f\,\nabla u_i\!\cdot\!\mathbf{k}\;+\;\mu_f\,(\partial_i u_j)S_j\;-\tfrac{2}{3}\mu_f(\nabla\!\cdot u)S_i\Big]$$
+
+- 壁端速度は no-slip 値 $U_{wb}=$`Ux_b/Uy_b/Uz_b`$=0$ (ghost 不使用)。
+- 面勾配 $\nabla u_i$, $\mu_f$ は **$\tfrac12(\cdot[W]+\cdot[I])$ の dual 平均**。
+- over-relaxed 分解 ($\delta$, $\mathbf{k}=\mathbf{S}-\boldsymbol\delta$) は `viscousFlux_d` と同形だが、距離は退化
+  `dcc` でなく **$W$-$I$ 間の物理距離 $|cc_I-cc_W|$** (第一オフ壁セル厚, 退化しない)。
+- **運動量残差・`y+` には触れない** (内部ノード運動量は `viscousFlux_d` が担うため二重計上回避;
+  `twall` は出力専用で**場は不変**)。cell モードと `nodeWallStressEdgeKernel==0` では従来どおり。
+
+計画は [`.github/plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md) §11。
 
 ### node-centered の内部面 dcc に node 座標を使う (2026-06-22)
 
