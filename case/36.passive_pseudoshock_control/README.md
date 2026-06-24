@@ -92,7 +92,105 @@ wall=2274, 最小辺 ~0.087mm。`med_to_gmsh.py` の変換ロジックは合成�
 | `run_0019_sst_wt1_solid_bp2p06` | SST wall-res・**固体壁**・Ps=2.06 (比較) | **NOT CONVERGED** (roUx 上昇)。衝撃波 x~129mm (ドリフト中) | 非収束 |
 | `run_0020_sst_wt1_porous_bp2p08` | SST wall-res・多孔壁・Ps=2.08 (x_f≈0狙い) | **NOT CONVERGED** (roOmega 上昇・他低下中)。衝撃波 x~141mm | 非収束 |
 | `run_0021_sst_wt1_porous_prof` | **計算時間ボトルネック分析用** (run_0020 入力複製, nStepOuter 縮小)。ncu でカーネル別 GPU 時間を取得 | 単独実行 **~5.35ms/step** (run_0020 基準, 98k cell)。GPU busy ~3.7ms/step・残りは launch/host。**上位: implicit_defect_correction_block 24.6% / SLAU 22.4% / limiter_r1 17.4% / viscousFlux 7.3%**。`residual_history.png` | 破棄予定 (プロファイル) |
-| `run_0050_solid_prof` | **run_0048 (solid 構造) の計算時間ボトルネック分析用** (入力複製, nStepOuter 縮小)。ncu + detectNaN on/off 比較 | solid 79.4k cell, steady **5.77ms/step** (run_0048)。GPU busy **2.87ms/step (~50%)・残り ~50% は host/launch (110 launch/step)**。GPU 上位: implicit_block 27% / limiter_r1 20% / SLAU 13% / viscous 7.6%。**`detectNaN=1` が +1.45ms/step (=wall の ~21%)** = launch オーバーヘッドの主因 (毎step 全保存量に cub/thrust リダクション ~42 launch)。`residual_history.png` | 破棄予定 (プロファイル) |
+| `run_0050_solid_prof` | **run_0048 (solid 構造) の計算時間ボトルネック分析 + 残差モニタ device 常駐化の検証** (入力複製)。ncu + detectNaN on/off 比較、旧/新バイナリ比較 | solid 79.4k cell。分析: GPU busy **2.87ms/step (~50%)・残り host/launch (110 launch/step)**、`detectNaN=1` が +1.45ms/step。**最適化結果** ([plan](../../.github/plans/architecture-residual-monitor-async.md)): 残差 RMS/detectNaN を fused device 縮約+間引き flush 化し 2000 step **13.38s→9.58s (−28%)**、残差 CSV は不変 (差は solver 非決定性ノイズ床内)。`residual_history.png`/`CONVERGENCE_VERDICT.txt` | 破棄予定 (プロファイル/検証) |
+
+### node-centered (median-dual) SST 試行 (2026-06-23)
+
+solid メッシュを node + SST で計算。**wall_dist は現ビルド (commit 8b60f2c) で再変換し正しく計算**されることを
+確認 (全壁ノード=0、near-wall で wd が幾何最近接壁距離と ratio=1.000 一致。ご要望「壁距離をちゃんと」を満たす)。
+
+| run_* | 設定 | 結果 | 状態 |
+|---|---|---|---|
+| `run_node_sst_wdfix` | node SST, wt=1, conv1次, cfl_p1, ccnode_B(fix前)場から restart 4000 step | NaN なし・shock train 確立。残差は減少傾向 (rms_roOmega 1.6e4→498) しプラトー | active |
+| `run_node_sst_fromcell` | **健全な cell 場 (run_0049) を nearest 補間して開始**、conv1次 | NaN なし。cell と整合 (mut/μ・圧力回復)。1次のため shock train は平滑化、衝撃波 x237mm | active |
+| `run_node_sst_muscl` | fromcell から **convMethod=2 (MUSCL) に昇格** 8000 step | **shock train 構造が cell と一致** (多段 P/Mach 振動再現)、衝撃波 **x127mm** (cell 147, 1次 237)、下流圧力回復一致。`compare_centerline_cell_node_muscl.png` | active |
+
+**所見 (訂正済み)**: 当初「過剰乱流」と誤判定したが、**それは誤り**だった。この超音速擬似衝撃波は本来 **mut/μ ~9万の
+高乱流場**で、**cell 自身**も peak mut/μ=91,137 (p99 84,016, p90 41,201, frac>1e4=0.33)。node は peak 90,469
+(p99 83,246, p90 39,369, frac>1e4=0.31) で **cell とほぼ一致**。flat plate の値 (199) と比べたのが誤りだった。
+
+平均流もセンターラインで cell とよく一致: P(kPa) x=0.3:1598/1600, x=0.4:1756/1757, x=0.5:1835/1825 (cell/node)、
+Mach も近接。**node SST は cell と整合**しており暴走していない。wall_dist は再変換で正しく計算 (全壁ノード=0,
+near-wall ratio=1.000)。
+
+**1次 vs MUSCL**: node 1次は強い数値拡散で shock train を平滑化し衝撃波が下流 (x237mm) に流れていた。**MUSCL
+(convMethod=2) に昇格すると cell と同じ多段 shock train を解像**し衝撃波 x127mm (cell 147mm に接近)、圧力回復も
+一致 (`compare_centerline_cell_node_muscl.png`)。残差床 (rms_roUx ~0.08–0.15) は shock train の limit cycle 的
+性質でプラトー (cell も rms_roUx ~0.03 でプラトー)。衝撃波位置の ~20mm 差は擬似衝撃波の背圧敏感性 + 収束途中の範囲。
+**結論: node + SST + 正しい wall_dist で case/36 solid が cell と整合的に計算できる**。
+
+### SU2 クロスチェック (中立基準で cell/node を判定; 2026-06-23)
+
+forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソルバ **SU2 v8.5.0** で同一 `.geo`・同一 BC
+(超音速入口 M=1.689/Ps=617.8kPa, 出口 Ps=1.90MPa, SST/SLAU/MUSCL, Sutherland)で判定。手順は
+[`.github/forge-su2-cross-check.md`](../../.github/forge-su2-cross-check.md)。run dir: `run_su2_sst_slau_muscl/`、
+比較スクリプト `compare_su2_forge_centerline.py` / 図 `compare_su2_vs_forge_centerline.png`。
+
+| 設定 (SU2, 全て restart 同一発達場から) | CFL | 残差 rms[Rho] | 衝撃 x[mm] | peak μt/μ | M_max |
+|---|---|---|---|---|---|
+| SLAU 2nd + Venkat(K=0.05) | adapt | **激しい limit cycle** −0.9↔−2.8 | (振動) | (振動) | — |
+| SLAU 2nd + Van Albada edge | adapt | **激しい limit cycle** | (振動) | — | — |
+| SLAU **1st-order** | adapt | **激しい limit cycle** | (振動) | — | — |
+| SLAU 1st-order | **固定 2.0** | 準定常プラトー −3.3 | — | — | — |
+| **SLAU 2nd + Venkat（中立基準）** | **固定 2.0** | 準定常プラトー **−3.2** | **132** | **99,900** | **1.82** |
+| forge cell run_0049 (参考) | — | プラトー | 142 | 81,300 | 1.82 |
+| forge node MUSCL (参考) | — | プラトー | 120 | 73,700 | 1.69 |
+
+- **振動の正体は `CFL_ADAPT` のフィードバック共振**（リミッタ無関係）。リミッタを 3 段階 (Venkat→Van Albada→1次) 変えても
+  CFL adapt 下では全部 limit cycle、**CFL を固定にした瞬間 1次でも2次でも振動消失 → 準定常プラトー (rms[Rho]~−3.2)**。
+  安定設定は **`CFL_ADAPT= NO` + `CFL_NUMBER= 2.0`**（2次の鋭い衝撃を保ったまま準定常）。
+- **判定 (衝撃位置)**: SU2 中立基準 **132mm** は node(120) と cell(142) の**ほぼ中間**（node −12mm 上流, cell +10mm 下流）。
+  cell/node は SU2 を挟む形で、どちらか一方が明確に正しいわけではない。
+- **node がやや劣る点**: ① 上流の超音速加速を解像できず **M_max が 1.69 止まり**（cell/SU2 は area 駆動で 1.82 まで加速）、
+  ② 衝撃が ~12mm 上流寄り。node-mode の数値拡散過多で衝撃が上流へ押されている兆候。**上流 Mach と衝撃位置の両方で cell の方が SU2 に近い**。
+- **peak μt/μ**: SU2(~10万) > cell(8.1万) > node(7.4万)。forge 両者が SU2 より ~20-26% 低いのは **forge の dilatation
+  correction（圧縮性補正, SU2 標準 SST には無い）が衝撃近傍の k を抑制**するため（既知の差）。
+- 下流圧力回復 (>250mm) は三者ほぼ一致。**いずれも完全収束ではなく準定常スナップショット同士の比較**（擬似衝撃波は背圧固定で残差が落ちきらない）。
+
+### node/cell 大差の根本原因 = node SST 壁関数バグ (2026-06-24)
+
+「なぜ case36 だけ node/cell 差が大きいか (平板 case26・Euler case29 は ~一致)」を多角分析し**根本原因を特定**。
+
+| run_* | 目的・設定差分 | 主要結果 | 状態 |
+|---|---|---|---|
+| `run_node_sst_bp1p90_matched` | node SST を **cell と背圧一致 Ps=1.90** に揃え res_4000(shock134mm)から継続 40k | **shock 46mm に漸近** (cell 142/SU2 132 から大きく外れ)・Mmax 1.69 (加速失敗)・Pmax 1.909(背圧満足)。背圧交絡を排除し node 固有問題を確定 | ref (診断) |
+| `run_0054_node_sst_wffix_bp1p90` | **壁関数修正バイナリ (commit 8a2caad)** で Ps=1.90 node SST、res_4000 から 40k | utau/ypls=0→物理(y+~98)、peak μt/μ 91k→57k 是正、**shock 46→~65mm 改善** (なお cell/SU2 132-142 には届かず=残差はコア checkerboard)。漸近 ~65mm (plateau, 未収束) | ref (壁関数修正検証) |
+| `run_0056/57/58_node_sst_wffix_bp1p80/70/60` | 壁関数修正バイナリで **node 背圧 down-sweep** Ps=1.80/1.70/1.60 (chain warm-start) | **shock 漸近 55/44/44mm**・Mmax 1.69 (全 BP で加速失敗)。**背圧低下で衝撃が上流へ=cell と逆応答** (cell は Ps1.90→142, 1.80→181mm で下流=物理的に正)。残差 plateau (未収束)。`cmp_node_vs_cell_bp_sweep.png` | ref (診断) |
+| `run_0059_node_euler_bp1p90` | **node Euler** (viscMethod0, slip壁, Ps1.90) で粘性/SST 非依存切り分け | **コア加速 OK (Mmax 1.96-2.06)・衝撃 下流 157-197mm** (cell/SU2 ballpark)。基底 inviscid スキームは健全=checkerboard/対流/幾何は無実 | ref (切り分け) |
+| `run_0060_node_lam_visc_bp1p90` | **node 層流粘性** (viscMethod1, no SST, no-slip, Ps1.90) | **衝撃 下流 179mm・コア加速 OK (Mmax 1.86)** = 健全な向き。step~17k で**発散** (既知の node 近壁粘性剛性, 向きは正)。→ **case36 不具合は SST 固有**と確定 | ref (切り分け) |
+| `run_0067_node_sst_tauwall_bp1p90` | **AddTauWall バイナリ** (`945a27f`) で node SST Ps1.90、res_4000 から 40k | **shock 46→171mm・コア加速 1.69→1.92** (cell142/SU2132 方向へ)。NOT CONVERGED (plateau)。主病理 (壁関数 τ_w 未付与) 解消の根拠 run | ref (AddTauWall 検証) |
+| `run_0068_node_sst_tauwall_outletchar_bp1p90` | 特性出口 **forward のみ** (backflow 未修正) で case36 SST 対照 | run_0067 と**衝撃軌跡ビット一致** (171mm)・出口コーナー圧 CV 不変 → **出口 forward 構成は case36 で inert** | ref (出口対照) |
+| `run_0071_node_lam1st_bffix_bp1p70` | **逆流修正バイナリ** (静圧アンカー backflow) で層流コーナー発散ケース、res_4000 から 10k | **step9999 まで生存・NaN 無** (naive/forward-only は step3183/3723 で壁∩出口コーナー発散)。逆流処理が真因と実証 | ref (逆流修正検証) |
+| `run_0072_node_sst_bffix_bp1p90` | 逆流修正バイナリで case36 SST Ps1.90 回帰 | run_0067 と**完全一致** (171mm/Mmax1.92)・NOT CONVERGED plateau → 逆流修正は SST Ps1.90 に**無害** | ref (回帰) |
+| `run_0073_node_lam1st_bffix_bp1p70` / `run_0074_cell_lam1st_bffix_bp1p70` | **1次・層流・逆流修正で node vs cell 比較** (共通 in-duct IC: node←run_0072, cell←run_0049) | (#3 調査, 別途) | active (node/cell 比較) |
+
+**切り分け結論 (2026-06-24)**: node Euler (下流157-197/加速2.0) と node 層流粘性 (下流179/加速1.86) は**衝撃を下流へ・コア加速 OK** で健全。**SST だけが衝撃上流46-66/加速失敗1.69・背圧逆応答**。→ **case36 node 不具合は SST 固有** (基底スキーム・対流・幾何・チェッカーボードは無実; ユーザー指摘どおり)。壁関数 utau=0 バグ (`8a2caad` 修正) は SST 不具合の一部だが残差あり。**SST 壁関数 τ_w を壁エッジに付与する SU2 AddTauWall (`945a27f`) で主病理解消** (衝撃 46→171mm, コア加速 1.92, `run_0067`)。残 ~30mm overshoot は τ_w リファイン。
+
+### node 層流 1次の SU2/cell/node 比較 + コーナー発散 (2026-06-24)
+
+| run_* | 設定 | 結果 | 状態 |
+|---|---|---|---|
+| `run_su2_lam1st_bp1p70` | SU2 NAVIER_STOKES 1次, **固定CFL** (振動回避) | **clean 単一衝撃 155mm, コア加速 Mmax1.92**, 振動なし=良い中立基準 | ref |
+| `run_cell_lam1st_bp1p70` | forge cell 層流1次 | 入口衝撃+shock train, Mmax1.64 (SU2 と別枝=IC ヒステリシス) | ref |
+| `run_node_lam1st_bp1p70` | forge node 層流1次 cfl_pseudo=1.0 | **step7185 で発散**=壁∩出口コーナー (x690,y±22.27) で発散 (detectNaN 局在化) | 破棄(発散) |
+| `run_nodelam_cfl0p3/0p1/expl` | 同 cfl_pseudo=0.3/0.1/陽0.2 | **15000step 安定** (発散解消)・過散逸 (Mmax1.40, 入口衝撃) | ref (CFL 律速実証) |
+| `run_nodelam_fineout` | 同 cfl1.0 を 50step毎出力で build-up 捕捉 | **コーナー P が Ps=1700 中心に振幅増大して振動 (std 30→333kPa), ρ 21↔6.6**=成長する圧力振動 (蓄積でない) | 破棄(診断) |
+| `run_nodelam_slipwall_cfl1` | 壁を slip 化 (BL/no-slip 除去) | **それでも step3176 で同所発散・P std309kPa で振動**→ no-slip BL 無関係, **真因=出口静圧 BC** | 破棄(切り分け) |
+
+→ **node コーナー発散の正体 (訂正済)**: 当初「質量/エネルギー蓄積」と書いたが**誤り**。細分出力 build-up で
+**壁∩出口コーナーの成長する圧力振動** (P が Ps 中心に振幅10倍に増大して発散) と判明、slip テストで **no-slip BL も
+否定**。**真因=壁∩出口コーナーでの outlet_statPress (Ps 規定) の数値不安定** (slip/no-slip 不問)。multi-marker emit
+は効いている (コーナー2ノードが両属) が**§9.1 検証は実コーナー無しメッシュだったため症状再発**。高 CFL で振動成長、
+**cfl_pseudo≤0.3 で安定**。根治=出口静圧 BC の数値安定化 (弱形式+緩和 等)。詳細 [`plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md) §9.8。図 `cmp_laminar_3way.png`/`corner_divergence_buildup.png`。
+| `run_node_wallstress_{off,on,off2}` | bb90036 twall カーネル A/B (30step) | 場は不変(非決定性床内)、新 twall 物理値・**utau/ypls の nonzero frac=0 実測**(壁関数退化の実証) | 破棄予定(診断) |
+
+**確定した連鎖** (`run_0049`(cell) vs `run_node_sst_muscl`/`run_node_sst_bp1p90_matched`(node) vs SU2 中立132mm):
+1. node/cell とも `convMethod=2` (移流1次化ではない)。x<40mm のコア・BL は node≡cell。
+2. **node SST 壁関数 (`wallTreatmentSST=1`) が `ic=bplane_cell`=壁ノード(u=0,Dirichlet)を参照→ Ut=0→ utau/ypls/wf_pk=0 に退化** (実測 utau/ypls=0)。cell は ic=内部セルで正常。twall≡0 と同一トラップ。
+3. 近壁 μt が異常化 (μt/μ~4-5千がコア y=9-10mm へ侵入, cell は y=10.5+) → BL 厚化 → 発散ダクトの実効面積増を相殺 → **超音速コア加速失敗** (中心 M 1.69 vs cell/SU2 1.82) → **擬似衝撃波が ~80mm 上流** (node 46mm)。
+4. 擬似衝撃波の背圧敏感性が小さな壁関数 μt 誤差を巨大な衝撃位置差へ増幅。平板(case26)は `wallTreatmentSST=0` ゆえ無傷で node/cell 一致 (Cf±1%)。
+
+→ 図 `cmp_node_vs_cell_ROOTCAUSE.png`。修正方針・SU2 調査待ちは [`.github/plans/turbulence-node-sst-wallfunction.md`](../../.github/plans/turbulence-node-sst-wallfunction.md)。**この差は node の物理バグであり cell は SU2 と整合 (142 vs 132mm)。**
 
 ### 背圧 down-sweep (porous, SST wall-resolved, 本番設定; 2026-06-21)
 

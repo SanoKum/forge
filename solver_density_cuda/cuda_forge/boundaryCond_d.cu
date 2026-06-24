@@ -579,39 +579,40 @@ flow_float* Psb
 
         flow_float Un = (Uxnew*sxx+Uynew*syy+Uznew*szz)/sss;
 
-        if (Un >= 0) {
-            Umag_new = Umagc;
-            if (Un/sonic[ig]>1.0) {
-                Pnew = P[ic];
-            }
-        } else { // backflow: stagnation conditions of ambient gas
-            Uxnew = -Uxnew*sxx/sss;
-            Uynew = -Uynew*syy/sss;
-            Uznew = -Uznew*szz/sss;
-
-            Umag_new = sqrt(Uxnew*Uxnew + Uynew*Uynew + Uznew*Uznew);
-
-            flow_float mach_new = Umag_new/sonic[ic];
-
-            flow_float Pt_b = Ptb[ib];
-            flow_float Tt_b = Ttb[ib];
-            if (thermalMethod == 2) {
-                // TP: 全温・全圧から NASA 等エントロピーで静的 (ρ, P) を反転 (流入ガス組成 = 内部セル)
-                double Ts_d, Ps_d, ro_d, um_d;
-                if (mix)
-                    thermo_isentropic_from_total_mix(sp, nSpecies, Yc, (double)Pt_b, (double)Tt_b,
-                                                     (double)mach_new, &Ts_d, &Ps_d, &ro_d, &um_d);
-                else
-                    thermo_isentropic_from_total_single(sp, (double)Pt_b, (double)Tt_b, (double)mach_new,
-                                                        &Ts_d, &Ps_d, &ro_d, &um_d);
-                Pnew  = (flow_float)Ps_d;
-                ronew = (flow_float)ro_d;
-            } else {
-                Pnew = Pt_b/pow(1.0+0.5*(ga-1.0)*mach_new*mach_new, ga/(ga-1.0));
-                flow_float Tnew = Tt_b/(1.0+0.5*(ga-1.0)*mach_new*mach_new);
-                ronew = ga*Pnew/((ga-1.0)*cp*Tnew);
-            }
+        // SU2 BC_Outlet (亜音速静圧出口) の特性ベース構築 (CEulerSolver::BC_Outlet)。
+        // naive な「P=Ps 規定 + ρ・u を内部から独立外挿」は ρ/u/P が相互不整合で、毎ステップ
+        // 流束が規定状態と争い、壁∩出口コーナーで成長する圧力振動を生む (case36 で実証)。
+        // 代わりに: P=P_exit を課し、ρ は内部等エントロピー上、法線速度は外向き Riemann 不変量、
+        // 接線速度は内部外挿、として自己整合な1-incoming-characteristic 状態を作る。
+        //
+        // 逆流 (Un<0) も同じ静圧 P_exit アンカーで扱う (SU2 は方向分岐しない; Vn_exit<0 を許容し
+        // upwind flux が incoming/outgoing 特性を捌く)。旧実装は逆流時に ambient 全圧 (Pt/Tt) の
+        // stagnation 流入へ切替えていたが、これは SU2 の *inlet* TOTAL_CONDITIONS の構築で、剥離域
+        // (壁∩出口コーナー) へ高 stagnation エンタルピ/全圧を注入し過加圧→発散させた (case36 層流で実証)。
+        // さらに旧速度構築 (Uxnew=-Ux[ic]*nx) は物理的に妥当な速度ベクトルでなく、forward↔backflow の
+        // ばたつきと相まって不整合ゴーストを生んでいた。逆流出口でも静圧のみ規定するのが整合的。
+        // 注: thermalMethod==2 (TP) では γ/cp が温度依存のため本構築は近似 (CPG 同型)。TP の厳密化は別途。
+        const flow_float c_int = max(sonic[ic], (flow_float)1.0e-20);
+        if (Un > (flow_float)0.0 && Umagc/c_int >= (flow_float)1.0) {
+            // 超音速流出: P_back を課さず全量外挿 (SU2: Mach>=1 で V_outlet=V_domain)。
+            Pnew = P[ic]; ronew = ro[ic];   // Uxnew/Uynew/Uznew は既に内部値
+        } else {
+            // 亜音速流出 / 局所逆流: 静圧 P_exit + 内部エントロピー + 外向き Riemann で統一構築。
+            const flow_float P_exit = Psb[ib];
+            const flow_float s_int  = P[ic]/pow(ro[ic], ga);         // 内部エントロピー P/ρ^γ
+            const flow_float Rplus  = Un + (flow_float)2.0*c_int/(ga-(flow_float)1.0); // 外向き Riemann 不変量
+            ronew = pow(P_exit/s_int, (flow_float)1.0/ga);            // ρ on interior isentrope
+            const flow_float c_exit = sqrt(ga*P_exit/ronew);
+            const flow_float Vn_exit= Rplus - (flow_float)2.0*c_exit/(ga-(flow_float)1.0); // 逆流なら <0 を許容 (クランプ無)
+            const flow_float nx=sxx/sss, ny=syy/sss, nz=szz/sss;
+            Pnew  = P_exit;
+            Uxnew = Ux[ic] + (Vn_exit-Un)*nx;   // 接線=内部外挿, 法線のみ Vn_exit へ補正
+            Uynew = Uy[ic] + (Vn_exit-Un)*ny;
+            Uznew = Uz[ic] + (Vn_exit-Un)*nz;
+            // ghost エネルギーを (ronew,Pnew,構築速度) と整合 (CPG)。TP は後段で T から再計算。
+            roec = Pnew/(ga-(flow_float)1.0) + (flow_float)0.5*ronew*(Uxnew*Uxnew+Uynew*Uynew+Uznew*Uznew);
         }
+        Umag_new = Umagc;   // uscale=1 (ghost 速度 = 構築値そのもの)
 
         // 速度方向スケール。静止場 (Umagc=0) では方向が未定義なので 0 とし、0/0=NaN を防ぐ
         // (Uxnew 等も 0 のため ghost 速度は 0 になる)。u=0 初期化での発散を回避。

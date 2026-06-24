@@ -26,7 +26,7 @@ forge は密度ベース有限体積で **ゴーストセル方式** を採用�
 | `wall_isothermal` | 非滑り等温壁 | $\mathbf u_R = -\mathbf u_L$、$T_R = 2 T_{\text{wall}} - T_L$ |
 | `inlet_uniformVelocity` | 均一速度流入 | $\mathbf u_R, \rho_R$ を指定値に固定、$P_R = P_L$ |
 | `inlet_fluctVelocity` | 速度変動つき流入 | uniformVelocity に変動成分を加算 (`fluct_variables`) |
-| `outlet_statPress` | 静圧固定流出 | $P_R = P_{\text{back}}$、その他は外挿 |
+| `outlet_statPress` | 静圧固定流出 | $P_R = P_{\text{back}}$ を課し、$\rho$・速度は内部エントロピー＋外向き Riemann 不変量で構成 (亜音速)。逆流時も同じ静圧アンカー |
 | `inlet_Pressure` | 全圧・全温固定流入 | 全条件 ($P_t, T_t$) から内部マッハで $P, T$ を再構成 |
 | `inlet_Pressure_dir` | 方向指定全圧流入 | inlet_Pressure に流入方向ベクトルを併用 |
 | `outflow` | サブソニック流出 | リーマン不変量に基づく Non-reflecting 流出 |
@@ -60,6 +60,27 @@ P_R = P_t \left(\frac{T_R}{T_t}\right)^{\gamma/(\gamma-1)},\quad
 $$
 
 速度方向は外挿 (`inlet_Pressure`) または指定方向 (`inlet_Pressure_dir`)。
+
+## 例: 静圧固定流出 (特性ベース・逆流統一)
+
+亜音速流出では SU2 `CEulerSolver::BC_Outlet` と同様、指定静圧 $P_{\text{exit}}$ のみを境界条件として課し、
+残りは内部状態から自己整合に構成する (1-incoming-characteristic)。内部エントロピー $s = P_L/\rho_L^\gamma$ と
+外向き Riemann 不変量 $R^+ = U_n + 2c_L/(\gamma-1)$ を保存量として、
+
+$$
+\rho_R = \left(\frac{P_{\text{exit}}}{s}\right)^{1/\gamma},\quad
+c_R = \sqrt{\gamma P_{\text{exit}}/\rho_R},\quad
+V_n = R^+ - \frac{2 c_R}{\gamma-1},\quad
+\mathbf u_R = \mathbf u_L + (V_n - U_n)\hat{\mathbf n}
+$$
+
+(接線速度は内部外挿、法線のみ $V_n$ へ補正)。超音速流出 ($M_L\ge 1$ かつ $U_n>0$) では境界条件不要で全量外挿。
+
+**逆流 (局所流入, $U_n<0$) も同じ静圧アンカーで扱う**: 上式で $V_n<0$ となるのを許容し (クランプ無)、
+incoming/outgoing 特性の捌きは upwind フラックスに委ねる。出口逆流で全圧 ($P_t,T_t$) の stagnation
+流入へ切替えると、剥離域 (壁∩出口コーナー) へ高 stagnation エンタルピを注入し過加圧→発散させる
+(これは `inlet_Pressure` の構成であり出口に流用すべきでない)。乱流スカラー $k,\omega$ は出口で
+ゼロ勾配 (Neumann) であり、逆流時も内部値を再循環させる (固定値注入はしない)。
 
 ## 周期境界
 
