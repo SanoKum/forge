@@ -81,6 +81,32 @@ SU2 の vertex-centered wall function は**壁頂点自身の速度を使わず�
 - y-整合: utau の `y=dn`(代表点壁法線距離) は ransBoundary の omega 用 `wall_y_eff`(最近接隣接 wall_dist) と
   近似一致 (構造近壁メッシュでは代表点=最近接)。厳密一致は将来 refine。
 
+## 3.2 第2の欠落＝壁関数 τ_w が運動量に課されていない (SU2 AddTauWall, 2026-06-24)
+
+§3.1 の代表点修正 (utau/ypls 是正) は必要だったが**不十分**だった (case36 shock 46→65mm 止まり)。SU2 を
+さらに対比して**真の主因**を特定:
+
+- **SU2 の流儀** (`CNSSolver::SetTau_Wall_WF`, `flow_diffusion.cpp:AddTauWall`): 壁関数 ON/OFF に依らず
+  **常に u=0 strong Dirichlet**。壁関数のときは「壁ノード↔第一内部点エッジの**解像粘性応力テンソルを
+  スカラー τ_w/|τ_resolved| で再スケール**」して、壁エッジの運動量流束がモデル τ_w を運ぶ
+  (`tau[i][j] *= τ_w/|τ_tangent|`, `xor` ガードで片端のみ壁ノードのエッジに作用)。Neumann 流束加算でも
+  速度自由化でもない。OFF は `Tau_Wall=-1` で再スケールを切るだけ。
+- **forge cell**: `viscousFlux_wall_d`(wallTreatment==1) がモデル τ_w を**内部セル ic** に課す → 正しい。
+- **forge node (欠落)**: モデル τ_w は壁境界半割面 (W→ghost) → **壁ノード W (Dirichlet で破棄)** へ。W-I 内部
+  エッジは**生の解像応力 μ_total·u_I/dcc のまま**で τ_w を一切知らない。**壁ノード残差は両者とも捨てるが
+  (ユーザー確認)、SU2/cell は τ_w を「届く面」に乗せ、node だけ「捨てられる面」に乗せていた** (ic=壁ノード
+  トラップの3例目)。
+
+→ **修正 (採用, SU2 AddTauWall 厳密移植)**: node で per-node `Tau_Wall=ρu_τ²` を壁関数が格納し、
+  `viscousFlux_d` で片端のみ壁ノードの W-I 内部双対面 (`Tau_Wall>0` の xor) の接線 traction を τ_w に
+  再スケール (`scale=τ_w·area/|接線traction|`)。cell/非WF は `Tau_Wall≡-1` で無効 (ビット不変)。壁ノード
+  残差は不変 (Dirichlet ゼロ化のまま; τ_w は W-I エッジ流束経由で内部ノード I に届く)。
+
+**検証 (決定的, `run_0067_node_sst_tauwall_bp1p90`, Ps1.90)**: コア加速 **Mmax 1.69→1.92**、衝撃 **46→~171mm**
+(cell142/SU2132 域へ; 上流固着・背圧逆応答が消失)、utau/ypls 物理 (y+→145)。cell SST 不変 (142/1.82,
+`run_cell_tauwall_regr`)。**主病理解消**。残差: shock が cell/SU2 より ~30mm 下流 (node Mmax1.92>cell1.82=BL
+やや薄=τ_w やや過小付与) は別途リファイン (τ_w 大きさ・代表点 ρ・y の精査)。図 `cmp_node_addtauwall.png`。
+
 ## 4. 検証チェックリスト (修正後)
 
 - `utau`/`ypls`/`wf_pk` が node で**非ゼロ・物理的**になる (現状 0)。

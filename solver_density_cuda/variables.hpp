@@ -94,6 +94,11 @@ public:
         // wall-function 生産 P_k = ρu_τ⁴/ν·g(1-g) (g=du⁺/dy⁺) を格納。非 wall セルは -1
         // (inactive)。ransSource が >=0 のセルで標準 P_k をこの値に置換する (docs/turbulence §6.5(d))。
         "wf_pk",
+        // SST automatic wall treatment (node, wallTreatmentSST==1) 用: 壁ノードの壁関数せん断応力
+        // τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ壁ノードの内部双対面
+        // (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。cell モードでは常に -1
+        // (cell は viscousFlux_wall_d の壁面 modeled τ_w を内部セルに課すため不要)。
+        "Tau_Wall",
         // SST 陰解法用: k/ω 輸送項（移流+拡散）のヤコビアン対角（point-implicit）[m³/s]。
         // 1次風上移流の Σ_f max(±ṁ,0)/ρ と拡散 Σ_f (μ_face/ρ)(|δ|/dcc) を面ループで集計し、
         // D_φ = V/Δτ + V·src_jac + transport_diag に加える。壁近傍の細セルで陽的輸送 stiff 性を

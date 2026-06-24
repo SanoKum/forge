@@ -35,11 +35,11 @@ __device__ inline flow_float reichardt_duplus_dyp(flow_float yp)
     return dlg + dtr;
 }
 
-// wf_pk を全セル -1 (inactive) に初期化する。
-__global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk)
+// wf_pk・Tau_Wall を全セル -1 (inactive) に初期化する。
+__global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
-    if (ic < nCells) wf_pk[ic] = static_cast<flow_float>(-1.0);
+    if (ic < nCells) { wf_pk[ic] = static_cast<flow_float>(-1.0); Tau_Wall[ic] = static_cast<flow_float>(-1.0); }
 }
 
 __global__ void compute_wall_friction_sst_d(
@@ -60,7 +60,9 @@ __global__ void compute_wall_friction_sst_d(
     geom_int nNormalPlanes,
     geom_int* cell_planes_index, geom_int* cell_planes, geom_int* plane_cells,
     geom_int* wall_flag,
-    geom_float* ccx, geom_float* ccy, geom_float* ccz)
+    geom_float* ccx, geom_float* ccy, geom_float* ccz,
+    // node: 壁ノードに τ_w=ρu_τ² を格納 (viscousFlux_d の AddTauWall 再スケール用)。cell では書かない (-1 維持)。
+    flow_float* Tau_Wall)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
     if (ib >= nb) return;
@@ -130,6 +132,7 @@ __global__ void compute_wall_friction_sst_d(
         utau_b[ib] = static_cast<flow_float>(0.0);
         ypls_b[ib] = static_cast<flow_float>(0.0);
         wf_pk[ic]  = static_cast<flow_float>(0.0);
+        if (isNode != 0) Tau_Wall[ic] = static_cast<flow_float>(0.0);  // 退化: 再スケール無し (>0 でない)
         return;
     }
 
@@ -155,6 +158,10 @@ __global__ void compute_wall_friction_sst_d(
 
     utau_b[ib] = utau;
     ypls_b[ib] = utau * y / nu;
+
+    // node: 壁ノードに τ_w=ρu_τ² を格納 → viscousFlux_d が W-I エッジの接線応力を τ_w に再スケール
+    // (SU2 AddTauWall)。代表点 ρ を使う (u_τ と整合)。cell では Tau_Wall を書かず -1 維持 (再スケール無効)。
+    if (isNode != 0) Tau_Wall[ic] = rho * utau * utau;
 }
 
 }
@@ -164,7 +171,7 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"]);
 }
 
 void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var)
@@ -199,5 +206,6 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         msh.nNormalPlanes,
         msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.map_plane_cells_d,
         msh.wall_flag_d,
-        var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"]);
+        var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+        var.c_d["Tau_Wall"]);
 }

@@ -44,7 +44,12 @@ __global__ void viscousFlux_d
 
  // 軸対称: 完全な発散 ∇·u = ∂xUx+∂yUy+u_r/r (axisym_divU)。-2/3 μ(∇·u) の体積粘性項を
  // τθθ ソース (axisymmetricSource_d) と整合させるため planar 面でもフープ項込みの divu を使う。
- int isAxisymmetric, flow_float* axisym_divU
+ int isAxisymmetric, flow_float* axisym_divU,
+
+ // SST automatic wall treatment (node, wallTreatmentSST==1): 壁ノードに格納した τ_w=ρu_τ² (>0)。
+ // 片端だけ壁ノードの内部双対面 (W-I) で接線粘性応力を τ_w に再スケールする (SU2 AddTauWall)。
+ // cell/非壁関数では Tau_Wall≡-1 で再スケール無効 (ビット不変)。nullptr 可 (常に無効)。
+ flow_float* Tau_Wall
 )
 {
     geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
@@ -135,6 +140,29 @@ __global__ void viscousFlux_d
         tau_z += mu_total*(dUzdxf*k_x +dUzdyf*k_y +dUzdzf*k_z);
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
+
+        // SST node 壁関数 (SU2 AddTauWall): 片端のみ壁ノードの内部双対面 (W-I) で、解像した粘性 traction
+        // の接線成分をモデル τ_w に再スケールする。粗い y+ メッシュでは生の解像勾配が τ_w を過小評価する
+        // ため、壁関数の τ_w を内部ノード I の運動量・エネルギーに正しく伝える (壁ノード残差は Dirichlet で
+        // 別途ゼロ化)。cell/非壁関数では Tau_Wall≡-1 で無効 (ビット不変)。
+        if (Tau_Wall != nullptr) {
+            const flow_float tw0 = Tau_Wall[ic0];
+            const flow_float tw1 = Tau_Wall[ic1];
+            const bool w0 = (tw0 > (flow_float)0.0);
+            const bool w1 = (tw1 > (flow_float)0.0);
+            if (w0 != w1) {                                   // 片端のみ壁ノード (xor)
+                const flow_float tauw  = w0 ? tw0 : tw1;      // 壁ノード側の τ_w [Pa]
+                const flow_float inv_s = (flow_float)1.0 / max(sss, (flow_float)1.0e-30);
+                const flow_float nhx = sxx*inv_s, nhy = syy*inv_s, nhz = szz*inv_s;
+                const flow_float Tn  = tau_x*nhx + tau_y*nhy + tau_z*nhz;   // 法線 traction
+                const flow_float ttx = tau_x - Tn*nhx;
+                const flow_float tty = tau_y - Tn*nhy;
+                const flow_float ttz = tau_z - Tn*nhz;
+                const flow_float tmag = sqrt(ttx*ttx + tty*tty + ttz*ttz); // 接線 traction の大きさ [N]
+                const flow_float scale = (tauw*sss) / max(tmag, (flow_float)1.0e-30); // |接線|→τ_w·面積
+                tau_x *= scale; tau_y *= scale; tau_z *= scale;
+            }
+        }
 
         // 乱流熱伝導: 有効熱伝導率 k_eff = k_lam + cp*mu_turb/Pr_t。
         // 応力(摩擦発熱)が mu_total=v_lam+v_turb を使うのに対し従来は層流 k のみで
@@ -637,7 +665,10 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
         var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
         var.c_d["dTdx"] , var.c_d["dTdy"] , var.c_d["dTdz"],
-        cfg.isAxisymmetric, var.c_d["axisym_divU"]
+        cfg.isAxisymmetric, var.c_d["axisym_divU"],
+        // node SST 壁関数のとき Tau_Wall を渡し AddTauWall 再スケール。それ以外は nullptr (Tau_Wall 未初期化のため)。
+        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
+            ? var.c_d["Tau_Wall"] : nullptr
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
