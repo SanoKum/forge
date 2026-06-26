@@ -82,7 +82,8 @@ __global__ void rans_dirichlet_scalar_boundary_d(
     flow_float* k,
     flow_float* omega,
     flow_float* kb,
-    flow_float* omegab)
+    flow_float* omegab,
+    int isNode)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -92,6 +93,15 @@ __global__ void rans_dirichlet_scalar_boundary_d(
 
         k[ig] = static_cast<flow_float>(2.0) * kb[ib] - k[ic];
         omega[ig] = static_cast<flow_float>(2.0) * omegab[ib] - omega[ic];
+
+        // node-centered: 境界面の流束/勾配 (ransTransport) は ghost を使わず境界ノード値 k[ic0] を
+        // そのまま境界値に使う設計。壁は omega[ic]=omega_w をピンするが、入口 Dirichlet が ghost しか
+        // 書かないと境界ノードがピンされず、入口 k/ω が freestream から drift する (実測 1000→918)。
+        // node では境界ノードを Dirichlet 値に直接ピンする (cell は ghost 経由で正しく課されるので不変)。
+        if (isNode != 0) {
+            k[ic]     = kb[ib];
+            omega[ic] = omegab[ib];
+        }
     }
 }
 
@@ -206,7 +216,8 @@ void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc
             var.c_d["k"],
             var.c_d["omega"],
             bc.bvar_d["k"],
-            bc.bvar_d["omega"]);
+            bc.bvar_d["omega"],
+            (cfg.discretization == "node") ? 1 : 0);
         return;
     }
 

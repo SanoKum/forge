@@ -54,9 +54,22 @@ case: `case/20.naca_ml/001.test`、メッシュ y+~50 (壁関数領域)。
   **node wt=1+fix が最も物理的**。
 - 既定 (kInit=omegaInit=0) は `ro*0=0` で従来とビット一致 (回帰なし)。
 
+
+## 6. 追加修正: node 入口/Dirichlet スカラー BC のノードピン
+
+`ransTransport` の node 境界面は ghost を使わず**境界ノード値 `k[ic0]`/`omega[ic0]` をそのまま境界値**に使う
+設計 (ransTransport_d.cu:44 のコメント「壁では omega[ic0]=omegab ピン留め」)。壁 BC は `omega[ic]=omega_w` を
+ピンするが、入口 `rans_dirichlet_scalar_boundary_d` は **ghost `k[ig]` しか書かない** → node では境界ノードが
+ピンされず、入口 k/ω が freestream から drift (NACA で 1000→**918**, k 1.0→0.911 の平衡)。
+
+**修正**: `rans_dirichlet_scalar_boundary_d` に `isNode` を追加し、node では `k[ic]=kb`, `omega[ic]=omegab` を
+直接ピン (壁 BC と同パターン)。cell は ghost 経由で正しく課されるので不変 (`isNode` ガードでビット不変)。
+検証: 入口 k/ω が **1.0000/1000.0 ちょうど**に保持 (旧 0.911/918)。inlet_uniformVelocity/Pressure 系も同様に改善。
+
 ## 変更ログ
 
 - 2026-06-26: 実装・検証完了。`kInit`/`omegaInit` 追加、IC 欠落時 freestream 初期化。
   node SST wt=1 が y+~50 メッシュで cold IC から安定し CL 0.78 (妥当) を出すことを確認。
   これにより node が適切な壁関数 (wt=1) を使えるようになり、「node SST が wt=0 を強制され
   乱流暴走」問題が解消。
+- 2026-06-26: 追加で node 入口 Dirichlet のノードピン欠落を修正 (ghost のみ書込→境界ノード未ピン→入口 drift)。入口 k/ω が 1.0/1000 に保持。
