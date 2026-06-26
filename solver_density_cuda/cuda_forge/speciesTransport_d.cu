@@ -144,7 +144,8 @@ __global__ void species_diffusion_d(
     flow_float** roY, flow_float** res_roY, flow_float** transport_diag,
     flow_float* ro, flow_float* T, flow_float* P, flow_float* vis_lam, flow_float* vis_turb,
     flow_float* res_roe,
-    int diffMethod, flow_float Sc, flow_float Sc_t)
+    int diffMethod, flow_float Sc, flow_float Sc_t,
+    int isNode, flow_float** dYdx, flow_float** dYdy, flow_float** dYdz)
 {
     geom_int ih = blockDim.x * blockIdx.x + threadIdx.x;
     if (ih >= nNormalHaloPlanes) return;
@@ -155,6 +156,41 @@ __global__ void species_diffusion_d(
 
     const geom_float f   = fx[ip];
     const geom_float sxx = sx[ip], syy = sy[ip], szz = sz[ip], sss = ss[ip];
+
+    // node モードの境界半割面 (ghost を含む面): ghost mirror の dcc≈0 が退化し Fick flux が 0/0 に
+    // なるため、境界ノードのセル species 勾配 ∇Y (species_gradient_d, ghost が BC 値を保持)を用いた
+    // 弱形式 J_s=ρD(∇Y_s·S) で評価する。k/ω 拡散 (scalar_diffusion_first_order_d) と同型。補正 ΣJ=0 と
+    // エンタルピー結合は境界ノード値で評価。cell は ghost で正しく閉じるので従来どおり。
+    if (isNode != 0 && (ic0 >= nCells || ic1 >= nCells)) {
+        const geom_int icw = (ic0 < nCells) ? ic0 : ic1;
+        if (icw < nCells && dYdx != nullptr) {
+            const double row = (double)max(ro[icw], (flow_float)1.0e-30);
+            const double Tw = (double)T[icw], Pw = (double)P[icw];
+            const double Dt = ((double)vis_turb[icw] > 0.0) ? (double)vis_turb[icw]/(row*(double)Sc_t) : 0.0;
+            double Yw[THERMO_MAX_SPECIES], Xw[THERMO_MAX_SPECIES], ysum=0.0;
+            for (int s=0;s<nSpecies;s++){ double y=(double)roY[s][icw]/row; if(y<0.0)y=0.0; Yw[s]=y; ysum+=y; }
+            const double yinv=1.0/(ysum>1.0e-30?ysum:1.0e-30);
+            for (int s=0;s<nSpecies;s++) Yw[s]*=yinv;
+            thermo_X_from_Y(sp, nSpecies, Yw, Xw);
+            double Js[THERMO_MAX_SPECIES], sumJ=0.0;
+            for (int s=0;s<nSpecies;s++){
+                double D = (diffMethod==1) ? thermo_Dmix_species(sp, nSpecies, Xw, s, Tw, Pw)
+                                           : (double)vis_lam[icw]/(row*(double)Sc);
+                D += Dt;
+                const double gradS = (double)dYdx[s][icw]*sxx + (double)dYdy[s][icw]*syy + (double)dYdz[s][icw]*szz;
+                Js[s] = row * D * gradS;   // 弱形式 ρD(∇Y·S)、dcc 不使用
+                sumJ += Js[s];
+            }
+            double q=0.0;
+            for (int s=0;s<nSpecies;s++){
+                const double Jc = Js[s] - Yw[s]*sumJ;
+                atomicAdd(&res_roY[s][icw], (flow_float)Jc);
+                q += thermo_h_mass(sp[s], Tw) * Jc;
+            }
+            atomicAdd(&res_roe[icw], (flow_float)q);
+        }
+        return;
+    }
 
     const flow_float dccx = ccx[ic1] - ccx[ic0];
     const flow_float dccy = ccy[ic1] - ccy[ic0];
@@ -477,7 +513,8 @@ flow_float* species_Yface_alloc(int nPlanes)
 __global__ void species_advection_faceY_d(
     geom_int nCells, geom_int nNormalHaloPlanes, geom_int* normal_halo_planes, geom_int* plane_cells,
     flow_float* ro, flow_float* massflux, int nSpecies, flow_float* Yface,
-    flow_float** res_roY, flow_float** transport_diag)
+    flow_float** res_roY, flow_float** transport_diag,
+    int isNode, flow_float** roY)
 {
     geom_int ih = blockDim.x*blockIdx.x + threadIdx.x;
     if (ih < nNormalHaloPlanes) {
@@ -487,8 +524,14 @@ __global__ void species_advection_faceY_d(
         const flow_float mdot = massflux[ip];
         const flow_float d0 = max(mdot, (flow_float)0.0) / max(ro[ic0], (flow_float)1.0e-30);
         const flow_float d1 = max(-mdot,(flow_float)0.0) / max(ro[ic1], (flow_float)1.0e-30);
+        // node 境界半割面 (ic1=ghost): 主ループ (SLAU/ROE) は境界半割面を除外するため Yface[ip] が
+        // 未書込 (stale)。node は ghost を読まない設計なので、境界ノード ic0 自身の組成を面組成に使う。
+        const bool nodeBnd = (isNode != 0 && ic1 >= nCells);
         for (int s = 0; s < nSpecies; ++s) {
-            const flow_float flux = mdot * Yface[(size_t)ip*nSpecies + s];   // upwind は convectiveFlux 側で確定済み
+            const flow_float Yf = nodeBnd
+                ? (roY[s][ic0] / max(ro[ic0], (flow_float)1.0e-30))
+                : Yface[(size_t)ip*nSpecies + s];   // 内部面 upwind は convectiveFlux 側で確定済み
+            const flow_float flux = mdot * Yf;
             if (ic0 < nCells) { atomicAdd(&res_roY[s][ic0], -flux); atomicAdd(&transport_diag[s][ic0], d0); }
             if (ic1 < nCells) { atomicAdd(&res_roY[s][ic1],  flux); atomicAdd(&transport_diag[s][ic1], d1); }
         }
@@ -501,7 +544,8 @@ void speciesAdvectionFaceY_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, me
     dim3 dimGrid_nh = dim3(ceil(msh.nNormal_halo_Planes / (flow_float)cuda_cfg.blocksize));
     species_advection_faceY_d<<<dimGrid_nh, cuda_cfg.dimBlock>>>(
         msh.nCells, msh.nNormal_halo_Planes, msh.normal_halo_planes_d, msh.map_plane_cells_d,
-        var.c_d["ro"], var.p_d["massflux"], g_nSpecies, g_Yface_dev, g_resroY_dev, g_transdiag_dev);
+        var.c_d["ro"], var.p_d["massflux"], g_nSpecies, g_Yface_dev, g_resroY_dev, g_transdiag_dev,
+        (cfg.discretization == "node") ? 1 : 0, g_roY_dev);
     gpuErrchk( cudaPeekAtLastError() );
 }
 
@@ -677,7 +721,8 @@ void speciesTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& m
             g_roY_dev, g_resroY_dev, g_transdiag_dev,
             var.c_d["ro"], var.c_d["T"], var.c_d["P"], var.c_d["vis_lam"], var.c_d["vis_turb"],
             var.c_d["res_roe"],
-            cfg.speciesDiffusionMethod, cfg.Sc, cfg.Sc_t);
+            cfg.speciesDiffusionMethod, cfg.Sc, cfg.Sc_t,
+            (cfg.discretization == "node") ? 1 : 0, g_dYdx_dev, g_dYdy_dev, g_dYdz_dev);
     }
 
     gpuErrchk( cudaPeekAtLastError() );

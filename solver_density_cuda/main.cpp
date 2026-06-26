@@ -920,7 +920,10 @@ void assembleResidual(StepContext& s, int stage_index)
         calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         // 多成分 face 整合再構成 (speciesFaceReconstruction==1): ∇Y_s を Green-Gauss で計算。
         // species ghost は直前の applySpeciesBoundaries で Neumann 充填済み。既定 0 で no-op。
-        if (s.cfg.speciesFaceReconstruction >= 1) {
+        // node + 粘性多成分でも ∇Y が要る: species_diffusion_d の境界半割面 ghostless 弱形式
+        // (J_s=ρD∇Y·S) が ∇Y を参照するため、その場合も計算しておく。
+        if (s.cfg.speciesFaceReconstruction >= 1 ||
+            (s.cfg.discretization == "node" && s.cfg.viscMethod != 0)) {
             speciesGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         }
     });

@@ -257,3 +257,20 @@ flux 寄与は不要。
   重心のまま (セル中心の直下に整列, 不変)。検証 (`run_node_sst_wdist`, 再 convert): wall_dist=0 (壁), =y (第1オフ壁)
   が全 x で成立。**SST node が cell 基準 (run_0009) と一致: Cf/Schlichting 0.89/0.91/0.93 (旧 3×), peak mut/μ 202
   (cell 199), k_wall=0, δ99 が cell 一致**。massflux(0f6d53d)+omega pin(2b19d1d)+wall_dist(8b60f2c) の 3 点で完結。
+
+## 変更ログ (追補 2026-06-26)
+
+- node スカラー/species 境界の **ghost 読み残り** を ghostless 化 (BC は ghost を書くが node consumer は
+  境界ノード値を使う設計との不整合を解消):
+  - **k/ω advection** (`scalar_advection_first_order_d`): inflow で `phi[ic1]`(ghost) でなく境界ノード
+    `phi[ic0]` を使う (`isNode` ガード)。入口 Dirichlet ピンと整合し移流が真の入口値を運ぶ。
+    cell ビット不変、node SST は入口移流が正しくなり ~1.4e-2 改善 (回帰でなく correctness)。
+  - **species 拡散** (`species_diffusion_d`): 境界半割面で ghost mirror の `dcc≈0` が 0/0 退化するのを、
+    境界ノード species 勾配の弱形式 `J_s=ρD(∇Y_s·S)` に置換 (k/ω 拡散と同型)。`speciesGradient` を
+    node+粘性多成分でも計算するよう gating 拡張。
+  - **species faceY advection** (`species_advection_faceY_d`): node 境界半割面は主ループ除外で `Yface[ip]`
+    が stale → 境界ノード組成を使用。
+  - flow(ρ,ρu,ρe) は既に bvar 弱形式で閉じ済み・全 BC (slip/wall/inlet/outlet) が bvar 5 量を書込済みで
+    node 正しいことを確認 (本監査の coverage)。
+  - 注意: species + node は検証ケース未整備のため上記 species 修正は **未検証** (構造は k/ω の実証済み
+    パターンに準拠)。node 単成分 SST と cell は回帰確認済み。

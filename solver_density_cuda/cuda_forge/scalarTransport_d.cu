@@ -5,6 +5,7 @@ namespace {
 __global__ void scalar_advection_first_order_d(
     geom_int nCells,
     geom_int nNormalHaloPlanes,
+    int isNode,
     geom_int* normal_halo_planes,
     geom_int* plane_cells,
     flow_float* phi,
@@ -22,7 +23,12 @@ __global__ void scalar_advection_first_order_d(
 
         const flow_float mdot = massflux[ip];
 
-        const flow_float phi_upwind = (mdot >= 0.0) ? phi[ic0] : phi[ic1];
+        // node モード境界半割面 (ic1=ghost): node は ghost を読まない設計。流入側の上流値は
+        // 境界ノード ic0 自身の値 (BC が Dirichlet/壁ではそこへピン、Neumann はゼロ勾配で
+        // 境界値=ic0 値) を使い、ghost phi[ic1] への依存を断つ (cell は従来どおり ghost)。
+        flow_float phi_ext = phi[ic1];
+        if (isNode != 0 && ic1 >= nCells) phi_ext = phi[ic0];
+        const flow_float phi_upwind = (mdot >= 0.0) ? phi[ic0] : phi_ext;
         const flow_float flux = mdot * phi_upwind;
 
         // point-implicit 移流対角: 1次風上の -∂res/∂(ρφ) は流出側セルに max(±ṁ,0)/ρ [m³/s]。
@@ -199,6 +205,7 @@ void scalarTransportResidual_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
     scalar_advection_first_order_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>>(
         msh.nCells,
         msh.nNormal_halo_Planes,
+        (cfg.discretization == "node") ? 1 : 0,
         msh.normal_halo_planes_d,
         msh.map_plane_cells_d,
         desc.phi,
