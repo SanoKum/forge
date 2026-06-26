@@ -157,38 +157,14 @@ __global__ void species_diffusion_d(
     const geom_float f   = fx[ip];
     const geom_float sxx = sx[ip], syy = sy[ip], szz = sz[ip], sss = ss[ip];
 
-    // node モードの境界半割面 (ghost を含む面): ghost mirror の dcc≈0 が退化し Fick flux が 0/0 に
-    // なるため、境界ノードのセル species 勾配 ∇Y (species_gradient_d, ghost が BC 値を保持)を用いた
-    // 弱形式 J_s=ρD(∇Y_s·S) で評価する。k/ω 拡散 (scalar_diffusion_first_order_d) と同型。補正 ΣJ=0 と
-    // エンタルピー結合は境界ノード値で評価。cell は ghost で正しく閉じるので従来どおり。
+    // node モードの境界半割面 (ghost を含む面): 拡散流束を加えない (skip)。
+    // 根拠 (plan diffusion-node-boundary-real-distance.md §3 (c), scalar_diffusion_first_order_d と同方針):
+    //  - Dirichlet (固定組成入口) では境界ノード Y はピンで上書きされ無意味、内部ノードへの拡散は
+    //    内部双対面 W↔I が実距離で運ぶ (本ループの非境界 plane で計算済)。
+    //  - Neumann (壁 zero-grad / slip) は ∂Y/∂n=0 ＝半割面フラックス 0。
+    //  → ghost mirror の dcc≈0 退化も ∇Y·S 弱形式の境界閉包依存も不要。エネルギー結合 (Σh_sJ_s) も
+    //    半割面では 0。cell は ghost で正しく閉じるので従来どおり。
     if (isNode != 0 && (ic0 >= nCells || ic1 >= nCells)) {
-        const geom_int icw = (ic0 < nCells) ? ic0 : ic1;
-        if (icw < nCells && dYdx != nullptr) {
-            const double row = (double)max(ro[icw], (flow_float)1.0e-30);
-            const double Tw = (double)T[icw], Pw = (double)P[icw];
-            const double Dt = ((double)vis_turb[icw] > 0.0) ? (double)vis_turb[icw]/(row*(double)Sc_t) : 0.0;
-            double Yw[THERMO_MAX_SPECIES], Xw[THERMO_MAX_SPECIES], ysum=0.0;
-            for (int s=0;s<nSpecies;s++){ double y=(double)roY[s][icw]/row; if(y<0.0)y=0.0; Yw[s]=y; ysum+=y; }
-            const double yinv=1.0/(ysum>1.0e-30?ysum:1.0e-30);
-            for (int s=0;s<nSpecies;s++) Yw[s]*=yinv;
-            thermo_X_from_Y(sp, nSpecies, Yw, Xw);
-            double Js[THERMO_MAX_SPECIES], sumJ=0.0;
-            for (int s=0;s<nSpecies;s++){
-                double D = (diffMethod==1) ? thermo_Dmix_species(sp, nSpecies, Xw, s, Tw, Pw)
-                                           : (double)vis_lam[icw]/(row*(double)Sc);
-                D += Dt;
-                const double gradS = (double)dYdx[s][icw]*sxx + (double)dYdy[s][icw]*syy + (double)dYdz[s][icw]*szz;
-                Js[s] = row * D * gradS;   // 弱形式 ρD(∇Y·S)、dcc 不使用
-                sumJ += Js[s];
-            }
-            double q=0.0;
-            for (int s=0;s<nSpecies;s++){
-                const double Jc = Js[s] - Yw[s]*sumJ;
-                atomicAdd(&res_roY[s][icw], (flow_float)Jc);
-                q += thermo_h_mass(sp[s], Tw) * Jc;
-            }
-            atomicAdd(&res_roe[icw], (flow_float)q);
-        }
         return;
     }
 

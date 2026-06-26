@@ -98,7 +98,10 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_node_sst_fine` | node モード SST (cell run_0001 から cross-mesh restart, 20000 step) | omega/k 6 桁収束だが u_τ 過小 (node 1.24 vs cell 1.97)。残差プラトー (rms_roUx≈0.23)。図 `uplus_yplus_node_vs_cell.png` | active |
 | `run_node_lam_5e_long` | **node 弱形式境界 (Phase 2: 5a+5b+5e)** 層流 (40000 step, run_node_lam_cont 崩壊場から restart) | **出口 BL 崩壊解消** (δ99(x) 単調・Blasius 一致, x=1.0 δ99=0.0114 vs 旧 1e-5)。**残差プラトー打破** rms_roUx 0.214→3.08e-5 (3.8桁), rms_ro 1.04e-7。NaN なし | active |
 | `run_node_sst_5e_long` | **node 弱形式境界 (5a+5b+5e)** SST (40000 step) — 過剰乱流の「before」 | プラトー打破 (rms_roUx 0.597→1.3e-3) だが **過剰乱流**: peak mut/μ=375, Cf≈3×Schl。真因=壁 ω 非ピン + wall_dist バグ (下行で解消) | ref(before) |
-| `run_node_sst_final` | **node SST 完成**: massflux 書込 + 壁 ω Dirichlet ピン (omega/roOmega ピン+ω decouple+res_roOmega 壁ゼロ) + **wall_dist 修正** (node で壁点に壁ノード座標)。過剰乱流場から 60000 step | **cell 基準と一致: Cf/Schl 0.87/0.90/0.92** (旧 3×), peak mut/μ 217 (cell 199), k_wall=0, δ99 cell 近接。rms_roUx 0.597→1.5e-4 (3.6桁), 全列 falling。NaN なし | active |
+| `run_node_sst_final` | **node SST 完成**: massflux 書込 + 壁 ω Dirichlet ピン (omega/roOmega ピン+ω decouple+res_roOmega 壁ゼロ) + **wall_dist 修正** (node で壁点に壁ノード座標)。過剰乱流場から 60000 step。**convMethod 0 (1次風上) のまま** | u⁺-y⁺ collapse は cell 一致だが **Cf/δ99 は cell(MUSCL)と乖離**: Cf −8%, δ99 +13〜20% (1次の数値拡散で BL 過厚)。かつ res_60000 で Cf 未収束 (step30k→60k で +20% ドリフト)。massflux+ω pin+wall_dist 修正で過剰乱流は解消済 | ref(1次) |
+| `run_node_sst_muscl_cont` | **node SST を MUSCL(convMethod 2)に切替**え run_node_sst_final/res_60000 から +90000 step。cell 基準 (run_0009, MUSCL) とスキームを揃えた公平比較 | **node≈cell に一致**: Cf 差 **−3.4〜−3.9%**, δ99 差 **−1.0〜−1.5%**, u_τ −2.0〜−2.3% (3 station)。Cf@0.6 ドリフト +0.20%→+0.06%→0.00% で定常化、NaN なし。残差は block-DPLUR 構造プラトー (cell run_0007 と同様)。図 `cf_bl_cell_node_muscl.png` | active |
+| `run_node_skip_verify` | **node 境界半割面拡散 skip 検証 (新)**: run_node_sst_muscl_cont/res_90000 から +5000 step、k/ω 境界半割面拡散を ∇·S 弱形式→skip 化したバイナリ。plan [diffusion-node-boundary-real-distance.md](../../.github/plans/diffusion-node-boundary-real-distance.md) §3(c) | **Cf/u_τ/δ99 は ∇·S と完全一致** (3 station 差 0.00%, ref90k と 0.01% 以内)。k 場差 (relL2 6.5%) は **全て前縁上流 x<0 のスリップ域**に局在 (∇·S が Neumann 漏れで k を ~10 に過剰生成→skip は ∂k/∂n=0 で k≈3=内部値、skip がより正)。平板 BL は無影響。NaN なし | active |
+| `run_node_gradS_verify` | 上記の比較基準: 同じ restart から **旧 ∇·S 弱形式バイナリ**で +5000 step | skip と Cf 完全一致を確認するための apples-to-apples ペア (k のみ前縁スリップ域で skip と差) | ref |
 
 > **node 弱形式境界 (Phase 2)**: node モードで inlet/outlet/slip も ghostless 弱形式化。(5a) 主対流ループを内部+periodic
 > のみに、(5b) 全境界を `convectiveFlux_boundary_d` の bvar 弱形式に、(5e) **block-DPLUR Jacobian の境界半割面で
@@ -115,9 +118,17 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 > **さらに wall_dist バグを修正 (commit 8b60f2c) → cell 基準と完全一致**: `calcWallDistance_kdtree` が node で壁点に
 > 半割面重心 (壁ノードから x に ~dx/8 ずれ) を使い、近壁 wall_dist が法線距離 y でなく x ずれ (≈1e-4·x, 下流で増大)
 > になっていた → ω_w 過小 → 過剰乱流 (下流ほど)。node では壁点に**壁ノード座標**を使うよう修正。結果
-> [run_node_sst_final](run_node_sst_final/): **Cf/Schl 0.87/0.90/0.92**, peak mut/μ **217** (cell 199), k_wall=0,
-> δ99 が cell 近接、rms_roUx 0.597→1.5e-4 (3.6桁)。**massflux + omega pin + wall_dist の 3 点で SST node が
-> cell 基準に一致**。
+> [run_node_sst_final](run_node_sst_final/): peak mut/μ **217** (cell 199), k_wall=0, rms_roUx 0.597→1.5e-4 (3.6桁)。
+> **massflux + omega pin + wall_dist の 3 点で過剰乱流 (旧 peak mut/μ 375, Cf≈3×) を解消**し乱流レベルは cell 並みに。
+>
+> **ただし Cf・境界層厚さの cell 一致には convection スキームを揃える必要がある (追検証)**: `run_node_sst_final` は
+> `convMethod 0` (1次風上) のままで、同一測定 (分子勾配 τ_w, δ99=0.99U_e) で cell(MUSCL, run_0009) と比べると
+> **Cf −8% / δ99 +13〜20%** と乖離していた (1次の数値拡散で BL が厚くなる + res_60000 で Cf がまだ +20%/30k step
+> ドリフト中=未収束)。node を **MUSCL に切替えて Cf 収束まで回した [run_node_sst_muscl_cont](run_node_sst_muscl_cont/)**
+> では **Cf 差 −3.4〜−3.9% / δ99 差 −1.0〜−1.5% / u_τ −2.0〜−2.3%** と cell に一致する。u⁺-y⁺ collapse (各 run 自身の
+> u_τ で正規化) は 1次でも揃って見えるため、**絶対量 (Cf, δ99) は必ず同一スキームで比較する**こと。比較図:
+> `cf_bl_cell_node_muscl.png` (再生成 `tools/compare_cf_bl_cell_node.py`)。残る ~3.5% の Cf 差は median-dual 壁勾配と
+> cell の離散差由来で、全 station で一定符号・小さい。
 
 > **SST-DES (DDES) T1-A** の合否: `DESmode:0` ビット不変 + `DESmode:1` で付着 BL が RANS から
 > 不変 (Cf 差≪0.1%)。**発達乱流場 (nut/nu≫1) から restart すること** (`run_regr_cf` 等 nut/nu≤1 の

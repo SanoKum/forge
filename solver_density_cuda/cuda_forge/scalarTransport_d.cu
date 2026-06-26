@@ -83,17 +83,14 @@ __global__ void scalar_diffusion_first_order_d(
         const geom_float szz = sz[ip];
         const geom_float sss = ss[ip];
 
-        // node モードの境界半割面 (ghost を含む面: ic0 か ic1 が nCells 以上) は ghost を使わず、
-        // 境界ノードのセル勾配 ∇φ (calcGradient が bvar で境界閉包・内部隣接ノード由来) を用いた弱形式
-        // ∇φ·S で評価する。境界ノードが境界面上に乗り ghost mirror の dcc≈0 に退化するのを完全回避する。
-        // periodic 面は partner 実セルで両側 < nCells なので該当せず通常処理。(void)nWallHaloPlanes。
+        // node モードの境界半割面 (ghost を含む面: ic0 か ic1 が nCells 以上) は拡散流束を加えない (skip)。
+        // 根拠 (plan diffusion-node-boundary-real-distance.md §3 (c)):
+        //  - Dirichlet (入口固定値 / k=0・ω ピン) では境界ノードはピンで上書きされ、半割面に何を足しても無意味。
+        //    内部ノード I への拡散は内部双対面 W↔I が実距離で運ぶ (本ループの非境界 plane で計算済)。
+        //  - Neumann (slip / zero-grad 出口) は物理的に ∂φ/∂n=0 ＝半割面フラックス 0 そのもの。
+        //  → ghost mirror の dcc≈0 退化も、∇φ·S 弱形式の境界閉包依存も不要。skip が正しく最シンプル。
+        // periodic 面は partner 実セルで両側 < nCells なので該当せず通常処理。(void)nWallHaloPlanes,dphi*。
         if (isNode != 0 && (ic0 >= nCells || ic1 >= nCells)) {
-            const geom_int icw = (ic0 < nCells) ? ic0 : ic1;
-            if (icw < nCells && dphidx != nullptr) {
-                const flow_float mu = vis_lam[icw] + sigma * max(vis_turb[icw], static_cast<flow_float>(0.0));
-                const flow_float flux = mu * (dphidx[icw]*sxx + dphidy[icw]*syy + dphidz[icw]*szz);
-                atomicAdd(&res_rho_phi[icw], flux);  // S 外向き → ∇·(μ∇φ) の発散形寄与
-            }
             return;
         }
 

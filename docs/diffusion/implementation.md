@@ -186,9 +186,19 @@ flux を爆発**させる (case/36 node SST が step3 で roOmega→1e22)。検�
 ノード座標に統一**し、cell/node で同一処理にする。双対 CV 重心は別量に分離し、軸対称の r 重み/source
 だけが参照する (`axisCentroidShift` 撤去)。これで内部面は自動で直交化する。ただし `centCoords=node` は
 **壁ノードが壁面に乗り ghost mirror の dcc が退化** (検証: NaN 132/132 が壁) するため、**node モードの
-境界を完全 ghostless 化** (境界半割面を bvar + 内部隣接ノードの `∇φ·S` 弱形式で評価) するのが前提。
+境界を完全 ghostless 化**するのが前提。
 計画: [`.github/plans/architecture-node-centroid-value-position.md`](../../.github/plans/architecture-node-centroid-value-position.md)
 (旧 [`diffusion-node-scalar-nonortho-limit.md`](../../.github/plans/diffusion-node-scalar-nonortho-limit.md) は superseded)。
+
+**スカラ (k/ω)・化学種拡散の node 境界半割面は「加えない (skip)」**: 退化する ghost mirror も、暫定で
+使っていた `∇φ·S` 弱形式 (cell 勾配の境界投影に依存・Neumann で厳密 0 にならない) も用いず、`isNode!=0` かつ
+ghost を含む半割面 (`ic0>=nCells || ic1>=nCells`) では拡散流束を**スキップ**する (`scalar_diffusion_first_order_d`,
+`species_diffusion_d`)。根拠: Dirichlet (固定値入口 / k=0・ω ピン) では境界ノードがピンで上書きされ半割面は無意味で、
+内部ノードへの拡散は**内部双対面 W↔I が実距離で運ぶ** (主ループの非境界 plane で計算済)。Neumann (slip / zero-grad)
+は物理的に $\partial_n\phi=0$ ＝半割面フラックス 0 そのもの。例外は陽に課す非ゼロ Neumann 熱流束のみ (forge は断熱/
+Dirichlet/等温=Dirichlet なので不要、等温壁の熱流束は粘性流束側)。平板 `case/26.flat_plate_sst` で **Cf/u_τ/δ99 が
+∇·S 版と完全一致** (差 0.00%) を確認、k は前縁上流スリップ域で skip がより正 (∇·S は Neumann 漏れで過剰生成)。
+計画: [`.github/plans/diffusion-node-boundary-real-distance.md`](../../.github/plans/diffusion-node-boundary-real-distance.md)。
 
 ## 入出力
 
