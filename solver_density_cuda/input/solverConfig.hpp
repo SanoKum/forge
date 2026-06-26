@@ -123,6 +123,12 @@ public:
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (docs/turbulence §7.5)
     int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (docs/turbulence §6.5)
+    // SST 初期乱流 (IC に roK/roOmega が無いときの初期値)。既定 0 = 従来動作 (k=ω=0, ビット不変)。
+    // ただし ω=0 は mu_t=k/ω が ill-posed で cold start から発散しやすい (特に node wt=1)。
+    // 非 SST IC (層流場/メッシュ変換直後) から SST を始める場合は freestream 値 (例 inlet と同じ
+    // k, ω) を設定して 0 初期化を避ける。読み込みは variables::readValueHDF5。
+    flow_float kInit = 0.0;     // 初期 k [m²/s²] (roK 欠落時 roK=ro*kInit)
+    flow_float omegaInit = 0.0; // 初期 ω [1/s]   (roOmega 欠落時 roOmega=ro*omegaInit)
     flow_float turbulentPrandtl = 0.85; // 乱流プラントル数 Pr_t。乱流熱伝導 k_t=cp*mu_t/Pr_t に使用 (既定 0.85)
 
     // SST-DES (Detached-Eddy Simulation) length scale 修正。SST k 消滅項を

@@ -212,5 +212,6 @@ public:
     void setStructuralVariables(solverConfig& cfg, cudaConfig& cuda_cfg , mesh& msh);
     void setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh);
 
-    void readValueHDF5(std::string fname , mesh& msh);
+    void readValueHDF5(std::string fname , mesh& msh,
+                       flow_float kInit = 0.0, flow_float omegaInit = 0.0);
 };

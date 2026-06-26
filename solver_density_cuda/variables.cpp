@@ -449,7 +449,8 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
 
 }
 
-void variables::readValueHDF5(std::string fname , mesh& msh)
+void variables::readValueHDF5(std::string fname , mesh& msh,
+                              flow_float kInit, flow_float omegaInit)
 {
     HighFive::File file(fname, HighFive::File::ReadOnly);
 
@@ -498,8 +499,12 @@ void variables::readValueHDF5(std::string fname , mesh& msh)
         v_roUz[i] = roUz[i];
         v_roe[i] = roe[i];
         v_wall_dist[i] = wall_dist[i];
-        v_roK[i] = has_roK ? roK[i] : static_cast<flow_float>(0.0);
-        v_roOmega[i] = has_roOmega ? roOmega[i] : static_cast<flow_float>(0.0);
+        // IC に roK/roOmega が無い場合は freestream 初期値 ro*kInit / ro*omegaInit を使う。
+        // kInit=omegaInit=0 (既定) では従来どおり 0 (ビット不変)。ただし ω=0 は mu_t=k/ω が
+        // ill-posed で SST cold start から発散しやすい (特に node wt=1) ため、非 SST IC から
+        // SST を始める場合は config で freestream 値を設定すること (variables.hpp / solverConfig)。
+        v_roK[i] = has_roK ? roK[i] : ro[i] * kInit;
+        v_roOmega[i] = has_roOmega ? roOmega[i] : ro[i] * omegaInit;
     }
 
     std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "wall_dist", "roK", "roOmega"};

@@ -322,6 +322,13 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'wallTreatmentSST' in 'turbulence' must be 0 or 1.");
         }
 
+        // SST 初期乱流 (IC に roK/roOmega が無いときの初期値, 既定 0 = 従来動作・ビット不変)
+        this->kInit     = getOptionalValidatedValue<flow_float>(turb, "kInit", 0.0, "turbulence");
+        this->omegaInit = getOptionalValidatedValue<flow_float>(turb, "omegaInit", 0.0, "turbulence");
+        if (this->kInit < 0.0 || this->omegaInit < 0.0) {
+            throw std::runtime_error("Keys 'kInit'/'omegaInit' in 'turbulence' must be >= 0.");
+        }
+
         // SST-DES length scale 修正 (docs/turbulence §8): 0=RANS(既定・ビット不変)/1=DDES/2=IDDES
         this->DESmode = getOptionalValidatedValue<int>(turb, "DESmode", 0, "turbulence");
         if (this->DESmode < 0 || this->DESmode > 2) {

@@ -30,6 +30,18 @@
 初期フェーズでは implicit 用の `dq_*`, `rhs_block_*`, `diag_block_*` は
 拡張しない。
 
+### 3.1.1 初期乱流場 (`kInit` / `omegaInit`)
+
+IC (`valueFileName`) に `roK`/`roOmega` が無い場合 (非 SST 場・メッシュ変換直後など)、
+`variables::readValueHDF5` は `roK = ρ·kInit`, `roOmega = ρ·omegaInit` で初期化する
+(`solverConfig` の `turbulence.kInit` / `turbulence.omegaInit`、既定 0)。
+
+**`ω=0` 初期化は `μ_t = ρ a₁ k / max(a₁ ω, S F₂)` が ill-posed で SST が cold start から
+発散しやすい** (特に node `wallTreatmentSST=1`: ω₀=0 だと inlet コーナーで ω が暴走)。
+非 SST IC から SST を始めるときは inlet と同じ freestream 値 (例 `kInit=1.0`, `omegaInit=1000.0`)
+を設定して 0 初期化を避ける。既定 0 では `ρ·0 = 0` で従来動作 (ビット不変)。
+k/ω を持つ収束場から restart する場合は不要 (IC の roK/roOmega をそのまま使う)。
+
 ### 3.2 設定
 
 `solverConfig` の turbulence 設定は、現在の `LESorRANS` と `LESmodel` に加えて、

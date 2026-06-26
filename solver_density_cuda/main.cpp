@@ -813,7 +813,7 @@ cudaConfig initializeSimulation(
     condensationInit_d(cfg , var);
 
     cout << "Read Initial Values \n";
-    var.readValueHDF5(cfg.valueFileName , msh);
+    var.readValueHDF5(cfg.valueFileName , msh, cfg.kInit, cfg.omegaInit);
 
     cout << "Set mesh connection map for cuda \n";
     cudaConfig cuda_cfg(msh);
