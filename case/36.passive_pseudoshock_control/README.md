@@ -190,7 +190,7 @@ forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソ�
 3. 近壁 μt が異常化 (μt/μ~4-5千がコア y=9-10mm へ侵入, cell は y=10.5+) → BL 厚化 → 発散ダクトの実効面積増を相殺 → **超音速コア加速失敗** (中心 M 1.69 vs cell/SU2 1.82) → **擬似衝撃波が ~80mm 上流** (node 46mm)。
 4. 擬似衝撃波の背圧敏感性が小さな壁関数 μt 誤差を巨大な衝撃位置差へ増幅。平板(case26)は `wallTreatmentSST=0` ゆえ無傷で node/cell 一致 (Cf±1%)。
 
-→ 図 `cmp_node_vs_cell_ROOTCAUSE.png`。修正方針・SU2 調査待ちは [`.github/plans/turbulence-node-sst-wallfunction.md`](../../plans/active/turbulence-node-sst-wallfunction.md)。**この差は node の物理バグであり cell は SU2 と整合 (142 vs 132mm)。**
+→ 図 `cmp_node_vs_cell_ROOTCAUSE.png`。修正の経緯と完了は [`plans/accepted/turbulence-node-sst-wallfunction.md`](../../plans/accepted/turbulence-node-sst-wallfunction.md) (代表点修正 + τ_w 付与で node≈cell に解消、`done`)。**この差は node の物理バグであり cell は SU2 と整合 (142 vs 132mm)。**
 
 ### ★ node vs cell SST 再比較 @ Ps=1.90 (現行バイナリ; 2026-06-27)
 

@@ -6,7 +6,7 @@
 - **status**: `done` (§3.1 代表点 + §3.2 AddTauWall を実装・検証・commit 済。node≈cell 一致を確認しクローズ 2026-06-27)
 - **related_docs**:
   - `methods/turbulence/implementation.md`
-  - `.github/plans/diffusion-node-wall-viscous-distance.md` (§11 twall, 同一トラップ)
+  - `diffusion-node-wall-viscous-distance.md` (§11 twall, 同一トラップ; `plans/accepted/`)
 - **created**: `2026-06-24`
 
 ## 1. 確定済みの問題 (コード + 実測)

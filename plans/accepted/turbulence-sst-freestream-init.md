@@ -7,8 +7,8 @@
 - **related_docs**:
   - `methods/turbulence/implementation.md`
 - **related_plans**:
-  - `.github/plans/turbulence-node-sst-wallfunction.md`
-  - `.github/plans/diffusion-node-wall-viscous-distance.md`
+  - `turbulence-node-sst-wallfunction.md` (`plans/accepted/`)
+  - `diffusion-node-wall-viscous-distance.md` (`plans/accepted/`)
 - **created**: `2026-06-26`
 - **owner**: `CFD Dev`
 
