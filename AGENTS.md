@@ -67,6 +67,14 @@
 - **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
 - 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) を参照。
 
+**準定常確認 (必須・収束確認とは別)**: 残差が下がっていても (またはプラトーでも)、**報告する派生量そのもの** (衝撃位置・上下非対称・CL/CD・massflux・推力・peak μt/μ・出口諸量 等) が**定常化 (頭打ち) しているか**は別問題である。**残差プラトー ≠ 量の定常化**であり、**過渡ピーク ≠ 飽和値**である。これを怠り、過渡ピークの量を定常値として報告した事例があるため、量の報告にはツール経由の確認を必須とする。
+
+- **判定は `solver_density_cuda/tools/check_quasisteady.py <run_dir> [--quantity shock,asym,...]` を実行して行う** (本ルールの実体化ツール)。全 `res_*.h5` スナップショット時系列から対象量を計算し、末尾の頭打ちを `STEADY / DRIFTING / OSCILLATING / TRANSIENT-UNSETTLED` で判定する。**衝撃位置・非対称・CL/CD・massflux 等の派生量を「○○だ」と報告する応答には、このツールの VERDICT を必ず貼ること**。
+- **単一スナップショット・短窓で量を報告しない**。`DRIFTING` / `TRANSIENT-UNSETTLED` を「定常」「飽和」と表現しない。`OSCILLATING` (リミットサイクル) は瞬時値でなく**平均±振幅**で報告する。
+- **過渡が減衰しきる長さまで回す**。短い run では非対称・衝撃位置などの**過渡ピークを定常的な値と誤認する** (例: 擬似衝撃波の上下非対称は visc=0 Euler で過渡 0.25→減衰 0.05 だが、~12k step では 0.25 を定常偏りと誤判定した。十分長く=量が頭打ちするまで回す)。量が `DRIFTING` なら「未だ動いている」と明記し run を伸ばす。
+- 強い偏り流など中心線量が破綻する場合は対象量を選ぶ (`--quantity asym` 等)。詳細閾値は `--tail/--drift/--osc`。
+- 外部ソルバ比較や「一致」の主張でも同様: 比較する両者がともに `STEADY` であることを確認してから「一致」と述べる。
+
 **メッシュ変更後の restart (必須)**: メッシュを変えた (quad↔tri↔構造化, 解像度変更) ときは **uniform 初期値から計算を始めない** (超音速/衝撃波/SST は uniform IC から step 数回で発散する)。`solver_density_cuda/tools/interp_field.py SRC.h5 新メッシュ入力.h5` で過去の収束済み場を**最近傍interpolateして cross-mesh restart** する (保存量+roK/roOmega+スカラー輸送を移植、wall_dist は移植せず新メッシュの値を使う)。同一メッシュの restart は `restart_field.py`。
 
 **メッシュ品質チェック (計算前・必須)**: メッシュを HDF5 化したら計算投入前に必ず `solver_density_cuda/tools/check_mesh_quality.py <mesh.h5>` で品質を確認する。**アスペクト比 ≤ 1000、スキューネス ≤ 0.9 を目標**とし、`VERDICT: FAIL` のメッシュは投入しない。近壁細分化で AR が増えやすいので接線長と第一セル厚のバランスを取る (高 Re では y+~1 と AR≤1000 が両立しないことがあり、その場合 y+~30-80 + `wallTreatmentSST=1` を選ぶ)。詳細は [`.github/forge-calculation-workflow.md`](.github/forge-calculation-workflow.md) の「メッシュ品質チェック」。「メッシュできた/収束した」と報告する応答には品質 VERDICT も併記する。
