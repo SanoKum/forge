@@ -44,7 +44,7 @@
 #include "cuda_forge/cudaConfig.cuh"
 
 #include "cuda_forge/calcGradient_d.cuh"
-#include "cuda_forge/convectiveFlux_d.cuh"
+#include "cuda_forge/convection/convectiveFlux_d.cuh"
 #include "cuda_forge/ransTransport_d.cuh"
 #include "cuda_forge/ransSource_d.cuh"
 #include "cuda_forge/speciesTransport_d.cuh"

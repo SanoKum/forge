@@ -1,4 +1,4 @@
-#include "convectiveFlux_d.cuh"
+#include "convection/convectiveFlux_d.cuh"
 #include <cstdlib>
 #include <cstdio>
 #include <vector>

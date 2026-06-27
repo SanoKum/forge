@@ -20,8 +20,8 @@ add_library(cuda_forge STATIC
     calcGradient_d.cuh
     limiter_d.cu
     limiter_d.cuh
-    convectiveFlux_d.cu
-    convectiveFlux_d.cuh
+    convection/convectiveFlux_d.cu
+    convection/convectiveFlux_d.cuh
     scalarTransport_d.cu
     scalarTransport_d.cuh
     ransTransport_d.cu
@@ -43,8 +43,8 @@ add_library(cuda_forge STATIC
     turbulent_viscosity_d.cu
     turbulent_viscosity_d.cuh
  
-    #AUSM_d.cu
-    #AUSM_d.cuh
+    #convection/AUSM_d.cu
+    #convection/AUSM_d.cuh
     viscousFlux_d.cu
     viscousFlux_d.cuh
 
@@ -70,7 +70,7 @@ add_library(cuda_forge STATIC
 )
 
 
-target_include_directories(cuda_forge PRIVATE .. )
+target_include_directories(cuda_forge PRIVATE .. ${CMAKE_CURRENT_SOURCE_DIR} )
 
 # Inherit CUDA_ARCHITECTURES from the top-level CMakeLists.txt.
 if(CMAKE_CUDA_ARCHITECTURES)

@@ -3,7 +3,7 @@
 #include "mesh/mesh.hpp"
 #include "variables.hpp"
 #include "input/solverConfig.hpp"
-#include "cuda_forge/convectiveFlux_d.cuh"
+#include "cuda_forge/convection/convectiveFlux_d.cuh"
 
 #include <algorithm>
 #include <vector>

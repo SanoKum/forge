@@ -1,13 +1,13 @@
 #pragma once
 
-#include "cudaConfig.cuh"
-#include "cudaWrapper.cuh"
+#include "cuda_forge/cudaConfig.cuh"
+#include "cuda_forge/cudaWrapper.cuh"
 
 #include "flowFormat.hpp"
 #include "mesh/mesh.hpp"
 #include "input/solverConfig.hpp"
 #include "variables.hpp"
-#include "thermo_d.cuh"
+#include "cuda_forge/thermo_d.cuh"
 
 __device__ flow_float calcRratio(flow_float phiC, flow_float phiD, 
                                  flow_float dphidx, flow_float dphidy, flow_float dphidz,
