@@ -37,6 +37,7 @@
 - **node / cell の両方で検証する (必須)**: `mesh.discretization` には `cell` (既定) と `node` (median-dual) の 2 系統があり、対流流束・境界処理・主ループ対象 plane などが系統で分岐する。**両系統が通る変更 (対流/拡散/勾配/境界/時間積分などの共有コード) を検証するときは、cell ベースと node ベースの双方で実行し、双方の収束 (`check_convergence.py`) と場の妥当性を確認する。** 片方だけで「問題なし」と判断しない。
   - 同一ケースを `discretization: "cell"` と `discretization: "node"` の 2 run で回して比較する。
   - node 系統が未対応の構成 (3D median-dual 未実装 / periodic 未検証 / 一部ケースの近壁チェッカーボード発散など) でそのケースを node で回せない場合は、**その旨と理由を明記**したうえで cell のみで判断してよい (黙って片方を省略しない)。
+  - **三者比較が必要なときは SU2 を基準に加える**: node / cell / SU2 をサンプリングライン (既定は下端から ~25% 高さ) 上の `P`/`T`/速度で突き合わせる。手順は [`procedures/su2-cross-check.md`](../su2-cross-check.md) の「ライン比較プロトコル」に従う。
 - `run_*` の複製実行と `residual_history.png` の生成は、[AGENTS.md](../../AGENTS.md) の共通ルールに従う (検証実行でも同じ)。
 - 生成される `residual_history.csv`、`res_*.h5`、壁面出力、実行ログは、その新しい `run_*` に保存して比較可能な状態を維持する。
 - 既定ケースで十分に異常を切り分けられない場合は、変更内容に応じて他の標準ケースも追加で使う。
