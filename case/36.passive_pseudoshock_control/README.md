@@ -211,20 +211,32 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
   プラトー; rms 全列が flat 床、cell rms_roUy 6.4e-2・node rms_roOmega 2.44e6 で停滞)。報告した shock 位置は
   **limit-cycle スナップショット**で、cell は ±1mm 振動・node は静止。**「収束した」とは主張しない** (この case は
   定常 RANS では収束しないことが既知=下記 down-sweep 節・本 README 末尾の所見)。場の比較は準定常同士。
-- **⚠ cell 自身が 142→160mm に移動 (= limit-cycle ドリフト、binary 起因ではない)**: 現行バイナリの cell は
-  旧 run_0049 (142mm) より ~18mm 下流。当初これを outlet 統一 (`88def3b`、cell+node 共通=node 専用でない一般変更)
-  の交絡と疑ったが、**実測で棄却**: `88def3b` 直前 (945a27f) の outlet で同じ restart (run_0049/res_80000) から
-  cell を回すと衝撃軌跡は **165.8/169.2/163.1mm** で、現行 outlet の **165.2/168.0/162.1mm** と ~1mm (limit-cycle
-  ノイズ) しか違わない (`run_cmp_cell_sst_bp1p90_oldoutlet`)。→ **`88def3b` は case36 cell 衝撃位置に実質無影響**
-  (本来の目的は逆流コーナー発散の修正)。**142→160mm は run_0049 が非収束スナップショットで、継続すると
-  limit-cycle 内で ~160-165mm へドリフトするため**。結果、**forge node/cell は互いに一致するが、両者とも
-  SU2 中立 132mm・旧 cell 142mm より ~20-30mm 下流**。forge 対 SU2 の ~30mm 差 (どちらが正かは本比較の対象外)
-  は別途要調査。
+- **⚠ cell 自身が 142→160mm に移動 = forge の SST restart 再現性問題 (commit 起因でも非収束でもない)**:
+  現行バイナリの cell は旧 run_0049 (142mm) より ~18mm 下流。**真因を git bisect (フルビルド) で特定**したところ、
+  **run_0049 自身のバイナリ (`894fa47`) で res_80000 から restart しても 141.8→165.8mm に動く** (8000 step、
+  `run_bisect_cell_894fa47`)。→ **どのコミットの仕業でもない**。さらに:
+  - **非収束ドリフトではない**: run_0049 は res_24000〜80000 の 56000 step を **141.5-142.1mm / Mmax 1.820-1.821 で
+    完全静止** = genuine steady。当初の「非収束スナップショットのドリフト」説は**棄却**。
+  - **restart_field の primitive→conserved 変換のせいでもない**: 保存量 (ro,roUx,roe,roK,roOmega) を**直接コピー**する
+    忠実 restart でも同じく 165.8mm へジャンプ (`run_bisect_cell_894_faithful`)。
+  - **CFL オーバーシュート単独でもない**: restart 直後 res_0 の cfl は mean 0.59/max 3.33 と連続マーチ最終
+    (mean 0.21/max 1.0) の ~2.8倍だが、cfl を 0.3 に絞っても 142→150mm へ (遅くなるだけで) ドリフト
+    (`run_bisect_cell_894_gentle`)。
+  - **真因 = restart 時に SST 乱流場が再現されない**: 忠実 restart 直後 res_0 を run_0049 res_80000 と比較すると、
+    保存量 ro/roUx/**roK** はバイト一致なのに、**渦粘性 `vis_turb` は全域ゼロ** (連続マーチは遠方 0.34)、
+    **壁近傍 omega が 0.82倍** (1.68e6→1.38e6、差は 100% 壁近傍・遠方は完全一致)。forge は restart で eddy
+    viscosity を復元せず 0 から、壁 omega ピンも別値に再導出するため、初手の数ステップが**乱流散逸不足**で進み、
+    敏感な擬似衝撃波を 142mm から ~160-165mm へ蹴り出す。
+  - 結果、**forge node/cell は互いに一致するが、両者とも restart 由来でこの ~160-165mm 枝に乗る**。run_0049 の
+    142mm (連続マーチ steady, SU2 132mm に近い) は restart では再現できていない。→ **node vs cell の比較自体は
+    「同じ restart 条件同士」で公平だが、SU2/旧 cell との 142 基準には forge の SST restart 再現性問題が絡む**。
+    これは別課題 (forge restart で vis_turb/壁 omega を収束値から再構築すべき)。
 - 図 `compare_node_cell_sst_bp1p90_current.png` (P/Mach センターライン、SU2 132・旧 cell 142 マーカ付き)。
 - **node 専用でない直近変更の確認**: 直近コミットのうち cell に効きうるのは `88def3b` (outlet `outlet_statPress_d`、
   isNode ガード無し) のみ。他 (`537d80f`/`9cc6475`/`af5b98d` は isNode ガード、`945a27f` AddTauWall は cell に
   nullptr で bit-identical、`f639ff2` SST init は restart で roK/roOmega が在れば inert) は cell 無影響。
-  → `88def3b` は一般変更だが case36 cell では上記実測どおり実質 inert。
+  **そして上記 bisect で `88def3b` も含め全 commit が無罪**と確定 (run_0049 自身のバイナリで再現するため)。
+  → ユーザーの node 修正は cell を動かしていない。cell の移動は forge の SST restart 再現性問題。
 - **結論**: 問い「node と cell を SST で比較」への答え=**現行バイナリで node SST は cell SST と整合 (shock ~3mm,
   Mmax/μt 同等)**。ただし**双方とも未収束 (limit-cycle)** で準定常スナップショット比較であり、cell の 142→160mm は
   binary 変更でなく非収束ドリフト。両 forge とも SU2 132mm より ~30mm 下流である点は別課題。
