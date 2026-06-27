@@ -50,6 +50,23 @@ python3 solver_density_cuda/tools/extract_line_profile.py \
 - 数値結果を変えない想定の変更なら、この比較が既定許容差内に収まることを期待する。
 - アルゴリズムを変える変更なら、差分を失敗扱いせず、どの量がどれだけ変わったかを報告する。
 
+## node / cell / SU2 三者ライン比較 (y=0.25)
+
+離散化・対流まわりを検証するときの**本ケースでの SU2 クロスチェック実体**。一般手順 (ライン位置の選び方・収束前提・三者比較の作法) は
+[`procedures/su2-cross-check.md`](../su2-cross-check.md) の「ライン比較プロトコル」を正本とし、ここには bump 固有の設定と所在のみ記す。
+
+- **サンプリングライン**: `y=0.25` の水平ライン。領域は x∈[0,3]・y∈[0,1]、bump peak 0.1 なので全 x で流体内 (壁・よどみを避ける)。
+- **比較量**: 静圧 `P`、温度 `T`、速度 `|U|`。SU2 を基準に forge node / cell の相対差を出す。
+- **リファレンス一式**: [`case/08.bump/run_su2cmp/`](../../case/08.bump/run_su2cmp/)
+  - SU2: `bump_euler.cfg` (2D Euler, ROE/Venkat, inlet Pt=120193/Tt=302.557, outlet Ps=101325) と `mesh/bump2d.geo`
+    (`.su2` は `gmsh -2 mesh/bump2d.geo -format su2 -o mesh/bump2d.su2` で再生成)。
+  - 比較: `compare_line.py` (SU2 vtu と forge `res_*.h5` を y=0.25 へ補間し `bump_line_compare.png` を出力)。
+  - 結果サマリ: `COMPARISON_SUMMARY.md`。
+- **forge 側 run の作り方**: `run_dual_loM_{cell,node}_m2` を複製し目的のスキームにして**収束まで**回す
+  (node は ~150k step で float 床まで収束、cell は atomicAdd 床 ~6e-4 で頭打ち=妥当なプラトー)。
+- **期待挙動**: forge-node は SU2 と **<0.1%** で一致。forge-cell は **~0.25-0.5%** ずれるが、これは cell の未収束
+  (atomicAdd 床) の刻印で物理誤差ではない。node/cell どちらが SU2 に近いかと収束度を併記する。
+
 ## 既存ファイル
 
 この run ディレクトリには、比較用のファイルが既に置かれている。
