@@ -41,7 +41,7 @@ __global__ void rans_sst_source_d(
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
     flow_float* src_jac_k,
     flow_float* src_jac_omega,
-    // SST-DES (docs/turbulence §8): DESmode>0 で k 消滅項を ρk^{3/2}/l_des に切替える。
+    // SST-DES (methods/turbulence §8): DESmode>0 で k 消滅項を ρk^{3/2}/l_des に切替える。
     int DESmode,
     flow_float* l_des)
 {
@@ -69,7 +69,7 @@ __global__ void rans_sst_source_d(
     flow_float S_sq = static_cast<flow_float>(2.0) *
         (S11*S11 + S22*S22 + S33*S33 +
          static_cast<flow_float>(2.0) * (S12*S12 + S13*S13 + S23*S23));
-    // 軸対称: フープひずみ S_thetatheta = u_r/r を加算 (docs/turbulence/theory.md §7.2)
+    // 軸対称: フープひずみ S_thetatheta = u_r/r を加算 (methods/turbulence/theory.md §7.2)
     if (isAxisymmetric) {
         const flow_float S_tt = axisym_uy_over_r[ic];
         S_sq += static_cast<flow_float>(2.0) * S_tt * S_tt;
@@ -81,14 +81,14 @@ __global__ void rans_sst_source_d(
         divU += axisym_uy_over_r[ic];
     }
 
-    // (A) deviatoric トレース除去 (dilatationCorrection >= 1, docs/turbulence/theory.md §7.3)
+    // (A) deviatoric トレース除去 (dilatationCorrection >= 1, methods/turbulence/theory.md §7.3)
     //   S^2 = 2 Sij Sij から 2/3 (divU)^2 を引く (= 2 * 1/3 (divU)^2)
     if (dilatationCorrection >= 1) {
         S_sq -= static_cast<flow_float>(2.0 / 3.0) * divU * divU;
         S_sq = max(S_sq, static_cast<flow_float>(0.0));
     }
 
-    // Kato-Launder 補正 (docs/turbulence/theory.md §7.5): 生産の片方の S を渦度 Omega に
+    // Kato-Launder 補正 (methods/turbulence/theory.md §7.5): 生産の片方の S を渦度 Omega に
     // 置換し、非回転の強加速 (よどみ点・ノズル喉中心線) での偽生産を抑える。
     //   S_prod = S^2 (標準, katoLaunder==0)  /  S*Omega (katoLaunder==1)
     // せん断層 S~Omega では従来同等、非回転 Omega->0 では生産->0。Omega は無旋回でも
@@ -132,7 +132,7 @@ __global__ void rans_sst_source_d(
         Pk = max(Pk, static_cast<flow_float>(0.0));
     }
 
-    // automatic wall treatment (docs/turbulence §6.5(d)): wall-adjacent セル (wf_pk>=0) では
+    // automatic wall treatment (methods/turbulence §6.5(d)): wall-adjacent セル (wf_pk>=0) では
     // 解像勾配ベースの P_k を wall-function 生産 P_k=ρu_τ⁴/ν·g(1-g) に置換する。ω はピン留め済み
     // (ransBoundary) なので k は平衡値 u_τ²/√β* に自律収束する。非 wall セルは wf_pk<0 で不変。
     if (wallTreatment == 1 && wf_pk[ic] >= static_cast<flow_float>(0.0)) {
@@ -140,7 +140,7 @@ __global__ void rans_sst_source_d(
     }
 
     // k 消滅項。標準 SST は D_k = β* ρ k ω = ρ k^{3/2}/l_RANS。
-    // SST-DES (DESmode>0) では l_RANS を l_DDES に置換: D_k = ρ k^{3/2}/l_des (docs/turbulence §8)。
+    // SST-DES (DESmode>0) では l_RANS を l_DDES に置換: D_k = ρ k^{3/2}/l_des (methods/turbulence §8)。
     // 剥離域 (l_des < l_RANS) で消滅が強まり渦粘性が下がる。ω 方程式・渦粘性式は不変。
     // DESmode==0 では従来式そのまま (係数・順序・キャスト一致) = ビット不変。
     flow_float Dk;

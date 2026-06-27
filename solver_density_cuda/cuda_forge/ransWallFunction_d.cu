@@ -3,7 +3,7 @@
 #include "cuda_forge/cudaWrapper.cuh"
 
 // SST automatic wall treatment の摩擦速度 u_τ を Reichardt 普遍速度則の逆解きで求める。
-// 理論は docs/turbulence/theory.md §6.5 (a)。粘性低層・バッファ・対数を 1 式で繋ぐため
+// 理論は methods/turbulence/theory.md §6.5 (a)。粘性低層・バッファ・対数を 1 式で繋ぐため
 // 第一セルの y⁺ 位置に依存せず妥当な u_τ を返す。
 namespace {
 
@@ -149,7 +149,7 @@ __global__ void compute_wall_friction_sst_d(
     utau = max(utau, static_cast<flow_float>(0.0));
 
     // wall-function 生産 P_k = (τ_w - τ_visc)·∂U/∂y = ρu_τ⁴/ν · g(1-g), g = du⁺/dy⁺(y⁺₁)
-    // (docs/turbulence §6.5(d))。粘性低層 g→1 で P_k→0 (壁解像極限を保つ)、対数層 g→1/(κy⁺) で
+    // (methods/turbulence §6.5(d))。粘性低層 g→1 で P_k→0 (壁解像極限を保つ)、対数層 g→1/(κy⁺) で
     // P_k→ρu_τ³/(κy)。これと ω ピン留めで k が平衡値 u_τ²/√β* に収束し runaway を断つ。
     const flow_float yp1 = utau * y / nu;
     const flow_float g   = reichardt_duplus_dyp(yp1);

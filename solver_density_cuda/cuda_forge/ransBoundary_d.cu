@@ -12,7 +12,7 @@ constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 constexpr flow_float kSmall = static_cast<flow_float>(1.0e-12);
 
 // SST 壁面 ω 境界。
-// wallTreatment==0: low-Re 壁解像型 ω_w = 60ν/(β₁ y²) (docs/turbulence §6.1)。
+// wallTreatment==0: low-Re 壁解像型 ω_w = 60ν/(β₁ y²) (methods/turbulence §6.1)。
 // wallTreatment==1: Menter automatic ブレンド ω_w = √(ω_vis² + ω_log²) (§6.5 (b))。
 //   ω_vis = 6ν/(β₁ y²), ω_log = u_τ/(√β* κ y)。u_τ は事前に utau に格納済み。
 __global__ void rans_wall_scalar_boundary_d(
@@ -42,7 +42,7 @@ __global__ void rans_wall_scalar_boundary_d(
         const flow_float y_w = max(wall_dist[ic], kSmall);
 
         if (wallTreatment == 1) {
-            // automatic wall treatment (docs/turbulence §6.5):
+            // automatic wall treatment (methods/turbulence §6.5):
             //   ω: Menter ブレンド ω_w=√(ω_vis²+ω_log²) を **wall-adjacent セル値にピン留め**する。
             //      ω_w は全 y⁺ で妥当 (y⁺→0 で ω_vis 支配=壁解像値) なので μ_t=ρa₁k/max(a₁ω,SF₂) を
             //      適切に上限し、k runaway を断つ。conserved roOmega も合わせて更新する。

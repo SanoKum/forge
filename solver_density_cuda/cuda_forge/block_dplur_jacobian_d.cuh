@@ -1,7 +1,7 @@
 #pragma once
 // block-DPLUR の閉形式 FVS 蓄積 (rank-2 外積で A⁺S を diag・−A⁻·sdq を nbr へ)。
 // host/device 双方でビルド可 (Level3 単体テスト tools/test_eos_jacobian.cpp から呼ぶため共有ヘッダ化)。
-// 数式・検証は docs/time_integration + plan time_integration-general-eos-jacobian.md。
+// 数式・検証は methods/time_integration + plan time_integration-general-eos-jacobian.md。
 #include <cmath>
 #ifdef FORGE_JACOBIAN_SANITY
 #include <cstdio>

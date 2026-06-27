@@ -10,7 +10,7 @@
 //     R_{rho u_r} = ∫∫ (p / r) · r dr dz = p_cell · A_planar
 //
 // が残る。粘性は $-\tau_{\theta\theta}$ を同じ面積で積分した source として加える
-// (詳しくは docs/axisymmetric/theory.md)。
+// (詳しくは methods/axisymmetric/theory.md)。
 //
 // res_roUy には -∑(F·S) が累積されており、時間進行は
 //   roUy^{n+1} = roUy^n + coef_DT * res_roUy * dt / V

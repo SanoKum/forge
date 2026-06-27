@@ -9,9 +9,9 @@
 // 使用箇所: convectiveFlux_d.cu の SLAU_d のみ — 質量流束の圧力散逸項 chi/c_hat·ΔP の c_hat → c'。
 //   (setDT のスペクトル半径前処理・block DPLUR の固有値前処理も試したが、いずれも block DPLUR の
 //    対角優位性を崩して有害と判明し不採用。詳細は計画
-//    .github/plans/time_integration-lowmach-preconditioning.md §9、docs/{convection,time_integration}/theory.md)
+//    plans/accepted/time_integration-lowmach-preconditioning.md §9、methods/{convection,time_integration}/theory.md)
 //
-// 設計・理論・検証は docs/convection/theory.md「低マッハ前処理」節を参照。
+// 設計・理論・検証は methods/convection/theory.md「低マッハ前処理」節を参照。
 
 #include "flowFormat.hpp"
 
@@ -38,8 +38,8 @@ flow_float lowMachCprime(flow_float c, flow_float velMag, flow_float Un, flow_fl
 
 // =============================================================================
 // Phase 4 (完全 Γ⁻¹A 前処理, lowMachPrecond=2) 用の土台ヘルパ。
-// 計画 .github/plans/time_integration-lowmach-preconditioning.md §5 Phase 4、
-// 導出は docs/time_integration/theory.md「低マッハ前処理固有系 (Weiss-Smith)」節。
+// 計画 plans/accepted/time_integration-lowmach-preconditioning.md §5 Phase 4、
+// 導出は methods/time_integration/theory.md「低マッハ前処理固有系 (Weiss-Smith)」節。
 // （Phase 1 の lowMachPrecond=1 経路は上の lowMachCprime のみを使い、以下には依存しない。）
 // =============================================================================
 

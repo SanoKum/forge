@@ -1,6 +1,6 @@
 #pragma once
 // 一般EOS flux Jacobian の固有系 (Method A: 数値 L=R^-1)。
-// plan time_integration-general-eos-jacobian.md / docs/time_integration。
+// plan time_integration-general-eos-jacobian.md / methods/time_integration。
 // CPG では h=c²/(γ-1)・χ=0 で従来の閉形式に簡約されるが、TP (NASA) では別物。
 // 法線方向 n の Euler 流束 Jacobian A_n = R Λ L を、実 H_t・κ・χ から構築する。
 //   音響:  r∓ = [1, u∓c n, H_t ∓ c U_n]

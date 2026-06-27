@@ -113,7 +113,7 @@ mid-chord 第1オフ壁 |U|: euler 123 / 層流 98 / SST ~1 と**物理ごとに
 
 ## 追補: node 境界半割面拡散 skip の回帰 (2026-06-27)
 
-plan [diffusion-node-boundary-real-distance.md](../../../design/accepted/diffusion-node-boundary-real-distance.md)
+plan [diffusion-node-boundary-real-distance.md](../../../plans/accepted/diffusion-node-boundary-real-distance.md)
 で node 境界半割面の k/ω 拡散を ∇·S 弱形式→**skip** 化 (commit af5b98d)。本 NACA-ML node SST でも
 平板 case/26 と同じ差分回帰を実施:
 

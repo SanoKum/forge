@@ -54,12 +54,12 @@ public:
                                      // 0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
                                      // 1: 緩和整合 scalar-DPLUR (流れ block と同一 dt_local/implicitRelax/nStepInner
                                      //    sweep で ρY_s を緩和し、要因2 の擬似時間緩和ミスマッチを解消)。
-                                     // 詳細: .github/plans/thermophysics-species-implicit-coupling.md。
+                                     // 詳細: plans/accepted/thermophysics-species-implicit-coupling.md。
     int implicitSolvePrecision = 0; // block-DPLUR 線形 solve の内部精度。0: float (既定・高速), 1: double。
                                     // 残差/状態は float のまま、Jacobian 構築+5×5 solve のみ double 化する混合精度
                                     // (iterative refinement)。軸対称 近軸の float 陰解固着 (Uy が −15 でなく
                                     // −0.6 固着) を根治するが double は遅い (RTX で ~×2.6)。詳細:
-                                    // .github/plans/precision-mixed-axisym.md。blockDPLUR==1・lowMachPrecond 0/1 でのみ有効。
+                                    // plans/archived/precision-mixed-axisym.md。blockDPLUR==1・lowMachPrecond 0/1 でのみ有効。
     // Ducros センサによる衝撃近傍の MUSCL リミタ強制 1 次化。0: off (既定・1 次化を使わない;
     // 衝撃近傍も MUSCL 2 次のまま)、1: on (衝撃近傍でリミタを強制 1 次化する従来挙動)。
     // off のときは ducros センサ配列を 0 に潰すため duc≤0.8 で apply_ducros_limiter がリミタを素通しする。
@@ -77,7 +77,7 @@ public:
     // をまとめて間引く。残差は毎ステップ device バッファに記録され、この間隔ごとに一括 D2H+CSV 書き出しされる
     // (毎ステップの値・行構成は不変)。`max cfl`/`dt` は console にこの間隔ごとに表示される。
     // 注意: dt 適応 (dtControl==1) はこの間隔とは独立 (下記)。詳細:
-    // .github/plans/architecture-residual-monitor-async.md, architecture-perphase-profiling-hotspot.md。
+    // plans/accepted/architecture-residual-monitor-async.md, architecture-perphase-profiling-hotspot.md。
     int monitorInterval = 1;
     int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
     flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
@@ -121,8 +121,8 @@ public:
     int RANSmodel = 0; // 0:none 1:SST
     int scalarDiffusion = 1; // 0:advection-only 1:advection+diffusion
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
-    int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (docs/turbulence §7.5)
-    int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (docs/turbulence §6.5)
+    int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (methods/turbulence §7.5)
+    int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (methods/turbulence §6.5)
     // SST 初期乱流 (IC に roK/roOmega が無いときの初期値)。既定 0 = 従来動作 (k=ω=0, ビット不変)。
     // ただし ω=0 は mu_t=k/ω が ill-posed で cold start から発散しやすい (特に node wt=1)。
     // 非 SST IC (層流場/メッシュ変換直後) から SST を始める場合は freestream 値 (例 inlet と同じ
@@ -133,7 +133,7 @@ public:
 
     // SST-DES (Detached-Eddy Simulation) length scale 修正。SST k 消滅項を
     //   D_k = β* ρ k ω = ρ k^{3/2}/l_RANS  →  ρ k^{3/2}/l_DDES
-    // へ切り替え、剥離域のみ LES、付着 BL は RANS のままにする (docs/turbulence §8)。
+    // へ切り替え、剥離域のみ LES、付着 BL は RANS のままにする (methods/turbulence §8)。
     //   0: RANS (既定・既存 SST とビット不変)
     //   1: DDES (Spalart 2006 シールド f_d で BL を保護)
     //   2: IDDES (Phase 2・未実装、現状は範囲のみ受理)
@@ -147,11 +147,11 @@ public:
     int isAxisymmetric = 0;
 
     // 離散化レイアウト。"cell": cell-centered FVM (既定・従来)、"node": node-centered
-    // (中点双対 median-dual) FVM。docs/discretization/ 参照。
+    // (中点双対 median-dual) FVM。methods/discretization/ 参照。
     std::string discretization = "cell";
 
     // 境界隣接 CV の 2 次再構成を 1 次に落とす (0:off 既定, 1:on)。node-centered の壁近傍
-    // 高マッハ発散の原因切り分け診断 / ロバス化。docs/discretization/implementation.md §7。
+    // 高マッハ発散の原因切り分け診断 / ロバス化。methods/discretization/implementation.md §7。
     int bndFirstOrder = 0;
 
     // node-centered 軸対称: 軸上 CV (R=0) の cell 中心に CV 面積加重重心を使うか (1:既定, ゼロ回転体積回避)。
@@ -160,18 +160,18 @@ public:
 
     // node-centered 壁 Dirichlet 試作 (0:既定 OFF)。1 で init u=0 + 運動量残差射影。
     // 注: 残差射影は壁圧力寄与も落とすため不正 (検証で壁全域発散)。正解は弱形式半割面 flux (Phase 2,
-    // docs/discretization/implementation.md §7.2)。本フラグは切り分け用に残置、既定 OFF。
+    // methods/discretization/implementation.md §7.2)。本フラグは切り分け用に残置、既定 OFF。
     int nodeWallDirichlet = 0;
 
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ)。node-centered の median-dual 近壁で
     // Green-Gauss 面勾配が checkerboard を持ち粘性 BL を振動させるための対策 (over-relaxed 法線項は別途維持)。
-    // 境界は bvar 境界値を LSQ 点として含め勾配を閉じる。docs/discretization/implementation.md §7.3。
+    // 境界は bvar 境界値を LSQ 点として含め勾配を閉じる。methods/discretization/implementation.md §7.3。
     int gradLSQ = 0;
 
     // node-centered の内部双対面で面補間係数を中点 fx=0.5 (φ_f=½(φ_A+φ_B)) に固定する
     // (0:既定 幾何 fx=dualFaceCent 射影比, 1:中点)。標準的な median-dual エッジ補間で近壁 checkerboard を
     // 低減するが、出口リップ近傍 near-wall の解を変えるため SU2 検証まで既定 OFF。cell モードは無関係。
-    // docs/discretization/implementation.md §7.4。
+    // methods/discretization/implementation.md §7.4。
     int nodeMidpointFx = 0;
 
     // node-centered 壁摩擦応力 (twall) を「壁ノードに接続する内部双対面 (壁ノード↔内部ノード) の粘性力
@@ -181,7 +181,7 @@ public:
     // 各内部双対面の粘性運動量 flux を壁ノード CV に集約し、壁半割面積で割って twall とする (= 流体が
     // 壁 CV に及ぼす粘性 traction; magnitude=τ_w)。運動量残差・y+ には触れない (内部ノード運動量は
     // viscousFlux_d が担うため二重計上回避; twall は出力専用で場は不変)。cell モードは無関係 (従来どおり
-    // viscousFlux_wall_d が res+twall を算出)。docs/diffusion/implementation.md, plans/diffusion-node-wall-viscous-distance.md §11。
+    // viscousFlux_wall_d が res+twall を算出)。methods/diffusion/implementation.md, plans/diffusion-node-wall-viscous-distance.md §11。
     int nodeWallStressEdgeKernel = 1;
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
@@ -206,7 +206,7 @@ public:
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
                                                // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)
 
-    // 非平衡凝縮 (4 モーメント方程式 ρg,ρQ2,ρQ1,ρQ0)。docs/condensation/ 参照。
+    // 非平衡凝縮 (4 モーメント方程式 ρg,ρQ2,ρQ1,ρQ0)。methods/condensation/ 参照。
     // Phase 1 はモーメントを受動スカラー (ソース=0) として輸送するのみ。既定 off で従来経路ビット不変。
     int condensation = 0;    // 0: off (既定), 1: on
     int nCondSpecies = 0;    // 凝縮種数。condensation==1 のとき >=1。当面 1 (N2)

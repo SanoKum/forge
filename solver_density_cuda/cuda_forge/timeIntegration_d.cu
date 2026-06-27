@@ -648,7 +648,7 @@ __global__ void implicit_defect_correction_d
 // block-DPLUR の閉形式 FVS 版。線形 solve の内部精度を ST (float 既定 / double で軸対称近軸を根治) で
 // テンプレート化。残差/状態 (flow_float=float) を ST へキャストして取り込み、R/L を作らず閉形式で
 // diag/nbr を畳み、ST で in-place 5×5 solve、補正を float dq_new へ書戻す (混合精度 iterative refinement)。
-// 詳細: .github/plans/precision-mixed-axisym.md。
+// 詳細: plans/archived/precision-mixed-axisym.md。
 template<typename ST>
 __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correction_block_d
 (
@@ -729,7 +729,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 
  // node-centered 壁 no-slip: 壁ノードで運動量3行 (index1=roUx,2=roUy,3=roUz) を decouple する (nullptr 可)。
  // SU2 `DeleteValsRowi` 相当。残差射影だけでは block-DPLUR が壁運動量を連成したまま dq≠0 を返し速度 drift
- // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。docs/discretization/implementation.md §7.2.1。
+ // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。methods/discretization/implementation.md §7.2.1。
  geom_int* wall_flag,
 
  // node-centered 弱形式 (Phase 2, 5e): node モードはゴーストセルを使わない。境界半割面 (has_nbr=false=ゴースト
@@ -915,7 +915,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 // **Sherman-Morrison 解法**: Γ_c=I+α g rᵀ がランク1なので D=D0+γ g rᵀ (D0=物理ブロック・良条件)。
 //   D0 を float で 2 RHS 同時 (solve_5x5_2rhs) に解き、悪条件 ~1/β は分母スカラーのみ double に隔離。
 //   FP64 を回避して 0/1 カーネルに近い速度。β=1 (超音速) で Γ_c=I・Δτ'=Δτ・フラックス同一ゆえ現行と解一致。
-// 理論: docs/time_integration/theory.md「低マッハ前処理固有系」、計画 §5 Phase 4。
+// 理論: methods/time_integration/theory.md「低マッハ前処理固有系」、計画 §5 Phase 4。
 __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correction_block_precond_d
 (
  int loop,

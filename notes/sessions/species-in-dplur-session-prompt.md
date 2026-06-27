@@ -165,7 +165,7 @@ CPG β=0 既定はビット不変 (gating)・CPG cfl2 安定を確認。field �
 (min-clamp / 目標Θ) は試したが棄却: min-clamp は最内セルしか触れず CFL≳4 で不足、目標Θ形 (係数=cfl_pseudo/C)
 は face 項のぶん実効 Θ が C/2 になり C=1 で過減衰発散。**設定値と実効 Θ が一対一でない**ため名称を約束しない。
 docs に「`axisTimestepBeta` は数値スペクトル半径の重み・Θ≈CFL/β は厳密保証でない・β≈CFL/2 は case/28 経験則」を明記
-([docs/axisymmetric/theory.md](../../docs/axisymmetric/theory.md) / [implementation.md](../../docs/axisymmetric/implementation.md))。
+([methods/axisymmetric/theory.md](../../methods/axisymmetric/theory.md) / [implementation.md](../../methods/axisymmetric/implementation.md))。
 
 **CFL4 長時間 + down-test (検証完了)**: β=2 で CFL4 安定 (8000步, 残差 5.4e-6→4.5e-6 緩やか低下)。
 質量流量 in/out 比 1.362 (baseline 1.363 と一致)、ΣY=1, He コア保持。**CFL4→1 down-test で残差再低下**
@@ -293,13 +293,13 @@ setDT とは別の独立スペクトル半径を使っていないか確認)。
 
 ## 進め方・落とし穴
 
-- **開発フロー (AGENTS.md)**: 数値スキーム変更 → 4 ステップ厳守。①`docs/time_integration/`(block へのクロス
-  項)theory/implementation 更新、②`docs/thermophysics/`(EOS の `∂T,∂P,∂h/∂Y`)更新、③本ファイル/
+- **開発フロー (AGENTS.md)**: 数値スキーム変更 → 4 ステップ厳守。①`methods/time_integration/`(block へのクロス
+  項)theory/implementation 更新、②`methods/thermophysics/`(EOS の `∂T,∂P,∂h/∂Y`)更新、③本ファイル/
   `.github/plans/thermophysics-multicomponent-tpgas.md` §10 の plan を `status` 込みで更新、④実装。
 - **stale build trap** ([[stale-build-struct-layout-trap]]): block サイズや `solverConfig.hpp` 変更後は
   `ninja -C .build-native/relwithdebinfo -t clean && ninja` で **full rebuild**(差分は step0 NaN 凍結)。
 - **native build**: `.build-native/relwithdebinfo/forge`(nvcc 12, sm_86)。`tools/build_native_wsl.sh`。
-- **CFL の定義**: 定常は `cfl_pseudo` が実効(`setDT_d.cu`)。`cfl` は表示用。`guide/solver-settings.md`。
+- **CFL の定義**: 定常は `cfl_pseudo` が実効(`setDT_d.cu`)。`cfl` は表示用。`procedures/solver-settings.md`。
 - **収束報告の規律** ([[convergence-check-discipline]]): `rms_ro` 単独で判断しない・全残差列・ツール経由。
 - **run 索引**: `case/28.cutler_coaxial_jet/README.md` の「## 計算 run 一覧」を同期。新 run は
   `run_NNNN_<slug>` 連番(現在 run_0039 まで使用、0040–0044 は CFL 上限探索で破棄済み)。
@@ -309,7 +309,7 @@ setDT とは別の独立スペクトル半径を使っていないか確認)。
 
 - 分析プロンプト(H1–H5 切り分け): `.github/plans/cutler-tp-multispecies-cfl-analysis-prompt.md`
 - plan: `.github/plans/thermophysics-multicomponent-tpgas.md`(§10 多成分 implicit 結合)
-- docs: `docs/thermophysics/theory.md`(sensible-enthalpy datum)/`implementation.md`, `docs/time_integration/`
+- docs: `methods/thermophysics/theory.md`(sensible-enthalpy datum)/`implementation.md`, `methods/time_integration/`
 - case README: `case/28.cutler_coaxial_jet/README.md`(CPG vs TP / CFL 上限節), `case/16.nozzle_wys/README.md`
 - memory: [[cutler-cpg-vs-tp-dplur-sst]] / [[wys-tp-divergence-is-cold-not-multispecies]] /
   [[implicit-blockdplur-config]] / [[forge-implicit-inner-cfl-tuning]]

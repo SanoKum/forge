@@ -88,7 +88,7 @@ __global__ void WALE_d
 
 // SST 渦粘性: mu_t = rho * a1 * k / max(a1 * omega, S * F2)
 // 軸対称 (isAxisymmetric=1) では planar 速度勾配に現れないフープひずみ
-// S_thetatheta = u_r/r (= axisym_uy_over_r) を S^2 に加える (docs/turbulence/theory.md §7.2)。
+// S_thetatheta = u_r/r (= axisym_uy_over_r) を S^2 に加える (methods/turbulence/theory.md §7.2)。
 __global__ void sst_eddy_viscosity_d(
     geom_int nCells,
     flow_float* ro,
@@ -145,7 +145,7 @@ __global__ void sst_eddy_viscosity_d(
 
 
 // ===========================================================================
-// SST-DDES length scale (docs/turbulence §8, plan turbulence-iddes-sst.md §4.4)
+// SST-DDES length scale (methods/turbulence §8, plan turbulence-iddes-sst.md §4.4)
 // ---------------------------------------------------------------------------
 // Spalart et al. (2006) シールド関数 f_d で剥離域のみ LES、付着 BL は RANS に保つ。
 //   r_d = (ν_t + ν) / (κ² d² √(∂Ui/∂xj·∂Ui/∂xj))      κ=0.41

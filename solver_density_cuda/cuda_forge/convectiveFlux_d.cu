@@ -7,7 +7,7 @@
 // free-stream 保存: 対流流束の圧力項を (p_tilde - d_pRef)*s で組むための基準静圧。
 // wrapper で cfg.pRef を cudaMemcpyToSymbol。既定 0.0 で従来挙動 (ビット不変)。
 // 非直交メッシュで大きな p*s を float32 加算する際の桁落ち(metric closure 由来の
-// 偽運動量源)を抑える。詳細: .github/plans/freestream-preserving-flux.md
+// 偽運動量源)を抑える。詳細: plans/active/convection-freestream-preserving-flux.md
 __constant__ flow_float d_pRef;
 
 // D2a/D4 診断 (env ゲート, 既定 off = ビット不変): 多成分 TP の contact 混合層 limit-cycle 切り分け。
@@ -446,7 +446,7 @@ __global__ void SLAU_d
         }
         // 低マッハ Thornber 再構成補正: L/R 速度ジャンプを z=min(M,1) で縮約し、低マッハで
         // O(1/M) に増大する速度ジャンプ由来の散逸を抑える。lowMachThornber==0 で恒等 (ビット不変)、
-        // M>=1 で z=1 (超音速域不変)。圧力 P_L/R・密度 ro_L/R は不変。理論は docs/convection/theory.md。
+        // M>=1 で z=1 (超音速域不変)。圧力 P_L/R・密度 ro_L/R は不変。理論は methods/convection/theory.md。
         if (lowMachThornber == 1) {
             flow_float c_hat_th = 0.5*(sonic[ic0] + sonic[ic1]);
             flow_float v2L_th = Ux_L*Ux_L + Uy_L*Uy_L + Uz_L*Uz_L;

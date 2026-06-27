@@ -257,7 +257,7 @@ __global__ void viscousFlux_wall_d
  // 軸対称: 完全発散 (u_r/r 込み) を体積粘性項に使う (内部面と同趣旨)
  int isAxisymmetric, flow_float* axisym_divU,
 
- // SST automatic wall treatment (docs/turbulence §6.5 (c)):
+ // SST automatic wall treatment (methods/turbulence §6.5 (c)):
  //   wallTreatment==1 で接線せん断を modeled τ_w=ρu_τ² に置換。utau_b は事前算出済み u_τ。
  int wallTreatment, flow_float* utau_b,
  // node-centered (1): 壁法線 Laplacian/熱流束を ghost+dcc でなくセル勾配 ∇φ·S (bvar 壁閉包) で評価。
@@ -338,7 +338,7 @@ __global__ void viscousFlux_wall_d
         tau_z += mu_total*(dUxdzf*sxx +dUydzf*syy +dUzdzf*szz);
         tau_z += -mu_total*2.0/3.0*(divu)*szz;
 
-        // SST automatic wall treatment (docs/turbulence §6.5 (c)): 粗メッシュで分子勾配が τ_w を
+        // SST automatic wall treatment (methods/turbulence §6.5 (c)): 粗メッシュで分子勾配が τ_w を
         // 過小評価するため、接線せん断を modeled τ_w=ρu_τ² (有効壁粘性) に置換する。u_τ は壁関数で
         // 事前算出済み (ransWallFunction)。法線は単位法線 n、接線方向 ê_t はセル接線速度から取る。
         // y⁺→0 では u_τ²=νU_t/y より分子勾配に縮退、対数層では壁関数化し、全層で連続。

@@ -9,17 +9,18 @@
 | 文書 | 役割 |
 | --- | --- |
 | `AGENTS.md` (本ファイル) | 全ルール・方針の正本。常時参照される基準 |
-| [`guide/`](guide/README.md) | forge を使う/開発するための**運用・開発ハンドブック**。以下が主要文書 |
-| [`guide/calculation-workflow.md`](guide/calculation-workflow.md) | 計算ケース準備・メッシュ生成/変換・`forge` 実行の標準手順 |
-| [`guide/divergence-and-startup.md`](guide/divergence-and-startup.md) | 発散の主因と安定起動の手順 (新規計算 / 発散時に必ず参照) |
-| [`guide/solver-settings.md`](guide/solver-settings.md) | `convMethod` / `limiter` などの数値設定リファレンス |
-| [`guide/su2-cross-check.md`](guide/su2-cross-check.md) | 同一メッシュ・同一 BC で SU2 と比較し forge 固有の問題を切り分ける手順 |
-| [`guide/development-environment.md`](guide/development-environment.md) | 開発環境とビルド (Docker / WSL native) の方針 |
-| [`guide/coding-conventions.md`](guide/coding-conventions.md) | ソース構成・C++/CUDA 命名規約・ビルド/テスト実行手順 |
-| [`guide/verification/`](guide/verification/README.md) | 検証ケース選定 (`README.md`) と各標準検証ケースの個別手順 |
-| [`design/`](design/README.md) | 変更単位の設計判断文書。`active/` (検討中・進行中) / `accepted/` (現役の設計判断) / `archived/` (superseded・終了)。着手前に参照する基準文書 |
+| [`procedures/`](procedures/README.md) | forge を使う/開発するための**運用・開発ハンドブック**。以下が主要文書 |
+| [`procedures/calculation-workflow.md`](procedures/calculation-workflow.md) | 計算ケース準備・メッシュ生成/変換・`forge` 実行の標準手順 |
+| [`procedures/divergence-and-startup.md`](procedures/divergence-and-startup.md) | 発散の主因と安定起動の手順 (新規計算 / 発散時に必ず参照) |
+| [`procedures/solver-settings.md`](procedures/solver-settings.md) | `convMethod` / `limiter` などの数値設定リファレンス |
+| [`procedures/su2-cross-check.md`](procedures/su2-cross-check.md) | 同一メッシュ・同一 BC で SU2 と比較し forge 固有の問題を切り分ける手順 |
+| [`procedures/development-environment.md`](procedures/development-environment.md) | 開発環境とビルド (Docker / WSL native) の方針 |
+| [`procedures/coding-conventions.md`](procedures/coding-conventions.md) | ソース構成・C++/CUDA 命名規約・ビルド/テスト実行手順 |
+| [`procedures/verification/`](procedures/verification/README.md) | 検証ケース選定 (`README.md`) と各標準検証ケースの個別手順 |
+| [`plans/`](plans/README.md) | 変更単位の設計判断文書。`active/` (検討中・進行中) / `accepted/` (現役の設計判断) / `archived/` (superseded・終了)。着手前に参照する基準文書 |
 | [`notes/`](notes/README.md) | 調査メモ・作業ログ。`investigations/` (技術調査・サーベイ) / `sessions/` (使い捨て作業プロンプト) |
-| [`docs/`](docs/index.md) | 現在の仕様と解説 (機能単位 `<area>/`)。「なぜそうしたか」は `design/` 側 |
+| [`methods/`](methods/index.md) | 現在の仕様と解説 (機能単位 `<area>/`)。「なぜそうしたか」は `plans/` 側 |
+| `papers/` | 参照文献 (PDF)。理論・スキームの一次資料。本文では引用元として参照 |
 
 ## 言語方針
 
@@ -29,11 +30,11 @@
 
 ## 計算・実行ルール
 
-計算の実行方法、ケース準備、メッシュ生成、メッシュ変換、`forge` の起動、Docker 経由の Gmsh/ParaView 利用について回答するときは、まず `guide/calculation-workflow.md` を参照し、その手順に合わせて案内すること。計算手順の本文はこのファイルに重複記載しない。
+計算の実行方法、ケース準備、メッシュ生成、メッシュ変換、`forge` の起動、Docker 経由の Gmsh/ParaView 利用について回答するときは、まず `procedures/calculation-workflow.md` を参照し、その手順に合わせて案内すること。計算手順の本文はこのファイルに重複記載しない。
 
-`solverConfig.yaml` の `convMethod`・`limiter` などの数値設定を変更・確認するときは、必ず `guide/solver-settings.md` を参照すること。設定値の意味を記憶や推測で判断しないこと。
+`solverConfig.yaml` の `convMethod`・`limiter` などの数値設定を変更・確認するときは、必ず `procedures/solver-settings.md` を参照すること。設定値の意味を記憶や推測で判断しないこと。
 
-**新規計算の投入時、および計算が発散 (NaN / 残差爆発) したときは、まず [`guide/divergence-and-startup.md`](guide/divergence-and-startup.md) を参照し、そのチェックリストと段階起動手順に従うこと。** 発散の大半は物理やメッシュでなく投入設定 (初期値が入口流れと不整合 / 超音速向け BC を亜音速に使用・出口逆流 Pt/Tt 未設定 / 初手から 2 次移流・乱流・no-slip / 非直交での free-stream 桁落ち) が原因であり、易しい条件で収束させてから引き継ぎ計算で段階的に上げるのが基本。
+**新規計算の投入時、および計算が発散 (NaN / 残差爆発) したときは、まず [`procedures/divergence-and-startup.md`](procedures/divergence-and-startup.md) を参照し、そのチェックリストと段階起動手順に従うこと。** 発散の大半は物理やメッシュでなく投入設定 (初期値が入口流れと不整合 / 超音速向け BC を亜音速に使用・出口逆流 Pt/Tt 未設定 / 初手から 2 次移流・乱流・no-slip / 非直交での free-stream 桁落ち) が原因であり、易しい条件で収束させてから引き継ぎ計算で段階的に上げるのが基本。
 
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。
 また、計算を実行した場合は `residual_history.csv` から `residual_history.png` も生成して残すこと。
@@ -49,7 +50,7 @@
 - **対象 case に `README.md` が無ければ新規作成**し、ケース概要に続けて run 一覧表を置く。
 - **run_* を作成・破棄したら同表を必ず同期**する。列は最低限: `run_*` ディレクトリ名 / 目的・主要設定差分 / 主要結果・成果物 / 状態 (`active` / `破棄予定` / `ref`=入力リファレンスとして保持)。
 - **命名規約**: `run_NNNN_<slug>` とし、`<slug>` は目的が一目で分かる語にする (例 `run_0015_prod_double`)。**既存 run と番号が衝突しない連番**を使い、衝突や系列違いが起きたら表の備考でグルーピングを明記する。
-- 表の本文は簡潔に (1 run = 1 行)。詳細な考察は `design/` の該当計画に書き、表からはその計画へリンクする。
+- 表の本文は簡潔に (1 run = 1 行)。詳細な考察は `plans/` の該当計画に書き、表からはその計画へリンクする。
 
 **NaN / 発散チェック (必須)**: 計算が「完走 (exit 0)」しても妥当とは限らない。**初期ステップから発散している**ことが多いため、結果を使う前に必ず NaN/Inf の有無を確認すること。
 
@@ -63,10 +64,10 @@
 **収束確認 (必須・NaN チェックとは別)**: 「NaN が無い」=「収束した」ではない。結果を使う/報告する前に、各保存量の残差が**実際に下がりきっているか**を必ず確認すること。
 
 - **判定は手作業の目視ではなく `solver_density_cuda/tools/check_convergence.py <run_dir> ...` を実行して行う** (本ルールの実体化ツール)。全残差列の低下桁数・トレンド・NaN を判定し `PASS / NOT CONVERGED / DIVERGED` を返す。**「収束した」「一致した」と報告する応答には、このツールの VERDICT を根拠として必ず貼ること** (これを怠り `rms_ro` だけで「収束」と誤報告した事例があるため、ツール経由を必須とする)。未収束なら「未収束」と明記し、未収束のトランジェント同士の場の比較を「一致」と表現しない。
-- **`rms_ro` だけで判断しない**。`residual_history.csv` の **全列** (`rms_ro`,`rms_roUx`,`rms_roUy`,`rms_roUz`,`rms_roe`、RANS 時は `rms_roK`,`rms_roOmega`) のトレンドを見る。`rms_ro` が低くても、運動量 (特に軸対称の `rms_roUy`) や乱流 (`rms_roK`/`rms_roOmega`) が**下げ止まり・横ばい・上昇**していれば未収束。実例: 軸対称 SST で `rms_ro`≈3e-5 でも `rms_roUy`≈1e-2 停滞・`rms_roK` 増大=近軸が未収束だった ([architecture-axisym-axis-singularity.md](design/accepted/architecture-axisym-axis-singularity.md))。
+- **`rms_ro` だけで判断しない**。`residual_history.csv` の **全列** (`rms_ro`,`rms_roUx`,`rms_roUy`,`rms_roUz`,`rms_roe`、RANS 時は `rms_roK`,`rms_roOmega`) のトレンドを見る。`rms_ro` が低くても、運動量 (特に軸対称の `rms_roUy`) や乱流 (`rms_roK`/`rms_roOmega`) が**下げ止まり・横ばい・上昇**していれば未収束。実例: 軸対称 SST で `rms_ro`≈3e-5 でも `rms_roUy`≈1e-2 停滞・`rms_roK` 増大=近軸が未収束だった ([architecture-axisym-axis-singularity.md](plans/accepted/architecture-axisym-axis-singularity.md))。
 - **残差プラトーは「収束」ではない**。下げ止まる場合は、積分量 (massflux/推力/出口諸量) が**定常化**しているか、場が**発達しきっている**かを併せて確認する (リミットサイクルの可能性)。
 - **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
-- 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`guide/su2-cross-check.md`](guide/su2-cross-check.md) を参照。
+- 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`procedures/su2-cross-check.md`](procedures/su2-cross-check.md) を参照。
 
 **準定常確認 (必須・収束確認とは別)**: 残差が下がっていても (またはプラトーでも)、**報告する派生量そのもの** (衝撃位置・上下非対称・CL/CD・massflux・推力・peak μt/μ・出口諸量 等) が**定常化 (頭打ち) しているか**は別問題である。**残差プラトー ≠ 量の定常化**であり、**過渡ピーク ≠ 飽和値**である。これを怠り、過渡ピークの量を定常値として報告した事例があるため、量の報告にはツール経由の確認を必須とする。
 
@@ -78,44 +79,44 @@
 
 **メッシュ変更後の restart (必須)**: メッシュを変えた (quad↔tri↔構造化, 解像度変更) ときは **uniform 初期値から計算を始めない** (超音速/衝撃波/SST は uniform IC から step 数回で発散する)。`solver_density_cuda/tools/interp_field.py SRC.h5 新メッシュ入力.h5` で過去の収束済み場を**最近傍interpolateして cross-mesh restart** する (保存量+roK/roOmega+スカラー輸送を移植、wall_dist は移植せず新メッシュの値を使う)。同一メッシュの restart は `restart_field.py`。
 
-**メッシュ品質チェック (計算前・必須)**: メッシュを HDF5 化したら計算投入前に必ず `solver_density_cuda/tools/check_mesh_quality.py <mesh.h5>` で品質を確認する。**アスペクト比 ≤ 1000、スキューネス ≤ 0.9 を目標**とし、`VERDICT: FAIL` のメッシュは投入しない。近壁細分化で AR が増えやすいので接線長と第一セル厚のバランスを取る (高 Re では y+~1 と AR≤1000 が両立しないことがあり、その場合 y+~30-80 + `wallTreatmentSST=1` を選ぶ)。詳細は [`guide/calculation-workflow.md`](guide/calculation-workflow.md) の「メッシュ品質チェック」。「メッシュできた/収束した」と報告する応答には品質 VERDICT も併記する。
+**メッシュ品質チェック (計算前・必須)**: メッシュを HDF5 化したら計算投入前に必ず `solver_density_cuda/tools/check_mesh_quality.py <mesh.h5>` で品質を確認する。**アスペクト比 ≤ 1000、スキューネス ≤ 0.9 を目標**とし、`VERDICT: FAIL` のメッシュは投入しない。近壁細分化で AR が増えやすいので接線長と第一セル厚のバランスを取る (高 Re では y+~1 と AR≤1000 が両立しないことがあり、その場合 y+~30-80 + `wallTreatmentSST=1` を選ぶ)。詳細は [`procedures/calculation-workflow.md`](procedures/calculation-workflow.md) の「メッシュ品質チェック」。「メッシュできた/収束した」と報告する応答には品質 VERDICT も併記する。
 
-forge の結果が「軸対称・乱流・近軸で forge だけ妙な値になる」ようなときは、推測で結論づけず [`guide/su2-cross-check.md`](guide/su2-cross-check.md) の手順で **同一メッシュ・同一 BC の SU2 と比較**して切り分けること。
+forge の結果が「軸対称・乱流・近軸で forge だけ妙な値になる」ようなときは、推測で結論づけず [`procedures/su2-cross-check.md`](procedures/su2-cross-check.md) の手順で **同一メッシュ・同一 BC の SU2 と比較**して切り分けること。
 
-開発環境に関する既定ルールは `guide/development-environment.md` を参照すること。通常の開発は Docker コンテナを基本とし、NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う場合は、Docker 内でうまくいかないケースを想定して WSL native または Linux native の手順を優先する。さらに、**計算速度の評価・比較・プロファイル作業は原則 native で行う** (Docker は計測値が不安定でツールも揃わないため、速度評価の基準環境としない)。詳細は `guide/development-environment.md` の「速度評価・ベンチマークは native を既定とする」を参照。
+開発環境に関する既定ルールは `procedures/development-environment.md` を参照すること。通常の開発は Docker コンテナを基本とし、NVIDIA 提供の GPU 速度計測・プロファイリングツールを使う場合は、Docker 内でうまくいかないケースを想定して WSL native または Linux native の手順を優先する。さらに、**計算速度の評価・比較・プロファイル作業は原則 native で行う** (Docker は計測値が不安定でツールも揃わないため、速度評価の基準環境としない)。詳細は `procedures/development-environment.md` の「速度評価・ベンチマークは native を既定とする」を参照。
 
-コード変更時の検証ケースの選び方と個別の確認手順は `guide/verification/README.md` を参照すること。
+コード変更時の検証ケースの選び方と個別の確認手順は `procedures/verification/README.md` を参照すること。
 
-`design/` 配下の `.md` は、変更単位の設計判断文書 (実装計画) として扱うこと。対象タスクに対応する計画が存在する場合、実装や調査を進める前にまずその `.md` を参照すること。計画一覧は [`design/README.md`](design/README.md) を使う (`active/` が進行中、`accepted/` が現役の設計判断、`archived/` が superseded・終了)。コード変更を伴わない技術調査・サーベイは `notes/investigations/`、使い捨ての作業プロンプトは `notes/sessions/` に置く。
+`plans/` 配下の `.md` は、変更単位の設計判断文書 (実装計画) として扱うこと。対象タスクに対応する計画が存在する場合、実装や調査を進める前にまずその `.md` を参照すること。計画一覧は [`plans/README.md`](plans/README.md) を使う (`active/` が進行中、`accepted/` が現役の設計判断、`archived/` が superseded・終了)。コード変更を伴わない技術調査・サーベイは `notes/investigations/`、使い捨ての作業プロンプトは `notes/sessions/` に置く。
 
-実装方針を変更する場合は、先に対応する `design/active/*.md` を更新してから実装に移ること。計画未更新のまま実装だけを先行させないこと。
+実装方針を変更する場合は、先に対応する `plans/active/*.md` を更新してから実装に移ること。計画未更新のまま実装だけを先行させないこと。
 
-ユーザーが solver のコード構造、アーキテクチャ、モジュール責務について質問した場合は、`docs/architecture/overview.md` を既定の参照先とすること。
+ユーザーが solver のコード構造、アーキテクチャ、モジュール責務について質問した場合は、`methods/architecture/overview.md` を既定の参照先とすること。
 
 ## ドキュメント整備方針
 
-forge の理論的背景と実装解説は `docs/` 配下に機能単位 (物理プロセス / 数値処理) のサブディレクトリで蓄積する。運用方針の本文は `docs/README.md` を参照し、本ファイルには重複記載しない。
+forge の理論的背景と実装解説は `methods/` 配下に機能単位 (物理プロセス / 数値処理) のサブディレクトリで蓄積する。運用方針の本文は `methods/README.md` を参照し、本ファイルには重複記載しない。
 
-- 新規に理論背景や実装解説を書くときは `docs/<area>/` (例: `gradient/`, `limiter/`, `convection/`, `diffusion/`, `time_integration/`, `boundary/`, `poisson/`, `architecture/`) の配下に追加する。スキーム名 (Roe / SLAU / KEEP など) は対応する機能ディレクトリ内のセクションまたはファイルとして扱い、新たなトピック単位ディレクトリは作らない。
+- 新規に理論背景や実装解説を書くときは `methods/<area>/` (例: `gradient/`, `limiter/`, `convection/`, `diffusion/`, `time_integration/`, `boundary/`, `poisson/`, `architecture/`) の配下に追加する。スキーム名 (Roe / SLAU / KEEP など) は対応する機能ディレクトリ内のセクションまたはファイルとして扱い、新たなトピック単位ディレクトリは作らない。
 - 既存ドキュメントがある話題は新規ファイルを作らず、該当ファイルを更新する。
-- 理論・実装に関する質問に答えるときは、該当する `docs/<area>/*.md` を既定の参照先とする。
-- ファイルの追加・改名・削除を行った場合は `docs/index.md` の目次を必ず同期させる。
+- 理論・実装に関する質問に答えるときは、該当する `methods/<area>/*.md` を既定の参照先とする。
+- ファイルの追加・改名・削除を行った場合は `methods/index.md` の目次を必ず同期させる。
 - 数式は KaTeX 記法 (インライン `$...$`、ブロック `$$...$$`)、図は mermaid フェンスまたは画像で統一する。
-- `docs/` は現在の仕様・解説 (理論+実装を機能単位 `<area>/` に集約。`theory.md`/`implementation.md` の強制分割は廃止し、規模が大きい領域のみ分ける)、`design/` は変更単位の設計判断、`notes/` は調査・作業ログ、`guide/` は運用・開発の手順/ルール (計算手順・発散対処・設定・SU2比較・開発環境・コーディング規約・検証ケース)、という棲み分けを守る。`.github/` は GitHub プラットフォーム設定 (`copilot-instructions.md` 等) のみ。
+- `methods/` は現在の仕様・解説 (理論+実装を機能単位 `<area>/` に集約。`theory.md`/`implementation.md` の強制分割は廃止し、規模が大きい領域のみ分ける)、`plans/` は変更単位の設計判断、`notes/` は調査・作業ログ、`procedures/` は運用・開発の手順/ルール (計算手順・発散対処・設定・SU2比較・開発環境・コーディング規約・検証ケース)、という棲み分けを守る。`.github/` は GitHub プラットフォーム設定 (`copilot-instructions.md` 等) のみ。
 
 ## 開発フロー (新規機能・設計変更)
 
 バグ修正と軽微な変更を除く「新規機能追加」「数値スキームや設計方針の変更」を行うときは、必ず次の 4 ステップを順に踏むこと。
 
-1. 該当する [`docs/<area>/`](docs/) の現在仕様ドキュメントを更新する (理論・実装の両面。領域が小さければ 1 ファイル内の節で分ける)。
-2. [`design/_template.md`](design/_template.md) を雛型に `design/active/<area>-<short-slug>.md` を作成し、`related_docs` で 1. のファイルをリンクする。[`design/README.md`](design/README.md) の `active` 一覧にも追記する。
+1. 該当する [`methods/<area>/`](methods/) の現在仕様ドキュメントを更新する (理論・実装の両面。領域が小さければ 1 ファイル内の節で分ける)。
+2. [`plans/_template.md`](plans/_template.md) を雛型に `plans/active/<area>-<short-slug>.md` を作成し、`related_docs` で 1. のファイルをリンクする。[`plans/README.md`](plans/README.md) の `active` 一覧にも追記する。
 3. 以上 2 つが揃ってから実装に着手する。
 
 完了時には次を行うこと。
 
-- 計画の `status` を `done` に更新し、`## 変更ログ` に実装・検証結果を追記する。**ファイルを `design/active/` から `design/accepted/` へ移動する** (superseded になった場合は `design/archived/`、後継を本文に明記)。ファイル名は変えない (リンク維持)。
-- [`design/README.md`](design/README.md) の一覧表も同期させる (移動元・移動先の両セクション)。
-- 1. で触った docs と [`docs/index.md`](docs/index.md) の整合性を確認する。
+- 計画の `status` を `done` に更新し、`## 変更ログ` に実装・検証結果を追記する。**ファイルを `plans/active/` から `plans/accepted/` へ移動する** (superseded になった場合は `plans/archived/`、後継を本文に明記)。ファイル名は変えない (リンク維持)。
+- [`plans/README.md`](plans/README.md) の一覧表も同期させる (移動元・移動先の両セクション)。
+- 1. で触った docs と [`methods/index.md`](methods/index.md) の整合性を確認する。
 
 例外 (本フローを要しないもの):
 
@@ -131,7 +132,7 @@ forge の理論的背景と実装解説は `docs/` 配下に機能単位 (物理
 実装または修正が一段落し、検証 (ビルド成功 + 該当検証ケースの結果が妥当) まで確認できたら、その機能・計画単位で git commit し、現在の feature ブランチへ push すること。本節は検証済みマイルストーンでの commit/push を事前承認するものとして扱い、都度の確認は不要とする。
 
 - **commit タイミング**: 機能・計画単位でまとめて commit する。段階検証ごと・小さな編集ごとには commit しない。plan を伴う作業では plan の `status: done` 化と整合させる。
-- **commit 対象**: `solver_density_cuda/` などのソース、`docs/`、`design/`、`notes/` といった意味あるソース・文書変更を対象とする。`case/` 配下の検証 run 成果物 (`res_*.h5`, `*.xmf`, `residual_history.csv` / `.png`, `forge_run.log` など) は commit に含めない。検証 run の入力 config (`solverConfig.yaml`, `bcondConfig.yaml` 等) は、リファレンスとして意図的に残したい場合のみ明示的に `git add` する。
+- **commit 対象**: `solver_density_cuda/` などのソース、`methods/`、`plans/`、`notes/` といった意味あるソース・文書変更を対象とする。`case/` 配下の検証 run 成果物 (`res_*.h5`, `*.xmf`, `residual_history.csv` / `.png`, `forge_run.log` など) は commit に含めない。検証 run の入力 config (`solverConfig.yaml`, `bcondConfig.yaml` 等) は、リファレンスとして意図的に残したい場合のみ明示的に `git add` する。
 - **push**: commit 後は現在の feature ブランチへ push する。`main` へ直接 commit / push しない。`main` 上にいる場合は先に feature ブランチを切ってから作業する。
 - **commit メッセージ**: 英語の命令形で記述する (例: `Add Menter SST turbulence model with dilatation correction`)。
 - 無関係な既存の作業ツリー変更を巻き込まないよう、commit 前に `git status` / `git diff` で対象を確認すること。

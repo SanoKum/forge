@@ -92,7 +92,7 @@ public:
         "src_jac_omega",
         // SST automatic wall treatment (wallTreatmentSST==1) 用: wall-adjacent セルの
         // wall-function 生産 P_k = ρu_τ⁴/ν·g(1-g) (g=du⁺/dy⁺) を格納。非 wall セルは -1
-        // (inactive)。ransSource が >=0 のセルで標準 P_k をこの値に置換する (docs/turbulence §6.5(d))。
+        // (inactive)。ransSource が >=0 のセルで標準 P_k をこの値に置換する (methods/turbulence §6.5(d))。
         "wf_pk",
         // SST automatic wall treatment (node, wallTreatmentSST==1) 用: 壁ノードの壁関数せん断応力
         // τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ壁ノードの内部双対面
@@ -105,7 +105,7 @@ public:
         // 陰化し安定 cfl_pseudo を一桁以上引き上げる。defect-correction なので定常解は不変。
         "transport_diag_k",
         "transport_diag_omega",
-        // SST-DES (DESmode>0) 用 (docs/turbulence §8)。delta_les は幾何セットアップ時に 1 回計算する
+        // SST-DES (DESmode>0) 用 (methods/turbulence §8)。delta_les は幾何セットアップ時に 1 回計算する
         // 静的量、他 3 つは毎 step の診断量。float32 で f_d が 0/1 へ張り付くのは NaN より危険なため
         // r_d / f_d は必ず出力する (plan §4.2)。
         "delta_les",   // per-cell グリッドスケール Δmax (隣接重心距離の最大)
@@ -176,7 +176,7 @@ public:
     std::vector<std::string> speciesVarNames; // ["roY0","roY1",...]
 
     // 非平衡凝縮 (4 モーメント方程式)。registerCondensation() で登録された凝縮種数。
-    // 0 のときは凝縮変数を一切登録せず従来経路を保つ。docs/condensation/ 参照。
+    // 0 のときは凝縮変数を一切登録せず従来経路を保つ。methods/condensation/ 参照。
     int nCondSpeciesRegistered = 0;
     // 凝縮モーメントの保存量名 (登録順)。1 凝縮種あたり 4 本: "rog_{s}","roQ2_{s}","roQ1_{s}","roQ0_{s}"。
     // 原始量は ro を外した名前 ("g_{s}" 等)、N/M/res/src_jac/transport_diag も命名規約で導出する

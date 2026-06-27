@@ -10,8 +10,8 @@ device 実装 (`cuda_forge/lowMachPrecond_d.cuh` の lowMachGammaC / lowMachGamm
   4. β=1 (超音速) で Γ_c = Γ_c⁻¹ = I
   5. 前処理ヤコビアン P = Γ_c⁻¹ A_c の固有値 = {Uₙ,Uₙ,Uₙ, ½(1+β)Uₙ ± c'}
 
-理論は docs/time_integration/theory.md「低マッハ前処理固有系 (Weiss-Smith)」節、
-計画は .github/plans/time_integration-lowmach-preconditioning.md §5 Phase 4。
+理論は methods/time_integration/theory.md「低マッハ前処理固有系 (Weiss-Smith)」節、
+計画は plans/accepted/time_integration-lowmach-preconditioning.md §5 Phase 4。
 依存は numpy のみ。`python3 tools/verify_lowmach_precond.py` で実行。
 """
 import numpy as np

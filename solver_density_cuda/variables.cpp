@@ -415,7 +415,7 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         cudaMemcpy(c_A_planar , A_planar_h , msh.nCells_all*sizeof(geom_float) , cudaMemcpyHostToDevice);
     }
 
-    // SST-DES グリッドスケール Δmax (docs/turbulence §8, plan §4.3)。
+    // SST-DES グリッドスケール Δmax (methods/turbulence §8, plan §4.3)。
     // 各 CV について隣接面を介した重心間距離の最大を取る。BL の高アスペクト比セルで V^{1/3} が
     // 接線スケールを過小評価し DES リミッタが誤発火するのを避けるため、Δmax を採用する。
     // 実行時の重心 (ccx/ccy/ccz = CV 中心) と面接続のみから計算するので、node-centered (median-dual)

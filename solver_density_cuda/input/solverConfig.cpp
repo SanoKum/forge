@@ -180,7 +180,7 @@ void solverConfig::read(std::string fname)
         this->valueFileName = getValidatedValue<std::string>(config["mesh"], "valueFileName", "mesh");
 
         // 離散化レイアウト (任意, 既定 "cell")。"cell": cell-centered、"node": node-centered
-        // (中点双対 median-dual)。docs/discretization/ 参照。
+        // (中点双対 median-dual)。methods/discretization/ 参照。
         if (config["mesh"]["discretization"]) {
             this->discretization = config["mesh"]["discretization"].as<std::string>();
             if (this->discretization != "cell" && this->discretization != "node") {
@@ -315,7 +315,7 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'katoLaunder' in 'turbulence' must be 0 or 1.");
         }
 
-        // SST 壁処理 (docs/turbulence §6.5): 0=low-Re 壁解像 (60ν/β₁y², 既定), 1=automatic (y⁺ 非依存)
+        // SST 壁処理 (methods/turbulence §6.5): 0=low-Re 壁解像 (60ν/β₁y², 既定), 1=automatic (y⁺ 非依存)
         this->wallTreatmentSST = getOptionalValidatedValue<int>(turb, "wallTreatmentSST", 0, "turbulence");
 
         if (this->wallTreatmentSST < 0 || this->wallTreatmentSST > 1) {
@@ -329,7 +329,7 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Keys 'kInit'/'omegaInit' in 'turbulence' must be >= 0.");
         }
 
-        // SST-DES length scale 修正 (docs/turbulence §8): 0=RANS(既定・ビット不変)/1=DDES/2=IDDES
+        // SST-DES length scale 修正 (methods/turbulence §8): 0=RANS(既定・ビット不変)/1=DDES/2=IDDES
         this->DESmode = getOptionalValidatedValue<int>(turb, "DESmode", 0, "turbulence");
         if (this->DESmode < 0 || this->DESmode > 2) {
             throw std::runtime_error("Key 'DESmode' in 'turbulence' must be one of 0, 1, or 2.");
@@ -402,7 +402,7 @@ void solverConfig::read(std::string fname)
             this->nSpecies = 1;
         }
 
-        // 非平衡凝縮 (任意セクション)。docs/condensation/ 参照。
+        // 非平衡凝縮 (任意セクション)。methods/condensation/ 参照。
         // Phase 1 は受動スカラー輸送のみ (核生成/成長係数はまだ読まない)。
         if (config["condensation"]) {
             auto cond = config["condensation"];
@@ -515,7 +515,7 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
     // implicitSolvePrecision (block-DPLUR 線形 solve の double 化) のサポート範囲チェック。
     // 未対応の組み合わせはフラグが黙って無視され「効いていない」事故になるため、明示エラーで停止する。
     // 実装済みは block 経路 (blockDPLUR==1) かつ非 precond (lowMachPrecond 0/1) の implicit (timeIntegration==11) のみ。
-    // 詳細: .github/plans/precision-mixed-axisym.md §13。
+    // 詳細: plans/archived/precision-mixed-axisym.md §13。
     if (this->implicitSolvePrecision != 0 && this->implicitSolvePrecision != 1) {
         throw std::runtime_error(
             "implicitSolvePrecision must be 0 (float) or 1 (double).");

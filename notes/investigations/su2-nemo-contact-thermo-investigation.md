@@ -7,9 +7,9 @@
 - **area**: `convection / thermophysics`
 - **status**: `draft` <!-- 調査専用。コード変更は未着手 -->
 - **related_docs**:
-  - `docs/thermophysics/` (多成分 TP gas)
-  - `docs/convection/` (SLAU/Roe 再構成)
-  - `docs/time_integration/` (block-DPLUR / general-EOS Jacobian)
+  - `methods/thermophysics/` (多成分 TP gas)
+  - `methods/convection/` (SLAU/Roe 再構成)
+  - `methods/time_integration/` (block-DPLUR / general-EOS Jacobian)
 - **related_plans**:
   - `thermophysics-multicomponent-tpgas.md`
   - `thermophysics-species-implicit-coupling.md`

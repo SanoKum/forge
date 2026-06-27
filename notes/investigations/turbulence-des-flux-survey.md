@@ -7,19 +7,19 @@
 - **area**: `turbulence`
 - **status**: `draft`（**調査専用 / コード変更なし**）
 - **related_docs**:
-  - [`docs/turbulence/theory.md`](../../docs/turbulence/theory.md)
-  - [`docs/turbulence/implementation.md`](../../docs/turbulence/implementation.md)
-  - [`docs/convection/theory.md`](../../docs/convection/theory.md)
-  - [`docs/convection/implementation.md`](../../docs/convection/implementation.md)
+  - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md)
+  - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md)
+  - [`methods/convection/theory.md`](../../methods/convection/theory.md)
+  - [`methods/convection/implementation.md`](../../methods/convection/implementation.md)
 - **related_plans**:
-  - [`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md) — 本調査の直接の動機（§4.8 低散逸 flux 設計を本調査で再評価・改訂）
+  - [`turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) — 本調査の直接の動機（§4.8 低散逸 flux 設計を本調査で再評価・改訂）
   - [`turbulence-des-wmles-survey.md`](turbulence-des-wmles-survey.md) — DES/WMLES 手法選定サーベイ（SBLI は IDDES-SST+WENO が主流）
   - [`convection-pep-scheme-survey.md`](convection-pep-scheme-survey.md) — KEEP/PEP 系中心スキーム調査（中心枝の保存性側）
 - **created**: `2026-06-22`
 - **owner**: `CFD Dev`
 - **調査実施**: deep-research ワークフロー（98 エージェント, 16 ソース取得, 25 クレーム検証: 24 確認 / 1 棄却）
 
-> **位置づけ**: 本文書は実装計画ではなく **技術調査レポート**。forge に SST-DDES/IDDES を追加する際、LES 領域の対流 flux をどう設計するかを判断する材料（一次文献 + SU2 公式実装 + forge 現状との突き合わせ）をまとめる。実装に進む場合は本調査を基に [`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md) §4.8 の設計（既に本調査を反映して改訂済み）に従うこと。
+> **位置づけ**: 本文書は実装計画ではなく **技術調査レポート**。forge に SST-DDES/IDDES を追加する際、LES 領域の対流 flux をどう設計するかを判断する材料（一次文献 + SU2 公式実装 + forge 現状との突き合わせ）をまとめる。実装に進む場合は本調査を基に [`turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) §4.8 の設計（既に本調査を反映して改訂済み）に従うこと。
 
 ---
 
@@ -132,7 +132,7 @@
 ## 6. 不確実な点・追加で読むべき一次文献
 
 1. **`KEEP_SLAU` の `duc` の入り方**: SU2 同様「散逸テンソルに σ 乗算」か、「フルフラックスを中心↔風上で線形ブレンド」か。前者なら SU2 σ 式を直接移植可。→ [convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) `KEEP_SLAU_d`（L2210–, blend L2452–2456）を実確認。
-2. **SBLI/ノズル/ピントルで `FD` 単体で足りるか**: SU2 BSCW は共存ゆえ `NTS_DUCROS`。forge は SU2 クロスチェック（[`guide/su2-cross-check.md`](../../guide/su2-cross-check.md)）で判定。
+2. **SBLI/ノズル/ピントルで `FD` 単体で足りるか**: SU2 BSCW は共存ゆえ `NTS_DUCROS`。forge は SU2 クロスチェック（[`procedures/su2-cross-check.md`](../../procedures/su2-cross-check.md)）で判定。
 3. **`ψ_limiter` はセンサとして反応するか**: <0.1% 不変なら `1-ψ_limiter` 項は無寄与で `duc=1-f_d` に縮退。要計測。
 4. **IDDES（vs DDES）での flux 係数**: f_d（DDES）か IDDES の f̃/f_dt か。本調査の検証ソース範囲外 → **Shur, Spalart, Strelets, Travin (2008, IJHFF, [doi:10.1016/j.ijheatfluidflow.2008.07.001](https://doi.org/10.1016/j.ijheatfluidflow.2008.07.001))** / **Gritskevich et al. (2012)** を一次で読む。
 5. 全文 403 だった AIAA URL（2017-4284, J054956）は SU2 master ソースで内容裏取り済（同等以上の証拠）。
@@ -141,4 +141,4 @@
 
 ## 変更ログ
 
-- `2026-06-22`: deep-research（98 エージェント / 16 ソース / 25 claim 検証）で新規作成。結論を [`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md) §4.8 に反映（短期=f_d 主導・limiter は positivity フロア / 中期=改良 Ducros を OR ブレンド追加）。
+- `2026-06-22`: deep-research（98 エージェント / 16 ソース / 25 claim 検証）で新規作成。結論を [`turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) §4.8 に反映（短期=f_d 主導・limiter は positivity フロア / 中期=改良 Ducros を OR ブレンド追加）。

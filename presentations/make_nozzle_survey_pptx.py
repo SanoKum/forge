@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """超音速・極超音速ノズル設計技術 文献調査スライド生成スクリプト。
 
-出典: .github/plans/nozzle-optimization-tool-survey.md (2026-06 調査)
+出典: notes/investigations/nozzle-optimization-tool-survey.md (2026-06 調査)
 1 論文 = 1 スライド。各スライドは「目的 / 方法 / 結果 / 得られた知見」で統一。
 papers/ に PDF がある論文には代表図 (figs_final_*.png) を貼り込む。
 

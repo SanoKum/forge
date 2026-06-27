@@ -21,7 +21,7 @@ Menter SST k-ω モデルが乱流平板の**壁法則 (law of the wall)** を�
 ## 実行手順 (段階法)
 
 **重要**: 定常計算の実効 CFL は `cfl` ではなく `cfl_pseudo`
-(`guide/solver-settings.md` の「CFL の定義」を参照)。
+(`procedures/solver-settings.md` の「CFL の定義」を参照)。
 本ケースは壁セルが極めて細く陰解法でも CFL 制限が低いため、段階的に進める。
 
 1. **stage A (`run_0005_slau_spinup`)**: 一様初期値からの cold start。
@@ -32,7 +32,7 @@ Menter SST k-ω モデルが乱流平板の**壁法則 (law of the wall)** を�
 > cold start で `cfl_pseudo≳5` や、いきなり MUSCL + 高 `cfl_pseudo` にすると発散する。
 > 発達場からの restart でも本ケースの安定上限は `cfl_pseudo≈3` 程度。
 
-メッシュ生成・変換・実行は `guide/calculation-workflow.md` の標準手順に従う
+メッシュ生成・変換・実行は `procedures/calculation-workflow.md` の標準手順に従う
 (Docker, `convertGmshToForge`, `forge`)。
 
 ## ポスト処理
@@ -76,7 +76,7 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | run_* | 目的・設定 | 主要結果 | 状態 |
 | --- | --- | --- | --- |
 | `run_0001_slau_rans_implicit` | 標準: SLAU + SST + block-DPLUR 陰解 (2D) | rms_ro 2.08e-9 収束、壁法則再現 | active |
-| `run_regr_cf` | 回帰: 閉形式 FVS 既定化 (`implicitSolvePrecision=0`) の確認。run_0001 と同条件 | 残差収束が legacy と一致 (rms_ro 2.0e-9)、NaN なし → **閉形式は 2D 陰解に無害**。plan [precision-mixed-axisym.md](../../design/archived/precision-mixed-axisym.md) | active |
+| `run_regr_cf` | 回帰: 閉形式 FVS 既定化 (`implicitSolvePrecision=0`) の確認。run_0001 と同条件 | 残差収束が legacy と一致 (rms_ro 2.0e-9)、NaN なし → **閉形式は 2D 陰解に無害**。plan [precision-mixed-axisym.md](../../plans/archived/precision-mixed-axisym.md) | active |
 | `run_0009_ewt_fine_mode1` | EWT 回帰: 細メッシュ (y⁺₁≈0.35) で `wallTreatmentSST:1`。run_0007 収束場から restart 20000 step | mode1 ≈ mode0(run_0007): Cf/Schl 0.93/0.96/0.99、残差 floor 全列一致 → 壁解像に縮退 | active |
 | `run_0010_ewt_yp30_mode0` | EWT 検証: 粗メッシュ y⁺₁≈30, mode0(low-Re)。cold start→MUSCL | **Cf 崩壊** Cf_model/Schl 0.13/0.13/0.14 (low-Re BC が粗メッシュで破綻) | active |
 | `run_0011_ewt_yp30_mode1` | EWT 検証: 粗メッシュ y⁺₁≈30, mode1(enhanced) | **Cf 回復** Cf_model/Schl 0.89/0.91/0.93、u_τ≈細メッシュ一致 → y⁺ 非依存 | active |
@@ -85,7 +85,7 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0016_ewt_fine_wf`  | **full WF** (ω pin + k zero-grad + P_k log則化): 細 y⁺₁≈0.35 回帰 | Cf/Schl 0.89/0.92/0.95 (=壁解像), Cf_molec≈Cf_model → 壁解像極限を保持 | active |
 | `run_0017_ewt_yp30_wf`  | **full WF**: 対数帯 y⁺₁≈30 | Cf/Schl 0.92/0.94/0.97, u_τ≈2.5–2.6 | active |
 | `run_0018_ewt_yp10_wf`  | **full WF**: バッファ帯 y⁺₁≈10 | Cf/Schl 0.95/0.98/1.01 (ω-blend単独の過大を解消) | active |
-| `run_0019_des_regr_mode0` | **SST-DES T1-A 回帰**: 発達場(run_0007/res_120000)から `DESmode:0` 1000 step。新旧バイナリ比較 | DESmode:0 は baseline と atomicAdd 床内で一致 (1 step base–base ≡ base–des: ro 1.19e-7/roe 1.56e-2/roK 3.73e-9) → **ビット不変**。plan [turbulence-iddes-sst.md](../../design/active/turbulence-iddes-sst.md) | active |
+| `run_0019_des_regr_mode0` | **SST-DES T1-A 回帰**: 発達場(run_0007/res_120000)から `DESmode:0` 1000 step。新旧バイナリ比較 | DESmode:0 は baseline と atomicAdd 床内で一致 (1 step base–base ≡ base–des: ro 1.19e-7/roe 1.56e-2/roK 3.73e-9) → **ビット不変**。plan [turbulence-iddes-sst.md](../../plans/active/turbulence-iddes-sst.md) | active |
 | `run_0020_des_mode1` | **SST-DES T1-A シールド (wall-resolved y+1)**: 同場から `DESmode:1` 1000 step | mode1 vs mode0 `roUx` relL2 **5.7e-7**≪Cf 0.1%, `roK` 1.8e-5。付着 BL シールド (DES 発火は外縁 3%)、NaN なし | active |
 | `run_0021_des_ewt_yp30_mode0` | SST-DES T1-A: y+30 wall-modeled 場 (run_0011) から `DESmode:0` 1000 step (mode1 比較基準) | NaN なし | ref |
 | `run_0022_des_ewt_yp30_mode1` | **SST-DES T1-A シールド (wall-modeled y+30)**: 同場 `DESmode:1` 1000 step | mode1 vs mode0 `roUx` relL2 4.7e-5, `roK` 9.3e-4、付着 BL シールド (frac f_d<0.05=0.92)、NaN なし | active |
@@ -100,14 +100,14 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_node_sst_5e_long` | **node 弱形式境界 (5a+5b+5e)** SST (40000 step) — 過剰乱流の「before」 | プラトー打破 (rms_roUx 0.597→1.3e-3) だが **過剰乱流**: peak mut/μ=375, Cf≈3×Schl。真因=壁 ω 非ピン + wall_dist バグ (下行で解消) | ref(before) |
 | `run_node_sst_final` | **node SST 完成**: massflux 書込 + 壁 ω Dirichlet ピン (omega/roOmega ピン+ω decouple+res_roOmega 壁ゼロ) + **wall_dist 修正** (node で壁点に壁ノード座標)。過剰乱流場から 60000 step。**convMethod 0 (1次風上) のまま** | u⁺-y⁺ collapse は cell 一致だが **Cf/δ99 は cell(MUSCL)と乖離**: Cf −8%, δ99 +13〜20% (1次の数値拡散で BL 過厚)。かつ res_60000 で Cf 未収束 (step30k→60k で +20% ドリフト)。massflux+ω pin+wall_dist 修正で過剰乱流は解消済 | ref(1次) |
 | `run_node_sst_muscl_cont` | **node SST を MUSCL(convMethod 2)に切替**え run_node_sst_final/res_60000 から +90000 step。cell 基準 (run_0009, MUSCL) とスキームを揃えた公平比較 | **node≈cell に一致**: Cf 差 **−3.4〜−3.9%**, δ99 差 **−1.0〜−1.5%**, u_τ −2.0〜−2.3% (3 station)。Cf@0.6 ドリフト +0.20%→+0.06%→0.00% で定常化、NaN なし。残差は block-DPLUR 構造プラトー (cell run_0007 と同様)。図 `cf_bl_cell_node_muscl.png` | active |
-| `run_node_skip_verify` | **node 境界半割面拡散 skip 検証 (新)**: run_node_sst_muscl_cont/res_90000 から +5000 step、k/ω 境界半割面拡散を ∇·S 弱形式→skip 化したバイナリ。plan [diffusion-node-boundary-real-distance.md](../../design/accepted/diffusion-node-boundary-real-distance.md) §3(c) | **Cf/u_τ/δ99 は ∇·S と完全一致** (3 station 差 0.00%, ref90k と 0.01% 以内)。k 場差 (relL2 6.5%) は **全て前縁上流 x<0 のスリップ域**に局在 (∇·S が Neumann 漏れで k を ~10 に過剰生成→skip は ∂k/∂n=0 で k≈3=内部値、skip がより正)。平板 BL は無影響。NaN なし | active |
+| `run_node_skip_verify` | **node 境界半割面拡散 skip 検証 (新)**: run_node_sst_muscl_cont/res_90000 から +5000 step、k/ω 境界半割面拡散を ∇·S 弱形式→skip 化したバイナリ。plan [diffusion-node-boundary-real-distance.md](../../plans/accepted/diffusion-node-boundary-real-distance.md) §3(c) | **Cf/u_τ/δ99 は ∇·S と完全一致** (3 station 差 0.00%, ref90k と 0.01% 以内)。k 場差 (relL2 6.5%) は **全て前縁上流 x<0 のスリップ域**に局在 (∇·S が Neumann 漏れで k を ~10 に過剰生成→skip は ∂k/∂n=0 で k≈3=内部値、skip がより正)。平板 BL は無影響。NaN なし | active |
 | `run_node_gradS_verify` | 上記の比較基準: 同じ restart から **旧 ∇·S 弱形式バイナリ**で +5000 step | skip と Cf 完全一致を確認するための apples-to-apples ペア (k のみ前縁スリップ域で skip と差) | ref |
 
 > **node 弱形式境界 (Phase 2)**: node モードで inlet/outlet/slip も ghostless 弱形式化。(5a) 主対流ループを内部+periodic
 > のみに、(5b) 全境界を `convectiveFlux_boundary_d` の bvar 弱形式に、(5e) **block-DPLUR Jacobian の境界半割面で
 > 退化粘性対角 `viscous_diag` をスキップ** (境界ノードが境界上で `dcc·S≈0`→delta 爆発→dq≈0 で凍結し出口 BL 崩壊・
 > 残差プラトーを生んでいた真因)。**出口 BL 崩壊と残差プラトーの双方を解消**。plan
-> [discretization-node-boundary-ghostless.md](../../design/active/discretization-node-boundary-ghostless.md)。コーナー BC
+> [discretization-node-boundary-ghostless.md](../../plans/active/discretization-node-boundary-ghostless.md)。コーナー BC
 > (壁∩出口) は `ow=ib` マルチマーカ emit + `wall_flag` Dirichlet で別途解決済み (commit 5ce92dc)。
 > **過剰乱流を解消** (commit 2b19d1d/0f6d53d): 真因は node で**壁 ω が Dirichlet ピンされていない**こと (ghost BC が
 > 壁ノード CV 中心・dcc≈0 退化で omega[ic] を固定できず ω 過小→k 消散不足→過生成)。修正: (i) 境界 massflux 書込
@@ -132,9 +132,9 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 
 > **SST-DES (DDES) T1-A** の合否: `DESmode:0` ビット不変 + `DESmode:1` で付着 BL が RANS から
 > 不変 (Cf 差≪0.1%)。**発達乱流場 (nut/nu≫1) から restart すること** (`run_regr_cf` 等 nut/nu≤1 の
-> 未発達場では νt≈0 で rd 小→シールドが効かない)。詳細 plan [turbulence-iddes-sst.md](../../design/active/turbulence-iddes-sst.md)。
+> 未発達場では νt≈0 で rd 小→シールドが効かない)。詳細 plan [turbulence-iddes-sst.md](../../plans/active/turbulence-iddes-sst.md)。
 
-> EWT (enhanced wall treatment) 検証の詳細は plan [turbulence-enhanced-wall-treatment.md](../../design/accepted/turbulence-enhanced-wall-treatment.md)。
+> EWT (enhanced wall treatment) 検証の詳細は plan [turbulence-enhanced-wall-treatment.md](../../plans/accepted/turbulence-enhanced-wall-treatment.md)。
 > まとめ図は `ewt_comparison.png` (壁処理進化の Cf 比較) と `ewt_uplus_yplus.png` (u⁺-y⁺ collapse)。
 > 再生成: `python3 tools/plot_ewt_summary.py`。
 

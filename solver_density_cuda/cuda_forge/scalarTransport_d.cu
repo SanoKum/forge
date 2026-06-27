@@ -182,7 +182,7 @@ __global__ void runge_kutta_exp_scalar_d(
         // 源項（消散）+ 輸送項（移流+拡散）の stiff 性を point-implicit で減衰。
         //   src_jac=∂D/∂(ρφ)≥0、transport_diag=Σ_f[max(±ṁ,0)+μ_face|δ|/dcc]/ρ≥0 [m³/s]（/v で 1/s 化）。
         // 源項・輸送対角が双方 0 なら従来の純陽的更新と一致。減衰係数は陰解法対角
-        // D_φ=V/Δτ+V·src_jac+transport_diag に Δτ/V を掛けた形と整合。理論は docs/time_integration。
+        // D_φ=V/Δτ+V·src_jac+transport_diag に Δτ/V を掛けた形と整合。理論は methods/time_integration。
         const flow_float fac = static_cast<flow_float>(1.0)
             + coef_Res * dt_l * (src_jac[ic] + transport_diag[ic] / v);
         const flow_float updated = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]

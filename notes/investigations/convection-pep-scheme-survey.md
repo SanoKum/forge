@@ -7,18 +7,18 @@
 - **area**: `convection`
 - **status**: `draft` (**調査専用 / コード変更なし**)
 - **related_docs**:
-  - [`docs/convection/theory.md`](../../docs/convection/theory.md)
-  - [`docs/convection/implementation.md`](../../docs/convection/implementation.md)
-  - [`docs/thermophysics/theory.md`](../../docs/thermophysics/theory.md)
+  - [`methods/convection/theory.md`](../../methods/convection/theory.md)
+  - [`methods/convection/implementation.md`](../../methods/convection/implementation.md)
+  - [`methods/thermophysics/theory.md`](../../methods/thermophysics/theory.md)
 - **related_plans**:
-  - [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md) — 多成分 TP 接触面 limit-cycle の 1D ゲート切り分け (本調査の直接の動機)
+  - [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) — 多成分 TP 接触面 limit-cycle の 1D ゲート切り分け (本調査の直接の動機)
   - [`su2-nemo-contact-thermo-investigation.md`](su2-nemo-contact-thermo-investigation.md) — SU2-NEMO の contact 処理棚卸し (double-flux/PEP 補正は SU2 にも無いと確認済み)
-  - [`time_integration-general-eos-jacobian.md`](../../design/accepted/time_integration-general-eos-jacobian.md) — 一般 EOS 固有系 Jacobian (PEP の陰解法側で再利用)
-  - [`thermophysics-multicomponent-tpgas.md`](../../design/accepted/thermophysics-multicomponent-tpgas.md) — NASA-9 TP gas 基盤 (face 内部エネルギー補正の素材)
+  - [`time_integration-general-eos-jacobian.md`](../../plans/accepted/time_integration-general-eos-jacobian.md) — 一般 EOS 固有系 Jacobian (PEP の陰解法側で再利用)
+  - [`thermophysics-multicomponent-tpgas.md`](../../plans/accepted/thermophysics-multicomponent-tpgas.md) — NASA-9 TP gas 基盤 (face 内部エネルギー補正の素材)
 - **created**: `2026-06-20`
 - **owner**: (未定)
 
-> **位置づけ**: 本文書は実装計画ではなく **技術調査レポート**。forge への PEP 系スキーム導入を判断するための材料 (文献調査結果 + forge 現状コードとの突き合わせ + 筆頭候補とリスク) をまとめる。実装に進む場合は、本調査を基に [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md) の Gate 判定 (Gate 2 = 保存形 PEP 不足) を確定させてから、別 plan を `_template.md` で起こすこと。
+> **位置づけ**: 本文書は実装計画ではなく **技術調査レポート**。forge への PEP 系スキーム導入を判断するための材料 (文献調査結果 + forge 現状コードとの突き合わせ + 筆頭候補とリスク) をまとめる。実装に進む場合は、本調査を基に [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) の Gate 判定 (Gate 2 = 保存形 PEP 不足) を確定させてから、別 plan を `_template.md` で起こすこと。
 
 ---
 
@@ -45,7 +45,7 @@
 - 根本原因 (Karni 1994, Abgrall 1996): $\gamma$ が face を跨いで変化するとき、**エネルギー方程式 / EOS 反転の離散熱力学的不整合**が生じる。
 - 理論的帰結 (Ching-Johnson-Kercher, arXiv 2501.12532): **保存形 DG は velocity-equilibrium-preserving だが pressure-equilibrium-preserving ではない**ことが証明されている。
 
-**forge での現れ方** (→ [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md)):
+**forge での現れ方** (→ [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md)):
 
 - forge の SLAU は現状 **mixed-order face state**: $\rho, p, u$ は 2 次 MUSCL、組成 $Y$ はセル 1 次。face 温度を $T_f = P_f^{(2)} / (\rho_f^{(2)} R(Y_{\text{cell}}^{(1)}))$ と次数混在で再回復している ([convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) L60-70)。
 - He/空気接触面の高 CFL 擬似時間で残差床 ~4e-6 の **limit-cycle** が出る。これが「mixed-order 由来 (Gate 1)」か「保存形 SLAU の PEP 本質不足 (Gate 2)」かを 1D ベンチで切り分ける、というのが現行 plan の主題。
@@ -114,7 +114,7 @@
 1. **既存 `KEEP` convMethod の器**: [convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) に `KEEP_FVS_d` (L1174-)・`KEEP_SLAU_d` (L2210-) が実装済 (現状ラッパで無効化中)。`KEEP_SLAU_d` は `Ktilde` (運動エネ) ・`Itilde` (内部エネ) を持つ中心型 + SLAU 散逸ブレンド = **完全保存 PEP 補正を載せる自然な母体**。
 2. **NASA-9 TP 熱力学基盤**: [thermo_d.cu](../../solver_density_cuda/cuda_forge/thermo_d.cu) に多項式 $h(T),c_p(T)$・Newton 温度反転・混合則。**face の $\rho e$ 補正と $\epsilon_i=(\partial\rho e/\partial\rho Y_i)_p$ 評価の素材が揃っている**。
 3. **per-cell 物性配列** (`gamma[ic]`, `cp[ic]`, `Rmix[ic]`): $\alpha,\epsilon_i$ の face 評価に即流用可能。
-4. **一般 EOS 固有系 Jacobian** ([time_integration-general-eos-jacobian.md](../../design/accepted/time_integration-general-eos-jacobian.md)): block-DPLUR が CPG 専用 EOS 仮定を脱し、実 $H_t,\kappa,\chi$ で TP 整合済 → **PEP の陰解法側の足場**。frozen-coefficient なので **新フラックス追加で LHS を作り直さず defect-correction で対応可能**。
+4. **一般 EOS 固有系 Jacobian** ([time_integration-general-eos-jacobian.md](../../plans/accepted/time_integration-general-eos-jacobian.md)): block-DPLUR が CPG 専用 EOS 仮定を脱し、実 $H_t,\kappa,\chi$ で TP 整合済 → **PEP の陰解法側の足場**。frozen-coefficient なので **新フラックス追加で LHS を作り直さず defect-correction で対応可能**。
 5. **face state 再構成パイプライン**: 勾配→limiter→MUSCL が段階化済。species 2 次化はこのパイプラインへの参入で済む。
 
 ### 4.2 障壁・ギャップ
@@ -143,16 +143,16 @@
 ### 5.2 次点・比較対象
 
 - **double-flux (OpenFOAM 実証ライン)**: 非構造 cell-centered FV での **動作実証**としては最も近い (Badrkhani 2025) が、**非保存**を受け入れる必要。Gate 2 確定後、完全保存 PEP の非構造再導出が難航した場合の **フォールバック**として位置づけ。
-- **非構造 KEEP-FV (Kuya 2023) そのもの**: cell-vertex 前提。forge の median-dual 化 ([discretization-median-dual.md](../../design/active/discretization-median-dual.md)) が進めば node-centered = cell-vertex 的な土俵になり、**親和性が上がる**可能性 → 中長期で再評価の価値。
+- **非構造 KEEP-FV (Kuya 2023) そのもの**: cell-vertex 前提。forge の median-dual 化 ([discretization-median-dual.md](../../plans/active/discretization-median-dual.md)) が進めば node-centered = cell-vertex 的な土俵になり、**親和性が上がる**可能性 → 中長期で再評価の価値。
 
 ### 5.3 推奨する段階導入の道筋 (実装着手時)
 
-1. **Gate 確定が先**: [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md) の 1D He/空気ベンチで「Gate 1 (mixed-order 再構成主因) か Gate 2 (保存形 PEP 不足)」を確定。Gate 1 なら **species 同次再構成 (低コスト)** で済み、本格 PEP は不要。
+1. **Gate 確定が先**: [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) の 1D He/空気ベンチで「Gate 1 (mixed-order 再構成主因) か Gate 2 (保存形 PEP 不足)」を確定。Gate 1 なら **species 同次再構成 (低コスト)** で済み、本格 PEP は不要。
 2. **Gate 2 確定なら本 plan を `_template.md` で起こす**。まず **1D 構造的セットアップで APEP face $\rho e$ 補正を検証** (Coppola/DeGrendele 再現)。
 3. **非構造 cell-centered での face $\rho e$ 補正を再導出** (Kuya 2023 を参照)。陽解法 RK で 1D/2D 接触面の圧力振動消失と保存則を確認。
 4. **衝撃ハイブリッド** (既存 Ducros + SLAU/Roe フォールバック) を組む。
 5. **blockDPLUR との整合**を defect-correction で確認 (frozen-coefficient、収束解不変を回帰基準)。
-6. cell-centered で精度/安定が出ない場合、**cell-vertex (median-dual) ルート**を [discretization-median-dual.md](../../design/active/discretization-median-dual.md) と合流して再検討。
+6. cell-centered で精度/安定が出ない場合、**cell-vertex (median-dual) ルート**を [discretization-median-dual.md](../../plans/active/discretization-median-dual.md) と合流して再検討。
 
 ---
 
@@ -178,21 +178,21 @@ PEP スキームは「**一様圧力を一様に保てるか (PEP)**」「**厳�
 
 | # | 次元 | ケース | 主眼 (何を分離して見るか) | 既存 case 対応 | 合否ライン |
 | --- | --- | --- | --- | --- | --- |
-| **V0** | 1D | **静止等温 材料接触面** (He\|N2, 一様 $p$, $u{=}0$) | **PEP の素過程・ゲート** | 新規 (or [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md) の 1D) | $\max\|p-p_0\|/p_0$: PEP $\lesssim10^{-12}$ / 現行 SLAU は有限振動 |
+| **V0** | 1D | **静止等温 材料接触面** (He\|N2, 一様 $p$, $u{=}0$) | **PEP の素過程・ゲート** | 新規 (or [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) の 1D) | $\max\|p-p_0\|/p_0$: PEP $\lesssim10^{-12}$ / 現行 SLAU は有限振動 |
 | **V1** | 1D | **移流 材料接触面** (低マッハ $M{\sim}0.01$–$0.1$) | 低マッハ PEP・`lowMachPrecond` 相互作用 | 同上を $u{\neq}0$ 化 | 圧力振幅 vs $M$ が増大しない |
 | **V2** | 1D | **多成分 shock tube** (He/N2 両側異種) | 衝撃+接触+膨張、**保存性**、衝撃ハイブリッド | [`case/05.sod_shock_tube`](../../case/05.sod_shock_tube/) (既存 `*_slau_tp_n2_*` 拡張) | 厳密 Riemann/CEA と接触圧 overshoot 比較、$\sum$ 保存量 機械精度 |
 | **V3** | 1D | **密度/組成波 伝播** (一様 $p,u$, 正弦波長時間移流) | **線形安定** (entropy-cons の anti-diffusion) | 新規 (周期 1D) | 振幅が成長しない (制御散逸内) |
 | **V4** | 1D | **厳密保存検算** (任意 Riemann の総和監視) | テレスコープ=機械精度保存 | V2 と同 run で計測 | $\frac{d}{dt}\sum(\rho,\rho u,\rho E)\approx0$ ($10^{-13}$) |
-| **V5** | 2D | **斜め移流 材料界面** (周期箱, 格子非整列, 三角/歪みメッシュ) | **非構造 cell-centered で PEP 成立か** (§6-1 の核心) | 新規 ([`discretization-median-dual`](../../design/active/discretization-median-dual.md) のメッシュ流用可) | $\max\|p-p_0\|$ 機械精度、界面が歪まず移流 |
+| **V5** | 2D | **斜め移流 材料界面** (周期箱, 格子非整列, 三角/歪みメッシュ) | **非構造 cell-centered で PEP 成立か** (§6-1 の核心) | 新規 ([`discretization-median-dual`](../../plans/active/discretization-median-dual.md) のメッシュ流用可) | $\max\|p-p_0\|$ 機械精度、界面が歪まず移流 |
 | **V6** | 2D | **shock-bubble interaction** (Haas-Sturtevant: He or R22 バブル) | 多成分+衝撃+界面不安定の総合 | 新規 (or [`case/06`](../../case/06.mach3_wind_tunnel/) 系) | 実験/既往計算と界面形状・波系を定性照合 |
 | **V7** | 2D | **Taylor-Green vortex** (非粘性, 単/多成分) | **KEEP 性=運動エネ保存・低散逸** | 新規 (周期箱) | 非粘性で KE 散逸が upwind より桁で小 |
 | **V8** | 2D | (発展) **多成分 Riemann / RM 不安定** | 実運用近接の総合 | 新規 | 既往参照解と定性一致 |
 
 ### 各ケースの要点
 
-**V0 (最優先・ゲート)**: 一様 $p$・$u{=}0$ で中央に組成ジャンプ (He\|N2 など TP)。温度は $p$ と組成から決まり**密度ジャンプを伴う**。厳密 PEP なら $p,u$ は機械精度で不変、非 PEP は接触面で spurious 圧力・速度振動。**これが [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md) の Gate 1 (mixed-order 再構成主因) / Gate 2 (保存形 PEP 不足) を切り分ける実体**。現行 `KEEP`/`SLAU` を baseline に、§7.5 の `Itilde` 差し替え版で振動が機械精度まで消えることを確認する最初の関門。
+**V0 (最優先・ゲート)**: 一様 $p$・$u{=}0$ で中央に組成ジャンプ (He\|N2 など TP)。温度は $p$ と組成から決まり**密度ジャンプを伴う**。厳密 PEP なら $p,u$ は機械精度で不変、非 PEP は接触面で spurious 圧力・速度振動。**これが [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) の Gate 1 (mixed-order 再構成主因) / Gate 2 (保存形 PEP 不足) を切り分ける実体**。現行 `KEEP`/`SLAU` を baseline に、§7.5 の `Itilde` 差し替え版で振動が機械精度まで消えることを確認する最初の関門。
 
-**V1**: V0 を一定速度で移流。低マッハ漸近で圧力振動が出ないか、既存 `lowMachPrecond` (`c'` 散逸前処理) と干渉しないかを見る。[`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) の知見と接続。
+**V1**: V0 を一定速度で移流。低マッハ漸近で圧力振動が出ないか、既存 `lowMachPrecond` (`c'` 散逸前処理) と干渉しないかを見る。[`time_integration-lowmach-preconditioning.md`](../../plans/accepted/time_integration-lowmach-preconditioning.md) の知見と接続。
 
 **V2**: 両側異種ガスの shock tube。**衝撃捕捉ハイブリッド** (平滑/界面=PEP, 衝撃=既存 `duc`-blend で SLAU) が、接触面の偽圧力を消しつつ衝撃で振動しないかを検証。厳密 Riemann (CEA 組成) と照合。既存 `case/05` に `*_slau_tp_n2_*` の run があるので拡張が早い。
 
@@ -329,6 +329,6 @@ $$\epsilon_i=\left(\frac{\partial\rho e}{\partial c_i}\right)_p=e_i(T)-\frac{c_{
 
 ## 8. 変更ログ
 
-- `2026-06-20` — 初稿 (調査専用)。deep-research (97 agents / 24 confirmed claims) + forge コード調査を統合。筆頭候補 = 完全保存 PEP の face 内部エネルギー補正を既存 `KEEP` に接ぎ木。実装着手は [`convection-multispecies-contact-pressure.md`](../../design/active/convection-multispecies-contact-pressure.md) の Gate 2 確定後。
+- `2026-06-20` — 初稿 (調査専用)。deep-research (97 agents / 24 confirmed claims) + forge コード調査を統合。筆頭候補 = 完全保存 PEP の face 内部エネルギー補正を既存 `KEEP` に接ぎ木。実装着手は [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) の Gate 2 確定後。
 - `2026-06-20` — §7.5 付録追加。Coppola APEP-RG / DeGrendele APEC の原著式を抽出し具体形を記載。forge TP 混合の $\epsilon_i=e_i(T)-(c_{v,\mathrm{mix}}/R_{\mathrm{mix}})R_iT$ を導出、`Itilde` 差し替え点・1 face アルゴリズム擬似コードを追記。
 - `2026-06-20` — §6.5 検証ケース提案 (1D→2D ラダー V0–V8) 追加。V0 静止材料接触面 (PEP ゲート) ・V5 斜め移流非構造界面 (非構造 PEP の要) を 2 大関門、V3 を線形安定下限、V2/V6 を衝撃両立、V7 を KEEP 性として配置。既存 case 対応と実施順序を明記。

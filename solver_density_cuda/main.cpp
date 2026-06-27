@@ -194,7 +194,7 @@ struct ImplicitDiagSnapshot {
 // GPU 経路 (cfg.gpu==1) では残差二乗和を device 常駐バッファに async 集約し、monitorInterval
 // ステップごとに 1 回だけ D2H 転送してまとめて書き出す (per-step host 同期を避ける)。CPU 経路は
 // 従来通り即時計算・即時書き出し。CSV の列・行構成・値 (毎ステップ・3 行/step・rms_dq_*=0) は不変。
-// 設計: .github/plans/architecture-residual-monitor-async.md
+// 設計: plans/accepted/architecture-residual-monitor-async.md
 class ResidualCsvLogger {
 public:
     ResidualCsvLogger(const std::string& file_name, const solverConfig& cfg, mesh& msh, variables& var)

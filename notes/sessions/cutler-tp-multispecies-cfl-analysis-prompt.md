@@ -132,7 +132,7 @@ SST 自体が `cfl_pseudo` を律速している可能性。生産項 lagged + k
 ## 6. 環境・規律(リポジトリにアクセスする場合)
 
 - **実効 CFL**: 定常(`unsteady:0`)は `cfl` でなく **`cfl_pseudo`** が局所刻みを決める
-  (`cuda_forge/setDT_d.cu` `setDT_d_wrapper`)。`cfl` は表示用。`guide/solver-settings.md` 参照。
+  (`cuda_forge/setDT_d.cu` `setDT_d_wrapper`)。`cfl` は表示用。`procedures/solver-settings.md` 参照。
 - **build**: native `solver_density_cuda/.build-native/relwithdebinfo/forge`(nvcc 12, sm_86)。
   `tools/build_native_wsl.sh`。**構造体(`solverConfig.hpp` 等)変更後は full rebuild**(stale build trap)。
 - **収束判定の規律**: `rms_ro` だけで判断しない。`tools/check_convergence.py <run>` の VERDICT を必ず使い、

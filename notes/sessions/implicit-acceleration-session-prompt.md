@@ -14,7 +14,7 @@ forge は密度ベース圧縮性ソルバー(`solver_density_cuda/`)。定常 R
 
 - 定常計算の実効 CFL は `cfl` ではなく **`cfl_pseudo`**(`setDT_d.cu` の `setDT_d_wrapper`、
   `unsteady==0` で `dt_local = cfl_pseudo·dt/cfl_cell`、`dt` が相殺し実効 CFL=`cfl_pseudo`)。
-  詳細は `guide/solver-settings.md` の「CFL の定義」節。
+  詳細は `procedures/solver-settings.md` の「CFL の定義」節。
 - `cfl_pseudo=10` は MUSCL・cold start いずれも step 数十で発散。`nStepInner` を 15→40 に増やしても
   発散したので、**内部 Jacobi の収束不足ではなく外側 defect-correction の安定限界**。
 
@@ -34,7 +34,7 @@ forge は密度ベース圧縮性ソルバー(`solver_density_cuda/`)。定常 R
   k/ω は平均流とは**分離(segregated)** で解かれ、`src_jac_k = β*·ω`、`src_jac_omega = 2β·ω`(消散項のみ陰的)。
   **生産項 Pk, Pω は陽的(lagged)**。壁近傍で ω~10⁸ と stiff。
 
-ドキュメント: `docs/time_integration/theory.md`, `docs/time_integration/implementation.md`。
+ドキュメント: `methods/time_integration/theory.md`, `methods/time_integration/implementation.md`。
 関連 plan: `.github/plans/time_integration-explicit-pointimplicit-sst.md`,
 `.github/plans/gpu-implicit-plan.md`。
 
@@ -74,8 +74,8 @@ forge は密度ベース圧縮性ソルバー(`solver_density_cuda/`)。定常 R
 ## 運用上の必須事項(AGENTS.md 準拠)
 
 - **開発フロー**: 数値スキーム変更なので着手前に
-  (1) `docs/time_integration/theory.md` 更新 →
-  (2) `docs/time_integration/implementation.md` 更新 →
+  (1) `methods/time_integration/theory.md` 更新 →
+  (2) `methods/time_integration/implementation.md` 更新 →
   (3) `.github/plans/time_integration-<slug>.md` を `_template.md` から作成し README.md 一覧に追記 →
   (4) 実装。完了時に plan を `status: done` 化し変更ログ記載。
 - **ビルド**: `build/forge` は自動再ビルドされない。`*.cu` 編集後は必ず Docker 再ビルド:
@@ -85,9 +85,9 @@ forge は密度ベース圧縮性ソルバー(`solver_density_cuda/`)。定常 R
     forge-solver:cuda-dev bash -c "cd /workspace/solver_density_cuda && bash tools/build.sh"
   ```
 - **計算**: 既存 `run_*` を使い回さず複製した新 `run_*` で実行。実行後 `residual_history.png` を生成。
-  メッシュ生成→`convertGmshToForge`→`forge` の流れは `guide/calculation-workflow.md` 準拠。
-- **設定変更**は `guide/solver-settings.md` を参照(特に `cfl`/`cfl_pseudo` の定義)。
-- **言語**: docs/コメントは日本語、識別子は原語 `code` 表記、commit は英語命令形。
+  メッシュ生成→`convertGmshToForge`→`forge` の流れは `procedures/calculation-workflow.md` 準拠。
+- **設定変更**は `procedures/solver-settings.md` を参照(特に `cfl`/`cfl_pseudo` の定義)。
+- **言語**: methods/コメントは日本語、識別子は原語 `code` 表記、commit は英語命令形。
 - **コミット**: 機能単位で feature ブランチへ。`case/` の run 成果物(res_*.h5, *.png, log)は commit しない。
 
 ## 注意 / 既知の罠

@@ -27,7 +27,7 @@ bool hasNonFiniteCellValue_d(
 	std::string& offending_name);
 
 // ---- device 常駐の残差 RMS / NaN reducer (per-step host 同期を避ける) ----
-// 詳細: .github/plans/architecture-residual-monitor-async.md
+// 詳細: plans/accepted/architecture-residual-monitor-async.md
 struct DeviceResidualReducer {
 	int nVar = 0;
 	geom_int nCells = 0;

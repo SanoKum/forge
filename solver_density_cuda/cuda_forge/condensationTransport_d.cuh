@@ -10,7 +10,7 @@
 
 // 非平衡凝縮 (Phase 1): 凝縮種ごとの 4 モーメント (ρg,ρQ2,ρQ1,ρQ0) を、汎用スカラ輸送コア
 // scalarTransport_d (ScalarTransportDesc) を再利用して受動スカラーとして移流する。
-// Phase 1 は移流のみ (拡散なし・ソース=0)。核生成/成長ソースは Phase 2。docs/condensation/ 参照。
+// Phase 1 は移流のみ (拡散なし・ソース=0)。核生成/成長ソースは Phase 2。methods/condensation/ 参照。
 // 凝縮無効 (var.nCondSpeciesRegistered < 1) のときは全 wrapper が no-op で従来経路を保つ。
 
 // device の rog (液相質量分率の保存量 ρg_sp) ポインタ配列 (flow_float*[nCondSpecies]) を 1 度だけ構築。
