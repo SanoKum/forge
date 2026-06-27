@@ -211,10 +211,18 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
   プラトー; rms 全列が flat 床、cell rms_roUy 6.4e-2・node rms_roOmega 2.44e6 で停滞)。報告した shock 位置は
   **limit-cycle スナップショット**で、cell は ±1mm 振動・node は静止。**「収束した」とは主張しない** (この case は
   定常 RANS では収束しないことが既知=下記 down-sweep 節・本 README 末尾の所見)。場の比較は準定常同士。
-- **⚠ cell 自身が 142→160mm に移動 = forge の SST restart 再現性問題 (commit 起因でも非収束でもない)**:
-  現行バイナリの cell は旧 run_0049 (142mm) より ~18mm 下流。**真因を git bisect (フルビルド) で特定**したところ、
-  **run_0049 自身のバイナリ (`894fa47`) で res_80000 から restart しても 141.8→165.8mm に動く** (8000 step、
-  `run_bisect_cell_894fa47`)。→ **どのコミットの仕業でもない**。さらに:
+- **⚠ cell 自身が 142→160mm に移動 = 主因は forge の SST restart 過渡 (大); コードも cell を僅かに変えている (小)**:
+  現行バイナリの cell は旧 run_0049 (142mm) より ~18mm 下流。2 つの効果が重なっている:
+  - **(小) コード変更も cell を実際に変えている**: 894fa47 と現行を**同一 restart から並走**させると 2000 step で
+    場 relL2 ~5e-4〜1e-3。これは current-vs-current の atomicAdd 床 (~5e-5) より **8〜63 倍大きい** = ノイズでなく
+    実在のコード効果。犯人は **`88def3b` (出口 `outlet_statPress_d` 統一、node 専用でない一般変更)** で、cell 衝撃を
+    limit-cycle 内 ~1mm・場を ~1e-3 動かす (boundaryCond を 88def3b 直前へ戻すと 894fa47 と一致)。**node 専用修正
+    (537d80f/9cc6475/af5b98d, isNode ガード) は cell bit 不変**。→ 「node 修正だけ」は厳密には崩れており、
+    `88def3b` が cell も僅かに変える。
+  - **(大) 142→160mm の本体は restart 過渡で、コード起因ではない**: 894fa47 と現行は**同一 restart から衝撃軌跡が
+    完全一致** (両者 res_500/1000/1500/2000 = 141.8/142.4/146.9/149.9mm)。**run_0049 自身のバイナリ (`894fa47`)
+    でも restart すると 141.8→165.8mm に動く**。→ ~18mm の移動自体はどのコミットでも同じに起きる restart 効果
+    (下記)。さらに:
   - **非収束ドリフトではない**: run_0049 は res_24000〜80000 の 56000 step を **141.5-142.1mm / Mmax 1.820-1.821 で
     完全静止** = genuine steady。当初の「非収束スナップショットのドリフト」説は**棄却**。
   - **restart_field の primitive→conserved 変換のせいでもない**: 保存量 (ro,roUx,roe,roK,roOmega) を**直接コピー**する
@@ -245,11 +253,13 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
     「同じ restart 条件同士」で公平だが、SU2/旧 cell との 142 基準には forge の SST restart 再平衡過渡が絡む**。
     これは別課題 (forge restart で壁 omega/壁関数の coupled 平衡を収束値から復元するか、過渡を抑えて flip を防ぐ)。
 - 図 `compare_node_cell_sst_bp1p90_current.png` (P/Mach センターライン、SU2 132・旧 cell 142 マーカ付き)。
-- **node 専用でない直近変更の確認**: 直近コミットのうち cell に効きうるのは `88def3b` (outlet `outlet_statPress_d`、
-  isNode ガード無し) のみ。他 (`537d80f`/`9cc6475`/`af5b98d` は isNode ガード、`945a27f` AddTauWall は cell に
-  nullptr で bit-identical、`f639ff2` SST init は restart で roK/roOmega が在れば inert) は cell 無影響。
-  **そして上記 bisect で `88def3b` も含め全 commit が無罪**と確定 (run_0049 自身のバイナリで再現するため)。
-  → ユーザーの node 修正は cell を動かしていない。cell の移動は forge の SST restart 再現性問題。
+- **node 専用でない直近変更の確認**: 直近コミットのうち cell に効くのは `88def3b` (outlet `outlet_statPress_d`、
+  isNode ガード無し) で、**実際に cell を ~1e-3 動かす** (上記並走テストで atomicAdd 床の 8〜63 倍)。他
+  (`537d80f`/`9cc6475`/`af5b98d` は isNode ガード、`945a27f` AddTauWall は cell に nullptr で bit-identical、
+  `f639ff2` SST init は restart で roK/roOmega が在れば inert) は **cell bit 不変**。
+  → **正確には: ユーザーの node 専用修正は cell を動かしていないが、一般変更 `88def3b` は cell を僅かに変えている**
+  (「node 修正だけ」は厳密には崩れている)。ただし**この小さなコード効果は 142→160mm の主因ではない** —
+  ~18mm の移動は restart 過渡が支配的で、`88def3b` 込み/抜き・新旧バイナリいずれでも同じに起きる。
 - **結論**: 問い「node と cell を SST で比較」への答え=**現行バイナリで node SST は cell SST と整合 (shock ~3mm,
   Mmax/μt 同等)**。ただし**双方とも未収束 (limit-cycle)** で準定常スナップショット比較であり、cell の 142→160mm は
   binary 変更でなく非収束ドリフト。両 forge とも SU2 132mm より ~30mm 下流である点は別課題。
