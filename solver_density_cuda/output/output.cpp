@@ -216,32 +216,39 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
 
         file.createDataSet("/MESH/COORD",COORD);
 
+        // --- 壁サーフェスのトポロジ (XDMF Mixed) ---
+        // cell モード: planes_local の面 (2D=line, 3D=tri/quad)、値は面単位 (Center='Cell')。
+        // node モード: 境界も半割双対面(1ノード)になるため、replacePrimalWithDual で退避した primal 境界面
+        //   (bc.vizBfaceNodes) で壁ノードを接続し、値はノード単位に並べ替えて Center='Node' で書く。
+        // XDMF Mixed の可変ノード型 (Polyvertex=1/Polyline=2) は [type, nNodes, node...] とノード数が要る。
+        //   固定型 (Triangle=4/Quad=5) は [type, node...]。(旧版は nn 分岐漏れで未初期化型を書き ParaView 不可視だった)
+        const bool nodeWallViz = !bc.vizBfaceNodes.empty();
+
         vector<geom_int> CONNE;
         geom_int CONNE_dim = 0;
-        geom_int CONNE0;    
+        auto pushElem = [&](const vector<geom_int>& gnodes) {
+            geom_int nn = (geom_int)gnodes.size();
+            if      (nn == 1) { CONNE.push_back(1); CONNE.push_back(1);  CONNE_dim += 3; }      // Polyvertex
+            else if (nn == 2) { CONNE.push_back(2); CONNE.push_back(2);  CONNE_dim += 4; }      // Polyline
+            else if (nn == 3) { CONNE.push_back(4);                      CONNE_dim += nn + 1; } // Triangle
+            else if (nn == 4) { CONNE.push_back(5);                      CONNE_dim += nn + 1; } // Quadrilateral
+            else              { CONNE.push_back(1); CONNE.push_back(nn); CONNE_dim += nn + 2; } // fallback Polyvertex
+            for (const geom_int g : gnodes) CONNE.push_back(bc.inodes_g2l[g]);
+        };
 
-        for (auto& pln : bc.planes_local)
-        {
-            geom_int nn = pln.iNodes.size();
-            if (nn == 3) { // tri
-                string name = "triangle";
-                CONNE0 = 4;
-            } else if (nn == 4 ) {
-                string name = "quad";
-                CONNE0 = 5;
-            } else if (nn == 2 ) {
-                string name = "line";
-                CONNE0 = 2;
-            }
-
-            CONNE.push_back(CONNE0);
-            CONNE_dim += nn + 1;
-
-            for (auto& ing : pln.iNodes)
-            {
-                inl = bc.inodes_g2l[ing];
-                CONNE.push_back(inl);
-            }
+        geom_int nElements;
+        geom_int attrDim;
+        string attrCenter;
+        if (nodeWallViz) {
+            for (auto& face : bc.vizBfaceNodes) pushElem(face);
+            nElements  = (geom_int)bc.vizBfaceNodes.size();
+            attrDim    = (geom_int)bc.inodes_l2g.size();
+            attrCenter = "Node";
+        } else {
+            for (auto& pln : bc.planes_local) pushElem(pln.iNodes);
+            nElements  = (geom_int)bc.planes_local.size();
+            attrDim    = (geom_int)bc.planes_local.size();
+            attrCenter = "Cell";
         }
         file.createDataSet("/MESH/CONNE",CONNE);
 
@@ -249,12 +256,19 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         for (auto& vt : bc.valueTypes)
         {
             string name = vt.first;
-
             std::vector<flow_float> vtemp;
-            vtemp.resize(bc.planes_local.size());
-
-            copy(bc.bvar[name].begin(), bc.bvar[name].begin()+bc.planes_local.size(), vtemp.begin());
-
+            if (nodeWallViz) {
+                // bvar は bplane(=半割面=ノード) 順。Center='Node' 用に局所ノード順 (inodes_l2g) へ並べ替える。
+                vtemp.assign(bc.inodes_l2g.size(), (flow_float)0.0);
+                for (geom_int j = 0; j < (geom_int)bc.planes_local.size(); j++) {
+                    if (bc.planes_local[j].iNodes.empty()) continue;
+                    geom_int L = bc.inodes_g2l[bc.planes_local[j].iNodes[0]];
+                    if (L >= 0) vtemp[L] = bc.bvar[name][j];
+                }
+            } else {
+                vtemp.resize(bc.planes_local.size());
+                copy(bc.bvar[name].begin(), bc.bvar[name].begin()+bc.planes_local.size(), vtemp.begin());
+            }
             file.createDataSet("/VALUE/"+name , vtemp);
         }
 
@@ -351,7 +365,7 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         ofs << "    <Grid  GridType='Collection' CollectionType='Spatial' Name='Mixed'>\n";
         ofs << "    <Time TimeType='Single' Value='" << outputTimeValue(cfg, iStep) << "'/> \n";
         ofs << "      <Grid Name='wall'>\n";
-        ofs << "        <Topology Type='Mixed' NumberOfElements='" << bc.iPlanes.size() << "'>\n";
+        ofs << "        <Topology Type='Mixed' NumberOfElements='" << nElements << "'>\n";
         ofs << "          <DataItem Format='HDF' DataType='Int' Dimensions='" << CONNE_dim << "'>\n";
         ofs << "            res_" << bc.physName << "_" << oss_id.str() <<"_" << oss.str() <<".h5:MESH/CONNE\n";
         ofs << "          </DataItem>\n";
@@ -368,8 +382,8 @@ void outputBconds_H5_XDMF(const solverConfig& cfg , mesh& msh , variables& var ,
         for (auto& vt : bc.valueTypes)
         {
             string name = vt.first;
-            ofs << "        <Attribute Name='"  << name << "' Center='Cell' >\n";
-            ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << bc.iPlanes.size() << "'>\n";
+            ofs << "        <Attribute Name='"  << name << "' Center='" << attrCenter << "' >\n";
+            ofs << "          <DataItem Format='HDF' DataType='Float' Dimensions='" << attrDim << "'>\n";
             ofs << "            res_" << bc.physName << "_" << oss_id.str() <<"_" << oss.str() <<".h5:VALUE/" << name << "\n";
             ofs << "          </DataItem>\n";
             ofs << "        </Attribute>\n";

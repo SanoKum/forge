@@ -1599,7 +1599,8 @@ public:
     // これは solver のゴースト鏡像生成で非退化 (dcc>0) を保証するための便宜。半割面は厳密には
     // 境界上だが、M1 は非粘性 1 次でゴーストが 1 次精度を強制するため pc 位置はフラックスに影響しない
     // (fx/dcc は再構成・粘性で使われるが M1 では未使用)。厳密な境界は弱形式 (M2+) で扱う。
-    // 可視化 (output の CONNE/XDMF) は cell topology を前提とするため node モードでは正しくない (M4)。
+    // 可視化: 体積は退避した primal セル接続 (vizCONNE, Center='Node')、壁は退避した primal 境界面接続
+    // (bcond.vizBfaceNodes, output.cpp で線/面を作り Center='Node') で正しく描ける。
     // -------------------------------------------------------------------------
     void replacePrimalWithDual()
     {
@@ -1608,6 +1609,16 @@ public:
             exit(EXIT_FAILURE);
         }
         cout << "[replacePrimalWithDual] replacing primal cells/planes/bconds with median-dual ...\n";
+
+        // ---- 可視化用に primal 境界面トポロジを bcond ごとに退避 (一度だけ) ----
+        // 双対置換で境界も半割面(1ノード)になり面を作れなくなるため、置換前に primal 境界面の
+        // global ノードid列を保存する (msh.vizCONNE の境界版)。壁出力で線/面を作り Center='Node' で描く。
+        for (auto& bc : this->bconds) {
+            bc.vizBfaceNodes.clear();
+            bc.vizBfaceNodes.reserve(bc.iPlanes.size());
+            for (const geom_int ip : bc.iPlanes)
+                bc.vizBfaceNodes.push_back(this->planes[ip].iNodes);
+        }
 
         const geom_int nN = this->nNodes;
         const geom_int nDualInternal = (geom_int)this->dualFaceArea.size();
@@ -1960,6 +1971,17 @@ public:
             group.createDataSet("/BCONDS/"+oss.str()+"/iPlanes", bc.iPlanes);
             group.createDataSet("/BCONDS/"+oss.str()+"/iBPlanes", bc.iBPlanes);
             group.createDataSet("/BCONDS/"+oss.str()+"/iCells", bc.iCells);
+
+            // node モード壁可視化: primal 境界面接続 (flat global ids + 面ごとのノード数)。
+            if (!bc.vizBfaceNodes.empty()) {
+                std::vector<geom_int> bfNodes, bfSizes;
+                for (const auto& f : bc.vizBfaceNodes) {
+                    bfSizes.push_back((geom_int)f.size());
+                    for (const geom_int n : f) bfNodes.push_back(n);
+                }
+                group.createDataSet("/BCONDS/"+oss.str()+"/vizBfaceNodes", bfNodes);
+                group.createDataSet("/BCONDS/"+oss.str()+"/vizBfaceSizes", bfSizes);
+            }
 
             string ATTRIBUTE_NAME_NOTE("bcondKind");
             string string_list(bc.bcondKind);

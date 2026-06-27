@@ -392,6 +392,19 @@ void mesh::readMesh(string fname)
         else
             cout << "               (no boundary planes; e.g. node-mode wall Dirichlet)" << endl;
 
+        // node モード壁可視化用 primal 境界面接続 (あれば復元)。
+        this->bconds[ib].vizBfaceNodes.clear();
+        if (grp.exist("vizBfaceSizes")) {
+            std::vector<geom_int> bfNodes, bfSizes;
+            grp.getDataSet("vizBfaceNodes").read(bfNodes);
+            grp.getDataSet("vizBfaceSizes").read(bfSizes);
+            geom_int off = 0;
+            for (geom_int s : bfSizes) {
+                this->bconds[ib].vizBfaceNodes.emplace_back(bfNodes.begin()+off, bfNodes.begin()+off+s);
+                off += s;
+            }
+        }
+
         // iBPlanes
         std::vector<geom_int> iBPlanes;
         grp.getDataSet("iBPlanes").read(iBPlanes);

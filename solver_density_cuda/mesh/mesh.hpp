@@ -83,8 +83,14 @@ public:
     int output_preparation_flg = 0;
     std::vector<node> nodes_local;
     std::vector<plane> planes_local;
-    std::vector<geom_int> inodes_l2g; 
-    std::vector<geom_int> inodes_g2l; 
+    std::vector<geom_int> inodes_l2g;
+    std::vector<geom_int> inodes_g2l;
+
+    // node モード壁可視化用: primal 境界面の global ノードid列を一度だけ退避 (replacePrimalWithDual)。
+    // node モードでは境界も半割双対面(1ノード)に置換され面を作れないため、msh.vizCONNE の境界版として
+    // primal 面接続を保存し h5 (/BCONDS/<id>/vizBface*) 経由で solver の壁出力へ渡す (Center='Node')。
+    // 空なら cell モード (planes_local の面を使い Center='Cell')。
+    std::vector<std::vector<geom_int>> vizBfaceNodes;
 
     std::map<std::string, int> inputInts;
     std::map<std::string, flow_float> inputFloats;
