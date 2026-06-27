@@ -7,6 +7,58 @@
 //   - 復活させる場合は wrapper に分岐を戻し、参照ヘルパの可視性を確認する。
 // =============================================================================
 
+// interp_general: dead な AUSM/KEEP のみが関数ポインタ経由で参照する汎用補間。
+// live の interp_dispatch は 1stUp/MUSCL_2nd/3rd/MINMOD のみ使うため共通ヘッダから退避。
+__device__ flow_float interp_general(int scheme, int limit_scheme,
+                            flow_float phiC, flow_float phiD,
+                            flow_float dphidxC, flow_float dphidyC, flow_float dphidzC,
+                            flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
+                            flow_float dx , flow_float dy , flow_float dz,
+                            flow_float cpdx, flow_float cpdy, flow_float cpdz,
+                            flow_float f, flow_float limiter
+                           )
+{
+    flow_float phif;
+    flow_float k;
+    flow_float r;
+    flow_float psi_r;
+
+    flow_float DD2dx;
+    flow_float DD2dy;
+    flow_float DD2dz;
+    flow_float phiDD;
+    flow_float phiU;
+    flow_float limit;
+
+    if (limit_scheme == -1) { // minmod  not completed
+        r = (phiD - phiC)/(phiC - phiD);
+
+        DD2dx = (2.0*f-1.0)*dx;
+        DD2dy = (2.0*f-1.0)*dy;
+        DD2dz = (2.0*f-1.0)*dz;
+
+        phiDD = phiD - limiter*(DD2dx*dphidxD + DD2dy*dphidyD + DD2dz*dphidzD );
+        phiU  = phiDD -4.0*(1.0-f)*limiter*(dx*dphidxC + dy*dphidyC + dz*dphidzC );
+
+        r = (phiC - phiU)/(phiD - phiC);
+
+        limiter = max(0.0, min(1.0,r));
+    }
+
+    if (scheme == 0) {
+        phif = phiC;
+    } else if (scheme == 1) { // 2nd order
+        phif = phiC + limiter*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz);
+    } else if (scheme == 2) {// 3rd order
+        k = 1.0/3.0;
+        phif = phiC + limiter*(0.5*k*(phiD-phiC) +(1.0-k)*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz));
+    } else if (scheme == -1) {// ghost
+        phif = phiC;
+    }
+
+    return phif;
+};
+
 inline __device__ flow_float betaPls(flow_float M, flow_float alpha) // ok
 {
     if (abs(M) >= 1.0) {

@@ -50,56 +50,6 @@ __device__ int g_Yface_max_scaled = -2000000;           // max(Y_face)·1e6 (ato
 // K7: pow(x,2.0) は exp(2*log(x)) に展開され重い。2乗は乗算 1 命令で済むため sq() に置換。
 __device__ __forceinline__ flow_float sq(flow_float x) { return x * x; }
 
-__device__ flow_float interp_general(int scheme, int limit_scheme,
-                            flow_float phiC, flow_float phiD, 
-                            flow_float dphidxC, flow_float dphidyC, flow_float dphidzC,
-                            flow_float dphidxD, flow_float dphidyD, flow_float dphidzD,
-                            flow_float dx , flow_float dy , flow_float dz,
-                            flow_float cpdx, flow_float cpdy, flow_float cpdz,
-                            flow_float f, flow_float limiter
-                           )
-{
-    flow_float phif;
-    flow_float k;
-    flow_float r;
-    flow_float psi_r;
-
-    flow_float DD2dx;
-    flow_float DD2dy;
-    flow_float DD2dz;
-    flow_float phiDD;
-    flow_float phiU;
-    flow_float limit;
-
-    if (limit_scheme == -1) { // minmod  not completed
-        r = (phiD - phiC)/(phiC - phiD);
-
-        DD2dx = (2.0*f-1.0)*dx;
-        DD2dy = (2.0*f-1.0)*dy;
-        DD2dz = (2.0*f-1.0)*dz;
-
-        phiDD = phiD - limiter*(DD2dx*dphidxD + DD2dy*dphidyD + DD2dz*dphidzD );
-        phiU  = phiDD -4.0*(1.0-f)*limiter*(dx*dphidxC + dy*dphidyC + dz*dphidzC );
-
-        r = (phiC - phiU)/(phiD - phiC);
-
-        limiter = max(0.0, min(1.0,r));
-    }
-
-    if (scheme == 0) {
-        phif = phiC;
-    } else if (scheme == 1) { // 2nd order
-        phif = phiC + limiter*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz);
-    } else if (scheme == 2) {// 3rd order
-        k = 1.0/3.0;
-        phif = phiC + limiter*(0.5*k*(phiD-phiC) +(1.0-k)*(dphidxC*cpdx +dphidyC*cpdy +dphidzC*cpdz));
-    } else if (scheme == -1) {// ghost
-        phif = phiC;
-    }
-
-    return phif;
-};
-
 __device__ flow_float interp_MUSCL_2nd(int scheme, int limit_scheme,
                                        flow_float phiC, flow_float phiD, 
                                        flow_float dphidx, flow_float dphidy, flow_float dphidz,
