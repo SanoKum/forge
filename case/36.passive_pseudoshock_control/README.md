@@ -296,6 +296,30 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
 - 固体壁 (キャビティ・多孔板なし) 構造メッシュ Ps 1.80-1.90/0.02 を別途計算中 (porous vs solid 比較基準)。
 - run_0036-0043=porous 構造 sweep, run_0044-0049=solid 構造 sweep。`up_sweep_struct.sh`/`fine_sweep_struct.sh`/`solid_sweep_struct.sh` で駆動。
 
+### ★ 上下非対称は「粘性段階」で発生 — Euler→層流→SST 段階切り分け (2026-06-27)
+
+「上下偏りはどの物理段階で出るか」を、**厳密対称 IC から Euler→層流→SST を順に確立**して切り分けた
+(solid 構造メッシュ, 対称性メトリック `asym = ||Mach - mirror(Mach)|| / ||Mach||`, 0=対称)。各段は前段を
+鏡像平均で**強制対称化**してから開始し、機械精度からの非対称成長を見る。**restart せず段階内は連続マーチ**。
+
+| 段階 | 物理 | asym(Mach) の挙動 | 偏り |
+| --- | --- | --- | --- |
+| Euler | 非粘性 (**visc=0** 厳密, slip 壁) | 過渡ピーク 0.25 → **減衰 ~0.05** (Mach ほぼ対称) | **出ない** |
+| 層流 | Sutherland 粘性, no-slip 壁 | 成長 → **飽和 ~0.45-0.46** (持続, 過渡でない) | **強い** |
+| SST | 乱流 (wt=1) | 層流場から 0.46 → **~0.25 に緩和して飽和** | 中程度 |
+
+- **核心**: **上下偏りは inviscid Euler では出ず (visc=0 で十分長く回すと非対称は減衰)、no-slip 境界層を入れた
+  層流段階で初めて飽和的に発生する**。乱流 (SST) は層流の偏りを部分的に緩和するが残る (run_0049 SST 0.30 と同系統)。
+  → 「物理的な非対称分岐」(run_0035) の駆動源が**粘性境界層 (剥離)** と確定。bp=1.90/1.70 の両方で同じ。
+- **落とし穴 (教訓)**: ① `viscMethod:0` は「定数粘性」で**非粘性ではない**。厳密 Euler は `visc:0.0`+`thermCond:0.0`。
+  ② 短い run (~12k step) では非対称の**過渡ピークを定常的偏りと誤認**する。Euler は過渡 0.25→減衰 0.05 なので、
+  十分長く (100k) 回さないと判定を誤る。
+- **★ bp=1.70 SST が VERDICT=PASS (収束)**: この**クリーン段階確立 (Euler→層流→SST) で初めて収束解**を得た
+  (rms 全列 3-8.6 桁低下, 衝撃 x=237mm)。restart ベースの全 run が NOT CONVERGED だったのは、別途診断した
+  **SST restart 過渡 (壁 omega ディップ) を段階確立が回避**するため。run: `run_sym_E_euler_bp170`(Euler) /
+  `run_sym_F_laminar_bp170`(層流) / `run_sym_G_sst_bp170`(**SST, PASS**)、bp1.90 側は `run_sym_C_trueeuler` /
+  `run_sym_D_laminar`。図 `run_sym_G_sst_bp170/bp170_staged_asym.png`。
+
 ### ★ porous vs solid 比較 = 論文の機構を再現 (2026-06-21)
 
 構造メッシュで porous (run_0036-0043) と solid (run_0044-0049) を matched-Ps で比較。
