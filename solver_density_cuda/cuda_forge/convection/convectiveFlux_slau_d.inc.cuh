@@ -12,66 +12,60 @@ __global__ void SLAU_d
  int slauVariant,   // 1: SLAU, 2: SLAU2 (圧力束第3項のみ低マッハ改良)
  int lowMachPrecond, flow_float precondEps,   // 低マッハ前処理 (1: 散逸スケールを c'、0: 従来 c_hat)
  int lowMachThornber,                         // Thornber 再構成補正 (1: L/R 速度ジャンプを z=min(M,1) で縮約)
-
  flow_float ga,
- int thermalMethod,                           // 0: calorically perfect, 2: thermally-perfect (NASA-9)
- const SpeciesThermo* sp, int nSpecies,       // thermally-perfect 用化学種データ
- flow_float** roY,                            // 多成分: セル毎 ρY_s (nullptr で単成分 sp[0])
- flow_float** Yd_recon,                       // face 整合再構成用 Y{s} とセル勾配 ∇Y{s} (g_speciesFaceRecon 時)
- flow_float** dYdx_recon, flow_float** dYdy_recon, flow_float** dYdz_recon,
- flow_float** limiterY_recon,                 // ψ_Y[s] (Venkat on Y)。Y 再構成は min(ψ_ρ,ψ_Y) を使う。
- flow_float* Yface_out,                       // S3: upwind 再構成 face 組成を書き出す [ip*nSpecies+s] (g_speciesFaceRecon 時)
- flow_float* Rmix_cell,                       // M6: per-cell 混合比気体定数 R[ic] (面エンタルピー用キャッシュ)
-
- // 非平衡凝縮 (二相): エネルギー流束を二相全エンタルピーに補正する。g_total==nullptr で従来 (ビット不変)。
- // cp_cpg=CPG 比熱 (pure)。condModel=凝縮種 (0:N2, 1:H2O carrier の潜熱選択)。
- flow_float cp_cpg, flow_float* g_total, flow_float* T_cell, int condModel,
-
- // mesh structure
- geom_int nCells,
- geom_int nPlanes, geom_int nNormalPlanes, geom_int* plane_cells,
- geom_int nNormal_ghst_Planes , geom_int* normal_ghst_planes_d,
- geom_float* vol ,  geom_float* ccx ,  geom_float* ccy, geom_float* ccz,
- geom_float* pcx ,  geom_float* pcy ,  geom_float* pcz, geom_float* fx,
- geom_float* sx  ,  geom_float* sy  ,  geom_float* sz , geom_float* ss,
- flow_float* massflux,
-
- // variables
-//flow_float* convx , flow_float* convy , flow_float* convz,
-// flow_float* diffx , flow_float* diffy , flow_float* diffz,
- flow_float* ro   ,
- flow_float* roUx  ,
- flow_float* roUy  ,
- flow_float* roUz  ,
- flow_float* roe ,
- flow_float* Ux  ,
- flow_float* Uy  ,
- flow_float* Uz  ,
- flow_float* Ps  ,
- flow_float* Ht  ,
- flow_float* sonic,
- 
- flow_float* res_ro   ,
- flow_float* res_roUx  ,
- flow_float* res_roUy  ,
- flow_float* res_roUz  ,
- flow_float* res_roe   ,
-
- flow_float* limiter_ro,
- flow_float* limiter_Ux,
- flow_float* limiter_Uy,
- flow_float* limiter_Uz,
- flow_float* limiter_P,
- flow_float* ducros,
-
- flow_float* drodx  , flow_float* drody , flow_float* drodz,
- flow_float* dUxdx  , flow_float* dUxdy , flow_float* dUxdz,
- flow_float* dUydx  , flow_float* dUydy , flow_float* dUydz,
- flow_float* dUzdx  , flow_float* dUzdy , flow_float* dUzdz,
- flow_float* dPdx   , flow_float* dPdy  , flow_float* dPdz
-
+ SpeciesArgs   spA,    // thermalMethod / sp / nSpecies / roY / Y{,d}_recon / limiterY_recon / Yface_out / Rmix_cell
+ CondArgs      cnd,    // cp_cpg / g_total / T_cell / condModel (非平衡凝縮の二相エネルギー補正)
+ FaceGeom      geom,   // mesh 構造 (nCells..massflux)
+ PrimState     st,     // 保存量/原始量 (ro..sonic)
+ ResidualOut   reso,   // 残差出力 (res_*)
+ LimiterFields lim,    // リミタ (limiter_* / ducros)
+ GradFields    grd     // 勾配 (drod*..dPd*)
 )
 {
+    // --- struct 引数をローカルへ展開 (以降の本体は旧シグネチャのまま無改変) ---
+    const int            thermalMethod  = spA.thermalMethod;
+    const SpeciesThermo* sp             = spA.sp;
+    const int            nSpecies       = spA.nSpecies;
+    flow_float**         roY            = spA.roY;
+    flow_float**         Yd_recon       = spA.Yd_recon;
+    flow_float**         dYdx_recon     = spA.dYdx_recon;
+    flow_float**         dYdy_recon     = spA.dYdy_recon;
+    flow_float**         dYdz_recon     = spA.dYdz_recon;
+    flow_float**         limiterY_recon = spA.limiterY_recon;
+    flow_float*          Yface_out      = spA.Yface_out;
+    flow_float*          Rmix_cell      = spA.Rmix_cell;
+
+    const flow_float cp_cpg   = cnd.cp_cpg;
+    flow_float*      g_total  = cnd.g_total;
+    flow_float*      T_cell   = cnd.T_cell;
+    const int        condModel= cnd.condModel;
+
+    const geom_int nCells       = geom.nCells;
+    const geom_int nPlanes      = geom.nPlanes;
+    const geom_int nNormalPlanes= geom.nNormalPlanes;
+    geom_int*      plane_cells  = geom.plane_cells;
+    const geom_int nNormal_ghst_Planes = geom.nLoopPlanes;
+    geom_int*      normal_ghst_planes_d = geom.loop_planes;
+    geom_float *vol=geom.vol, *ccx=geom.ccx, *ccy=geom.ccy, *ccz=geom.ccz;
+    geom_float *pcx=geom.pcx, *pcy=geom.pcy, *pcz=geom.pcz, *fx=geom.fx;
+    geom_float *sx=geom.sx, *sy=geom.sy, *sz=geom.sz, *ss=geom.ss;
+    flow_float* massflux=geom.massflux;
+
+    flow_float *ro=st.ro, *roUx=st.roUx, *roUy=st.roUy, *roUz=st.roUz, *roe=st.roe;
+    flow_float *Ux=st.Ux, *Uy=st.Uy, *Uz=st.Uz, *Ps=st.Ps, *Ht=st.Ht, *sonic=st.sonic;
+
+    flow_float *res_ro=reso.res_ro, *res_roUx=reso.res_roUx, *res_roUy=reso.res_roUy, *res_roUz=reso.res_roUz, *res_roe=reso.res_roe;
+
+    flow_float *limiter_ro=lim.limiter_ro, *limiter_Ux=lim.limiter_Ux, *limiter_Uy=lim.limiter_Uy, *limiter_Uz=lim.limiter_Uz, *limiter_P=lim.limiter_P;
+    flow_float* ducros=lim.ducros;
+
+    flow_float *drodx=grd.drodx, *drody=grd.drody, *drodz=grd.drodz;
+    flow_float *dUxdx=grd.dUxdx, *dUxdy=grd.dUxdy, *dUxdz=grd.dUxdz;
+    flow_float *dUydx=grd.dUydx, *dUydy=grd.dUydy, *dUydz=grd.dUydz;
+    flow_float *dUzdx=grd.dUzdx, *dUzdy=grd.dUzdy, *dUzdz=grd.dUzdz;
+    flow_float *dPdx=grd.dPdx, *dPdy=grd.dPdy, *dPdz=grd.dPdz;
+    // --- ローカル展開ここまで ---
+
     geom_int ip_orig = blockDim.x*blockIdx.x + threadIdx.x;
 
 

@@ -137,65 +137,42 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     if (cfg.solver == "SLAU" || cfg.solver == "SLAU2") {
         int slauVariant = (cfg.solver == "SLAU2") ? 2 : 1;
-        SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
-            cfg.convMethod, cfg.limiter, slauVariant,
-            cfg.lowMachPrecond, cfg.precondEps,
-            cfg.lowMachThornber,
-
-            cfg.gamma,
+        FaceGeom geom {
+            msh.nCells, msh.nPlanes, msh.nNormalPlanes, msh.map_plane_cells_d,
+            convPlaneBound, msh.normal_halo_planes_d,
+            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
+            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
+            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
+            var.p_d["massflux"] };
+        PrimState st {
+            var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"],
+            var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"], var.c_d["P"], var.c_d["Ht"], var.c_d["sonic"] };
+        ResidualOut reso {
+            var.c_d["res_ro"], var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"], var.c_d["res_roe"] };
+        LimiterFields lim {
+            var.c_d["limiter_ro"], var.c_d["limiter_Ux"], var.c_d["limiter_Uy"], var.c_d["limiter_Uz"], var.c_d["limiter_P"],
+            var.c_d["ducros"] };
+        GradFields grd {
+            var.c_d["drodx"], var.c_d["drody"], var.c_d["drodz"],
+            var.c_d["dUxdx"], var.c_d["dUxdy"], var.c_d["dUxdz"],
+            var.c_d["dUydx"], var.c_d["dUydy"], var.c_d["dUydz"],
+            var.c_d["dUzdx"], var.c_d["dUzdy"], var.c_d["dUzdz"],
+            var.c_d["dPdx"] , var.c_d["dPdy"] , var.c_d["dPdz"] };
+        CondArgs cnd { cfg.cp, cond_g, var.c_d["T"], cfg.condModel };
+        SpeciesArgs spA {
             cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies,
             species_roY_device_ptr(),
             species_Y_device_ptr(), species_dYdx_device_ptr(), species_dYdy_device_ptr(), species_dYdz_device_ptr(),
             species_limiterY_device_ptr(),
             (cfg.speciesFaceReconstruction >= 2) ? species_Yface_alloc(msh.nPlanes) : nullptr,
-            var.c_d["Rmix"],
-            cfg.cp, cond_g, var.c_d["T"], cfg.condModel,
+            var.c_d["Rmix"] };
 
-            // mesh structure
-            msh.nCells,
-            msh.nPlanes , msh.nNormalPlanes , msh.map_plane_cells_d,
-            convPlaneBound, msh.normal_halo_planes_d,
-            var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-            var.p_d["pcx"]   , var.p_d["pcy"], var.p_d["pcz"], var.p_d["fx"],
-            var.p_d["sx"]    , var.p_d["sy"] , var.p_d["sz"] , var.p_d["ss"],
-            var.p_d["massflux"],
-
-            // basic variables
-            //var.c_d["convx"] , var.c_d["convy"] , var.c_d["convz"] ,
-            //var.c_d["diffx"] , var.c_d["diffy"] , var.c_d["diffz"] ,
-            var.c_d["ro"] ,
-            var.c_d["roUx"] ,
-            var.c_d["roUy"] ,
-            var.c_d["roUz"] ,
-            var.c_d["roe"] ,
-            var.c_d["Ux"]  ,
-            var.c_d["Uy"]  ,
-            var.c_d["Uz"]  ,
-            var.c_d["P"]  ,
-            var.c_d["Ht"]  ,
-            var.c_d["sonic"]  ,
-
-            var.c_d["res_ro"] ,
-            var.c_d["res_roUx"] ,
-            var.c_d["res_roUy"] ,
-            var.c_d["res_roUz"] ,
-            var.c_d["res_roe"]  ,
-
-            var.c_d["limiter_ro"]  ,
-            var.c_d["limiter_Ux"]  ,
-            var.c_d["limiter_Uy"]  ,
-            var.c_d["limiter_Uz"]  ,
-            var.c_d["limiter_P"]  ,
-
-            var.c_d["ducros"]  ,
-
-            // gradient
-            var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
-            var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
-            var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
-            var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
-            var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"]
-
+        SLAU_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
+            cfg.convMethod, cfg.limiter, slauVariant,
+            cfg.lowMachPrecond, cfg.precondEps,
+            cfg.lowMachThornber,
+            cfg.gamma,
+            spA, cnd, geom, st, reso, lim, grd
         ) ;
 
     } else if (cfg.solver == "HLLE") {

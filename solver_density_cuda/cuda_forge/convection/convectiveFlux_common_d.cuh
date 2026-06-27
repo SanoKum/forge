@@ -270,3 +270,62 @@ __device__ flow_float betaMns_slau(flow_float M)
         return 0.5*(1.0+sign_sano(-M));
     }
 }
+
+// =============================================================================
+// 対流フラックス カーネル共通の引数バンドル。
+//   - いずれも device ポインタ (とスカラー) を束ねるだけの POD。配列実体はコピーせず、
+//     アドレスのみを値渡しする (カーネル引数はもともと値渡し)。
+//   - SLAU/HLLE/ROE で完全に同一な mesh幾何/保存量/残差/リミタ/勾配を 5 つに束ね、
+//     カーネル冒頭でローカルポインタへ展開して本体を無改変に保つ。
+//   - loop_planes は主ループ対象 plane 列 (cell: 全 halo, node: 内部+periodic)。
+//     旧シグネチャの nNormal_ghst_Planes (SLAU) / nNormal_halo_Planes (HLLE/ROE) を統一。
+// =============================================================================
+struct FaceGeom {
+    geom_int   nCells, nPlanes, nNormalPlanes;
+    geom_int*  plane_cells;
+    geom_int   nLoopPlanes;
+    geom_int*  loop_planes;
+    geom_float *vol, *ccx, *ccy, *ccz;
+    geom_float *pcx, *pcy, *pcz, *fx;
+    geom_float *sx, *sy, *sz, *ss;
+    flow_float* massflux;
+};
+struct PrimState {
+    flow_float *ro, *roUx, *roUy, *roUz, *roe;
+    flow_float *Ux, *Uy, *Uz, *Ps, *Ht, *sonic;
+};
+struct ResidualOut {
+    flow_float *res_ro, *res_roUx, *res_roUy, *res_roUz, *res_roe;
+};
+struct LimiterFields {
+    flow_float *limiter_ro, *limiter_Ux, *limiter_Uy, *limiter_Uz, *limiter_P;
+    flow_float *ducros;
+};
+struct GradFields {
+    flow_float *drodx, *drody, *drodz;
+    flow_float *dUxdx, *dUxdy, *dUxdz;
+    flow_float *dUydx, *dUydy, *dUydz;
+    flow_float *dUzdx, *dUzdy, *dUzdz;
+    flow_float *dPdx, *dPdy, *dPdz;
+};
+// 非平衡凝縮 (二相) のエネルギー流束補正。g_total==nullptr で従来挙動 (ビット不変)。全スキーム共通。
+struct CondArgs {
+    flow_float  cp_cpg;
+    flow_float* g_total;
+    flow_float* T_cell;
+    int         condModel;
+};
+// thermally-perfect 多成分の化学種データと face 整合再構成用配列 (SLAU の種別再構成で使用)。
+struct SpeciesArgs {
+    int                  thermalMethod;
+    const SpeciesThermo* sp;
+    int                  nSpecies;
+    flow_float**         roY;
+    flow_float**         Yd_recon;
+    flow_float**         dYdx_recon;
+    flow_float**         dYdy_recon;
+    flow_float**         dYdz_recon;
+    flow_float**         limiterY_recon;
+    flow_float*          Yface_out;
+    flow_float*          Rmix_cell;
+};
