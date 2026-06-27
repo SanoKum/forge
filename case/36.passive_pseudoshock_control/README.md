@@ -192,6 +192,34 @@ forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソ�
 
 → 図 `cmp_node_vs_cell_ROOTCAUSE.png`。修正方針・SU2 調査待ちは [`.github/plans/turbulence-node-sst-wallfunction.md`](../../.github/plans/turbulence-node-sst-wallfunction.md)。**この差は node の物理バグであり cell は SU2 と整合 (142 vs 132mm)。**
 
+### ★ node vs cell SST 再比較 @ Ps=1.90 (現行バイナリ; 2026-06-27)
+
+node SST の一連の修正 (壁関数 τ_w `AddTauWall`=`945a27f`、SST init freestream=`f639ff2`、入口ピン=`537d80f`、
+境界 ghostless=`9cc6475`、**境界半割面拡散 skip**=`af5b98d`) を全て積んだ現行バイナリで、**同一メッシュ
+`passive_solid.h5`・同一 BC (Ps=1.90, wt=1, MUSCL, SST, Sutherland, blockDPLUR)** で node と cell を再比較。
+restart: cell←run_0049/res_80000、node←run_0072/res_40000。
+
+| run | discretization | shock x (limit-cycle) | Mmax | peak μt/μ | VERDICT |
+| --- | --- | --- | --- | --- | --- |
+| `run_cmp_cell_sst_bp1p90` (+`_cont` で計 60k) | cell | **~160mm** (159-161 振動) | 1.923 | 93800 | **NOT CONVERGED** (plateau) |
+| `run_cmp_node_sst_bp1p90` | node | **~163mm** (163.5→163.2 静止) | 1.913 | 92300 | **NOT CONVERGED** (plateau) |
+
+- **★ node ≈ cell に一致 (~160 vs ~163mm, 差 ~3mm)**。過去の **cell 142 / node 171mm (29mm 差)** から
+  ギャップがほぼ消滅。node の Mmax も **1.69→1.913** とコア加速が回復 (過去の「加速失敗」解消)、peak μt/μ も
+  cell とほぼ同一 (92-94k)。→ **node SST 修正群 (壁関数 τ_w + init + ghostless + skip) で node が cell と整合**。
+- **⚠ 収束性 (要注意)**: **両者とも `check_convergence.py` VERDICT=NOT CONVERGED** (擬似衝撃波の limit-cycle
+  プラトー; rms 全列が flat 床、cell rms_roUy 6.4e-2・node rms_roOmega 2.44e6 で停滞)。報告した shock 位置は
+  **limit-cycle スナップショット**で、cell は ±1mm 振動・node は静止。**「収束した」とは主張しない** (この case は
+  定常 RANS では収束しないことが既知=下記 down-sweep 節・本 README 末尾の所見)。場の比較は準定常同士。
+- **⚠ cell 自身が 142→160mm に移動**: 現行バイナリの cell は旧 run_0049 (142mm) より ~18mm 下流。outlet 静圧
+  BC の特性状態統一 (`88def3b`) が cell 出口にも効いた交絡が疑われる (node 専用修正ではない)。結果、**forge
+  node/cell は互いに一致するが、両者とも SU2 中立 132mm・旧 cell 142mm より ~20-30mm 下流**。forge 対 SU2 の
+  ~30mm 差 (どちらが正かは本比較の対象外) は別途要調査。
+- 図 `compare_node_cell_sst_bp1p90_current.png` (P/Mach センターライン、SU2 132・旧 cell 142 マーカ付き)。
+- **結論**: 問い「node と cell を SST で比較」への答え=**現行バイナリで node SST は cell SST と整合 (shock ~3mm,
+  Mmax/μt 同等)**。ただし**双方とも未収束 (limit-cycle)** で準定常スナップショット比較であり、かつ現行 cell が
+  旧 cell/SU2 より下流に動いている点 (outlet BC 交絡) は留意。
+
 ### 背圧 down-sweep (porous, SST wall-resolved, 本番設定; 2026-06-21)
 
 本番設定 = SLAU+SST(`wallTreatmentSST:1`)+MUSCL+陰解法 `cfl_pseudo:5`/`nStepInner:5`/**`implicitRelax:1.0`**/`detectNaN:1`、入口乱流 μt/μ=1・TI=1%、`outlet_statPress` Pt=Ps、80k step、出力2000。各点は前段から継続 (`run_case.sh` 経由, VERDICT 記録)。
