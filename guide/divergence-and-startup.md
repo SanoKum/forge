@@ -3,7 +3,7 @@
 新しい計算を投入するとき、および計算が発散 (NaN / 残差爆発) したときは、まずこの文書の
 チェックリストと起動手順に従うこと。経験上、発散の大半は**物理やメッシュではなく投入設定**
 が原因であり、ここを直すと回ることが多い (Fluent 変換メッシュ fan / StaticMixer も、当初の
-発散はすべて投入設定が原因だった。実証は [`.github/forge-calculation-workflow.md`](forge-calculation-workflow.md) の Fluent 節)。
+発散はすべて投入設定が原因だった。実証は [`guide/calculation-workflow.md`](calculation-workflow.md) の Fluent 節)。
 
 ## 0. まず確認するチェックリスト
 
@@ -47,7 +47,7 @@
 
 ### (E) 非直交メッシュの free-stream 桁落ち
 - 非直交セルでは一様流の圧力流束 Σ(P·s) が float32 で厳密相殺せず偽の運動量源になる。
-  `space.pRef` に動作静圧を入れて差分化する (詳細: [`.github/plans/convection-freestream-preserving-flux.md`](plans/convection-freestream-preserving-flux.md))。
+  `space.pRef` に動作静圧を入れて差分化する (詳細: [`.github/plans/convection-freestream-preserving-flux.md`](../design/active/convection-freestream-preserving-flux.md))。
 
 ## 2. 推奨する段階起動 (易→難の引き継ぎ計算)
 
@@ -76,10 +76,10 @@
    入口域なら起動衝撃/入口 BC、壁際なら no-slip/乱流、を疑う。
 4. 上の §0 チェックリスト・§1 主因に照らして設定を直し、§2 段階起動からやり直す。
 5. メッシュ起因が疑われるなら閉性・体積・向きを確認する (Fluent 変換は
-   [`.github/forge-calculation-workflow.md`](forge-calculation-workflow.md) の Fluent 節参照)。
+   [`guide/calculation-workflow.md`](calculation-workflow.md) の Fluent 節参照)。
 
 ## 4. 関連文書
 
-- [`.github/forge-calculation-workflow.md`](forge-calculation-workflow.md) — 計算準備・実行・Fluent 取り込みと実行レシピ。
-- [`.github/forge-solver-settings.md`](forge-solver-settings.md) — `convMethod`/`limiter` 等の意味。
-- [`.github/plans/convection-freestream-preserving-flux.md`](plans/convection-freestream-preserving-flux.md) — `pRef` (free-stream 保存)。
+- [`guide/calculation-workflow.md`](calculation-workflow.md) — 計算準備・実行・Fluent 取り込みと実行レシピ。
+- [`guide/solver-settings.md`](solver-settings.md) — `convMethod`/`limiter` 等の意味。
+- [`.github/plans/convection-freestream-preserving-flux.md`](../design/active/convection-freestream-preserving-flux.md) — `pRef` (free-stream 保存)。

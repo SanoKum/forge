@@ -48,7 +48,7 @@
 ## 6. 検証
 
 - **単体 / ビルド**: コンパイル・ユニット検証手順。
-- **検証ケース**: `case/<case_name>/` のどれを使うか、[`../.github/forge-verification-cases.md`](../.github/forge-verification-cases.md) 参照。
+- **検証ケース**: `case/<case_name>/` のどれを使うか、[`../guide/verification/README.md`](../guide/verification/README.md) 参照。
 - **判定基準**: 残差・物理量・性能の合否ライン。
 
 ## 7. 影響範囲

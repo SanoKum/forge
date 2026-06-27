@@ -299,7 +299,7 @@ setDT とは別の独立スペクトル半径を使っていないか確認)。
 - **stale build trap** ([[stale-build-struct-layout-trap]]): block サイズや `solverConfig.hpp` 変更後は
   `ninja -C .build-native/relwithdebinfo -t clean && ninja` で **full rebuild**(差分は step0 NaN 凍結)。
 - **native build**: `.build-native/relwithdebinfo/forge`(nvcc 12, sm_86)。`tools/build_native_wsl.sh`。
-- **CFL の定義**: 定常は `cfl_pseudo` が実効(`setDT_d.cu`)。`cfl` は表示用。`.github/forge-solver-settings.md`。
+- **CFL の定義**: 定常は `cfl_pseudo` が実効(`setDT_d.cu`)。`cfl` は表示用。`guide/solver-settings.md`。
 - **収束報告の規律** ([[convergence-check-discipline]]): `rms_ro` 単独で判断しない・全残差列・ツール経由。
 - **run 索引**: `case/28.cutler_coaxial_jet/README.md` の「## 計算 run 一覧」を同期。新 run は
   `run_NNNN_<slug>` 連番(現在 run_0039 まで使用、0040–0044 は CFL 上限探索で破棄済み)。

@@ -338,7 +338,7 @@ cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は�
 ## 5. 設定
 
 [solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。
-設定の意味は [.github/forge-solver-settings.md](../../.github/forge-solver-settings.md) を参照。
+設定の意味は [guide/solver-settings.md](../../guide/solver-settings.md) を参照。
 
 ## 6. 検証
 

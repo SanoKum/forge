@@ -5,7 +5,7 @@
 - **area**: `architecture`
 - **status**: `done`
 - **related_docs**:
-  - `.github/forge-solver-settings.md`（`detectNaN` 設定リファレンス）
+  - `guide/solver-settings.md`（`detectNaN` 設定リファレンス）
 - **created**: `2026-06-11`
 - **owner**: `CFD Dev`
 
@@ -25,7 +25,7 @@
 
 ## 3. 関連 docs と前提
 
-- `.github/forge-solver-settings.md` に `detectNaN` 節を追加済み。
+- `guide/solver-settings.md` に `detectNaN` 節を追加済み。
 - AGENTS.md の「NaN / 発散チェック (必須)」運用を実行時に支援する位置づけ。
 
 ## 4. 設計方針
@@ -65,7 +65,7 @@
 - 触るファイル: `input/solverConfig.{hpp,cpp}`, `cuda_forge/residualMonitor_d.{cu,cuh}`,
   `output/output.{cpp,hpp}`, `main.cpp`。
 - 既存ケースは `detectNaN` 未指定で既定 0 → 挙動・性能とも不変。
-- ドキュメント: `.github/forge-solver-settings.md` に節追加。
+- ドキュメント: `guide/solver-settings.md` に節追加。
 
 ## 8. 完了条件
 

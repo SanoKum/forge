@@ -74,7 +74,7 @@ node-centered で未知量の位置は**ノード**だが、現状 `CELLS/centCo
 
 - [ ] docs 更新 (centCoords=値の位置 / 軸半径分離 / 境界弱形式)
 - [ ] 実装・検証完了 (§6)
-- [ ] [`.github/plans/README.md`](../README.md) 更新、`diffusion-node-scalar-nonortho-limit.md` を superseded 化
+- [ ] [`design/README.md`](../README.md) 更新、`diffusion-node-scalar-nonortho-limit.md` を superseded 化
 - [ ] `status: done`、§9 に case/36・case/29 の before/after
 
 ## 9. 変更ログ

@@ -14,7 +14,7 @@ forge は密度ベース圧縮性ソルバー(`solver_density_cuda/`)。定常 R
 
 - 定常計算の実効 CFL は `cfl` ではなく **`cfl_pseudo`**(`setDT_d.cu` の `setDT_d_wrapper`、
   `unsteady==0` で `dt_local = cfl_pseudo·dt/cfl_cell`、`dt` が相殺し実効 CFL=`cfl_pseudo`)。
-  詳細は `.github/forge-solver-settings.md` の「CFL の定義」節。
+  詳細は `guide/solver-settings.md` の「CFL の定義」節。
 - `cfl_pseudo=10` は MUSCL・cold start いずれも step 数十で発散。`nStepInner` を 15→40 に増やしても
   発散したので、**内部 Jacobi の収束不足ではなく外側 defect-correction の安定限界**。
 
@@ -85,8 +85,8 @@ forge は密度ベース圧縮性ソルバー(`solver_density_cuda/`)。定常 R
     forge-solver:cuda-dev bash -c "cd /workspace/solver_density_cuda && bash tools/build.sh"
   ```
 - **計算**: 既存 `run_*` を使い回さず複製した新 `run_*` で実行。実行後 `residual_history.png` を生成。
-  メッシュ生成→`convertGmshToForge`→`forge` の流れは `.github/forge-calculation-workflow.md` 準拠。
-- **設定変更**は `.github/forge-solver-settings.md` を参照(特に `cfl`/`cfl_pseudo` の定義)。
+  メッシュ生成→`convertGmshToForge`→`forge` の流れは `guide/calculation-workflow.md` 準拠。
+- **設定変更**は `guide/solver-settings.md` を参照(特に `cfl`/`cfl_pseudo` の定義)。
 - **言語**: docs/コメントは日本語、識別子は原語 `code` 表記、commit は英語命令形。
 - **コミット**: 機能単位で feature ブランチへ。`case/` の run 成果物(res_*.h5, *.png, log)は commit しない。
 

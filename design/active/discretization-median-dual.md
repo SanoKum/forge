@@ -105,7 +105,7 @@
   `input/setInitial.hpp`, `probe/point_probes.cpp`, `variables.cpp` (軸対称・副次)。
 - 既存ケース: cell モードは無影響 (フラグ既定 `cell`)。
 - ドキュメント: `docs/discretization/{theory,implementation}.md`, `docs/index.md`,
-  `docs/architecture/overview.md`, `.github/forge-solver-settings.md`。
+  `docs/architecture/overview.md`, `guide/solver-settings.md`。
 
 ## 8. 完了条件
 
@@ -113,7 +113,7 @@
 - [x] 関連 `docs/discretization/implementation.md` 作成済み
 - [ ] M1 実装・検証完了 (§6 の sod 判定を満たす)
 - [ ] M2–M4 実装・検証完了
-- [ ] `.github/plans/README.md` の状態を更新
+- [ ] `design/README.md` の状態を更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
 
 ## 9. 変更ログ

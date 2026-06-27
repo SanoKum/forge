@@ -123,7 +123,7 @@ near-wall ratio=1.000)。
 
 forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソルバ **SU2 v8.5.0** で同一 `.geo`・同一 BC
 (超音速入口 M=1.689/Ps=617.8kPa, 出口 Ps=1.90MPa, SST/SLAU/MUSCL, Sutherland)で判定。手順は
-[`.github/forge-su2-cross-check.md`](../../.github/forge-su2-cross-check.md)。run dir: `run_su2_sst_slau_muscl/`、
+[`guide/su2-cross-check.md`](../../guide/su2-cross-check.md)。run dir: `run_su2_sst_slau_muscl/`、
 比較スクリプト `compare_su2_forge_centerline.py` / 図 `compare_su2_vs_forge_centerline.png`。
 
 | 設定 (SU2, 全て restart 同一発達場から) | CFL | 残差 rms[Rho] | 衝撃 x[mm] | peak μt/μ | M_max |

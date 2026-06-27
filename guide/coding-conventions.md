@@ -32,7 +32,7 @@ solver_density_cuda/
 - **カーネル/デバイス関数**: `__global__ void <Name>_d(...)`、補助は `__device__` / `__device__ __forceinline__`。
 - **浮動小数型**: 実数は `flow_float` (typedef) を使い、`float`/`double` を直書きしない。
 - **流れ場変数**: セル/プレーン量は文字列キーの map (`variables::c`, `c_d` 等) で保持し、キーは `"ro"`, `"roUx"`, `"roe"`, `"roK"`, `"roOmega"` のような保存量名を用いる。時間レベルは接尾辞 `N` / `NN` で表す。
-- **スキーム識別子**: `SLAU`, `ROE`, `AUSM+`, `AUSM+UP`, `KEEP_SLAU` を設定値・run 名で統一して使う (run 名規則は [calculation-workflow](forge-calculation-workflow.md))。
+- **スキーム識別子**: `SLAU`, `ROE`, `AUSM+`, `AUSM+UP`, `KEEP_SLAU` を設定値・run 名で統一して使う (run 名規則は [calculation-workflow](calculation-workflow.md))。
 
 ## コメント・言語
 
@@ -42,7 +42,7 @@ solver_density_cuda/
 ## ビルド
 
 通常開発は Docker を基本とし、GPU プロファイリング時のみ native を優先する (方針は
-[forge-development-environment.md](forge-development-environment.md))。
+[forge-development-environment.md](development-environment.md))。
 
 ### Docker
 
@@ -90,7 +90,7 @@ python3 tests/regression/run_regression.py --update-baseline  # 数値を変え�
 ## commit / PR
 
 - 1 commit は 1 つの論理変更にまとめ、メッセージ本文は日本語可・命令形の要約から始める。
-- 数値・設計を変える変更は、対応する [`docs/`](../docs/index.md) と [`.github/plans/`](plans/README.md) を先に更新してから実装する (AGENTS.md「開発フロー」)。
+- 数値・設計を変える変更は、対応する [`docs/`](../docs/index.md) と [`.github/plans/`](../design/README.md) を先に更新してから実装する (AGENTS.md「開発フロー」)。
 - PR は対象・非対象、検証に使ったケースと結果 (回帰 PASS/FAIL、必要なら residual PNG) を記載する。
 
 ## 今後の課題 (backlog)

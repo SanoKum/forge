@@ -61,7 +61,7 @@ node-centered で SST RANS が omega 爆発で起動できない (case/36: roOme
 
 - [x] `docs/diffusion/implementation.md` に node 座標 dcc を追記
 - [ ] 残発散 (case/36 step1657) の追加対策 (対流 fx/dcc・勾配の node 座標化、または near-convergence 安定化) を別 plan/§9 で判断
-- [ ] [`.github/plans/README.md`](../README.md) を更新
+- [ ] [`design/README.md`](../README.md) を更新
 - [ ] `status: done` 化 (残発散の整理後)
 
 ## 9. 変更ログ

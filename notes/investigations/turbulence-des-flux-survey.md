@@ -132,7 +132,7 @@
 ## 6. 不確実な点・追加で読むべき一次文献
 
 1. **`KEEP_SLAU` の `duc` の入り方**: SU2 同様「散逸テンソルに σ 乗算」か、「フルフラックスを中心↔風上で線形ブレンド」か。前者なら SU2 σ 式を直接移植可。→ [convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) `KEEP_SLAU_d`（L2210–, blend L2452–2456）を実確認。
-2. **SBLI/ノズル/ピントルで `FD` 単体で足りるか**: SU2 BSCW は共存ゆえ `NTS_DUCROS`。forge は SU2 クロスチェック（[`.github/forge-su2-cross-check.md`](../../.github/forge-su2-cross-check.md)）で判定。
+2. **SBLI/ノズル/ピントルで `FD` 単体で足りるか**: SU2 BSCW は共存ゆえ `NTS_DUCROS`。forge は SU2 クロスチェック（[`guide/su2-cross-check.md`](../../guide/su2-cross-check.md)）で判定。
 3. **`ψ_limiter` はセンサとして反応するか**: <0.1% 不変なら `1-ψ_limiter` 項は無寄与で `duc=1-f_d` に縮退。要計測。
 4. **IDDES（vs DDES）での flux 係数**: f_d（DDES）か IDDES の f̃/f_dt か。本調査の検証ソース範囲外 → **Shur, Spalart, Strelets, Travin (2008, IJHFF, [doi:10.1016/j.ijheatfluidflow.2008.07.001](https://doi.org/10.1016/j.ijheatfluidflow.2008.07.001))** / **Gritskevich et al. (2012)** を一次で読む。
 5. 全文 403 だった AIAA URL（2017-4284, J054956）は SU2 master ソースで内容裏取り済（同等以上の証拠）。

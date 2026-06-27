@@ -21,7 +21,7 @@ Menter SST k-ω モデルが乱流平板の**壁法則 (law of the wall)** を�
 ## 実行手順 (段階法)
 
 **重要**: 定常計算の実効 CFL は `cfl` ではなく `cfl_pseudo`
-(`.github/forge-solver-settings.md` の「CFL の定義」を参照)。
+(`guide/solver-settings.md` の「CFL の定義」を参照)。
 本ケースは壁セルが極めて細く陰解法でも CFL 制限が低いため、段階的に進める。
 
 1. **stage A (`run_0005_slau_spinup`)**: 一様初期値からの cold start。
@@ -32,7 +32,7 @@ Menter SST k-ω モデルが乱流平板の**壁法則 (law of the wall)** を�
 > cold start で `cfl_pseudo≳5` や、いきなり MUSCL + 高 `cfl_pseudo` にすると発散する。
 > 発達場からの restart でも本ケースの安定上限は `cfl_pseudo≈3` 程度。
 
-メッシュ生成・変換・実行は `.github/forge-calculation-workflow.md` の標準手順に従う
+メッシュ生成・変換・実行は `guide/calculation-workflow.md` の標準手順に従う
 (Docker, `convertGmshToForge`, `forge`)。
 
 ## ポスト処理

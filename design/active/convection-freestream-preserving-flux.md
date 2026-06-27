@@ -84,7 +84,7 @@ forge (float32) は非直交メッシュで一様場 (free-stream) を保持で�
 実証: **fan (Fluent hex) 完全収束** (case/32 run_0011_proper)、
 **StaticMixer (Fluent tet+prism) 300歩健全完走** (case/31 run_0012_backflow)。
 hex/tet/prism の Fluent メッシュが forge で計算可能と実証。レシピは
-`.github/forge-calculation-workflow.md` の Fluent 節に記載。
+`guide/calculation-workflow.md` の Fluent 節に記載。
 
 ## 変更ログ
 

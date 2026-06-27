@@ -12,7 +12,7 @@
   - `architecture-axisymmetric.md` (B 流儀 r 重み実装)
   - `time_integration-implicit-stable-cfl.md` (block DPLUR)
   - `turbulence-kato-launder.md` (← 本件の対処としては**誤り**。下記参照)
-- **related_docs(手順)**: `.github/forge-su2-cross-check.md`
+- **related_docs(手順)**: `guide/su2-cross-check.md`
 - **created**: `2026-06-12`
 - **updated**: `2026-06-14`
 - **owner**: `CFD Dev`

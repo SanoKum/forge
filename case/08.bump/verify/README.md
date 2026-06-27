@@ -4,7 +4,7 @@
 **y≈0.3 の数値解 (P/Pt, Mach) が基準とずれていないか**、
 **収束度合い (残差 floor・収束ステップ・発散有無) が悪化していないか** を自動判定する。
 
-正本の手順・判定基準は [`.github/verification-cases/08-bump.md`](../../../.github/verification-cases/08-bump.md) を参照。
+正本の手順・判定基準は [`guide/verification/08-bump.md`](../../../guide/verification/08-bump.md) を参照。
 
 ## 使い方
 

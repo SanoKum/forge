@@ -344,7 +344,7 @@ strain-based 生産の stagnation/加速アノマリー (theory.md §7.5) を抑
 
 ## 7. 検証方針
 
-標準の検証起点は [../../.github/forge-verification-cases.md](../../.github/forge-verification-cases.md)
+標準の検証起点は [../../guide/verification/README.md](../../guide/verification/README.md)
 に従う。
 
 推奨順序:

@@ -45,7 +45,7 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
 - 全体構成: [`docs/architecture/overview.md`](../../docs/architecture/overview.md)
 - 軸対称の前提: [`docs/axisymmetric/theory.md`](../../docs/axisymmetric/theory.md)
   と [`architecture-axisymmetric.md`](architecture-axisymmetric.md)
-- 検証運用: [`../forge-verification-cases.md`](../../.github/forge-verification-cases.md)
+- 検証運用: [`../forge-verification-cases.md`](../../guide/verification/README.md)
 
 軸対称 plan 側で「LES / RANS の軸対称対応 → 別 plan」と明記されているため、
 本計画で扱う axisymmetric は既存幾何の上で scalar advection plumbing を確認する

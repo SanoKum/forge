@@ -28,13 +28,13 @@
 
 ## 個別解説
 
-- `20.naca_ml`: `.github/verification-cases/20-naca-ml.md`
-- `08.bump`: `.github/verification-cases/08-bump.md`
-- `13.nozzle_H`: `.github/verification-cases/13-nozzle-h.md`
+- `20.naca_ml`: `guide/verification/20-naca-ml.md`
+- `08.bump`: `guide/verification/08-bump.md`
+- `13.nozzle_H`: `guide/verification/13-nozzle-h.md`
 
 ## 運用ルール
 
-- `run_*` の複製実行と `residual_history.png` の生成は、[AGENTS.md](../AGENTS.md) の共通ルールに従う (検証実行でも同じ)。
+- `run_*` の複製実行と `residual_history.png` の生成は、[AGENTS.md](../../AGENTS.md) の共通ルールに従う (検証実行でも同じ)。
 - 生成される `residual_history.csv`、`res_*.h5`、壁面出力、実行ログは、その新しい `run_*` に保存して比較可能な状態を維持する。
 - 既定ケースで十分に異常を切り分けられない場合は、変更内容に応じて他の標準ケースも追加で使う。
 - 数値結果を変えないはずの変更では、既存ベースラインとの差分が不必要に増えていないことを確認する。

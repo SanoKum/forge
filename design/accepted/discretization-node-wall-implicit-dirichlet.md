@@ -89,7 +89,7 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 - [ ] `docs/discretization/theory.md` に壁 in-Jacobian Dirichlet を追記
 - [ ] `docs/discretization/implementation.md` の SU2 比較節に壁を追記
 - [ ] 実装・検証完了 (§6 の判定基準を満たす)
-- [ ] [`.github/plans/README.md`](../README.md) の状態を `done` に更新
+- [ ] [`design/README.md`](../README.md) の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログ (壁 drift・KE シンク・近壁 dP/dy の before/after を数値で) を記載
 
 ## 9. 変更ログ

@@ -94,7 +94,7 @@ docker run --rm --gpus all \
 
 ## 関連文書
 
-- 計算準備と `forge` 実行手順: `.github/forge-calculation-workflow.md`
-- 標準検証ケース: `.github/forge-verification-cases.md`
+- 計算準備と `forge` 実行手順: `guide/calculation-workflow.md`
+- 標準検証ケース: `guide/verification/README.md`
 - Docker 開発環境の補足: `solver_density_cuda/README_docker.md`
 - native ビルドスクリプト: `solver_density_cuda/tools/build_native_wsl.sh`

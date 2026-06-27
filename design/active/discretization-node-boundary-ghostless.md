@@ -165,7 +165,7 @@ flux 寄与は不要。
 - [x] 関連 `docs/discretization/theory.md` 更新済み
 - [x] 関連 `docs/discretization/implementation.md` 更新済み
 - [ ] 実装・検証完了 (§6 を満たす)
-- [ ] `.github/plans/README.md` の状態を `done` に更新
+- [ ] `design/README.md` の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
 
 ## 9. 変更ログ

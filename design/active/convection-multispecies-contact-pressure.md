@@ -150,7 +150,7 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
 - [ ] 判定ゲートの結論 + 次の推奨を報告。
 - [ ] commit 分離: `test: add multispecies material-contact benchmark` /
       `feat: reconstruct consistent multispecies face composition` / `test/docs: validate contact pressure`。
-- [ ] `.github/plans/README.md` 同期、本 plan `status` 更新、§10 に変更ログ。
+- [ ] `design/README.md` 同期、本 plan `status` 更新、§10 に変更ログ。
 - [ ] **コード変更後は自動で PEP 実装へ進まず、結果と解釈を先に報告する。**
 
 ## 11. 実装ログ (S2/S3 face 整合再構成)

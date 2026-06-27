@@ -17,7 +17,7 @@ iterative refinement) に沿った混合精度** —「**状態 U と残差 R �
 2. `.github/plans/architecture-axisym-axis-singularity.md` (根本原因の確定記録)
 3. `papers/precision/itref_phys.pdf` (混合精度反復改良。Algorithm 1 が指針。
    `pdftotext papers/precision/itref_phys.pdf -` で読める)
-4. `AGENTS.md` の開発フロー・収束確認ルール・`.github/forge-su2-cross-check.md`
+4. `AGENTS.md` の開発フロー・収束確認ルール・`guide/su2-cross-check.md`
 
 ## 確定している事実 (再調査不要・これらは潰し済み)
 
@@ -56,10 +56,10 @@ iterative refinement) に沿った混合精度** —「**状態 U と残差 R �
     python3 -c "import h5py,numpy as np; f=h5py.File('<run>/res_20000.h5'); g=h5py.File('<run>/nozzle.h5'); cc=g['/CELLS/centCoords'][:].reshape(-1,3); m=np.abs(cc[:,0]-0.04)<4e-4; o=np.argsort(cc[m,1]); print('first-cell Uy=', float(f['/VALUE/Uy'][m][o][0]))"
     ```
 - 効けば SST (`run_su2cmp_forge_sst` 相当) で軸中心 k が **SU2 同様「軸で最小」** (スパイク消失) を確認。
-  SU2 比較は `.github/forge-su2-cross-check.md` と `case/29.bell_vs_conical/compare_forge_su2.py`。
+  SU2 比較は `guide/su2-cross-check.md` と `case/29.bell_vs_conical/compare_forge_su2.py`。
 - 回帰: case 26 flat_plate / 27 CEA / 29 推力 (mdot·λ) 悪化なし。**収束は rms_ro だけで判断しない**
   (近軸の `rms_roUy`/`rms_roK` も見る — AGENTS.md 収束ルール)。
-- 速度計測は native (`.github/forge-development-environment.md`)。
+- 速度計測は native (`guide/development-environment.md`)。
 
 ## 環境・参照物
 

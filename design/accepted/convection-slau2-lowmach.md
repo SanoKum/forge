@@ -79,7 +79,7 @@ $$\tilde p = \frac{p_L+p_R}{2} + \frac{\beta^+-\beta^-}{2}(p_L-p_R)
 ## 6. 検証
 
 - **ビルド**: 警告/エラー無くリンク (`forge`, `convertGmshToForge`)。
-- **検証ケース** (`.github/forge-verification-cases.md` 準拠):
+- **検証ケース** (`guide/verification/README.md` 準拠):
   - **3D ノズル** `case/23.axi_nozzle/run_3d_m4_prod` を複製した新 `run_*` で
     `solver: SLAU2` (陰解法設定は据え置き: timeIntegration 11, cfl 0.5, relax 0.3,
     nStepInner 20)。等エントロピー初期化後に実行。

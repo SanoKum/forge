@@ -2,8 +2,8 @@
 
 このディレクトリは forge の**現在の仕様と解説** (理論的背景 + 実装解説) を蓄積する場所である。
 「読めば現在の挙動が分かる」ことを目的とし、設計判断の経緯 (なぜそうしたか・これから何を変えるか)
-は `design/`、調査メモは `notes/` に置く。個別の検証手順・計算ワークフローは `.github/` 配下の
-メタ文書を参照すること (役割分担は後述)。
+は `design/`、調査メモは `notes/` に置く。個別の検証手順・計算ワークフロー・開発環境は
+`guide/` 配下のハンドブックを参照すること (役割分担は後述)。
 
 ## 構成方針
 
@@ -51,9 +51,8 @@ KEEP など) は機能ディレクトリ内のセクションまたはファイ�
 | `docs/` (本ディレクトリ) | 現在の仕様と解説 (恒常的) |
 | `design/` | 変更単位の設計判断 (`active/` 進行中 / `accepted/` 現役 / `archived/` 終了) |
 | `notes/` | 調査メモ・作業ログ (`investigations/` / `sessions/`) |
-| `.github/forge-calculation-workflow.md` | 計算実行・メッシュ生成手順 |
-| `.github/forge-development-environment.md` | 開発環境・ビルド・プロファイル |
-| `.github/forge-verification-cases.md`, `.github/verification-cases/` | 検証ケース選定と確認手順 |
+| [`guide/`](../guide/README.md) | 運用・開発の手順/ルール (計算手順・発散対処・設定リファレンス・SU2比較・開発環境・コーディング規約・検証ケース) |
+| `.github/` | GitHub プラットフォーム設定 (`copilot-instructions.md` 等) のみ |
 
 ## 目次の維持
 

@@ -171,7 +171,7 @@ forge が SU2 と同等の BL 変位を出していることを確認。
 SIGTERM 終了 (`su2.log` に `Exit Success` は出るが `rms[RhoE]≈-0.2` の未収束) しており、その未収束場と比べると
 下流で偽の 20-25% 差が出ていた。途中解から継続収束 (`run_0023`/`run_0024`, `rms[RhoE]≈-1.4`, 出口積分量
 ドリフト <0.2%) させると上記のとおり一致。**SU2 は `Exit Success` でなく iter 数・`rms[RhoE]` で収束判定すること**
-([.github/forge-su2-cross-check.md](../../.github/forge-su2-cross-check.md) の収束確認節)。
+([guide/su2-cross-check.md](../../guide/su2-cross-check.md) の収束確認節)。
 
 ## TP gas (thermalMethod 2) + 凝縮の検証 — 真因 = sub-200K NASA-9 外挿
 

@@ -86,6 +86,20 @@ SU2 のノズル流は **リミットサイクル**で残差が下げ止まる�
   下流で偽の 20-25% 差。`RESTART_SOL=YES`+`READ_BINARY_RESTART=NO`+`SOLUTION_FILENAME` で途中解から継続し
   `rms[RhoE]≈-1.4`・出口積分量ドリフト <0.2% まで発達させると **forge と全域 ≤0.8% 一致**した)。
 
+### `CFL_ADAPT` 共振による偽の limit cycle に注意(衝撃列/擬似衝撃波)
+
+衝撃列 (shock train) や擬似衝撃波 (pseudo-shock) で **残差が 2 桁オーダーで激しく振動して全く収束しない**ときは、
+**物理的非定常と決めつける前に `CFL_ADAPT= NO` + 固定 `CFL_NUMBER`(例 2.0)を試す**こと。`CFL_ADAPT` の ramp
+(`CFL_ADAPT_PARAM=(0.5,1.2,…)` 等)が残差の増減と共振し、**スキームと無関係に**限界振動を作ることがある。
+
+- 切り分け手順 (実例 2026-06 case 36 擬似衝撃波): リミッタを 3 段階 **Venkatakrishnan → Van Albada edge → 1次(MUSCL OFF)** に
+  変えても `CFL_ADAPT= YES` 下では全部 `rms[Rho]` が −0.9↔−2.8 で振動。**`CFL_ADAPT= NO`+`CFL_NUMBER=2.0` にした瞬間、
+  1次でも2次でも振動が消え準定常プラトー (`rms[Rho]~−3.2`) に落ちた** → 振動は CFL adapt 由来 (物理でもリミッタでもない)。
+- したがって振動を見たら **(1) 固定 CFL で再開 → 準定常に落ちるか** を最優先で確認する。落ちれば CFL 共振、
+  固定 CFL でも振動継続なら物理的非定常 (URANS or limit-cycle 時間平均で評価)。
+- 背圧固定の擬似衝撃波は固定 CFL でも `rms[Rho]` が −3 付近のプラトー止まりが普通。**衝撃位置が静止し massflux が
+  定常**なら準定常スナップショットとして比較してよい (forge 側も同様にプラトー)。
+
 ## VTU の読み取り(注意)
 
 SU2 v8 の `flow.vtu` は `NumberOfComponents= "3"`(= 後の空白)など属性が非標準で、**VTK の `vtkXMLUnstructuredGridReader` が失敗する**ことがある。
@@ -98,4 +112,4 @@ SU2 v8 の `flow.vtu` は `NumberOfComponents= "3"`(= 後の空白)など属性�
 - SU2(頂点中心・軸上に節点・倍精度)は軸中心の半径速度 `u_r` が 0 から滑らかに立ち上がり、k は軸で最小(スパイク無し)。
 - forge(セル中心)は **float32 の陰解法(block-DPLUR)が近軸第一セルの `u_r` を収束させきれず**(陽解法・倍精度では正しい)、
   偽の `∂u_r/∂r` → 偽ひずみ → SST 生産で k がスパイク。フープ項・Kato–Launder は無関係(下流の対症療法)。
-- 詳細: [`.github/plans/architecture-axisym-axis-singularity.md`](plans/architecture-axisym-axis-singularity.md)。
+- 詳細: [`.github/plans/architecture-axisym-axis-singularity.md`](../design/accepted/architecture-axisym-axis-singularity.md)。

@@ -83,7 +83,7 @@ $w_{ij}=1/|\mathbf d_{ij}|^2$、$\mathbf d_{ij}=\mathbf x_j-\mathbf x_i$。
 - [x] 関連 `docs/gradient/theory.md` 更新済み
 - [x] 関連 `docs/discretization/implementation.md` (§7.3) 更新済み
 - [ ] 実装・検証完了 (本 plan の §6 を満たす) — **GPU 検証が未**
-- [ ] `.github/plans/README.md` の状態を `done` に更新
+- [ ] `design/README.md` の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
 
 ## 9. 変更ログ
