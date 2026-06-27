@@ -45,7 +45,7 @@ CPU 経路の独立実装は無く、GPU 経路のみで運用される。
    (thermally-perfect の $c_p(T)$ 反映)。
    応力(摩擦発熱)は `mu_total = vis_lam + vis_turb` を使うので、熱伝導も同じ乱流寄与を
    含めないとエネルギーが保存せず、乱流境界層で散逸熱が逃げ場を失い静温が全温を超えて
-   overshoot する (2026-06 修正。詳細 [`.github/plans/diffusion-turbulent-thermal-conductivity.md`](../../.github/plans/diffusion-turbulent-thermal-conductivity.md))。
+   overshoot する (2026-06 修正。詳細 [`.github/plans/diffusion-turbulent-thermal-conductivity.md`](../../design/accepted/diffusion-turbulent-thermal-conductivity.md))。
 9. 残差 `res_roUx, res_roUy, res_roUz, res_roe` を両側に符号反転で `atomicAdd`。
 
 エネルギ残差には `tau_x*Uxf + tau_y*Uyf + tau_z*Uzf` (応力仕事) と `heatflux` を加える。
@@ -74,13 +74,13 @@ tau_x += -mu*2.0/3.0*divu*sxx;                      // (4) 発散項 (成分 S_x
 > (内部面 `f*axisym_divU[ic0]+(1-f)*axisym_divU[ic1]`、壁面はセル値 `axisym_divU[ic]`) で
 > `divu` を取り、$\tau_{\theta\theta}$ と同一の完全発散に揃える。`axisym_divU` は `axisymmetricGeomTerms_d`
 > が viscousFlux より前に算出済み (main ループ順)。非軸対称は従来どおりデカルト発散で**ビット不変**。
-> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md) §変更ログ。
+> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../design/accepted/diffusion-viscous-shear-flux.md) §変更ログ。
 
 > **履歴 (2026-06-06 修正)** — 以前は法線項に**成分** `delta_x`(`=dcc_x·β`)を使い、
 > 接線項の勾配添字が転置になっており、(3) の転置項もコメントアウトされていた。このため
 > 軸平行な $y$ 法線面で `delta_x=0` → 流れ方向運動量の横方向拡散 $\mu\,\partial u_x/\partial y$ が
 > 落ち、後述の壁面 `*sxx` 不具合と相まって境界層が形成されなかった。
-> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md)。
+> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../design/accepted/diffusion-viscous-shear-flux.md)。
 
 ## `viscousFlux_wall_d` ([L150](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu#L150))
 
@@ -105,7 +105,7 @@ tau_x += -mu*2.0/3.0*divu*sxx;                      // 発散項
 > 一切かからなかった (`twall_x ≡ 0`・`twall_y` のみ非ゼロ)。case 24 で SU2 laminar 参照の
 > 放物線に対し ~18 m/s の滑り台座を持つプラグ流・流量約2倍・Mach 過大評価となっていた。
 > 修正後は壁隣接セル Ux≈0.24 m/s・中心/平均比 1.53・流量 SU2 比約9%差・`twall_x` 非ゼロ。
-> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../.github/plans/diffusion-viscous-shear-flux.md)。
+> 計画は [`.github/plans/diffusion-viscous-shear-flux.md`](../../design/accepted/diffusion-viscous-shear-flux.md)。
 
 ### node-centered の壁法線項 (`isNode`=`discretization=="node"`, 2026-06-20)
 
@@ -139,9 +139,12 @@ hflux = (k_lam + cp*mu_turb/Prt)*(dTdx[ic]*sxx + dTdy[ic]*syy + dTdz[ic]*szz);
 > 決まる (専用フラグは無い)。
 診断は env `FORGE_VISC_WALL_DIAG=1` で壁半割面の $d_n$, `dcc`, `dcc/(2d_n)`, 接線オフセットを
 集計表示する (`viscousWallDiag_d`)。計画は
-[`.github/plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md)。
+[`.github/plans/diffusion-node-wall-viscous-distance.md`](../../design/accepted/diffusion-node-wall-viscous-distance.md)。
 
-### node-centered の壁摩擦応力 twall = 内部双対面集約 (`viscousFlux_wall_node_d`, `nodeWallStressEdgeKernel`, 2026-06-24)
+### node-centered の壁摩擦応力 twall = 内部双対面集約 (`wallStressForOutput_node_d`, `nodeWallStressEdgeKernel`, 2026-06-24)
+
+> **改名 (2026-06-27)**: 旧 `viscousFlux_wall_node_d`。残差・`y+` に一切触れず `twall` 出力を後処理として
+> 算出するだけのため、その役割が分かる名前 `wallStressForOutput_node_d` に変更。
 
 node の壁ノード $W$ は壁面上に乗るため、`viscousFlux_wall_d` が出力する `twall` は退化ミラーゴースト
 `dcc` / 壁ノード勾配 $\nabla U[W]\cdot\mathbf{S}$ ベースで、近壁で特異スパイク・偶奇振動する (上記 §)。
@@ -153,7 +156,7 @@ $W\leftrightarrow I$ (内部ノード) を介して `viscousFlux_d` (内部カ�
 せん断)、`viscousFlux_wall_d` の残差加算は**壁ノード $W$ (Dirichlet で破棄) へ捨てるだけ**。よって
 node での `viscousFlux_wall_d` の実効的役割は `twall`/`y+` 出力のみで、それが上記退化で不正確。
 
-`cfg.nodeWallStressEdgeKernel==1` (既定) のとき、node の `twall` を `viscousFlux_wall_node_d` で
+`cfg.nodeWallStressEdgeKernel==1` (既定) のとき、node の `twall` を `wallStressForOutput_node_d` で
 **置換**する (`viscousFlux_d.cu`)。1 スレッド = 1 壁半割面 $ib$ で、$W=$`bplane_cell[ib]` の入射内部
 双対面 (CSR `cell_planes`) を走査し、各面の粘性運動量 flux を $W$ の CV に集約して壁半割面積で割る:
 
@@ -166,7 +169,15 @@ $$\boldsymbol{\tau}_w(W)=\frac{1}{A_{wall}(W)}\sum_{I:\,W\text{-}I\,\text{内部
 - **運動量残差・`y+` には触れない** (内部ノード運動量は `viscousFlux_d` が担うため二重計上回避;
   `twall` は出力専用で**場は不変**)。cell モードと `nodeWallStressEdgeKernel==0` では従来どおり。
 
-計画は [`.github/plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md) §11。
+**壁関数時の twall モデル値化 (2026-06-27)**: 上の集約は**解像** $\mu_{tot}\,\partial_n u$ なので、壁関数メッシュ
+($y^+\!\sim\!30\text{–}300$, wt=1) では第一セルの $\mu_{turb}$ が大きく真の $\tau_w=\rho u_\tau^2$ を**~十数倍に過大評価**
+する (`utau`/`y+` は対数則由来で物理値なのに `twall` だけ解像値で不整合だった)。そこで壁関数 active
+($\texttt{Tau\_Wall}[W]=\rho u_\tau^2>0$、`ransWallFunction` が算出、AddTauWall が運動量に課す値と同一) のとき、
+`wallStressForOutput_node_d` は**向きを解像 traction・大きさを $\tau_w=\rho u_\tau^2$ に再スケール**して
+`twall`・`utau`・`y+` を整合させる。**壁解像 (wt≠1, `Tau_Wall<0`→nullptr) では解像値=真の $\tau_w$ なので無補正**。
+→ どちらのモードでも `twall` が物理的な壁せん断になり、`twall` から正しい $C_f$ が出る。
+
+計画は [`.github/plans/diffusion-node-wall-viscous-distance.md`](../../design/accepted/diffusion-node-wall-viscous-distance.md) §11。
 
 ### node-centered の内部面 dcc に node 座標を使う (2026-06-22)
 
@@ -187,8 +198,8 @@ flux を爆発**させる (case/36 node SST が step3 で roOmega→1e22)。検�
 だけが参照する (`axisCentroidShift` 撤去)。これで内部面は自動で直交化する。ただし `centCoords=node` は
 **壁ノードが壁面に乗り ghost mirror の dcc が退化** (検証: NaN 132/132 が壁) するため、**node モードの
 境界を完全 ghostless 化**するのが前提。
-計画: [`.github/plans/architecture-node-centroid-value-position.md`](../../.github/plans/architecture-node-centroid-value-position.md)
-(旧 [`diffusion-node-scalar-nonortho-limit.md`](../../.github/plans/diffusion-node-scalar-nonortho-limit.md) は superseded)。
+計画: [`.github/plans/architecture-node-centroid-value-position.md`](../../design/active/architecture-node-centroid-value-position.md)
+(旧 [`diffusion-node-scalar-nonortho-limit.md`](../../design/archived/diffusion-node-scalar-nonortho-limit.md) は superseded)。
 
 **スカラ (k/ω)・化学種拡散の node 境界半割面は「加えない (skip)」**: 退化する ghost mirror も、暫定で
 使っていた `∇φ·S` 弱形式 (cell 勾配の境界投影に依存・Neumann で厳密 0 にならない) も用いず、`isNode!=0` かつ
@@ -198,7 +209,7 @@ ghost を含む半割面 (`ic0>=nCells || ic1>=nCells`) では拡散流束を**�
 は物理的に $\partial_n\phi=0$ ＝半割面フラックス 0 そのもの。例外は陽に課す非ゼロ Neumann 熱流束のみ (forge は断熱/
 Dirichlet/等温=Dirichlet なので不要、等温壁の熱流束は粘性流束側)。平板 `case/26.flat_plate_sst` で **Cf/u_τ/δ99 が
 ∇·S 版と完全一致** (差 0.00%) を確認、k は前縁上流スリップ域で skip がより正 (∇·S は Neumann 漏れで過剰生成)。
-計画: [`.github/plans/diffusion-node-boundary-real-distance.md`](../../.github/plans/diffusion-node-boundary-real-distance.md)。
+計画: [`.github/plans/diffusion-node-boundary-real-distance.md`](../../design/accepted/diffusion-node-boundary-real-distance.md)。
 
 ## 入出力
 

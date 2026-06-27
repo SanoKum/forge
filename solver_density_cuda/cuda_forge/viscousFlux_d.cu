@@ -428,7 +428,11 @@ __global__ void viscousFlux_wall_d
 //   出力専用で場は不変)。壁端の速度は no-slip 値 Uxb=0 を使い (ghost 不使用)、面勾配は 1/2(∇[W]+∇[I])。
 //   over-relaxed 分解は viscousFlux_d と同形だが、距離は退化 dcc でなく W-I 間の物理距離 |cc[I]-cc[W]|。
 // 1 スレッド = 1 壁半割面 ib。W=bplane_cell[ib] の入射内部面を CSR (cell_planes) で走査して集約する。
-__global__ void viscousFlux_wall_node_d
+// **このカーネルは出力専用 (res/y+ に一切触れない; 名前の通り twall を後処理として算出するだけ)**。
+// 壁関数 active (Tau_Wall[W]>0) のときは、解像 traction を modeled 壁せん断 τ_w=ρu_τ² (Tau_Wall, AddTauWall と
+// 同値) に再スケールして向きだけ解像値・大きさをモデル値に揃える (壁関数メッシュで解像 μ_total·du/dy が
+// 過大評価する問題の補正。utau/y+ と整合)。壁解像 (Tau_Wall<0) では解像値のまま (それが真の τ_w)。
+__global__ void wallStressForOutput_node_d
 (
  geom_int nb,
  geom_int* bplane_plane,
@@ -450,7 +454,8 @@ __global__ void viscousFlux_wall_node_d
 
  int isAxisymmetric, flow_float* axisym_divU,
 
- flow_float* twall_x_b , flow_float* twall_y_b , flow_float* twall_z_b
+ flow_float* twall_x_b , flow_float* twall_y_b , flow_float* twall_z_b,
+ flow_float* Tau_Wall              // 壁関数 modeled τ_w=ρu_τ² (>0 で active, ransWallFunction が算出)。再スケール用。
 )
 {
     geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
@@ -541,6 +546,23 @@ __global__ void viscousFlux_wall_node_d
         twall_x_b[ib] = fX/ss_wall;
         twall_y_b[ib] = fY/ss_wall;
         twall_z_b[ib] = fZ/ss_wall;
+
+        // 壁関数 active (Tau_Wall[W]>0) のとき、向きは解像値・大きさを modeled τ_w=ρu_τ² に揃える
+        // (壁関数メッシュで解像 μ_total·du/dy が ρu_τ² の ~十数倍に過大評価する補正、utau/y+ と整合)。
+        // 壁解像 (Tau_Wall<0) では解像値=真の τ_w なので何もしない。
+        if (Tau_Wall != nullptr) {
+            const geom_int icW = bplane_cell[ib];
+            const flow_float tauM = Tau_Wall[icW];
+            if (tauM > static_cast<flow_float>(0.0)) {
+                const flow_float twMag = sqrt(twall_x_b[ib]*twall_x_b[ib]
+                                            + twall_y_b[ib]*twall_y_b[ib]
+                                            + twall_z_b[ib]*twall_z_b[ib]);
+                if (twMag > static_cast<flow_float>(1.0e-30)) {
+                    const flow_float sc = tauM / twMag;
+                    twall_x_b[ib] *= sc; twall_y_b[ib] *= sc; twall_z_b[ib] *= sc;
+                }
+            }
+        }
     }
 
     __syncthreads();
@@ -751,7 +773,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         for (auto& bc : msh.bconds) {
             if (!(bc.bcondKind == "wall" || bc.bcondKind == "wall_isothermal")) continue;
             if (bc.iPlanes.empty()) continue;
-            viscousFlux_wall_node_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
+            wallStressForOutput_node_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
                 bc.iPlanes.size(),
                 bc.map_bplane_plane_d,
                 bc.map_bplane_cell_d,
@@ -772,7 +794,11 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
 
                 cfg.isAxisymmetric, var.c_d["axisym_divU"],
 
-                bc.bvar_d["twall_x"], bc.bvar_d["twall_y"], bc.bvar_d["twall_z"]
+                bc.bvar_d["twall_x"], bc.bvar_d["twall_y"], bc.bvar_d["twall_z"],
+                // 壁関数 active のときだけ Tau_Wall=ρu_τ² を渡し twall を再スケール。それ以外は nullptr
+                // (Tau_Wall 未初期化のため; カーネルは nullptr で再スケール無し=解像値のまま)。
+                (cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
+                    ? var.c_d["Tau_Wall"] : nullptr
             ) ;
         }
         gpuErrchk( cudaPeekAtLastError() );
