@@ -211,14 +211,23 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
   プラトー; rms 全列が flat 床、cell rms_roUy 6.4e-2・node rms_roOmega 2.44e6 で停滞)。報告した shock 位置は
   **limit-cycle スナップショット**で、cell は ±1mm 振動・node は静止。**「収束した」とは主張しない** (この case は
   定常 RANS では収束しないことが既知=下記 down-sweep 節・本 README 末尾の所見)。場の比較は準定常同士。
-- **⚠ cell 自身が 142→160mm に移動**: 現行バイナリの cell は旧 run_0049 (142mm) より ~18mm 下流。outlet 静圧
-  BC の特性状態統一 (`88def3b`) が cell 出口にも効いた交絡が疑われる (node 専用修正ではない)。結果、**forge
-  node/cell は互いに一致するが、両者とも SU2 中立 132mm・旧 cell 142mm より ~20-30mm 下流**。forge 対 SU2 の
-  ~30mm 差 (どちらが正かは本比較の対象外) は別途要調査。
+- **⚠ cell 自身が 142→160mm に移動 (= limit-cycle ドリフト、binary 起因ではない)**: 現行バイナリの cell は
+  旧 run_0049 (142mm) より ~18mm 下流。当初これを outlet 統一 (`88def3b`、cell+node 共通=node 専用でない一般変更)
+  の交絡と疑ったが、**実測で棄却**: `88def3b` 直前 (945a27f) の outlet で同じ restart (run_0049/res_80000) から
+  cell を回すと衝撃軌跡は **165.8/169.2/163.1mm** で、現行 outlet の **165.2/168.0/162.1mm** と ~1mm (limit-cycle
+  ノイズ) しか違わない (`run_cmp_cell_sst_bp1p90_oldoutlet`)。→ **`88def3b` は case36 cell 衝撃位置に実質無影響**
+  (本来の目的は逆流コーナー発散の修正)。**142→160mm は run_0049 が非収束スナップショットで、継続すると
+  limit-cycle 内で ~160-165mm へドリフトするため**。結果、**forge node/cell は互いに一致するが、両者とも
+  SU2 中立 132mm・旧 cell 142mm より ~20-30mm 下流**。forge 対 SU2 の ~30mm 差 (どちらが正かは本比較の対象外)
+  は別途要調査。
 - 図 `compare_node_cell_sst_bp1p90_current.png` (P/Mach センターライン、SU2 132・旧 cell 142 マーカ付き)。
+- **node 専用でない直近変更の確認**: 直近コミットのうち cell に効きうるのは `88def3b` (outlet `outlet_statPress_d`、
+  isNode ガード無し) のみ。他 (`537d80f`/`9cc6475`/`af5b98d` は isNode ガード、`945a27f` AddTauWall は cell に
+  nullptr で bit-identical、`f639ff2` SST init は restart で roK/roOmega が在れば inert) は cell 無影響。
+  → `88def3b` は一般変更だが case36 cell では上記実測どおり実質 inert。
 - **結論**: 問い「node と cell を SST で比較」への答え=**現行バイナリで node SST は cell SST と整合 (shock ~3mm,
-  Mmax/μt 同等)**。ただし**双方とも未収束 (limit-cycle)** で準定常スナップショット比較であり、かつ現行 cell が
-  旧 cell/SU2 より下流に動いている点 (outlet BC 交絡) は留意。
+  Mmax/μt 同等)**。ただし**双方とも未収束 (limit-cycle)** で準定常スナップショット比較であり、cell の 142→160mm は
+  binary 変更でなく非収束ドリフト。両 forge とも SU2 132mm より ~30mm 下流である点は別課題。
 
 ### 背圧 down-sweep (porous, SST wall-resolved, 本番設定; 2026-06-21)
 
