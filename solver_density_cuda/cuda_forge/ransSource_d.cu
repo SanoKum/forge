@@ -36,6 +36,7 @@ __global__ void rans_sst_source_d(
     int katoLaunder,
     int wallTreatment,
     flow_float* wf_pk,
+    flow_float* Pk_diag,   // 診断: 確定した最終 k 生産 (wall-function 置換後)
     flow_float* res_roK,
     flow_float* res_roOmega,
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
@@ -43,7 +44,10 @@ __global__ void rans_sst_source_d(
     flow_float* src_jac_omega,
     // SST-DES (methods/turbulence §8): DESmode>0 で k 消滅項を ρk^{3/2}/l_des に切替える。
     int DESmode,
-    flow_float* l_des)
+    flow_float* l_des,
+    // node: ω ピン位置 (=壁ノード) の識別用。wf_pk は第一内層にも付くため、ω 残差ゼロ化は壁ノード限定にする。
+    // cell では nullptr (wf_pk>=0 で第一セルを識別)。
+    geom_int* wall_flag, int isNode)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -138,6 +142,7 @@ __global__ void rans_sst_source_d(
     if (wallTreatment == 1 && wf_pk[ic] >= static_cast<flow_float>(0.0)) {
         Pk = wf_pk[ic];
     }
+    Pk_diag[ic] = Pk;  // 診断: 確定 k 生産 (wall-function 置換後)
 
     // k 消滅項。標準 SST は D_k = β* ρ k ω = ρ k^{3/2}/l_RANS。
     // SST-DES (DESmode>0) では l_RANS を l_DDES に置換: D_k = ρ k^{3/2}/l_des (methods/turbulence §8)。
@@ -177,11 +182,14 @@ __global__ void rans_sst_source_d(
     src_jac_k[ic]     = jac_k;  // DESmode==0: β* ω (従来式と一致), DESmode>0: 1.5 √k / l_des
     src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
 
-    // automatic wall treatment: wall-adjacent セルは ω をピン留め (Dirichlet, ransBoundary) する。
-    // Dirichlet セルの残差は 0 が正しい。res_roOmega を 0 にし (transport+source 込みを上書き)、
-    // 無駄な update と rms_roOmega の汚染 (ピン留めの巨大残差) を防ぐ。k は解くので残差は残す。
-    // 注: 非軸対称ケース前提 (axisymmetricSource が後段で res_roOmega を足す場合は別途零化が要る)。
-    if (wallTreatment == 1 && wf_pk[ic] >= static_cast<flow_float>(0.0)) {
+    // automatic wall treatment: ω ピン留め (Dirichlet, ransBoundary) セルの残差は 0 が正しい。
+    // res_roOmega を 0 にし無駄な update と rms_roOmega 汚染を防ぐ。k は解くので残差は残す。
+    // ω ピン位置は「壁ノード/壁隣接第一セル」: node は wall_flag==1 (wf_pk は第一内層にも付くので不可)、
+    // cell は wf_pk>=0 (=第一セル ic)。第一内層ノード (node, wf_pk>=0 だが非壁) の ω は解くので 0 化しない。
+    const bool omega_pinned = (wallTreatment == 1) &&
+        (isNode != 0 ? (wall_flag != nullptr && wall_flag[ic] == 1)
+                     : (wf_pk[ic] >= static_cast<flow_float>(0.0)));
+    if (omega_pinned) {
         res_roOmega[ic]   = static_cast<flow_float>(0.0);
         src_jac_omega[ic] = static_cast<flow_float>(0.0);
     }
@@ -215,12 +223,15 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         cfg.katoLaunder,
         cfg.wallTreatmentSST,
         var.c_d["wf_pk"],
+        var.c_d["Pk_diag"],
         var.c_d["res_roK"],
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],
         var.c_d["src_jac_omega"],
         cfg.DESmode,
-        var.c_d["l_des"]);
+        var.c_d["l_des"],
+        (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
+        (cfg.discretization == "node") ? 1 : 0);
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchkKernelSync();

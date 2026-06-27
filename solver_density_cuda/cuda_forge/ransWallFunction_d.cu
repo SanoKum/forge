@@ -132,7 +132,9 @@ __global__ void compute_wall_friction_sst_d(
         utau_b[ib] = static_cast<flow_float>(0.0);
         ypls_b[ib] = static_cast<flow_float>(0.0);
         wf_pk[ic]  = static_cast<flow_float>(0.0);
-        if (isNode != 0) Tau_Wall[ic] = static_cast<flow_float>(0.0);  // 退化: 再スケール無し (>0 でない)
+        // node: 第一内層ノード irep も wall-function 生産 (=0) で覆う。壁ノードだけだと第一内層に標準
+        // 解像生産 P_k=μ_t S² が残り淀みコーナーで k 暴走するため (methods/turbulence §6.5(e))。
+        if (isNode != 0) { wf_pk[irep] = static_cast<flow_float>(0.0); Tau_Wall[ic] = static_cast<flow_float>(0.0); }
         return;
     }
 
@@ -153,8 +155,12 @@ __global__ void compute_wall_friction_sst_d(
     // P_k→ρu_τ³/(κy)。これと ω ピン留めで k が平衡値 u_τ²/√β* に収束し runaway を断つ。
     const flow_float yp1 = utau * y / nu;
     const flow_float g   = reichardt_duplus_dyp(yp1);
-    wf_pk[ic] = max(rho * utau * utau * utau * utau / nu * g * (static_cast<flow_float>(1.0) - g),
+    const flow_float pk_wf = max(rho * utau * utau * utau * utau / nu * g * (static_cast<flow_float>(1.0) - g),
                     static_cast<flow_float>(0.0));
+    wf_pk[ic] = pk_wf;
+    // node: 第一内層ノード irep も wall-function 生産で覆う (壁ノードのみだと第一内層に標準解像生産が
+    // 残り k 暴走。methods/turbulence §6.5(e))。ω ピン/decouple は壁ノードのまま (ここでは触らない)。
+    if (isNode != 0) wf_pk[irep] = pk_wf;
 
     utau_b[ib] = utau;
     ypls_b[ib] = utau * y / nu;

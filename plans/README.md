@@ -39,6 +39,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [turbulence-node-wall-function-coverage.md](accepted/turbulence-node-wall-function-coverage.md) | `boundary` | node SST 壁関数の生産置換を第一内層ノードにも適用 (近壁 k 暴走修正、cell 不変・x_R が SU2 整合) |
 | [architecture-axisym-axis-singularity.md](accepted/architecture-axisym-axis-singularity.md) | `architecture` | 軸対称 近軸の数値問題 (軸中心 k スパイク) の根本原因特定 |
 | [architecture-axisym-nozzle-geometry.md](accepted/architecture-axisym-nozzle-geometry.md) | `architecture` | architecture-axisym-nozzle-geometry |
 | [architecture-axisym-sst.md](accepted/architecture-axisym-sst.md) | `architecture` | architecture-axisym-sst — 軸対称 SST 幾何項 子計画 |

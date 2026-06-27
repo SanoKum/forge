@@ -171,6 +171,26 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
 3 点が揃うと、$k$ は生産・消滅平衡 $P_k=\beta^*\rho k\omega_w$ から平衡値 $u_\tau^2/\sqrt{\beta^*}$
 に収束し暴走しない。いずれか欠けると k 暴走 (zero-grad 単独) または過小 (P_k 解像勾配のまま) になる。
 
+**適用先 (cell / node, theory.md §6.5(e))**: **P_k 置換**と **ω ピン/decouple**で適用先が分かれる。
+
+- **cell**: `bplane_cell[ib]` = 壁隣接第一セルが唯一の近壁 DOF。`wf_pk`(P_k 置換)/ω ピン/`res_roOmega`・
+  `src_jac_omega` の 0 化/`applySSTPointImplicit` の ω decouple をすべて `ic`=第一セルに当てる (現行どおり・不変)。
+- **node**: 壁ノード ($y=0$) と第一内層ノードの 2 DOF がある。
+  - **P_k 置換 (`wf_pk`)**: `compute_wall_friction_sst_d` が `wf_pk[ic]`(壁ノード)に加えて **`wf_pk[irep]`(第一内層
+    ノード = $u_\tau$ 用に選ぶ Normal_Neighbor)** にも同じ wall-function 生産を書く。`ransSource` の P_k 置換は
+    `wf_pk>=0` 判定なので両ノードに効く。壁ノードだけだと第一内層に標準解像 P_k=μ_t S² が残り近壁 k 暴走
+    (`case/18.backstep` 段差コーナーで実証)。
+  - **ω ピン/残差ゼロ化/decouple**: **壁ノードのみ** (現行どおり)。`rans_wall_scalar_boundary_d` が `omega[ic]`
+    (壁ノード, y=`wall_y_eff`) にピン、`applySSTPointImplicit_d` が `wall_flag` で `dω=0`。`ransSource` の
+    `res_roOmega`/`src_jac_omega` 0 化は **node では `wall_flag==1` 限定** (cell は `wf_pk>=0`)。`wf_pk` が第一内層
+    にも付くので、ω ゼロ化を `wf_pk>=0` のままにすると第一内層ノードの solved ω まで凍結して崩壊するため、
+    `wall_flag` で壁ノードに限定する。
+  - **重要 (やってはいけない)**: ω ピンを第一内層ノードへ移すと、凹コーナーで複数壁が同じ第一内層ノードを共有して
+    ピン値が race し、壁ノード ω アンカが外れて ω 崩壊 → k 暴走 (実測で悪化、不採用)。
+  - **残課題**: node 壁ノードは cell 第一セルより壁から遠く ω ピンが ~1/4 低いため、再付着近傍で μ_t ピークが残る
+    (cell 990 に対し ~5800、局所)。場平均・x_R は cell/SU2 整合。
+  - 関連 plan: [`turbulence-node-wall-function-coverage.md`](../../plans/active/turbulence-node-wall-function-coverage.md)。
+
 ### 3.8 SST-DES (DDES) length scale 修正
 
 理論は [`theory.md`](theory.md) §8、計画は
