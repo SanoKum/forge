@@ -222,15 +222,23 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
   - **CFL オーバーシュート単独でもない**: restart 直後 res_0 の cfl は mean 0.59/max 3.33 と連続マーチ最終
     (mean 0.21/max 1.0) の ~2.8倍だが、cfl を 0.3 に絞っても 142→150mm へ (遅くなるだけで) ドリフト
     (`run_bisect_cell_894_gentle`)。
-  - **真因 = restart 時に SST 乱流場が再現されない**: 忠実 restart 直後 res_0 を run_0049 res_80000 と比較すると、
-    保存量 ro/roUx/**roK** はバイト一致なのに、**渦粘性 `vis_turb` は全域ゼロ** (連続マーチは遠方 0.34)、
-    **壁近傍 omega が 0.82倍** (1.68e6→1.38e6、差は 100% 壁近傍・遠方は完全一致)。forge は restart で eddy
-    viscosity を復元せず 0 から、壁 omega ピンも別値に再導出するため、初手の数ステップが**乱流散逸不足**で進み、
-    敏感な擬似衝撃波を 142mm から ~160-165mm へ蹴り出す。
+  - **真因 = restart 直後の SST 乱流場「再平衡過渡」が双安定な擬似衝撃波を別枝へ flip させる** (詳細は 1-step probe
+    `run_probe_omega` で実測):
+    - **ρω→ω の計算自体は正常**: res_0 で `omega == roOmega/ro` は一致 (max差 1.0 は 1e6 に対する float32 丸め)。
+      ρ 掛け忘れ等のバグではない。
+    - **`vis_turb`=0 は出力タイミングのみ**: res_0 で 0 だが **res_1 で 0.3405 = 収束値ぴったり (×1.000) に回復**。
+      渦粘性は犯人ではない (当初「vis_turb 復元せず」と書いたのは不正確、訂正)。
+    - **本体は壁 omega の過渡ディップ→回復**: 連続収束の壁 omega 1.677e6 に対し、restart 直後は **0.82倍** (1.382e6)
+      に落ち、res_2000=×0.84 → res_8000=×0.98 → res_16000=×1.05 → res_20000=×1.02 と **~16000 step かけて回復**する。
+      壁 omega は永久に間違うのではなく「再平衡過渡」。ただし **その数千 step の過渡 (近壁散逸が一時不足) の間に、
+      142mm の擬似衝撃波が ~160mm 側の枝へ flip し、壁 omega が戻っても衝撃は戻らない** (双安定/履歴依存)。
+    - これは forge が restart で「収束した coupled 乱流平衡状態」をそのまま復元せず step ごとに再導出するため。
+      保存量 (ro,roUx,roK,roOmega) はバイト一致でも、壁関数 u_τ・production・omega ピンの相互平衡が数千 step ぶん
+      ずれ、敏感ケースを別枝へ押す。CFL を下げると過渡が穏やかになり flip も遅くなる (cfl0.3 で 142→150) が止まらない。
   - 結果、**forge node/cell は互いに一致するが、両者とも restart 由来でこの ~160-165mm 枝に乗る**。run_0049 の
     142mm (連続マーチ steady, SU2 132mm に近い) は restart では再現できていない。→ **node vs cell の比較自体は
-    「同じ restart 条件同士」で公平だが、SU2/旧 cell との 142 基準には forge の SST restart 再現性問題が絡む**。
-    これは別課題 (forge restart で vis_turb/壁 omega を収束値から再構築すべき)。
+    「同じ restart 条件同士」で公平だが、SU2/旧 cell との 142 基準には forge の SST restart 再平衡過渡が絡む**。
+    これは別課題 (forge restart で壁 omega/壁関数の coupled 平衡を収束値から復元するか、過渡を抑えて flip を防ぐ)。
 - 図 `compare_node_cell_sst_bp1p90_current.png` (P/Mach センターライン、SU2 132・旧 cell 142 マーカ付き)。
 - **node 専用でない直近変更の確認**: 直近コミットのうち cell に効きうるのは `88def3b` (outlet `outlet_statPress_d`、
   isNode ガード無し) のみ。他 (`537d80f`/`9cc6475`/`af5b98d` は isNode ガード、`945a27f` AddTauWall は cell に
