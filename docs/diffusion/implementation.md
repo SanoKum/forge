@@ -176,6 +176,7 @@ $$\boldsymbol{\tau}_w(W)=\frac{1}{A_{wall}(W)}\sum_{I:\,W\text{-}I\,\text{内部
 `wallStressForOutput_node_d` は**向きを解像 traction・大きさを $\tau_w=\rho u_\tau^2$ に再スケール**して
 `twall`・`utau`・`y+` を整合させる。**壁解像 (wt≠1, `Tau_Wall<0`→nullptr) では解像値=真の $\tau_w$ なので無補正**。
 → どちらのモードでも `twall` が物理的な壁せん断になり、`twall` から正しい $C_f$ が出る。
+設計判断は [`design/accepted/output-node-wall-surface-viz.md`](../../design/accepted/output-node-wall-surface-viz.md)。
 
 計画は [`.github/plans/diffusion-node-wall-viscous-distance.md`](../../design/accepted/diffusion-node-wall-viscous-distance.md) §11。
 
