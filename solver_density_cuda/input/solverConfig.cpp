@@ -322,6 +322,11 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'wallTreatmentSST' in 'turbulence' must be 0 or 1.");
         }
 
+        this->nodeKwfDirichlet = getOptionalValidatedValue<int>(turb, "nodeKwfDirichlet", 0, "turbulence");
+        if (this->nodeKwfDirichlet < 0 || this->nodeKwfDirichlet > 1) {
+            throw std::runtime_error("Key 'nodeKwfDirichlet' in 'turbulence' must be 0 or 1.");
+        }
+
         // SST 初期乱流 (IC に roK/roOmega が無いときの初期値, 既定 0 = 従来動作・ビット不変)
         this->kInit     = getOptionalValidatedValue<flow_float>(turb, "kInit", 0.0, "turbulence");
         this->omegaInit = getOptionalValidatedValue<flow_float>(turb, "omegaInit", 0.0, "turbulence");

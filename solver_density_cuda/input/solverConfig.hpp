@@ -123,6 +123,11 @@ public:
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (methods/turbulence §7.5)
     int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (methods/turbulence §6.5)
+    // node-centered の第一内層ノードで k をハード Dirichlet (k=ω_w·μ_t,wall/ρ, SU2 SetTurbVars_WF 流) にする。
+    // 既定 0 (k は解く=prod-fix; x_R が cell/SU2 整合)。1 で near-wall k 蓄積=再付着 μ_t ピークを除去できるが、
+    // 非平衡再付着で u_τ→0 → k_wf→0 と乱流を抑えすぎ x_R が伸びる (case/18.backstep: 7.63→8.67)。
+    // wallTreatmentSST==1 かつ node のときだけ有効。cell では無視。
+    int nodeKwfDirichlet = 0;
     // SST 初期乱流 (IC に roK/roOmega が無いときの初期値)。既定 0 = 従来動作 (k=ω=0, ビット不変)。
     // ただし ω=0 は mu_t=k/ω が ill-posed で cold start から発散しやすい (特に node wt=1)。
     // 非 SST IC (層流場/メッシュ変換直後) から SST を始める場合は freestream 値 (例 inlet と同じ

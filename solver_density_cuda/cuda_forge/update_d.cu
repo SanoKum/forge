@@ -278,7 +278,10 @@ __global__ void applySSTPointImplicit_d
  flow_float unsteady_diag,
  // node-centered 壁 ω Dirichlet: 壁ノードで dω=0 にし rans_wall_scalar_boundary_d がピンした ω_w を保つ
  // (point-implicit の行=1/他=0)。k はノイマンなので通常更新。nullptr/0 で無効 (cell 不変)。
- geom_int* wall_flag, int decouple_wall_omega
+ geom_int* wall_flag, int decouple_wall_omega,
+ // node-centered k Dirichlet (SU2 SetTurbVars_WF 流): roK_wf[ic]>=0 の第一内層ノードで roK=roK_wf に固定
+ // (dk=0)。near-wall k 蓄積 (再付着 μ_t ピーク) を断つ。nullptr/全-1 で無効 (cell 不変)。
+ flow_float* roK_wf
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -286,11 +289,13 @@ __global__ void applySSTPointImplicit_d
         const flow_float v    = vol[ic];
         const flow_float dt_l = max(dt_local[ic], static_cast<flow_float>(1.0e-30));
         const bool omegaWall = (decouple_wall_omega != 0 && wall_flag != nullptr && wall_flag[ic] == 1);
+        const bool kPinned   = (roK_wf != nullptr && roK_wf[ic] >= static_cast<flow_float>(0.0));
         // D_φ = V/Δτ + V·src_jac（消散）+ transport_diag（移流+拡散、既に [m³/s]）+ V·unsteady_diag。
         // transport_diag は壁近傍の陽的 k/ω 輸送 stiff 性を陰化し安定 cfl_pseudo を一桁以上引き上げる。
         const flow_float Dk = v / dt_l + v * src_jac_k[ic]     + transport_diag_k[ic]     + v * unsteady_diag;
         const flow_float Dw = v / dt_l + v * src_jac_omega[ic] + transport_diag_omega[ic] + v * unsteady_diag;
 
+        // k Dirichlet (node 第一内層ノード): dk で更新せず roK_wf に固定。それ以外は通常 point-implicit。
         const flow_float dk = implicit_relax * res_roK[ic]     / max(Dk, static_cast<flow_float>(1.0e-30));
         // 壁 ω decouple: 壁ノードでは dω=0 とし、ピンした roOmega=ρ·ω_w を保つ (k はノイマンで通常更新)。
         const flow_float dw = omegaWall ? static_cast<flow_float>(0.0)
@@ -298,7 +303,7 @@ __global__ void applySSTPointImplicit_d
 
         // realizability: ρk ≥ 0, ρω > 0。dual-time でも正しいよう現在反復値への in-place 加算
         // （定常では roKN==roK のため roKN+dk と等価）。dual-time の roKN/roKNN は BDF 残差項側で使用。
-        roK[ic]     = max(roK[ic]     + dk, static_cast<flow_float>(0.0));
+        roK[ic]     = kPinned ? roK_wf[ic] : max(roK[ic] + dk, static_cast<flow_float>(0.0));
         roOmega[ic] = max(roOmega[ic] + dw, static_cast<flow_float>(1.0e-20));
     }
 }
@@ -322,7 +327,8 @@ void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["transport_diag_omega"],
         cfg.unsteadyDiagCoef,
         (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
-        (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0
+        (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0,
+        (cfg.discretization == "node") ? var.c_d["roK_wf"] : nullptr
     );
 
     gpuErrchk( cudaPeekAtLastError() );

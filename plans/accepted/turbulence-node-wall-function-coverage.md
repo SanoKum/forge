@@ -94,4 +94,8 @@ cell は §1-5 で一切変更されない (`discretization=="cell"` 分岐は `
   - 実装: `ransWallFunction_d.cu` で node のとき `wf_pk[irep]` も書く (両ノード被覆)。`ransSource_d.cu` の ω 残差ゼロ化は node では `wall_flag==1` 限定に変更 (wf_pk は第一内層にも付くため; `wall_flag`/`isNode` 引数追加)。`rans_wall_scalar_boundary_d` / `applySSTPointImplicit_d` (ω ピン・decouple) は **baseline のまま不変**。`build-native` full rebuild。
   - **効果 (`case/18.backstep` node autowall, run_0065/0067)**: 段差コーナー vis_t/l **6789→77**・k **52→3** (cell 同等)。場平均 vis_t/l **424→207** (cell 198)。x_R **6.71→7.63** (cell 7.95・SU2 7.89 に接近)。machmax/pmax `STEADY`。
   - **cell ビット不変** (run_0066): vis_t/l mean 197.71・max 994 が baseline と一致 (cell 経路は `wall_flag=nullptr`/`isNode=0` で `wf_pk>=0` 判定=従来同一)。
-  - **残課題 (別途)**: node 壁ノードは cell 第一セルより壁から遠く ω ピンが ~1/4 低いため、**再付着せん断層の近壁で μ_t ピークが残る** (vis_t/l ~5800 vs cell 990、局所 ~27 node)。場平均・x_R は整合。完全一致には node near-wall ω 解像 (または k 上限=SU2 SetTurbVars_WF の k Dirichlet) の追加対策が要る。診断出力 `wf_pk`/`Pk_diag` は今後の調査用に残置。
+  - **残課題 (別途)**: node 壁ノードは cell 第一セルより壁から遠く ω ピンが ~1/4 低いため、**再付着せん断層の近壁で μ_t ピークが残る** (vis_t/l ~5800 vs cell 990、局所 ~27 node)。場平均・x_R は整合。診断出力 `wf_pk`/`Pk_diag`/`roK_wf` は今後の調査用に残置。
+- `2026-06-28` — **追加オプション: node k Dirichlet (`nodeKwfDirichlet`, 既定 0)**。上記再付着 μ_t ピーク対策として SU2 `SetTurbVars_WF` 流の k ハード Dirichlet を実装 (第一内層ノードで `roK=ρ·k_wf`, `k_wf=ω_w·μ_t,wall/ρ=ω_w·ν·(1/g-1)`; `applySSTPointImplicit` で dk=0, `ransSource` で res_roK 0 化)。新フィールド `roK_wf` (-1=inactive)、新フラグ `turbulence.nodeKwfDirichlet`。
+  - **効果 (run_0068/0069_on)**: 再付着 μ_t ピーク除去 (vis_t/l max 5769→893 = cell 994 並、再付着 vt/l 5834→5、場平均 207→180)。
+  - **副作用**: 非平衡再付着で u_τ→0 → k_wf→0 と再付着乱流を抑えすぎ **x_R 7.63→8.67 と伸びる** (cell 7.95/SU2 7.89 より長い)。「場の清浄さ」と「x_R 精度」のトレードオフ。
+  - **判断**: **既定 OFF** (既定=k を解く prod-fix で x_R が cell/SU2 整合)。再付着 μ_t ピークを嫌う用途のみ opt-in。`nodeKwfDirichlet=0` で **prod-fix と一致** (run_0069_off が run_0067 と mean 206.8/max 5769/x_R 7.63 完全一致, roK_wf-active=0 で確認)。ω ピンは Dirichlet 版でも壁ノード据え置き (第一内層へ移すと race で崩壊するため)。

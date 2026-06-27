@@ -10,6 +10,9 @@ namespace {
 constexpr flow_float kKappa    = static_cast<flow_float>(0.41);  // von Karman 定数
 constexpr flow_float kSmall    = static_cast<flow_float>(1.0e-12);
 constexpr int        kNewtonIt = 5;                              // Newton 反復回数
+constexpr flow_float kSstBeta1  = static_cast<flow_float>(0.075); // SST β₁ (ω_vis 用)
+constexpr flow_float kSstBetaSt = static_cast<flow_float>(0.09);  // SST β* (ω_log・k_wf 用)
+constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 
 // Reichardt 則 u⁺(y⁺)
 __device__ inline flow_float reichardt_uplus(flow_float yp)
@@ -35,11 +38,15 @@ __device__ inline flow_float reichardt_duplus_dyp(flow_float yp)
     return dlg + dtr;
 }
 
-// wf_pk・Tau_Wall を全セル -1 (inactive) に初期化する。
-__global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall)
+// wf_pk・Tau_Wall・roK_wf を全セル -1 (inactive) に初期化する。
+__global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
-    if (ic < nCells) { wf_pk[ic] = static_cast<flow_float>(-1.0); Tau_Wall[ic] = static_cast<flow_float>(-1.0); }
+    if (ic < nCells) {
+        wf_pk[ic] = static_cast<flow_float>(-1.0);
+        Tau_Wall[ic] = static_cast<flow_float>(-1.0);
+        roK_wf[ic] = static_cast<flow_float>(-1.0);
+    }
 }
 
 __global__ void compute_wall_friction_sst_d(
@@ -62,7 +69,9 @@ __global__ void compute_wall_friction_sst_d(
     geom_int* wall_flag,
     geom_float* ccx, geom_float* ccy, geom_float* ccz,
     // node: 壁ノードに τ_w=ρu_τ² を格納 (viscousFlux_d の AddTauWall 再スケール用)。cell では書かない (-1 維持)。
-    flow_float* Tau_Wall)
+    flow_float* Tau_Wall,
+    // node: 第一内層ノードの k Dirichlet 値 (保存量 ρ·k_wf, SU2 SetTurbVars_WF 流) を格納。cell では書かない (-1 維持)。
+    int enableKwf, flow_float* roK_wf)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
     if (ib >= nb) return;
@@ -134,7 +143,11 @@ __global__ void compute_wall_friction_sst_d(
         wf_pk[ic]  = static_cast<flow_float>(0.0);
         // node: 第一内層ノード irep も wall-function 生産 (=0) で覆う。壁ノードだけだと第一内層に標準
         // 解像生産 P_k=μ_t S² が残り淀みコーナーで k 暴走するため (methods/turbulence §6.5(e))。
-        if (isNode != 0) { wf_pk[irep] = static_cast<flow_float>(0.0); Tau_Wall[ic] = static_cast<flow_float>(0.0); }
+        if (isNode != 0) {
+            wf_pk[irep] = static_cast<flow_float>(0.0); Tau_Wall[ic] = static_cast<flow_float>(0.0);
+            // 淀み域 u_τ=0 → k_wf=0。node k Dirichlet (SU2 SetTurbVars_WF 流, wallTreatment==1 のみ)。
+            if (enableKwf == 1) roK_wf[irep] = static_cast<flow_float>(0.0);
+        }
         return;
     }
 
@@ -160,7 +173,20 @@ __global__ void compute_wall_friction_sst_d(
     wf_pk[ic] = pk_wf;
     // node: 第一内層ノード irep も wall-function 生産で覆う (壁ノードのみだと第一内層に標準解像生産が
     // 残り k 暴走。methods/turbulence §6.5(e))。ω ピン/decouple は壁ノードのまま (ここでは触らない)。
-    if (isNode != 0) wf_pk[irep] = pk_wf;
+    if (isNode != 0) {
+        wf_pk[irep] = pk_wf;
+        // node k Dirichlet (SU2 SetTurbVars_WF 流, enableKwf==1 のみ): 第一内層ノードの k を
+        // k_wf = ω_w·μ_t,wall/ρ = ω_w·ν·(1/g - 1) に固定し、近壁 k 蓄積 (再付着 μ_t ピーク) を断つ。
+        // ω_w は Menter ブレンド (壁ノードのピンと同式)、μ_t,wall は壁モデル渦粘性 (Reichardt g 由来)。
+        if (enableKwf == 1) {
+            const flow_float omega_vis = static_cast<flow_float>(6.0) * nu / (kSstBeta1 * y * y);
+            const flow_float omega_log = utau / (sqrt(kSstBetaSt) * kKappa * y);
+            const flow_float omega_w   = max(sqrt(omega_vis * omega_vis + omega_log * omega_log), kOmegaMin);
+            const flow_float mut_wall   = nu * max(static_cast<flow_float>(1.0) / max(g, kSmall) - static_cast<flow_float>(1.0), static_cast<flow_float>(0.0));
+            const flow_float k_wf       = omega_w * mut_wall;  // = ω_w·μ_t,wall/ρ (mut_wall は運動学渦粘性 ν_t,wall)
+            roK_wf[irep] = rho * max(k_wf, static_cast<flow_float>(0.0));
+        }
+    }
 
     utau_b[ib] = utau;
     ypls_b[ib] = utau * y / nu;
@@ -177,7 +203,7 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"]);
 }
 
 void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , mesh& msh , variables& var)
@@ -213,5 +239,7 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.map_plane_cells_d,
         msh.wall_flag_d,
         var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],
-        var.c_d["Tau_Wall"]);
+        var.c_d["Tau_Wall"],
+        // node k Dirichlet ゲート: wallTreatmentSST==1 かつ nodeKwfDirichlet==1 のときだけ roK_wf を書く (既定 OFF)。
+        (cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? 1 : 0, var.c_d["roK_wf"]);
 }

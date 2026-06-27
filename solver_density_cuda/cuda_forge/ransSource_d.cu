@@ -47,7 +47,10 @@ __global__ void rans_sst_source_d(
     flow_float* l_des,
     // node: ω ピン位置 (=壁ノード) の識別用。wf_pk は第一内層にも付くため、ω 残差ゼロ化は壁ノード限定にする。
     // cell では nullptr (wf_pk>=0 で第一セルを識別)。
-    geom_int* wall_flag, int isNode)
+    geom_int* wall_flag, int isNode,
+    // node k Dirichlet (SU2 SetTurbVars_WF 流): roK_wf>=0 の第一内層ノードで res_roK を 0 化 (k は固定なので
+    // 残差不要・rms_roK 汚染回避)。nullptr/全-1 で無効 (cell 不変)。
+    flow_float* roK_wf)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -193,6 +196,11 @@ __global__ void rans_sst_source_d(
         res_roOmega[ic]   = static_cast<flow_float>(0.0);
         src_jac_omega[ic] = static_cast<flow_float>(0.0);
     }
+    // node k Dirichlet (第一内層ノード): k は roK_wf に固定するので残差・対角は不要 (rms_roK 汚染回避)。
+    if (roK_wf != nullptr && roK_wf[ic] >= static_cast<flow_float>(0.0)) {
+        res_roK[ic]   = static_cast<flow_float>(0.0);
+        src_jac_k[ic] = static_cast<flow_float>(0.0);
+    }
 }
 
 }
@@ -231,7 +239,8 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         cfg.DESmode,
         var.c_d["l_des"],
         (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
-        (cfg.discretization == "node") ? 1 : 0);
+        (cfg.discretization == "node") ? 1 : 0,
+        (cfg.discretization == "node") ? var.c_d["roK_wf"] : nullptr);
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchkKernelSync();

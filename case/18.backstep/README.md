@@ -55,6 +55,8 @@
 | `run_0062_node_wfcov` / `run_0064_node_wfcov2` | **修正試行 (失敗)**: wf_pk と ω ピンの両方を第一内層 irep へ移設 | **悪化** (k 52→246-350): ① 凹コーナーで irep 共有→ω ピン値 race、② 壁ノード ω アンカ喪失→ω 崩壊。**ω ピンは irep へ移してはいけない**と判明 | 破棄 (記録) |
 | `run_0065_node_wfcov3` / `run_0067_node_wfcov_long` | **修正 (成功)**: **生産 wf_pk のみ壁+第一内層に被覆、ω ピン/decouple は壁ノード据え置き** ([plan](../../plans/accepted/turbulence-node-wall-function-coverage.md)) | **段差コーナー vis_t/l 6789→77・k 52→3** (cell 同等)、場平均 424→**207** (cell 198)、**x_R 6.71→7.63** (cell 7.95/SU2 7.89 に接近)、machmax/pmax `STEADY`。残: 再付着で μt ピーク (vt/l~5800 vs cell 990、局所)。`CONVERGENCE_VERDICT.txt` | active |
 | `run_0066_cell_invar` | **cell ビット不変確認**: 修正ビルドで cell を 2000 step | vis_t/l mean **197.71**・max **994** が baseline 一致 → **cell 経路は無影響** | 記録 (回帰) |
+| `run_0068_node_kdirichlet` | **k Dirichlet 試行** (SU2 SetTurbVars_WF 流): 第一内層ノードで k=ω_w·μt,wall/ρ をハード Dirichlet | **再付着 μt ピーク除去** (vis_t/l max 5769→894=cell 994 並、再付着 vt/l 5834→5、場平均 207→183) **だが x_R 7.63→8.67 と伸びる** (非平衡再付着で u_τ→0→k_wf→0 と乱流抑えすぎ)。トレードオフ | 記録 (診断) |
+| `run_0069_node_kwf_off` / `run_0069_node_kwf_on` | **`nodeKwfDirichlet` フラグ検証** (既定 0) | OFF=**prod-fix と完全一致** (mean 206.8/max 5769/x_R 7.63, k-pin 0 node)。ON=k-Dirichlet (max 893/x_R 8.54, k-pin 472 node)。フラグで opt-in 化、既定は prod-fix | 記録 (回帰) |
 
 > **メッシュ/面ベクトル検証 (2026-06-21, user 指摘)**: 双対メッシュは正常 — 体積保存 88=88・closure 6.7e-6・負体積0・
 > 体積比4.4・発散種域は均一セル。**面ベクトルの向きも正常** (内部双対面 反転0%/cos min0.936、境界半割面 内向き0/556、

@@ -394,10 +394,16 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     壁ノードのピンが近傍を抑える)。$\omega$ を第一内層ノードに移すと、段差面と底壁で同じ第一内層ノードを共有する
     凹コーナーで $\omega$ ピン値が競合し、かつ「壁ノードからの $\omega$ 拡散アンカ」が外れて $\omega$ が崩壊し
     $k$ がさらに暴走する (実測で確認、不採用)。
-  - **残課題**: node の壁ノードは cell 第一セルより壁から遠い ($\Delta y$ vs $\Delta y/2$) ため $\omega$ ピン値が
-    $\sim1/4$ 低く、再付着せん断層の近壁で $k$ destruction が cell より弱く $\mu_t$ ピークが残る
-    (`case/18.backstep` 再付着 $\mu_t/\mu\!\approx\!5800$ vs cell 990、局所 ~27 node)。場平均・$x_R$ は cell/SU2 と
-    整合する。完全一致には node の near-wall $\omega$ 解像 (または $k$ 上限) の追加対策が要る (将来課題)。
+  - **再付着 $\mu_t$ ピーク (残課題)**: node の壁ノードは cell 第一セルより壁から遠い ($\Delta y$ vs $\Delta y/2$) ため
+    $\omega$ ピン値が $\sim1/4$ 低く、再付着せん断層の近壁で $k$ destruction が cell より弱く $\mu_t$ ピークが残る
+    (`case/18.backstep` 再付着 $\mu_t/\mu\!\approx\!5800$ vs cell 990、局所 ~27 node)。場平均・$x_R$ は cell/SU2 と整合。
+  - **オプション: node $k$ Dirichlet (`nodeKwfDirichlet=1`, SU2 `SetTurbVars_WF` 流)**: 第一内層ノードの $k$ を
+    $k_{wf}=\omega_w\,\mu_{t,wall}/\rho$ ($\mu_{t,wall}=\nu(1/g-1)$, $g=du^+/dy^+$) にハード Dirichlet し、上記
+    再付着ピークを除去できる (`case/18.backstep` $\mu_t/\mu$ max 5800→890 = cell 990 並)。**ただし副作用**: 非平衡な
+    再付着点では $u_\tau\to0$ で $k_{wf}\to0$ となり再付着乱流を抑えすぎ、$x_R$ が伸びる (7.63→8.67、cell 7.95/SU2 7.89
+    より長くなる)。場の清浄さ ($\mu_t$ ピーク除去) と $x_R$ 精度のトレードオフのため **既定 OFF** (既定は $k$ を解く
+    prod-fix で $x_R$ が cell/SU2 整合)。$\omega$ ピンは Dirichlet 化しても壁ノードのまま (第一内層へ移すと
+    凹コーナーで $\omega$ ピン値が race し崩壊するため不可)。
 
 ## 7. 2D / 3D / 軸対称
 

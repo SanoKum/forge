@@ -94,6 +94,10 @@ public:
         // wall-function 生産 P_k = ρu_τ⁴/ν·g(1-g) (g=du⁺/dy⁺) を格納。非 wall セルは -1
         // (inactive)。ransSource が >=0 のセルで標準 P_k をこの値に置換する (methods/turbulence §6.5(d))。
         "wf_pk",
+        // SST automatic wall treatment (node, wallTreatmentSST==1) 用: 第一内層ノードの **k Dirichlet 値**
+        // (保存量 roK_wf = ρ·k_wf, k_wf=ω_w·μ_t,wall/ρ = SU2 SetTurbVars_WF 流)。非対象セルは -1 (inactive)。
+        // >=0 のノードで k をこの値にハード Dirichlet し近壁 k 蓄積 (再付着 μ_t ピーク) を断つ。cell では常に -1。
+        "roK_wf",
         // 診断 (k 収支調査用, node/cell 近壁 SST 比較): ransSource が確定した最終 k 生産項 P_k
         // (wall-function 置換後)。res_roK へ加える値そのもの。non-RANS では未使用。
         "Pk_diag",
@@ -162,8 +166,8 @@ public:
         "vis_lam" , "vis_turb" , "wall_dist" , "thermCond" ,
 
         // k 収支調査 (node/cell 近壁 SST 比較, 一時診断): 壁関数生産 wf_pk(>=0=壁関数処理/-1=未処理),
-        // 最終 k 生産 Pk_diag, 消散ヤコビ src_jac_k(=β*ω → Dk=src_jac_k·ρk), k 輸送対角 transport_diag_k
-        "wf_pk" , "Pk_diag" , "src_jac_k" , "transport_diag_k" ,
+        // k Dirichlet 値 roK_wf, 最終 k 生産 Pk_diag, 消散ヤコビ src_jac_k, k 輸送対角 transport_diag_k
+        "wf_pk" , "roK_wf" , "Pk_diag" , "src_jac_k" , "transport_diag_k" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des"
