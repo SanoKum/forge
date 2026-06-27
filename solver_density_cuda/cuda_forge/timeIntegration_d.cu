@@ -729,7 +729,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 
  // node-centered 壁 no-slip: 壁ノードで運動量3行 (index1=roUx,2=roUy,3=roUz) を decouple する (nullptr 可)。
  // SU2 `DeleteValsRowi` 相当。残差射影だけでは block-DPLUR が壁運動量を連成したまま dq≠0 を返し速度 drift
- // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。methods/discretization/implementation.md §7.2.1。
+ // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。methods/discretization.md §7.2.1。
  geom_int* wall_flag,
 
  // node-centered 弱形式 (Phase 2, 5e): node モードはゴーストセルを使わない。境界半割面 (has_nbr=false=ゴースト

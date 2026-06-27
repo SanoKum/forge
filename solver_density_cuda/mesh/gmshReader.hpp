@@ -1295,7 +1295,7 @@ public:
     // 中点双対 (median-dual) メッシュを primal から構築する (node-centered 用)。
     //
     // 現状 2D (triangle / quad) のみ実装。3D は警告して何もしない (M4 で対応)。
-    // theory: methods/discretization/theory.md §3、impl: methods/discretization/implementation.md §2。
+    // theory: methods/discretization.md §3、impl: methods/discretization.md §2。
     //
     // 生成物 (メンバ): dualVolume / dualFace* / dualBnode* / dualBcond*。
     // 整合チェック (前処理必須, theory §3.3): ① Σ双対体積 == Σprimal体積、
@@ -1904,7 +1904,7 @@ public:
 
         // ---- node-centered 可視化トポロジ (/VIZMESH) ----
         // replacePrimalWithDual() で退避した primal CONNE。solver の出力が node モードで
-        // 「primal セル + Center='Node'」可視化に使う (methods/discretization/implementation.md §3.5)。
+        // 「primal セル + Center='Node'」可視化に使う (methods/discretization.md §3.5)。
         if (!this->vizCONNE.empty())
         {
             Group vgrp = file.createGroup("/VIZMESH");
@@ -1918,7 +1918,7 @@ public:
 
         // ---- median-dual (node-centered) データ ----
         // buildMedianDual() 済みのときのみ /DUAL を書く。solver は discretization=="node"
-        // で /DUAL を読み CV=ノードとして消費する (methods/discretization/implementation.md §1)。
+        // で /DUAL を読み CV=ノードとして消費する (methods/discretization.md §1)。
         if (this->dualBuilt)
         {
             Group dgrp = file.createGroup("/DUAL");

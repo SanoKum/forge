@@ -118,7 +118,7 @@ C は成長率の Knudsen 抑制を制御し、**小さいほど成長が速く 
 T_d−T_g は**成長活発な onset 前線で局所的に最大 ~15K**(過冷却 ~25–30K の一部)に達するが、中央値は ~0.2K
 (下流は凝縮完了で蒸気枯渇→成長停止→T_d→T_g)。**N2 キャリアが潜熱を効率よく奪う**ため巨視的影響は
 Kantrowitz/Gyarmathy のモデル選択より一桁小さい。方向は予想どおり成長を僅かに遅らせ onset を微小に下流へ
-(g プロファイルで二温度=破線が僅かに遅延)。→ **純蒸気凝縮では T_d が必須だが、キャリア希薄凝縮では一温度近似で十分**、という結論。実装詳細は [methods/condensation/theory.md §4](../../methods/condensation/theory.md)。
+(g プロファイルで二温度=破線が僅かに遅延)。→ **純蒸気凝縮では T_d が必須だが、キャリア希薄凝縮では一温度近似で十分**、という結論。実装詳細は [methods/condensation.md §4](../../methods/condensation.md#理論)。
 
 **複数 H2O 分圧スイープ (モデル汎化, Kantrowitz+Gyarmathy 固定)** — `compare_multicond.py` / `compare_multicond.png`:
 
@@ -234,7 +234,7 @@ SLAU 陰解法 (timeIntegration:11, blockDPLUR, **nStepInner:5, cfl_pseudo:4**)�
 | `run_0052_fig3_2d_sst_kwgyar` | 2D SST | Kantrowitz+Gyarmathy | onset 遅延で実験良好 | active |
 
 知見: **凝縮成長停止バグ修正後** (核生成を $r_{\rm nuc}=1.01r_*$ で生成し液滴を $r_*$ から離脱させる;
-[methods/condensation/implementation.md](../../methods/condensation/implementation.md) §検証 case/16) に全モデルが全凝縮を再現。
+[methods/condensation.md](../../methods/condensation.md#実装) §検証 case/16) に全モデルが全凝縮を再現。
 下流 (x≳4cm) は全モデル実験 ±数%。**onset 域は Kantrowitz 有り (Kw+HK/Kw+Gyar) が overshoot を抑え実験に最良**。
 残課題: x≈3cm のピークが実験よりやや高い (onset レート微調整)、3D 壁解像 (`make_nozzle_3d_wallres.py`) は未実施。
 

@@ -40,7 +40,7 @@ int                        g_n   = 0;
 // NASA-9 係数 (a0..a8): cp/R = a0/T^2 + a1/T + a2 + a3 T + a4 T^2 + a5 T^3 + a6 T^4
 // MW [kg/mol], sigma_LJ [Angstrom], eps_kB [K]。
 // 各 species・各定数の出典 (CEA / Svehla / forge 擬似種 AIR の区別) は
-// methods/thermophysics/implementation.md 「内蔵 species DB の一覧と出典」を参照。
+// methods/thermophysics.md 「内蔵 species DB の一覧と出典」を参照。
 SpeciesThermo makeSpecies(double MW, double sigma, double eps_kB,
                           double Tlo, double Tmid, double Thi,
                           const double low[9], const double high[9])

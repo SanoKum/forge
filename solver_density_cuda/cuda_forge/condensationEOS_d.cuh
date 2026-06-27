@@ -41,7 +41,7 @@ __host__ __device__ inline double cond_T_from_e_carrier(
     return T;
 }
 
-// 非平衡凝縮: 一温度 二相 EOS の温度反転 (Phase 2)。methods/condensation/theory.md 5 節。
+// 非平衡凝縮: 一温度 二相 EOS の温度反転 (Phase 2)。methods/condensation.md 5 節。
 //
 // 【一温度近似】気相温度 T_v と液滴温度 T_d を分けず T_v=T_d=T とする (初期実装)。
 // 将来は e=(1-g)e_v(T_v)+g e_l(T_d) と Hill T_d 式の 2 変数局所 Newton へ拡張する設計

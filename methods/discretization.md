@@ -1,24 +1,218 @@
-# 離散化レイアウト (cell / node) 実装解説
+# 離散化レイアウト (cell-centered / node-centered)
 
-本ドキュメントは、cell-centered / node-centered (median dual) 両対応の実装方針と
-ソース対応を記す。理論は [theory.md](theory.md) を参照。
+forge は密度ベース圧縮性 Navier–Stokes を有限体積法 (FVM) で解く。本ドキュメントは、
+解変数を **どの幾何要素に乗せるか** = 制御体積 (control volume, CV) の取り方に関する理論を扱う。
 
-## 1. 設計の核: discretization mesh 抽象
+- **cell-centered FVM** (現行): primal メッシュのセルを CV とし、解をセル重心に代表させる。
+- **node-centered FVM** (本整備の追加対象): primal メッシュの**ノードを CV 中心**とし、各ノードの
+  周囲に **中点双対 (median dual)** で CV を構成する。vertex-centered FVM とも呼ぶ。
+
+両者は同じ保存則の積分形を異なる CV 上で離散化したものであり、**数値スキーム
+(対流・勾配・粘性・陰解法) の定式化は CV と面 (CV 間の界面) の抽象だけで書ける**。
+forge ではこの事実を利用して両対応を実現する (→ 本ドキュメントの「実装」節)。
+
+本ドキュメントは理論(係数・方程式)と実装(ソース対応)をまとめる。
+
+## 理論
+
+### 1. 有限体積法の積分形 (CV 非依存)
+
+保存量 $\mathbf{U}$ について、任意の CV $\Omega_i$ 上で
+
+$$
+\frac{d}{dt}\int_{\Omega_i}\mathbf{U}\,dV
++ \oint_{\partial\Omega_i}\big(\mathbf{F}_c - \mathbf{F}_v\big)\cdot\mathbf{n}\,dS
+= \int_{\Omega_i}\mathbf{S}\,dV
+$$
+
+が成り立つ。$\mathbf{F}_c$ は対流フラックス、$\mathbf{F}_v$ は粘性フラックス、$\mathbf{S}$ はソース項。
+離散化では
+
+$$
+V_i\frac{d\mathbf{U}_i}{dt}
+= -\sum_{f\in\partial\Omega_i}\big(\mathbf{F}_c - \mathbf{F}_v\big)_f\cdot\mathbf{n}_f\,S_f
++ V_i\mathbf{S}_i
+$$
+
+となる。ここで必要な幾何量は **CV 体積 $V_i$**、**CV 代表点 $\mathbf{x}_i$**、各 CV を囲む
+**面 $f$ の法線 $\mathbf{n}_f S_f$ と面重心 $\mathbf{x}_f$**、そして **面が繋ぐ 2 つの CV** だけである。
+この抽象に cell / node の区別は現れない。差異はすべて「CV と面をどう作るか」に押し込められる。
+
+### 2. cell-centered の CV と面
+
+- CV = primal セル。$V_i$ = セル体積、$\mathbf{x}_i$ = セル重心。
+- 面 = primal セル間の界面 (内部面) と境界面。面は 2 つのセルを繋ぐ。
+- 境界はゴーストセル法で扱う (境界面の外側に鏡像 CV を置く)。
+
+### 3. node-centered の CV と面 (中点双対)
+
+primal メッシュは変えずに、その上に**双対メッシュ**を構成する。
+
+#### 3.1 双対 CV (median dual)
+ノード $p$ の CV $\Omega_p$ は、$p$ に接続する各 primal セルを
+**「セル重心 — 面重心 — エッジ中点 — ノード」** の小片に細分し、$p$ に帰属する小片を集めたもの。
+
+- 2D: 各セル内で、$p$ から出る 2 本のエッジ中点とセル重心を結ぶ四辺形が $p$ の取り分。
+- 3D: セル重心・面重心・エッジ中点・ノードから成る四面体片の和。
+- 性質: $\sum_p V_p = \sum_{\text{cell}} V_{\text{cell}}$ (双対体積の総和は領域体積に一致)。
+
+#### 3.2 双対面 (edge ↔ dual face)
+primal の各**エッジ** $(p,q)$ にちょうど 1 枚の双対面 $f_{pq}$ が対応する。
+$f_{pq}$ はエッジ $(p,q)$ を囲むセル重心・面重心を結ぶパッチ群であり、
+$\Omega_p$ と $\Omega_q$ の界面をなす。法線ベクトルはパッチの面積ベクトル和
+
+$$
+\mathbf{n}_{pq}S_{pq} = \sum_{\text{patch}}\mathbf{S}_{\text{patch}}, \qquad
+\mathbf{x}_{pq} = \frac{\sum_{\text{patch}} \mathbf{S}_{\text{patch}}\,\mathbf{x}_{\text{patch}}}{\sum_{\text{patch}} \mathbf{S}_{\text{patch}}}
+$$
+
+で与える。よって **1 エッジ = 1 面 = 2 CV を繋ぐ** という cell-centered と同型の接続が得られる。
+
+#### 3.3 閉性条件 (consistency)
+各内部ノード $p$ について、$p$ を囲む全双対面の符号付き面積ベクトル和が消える:
+
+$$
+\sum_{q\in N(p)} \mathbf{n}_{pq}S_{pq} = \mathbf{0}.
+$$
+
+これは「一定場で勾配がゼロ」「一定流で対流フラックスが保存」を保証する離散整合条件で、
+median dual は構成上これを厳密に満たす。実装では前処理で数値的に検証する (→ implementation.md)。
+
+#### 3.4 境界 CV と半割双対面
+境界ノードは CV 中心が**境界面上に乗る**ため、ゴースト鏡像が定義できない。
+代わりに各 primal 境界面を構成ノードへ細分した **半割双対面 (half median-dual face)** を境界ノードに
+割り当て、そこで境界フラックスを弱形式で課す。境界面積の分配は保存的でなければならない:
+
+$$
+\sum_{p\in f_b} S_{b,p} = S_{f_b}.
+$$
+
+### 4. cell-centered と node-centered の比較
+
+| 観点 | cell-centered | node-centered (median dual) |
+| --- | --- | --- |
+| CV | primal セル | ノード周りの双対セル |
+| 自由度数 (tet メッシュ) | $\approx 5.5\,N_{\text{node}}$ | $N_{\text{node}}$ (約 1/5.5) |
+| 面ループ単位 | primal 面 | primal エッジ |
+| 境界 | ゴーストセル | 半割双対面 + 弱形式 |
+| tet 非構造での効率 | 自由度過多 | 自由度少で有利 |
+| 軸上特異性 (軸対称) | セル CV が軸から離れる | 境界ノード CV を半割で扱える |
+
+tet 非構造メッシュでは node-centered の自由度が大幅に少なく、計算コスト削減が見込める
+(本整備の主動機)。一方 hex メッシュでは自由度比が逆転し得るため、両対応として残す。
+
+### 5. 精度・安定性に関する注意
+
+- **勾配**: Green–Gauss を双対 CV 上で適用する。§3.3 の閉性が一次精度の前提。
+- **対流の高次再構成 (MUSCL)**: CV 重心の勾配と CV 重心→面重心ベクトルで外挿する形式は
+  双対 CV 上でもそのまま意味を持つ。limiter も CV 値基準で不変。
+- **粘性 over-relaxed 補正**: 双対では面法線とエッジ方向が概ね揃い、非直交補正項が小さく安定しやすい。
+- **混合要素双対**: セル重心がノード平均近似のとき双対体積も近似を継ぐ。高歪み・非凸要素では
+  負体積に注意 (前処理でチェック)。
+
+### 6. 境界条件: ゴースト法 vs 弱形式 (node-centered)
+
+#### 6.1 なぜゴースト法が node-centered で問題になるか
+cell-centered では境界面の外側に鏡像ゴースト CV を置き、対流フラックスも Green–Gauss 勾配も
+「ゴーストを隣接 CV とする内部面」として一括処理できる。node-centered では境界ノードが
+**境界面上に乗る**ため鏡像ゴーストが退化し (§3.4)、ゴースト位置を人為的にずらす便宜が要る。
+この便宜のもとでは:
+
+- **対流フラックス**は境界面でゴースト経由 1 次精度になり、低マッハでは妥当だが、
+- **Green–Gauss 勾配**は境界面値を `0.5(φ_node + φ_ghost)` で評価し、境界ノードの半割 CV と
+  あいまいなゴースト幾何が混ざる。低マッハでは緩く問題ないが、**高マッハ (強膨張・衝撃) の壁近傍で
+  境界ノード勾配が不正確になり 2 次 MUSCL 再構成が過大 → 発散**する (M2 で bump Mach1.65 の
+  下壁後縁 x≈1.98 で実証)。
+
+#### 6.2 弱形式境界 (weak-form boundary)
+ゴーストを介さず、境界 CV の開いた面 (半割双対面) に対し**境界フラックス・境界面値を直接課す**:
+
+- **対流**: 境界半割面 $f_b$ を通る数値フラックスを境界状態 $Q_b$ と内部状態から評価し残差へ直接加える
+  $$ \mathbf{R}_p \mathrel{+}= \hat{\mathbf{F}}(\mathbf{Q}_i, \mathbf{Q}_b, \mathbf{n}_b)\, S_b. $$
+- **勾配 (Green–Gauss の閉曲面積分の境界寄与)**: 境界 CV の勾配は内部双対面に加え**境界半割面の寄与
+  $\phi_b \mathbf{S}_b$ を必ず含めねば閉じない** (発散定理):
+  $$ \nabla\phi_p = \frac{1}{V_p}\Big( \sum_{\text{内部面}} \phi_f \mathbf{S}_f + \sum_{\text{境界半割面}} \phi_b \mathbf{S}_b \Big). $$
+  ここで $\phi_b$ は境界面での値 (BC 種別で決まる: slip 壁なら接線速度・内部 $\rho,P$、超音速流入なら
+  自由流、超音速流出なら内部外挿)。**ゴーストの平均ではなく境界値そのもの**を使う点が肝。
+
+$Q_b$ / $\phi_b$ は各 BC 種別で定まる量で、既存のゴースト状態計算 (slip 鏡像・inlet 規定・outlet 外挿) と
+同じ物理を「面の値」として与えるもの。実装では既存ロジックを流用しつつ、勾配・フラックスへの
+寄与だけを弱形式に置き換える (→ 本ドキュメントの「実装」節 §7)。
+
+#### 6.3 壁の強形式 (Dirichlet) と壁ゴースト撤廃
+
+粘性壁 (no-slip) は弱形式フラックスより**強形式 (Dirichlet) の方が node-centered では自然かつ堅牢**である。
+理由は §3.4 の通り**境界ノードが壁面そのものの上に乗る**ため、その点の速度は物理的に厳密にゼロでなければ
+ならない:
+
+$$ \mathbf{u}_p = \mathbf{0} \qquad (p \in \text{wall}). $$
+
+cell-centered ではセル中心が壁から半セル内側にあり、壁面での $\mathbf{u}=0$ は鏡像ゴースト
+($\mathbf{u}_{\text{ghost}}=-\mathbf{u}_{\text{interior}}$) で**面平均**を 0 にして表す。これはセル中心速度が非ゼロ
+(近壁速度) であることと整合する。しかし node-centered で同じ鏡像を使うと、面平均は 0 になるが
+**壁ノード自身の速度は 0 に固定されない** (残差で更新される)。これは壁ノードが壁上にあるという幾何と矛盾する。
+
+**壁ゴーストは不要**:
+- **断熱壁を通る対流フラックスは恒等的に 0**。$\mathbf{u}\cdot\mathbf{n}=0$ より質量・エネルギー流束 0、運動量は
+  Dirichlet で固定 (壁反力が圧力を吸収)、断熱で熱流束 0。よって壁半割面の寄与は丸ごと不要で、CV を
+  「壁側で閉じない」まま扱ってよい (落とした圧力起因の偽運動量は運動量 Dirichlet が吸収する)。
+- **壁せん断の物理は内部双対面が担う**。近壁の内部ノード $q$ が感じる粘性せん断 $\mu\,\partial u_t/\partial n$ は、
+  $q$ と壁ノード $p$ ($\mathbf{u}_p=0$) を繋ぐ**通常の内部双対面** $f_{pq}$ の粘性フラックスとして自然に現れる。
+  したがって壁ゴーストを撤廃しても近壁せん断は失われない (むしろ鏡像で実効距離が 2 倍になる歪みが消える)。
+
+> **実装上の補足 (検証で更新)**: 残差射影 Dirichlet は壁の**圧力寄与も落とすため不正**で発散した。また壁ゴーストを
+> 完全に消すと壁ノードの Green-Gauss 勾配が閉じず悪化した。よって実際の採用形は: **壁ゴーストは勾配/粘性の
+> ミラー用に残し、対流のみ壁境界値 (bvar 速度=0) で pressure-only に弱形式化**する (no-slip の本質=対流の運動量は
+> 圧力のみ・せん断は内部双対面が担う、を満たす)。さらに**近壁極小 CV の粘性は陰解法では十分 implicit 化されず
+> explicit (cfl≤0.1) が安定**。詳細・検証は 本ドキュメントの「実装」節 §7.2。
+
+##### 6.3.1 陰解法での Dirichlet 整合 (Jacobian 行 decouple)
+
+壁 $\mathbf{u}_p=\mathbf{0}$ を**残差射影だけ** ($\mathbf{res}_{\rho\mathbf{u}}=0$) で課すと、explicit では $\Delta(\rho\mathbf{u})=0$ になり厳密に効くが、**implicit (block-DPLUR) では不十分**である。block-DPLUR の対角 5×5 ブロックは壁ノードの運動量を連続・エネルギーと連成したままなので、線形 solve は残差 0 でも $\Delta(\rho\mathbf{u})\neq0$ を返し、**壁速度が drift する** (実測: 壁 $|\rho u_x|$ が時間発展で増大、状態射影 `enforceWallNoSlip` が毎ステージ余分な KE を剥ぐ持続的エネルギーシンク化)。
+
+SU2 (同じ vertex-centered median-dual) はこれを **`Jacobian.DeleteValsRowi`** で解決する: 壁ノードの**運動量行を単位行に置換** ($\Delta(\rho u)=\Delta(\rho v)=\Delta(\rho w)=0$ を solve から直接得る)。連続・エネルギー行は保存式のまま残し、$u=0$ より $\rho e = \rho e_\text{int}$、圧力は EOS が復元する (CPG: $P=(\gamma-1)\rho e$、TP: $\rho e_\text{int}\to T\to P=\rho R_\text{mix}T$)。decouple は運動量行のみを触り thermo 行に依らないので **CPG/TP 共通** に動く。forge では既存の軸 `axis_flag` 行 decouple 機構を**壁の運動量3行へ拡張**して実装する。計画: [`discretization-node-wall-implicit-dirichlet.md`](../plans/accepted/discretization-node-wall-implicit-dirichlet.md)。
+
+> 軸 (§7.1) の `roUy` 単行 decouple は r=0 の極小 CV が多方程式的に ill-posed なため単独では発散したが、**壁は r=0 特異点を持たない**ので、運動量3行 decouple が drift 機構を直接除去できる。
+
+#### 6.4 コーナー所有優先 (boundary∩boundary)
+
+2 つの境界に同時に乗るノード (例: 壁∩出口の出口リップ) は、ゴースト法では**境界ごとに別々のゴースト**が
+立ち、同一 CV の残差に矛盾する条件 (壁の $\mathbf{u}=0$ と出口の超音速外挿) が同時に課されて発散する。
+
+これを避けるため、各境界ノードを**優先度に従い 1 つの境界条件にのみ所有させる**:
+
+$$ \text{wall} > \text{inlet} > \text{outlet} > \text{slip/axis}. $$
+
+物理的に、壁とその他境界の交線上の点は**壁点**である (リップは固体壁)。よって壁が最優先で所有し、当該ノードは
+壁 Dirichlet として扱い、他境界 (出口等) の条件・半割面からは除外する。これによりコーナーの矛盾が解消する。
+
+> 段階導入: まず壁を強形式化＋壁ゴースト撤廃 (Phase 1)、続いて流入出/slip/axis のゴーストも半割面弱形式へ
+> 置き換え node モードを完全 ghost-free にする (Phase 2)。
+
+### 参考
+
+- median-dual / edge-based FVM は非構造ソルバ (SU2, Fluent の node-based など) で広く使われる定式化。
+- 実装上の対応とデータ構造は 本ドキュメントの「実装」節、
+  実装計画は [`.github/plans/discretization-median-dual.md`](../plans/active/discretization-median-dual.md) を参照。
+
+## 実装
+
+### 1. 設計の核: discretization mesh 抽象
 
 forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消費する幾何が次の 4 群に限られる:
 
-1. **CV 中心量**: `volume[ic]`, `ccx/ccy/ccz[ic]` ([variables.cpp](../../solver_density_cuda/variables.cpp))
+1. **CV 中心量**: `volume[ic]`, `ccx/ccy/ccz[ic]` ([variables.cpp](../solver_density_cuda/variables.cpp))
 2. **面量**: `sx/sy/sz[ip]`, `ss[ip]`, `pcx/pcy/pcz[ip]`, `fx[ip]`, `dcc[ip]`
-3. **面 → CV**: `map_plane_cells_d[2*ip]` ([mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp))
+3. **面 → CV**: `map_plane_cells_d[2*ip]` ([mesh.cpp](../solver_density_cuda/mesh/mesh.cpp))
 4. **CV → 面 CSR**: `map_cell_planes_index_d` / `map_cell_planes_d`
 
 これらは「CV と面」の抽象だけで、primal セル形状を参照しない。`fx`/`dcc` も CV 重心と
-面重心からランタイム再計算される ([calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu))。
+面重心からランタイム再計算される ([calcStructualVariables_d.cu](../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu))。
 
 → **median-dual を前処理で構築し、同じ `nCells/nPlanes/map_plane_cells/CSR` レイアウトに
 「CV=ノード, 面=エッジ双対面」として詰めれば、内部カーネルは無変更で動く。**
 
-`mesh` 構造体 ([mesh.hpp](../../solver_density_cuda/mesh/mesh.hpp)) は既にこの汎用抽象になっている。
+`mesh` 構造体 ([mesh.hpp](../solver_density_cuda/mesh/mesh.hpp)) は既にこの汎用抽象になっている。
 よって solver はこの抽象だけを消費し、**供給側 (mesh を作る前処理) を 2 実装に分ける**:
 
 - **cell モード**: 現行 gmshReader 経路。`/CELLS` を CV とする。**現状維持**。
@@ -27,13 +221,13 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 
 切替は `solverConfig` の `discretization: cell | node` (既定 `cell`)。
 **`nCells` を `nCV` にリネームしない** (差分肥大回避)。node モードでは `nCells == nNodes` と読み替える
-(その旨を [mesh.hpp](../../solver_density_cuda/mesh/mesh.hpp) の doc コメントに明記)。
+(その旨を [mesh.hpp](../solver_density_cuda/mesh/mesh.hpp) の doc コメントに明記)。
 
-## 2. 双対メッシュ生成 (前処理)
+### 2. 双対メッシュ生成 (前処理)
 
-配置: `convertGmshToForge` 前処理 ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp))。
+配置: `convertGmshToForge` 前処理 ([gmshReader.hpp](../solver_density_cuda/mesh/gmshReader.hpp))。
 既存の primal 幾何構築 (セル重心・面重心・向き合わせ) と、**既に構築済みだが未使用の
-`node.iCells` / `node.iPlanes`** ([mesh.hpp:19-20](../../solver_density_cuda/mesh/mesh.hpp)) を起点に再利用する。
+`node.iCells` / `node.iPlanes`** ([mesh.hpp:19-20](../solver_density_cuda/mesh/mesh.hpp)) を起点に再利用する。
 
 生成物:
 - **双対体積** $V_p$: 各 primal セルを「セル重心–面重心–エッジ中点–ノード」で細分し各ノードへ集計。
@@ -45,24 +239,24 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 - **閉性チェック**: 各内部ノードで `Σ(双対面ベクトル, 符号付き)` の max ノルムを print。
 - 出力: HDF5 `/DUAL` グループ (可視化用 primal は `/MESH /CELLS` に残す二層構造)。
 
-## 3. カーネル別の対応状況
+### 3. カーネル別の対応状況
 
 | カテゴリ | ソース | node 対応 |
 | --- | --- | --- |
-| 対流 (Roe/SLAU/AUSM) MUSCL | [convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) | 無変更で成立 |
-| Green–Gauss 勾配 | [calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu) | 無変更 (閉性が前提) |
-| 粘性 over-relaxed | [viscousFlux_d.cu](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu) | 無変更 |
-| block-DPLUR 陰解法 | [timeIntegration_d.cu](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu) | 無変更 |
-| 構造量 (fx/dcc) | [calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu) | 無変更 (CV 重心と面重心から再計算) |
+| 対流 (Roe/SLAU/AUSM) MUSCL | [convectiveFlux_d.cu](../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) | 無変更で成立 |
+| Green–Gauss 勾配 | [calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu) | 無変更 (閉性が前提) |
+| 粘性 over-relaxed | [viscousFlux_d.cu](../solver_density_cuda/cuda_forge/viscousFlux_d.cu) | 無変更 |
+| block-DPLUR 陰解法 | [timeIntegration_d.cu](../solver_density_cuda/cuda_forge/timeIntegration_d.cu) | 無変更 |
+| 構造量 (fx/dcc) | [calcStructualVariables_d.cu](../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu) | 無変更 (CV 重心と面重心から再計算) |
 
-## 3.5. M1 実装方針 (確定): 双対を primary mesh として書き出す
+### 3.5. M1 実装方針 (確定): 双対を primary mesh として書き出す
 
 設計検討の結果、**M1 は solver 側を一切変更せずに実現できる**ことが判明した (当初計画の
 `readMesh` dual 分岐や新 BC カーネルは不要だった)。具体的には:
 
 - `convertGmshToForge` が node モードで `buildMedianDual()` → `replacePrimalWithDual()` を実行し、
   双対メッシュ (CV=ノード、内部面=双対面、境界面=半割双対面) を **そのまま `/MESH /PLANES /CELLS
-  /BCONDS /VALUE` に primary mesh として書き出す** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp))。
+  /BCONDS /VALUE` に primary mesh として書き出す** ([gmshReader.hpp](../solver_density_cuda/mesh/gmshReader.hpp))。
 - solver の `readMesh` はそれを通常メッシュとして読み、**境界半割面 (1 セルの境界 plane) から既存ロジックで
   自動的にゴースト CV を生成する**。よって `setMeshMap_d`・構造量カーネル・対流フラックス・既存 BC
   カーネル (`wall_d`/`inlet_*`/`outlet_*`/`slip_d`) はすべて無変更で node-centered を扱える。
@@ -75,19 +269,19 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
   XDMF を書く (CV index == primal node index)。cell モードは従来どおり `Center='Cell'`。
   両モードとも自己整合な XDMF/HDF5 を出力し ParaView で読める。
 
-## 4. 書き換えが必要な箇所 (M2 以降)
+### 4. 書き換えが必要な箇所 (M2 以降)
 
-- **境界条件** ([boundaryCond_d.cu](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu)):
+- **境界条件** ([boundaryCond_d.cu](../solver_density_cuda/cuda_forge/boundaryCond_d.cu)):
   現状はゴーストセル法 (`bplane_cell` / `bplane_cell_ghst` に対称/反射値)。node では境界ノードが
   境界上に乗りゴーストが置けない。新 `boundaryFlux_node_d.cu` で半割双対面に弱形式フラックスを
-  `atomicAdd(res_*[node])`。ディスパッチは [boundaryCond.cpp](../../solver_density_cuda/boundaryCond.cpp) でモード分岐。
-- **readMesh のゴースト生成** ([mesh.cpp:401-455](../../solver_density_cuda/mesh/mesh.cpp)):
+  `atomicAdd(res_*[node])`。ディスパッチは [boundaryCond.cpp](../solver_density_cuda/boundaryCond.cpp) でモード分岐。
+- **readMesh のゴースト生成** ([mesh.cpp:401-455](../solver_density_cuda/mesh/mesh.cpp)):
   node モードでスキップし、`nCells_ghst = 0`、境界ノード + 半割面を構築。
-- **I/O** ([output.cpp](../../solver_density_cuda/output/output.cpp)): node モードで XDMF
+- **I/O** ([output.cpp](../solver_density_cuda/output/output.cpp)): node モードで XDMF
   `Center='Cell'`→`'Node'`、`Dimensions=nCells`→`nNodes`。Topology/Geometry は可視化用 primal を流用。
-- **初期条件** ([setInitial.hpp](../../solver_density_cuda/input/setInitial.hpp)): 領域判定ループを node 座標へ。
-- **プローブ** ([point_probes.cpp](../../solver_density_cuda/probe/point_probes.cpp)): KD-tree を CV 中心=ノード座標で構築。
-- **implicit/AMG の edge 分類** ([mesh.cpp:742-780](../../solver_density_cuda/mesh/mesh.cpp)):
+- **初期条件** ([setInitial.hpp](../solver_density_cuda/input/setInitial.hpp)): 領域判定ループを node 座標へ。
+- **プローブ** ([point_probes.cpp](../solver_density_cuda/probe/point_probes.cpp)): KD-tree を CV 中心=ノード座標で構築。
+- **implicit/AMG の edge 分類** ([mesh.cpp:742-780](../solver_density_cuda/mesh/mesh.cpp)):
   `nNormalPlanes` ベースの CV 隣接で内部 edge と境界 edge を厳密に分類。
 - **軸対称の軸 (R=0) 注意点 (対応済み)**: solver は回転体積を `volume = A_planar × ccy`(ccy=セル重心 R)で
   実行時計算する。node-centered で CV 重心にノード座標 (軸上で R=0) を使うと**軸ノードの回転体積が ≈0 → 時間積分が
@@ -147,13 +341,13 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
     (i) 対称面フラックスを圧力のみ (質量/エネルギー流束 0)、(ii) 残差から法線運動量成分を除去、(iii) 同じ射影を
     block-DPLUR の 5×5 Jacobian へ整合適用 (1 行 hack でなく射影行列 P=I-nn^T で両側変換)、(iv) 解にも v_n=0。
     SU2 ソースは本リポジトリにバイナリのみで未読。bulk は完成済みのため残作業は corner=この対称面演算子の移植。
-- **軸対称** (副次, [variables.cpp](../../solver_density_cuda/variables.cpp) /
-  [axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
+- **軸対称** (副次, [variables.cpp](../solver_density_cuda/variables.cpp) /
+  [axisymmetricSource_d.cu](../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu)):
   双対体積に `r_node` 重み、`r_eff = volume/A_planar` を双対で再定義、軸上半割マスクをノード版に移植。
 
-## 7. M3: node-centered 弱形式境界 (実装方針)
+### 7. M3: node-centered 弱形式境界 (実装方針)
 
-理論は [theory.md](theory.md) §6。**cell-centered のゴースト経路 ([boundaryCond_d.cu](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu))
+理論は 本ドキュメントの「理論」節 §6。**cell-centered のゴースト経路 ([boundaryCond_d.cu](../solver_density_cuda/cuda_forge/boundaryCond_d.cu))
 は一切変更せず**、node 専用の弱形式を**別ファイル** `cuda_forge/boundaryNode_d.cu` (+ `.cuh`) に実装する。
 
 **設計判断 (既存ロジックの流用)**: 各 BC 種別の境界状態 $Q_b$ は、既存 BC カーネルが**従来どおり
@@ -162,11 +356,11 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 ゴースト CV は残すが、**勾配・対流フラックスの境界寄与をゴースト平均から弱形式へ差し替える**のが要点。
 
 **node モードのパイプライン差し替え** (`cfg.discretization=="node"` で分岐、cell は不変):
-1. **勾配** ([calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu)):
+1. **勾配** ([calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu)):
    `calcGradient_cellgather_d` は CSR 中の**内部面のみ** (`ip < nNormalPlanes`) を集約 (node モードで境界面をスキップ)。
    その後 `boundaryGradientNode_d` が各境界半割面で $\phi_b \mathbf{S}_b$ (φ_b=ゴースト値) を raw 勾配へ atomicAdd。
    最後に `calcGradient_2_d` が体積正規化 (閉曲面が内部+境界で閉じる → §6.2)。
-2. **対流フラックス** ([convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) wrapper):
+2. **対流フラックス** ([convectiveFlux_d.cu](../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) wrapper):
    node モードは内部面 `[0,nNormalPlanes)` のみ処理し、境界は `boundaryFluxNode_d` が
    1 次 Riemann/SLAU フラックス $\hat F(Q_i,Q_b,n_b)S_b$ を残差へ atomicAdd。
 3. **ロバスト化 (任意)**: 境界ノードに隣接する内部面の MUSCL 再構成を 1 次に落とすオプション
@@ -175,7 +369,7 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 **検証**: bump hiM (Mach1.65) の node 2 次 MUSCL が**発散しなくなる**ことを `check_convergence.py` で確認
 (M2 で step~400 発散 → M3 で安定収束が目標)。cell モードの全既存ケースが**従来とビット一致**(無変更) を回帰確認。
 
-### 7.0 [解決] node-centered 軸対称の near-axis corner
+#### 7.0 [解決] node-centered 軸対称の near-axis corner
 
 長く open だった「軸-境界 (inlet/outlet) 角 CV の P オーバーシュート/逆流」を **2 修正の併用で解決** (cell/SU2 一致):
 1. **軸 (R≤eps) で軸対称ソース OFF** (`axisymmetricSource_d` の `axis_flag`、node+axisym のみ)。ソース
@@ -191,9 +385,9 @@ Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と�
 (旧 max0.95) と中/外帯並み。平面 (bump loM) 無回帰。**explicit は startup の exit-wall 角で依然脆く発散** (cell explicit も
 同様; 軸でなく supersonic-startup ロバスト性) → implicit が実用。
 
-### 7.1 診断結果 (重要): hiM 発散は「境界値」でなく「壁近傍 2 次再構成」の問題
+#### 7.1 診断結果 (重要): hiM 発散は「境界値」でなく「壁近傍 2 次再構成」の問題
 弱形式実装の前に切り分け診断を実施 (`bndFirstOrder`: 境界隣接 CV の再構成勾配を 0 にし境界側を 1 次化、
-[calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu) の `zeroBndNodeGradient_d`、
+[calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu) の `zeroBndNodeGradient_d`、
 フラグは `mesh.bnode_flag_d`)。結果:
 - **`bndFirstOrder=1` で bump hiM node の NaN 発散 (step~400) が解消** (explicit は ~1e-3 のリミットサイクル、
   **implicit + bndFirstOrder で完全収束 PASS**)。cell モードは flag 既定 0 で無影響 (ビット不変)。
@@ -203,21 +397,21 @@ Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と�
 - **弱形式境界 (§7) は引き続き粘性 (壁せん断・熱流の正しい評価) で必要**だが、hiM 安定化とは別件として整理する。
   よって `boundaryNode_d.cu` の新規作成は粘性着手時に回す (既存 BC カーネルの Q_b 流用方針は不変)。
 
-### 7.2 node モード: 壁の弱形式 pressure-only 対流 ＋ 壁優先コーナー所有 ＋ explicit (viscous)
+#### 7.2 node モード: 壁の弱形式 pressure-only 対流 ＋ 壁優先コーナー所有 ＋ explicit (viscous)
 
-理論は [theory.md](theory.md) §6.3/§6.4。専用計画:
-[`discretization-node-boundary-ghostless.md`](../../plans/active/discretization-node-boundary-ghostless.md)。
+理論は 本ドキュメントの「理論」節 §6.3/§6.4。専用計画:
+[`discretization-node-boundary-ghostless.md`](../plans/active/discretization-node-boundary-ghostless.md)。
 ねらいは case/29 viscous node の壁発散の解消。試行錯誤の結論を実装に反映:
 
-**(A) 壁優先コーナー所有** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp), commit 93ef041):
+**(A) 壁優先コーナー所有** ([gmshReader.hpp](../solver_density_cuda/mesh/gmshReader.hpp), commit 93ef041):
 各境界ノードを優先度 (wall>inlet>outlet>slip/axis) で 1 bcond に所有。壁∩出口リップは壁所有となり矛盾する
-2 重ゴーストが消える。`wall_flag_d` ([mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp)) も同時に構築。
+2 重ゴーストが消える。`wall_flag_d` ([mesh.cpp](../solver_density_cuda/mesh/mesh.cpp)) も同時に構築。
 
 **(B) 壁の弱形式 pressure-only 対流** (本節の要):
-- 壁境界値 (bvar) を no-slip に: `wall_d` ([boundaryCond_d.cu](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu))
+- 壁境界値 (bvar) を no-slip に: `wall_d` ([boundaryCond_d.cu](../solver_density_cuda/cuda_forge/boundaryCond_d.cu))
   が壁 bvar 速度=0, `roUb=0`, `roeb=内部エネルギーのみ` を明示。
 - `normal_halo_planes_d` で**壁境界 plane を末尾に並べ** (`nWallHaloPlanes`)、node モードの主対流ループ
-  ([convectiveFlux_d.cu](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu)) は壁を除外
+  ([convectiveFlux_d.cu](../solver_density_cuda/cuda_forge/convectiveFlux_d.cu)) は壁を除外
   (`convPlaneBound = nNormal_halo_Planes - nWallHaloPlanes`)。壁だけ `convectiveFlux_boundary_d` (bvar) で扱う:
   u=0 → `mdot=0` → **運動量=圧力のみ p·n·S** (ユーザ指摘の「壁残差に圧力寄与」を保持)。
   これで壁ノード (壁上に乗りミラーゴースト幾何が退化=fx≠0.5 で質量貫通) の発散源を断つ。
@@ -238,9 +432,9 @@ P≤Pt/ro>0/T>0; 高 Re 層流で BL は微小厚=未解像のため場は概ね
 不正で壁全域発散 (ユーザ指摘どおり)。既定 OFF で残置。壁 plane 不出力 (ghost 完全撤廃) は勾配閉性を壊し悪化したため
 不採用 (壁 ghost は勾配/粘性 mirror 用に残す)。
 
-#### 7.2.1 陰解法での壁 Dirichlet 整合: Jacobian 行 decouple (SU2 `DeleteValsRowi` 相当)
+##### 7.2.1 陰解法での壁 Dirichlet 整合: Jacobian 行 decouple (SU2 `DeleteValsRowi` 相当)
 
-専用計画: [`discretization-node-wall-implicit-dirichlet.md`](../../plans/accepted/discretization-node-wall-implicit-dirichlet.md)。
+専用計画: [`discretization-node-wall-implicit-dirichlet.md`](../plans/accepted/discretization-node-wall-implicit-dirichlet.md)。
 
 **症状**: `nodeWallDirichlet=1` + implicit (block-DPLUR) で壁ノード速度が drift する。残差射影 (`zeroWallMomentumResidual_d`)
 は RHS を 0 にするが、block-DPLUR の対角 5×5 は壁運動量を連続・エネルギーと連成したまま (`wall_flag` が Jacobian に
@@ -249,7 +443,7 @@ KE を剥ぐが、これは持続的なエネルギーシンクになり、近�
 $|\rho u_x|$ mean 5.6→34 に増大、KE 除去 mean ~4000/stage)。**explicit (RK3) は残差 0 → 更新で $\Delta(\rho u)=0$ なので
 drift しない**ので、本症状は implicit 特有。
 
-**処方 (SU2 と同じ in-Jacobian)**: `implicit_defect_correction_block_d` ([timeIntegration_d.cu](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu))
+**処方 (SU2 と同じ in-Jacobian)**: `implicit_defect_correction_block_d` ([timeIntegration_d.cu](../solver_density_cuda/cuda_forge/timeIntegration_d.cu))
 の既存 `axis_flag` 行 decouple 機構を**壁の運動量3行 (index 1=roUx, 2=roUy, 3=roUz) へ拡張**する:
 
 ```cpp
@@ -272,12 +466,12 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 **Phase 2 (後続) — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: `convectiveFlux_boundary_d` を SLAU 等価にした上で
 半割面弱形式へ、スカラ輸送 (rans/species) も境界カーネル化、その後 node モードで ghost 生成停止。
 
-### 7.3 node モード: 最小二乗 (LSQ) 勾配 (`gradLSQ`, 既定 OFF)
+#### 7.3 node モード: 最小二乗 (LSQ) 勾配 (`gradLSQ`, 既定 OFF)
 
-専用計画: [`discretization-lsq-gradient.md`](../../plans/active/discretization-lsq-gradient.md)。
+専用計画: [`discretization-lsq-gradient.md`](../plans/active/discretization-lsq-gradient.md)。
 
 **動機**: node-centered (median-dual) の近壁では Green-Gauss 面勾配 (面値 $\phi_f$ を両側中心の線形補間で作る、
-[gradient/theory.md](../gradient/theory.md)) が **checkerboard (奇偶デカップリング) モード**を持ち、薄い粘性境界層で
+[gradient/theory.md](gradient.md#理論)) が **checkerboard (奇偶デカップリング) モード**を持ち、薄い粘性境界層で
 速度勾配 $\to$ せん断応力を振動させる。GG は隣接「面」を介した広い stencil の平均で、median-dual の歪んだ近壁双対面では
 中心点の値変動を平滑化しきれない。**重み付き最小二乗 (LSQ) 勾配**は近傍 CV「中心」の差分を直接フィットするため、
 この checkerboard を持たず近壁で素直な勾配を返す。
@@ -293,7 +487,7 @@ $$
 で解く。境界は **bvar 境界値** (壁=速度 0 等) を半割面重心 $\mathbf{p}_c$ の LSQ 点として加え、勾配を閉じる
 (GG の「ゴースト値を $c_2$ とする」閉じ方の LSQ 版)。
 
-**実装** ([calcGradient_d.cu](../../solver_density_cuda/cuda_forge/calcGradient_d.cu)): 3 カーネルで構成。
+**実装** ([calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu)): 3 カーネルで構成。
 1. `lsqGrad_accumInternal_d` — per-cell gather で**内部面のみ** (`ip < nNormalPlanes`) を走査し $M$ と $\mathbf b$ を蓄積。
    $\mathbf b$ は既存の勾配配列を流用して書く (専用バッファ不要)。$M$ は static な scratch (`Mxx..Mzz`、`nCells` 変化時のみ再確保)。
 2. `lsqGrad_accumBoundary_d` — 各境界半割面の bvar 点を `atomicAdd` で $M,\mathbf b$ に加える (1 セルが複数境界面を持つため atomic)。
@@ -304,7 +498,7 @@ $$
 (`calcGradient_2_d`) と弱形式境界加算 (§7.2 の `calcGradient_b_d` ループ) をスキップする (LSQ は勾配を直接解くため正規化不要)。
 **cell モード、および `gradLSQ=0` (既定) の node モードは従来の GG 経路のまま**で、数値はビット不変。
 
-**設定**: `mesh.gradLSQ` (0:GG, 1:LSQ)。[solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp)。
+**設定**: `mesh.gradLSQ` (0:GG, 1:LSQ)。[solverConfig.hpp](../solver_density_cuda/input/solverConfig.hpp)。
 
 **検証状況 (未完)**: コードは実装済みだが **GPU 実 run による検証は未実施** (本セクション記載時点で `gradLSQ=1` を使った
 `run_*` は皆無)。検証ケース・判定基準は計画 §6 を参照。実装上の**未確認リスク**: ① ghost セル
@@ -312,19 +506,19 @@ $$
 閉じるため不要のはずだが要確認、② 1 セル厚 2D での z 境界面 ($d_z\ne0$) が $m_{zz}$ に混入して誤って 3D 解に
 落ちないか (bvar の対称面値で $g_z\approx0$ になる想定だが要確認)。
 
-### 7.4 node モード: 内部双対面の面補間係数を中点 (fx=0.5) に固定
+#### 7.4 node モード: 内部双対面の面補間係数を中点 (fx=0.5) に固定
 
 node-centered (median-dual) では、双対面を挟む 2 つの CV 中心は**ノード**であり、面値は
 ノード–ノード中点での平均 $\phi_f=\tfrac12(\phi_A+\phi_B)$ を取るのが標準的なエッジベース補間 (2 次精度)。
 しかし forge の `dualFaceCent` は各セルの (エッジ中点 $M$ → セル重心 $G$) 区間の**面積加重重心**で、
-$M$ そのものではない ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp))。このため面補間係数
-`fx = dc1p/(dc0p+dc1p)` ([calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu)、
+$M$ そのものではない ([gmshReader.hpp](../solver_density_cuda/mesh/gmshReader.hpp))。このため面補間係数
+`fx = dc1p/(dc0p+dc1p)` ([calcStructualVariables_d.cu](../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu)、
 面重心を法線方向に射影した距離比) は対称メッシュでは 0.5 だが**歪み面では 0.5 からずれ**、ノード間の中点で
 値を取らない。
 
 **修正 (2026-06-14)**: フラグ `nodeMidpointFx` (既定 0=OFF) を追加。`discretization=="node"` かつ
 `nodeMidpointFx==1` のとき**内部双対面** (`ip < nNormalPlanes`) を `fx[ip]=0.5` に固定し
-$\phi_f=\tfrac12(\phi_A+\phi_B)$ の中点補間にする ([calcStructualVariables_d.cu](../../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu))。
+$\phi_f=\tfrac12(\phi_A+\phi_B)$ の中点補間にする ([calcStructualVariables_d.cu](../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu))。
 cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は対流・粘性の全面補間で使われる
 (gradient の over-relaxed 法線項が使う `dcc` は CV 中心間距離のまま)。
 
@@ -333,15 +527,15 @@ cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は�
 両者とも SU2 に平均 3.2% 一致、最大は未収束の超音速出口)。局所 Ux は出口リップ近傍で大きく変わる
 (1376→430) が圧力場に伝播しない近傍速度の細部。**SU2/forge とも本ケースは未収束のため near-wall 速度細部の
 厳密な是非は未確定**だが、fx=0.5 は SU2 一致を悪化させず checkerboard を下げる。既定 OFF・opt-in で残置。
-計画は [`discretization-median-dual.md`](../../plans/active/discretization-median-dual.md)。
+計画は [`discretization-median-dual.md`](../plans/active/discretization-median-dual.md)。
 
-## 5. 設定
+### 5. 設定
 
-[solverConfig.hpp](../../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。
-設定の意味は [procedures/solver-settings.md](../../procedures/solver-settings.md) を参照。
+[solverConfig.hpp](../solver_density_cuda/input/solverConfig.hpp) に `discretization` (`cell`/`node`, 既定 `cell`)。
+設定の意味は [procedures/solver-settings.md](../procedures/solver-settings.md) を参照。
 
-## 6. 検証
+### 6. 検証
 
-[.github/plans/discretization-median-dual.md](../../plans/active/discretization-median-dual.md) §6 を参照。
+[.github/plans/discretization-median-dual.md](../plans/active/discretization-median-dual.md) §6 を参照。
 要点: cell モードで既存ケースが従来と完全一致すること (デグレ無し) を回帰確認した上で、
 node モードを同一メッシュで実行し sod の shock 位置、tet ケースの DOF/コスト/精度を比較する。

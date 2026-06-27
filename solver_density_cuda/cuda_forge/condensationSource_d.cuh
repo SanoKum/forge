@@ -3,7 +3,7 @@
 #include "condensationProperties_d.cuh"
 
 // 非平衡凝縮: 核生成 (CNT+Iland) と成長 (Goodheart) のソース項 device 関数 (Phase 2)。
-// methods/condensation/theory.md 2-3 節。内部 double。現状 N2 のみ (n2_* 物性)。
+// methods/condensation.md 2-3 節。内部 double。現状 N2 のみ (n2_* 物性)。
 //
 // モーメント保存ベクトル後半の相変化ソース (論文 Eq.1):
 //   d(ρQ0)/dt = J

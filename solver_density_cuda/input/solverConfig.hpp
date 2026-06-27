@@ -151,7 +151,7 @@ public:
     std::string discretization = "cell";
 
     // 境界隣接 CV の 2 次再構成を 1 次に落とす (0:off 既定, 1:on)。node-centered の壁近傍
-    // 高マッハ発散の原因切り分け診断 / ロバス化。methods/discretization/implementation.md §7。
+    // 高マッハ発散の原因切り分け診断 / ロバス化。methods/discretization.md §7。
     int bndFirstOrder = 0;
 
     // node-centered 軸対称: 軸上 CV (R=0) の cell 中心に CV 面積加重重心を使うか (1:既定, ゼロ回転体積回避)。
@@ -160,18 +160,18 @@ public:
 
     // node-centered 壁 Dirichlet 試作 (0:既定 OFF)。1 で init u=0 + 運動量残差射影。
     // 注: 残差射影は壁圧力寄与も落とすため不正 (検証で壁全域発散)。正解は弱形式半割面 flux (Phase 2,
-    // methods/discretization/implementation.md §7.2)。本フラグは切り分け用に残置、既定 OFF。
+    // methods/discretization.md §7.2)。本フラグは切り分け用に残置、既定 OFF。
     int nodeWallDirichlet = 0;
 
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ)。node-centered の median-dual 近壁で
     // Green-Gauss 面勾配が checkerboard を持ち粘性 BL を振動させるための対策 (over-relaxed 法線項は別途維持)。
-    // 境界は bvar 境界値を LSQ 点として含め勾配を閉じる。methods/discretization/implementation.md §7.3。
+    // 境界は bvar 境界値を LSQ 点として含め勾配を閉じる。methods/discretization.md §7.3。
     int gradLSQ = 0;
 
     // node-centered の内部双対面で面補間係数を中点 fx=0.5 (φ_f=½(φ_A+φ_B)) に固定する
     // (0:既定 幾何 fx=dualFaceCent 射影比, 1:中点)。標準的な median-dual エッジ補間で近壁 checkerboard を
     // 低減するが、出口リップ近傍 near-wall の解を変えるため SU2 検証まで既定 OFF。cell モードは無関係。
-    // methods/discretization/implementation.md §7.4。
+    // methods/discretization.md §7.4。
     int nodeMidpointFx = 0;
 
     // node-centered 壁摩擦応力 (twall) を「壁ノードに接続する内部双対面 (壁ノード↔内部ノード) の粘性力
@@ -181,7 +181,7 @@ public:
     // 各内部双対面の粘性運動量 flux を壁ノード CV に集約し、壁半割面積で割って twall とする (= 流体が
     // 壁 CV に及ぼす粘性 traction; magnitude=τ_w)。運動量残差・y+ には触れない (内部ノード運動量は
     // viscousFlux_d が担うため二重計上回避; twall は出力専用で場は不変)。cell モードは無関係 (従来どおり
-    // viscousFlux_wall_d が res+twall を算出)。methods/diffusion/implementation.md, plans/diffusion-node-wall-viscous-distance.md §11。
+    // viscousFlux_wall_d が res+twall を算出)。methods/diffusion.md, plans/diffusion-node-wall-viscous-distance.md §11。
     int nodeWallStressEdgeKernel = 1;
     int thermalMethod;   // 0: calorically perfect (定数 cp/γ), 2: 多成分 thermally-perfect (NASA-9)
     int viscMethod;      // 0: 定数, 1: Sutherland, 2: kinetic theory (Chapman-Enskog)
