@@ -471,7 +471,7 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 専用計画: [`discretization-lsq-gradient.md`](../plans/active/discretization-lsq-gradient.md)。
 
 **動機**: node-centered (median-dual) の近壁では Green-Gauss 面勾配 (面値 $\phi_f$ を両側中心の線形補間で作る、
-[gradient/theory.md](gradient.md#理論)) が **checkerboard (奇偶デカップリング) モード**を持ち、薄い粘性境界層で
+[gradient.md](gradient.md#理論)) が **checkerboard (奇偶デカップリング) モード**を持ち、薄い粘性境界層で
 速度勾配 $\to$ せん断応力を振動させる。GG は隣接「面」を介した広い stencil の平均で、median-dual の歪んだ近壁双対面では
 中心点の値変動を平滑化しきれない。**重み付き最小二乗 (LSQ) 勾配**は近傍 CV「中心」の差分を直接フィットするため、
 この checkerboard を持たず近壁で素直な勾配を返す。
