@@ -174,7 +174,7 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
 ### 3.8 SST-DES (DDES) length scale 修正
 
 理論は [`theory.md`](theory.md) §8、計画は
-[`turbulence-iddes-sst.md`](../../.github/plans/turbulence-iddes-sst.md)。`DESmode`
+[`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md)。`DESmode`
 (`solverConfig` の `turbulence.DESmode`, 0:RANS[既定] / 1:DDES / 2:IDDES[Phase 2 未実装]) で
 opt-in する。**`DESmode==0` では DES カーネルを一切呼ばず、`ransSource` も従来 $D_k$ 分岐を
 通るため既存 SST とビット不変** (検証で確認済み)。
@@ -240,7 +240,7 @@ diffusion では `k` と `omega` に別々の係数を与え、`vis_lam` と `vi
 ## 5. 軸対称 SST の幾何項
 
 軸対称 SST の幾何項は子 plan
-[`architecture-axisym-sst.md`](../../.github/plans/architecture-axisym-sst.md)
+[`architecture-axisym-sst.md`](../../design/accepted/architecture-axisym-sst.md)
 で扱う。理論は [theory.md §7](theory.md) を参照。実装上の要点は次のとおり。
 
 ### 5.1 対流・拡散

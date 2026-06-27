@@ -9,7 +9,7 @@
   - `docs/discretization/implementation.md` (§7.2 ゴースト全撤廃へ)
 - **related_plans**:
   - 親: [`discretization-median-dual.md`](discretization-median-dual.md) (node 化本計画)
-  - 関連: [`architecture-axisym-axis-singularity.md`](architecture-axisym-axis-singularity.md) (軸 corner, 残差射影の先例)
+  - 関連: [`architecture-axisym-axis-singularity.md`](../accepted/architecture-axisym-axis-singularity.md) (軸 corner, 残差射影の先例)
 - **created**: `2026-06-14`
 - **owner**: `CFD Dev`
 
@@ -34,7 +34,7 @@ node-centered (median-dual) の境界はcell-centered 用の**ミラーゴース
 - 理論: [theory.md](../../docs/discretization/theory.md) §6 (ゴースト vs 弱形式, §6.3 壁 Dirichlet, §6.4 コーナー所有)。
 - 実装方針: [implementation.md](../../docs/discretization/implementation.md) §7 / §7.2。
 - 先例: 軸対称 near-axis の**残差射影** (`zeroAxisRadialResidual_d`) が block-DPLUR と整合した
-  ([architecture-axisym-axis-singularity.md](architecture-axisym-axis-singularity.md))。**state 直書きは Mach1000 発散**
+  ([architecture-axisym-axis-singularity.md](../accepted/architecture-axisym-axis-singularity.md))。**state 直書きは Mach1000 発散**
   実績があるため、壁 no-slip も残差射影で実装する。
 - 前提: 境界ノードを優先度で 1 bcond に所有させる。種別は `readBcondConfig` が前処理前に `bcond.bcondKind` を
   埋める ([convertGmshToForge.cpp:35,45]) ので利用可。

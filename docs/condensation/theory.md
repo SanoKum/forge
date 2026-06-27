@@ -212,7 +212,7 @@ $$
 となり、**$\chi\ne0$** となる (calorically-perfect は $\epsilon=C_v T$ の特殊形で $\chi=0$ に縮約)。
 本書の $\chi=RT-\kappa e_v$ は $e_v$ を**積分内部エネルギー** $\epsilon_v(T)$ と取れば
 ($\kappa e_v=(R/C_v)\epsilon_v=(\gamma-1)\epsilon_v$) この一般形と一致する。forge は既に多成分 TP の陰解法
-Jacobian で per-cell $\kappa=\gamma[ic]-1$ を実装済み ([thermophysics plan](../../.github/plans/thermophysics-multicomponent-tpgas.md))
+Jacobian で per-cell $\kappa=\gamma[ic]-1$ を実装済み ([thermophysics plan](../../design/accepted/thermophysics-multicomponent-tpgas.md))
 であり、凝縮 Phase 2 は同枠で $\kappa\to(\rho-\rho g)R/C_v$ (混合) と $(\rho g)$ 列の $\xi_g$ を足す最小拡張となる。
 
 ---

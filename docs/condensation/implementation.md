@@ -2,7 +2,7 @@
 
 理論は [theory.md](theory.md) を参照。本書は forge コードへの対応 (追加保存変数・移流・ソース・
 二相 EOS・境界・段階実装) を記述する。実装計画は
-[`.github/plans/condensation-nonequilibrium.md`](../../.github/plans/condensation-nonequilibrium.md)。
+[`.github/plans/condensation-nonequilibrium.md`](../../design/active/condensation-nonequilibrium.md)。
 
 既存の RANS 2 方程式 (`roK`/`roOmega`) が「移流される追加保存スカラー + stiff ソース」の手本であり、
 凝縮モーメントは**同じ骨格**で追加する。

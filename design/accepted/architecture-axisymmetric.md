@@ -164,7 +164,7 @@ $\bar r$ 重み付け、保存変数 $Q$ はそのまま) を採用し、軸 ($r
 - [x] 関連 [`docs/axisymmetric/theory.md`](../../docs/axisymmetric/theory.md) 作成
 - [x] 関連 [`docs/axisymmetric/implementation.md`](../../docs/axisymmetric/implementation.md) 作成
 - [x] 実装・検証完了 (本 plan の §6 を満たす)
-- [x] [`README.md`](README.md) の状態を `done` に更新
+- [x] [`README.md`](../README.md) の状態を `done` に更新
 - [x] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
 
 ## 9. 変更ログ
@@ -225,7 +225,7 @@ $\bar r$ 重み付け、保存変数 $Q$ はそのまま) を採用し、軸 ($r
   軸対称ソースヤコビアン（圧力 ∂p/∂Q ＋ 粘性フープ 2μ/(ρ r_eff)）を roUy 行の対角ブロックへ追加。
   `case/23.axi_nozzle` M4 ノズルで陽解法収束解と壁面静圧一致（平均 0.02%）、過渡収束 ~2 倍速・回帰なし。
   なお lagged source でも収束する（幾何 r 整合 + 平均流 A⁺/A⁻ 修正で足りる）ことを確認。詳細は
-  [`gpu-implicit-plan.md`](gpu-implicit-plan.md) と [`docs/axisymmetric/`](../../docs/axisymmetric/)。
+  [`gpu-implicit-plan.md`](../active/gpu-implicit-plan.md) と [`docs/axisymmetric/`](../../docs/axisymmetric/)。
 - 1D 等エントロピー解析解との Mach 数 / Ps 比較スクリプト整備。
 - 既存 3D 軸対称ケース `run_slau_3d_regression` との Mach 場定性比較。
 - 出力スクリプト群への $2\pi$ 補正コメント / ヘルパ追加。

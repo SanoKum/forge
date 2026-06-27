@@ -28,7 +28,7 @@ forge の時間積分・更新カーネルの実装とソース対応をまと�
 
 > `solverConfig::initTimeIntegrationScheme` の `case 11` は `blockDPLUR ∈ {0,1}` を受理（それ以外を throw）。両者とも古典 DPLUR 制御フロー（残差固定 + `nStepInner` sweep + 単一 commit）に対応。`unsteady == 1`（dual-time）は dispatcher 側で throw する（本体未実装）。
 
-> **軸対称ソース項の Jacobian**: scalar 版 `implicit_defect_correction_d` も block と整合させ、軸対称フープ源 `res_roUy += (P − τ_θθ)·A_planar` の Jacobian 対角成分 `A_pl·((γ−1)u_y + 2μ/(ρ r_eff))`（非負側、per-cell γ で TP 整合）を roUy 方程式の対角に陰化する。ただし scalar は式間連成 (源 Jacobian の非対角) を表現できないため、軸近傍以外が律速の強膨張ケース（例 `case/29` 出口コーナーの 2 次 MUSCL オーバーシュート）は救えない。**2 次精度の陰解法は block DPLUR 推奨**、scalar DPLUR は 1 次（起動・ロバスト用）に限るのが実用指針（切り分けは [`time_integration-scalar-dplur-axisym-source.md`](../../.github/plans/time_integration-scalar-dplur-axisym-source.md) / `case/29.bell_vs_conical/README.md`）。
+> **軸対称ソース項の Jacobian**: scalar 版 `implicit_defect_correction_d` も block と整合させ、軸対称フープ源 `res_roUy += (P − τ_θθ)·A_planar` の Jacobian 対角成分 `A_pl·((γ−1)u_y + 2μ/(ρ r_eff))`（非負側、per-cell γ で TP 整合）を roUy 方程式の対角に陰化する。ただし scalar は式間連成 (源 Jacobian の非対角) を表現できないため、軸近傍以外が律速の強膨張ケース（例 `case/29` 出口コーナーの 2 次 MUSCL オーバーシュート）は救えない。**2 次精度の陰解法は block DPLUR 推奨**、scalar DPLUR は 1 次（起動・ロバスト用）に限るのが実用指針（切り分けは [`time_integration-scalar-dplur-axisym-source.md`](../../design/accepted/time_integration-scalar-dplur-axisym-source.md) / `case/29.bell_vs_conical/README.md`）。
 
 ## ループ全体 ([`main.cpp`](../../solver_density_cuda/main.cpp))
 
@@ -200,8 +200,8 @@ valid な FVS で defect-correction の定常解は不変)。
 粘性対角を residual 整合形に直せば **float のまま固着が解消**し double solve は不要。
 したがって `implicitSolvePrecision=1` は**根治ではなく、悪条件 LHS を倍精度で押し切る検証/保険用の手段**として残す
 (幾何是正後は通常 `0` で良い)。RTX 3060 では FP64=FP32 の 1/32 ゆえ ~×2.8 遅い。
-切り分け・速度の詳細は [`.github/plans/precision-mixed-axisym.md`](../../.github/plans/precision-mixed-axisym.md)
-と [`.github/plans/architecture-axisym-axis-singularity.md`](../../.github/plans/architecture-axisym-axis-singularity.md)。
+切り分け・速度の詳細は [`.github/plans/precision-mixed-axisym.md`](../../design/archived/precision-mixed-axisym.md)
+と [`.github/plans/architecture-axisym-axis-singularity.md`](../../design/accepted/architecture-axisym-axis-singularity.md)。
 現状 `blockDPLUR=1`・`lowMachPrecond` 0/1 経路のみ対応 (precond=2 / scalar 版は float のまま)。
 
 **低マッハ前処理 (LHS 固有値) は不採用** (2026-06 検証・実装後 revert)。`build_jacobian_split` の
@@ -210,14 +210,14 @@ block DPLUR では**対角優位性の源である大きい音響固有値を縮
 単独で安定だった `eps=0.15` すら発散させ、安定 `eps` 範囲を狭めた。収束加速も根治もなし）。よって
 LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処理は `SLAU_d` の散逸スケールにのみ適用する。
 根拠・データは [`theory.md`](theory.md#低マッハ前処理固有値-weisssmith--試行したが不採用) と計画
-[`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
+[`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) §9。
 
 #### 一般EOS固有系 (TP gas, `thermalMethod==2`) — 実装・検証完了 (閉形式)
 
 閉形式 `accumulate_split_jacobian_cf` は `inv_chi=sonic/(γ-1)` で全エンタルピーを $K+c^2/(\gamma-1)$ と再構成し、
 接触波エネルギー成分に $K$ を使う。これは **CPG 専用**で TP では真の $\partial\mathbf F/\partial\mathbf Q$ と一致しない
 (理論は [theory.md](theory.md) 「一般EOS固有系」、FD 検証で TP 誤差 469%)。修正方針 (plan
-[`time_integration-general-eos-jacobian.md`](../../.github/plans/time_integration-general-eos-jacobian.md)):
+[`time_integration-general-eos-jacobian.md`](../../design/accepted/time_integration-general-eos-jacobian.md)):
 
 - **分岐保持**: `thermalMethod==0` は現行閉形式のまま (ビット不変・回帰基準)。`==2` のみ一般EOS固有系へ。
   数値 LU は閉形式と演算順序が違うため CPG ビット一致は望めない → CPG 経路を残すのが回帰構成。
@@ -315,7 +315,7 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 前処理音速 `c'` に置換する案は、低マッハ域で `dt_local` を増大させ陰解法対角 `V/Δτ` を縮め、block DPLUR の
 対角優位性を崩して発散させた。よって `setCFL_pln_d` は従来の `sonic` のまま。低マッハ前処理は対流フラックス
 ([`convectiveFlux_d.cu`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu) `SLAU_d`) の散逸スケールにのみ
-適用する。詳細は計画 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
+適用する。詳細は計画 [`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) §9。
 
 ## 入出力
 

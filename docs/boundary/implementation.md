@@ -63,7 +63,7 @@ Riemann・接線速度はすべて内部 `ic`、面法線は plane の `sx/sy/sz
 旧実装は逆流時に全圧 `Ptb/Ttb` の stagnation 流入 (=`inlet_Pressure` 構成) へ切替え、かつ速度を
 `-Ux[ic]*nx` で構成していたため、剥離 BL が出口に達するケース (擬似衝撃ダクト, 壁∩出口コーナー) で
 過加圧・forward↔backflow のばたつきにより発散していた。検証は
-[`.github/plans/boundary-outlet-characteristic-backflow.md`](../../.github/plans/boundary-outlet-characteristic-backflow.md)。
+[`.github/plans/boundary-outlet-characteristic-backflow.md`](../../design/accepted/boundary-outlet-characteristic-backflow.md)。
 
 ## 入力データ構造
 

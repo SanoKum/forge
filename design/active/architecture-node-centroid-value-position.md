@@ -8,9 +8,9 @@
   - `docs/discretization/implementation.md`
   - `docs/diffusion/implementation.md`
 - **related_plans**:
-  - 置換: [`diffusion-node-scalar-nonortho-limit.md`](diffusion-node-scalar-nonortho-limit.md) (ncx 別配列でなく本 plan の centCoords 統一で解決)
-  - 依存: [`diffusion-node-wall-viscous-distance.md`](diffusion-node-wall-viscous-distance.md) (壁境界の退化 dcc を弱形式化。本 plan の前提)
-  - 関連: [`discretization-node-wall-implicit-dirichlet.md`](discretization-node-wall-implicit-dirichlet.md), [`architecture-axisym-axis-singularity.md`](architecture-axisym-axis-singularity.md)
+  - 置換: [`diffusion-node-scalar-nonortho-limit.md`](../archived/diffusion-node-scalar-nonortho-limit.md) (ncx 別配列でなく本 plan の centCoords 統一で解決)
+  - 依存: [`diffusion-node-wall-viscous-distance.md`](../accepted/diffusion-node-wall-viscous-distance.md) (壁境界の退化 dcc を弱形式化。本 plan の前提)
+  - 関連: [`discretization-node-wall-implicit-dirichlet.md`](../accepted/discretization-node-wall-implicit-dirichlet.md), [`architecture-axisym-axis-singularity.md`](../accepted/architecture-axisym-axis-singularity.md)
 - **created**: `2026-06-22`
 - **owner**: (未割当)
 
@@ -74,7 +74,7 @@ node-centered で未知量の位置は**ノード**だが、現状 `CELLS/centCo
 
 - [ ] docs 更新 (centCoords=値の位置 / 軸半径分離 / 境界弱形式)
 - [ ] 実装・検証完了 (§6)
-- [ ] [`.github/plans/README.md`](README.md) 更新、`diffusion-node-scalar-nonortho-limit.md` を superseded 化
+- [ ] [`.github/plans/README.md`](../README.md) 更新、`diffusion-node-scalar-nonortho-limit.md` を superseded 化
 - [ ] `status: done`、§9 に case/36・case/29 の before/after
 
 ## 9. 変更ログ

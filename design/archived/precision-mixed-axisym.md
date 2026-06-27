@@ -20,7 +20,7 @@
 ## 0. 更新 (2026-06-14): double solve は根治ではなかった — 真因は粘性対角の幾何不整合
 
 本 plan は「真因 = float 線形 solve の精度、root-fix = `implicitSolvePrecision=1` (double solve)」としたが、
-**より上流の真因が判明し上書きする** (詳細は [architecture-axisym-axis-singularity.md](architecture-axisym-axis-singularity.md) §0)。
+**より上流の真因が判明し上書きする** (詳細は [architecture-axisym-axis-singularity.md](../accepted/architecture-axisym-axis-singularity.md) §0)。
 
 - 近軸固着は **粘性のときだけ**生じる (Euler は float でも健全)。真因は block-DPLUR の**粘性対角**
   $\Lambda^\nu_f$ が `face_area·(2ν/delta)` と書かれ `delta`(面積) が約分されて $\approx 2\nu$ に潰れ、

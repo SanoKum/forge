@@ -206,7 +206,7 @@ Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と�
 ### 7.2 node モード: 壁の弱形式 pressure-only 対流 ＋ 壁優先コーナー所有 ＋ explicit (viscous)
 
 理論は [theory.md](theory.md) §6.3/§6.4。専用計画:
-[`discretization-node-boundary-ghostless.md`](../../.github/plans/discretization-node-boundary-ghostless.md)。
+[`discretization-node-boundary-ghostless.md`](../../design/active/discretization-node-boundary-ghostless.md)。
 ねらいは case/29 viscous node の壁発散の解消。試行錯誤の結論を実装に反映:
 
 **(A) 壁優先コーナー所有** ([gmshReader.hpp](../../solver_density_cuda/mesh/gmshReader.hpp), commit 93ef041):
@@ -240,7 +240,7 @@ P≤Pt/ro>0/T>0; 高 Re 層流で BL は微小厚=未解像のため場は概ね
 
 #### 7.2.1 陰解法での壁 Dirichlet 整合: Jacobian 行 decouple (SU2 `DeleteValsRowi` 相当)
 
-専用計画: [`discretization-node-wall-implicit-dirichlet.md`](../../.github/plans/discretization-node-wall-implicit-dirichlet.md)。
+専用計画: [`discretization-node-wall-implicit-dirichlet.md`](../../design/accepted/discretization-node-wall-implicit-dirichlet.md)。
 
 **症状**: `nodeWallDirichlet=1` + implicit (block-DPLUR) で壁ノード速度が drift する。残差射影 (`zeroWallMomentumResidual_d`)
 は RHS を 0 にするが、block-DPLUR の対角 5×5 は壁運動量を連続・エネルギーと連成したまま (`wall_flag` が Jacobian に
@@ -274,7 +274,7 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 
 ### 7.3 node モード: 最小二乗 (LSQ) 勾配 (`gradLSQ`, 既定 OFF)
 
-専用計画: [`discretization-lsq-gradient.md`](../../.github/plans/discretization-lsq-gradient.md)。
+専用計画: [`discretization-lsq-gradient.md`](../../design/active/discretization-lsq-gradient.md)。
 
 **動機**: node-centered (median-dual) の近壁では Green-Gauss 面勾配 (面値 $\phi_f$ を両側中心の線形補間で作る、
 [gradient/theory.md](../gradient/theory.md)) が **checkerboard (奇偶デカップリング) モード**を持ち、薄い粘性境界層で
@@ -333,7 +333,7 @@ cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は�
 両者とも SU2 に平均 3.2% 一致、最大は未収束の超音速出口)。局所 Ux は出口リップ近傍で大きく変わる
 (1376→430) が圧力場に伝播しない近傍速度の細部。**SU2/forge とも本ケースは未収束のため near-wall 速度細部の
 厳密な是非は未確定**だが、fx=0.5 は SU2 一致を悪化させず checkerboard を下げる。既定 OFF・opt-in で残置。
-計画は [`discretization-median-dual.md`](../../.github/plans/discretization-median-dual.md)。
+計画は [`discretization-median-dual.md`](../../design/active/discretization-median-dual.md)。
 
 ## 5. 設定
 
@@ -342,6 +342,6 @@ cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は�
 
 ## 6. 検証
 
-[.github/plans/discretization-median-dual.md](../../.github/plans/discretization-median-dual.md) §6 を参照。
+[.github/plans/discretization-median-dual.md](../../design/active/discretization-median-dual.md) §6 を参照。
 要点: cell モードで既存ケースが従来と完全一致すること (デグレ無し) を回帰確認した上で、
 node モードを同一メッシュで実行し sod の shock 位置、tet ケースの DOF/コスト/精度を比較する。

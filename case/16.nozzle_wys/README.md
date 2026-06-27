@@ -61,7 +61,7 @@ exit Mach の単調序列 (非粘性 1.99 > 層流 1.94 > 2D乱流 1.88 > 3D乱�
 
 Wyslouzil et al. JCP 113, 7317 (2000) **Fig.3 (pv0=1.0 kPa 水)** 条件で、N2 キャリア中の
 希薄水蒸気 (Y_H2O=0.01095) の非平衡凝縮を 4 モーメント法で計算し、凝縮あり/なしの静圧比を比較する。
-凝縮潜熱で中心線静圧が dry 等エントロピー線より上振れする現象 ([condensation plan](../../.github/plans/condensation-nonequilibrium.md))。
+凝縮潜熱で中心線静圧が dry 等エントロピー線より上振れする現象 ([condensation plan](../../design/active/condensation-nonequilibrium.md))。
 
 - 入口: `inlet_Pressure` Pt=59070 Pa, Tt=286.65 K, Y(N2,H2O)=(0.98905, 0.01095)。
 - **carrier=CPG**: 低温 (<200K) で NASA-9 TP が外挿不可・発散するため、N2 キャリアは CPG (γ=1.4) で解く
@@ -187,7 +187,7 @@ NASA-9 有効下限 200K を割り、低温外挿が TP を不安定化**する�
 | (Tt=286.65, 通常) | 286.65 K | 159 K | step12 で発散 |
 
 → TP 実装は壊れていない (T>200K では wys でも動く)。**wys の極低温凝縮で CPG を強制してきた方針は正しい**。
-詳細・全棄却リストは [`.github/plans/condensation-nonequilibrium.md`](../../.github/plans/condensation-nonequilibrium.md) の 2026-06-16 ログ。
+詳細・全棄却リストは [`.github/plans/condensation-nonequilibrium.md`](../../design/active/condensation-nonequilibrium.md) の 2026-06-16 ログ。
 
 ## 壁面 y+ (SST メッシュ `nozzle_2d_sst.h5`)
 
@@ -297,7 +297,7 @@ O2 と H2O の対照で **H2O 固有**と判明、cfl_pseudo 依存で **implici
 3. **sub-200K NASA-9 外挿** (cold 固有): 出口<200K の極低温では CPG を使うか thermo 低温拡張。
 
 `run_0070` 用 double バイナリは `.build-native/double/` (要 `FORGE_CUDA_BLOCKSIZE=128`)。デッド energy 補正カーネルは
-[`.github/plans/thermophysics-multicomponent-tpgas.md`](../../.github/plans/thermophysics-multicomponent-tpgas.md) 参照。
+[`.github/plans/thermophysics-multicomponent-tpgas.md`](../../design/accepted/thermophysics-multicomponent-tpgas.md) 参照。
 
 ### cfl_pseudo パラスタ + 等エントロピー IC + ramp (run_0095〜0100, hot Tt=500K, N2+H2O 1%)
 
@@ -352,7 +352,7 @@ roe(block-DPLUR)/roY(point-implicit) の擬似時間緩和ミスマッチを増�
 **要因2 の恒久修正候補「案B (緩和整合)」の切り分け**。化学種 `ρY_s` を流れ block-DPLUR と**同一緩和**
 (同一凍結残差・`dt_local`・`implicitRelax`・`nStepInner` sweep) のスカラ DPLUR で前進させ、roe(block)/roY(点陰的)
 の擬似時間緩和ミスマッチを解消できるかを検証 (config `time.deltaT.speciesImplicitCoupling`, 既定 0=従来 segregated・
-ビット不変, 1=緩和整合)。実装は plan [`thermophysics-species-implicit-coupling.md`](../../.github/plans/thermophysics-species-implicit-coupling.md)、
+ビット不変, 1=緩和整合)。実装は plan [`thermophysics-species-implicit-coupling.md`](../../design/accepted/thermophysics-species-implicit-coupling.md)、
 docs `thermophysics/{theory §3.1, implementation §4b}`。全 native full rebuild。hot N2+H2O(1%, href ON)・同一場/BC。
 
 | run | 化学種更新 | cfl_pseudo | 結果 (初 NaN/最終 step) | 判定 |
@@ -449,7 +449,7 @@ run keeper: run_0121/0126 (inviscid), run_0131/0136 (SST), run_0141/0145 (CPG ho
 
 上節で「TP の cfl≈2 頭打ち・残差プラトーの真因は block-DPLUR の固有系が CPG 専用 (`h=c²/(γ−1)`,
 `∂P/∂ρ|_e=0` を仮定)」と確定したのを受け、**一般EOS固有系**を実装 (plan
-[`time_integration-general-eos-jacobian.md`](../../.github/plans/time_integration-general-eos-jacobian.md))。
+[`time_integration-general-eos-jacobian.md`](../../design/accepted/time_integration-general-eos-jacobian.md))。
 音響右固有ベクトルのエネルギーに実全エンタルピー `Ht`、左密度成分に `χ=c²−κh` を入れる**閉形式**3項改変
 (`accumulate_split_jacobian_cf`、`generalEOS=thermalMethod==2` で分岐、CPG ビット不変)。閉形式は数値 LU・FD と
 機械精度一致を host 単体テスト (`tools/test_eos_jacobian.cpp`) で確認済。

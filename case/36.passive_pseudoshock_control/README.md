@@ -6,7 +6,7 @@ Matsuo et al. (1988)「境界層のパッシブコントロールが擬似衝撃
 
 **目的**: 多孔壁+キャビティの境界層パッシブコントロールで擬似衝撃波 (shock train) が
 弱化し「ショックレス」に近づくかを再現確認する。詳細計画は
-[`.github/plans/verification-passive-pseudoshock-control.md`](../../.github/plans/verification-passive-pseudoshock-control.md)。
+[`.github/plans/verification-passive-pseudoshock-control.md`](../../design/active/verification-passive-pseudoshock-control.md)。
 
 ## 形状 (x=入口からの距離, 上下対称, 片側 1° 広がり)
 
@@ -92,7 +92,7 @@ wall=2274, 最小辺 ~0.087mm。`med_to_gmsh.py` の変換ロジックは合成�
 | `run_0019_sst_wt1_solid_bp2p06` | SST wall-res・**固体壁**・Ps=2.06 (比較) | **NOT CONVERGED** (roUx 上昇)。衝撃波 x~129mm (ドリフト中) | 非収束 |
 | `run_0020_sst_wt1_porous_bp2p08` | SST wall-res・多孔壁・Ps=2.08 (x_f≈0狙い) | **NOT CONVERGED** (roOmega 上昇・他低下中)。衝撃波 x~141mm | 非収束 |
 | `run_0021_sst_wt1_porous_prof` | **計算時間ボトルネック分析用** (run_0020 入力複製, nStepOuter 縮小)。ncu でカーネル別 GPU 時間を取得 | 単独実行 **~5.35ms/step** (run_0020 基準, 98k cell)。GPU busy ~3.7ms/step・残りは launch/host。**上位: implicit_defect_correction_block 24.6% / SLAU 22.4% / limiter_r1 17.4% / viscousFlux 7.3%**。`residual_history.png` | 破棄予定 (プロファイル) |
-| `run_0050_solid_prof` | **run_0048 (solid 構造) の計算時間ボトルネック分析 + 残差モニタ device 常駐化の検証** (入力複製)。ncu + detectNaN on/off 比較、旧/新バイナリ比較 | solid 79.4k cell。分析: GPU busy **2.87ms/step (~50%)・残り host/launch (110 launch/step)**、`detectNaN=1` が +1.45ms/step。**最適化結果** ([plan](../../.github/plans/architecture-residual-monitor-async.md)): 残差 RMS/detectNaN を fused device 縮約+間引き flush 化し 2000 step **13.38s→9.58s (−28%)**、残差 CSV は不変 (差は solver 非決定性ノイズ床内)。`residual_history.png`/`CONVERGENCE_VERDICT.txt` | 破棄予定 (プロファイル/検証) |
+| `run_0050_solid_prof` | **run_0048 (solid 構造) の計算時間ボトルネック分析 + 残差モニタ device 常駐化の検証** (入力複製)。ncu + detectNaN on/off 比較、旧/新バイナリ比較 | solid 79.4k cell。分析: GPU busy **2.87ms/step (~50%)・残り host/launch (110 launch/step)**、`detectNaN=1` が +1.45ms/step。**最適化結果** ([plan](../../design/accepted/architecture-residual-monitor-async.md)): 残差 RMS/detectNaN を fused device 縮約+間引き flush 化し 2000 step **13.38s→9.58s (−28%)**、残差 CSV は不変 (差は solver 非決定性ノイズ床内)。`residual_history.png`/`CONVERGENCE_VERDICT.txt` | 破棄予定 (プロファイル/検証) |
 
 ### node-centered (median-dual) SST 試行 (2026-06-23)
 
@@ -181,7 +181,7 @@ forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソ�
 **壁∩出口コーナーの成長する圧力振動** (P が Ps 中心に振幅10倍に増大して発散) と判明、slip テストで **no-slip BL も
 否定**。**真因=壁∩出口コーナーでの outlet_statPress (Ps 規定) の数値不安定** (slip/no-slip 不問)。multi-marker emit
 は効いている (コーナー2ノードが両属) が**§9.1 検証は実コーナー無しメッシュだったため症状再発**。高 CFL で振動成長、
-**cfl_pseudo≤0.3 で安定**。根治=出口静圧 BC の数値安定化 (弱形式+緩和 等)。詳細 [`plans/diffusion-node-wall-viscous-distance.md`](../../.github/plans/diffusion-node-wall-viscous-distance.md) §9.8。図 `cmp_laminar_3way.png`/`corner_divergence_buildup.png`。
+**cfl_pseudo≤0.3 で安定**。根治=出口静圧 BC の数値安定化 (弱形式+緩和 等)。詳細 [`plans/diffusion-node-wall-viscous-distance.md`](../../design/accepted/diffusion-node-wall-viscous-distance.md) §9.8。図 `cmp_laminar_3way.png`/`corner_divergence_buildup.png`。
 | `run_node_wallstress_{off,on,off2}` | bb90036 twall カーネル A/B (30step) | 場は不変(非決定性床内)、新 twall 物理値・**utau/ypls の nonzero frac=0 実測**(壁関数退化の実証) | 破棄予定(診断) |
 
 **確定した連鎖** (`run_0049`(cell) vs `run_node_sst_muscl`/`run_node_sst_bp1p90_matched`(node) vs SU2 中立132mm):
@@ -190,7 +190,7 @@ forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソ�
 3. 近壁 μt が異常化 (μt/μ~4-5千がコア y=9-10mm へ侵入, cell は y=10.5+) → BL 厚化 → 発散ダクトの実効面積増を相殺 → **超音速コア加速失敗** (中心 M 1.69 vs cell/SU2 1.82) → **擬似衝撃波が ~80mm 上流** (node 46mm)。
 4. 擬似衝撃波の背圧敏感性が小さな壁関数 μt 誤差を巨大な衝撃位置差へ増幅。平板(case26)は `wallTreatmentSST=0` ゆえ無傷で node/cell 一致 (Cf±1%)。
 
-→ 図 `cmp_node_vs_cell_ROOTCAUSE.png`。修正方針・SU2 調査待ちは [`.github/plans/turbulence-node-sst-wallfunction.md`](../../.github/plans/turbulence-node-sst-wallfunction.md)。**この差は node の物理バグであり cell は SU2 と整合 (142 vs 132mm)。**
+→ 図 `cmp_node_vs_cell_ROOTCAUSE.png`。修正方針・SU2 調査待ちは [`.github/plans/turbulence-node-sst-wallfunction.md`](../../design/active/turbulence-node-sst-wallfunction.md)。**この差は node の物理バグであり cell は SU2 と整合 (142 vs 132mm)。**
 
 ### ★ node vs cell SST 再比較 @ Ps=1.90 (現行バイナリ; 2026-06-27)
 

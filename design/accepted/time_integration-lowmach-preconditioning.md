@@ -13,7 +13,7 @@
   - [`docs/time_integration/implementation.md`](../../docs/time_integration/implementation.md)
 - **related_plans**:
   - [`convection-slau2-lowmach.md`](convection-slau2-lowmach.md) (done。SLAU2 では低マッハフロアが解消しないことを §9 で確認。本 plan が根治)
-  - [`gpu-implicit-plan.md`](gpu-implicit-plan.md) (block DPLUR / dual-time。Phase 2 が固有値で接続。dual-time は実装済 `unsteady_diag`)
+  - [`gpu-implicit-plan.md`](../active/gpu-implicit-plan.md) (block DPLUR / dual-time。Phase 2 が固有値で接続。dual-time は実装済 `unsteady_diag`)
 - **created**: `2026-06-07`
 - **owner**: `CFD Dev`
 

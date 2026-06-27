@@ -34,7 +34,7 @@
   $+1.4\to+17.9$ で double solve ($+18.1$) と一致、1 次では未収束→収束 (PASS)。実装は `timeIntegration_d.cu` の
   scalar/block/precond 3 箇所 (LHS のみ→定常解不変)。検証 run: `case/29.bell_vs_conical/run_disent_*`。
 - **回帰**: planar 粘性 (bump) は base/fix 場が $L2\sim10^{-5}$ 一致、planar RANS (backstep/naca, warm-start) は
-  残差レベル同一・mean flow 一致 (詳細 [precision-mixed-axisym.md](precision-mixed-axisym.md) §更新)。
+  残差レベル同一・mean flow 一致 (詳細 [precision-mixed-axisym.md](../archived/precision-mixed-axisym.md) §更新)。
 - **`implicitSolvePrecision=1` の位置づけ更新**: 根治ではなく**保険/検証手段**として残す。幾何是正後は通常 `0`。
 
 → 以下 §1〜§4 は経緯として残すが、「根治には double solve が必要 / 安価な根治なし」の記述は本 §0 で**上書き**される。

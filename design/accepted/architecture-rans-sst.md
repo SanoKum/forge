@@ -9,7 +9,7 @@
   - [`docs/turbulence/implementation.md`](../../docs/turbulence/implementation.md)
 - **related_plans**:
   - [`architecture-axisymmetric.md`](architecture-axisymmetric.md)
-  - [`gpu-implicit-plan.md`](gpu-implicit-plan.md)
+  - [`gpu-implicit-plan.md`](../active/gpu-implicit-plan.md)
 - **created**: `2026-06-02`
 - **owner**: `Copilot`
 
@@ -45,7 +45,7 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
 - 全体構成: [`docs/architecture/overview.md`](../../docs/architecture/overview.md)
 - 軸対称の前提: [`docs/axisymmetric/theory.md`](../../docs/axisymmetric/theory.md)
   と [`architecture-axisymmetric.md`](architecture-axisymmetric.md)
-- 検証運用: [`../forge-verification-cases.md`](../forge-verification-cases.md)
+- 検証運用: [`../forge-verification-cases.md`](../../.github/forge-verification-cases.md)
 
 軸対称 plan 側で「LES / RANS の軸対称対応 → 別 plan」と明記されているため、
 本計画で扱う axisymmetric は既存幾何の上で scalar advection plumbing を確認する
@@ -108,7 +108,7 @@ forge の圧縮性 NS ソルバに、低 Re の **Menter SST** モデルを導�
 - ドキュメント:
   - `docs/turbulence/*`
   - [`docs/index.md`](../../docs/index.md)
-  - [`.github/plans/README.md`](README.md)
+  - [`.github/plans/README.md`](../README.md)
 
 ## 8. 完了条件
 

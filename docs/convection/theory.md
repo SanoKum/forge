@@ -377,7 +377,7 @@ $-\dfrac{\chi}{\widehat c}(P_R-P_L)$ である。SLAU2 が変えるのは圧力�
 だけなので、**低マッハのエネルギー残差フロア自体は SLAU2 では解消しない**。実際、3D ノズル
 ($M_{\text{chamber}}\sim0.06$, 陰解法) で SLAU と SLAU2 を同条件比較したところ、`rms_roe`
 フロア・チャンバー圧力の非物理ばらつきはほぼ同一であった
-([`convection-slau2-lowmach.md`](../../.github/plans/convection-slau2-lowmach.md) §9)。
+([`convection-slau2-lowmach.md`](../../design/accepted/convection-slau2-lowmach.md) §9)。
 低マッハフロアの根治には時間項の**前処理** (Weiss–Smith 等。質量流束の散逸スケールごと
 是正する) が必要。`solver: SLAU2` は衝撃波ロバスト性向けの選択肢として有効 (既定は `SLAU`)。
 
@@ -442,7 +442,7 @@ forge では `lowMachPrecond: 1` で有効化する opt-in 機能とし (既定 
 > 超音速域の $M_{\max}$ は不変。$\epsilon$ を小さくするほど圧力散逸が増幅し、$\epsilon{=}0.05$ (停留点 ~20×) は
 > 発散、$\epsilon\!\gtrsim\!0.15$ で安定 (既定 0.15)。**陰解法 LHS の固有値前処理は block DPLUR では有害で
 > 採用しない** (対角優位性の源である音響固有値 $U\pm c$ を縮め、安定 $\epsilon$ 範囲をむしろ狭める。
-> 詳細・根拠は計画 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9)。
+> 詳細・根拠は計画 [`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) §9)。
 > $\epsilon$ を物理値まで下げて完全に根治するには、LHS に完全 preconditioned-flux Jacobian を組む
 > (固有ベクトルも前処理する) 大改修が要る (未着手)。
 
@@ -450,7 +450,7 @@ forge では `lowMachPrecond: 1` で有効化する opt-in 機能とし (既定 
 
 低マッハ自励振動は **RHS (半離散作用素) の低マッハモードのほぼ無散逸性**に起因する
 (LHS=擬似時間項側の前処理は収束解を変えないため振動を根治しない。
-[`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md)
+[`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md)
 §9 `2026-06-08`)。前処理音速 $c'$ (上節) は圧力散逸側を是正するが、もう一つの起源は
 **面再構成が作る左右速度ジャンプ** $\Delta\mathbf u=\mathbf u_L-\mathbf u_R$ である。
 Guillard–Viozat (1999) / Thornber ら (2008) の漸近解析によれば、低マッハで
@@ -490,7 +490,7 @@ forge では `lowMachThornber: 1` で有効化する opt-in 機能とする (既
 > あるのに対し、Thornber は速度ジャンプを縮めて**散逸を減らす**逆符号の補正だからである。Thornber が
 > 本来効くのは低マッハの**過剰散逸による精度劣化** (smearing。LES/乱流減衰など) であり、本ノズルの limit cycle
 > 根治には使えない。根治レバーは圧力散逸を増やす前処理音速 $c'$ (上節) 側に残る
-> (詳細・データは計画 [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9 `2026-06-08`)。
+> (詳細・データは計画 [`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) §9 `2026-06-08`)。
 
 ### HLLE
 

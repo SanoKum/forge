@@ -169,7 +169,7 @@ $V/\Delta\tau$ を縮めて対角を二重に潰し、最速で発散した。
 前処理しても aggressive なフラックス前処理を陰的に安定化できない。真の安定化には固有ベクトルも前処理する
 **完全 preconditioned-flux Jacobian**（大改修）が要る。よって現状はフラックス散逸前処理のみ採用し、LHS は
 従来の $A^\pm$ のまま。詳細・データは計画
-[`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9。
+[`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) §9。
 
 ### 低マッハ前処理固有系 (Weiss–Smith・完全 $\Gamma^{-1}A$) — Phase 4 (採用・振動根治)
 
@@ -257,7 +257,7 @@ $U_r\to0\Rightarrow\beta\to0$ となり $\Gamma_c$ が特異化 ($1/\beta\to\inf
 > 安定 `cfl_pseudo` は m1~1→m2~7-9 と広がる。当初は倍精度で per-step 2.54× で収束加速は互角だったが、
 > Sherman-Morrison 化で per-step を物理 block と同速 (15.7 vs 15.6ms) にした結果、cfl 余裕がそのまま wall-clock
 > 加速に転化し **rms_roe<1.0 到達で約 2.2× の net 加速** (深い収束ほど有利)。計画
-> [`time_integration-lowmach-preconditioning.md`](../../.github/plans/time_integration-lowmach-preconditioning.md) §9 `2026-06-09`。
+> [`time_integration-lowmach-preconditioning.md`](../../design/accepted/time_integration-lowmach-preconditioning.md) §9 `2026-06-09`。
 
 ## 非定常 dual-time 陰解法 (実装済み 2026-06)
 

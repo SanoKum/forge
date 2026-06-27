@@ -109,7 +109,7 @@ theory.md §7 に対する実装差分のみ記す。
 - ドキュメント:
   - [`docs/turbulence/theory.md`](../../docs/turbulence/theory.md) §7 (済)
   - [`docs/turbulence/implementation.md`](../../docs/turbulence/implementation.md) §5 (済)
-  - [`.github/plans/README.md`](README.md)
+  - [`.github/plans/README.md`](../README.md)
 
 ## 8. 完了条件
 

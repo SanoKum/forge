@@ -16,9 +16,10 @@
 | [`.github/forge-divergence-and-startup.md`](.github/forge-divergence-and-startup.md) | 発散の主因と安定起動の手順 (新規計算 / 発散時に必ず参照) |
 | [`.github/forge-verification-cases.md`](.github/forge-verification-cases.md) | コード変更時の検証ケース選定と確認手順 |
 | [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) | 同一メッシュ・同一 BC で SU2 と比較し forge 固有の問題を切り分ける手順 |
-| [`.github/plans/`](.github/plans/README.md) | 機能ごとの実装計画 (着手前に参照する基準文書) |
+| [`design/`](design/README.md) | 変更単位の設計判断文書。`active/` (検討中・進行中) / `accepted/` (現役の設計判断) / `archived/` (superseded・終了)。着手前に参照する基準文書 |
+| [`notes/`](notes/README.md) | 調査メモ・作業ログ。`investigations/` (技術調査・サーベイ) / `sessions/` (使い捨て作業プロンプト) |
 | [`.github/verification-cases/`](.github/verification-cases/) | 各標準検証ケースの個別手順 |
-| [`docs/`](docs/index.md) | 理論 (`<area>/theory.md`) と実装解説 (`<area>/implementation.md`) |
+| [`docs/`](docs/index.md) | 現在の仕様と解説 (機能単位 `<area>/`)。「なぜそうしたか」は `design/` 側 |
 
 ## 言語方針
 
@@ -48,7 +49,7 @@
 - **対象 case に `README.md` が無ければ新規作成**し、ケース概要に続けて run 一覧表を置く。
 - **run_* を作成・破棄したら同表を必ず同期**する。列は最低限: `run_*` ディレクトリ名 / 目的・主要設定差分 / 主要結果・成果物 / 状態 (`active` / `破棄予定` / `ref`=入力リファレンスとして保持)。
 - **命名規約**: `run_NNNN_<slug>` とし、`<slug>` は目的が一目で分かる語にする (例 `run_0015_prod_double`)。**既存 run と番号が衝突しない連番**を使い、衝突や系列違いが起きたら表の備考でグルーピングを明記する。
-- 表の本文は簡潔に (1 run = 1 行)。詳細な考察は `.github/plans/` の該当 plan に書き、表からはその plan へリンクする。
+- 表の本文は簡潔に (1 run = 1 行)。詳細な考察は `design/` の該当計画に書き、表からはその計画へリンクする。
 
 **NaN / 発散チェック (必須)**: 計算が「完走 (exit 0)」しても妥当とは限らない。**初期ステップから発散している**ことが多いため、結果を使う前に必ず NaN/Inf の有無を確認すること。
 
@@ -62,7 +63,7 @@
 **収束確認 (必須・NaN チェックとは別)**: 「NaN が無い」=「収束した」ではない。結果を使う/報告する前に、各保存量の残差が**実際に下がりきっているか**を必ず確認すること。
 
 - **判定は手作業の目視ではなく `solver_density_cuda/tools/check_convergence.py <run_dir> ...` を実行して行う** (本ルールの実体化ツール)。全残差列の低下桁数・トレンド・NaN を判定し `PASS / NOT CONVERGED / DIVERGED` を返す。**「収束した」「一致した」と報告する応答には、このツールの VERDICT を根拠として必ず貼ること** (これを怠り `rms_ro` だけで「収束」と誤報告した事例があるため、ツール経由を必須とする)。未収束なら「未収束」と明記し、未収束のトランジェント同士の場の比較を「一致」と表現しない。
-- **`rms_ro` だけで判断しない**。`residual_history.csv` の **全列** (`rms_ro`,`rms_roUx`,`rms_roUy`,`rms_roUz`,`rms_roe`、RANS 時は `rms_roK`,`rms_roOmega`) のトレンドを見る。`rms_ro` が低くても、運動量 (特に軸対称の `rms_roUy`) や乱流 (`rms_roK`/`rms_roOmega`) が**下げ止まり・横ばい・上昇**していれば未収束。実例: 軸対称 SST で `rms_ro`≈3e-5 でも `rms_roUy`≈1e-2 停滞・`rms_roK` 増大=近軸が未収束だった ([architecture-axisym-axis-singularity.md](.github/plans/architecture-axisym-axis-singularity.md))。
+- **`rms_ro` だけで判断しない**。`residual_history.csv` の **全列** (`rms_ro`,`rms_roUx`,`rms_roUy`,`rms_roUz`,`rms_roe`、RANS 時は `rms_roK`,`rms_roOmega`) のトレンドを見る。`rms_ro` が低くても、運動量 (特に軸対称の `rms_roUy`) や乱流 (`rms_roK`/`rms_roOmega`) が**下げ止まり・横ばい・上昇**していれば未収束。実例: 軸対称 SST で `rms_ro`≈3e-5 でも `rms_roUy`≈1e-2 停滞・`rms_roK` 増大=近軸が未収束だった ([architecture-axisym-axis-singularity.md](design/accepted/architecture-axisym-axis-singularity.md))。
 - **残差プラトーは「収束」ではない**。下げ止まる場合は、積分量 (massflux/推力/出口諸量) が**定常化**しているか、場が**発達しきっている**かを併せて確認する (リミットサイクルの可能性)。
 - **場の発達も確認する** ([develop-flow-before-reporting] と同趣旨): 残差が下がっていても、境界層・乱流・衝撃などが発達途中なら結果は使えない。中間 `res_*.h5` を時系列で見て、注目量が定常化したことを確認する。
 - 外部ソルバ (SU2 等) でクロスチェックする場合の収束確認も同様。手順は [`.github/forge-su2-cross-check.md`](.github/forge-su2-cross-check.md) を参照。
@@ -85,9 +86,9 @@ forge の結果が「軸対称・乱流・近軸で forge だけ妙な値にな�
 
 コード変更時の検証ケースの選び方と個別の確認手順は `.github/forge-verification-cases.md` を参照すること。
 
-`.github/plans/` 配下の `.md` は、実装計画ごとの基準文書として扱うこと。対象タスクに対応する計画が存在する場合、実装や調査を進める前にまずその `.md` を参照すること。計画一覧は [`.github/plans/README.md`](.github/plans/README.md) を使う。
+`design/` 配下の `.md` は、変更単位の設計判断文書 (実装計画) として扱うこと。対象タスクに対応する計画が存在する場合、実装や調査を進める前にまずその `.md` を参照すること。計画一覧は [`design/README.md`](design/README.md) を使う (`active/` が進行中、`accepted/` が現役の設計判断、`archived/` が superseded・終了)。コード変更を伴わない技術調査・サーベイは `notes/investigations/`、使い捨ての作業プロンプトは `notes/sessions/` に置く。
 
-実装方針を変更する場合は、先に対応する `.github/plans/*.md` を更新してから実装に移ること。計画未更新のまま実装だけを先行させないこと。
+実装方針を変更する場合は、先に対応する `design/active/*.md` を更新してから実装に移ること。計画未更新のまま実装だけを先行させないこと。
 
 ユーザーが solver のコード構造、アーキテクチャ、モジュール責務について質問した場合は、`docs/architecture/overview.md` を既定の参照先とすること。
 
@@ -100,22 +101,21 @@ forge の理論的背景と実装解説は `docs/` 配下に機能単位 (物理
 - 理論・実装に関する質問に答えるときは、該当する `docs/<area>/*.md` を既定の参照先とする。
 - ファイルの追加・改名・削除を行った場合は `docs/index.md` の目次を必ず同期させる。
 - 数式は KaTeX 記法 (インライン `$...$`、ブロック `$$...$$`)、図は mermaid フェンスまたは画像で統一する。
-- `docs/` は恒常的な理論・実装解説、`.github/forge-*.md` / `.github/plans/` / `.github/verification-cases/` はそれぞれ運用手順・実装計画・検証ケース手順という棲み分けを守る。
+- `docs/` は現在の仕様・解説 (理論+実装を機能単位 `<area>/` に集約。`theory.md`/`implementation.md` の強制分割は廃止し、規模が大きい領域のみ分ける)、`design/` は変更単位の設計判断、`notes/` は調査・作業ログ、`.github/forge-*.md` / `.github/verification-cases/` は運用手順・検証ケース手順、という棲み分けを守る。
 
 ## 開発フロー (新規機能・設計変更)
 
 バグ修正と軽微な変更を除く「新規機能追加」「数値スキームや設計方針の変更」を行うときは、必ず次の 4 ステップを順に踏むこと。
 
-1. 該当する [`docs/<area>/theory.md`](docs/) を更新する (理論的な変更がある場合)。
-2. 該当する [`docs/<area>/implementation.md`](docs/) を更新する (実装方針・ソース対応を反映)。
-3. [`.github/plans/_template.md`](.github/plans/_template.md) を雛型に `.github/plans/<area>-<short-slug>.md` を作成し、`related_docs` で 1./2. のファイルをリンクする。[`.github/plans/README.md`](.github/plans/README.md) の一覧にも追記する。
-4. 以上 3 つが揃ってから実装に着手する。
+1. 該当する [`docs/<area>/`](docs/) の現在仕様ドキュメントを更新する (理論・実装の両面。領域が小さければ 1 ファイル内の節で分ける)。
+2. [`design/_template.md`](design/_template.md) を雛型に `design/active/<area>-<short-slug>.md` を作成し、`related_docs` で 1. のファイルをリンクする。[`design/README.md`](design/README.md) の `active` 一覧にも追記する。
+3. 以上 2 つが揃ってから実装に着手する。
 
 完了時には次を行うこと。
 
-- plan の `status` を `done` に更新し、`## 変更ログ` に実装・検証結果を追記する。
-- [`.github/plans/README.md`](.github/plans/README.md) の一覧表も同期させる。
-- 1./2. で触った docs と [`docs/index.md`](docs/index.md) の整合性を確認する。
+- 計画の `status` を `done` に更新し、`## 変更ログ` に実装・検証結果を追記する。**ファイルを `design/active/` から `design/accepted/` へ移動する** (superseded になった場合は `design/archived/`、後継を本文に明記)。ファイル名は変えない (リンク維持)。
+- [`design/README.md`](design/README.md) の一覧表も同期させる (移動元・移動先の両セクション)。
+- 1. で触った docs と [`docs/index.md`](docs/index.md) の整合性を確認する。
 
 例外 (本フローを要しないもの):
 
@@ -131,7 +131,7 @@ forge の理論的背景と実装解説は `docs/` 配下に機能単位 (物理
 実装または修正が一段落し、検証 (ビルド成功 + 該当検証ケースの結果が妥当) まで確認できたら、その機能・計画単位で git commit し、現在の feature ブランチへ push すること。本節は検証済みマイルストーンでの commit/push を事前承認するものとして扱い、都度の確認は不要とする。
 
 - **commit タイミング**: 機能・計画単位でまとめて commit する。段階検証ごと・小さな編集ごとには commit しない。plan を伴う作業では plan の `status: done` 化と整合させる。
-- **commit 対象**: `solver_density_cuda/` などのソース、`docs/`、`.github/plans/` といった意味あるソース・文書変更を対象とする。`case/` 配下の検証 run 成果物 (`res_*.h5`, `*.xmf`, `residual_history.csv` / `.png`, `forge_run.log` など) は commit に含めない。検証 run の入力 config (`solverConfig.yaml`, `bcondConfig.yaml` 等) は、リファレンスとして意図的に残したい場合のみ明示的に `git add` する。
+- **commit 対象**: `solver_density_cuda/` などのソース、`docs/`、`design/`、`notes/` といった意味あるソース・文書変更を対象とする。`case/` 配下の検証 run 成果物 (`res_*.h5`, `*.xmf`, `residual_history.csv` / `.png`, `forge_run.log` など) は commit に含めない。検証 run の入力 config (`solverConfig.yaml`, `bcondConfig.yaml` 等) は、リファレンスとして意図的に残したい場合のみ明示的に `git add` する。
 - **push**: commit 後は現在の feature ブランチへ push する。`main` へ直接 commit / push しない。`main` 上にいる場合は先に feature ブランチを切ってから作業する。
 - **commit メッセージ**: 英語の命令形で記述する (例: `Add Menter SST turbulence model with dilatation correction`)。
 - 無関係な既存の作業ツリー変更を巻き込まないよう、commit 前に `git status` / `git diff` で対象を確認すること。

@@ -252,7 +252,7 @@ explicit/dual-time は必要に応じ毎ステップ適応; 表示のみ `monito
 > launch/host 同期だった。毎 step の残差 RMS と detectNaN がその主因。`detectNaN` も fused な device int
 > フラグ化し、`detectNaNInterval` ステップごとにのみフラグを host 読み出しする。`monitorInterval` /
 > `detectNaNInterval` の既定は 1 で従来挙動。設計詳細は
-> [`.github/plans/architecture-residual-monitor-async.md`](../../.github/plans/architecture-residual-monitor-async.md)。
+> [`.github/plans/architecture-residual-monitor-async.md`](../../design/accepted/architecture-residual-monitor-async.md)。
 
 GPU 計算結果をホストで使う一般則は変わらない: 出力・監視のために値を host で読む箇所は同期点になるため、
 頻度を必要最小限にするか device 常駐＋まとめ転送にするのが基本方針。

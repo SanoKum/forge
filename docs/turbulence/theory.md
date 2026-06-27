@@ -392,7 +392,7 @@ $$
 を用いている。advection-only 段階では既存の体積・面積重みで scalar の対流を
 通せるが、SST 特有の diffusion / source には幾何項の検討が必要である。
 詳細は子 plan
-[`architecture-axisym-sst.md`](../../.github/plans/architecture-axisym-sst.md)
+[`architecture-axisym-sst.md`](../../design/accepted/architecture-axisym-sst.md)
 で扱い、以下に理論的な要点を整理する。
 
 ### 7.1 対流・拡散には幾何 source が残らない
@@ -551,7 +551,7 @@ $$
 
 #### case 29 の「軸中心 k 過大」— 機構特定済み: **二層構造** (経緯の誤診は訂正済み)
 
-詳細は [`architecture-axisym-axis-singularity.md`](../../.github/plans/architecture-axisym-axis-singularity.md) /
+詳細は [`architecture-axisym-axis-singularity.md`](../../design/accepted/architecture-axisym-axis-singularity.md) /
 [case 29 検証](../../case/29.bell_vs_conical/README.md)。結論:
 
 **層 (a) — 実用格子 (軸セル ≥ 0.25mm) の軽度スパイク = 生産駆動。Kato–Launder で解決。**
@@ -590,7 +590,7 @@ rms_roK 1e11 爆発)。機構: 半径方向は近軸で深い低 Mach ($u_r\to0$
 低コストで解くため、SST に **DDES (Delayed DES, Spalart et al. 2006)** の length scale 修正を加える。
 付着境界層は RANS のまま保護し、剥離せん断層・自由せん断層でのみ LES へ切り替える。
 実装は [`implementation.md` §3.8](implementation.md) と plan
-[`turbulence-iddes-sst.md`](../../.github/plans/turbulence-iddes-sst.md) を参照。
+[`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md) を参照。
 
 ### 8.1 RANS length scale と k 消滅項の整合
 
@@ -685,5 +685,5 @@ $f_B$, $f_e$, $f_{dt}$ を加えた $l_\mathrm{IDDES}$ で WMLES モードへ自
 - 陰解法 Jacobian への SST 連成
 
 軸対称 SST の幾何 source (§7.1–7.4) は子 plan
-[`architecture-axisym-sst.md`](../../.github/plans/architecture-axisym-sst.md)
+[`architecture-axisym-sst.md`](../../design/accepted/architecture-axisym-sst.md)
 で実装・検証する。その他は別 plan または後続フェーズで扱う。

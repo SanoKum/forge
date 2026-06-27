@@ -8,8 +8,8 @@
   - `docs/diffusion/implementation.md`
   - `docs/discretization/implementation.md` (node 近壁・axisCentroidShift)
 - **related_plans**:
-  - 同根: [`diffusion-node-wall-viscous-distance.md`](diffusion-node-wall-viscous-distance.md) (壁面の dcc 退化。本 plan は内部面)
-  - 関連: [`discretization-node-wall-implicit-dirichlet.md`](discretization-node-wall-implicit-dirichlet.md)
+  - 同根: [`diffusion-node-wall-viscous-distance.md`](../accepted/diffusion-node-wall-viscous-distance.md) (壁面の dcc 退化。本 plan は内部面)
+  - 関連: [`discretization-node-wall-implicit-dirichlet.md`](../accepted/discretization-node-wall-implicit-dirichlet.md)
 - **created**: `2026-06-22`
 - **owner**: (未割当)
 
@@ -23,7 +23,7 @@ node-centered で SST RANS が omega 爆発で起動できない (case/36: roOme
 
 - **やる**: node mode の flux 幾何で **dcc に node 座標**を使う。`ncx/ncy/ncz` device 配列 (node mode=ノード座標, cell mode=centCoords) を追加し、scalar 拡散 + 運動量粘性 (内部面) の dcc に適用。
 - **やらない**:
-  - 壁面 (half-face/ghost) の dcc 退化 (別 plan [`diffusion-node-wall-viscous-distance.md`](diffusion-node-wall-viscous-distance.md))。
+  - 壁面 (half-face/ghost) の dcc 退化 (別 plan [`diffusion-node-wall-viscous-distance.md`](../accepted/diffusion-node-wall-viscous-distance.md))。
   - 対流 flux の fx/dcc、勾配 (calcGradient) の node 座標化 (残発散の追加対策として後続検討)。
   - `centCoords` (双対重心) 自体は volume/軸対称 r 重み/source 用に**温存** (axisCentroidShift の意図は保持)。
   - cell モード (ncx=ccx でビット不変)。
@@ -61,7 +61,7 @@ node-centered で SST RANS が omega 爆発で起動できない (case/36: roOme
 
 - [x] `docs/diffusion/implementation.md` に node 座標 dcc を追記
 - [ ] 残発散 (case/36 step1657) の追加対策 (対流 fx/dcc・勾配の node 座標化、または near-convergence 安定化) を別 plan/§9 で判断
-- [ ] [`.github/plans/README.md`](README.md) を更新
+- [ ] [`.github/plans/README.md`](../README.md) を更新
 - [ ] `status: done` 化 (残発散の整理後)
 
 ## 9. 変更ログ

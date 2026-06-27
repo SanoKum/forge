@@ -8,7 +8,7 @@
   - `docs/turbulence/theory.md`
   - `docs/turbulence/implementation.md`
 - **related_plans**:
-  - [`turbulence-iddes-sst.md`](turbulence-iddes-sst.md) — 本サーベイを受けた IDDES 実装計画
+  - [`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md) — 本サーベイを受けた IDDES 実装計画
 - **created**: `2026-06-21`
 - **owner**: `CFD Dev`
 - **調査実施**: deep-research ワークフロー（94 エージェント, 21 ソース取得, 22 クレーム検証: 11 確認 / 11 棄却）
@@ -127,7 +127,7 @@ DES/WMLES 研究は皆無**だった。以下がオープンクエスチョン�
 
 - **SST-DDES が最小コスト**: 既存 SST に f_d シールド関数 + length scale 修正のみ。
 - **SST-IDDES**: さらに f_B・f_e の追加が必要。WMLES モードは解像乱流流入がない限り不活性。
-- 実装計画は [`turbulence-iddes-sst.md`](turbulence-iddes-sst.md) を参照。
+- 実装計画は [`turbulence-iddes-sst.md`](../../design/active/turbulence-iddes-sst.md) を参照。
 
 ---
 

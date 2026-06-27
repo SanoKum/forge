@@ -100,6 +100,11 @@ run path: `case/29.bell_vs_conical/run_0019〜run_0025`。
 
 ### 6.2.1 コーナー (壁∩出口) が主因 (ユーザー指摘・検証)
 
+> **【2026-06-24 訂正】下記の「質量/エネルギーが溜まる (accumulation/outflow できない)」という機構説明は
+> §9.8 の細分出力 build-up + slip テストで否定された。** 実体は壁∩出口コーナーでの**出口静圧 BC の数値不安定
+> (成長する圧力振動)** で、質量蓄積でも no-slip BL でもない (slip 壁でも同所で同様に発散)。詳細・訂正は §9.8。
+> run_0027 の「全保存量凍結で3倍遅延」も、凍結が振動を一時鈍らせただけと再解釈する。
+
 壁ノードが出口と一致するコーナーでは、壁優先所有で `wall_flag=1` のため運動量は射影されるが、
 質量/エネルギー残差は射影されず、かつコーナーの出口方向 半割面が**壁ミラーゴースト (流出しない)**
 になるため、質量/エネルギーが溜まり **roe が先頭発散**する。run_0027 で全保存量を凍結すると発散が
@@ -149,7 +154,7 @@ SU2 は forge node と同じ**頂点中心 median-dual**。その no-slip / 粘�
 ### 7.1 再設計 (SU2 丸パクリ方針)
 
 本問題は「粘性壁 flux の距離」ではなく**境界クロージャ (ゴースト→弱形式マルチマーカー)** が本体。
-よって本 plan の主眼を [discretization-node-boundary-ghostless.md](discretization-node-boundary-ghostless.md)
+よって本 plan の主眼を [discretization-node-boundary-ghostless.md](../active/discretization-node-boundary-ghostless.md)
 Phase 2 と統合し、次を実装する:
 
 1. **node 境界をゴーストレス弱形式に**: 各マーカーが半割面流束をノードに加算。コーナーは所有を
@@ -218,7 +223,7 @@ auto& h = halfByOwner[ow][N];       //   コーナー(壁∩出口)は壁所有 
   (setMeshMap_d の plane 順序・対流主ループの ghost 経路・bvar 配列・CV 体積閉包のいずれか)。
 - 結論: **full ghostless は emit のマルチマーカー化に加え、ソルバ境界ループのマルチ bcond 対応**
   (1 ノードが複数境界 plane/ghost を持てるデータ構造とループ) が必須。これは
-  [discretization-node-boundary-ghostless.md](discretization-node-boundary-ghostless.md) Phase 2 の本体。
+  [discretization-node-boundary-ghostless.md](../active/discretization-node-boundary-ghostless.md) Phase 2 の本体。
 - 共有作業ツリーが並行セッションで頻繁にビルド不能 (`boundaryCond_d.cu`/`calcWallDistance_kdtree`) に
   なり、反復デバッグが困難。**専有ツリー (worktree or 別クローン) での一括実装+検証**を推奨。
 - emit のマルチマーカー変更は単体ではソルバを壊すため working tree から撤回した (再実装時は
@@ -347,7 +352,7 @@ full ghostless を完遂するには、emit マルチマーカー化に加えて
   `boundaryCond_d.cu` 編集でビルド不能・共有汚染中)。
 - 検証: case 29 node viscous (explicit RK3, cfl 0.1) で①NaN/発散解消 ②twall 平滑 ③中心線/出口が
   Euler/cell/SU2 一致、を確認。既存 Euler node (run_dual_eul_conical_node_m3) が回帰しないことも確認。
-- 親 plan [discretization-node-boundary-ghostless.md](discretization-node-boundary-ghostless.md) Phase 2 と統合。
+- 親 plan [discretization-node-boundary-ghostless.md](../active/discretization-node-boundary-ghostless.md) Phase 2 と統合。
 
 ## 9. 自走検証の結果 (2026-06-20, run_0030〜0034)
 
@@ -403,6 +408,39 @@ B (multi-marker emit + nodeWallDirichlet 強 no-slip) を node 壁の主軸に�
 - **T overshoot の根治 = 壁寄せ (BL 解像)**。scheme 側の追加修正は不要。
 - 残: WC の長時間収束、implicit CFL、既定値 (nodeWallDirichlet を node 既定 ON 化) の確定、cell 側の
   BL 解像での T overshoot 再確認。
+
+### 9.8 【症状再発】case36 実コーナーで roe 先頭発散が再発 (2026-06-24)
+
+case36 node 層流 1次 (Ps1.70, `run_node_lam1st_bp1p70`) が **step7185 で発散**。detectNaN ダンプ
+(`res_nan_7186.h5`) で局在化: **壁∩出口コーナー** (x=673-690mm=出口端, y=21.9-22.3mm=壁, wall_dist≈0)
+の 30 セルで ro/roe/roUx/roUy が NaN (P/T 有限)、max cfl→4.3e11。**§6.2.1 の roe 先頭発散と同一**。
+
+**重要 — マルチマーカーは効いているのに再発**: case36 node mesh は**コーナー2ノード (x=690,y=±22.27) が
+outlet・wall の両 bcond に所属** (multi-marker emit `ow=ib` は動作)。それでも発散 → **§8.1.1 の予言通り
+「emit だけでは不十分、ソルバ側のマルチ bcond 対応が必須」**。§9.1 の検証は**実コーナーの無い均一/粗メッシュ**
+(§8.1.2.4: per-bcond 数が single/multi で同一=コーナー非共有) だったため、**実コーナーでの破綻は未検出だった**。
+→ コーナー修正は emit のみ適用で**ソルバ側 (コーナーの出口 outflow) は未完**のまま、case36 の実コーナーで再発。
+
+**【機構訂正 2026-06-24, 細分出力 build-up + slip テストで確定】**: §6.2.1/上記の「質量/エネルギー蓄積
+(outflow できず溜まる)」は**誤り**。実体は**壁∩出口コーナーの成長する圧力振動 (数値不安定)**:
+- 細分出力 (50step毎, `run_nodelam_fineout`): コーナー P が **規定 Ps=1700 を中心に振幅増大して振動** (std
+  30→333 kPa で約10倍)、ρ も 21↔6.6 と振動し発散。**蓄積 (単調増) ではない**。コーナー速度は u=0 のまま
+  (壁面に沿う流量は無い=ユーザー指摘どおり)。先に near-wall 出口ノードが 1700→1000 へ落ち、続いてコーナーが
+  振動成長。図 `corner_divergence_buildup.png`。
+- **slip テスト (`run_nodelam_slipwall_cfl1`, 壁を slip 化)**: それでも**ほぼ同じ step3176 で発散・コーナー P
+  std309kPa で振動** → **no-slip BL は無関係**。トリガは**出口静圧 BC が壁と交わるコーナーでの Ps 規定**そのもの
+  (slip/no-slip 不問)。
+- → **真因 = 壁∩出口コーナーでの outlet_statPress (Ps 規定) の数値不安定**。高 CFL (陰解法) で圧力振動が成長、
+  低 CFL で減衰。質量流束/蓄積/no-slip BL はいずれも犯人でない。
+
+**CFL 律速 (実測, run_nodelam_*)**: cfl_pseudo=1.0 で step7185 発散、**0.3/0.1/陽解法(0.2) は 15000 step 安定**
+(NaN なし)。当面 node viscous/laminar は **cfl_pseudo≤0.3** で運用可。安定後の解は過散逸 (Mmax1.40, 衝撃入口
+寄り)。3者比較 `cmp_laminar_3way.png`: SU2 clean 155mm/1.92, cell 入口+train/1.64, node cfl0.3 入口/1.40。
+
+**根治方針 (修正)**: 「コーナーの outflow を直す」ではなく**「壁∩出口コーナーでの出口静圧 BC を数値安定化」**。
+候補: (a) コーナーで出口 Ps 規定を**弱形式化＋緩和** (圧力の急な強制を避ける)、(b) 出口を下流へ延長して壁∩
+出口コーナーを除く (幾何)、(c) コーナーノードの出口/壁 BC の優先順位・整合を見直す。**CFL 低減 (cfl≤0.3) は
+対症療法だが当面有効**。SU2 が同条件で振動しないのは固定CFL＋弱形式出口の差 (本 plan の SU2 対比と整合)。
 
 ## 10. スロート dPdx スプリアスピーク = メッシュ段差起因 (2026-06-20, ユーザー指摘, run_0037)
 

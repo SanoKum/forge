@@ -8,9 +8,9 @@
   - `docs/discretization/theory.md` (§6.3 壁 Dirichlet)
   - `docs/discretization/implementation.md` (§ 軸 MARKER_SYM の in-Jacobian decouple 先例)
 - **related_plans**:
-  - 親: [`discretization-node-boundary-ghostless.md`](discretization-node-boundary-ghostless.md) (Phase 1 で残差射影 Dirichlet を実装。本 plan はその implicit 整合化)
+  - 親: [`discretization-node-boundary-ghostless.md`](../active/discretization-node-boundary-ghostless.md) (Phase 1 で残差射影 Dirichlet を実装。本 plan はその implicit 整合化)
   - 先例: [`architecture-axisym-axis-singularity.md`](architecture-axisym-axis-singularity.md) (軸 roUy 行の in-Jacobian decouple)
-  - 関連: [`gpu-implicit-plan.md`](gpu-implicit-plan.md) (block-DPLUR 本体)
+  - 関連: [`gpu-implicit-plan.md`](../active/gpu-implicit-plan.md) (block-DPLUR 本体)
 - **created**: `2026-06-22`
 - **owner**: (未割当)
 
@@ -89,7 +89,7 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 - [ ] `docs/discretization/theory.md` に壁 in-Jacobian Dirichlet を追記
 - [ ] `docs/discretization/implementation.md` の SU2 比較節に壁を追記
 - [ ] 実装・検証完了 (§6 の判定基準を満たす)
-- [ ] [`.github/plans/README.md`](README.md) の状態を `done` に更新
+- [ ] [`.github/plans/README.md`](../README.md) の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログ (壁 drift・KE シンク・近壁 dP/dy の before/after を数値で) を記載
 
 ## 9. 変更ログ

@@ -115,6 +115,6 @@
     ② setDT の `max cfl` reduction (`thrust::max_element`) の per-step 同期、③ 各 wrapper の `cudaDeviceSynchronize()`
     全廃 (最大の host 律速要因)。本 plan ではいずれも対象外。
 - 2026-06-21 (後続): 本 plan で導入した `residualFlushInterval` は
-  [architecture-perphase-profiling-hotspot.md](architecture-perphase-profiling-hotspot.md) (Phase B-1) で
+  [architecture-perphase-profiling-hotspot.md](../active/architecture-perphase-profiling-hotspot.md) (Phase B-1) で
   **`monitorInterval` に改名・統合**した (残差 CSV flush と `max cfl`/`dt` の console 出力頻度を 1 つの間隔に統一)。
   挙動・既定 (1) は不変。`detectNaNInterval` はそのまま。

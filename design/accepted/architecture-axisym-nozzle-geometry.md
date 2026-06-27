@@ -87,7 +87,7 @@ source-corrected compatibility を使う **axisymmetric MOC** と、喉部直後
   - [`docs/axisymmetric/implementation.md`](../../docs/axisymmetric/implementation.md)
   - [`case/23.axi_nozzle/mesh_axisym_m2/generate_moc_contour.py`](../../case/23.axi_nozzle/mesh_axisym_m2/generate_moc_contour.py)
   - [`case/23.axi_nozzle/mesh_axisym_m2/build_mesh.sh`](../../case/23.axi_nozzle/mesh_axisym_m2/build_mesh.sh)
-  - [`.github/plans/README.md`](README.md)
+  - [`.github/plans/README.md`](../README.md)
 - 既存 solver 実行手順への影響はない。
 - validation nozzle の壁形状と mesh preview は変わる。
 - public reference contour の比較用 mesh/run が追加される。
