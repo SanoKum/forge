@@ -319,6 +319,13 @@ restart: cell←run_0049/res_80000、node←run_0072/res_40000。
   **SST restart 過渡 (壁 omega ディップ) を段階確立が回避**するため。run: `run_sym_E_euler_bp170`(Euler) /
   `run_sym_F_laminar_bp170`(層流) / `run_sym_G_sst_bp170`(**SST, PASS**)、bp1.90 側は `run_sym_C_trueeuler` /
   `run_sym_D_laminar`。図 `run_sym_G_sst_bp170/bp170_staged_asym.png`。
+- **★ 2次風上で cell ≈ node (bp1.70 SST)**: 上記 `run_sym_G`(1次風上収束) から `convMethod:1`(2次風上)+Venkat に
+  切替え、**cell** (`run_sym_H_2up_cell`, 1次収束場から restart) と **node** (`run_sym_H_2up_node`,
+  cell 収束場を centCoords 最近傍で interp) を計算。両者ほぼ一致: **衝撃 cell 241.8 / node 240.9mm (~1mm差)、
+  Mmax 2.019 / 2.005、asym 0.251 / 0.246**。1次風上 (Mmax~1.9, 衝撃 237) から 2次でコアがシャープ化 (Mmax~2.01)・
+  衝撃わずか下流。**判定**: 両者とも `check_convergence`=NOT CONVERGED (ρ/運動量 3桁低下だが roK/roOmega プラトー)
+  だが、`check_quasisteady`=**STEADY** (shock/asym/Mmax の drift<0.5%) → 量は準定常で一致 (残差未収束でも量で判定)。
+  図 `run_sym_H_2up_node/cmp_cell_node_2up_bp170.png` / `_mach.png`。node(median-dual) 健全性を 2次風上でも追認。
 
 ### ★ porous vs solid 比較 = 論文の機構を再現 (2026-06-21)
 
