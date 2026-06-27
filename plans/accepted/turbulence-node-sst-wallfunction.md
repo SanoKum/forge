@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `turbulence`
-- **status**: `in_progress` (SU2 調査完了→方針 A 確定、実装中 2026-06-24)
+- **status**: `done` (§3.1 代表点 + §3.2 AddTauWall を実装・検証・commit 済。node≈cell 一致を確認しクローズ 2026-06-27)
 - **related_docs**:
   - `methods/turbulence/implementation.md`
   - `.github/plans/diffusion-node-wall-viscous-distance.md` (§11 twall, 同一トラップ)
@@ -127,7 +127,21 @@ SU2 の vertex-centered wall function は**壁頂点自身の速度を使わず�
   worktree で build clean・検証。**結果**: `utau`/`ypls` が node で nonzero・物理 (y+~98) に修正 (実測
   nonzero_frac 0→1)、peak μt/μ 91k→57k 是正、case36 衝撃が **46→~65mm と +20mm 下流改善** (`run_0054_node_sst_wffix_bp1p90`,
   Ps1.90, shock 漸近 ~65mm, ただし `check_convergence` は plateau=未収束)。場は wt=1 node のみ変化、cell/flat-plate(wt=0) 不変。
-  **ただし case36 はまだ cell/SU2(132-142mm) に届かず (65mm, Mmax 1.69 vs 1.82)**。残差主因は壁関数でなく
-  **median-dual のコア・チェッカーボード** (x=50mm 半径分布で軸上コア Mach が波打ち沈む 1.62-1.68; μt は cell
-  以下なので BL ブロッケージでない) と判明 → `gradLSQ`/`nodeMidpointFx` 検証は別途。壁関数 fix 自体は独立バグ
-  修正として commit。
+  commit `8a2caad`。当初は残差主因を「median-dual コア checkerboard」と疑ったが、後述 §3.2 で**第2の欠落 (τ_w 未付与) が
+  真の主因**と判明し棄却 (node Euler/層流の切り分けで基底スキーム・対流・幾何・checkerboard は無実と確定; case36 README
+  「切り分け結論 2026-06-24」)。
+- 2026-06-24: §3.2 確定。第2の欠落=**壁関数 τ_w が運動量に課されていない** (SU2 `AddTauWall` 相当が node に無く、
+  モデル τ_w が Dirichlet 破棄される壁ノード半割面に乗っていた) を特定し、SU2 AddTauWall を厳密移植 (per-node
+  `Tau_Wall=ρu_τ²` を壁関数が格納、`viscousFlux_d` で片端のみ壁ノードの W-I 内部双対面の接線 traction を τ_w に
+  再スケール; cell/非WF は `Tau_Wall≡-1` でビット不変)。commit `945a27f`。**結果** (`run_0067_node_sst_tauwall_bp1p90`,
+  Ps1.90): コア加速 **Mmax 1.69→1.92**、衝撃 **46→~171mm** (上流固着・背圧逆応答が消失)、utau/ypls 物理 (y+~145)。
+  cell SST はビット不変。**主病理解消**。
+- 2026-06-27: **クローズ**。node SST 修正群 (壁関数 τ_w `945a27f` + SST init freestream `f639ff2` + 入口ピン `537d80f`
+  + 境界 ghostless `9cc6475` + 境界半割面拡散 skip `af5b98d`) を全積みした現行バイナリで、同一メッシュ・同一 BC
+  (Ps1.90, wt=1, MUSCL, SST) の node/cell を再比較 (case36 README ★節 `run_cmp_{cell,node}_sst_bp1p90`):
+  **node ≈ cell に一致 (shock ~160 vs ~163mm, 差 ~3mm; 過去の cell142/node171=29mm 差から消滅)**、node Mmax も
+  **1.69→1.913** とコア加速回復、peak μt/μ も cell とほぼ同一 (92-94k)。**§3.2 で挙げた残 ~30mm overshoot も解消**。
+  SU2 中立 (132mm) との残差は残るが、**three-way とも `check_convergence` VERDICT=NOT CONVERGED (擬似衝撃波の
+  limit-cycle plateau)** で SU2 も含めクリーンに収束しておらず、準定常スナップショット同士の比較として許容範囲
+  (ユーザー判断: close)。τ_w 大きさ・代表点 ρ・y の精密化は本 fix の主目的 (node SST 壁関数バグ修正) 外であり、
+  必要が生じた時点で別計画として切り出す。本計画は完了。

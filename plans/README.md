@@ -33,7 +33,6 @@
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [gpu-implicit-plan.md](active/gpu-implicit-plan.md) | `time_integration` | GPU 陰解法化計画 |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
-| [turbulence-node-sst-wallfunction.md](active/turbulence-node-sst-wallfunction.md) | `turbulence` | node-centered SST 壁関数の代表点修正 (ic=壁ノード u=0 トラップ) |
 | [verification-passive-pseudoshock-control.md](active/verification-passive-pseudoshock-control.md) | `verification` | 多孔壁パッシブコントロールによる擬似衝撃波抑制の逆解析 (case/36) |
 
 ## accepted (現役の設計判断)
@@ -65,6 +64,7 @@
 | [time_integration-scalar-dplur-axisym-source.md](accepted/time_integration-scalar-dplur-axisym-source.md) | `time_integration` | scalar DPLUR の軸対称ソース Jacobian 整合 (TP 対応) |
 | [turbulence-enhanced-wall-treatment.md](accepted/turbulence-enhanced-wall-treatment.md) | `turbulence` | SST Enhanced (Automatic / y⁺ 非依存) Wall Treatment |
 | [turbulence-kato-launder.md](accepted/turbulence-kato-launder.md) | `その他 (turbulence)` | SST 生産項 Kato–Launder 補正 (`katoLaunder`) |
+| [turbulence-node-sst-wallfunction.md](accepted/turbulence-node-sst-wallfunction.md) | `turbulence` | node-centered SST 壁関数の代表点修正 + τ_w 付与 (ic=壁ノード u=0 トラップ) |
 | [turbulence-sst-freestream-init.md](accepted/turbulence-sst-freestream-init.md) | `turbulence` | SST 初期乱流の freestream 初期化 (kInit / omegaInit) |
 
 ## archived (superseded / 終了)
