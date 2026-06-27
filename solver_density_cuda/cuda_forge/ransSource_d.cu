@@ -240,7 +240,7 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["l_des"],
         (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
         (cfg.discretization == "node") ? 1 : 0,
-        (cfg.discretization == "node") ? var.c_d["roK_wf"] : nullptr);
+        (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? var.c_d["roK_wf"] : nullptr);
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchkKernelSync();

@@ -122,12 +122,14 @@ public:
     int scalarDiffusion = 1; // 0:advection-only 1:advection+diffusion
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (methods/turbulence §7.5)
-    int wallTreatmentSST = 0; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:0 (methods/turbulence §6.5)
+    int wallTreatmentSST = 1; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:1 (methods/turbulence §6.5)
+                              // 注: 既定を 0→1 に変更 (2026-06-28, user 指示)。cell 含む全ケースが automatic 壁関数に
+                              //     なるため、低Re 前提の検証 (case/26 Cf, flat-plate 回帰 等) は要再検証。
     // node-centered の第一内層ノードで k をハード Dirichlet (k=ω_w·μ_t,wall/ρ, SU2 SetTurbVars_WF 流) にする。
-    // 既定 0 (k は解く=prod-fix; x_R が cell/SU2 整合)。1 で near-wall k 蓄積=再付着 μ_t ピークを除去できるが、
-    // 非平衡再付着で u_τ→0 → k_wf→0 と乱流を抑えすぎ x_R が伸びる (case/18.backstep: 7.63→8.67)。
+    // 既定 1=ON (near-wall k 蓄積=再付着 μ_t ピークを除去)。0 で k を解く prod-fix (x_R がやや短め=cell/SU2 寄り)。
+    // 副作用: 非平衡再付着で u_τ→0 → k_wf→0 と乱流を抑え x_R が伸びる (case/18.backstep: 7.63→8.67)。
     // wallTreatmentSST==1 かつ node のときだけ有効。cell では無視。
-    int nodeKwfDirichlet = 0;
+    int nodeKwfDirichlet = 1;
     // SST 初期乱流 (IC に roK/roOmega が無いときの初期値)。既定 0 = 従来動作 (k=ω=0, ビット不変)。
     // ただし ω=0 は mu_t=k/ω が ill-posed で cold start から発散しやすい (特に node wt=1)。
     // 非 SST IC (層流場/メッシュ変換直後) から SST を始める場合は freestream 値 (例 inlet と同じ
@@ -163,10 +165,11 @@ public:
     // 0 で node 座標 (R=0) を使う。0 は軸ソース OFF と併用前提 (converter で消費)。
     int axisCentroidShift = 1;
 
-    // node-centered 壁 Dirichlet 試作 (0:既定 OFF)。1 で init u=0 + 運動量残差射影。
-    // 注: 残差射影は壁圧力寄与も落とすため不正 (検証で壁全域発散)。正解は弱形式半割面 flux (Phase 2,
-    // methods/discretization.md §7.2)。本フラグは切り分け用に残置、既定 OFF。
-    int nodeWallDirichlet = 0;
+    // node-centered 壁 no-slip Dirichlet (既定 1=ON)。1 で 壁ノード u=0 (init+運動量残差射影) +
+    // block-DPLUR の壁運動量3行 in-Jacobian decouple (SU2 DeleteValsRowi 相当, plan
+    // discretization-node-wall-implicit-dirichlet)。これが無いと壁速度が再循環域でドリフトする。
+    // 非 node (cell) / explicit では no-op。0 で旧挙動 (弱形式半割面のみ)。
+    int nodeWallDirichlet = 1;
 
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ)。node-centered の median-dual 近壁で
     // Green-Gauss 面勾配が checkerboard を持ち粘性 BL を振動させるための対策 (over-relaxed 法線項は別途維持)。

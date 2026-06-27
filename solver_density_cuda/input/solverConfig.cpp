@@ -316,13 +316,13 @@ void solverConfig::read(std::string fname)
         }
 
         // SST 壁処理 (methods/turbulence §6.5): 0=low-Re 壁解像 (60ν/β₁y², 既定), 1=automatic (y⁺ 非依存)
-        this->wallTreatmentSST = getOptionalValidatedValue<int>(turb, "wallTreatmentSST", 0, "turbulence");
+        this->wallTreatmentSST = getOptionalValidatedValue<int>(turb, "wallTreatmentSST", 1, "turbulence"); // 既定 1 (automatic)
 
         if (this->wallTreatmentSST < 0 || this->wallTreatmentSST > 1) {
             throw std::runtime_error("Key 'wallTreatmentSST' in 'turbulence' must be 0 or 1.");
         }
 
-        this->nodeKwfDirichlet = getOptionalValidatedValue<int>(turb, "nodeKwfDirichlet", 0, "turbulence");
+        this->nodeKwfDirichlet = getOptionalValidatedValue<int>(turb, "nodeKwfDirichlet", 1, "turbulence"); // 既定 1 (node k Dirichlet)
         if (this->nodeKwfDirichlet < 0 || this->nodeKwfDirichlet > 1) {
             throw std::runtime_error("Key 'nodeKwfDirichlet' in 'turbulence' must be 0 or 1.");
         }

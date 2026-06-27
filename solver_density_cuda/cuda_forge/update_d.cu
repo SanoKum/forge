@@ -328,7 +328,9 @@ void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         cfg.unsteadyDiagCoef,
         (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
         (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0,
-        (cfg.discretization == "node") ? var.c_d["roK_wf"] : nullptr
+        // k Dirichlet は wallTreatmentSST==1 && nodeKwfDirichlet==1 の node のみ。それ以外は nullptr で無効化
+        // (roK_wf が init されない経路で誤発火しないよう堅牢化)。
+        (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? var.c_d["roK_wf"] : nullptr
     );
 
     gpuErrchk( cudaPeekAtLastError() );

@@ -278,8 +278,11 @@ $$
 
 automatic wall treatment は、粘性低層・バッファ層・対数層を **1 つの定式で滑らかに繋ぎ**、
 第一セルの y⁺ 位置に依存せず妥当な $\tau_w$, $\omega_w$ を与える (Menter, *automatic
-near-wall treatment*)。forge では opt-in (`wallTreatmentSST = 1`) とし、既定 `0` は §6.1 の
-wall-resolved 型を保つ。
+near-wall treatment*)。**`wallTreatmentSST` の既定は 1 (automatic)** (2026-06-28 に 0→1 へ変更, user 指示)。
+`0` で §6.1 の wall-resolved 型 ($60\nu/\beta_1 y^2$, $k_w=0$) に戻せる。**注**: 既定変更により y⁺~1 の
+wall-resolved 前提で検証していた cell ケース (`case/26` $C_f$, flat-plate 回帰 等) は automatic に切り替わるため
+要再検証。node-centered の Dirichlet 系既定もまとめて ON: `nodeWallDirichlet=1` (壁 no-slip Dirichlet, §6.5(e)・
+plan discretization-node-wall-implicit-dirichlet)、`nodeKwfDirichlet=1` (第一内層ノード $k$ Dirichlet, §6.5(e))。
 
 #### (a) 摩擦速度 $u_\tau$ — Reichardt 普遍速度則の逆解き
 
@@ -401,9 +404,9 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     $k_{wf}=\omega_w\,\mu_{t,wall}/\rho$ ($\mu_{t,wall}=\nu(1/g-1)$, $g=du^+/dy^+$) にハード Dirichlet し、上記
     再付着ピークを除去できる (`case/18.backstep` $\mu_t/\mu$ max 5800→890 = cell 990 並)。**ただし副作用**: 非平衡な
     再付着点では $u_\tau\to0$ で $k_{wf}\to0$ となり再付着乱流を抑えすぎ、$x_R$ が伸びる (7.63→8.67、cell 7.95/SU2 7.89
-    より長くなる)。場の清浄さ ($\mu_t$ ピーク除去) と $x_R$ 精度のトレードオフのため **既定 OFF** (既定は $k$ を解く
-    prod-fix で $x_R$ が cell/SU2 整合)。$\omega$ ピンは Dirichlet 化しても壁ノードのまま (第一内層へ移すと
-    凹コーナーで $\omega$ ピン値が race し崩壊するため不可)。
+    より長くなる)。場の清浄さ ($\mu_t$ ピーク除去) と $x_R$ 精度のトレードオフ。**既定 ON** (2026-06-28, user 指示;
+    `nodeKwfDirichlet=0` で $k$ を解く prod-fix に戻すと $x_R$ が cell/SU2 寄り)。$\omega$ ピンは Dirichlet 化しても
+    壁ノードのまま (第一内層へ移すと凹コーナーで $\omega$ ピン値が race し崩壊するため不可)。
 
 ## 7. 2D / 3D / 軸対称
 
