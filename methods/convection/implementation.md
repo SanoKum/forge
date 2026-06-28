@@ -120,8 +120,9 @@ limiter = (duc > 0.8) ? max(0.0, (1.0 - duc) * limiter) : limiter;
 
 #### 低マッハ前処理 (`lowMachPrecond`)
 
-`cfg.lowMachPrecond == 1` のとき、質量流束の圧力散逸スケール `c_hat` を**前処理音速** `c_prime`
-に置き換える (既定 `0` は従来挙動でビット不変)。共有ヘッダ
+`cfg.lowMachPrecond == 1`（フラックス散逸前処理）または `== 2`（RHS+LHS 完全前処理）のとき、質量流束の
+圧力散逸スケール `c_hat` を**前処理音速** `c_prime` に置き換える (既定 `0` は従来挙動でビット不変)。
+`== 3`（LHS のみの完全前処理）は RHS 散逸を触らず `c_hat` のまま (収束解は `0` とビット一致)。共有ヘッダ
 [`lowMachPrecond_d.cuh`](../../solver_density_cuda/cuda_forge/lowMachPrecond_d.cuh) の device 関数で
 
 ```cpp

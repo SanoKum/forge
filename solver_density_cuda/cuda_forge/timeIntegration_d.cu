@@ -903,7 +903,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 }
 
 // =============================================================================
-// Phase 4 (a): 完全 Γ⁻¹A 低マッハ前処理の block DPLUR (lowMachPrecond=2)。
+// Phase 4 (a): 完全 Γ⁻¹A 低マッハ前処理の block DPLUR (lowMachPrecond>=2; 2=RHS+LHS / 3=LHS-only)。
 // 既存 implicit_defect_correction_block_d (lowMachPrecond 0/1) とは別カーネルにし、
 // 0/1 経路のレジスタ・ビットを一切変えない。
 // 保存形は (Γ_c·V/Δτ' + A_c)ΔQ = -R で、**前処理は擬似時間項 Γ_c のみ**。フラックス A_c は
@@ -1211,8 +1211,11 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
             // レジスタ過多のため専用の小さい block サイズで起動（__launch_bounds__ と整合）。
             const int block_threads = BLOCK_DPLUR_THREADS;
             const int block_grid = (msh.nCells_all + block_threads - 1) / block_threads;
-            if (cfg.lowMachPrecond == 2) {
+            if (cfg.lowMachPrecond >= 2) {
               // Phase 4: 完全 Γ⁻¹A 前処理の倍精度カーネル (dt_local は前処理 Δτ' に拡大済)。
+              // lowMachPrecond==2: RHS 散逸 c' (Phase 1) + 本 LHS 前処理。
+              // lowMachPrecond==3: LHS 前処理のみ (RHS 散逸は c_hat で =0 と不変)。本カーネルは
+              //   擬似時間項 Γ_c のみ前処理しフラックス A_c は非前処理ゆえ、収束解は前処理なしと一致する。
               implicit_defect_correction_block_precond_d<<<block_grid , block_threads>>>(
                 loop, cfg.dt, var.c_d["dt_local"], cfg.implicitRelax, var.c_d["gamma"], cfg.precondEps,
                 msh.nCells_all, msh.nCells, var.c_d["volume"],

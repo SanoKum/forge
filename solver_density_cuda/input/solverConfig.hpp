@@ -79,7 +79,12 @@ public:
     // 注意: dt 適応 (dtControl==1) はこの間隔とは独立 (下記)。詳細:
     // plans/accepted/architecture-residual-monitor-async.md, architecture-perphase-profiling-hotspot.md。
     int monitorInterval = 1;
-    int lowMachPrecond = 0;        // 0: off (従来), 1: Weiss-Smith 低マッハ前処理 (フラックス散逸)
+    int lowMachPrecond = 0;        // Weiss-Smith 低マッハ前処理。0: off (従来・ビット不変),
+                                   // 1: フラックス散逸前処理のみ (RHS, c_hat→c'。収束解を低マッハ域で変更),
+                                   // 2: RHS(c' 散逸)+LHS 完全 Γ⁻¹A 前処理 (block-DPLUR 擬似時間項+setDT 拡大),
+                                   // 3: LHS 完全前処理のみ (RHS 散逸は c_hat のまま=lowMachPrecond 0 と
+                                   //    収束解ビット一致・保存性不変。純粋に収束加速だけを狙う LHS 操作)。
+                                   // 2/3 は timeIntegration==11 && blockDPLUR==1 必須。
     flow_float precondEps = 0.15;  // 低マッハ前処理の停留点フロア ε (Ur=min(c,max(|u|,ε·c)))。
                                    // ε 小ほど低マッハ振動を強く減衰するが ε≲0.1 は発散 (ε=0.05 で NaN)。
                                    // ε=0.15: M4 ノズルで limit-cycle 振幅 −32% (検証済), ε=0.3: −17%。

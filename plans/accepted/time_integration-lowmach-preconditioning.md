@@ -106,9 +106,20 @@ $\beta=1$ で $c'\!=\!c$, $\lambda'\!=\!U_n\pm c$ に厳密復帰。`__device__ 
 
 ### 4.4 config
 
-- `lowMachPrecond` (int, 既定 `0`): 0=従来、1=前処理 ON。`solverConfig.cpp`/`.hpp` に追加。
+- `lowMachPrecond` (int, 既定 `0`): 0=従来、1=フラックス散逸前処理 (RHS) のみ、
+  2=RHS(c' 散逸)+LHS 完全前処理、3=LHS 完全前処理のみ (RHS 散逸は `c_hat` のまま)。`solverConfig.cpp`/`.hpp` に追加。
 - `precondEps` (float, 既定例 `0.05`): 停留点フロア $\epsilon$。
 - whitelist 検証は SLAU2 同様に最小限 (未指定は既定値)。既定 0 のため既存ケースはビット不変。
+- 値域チェック (`0..3`) と、`2/3` が `timeIntegration==11 && blockDPLUR==1` を要する適用条件チェックを
+  `solverConfig.cpp` に追加 (`setDT` だけ効いて LHS 前処理が黙って抜ける事故を防ぐ)。
+
+#### lowMachPrecond=3 (LHS-only) の位置付け (§4.2 表との対応)
+
+§4.2 の切り分け表で、収束解を変えるのは①`SLAU_d` 散逸 `c_hat→c'` (RHS) のみで、②`setDT` ③LHS Γ_c
+前処理は**収束解に厳密不変** (収束加速のみ)。`lowMachPrecond=3` は②③だけを有効化し①を行わない構成で、
+**収束解は `lowMachPrecond=0` とビット一致 (保存性・解ともに不変)、純粋に低マッハ収束を加速する LHS 操作**。
+一方 `=2` は①②③すべてを行い、低マッハ域の解そのものも前処理音速基準に是正する。用途で使い分ける:
+解を変えずに収束だけ速めたいなら `=3`、低マッハの解精度 (自励振動フロア) も是正したいなら `=2`。
 
 ## 5. 実装ステップ
 
@@ -236,6 +247,24 @@ forge の保存変数パイプラインに侵襲的なため不採用。
 - [x] **任意の残課題3件** (§9 `2026-06-09`): β=1 ビット回帰 PASS、ε 最適化 (=2 は ε≈0.05 が最適)、2D 低速 `flat_plate` (M=0.2) 妥当性 PASS (=2 が壁法則/Cf を保存)
 
 ## 9. 変更ログ
+
+- `2026-06-29` — **`lowMachPrecond=3` (LHS-only) 追加** (user 要望: 「2 は RHS も触る、LHS だけの選択肢が欲しい」)。
+  既存 `=2` は ① `SLAU_d` 散逸 `c'` (RHS・解変更) ＋ ②③ LHS 完全前処理を**両方**行うため、解を変えずに
+  収束だけ加速したい用途が無かった。`=3` は ②③のみ (`convectiveFlux_slau` の `c'` 分岐を `==1||==2` に限定し
+  `=3` は `c_hat` 据え置き、block precond カーネル選択と `setDT` 拡大を `>=2` 化)。値域チェック (`0..3`) と
+  `>=2` 適用条件 (`timeIntegration==11 && blockDPLUR==1`) を追加。
+  - **検証** (`case/18.backstep`, cell, 同一 restart・同一 build, 10k step。`run_0100_cell_lmp0_ref` /
+    `run_0101_cell_lmp2_ref` / `run_0102_cell_lmp3_lhs`):
+    - **① RHS 不変**: step0 outer_begin で lmp3 の rms_ro=8.45e-4・roe=307.36 が lmp0 と一致 (差は cell
+      atomicAdd の総和順ノイズ ~1e-6 のみ、roe は bit 一致)。対して lmp2 は rms_ro 5.11e-3 (6×)・roe 1491 (5×)
+      と系統差 = `c'` が RHS を変える。
+    - **② 解 (市松) 不変**: 段差角下流 x≈2.2 縦列の P odd-even rms が lmp3=43.5 Pa ≈ lmp0=38.2 Pa (市松残存)
+      に対し lmp2=5.6 Pa (市松除去)。→ `=3` は収束解を lmp0 と同じ族に保つ (図
+      `case/18.backstep/run_0102_cell_lmp3_lhs/corner_oddeven_lmp0_lmp2_lmp3.png`)。
+    - **③ 収束加速は LHS 由来**: `check_convergence` VERDICT で lmp0=`NOT CONVERGED (plateau, rms_roUx 0.29 stall)`
+      に対し lmp3=lmp2=`NOT CONVERGED (still converging)` で rms_roUx≈0.088 までプラトー打破。NaN 無。
+    - 結論: **LHS 前処理=収束加速の道具 / RHS `c'`=市松 (解) 除去**という §4.2 表の切り分けを A/B で実証。
+      解を変えたくないが低マッハ収束を速めたい場合は `=3`、低マッハ解精度も是正したい場合は `=2`。
 
 - `2026-06-07` — 初稿 (計画)。docs 4 ファイル (convection/time_integration の theory/implementation)
   を先行更新。Phase 1 (フラックス散逸＋setDT、dual-time 独立) / Phase 2 (block DPLUR 固有値、

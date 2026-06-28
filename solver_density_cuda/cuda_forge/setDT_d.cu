@@ -194,7 +194,7 @@ __global__ void setDTlocal_uniform_cell_d
     }
 }
 
-// Phase 4 (lowMachPrecond==2): 擬似時間刻みを前処理スペクトル半径に合わせて拡大する。
+// Phase 4 (lowMachPrecond>=2): 擬似時間刻みを前処理スペクトル半径に合わせて拡大する。
 // 既存 dt_local は物理スペクトル半径 λ_phys=|u|+c 基準。前処理後の律速は
 // λ'=½(1+β)|u|+c' (低マッハで小) なので、dt_local ×= λ_phys/λ' で擬似 CFL を λ' 基準に合わせる。
 // ε フロアにより λ'≥ε·c 程度に下限が付き、倍率は ~1/ε で有界 (発散しない)。
@@ -315,8 +315,9 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         );
     }
 
-    // Phase 4: 完全前処理モードでは擬似時間刻みを前処理スペクトル半径基準に拡大する。
-    if (cfg.lowMachPrecond == 2) {
+    // Phase 4: 完全前処理モード (LHS) では擬似時間刻みを前処理スペクトル半径基準に拡大する。
+    // lowMachPrecond==2 (RHS+LHS) / ==3 (LHS のみ) の双方で擬似時間項は前処理されるため両方で適用する。
+    if (cfg.lowMachPrecond >= 2) {
         setDTlocal_precond_scale_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
             cfg.precondEps,
             msh.nCells,

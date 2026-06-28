@@ -262,7 +262,14 @@ void solverConfig::read(std::string fname)
         this->monitorInterval = getOptionalValidatedValue<int>(deltaT, "monitorInterval", 1, "time.deltaT");
         if (this->monitorInterval < 1) this->monitorInterval = 1;
         // 低マッハ前処理 (Weiss-Smith): 既定 0 で従来挙動 (ビット不変)。
+        // 0: off / 1: フラックス散逸前処理のみ (RHS, c') / 2: RHS(c')+LHS 完全前処理 /
+        // 3: LHS 完全前処理のみ (RHS 散逸は c_hat のまま=収束解は 0 と一致・保存性不変)。
         this->lowMachPrecond = getOptionalValidatedValue<int>(deltaT, "lowMachPrecond", 0, "time.deltaT");
+        if (this->lowMachPrecond < 0 || this->lowMachPrecond > 3) {
+            throw std::runtime_error(
+                "lowMachPrecond must be 0 (off), 1 (flux dissipation only), "
+                "2 (RHS+LHS full precond), or 3 (LHS-only full precond).");
+        }
         this->precondEps = getOptionalValidatedValue<double>(deltaT, "precondEps", 0.15, "time.deltaT");
         // Thornber 型低マッハ再構成補正: 既定 0 で従来挙動 (ビット不変)。lowMachPrecond と直交・併用可。
         this->lowMachThornber = getOptionalValidatedValue<int>(deltaT, "lowMachThornber", 0, "time.deltaT");
@@ -524,6 +531,18 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
 
     }
 
+    // 低マッハ完全前処理 (lowMachPrecond>=2: 2=RHS+LHS / 3=LHS-only) は block-DPLUR 陰解法
+    // (timeIntegration==11 && blockDPLUR==1) でのみ LHS 前処理カーネルが起動する。これ以外の経路では
+    // setDT の擬似時間刻み拡大だけが効いて LHS 前処理が黙って抜け落ちる事故になるため明示エラーで停止する。
+    // (lowMachPrecond==1 はフラックス散逸のみなので経路非依存・本チェック対象外。)
+    if (this->lowMachPrecond >= 2) {
+        if (timeIntegration != 11 || this->blockDPLUR != 1) {
+            throw std::runtime_error(
+                "lowMachPrecond>=2 (full preconditioned block DPLUR: 2=RHS+LHS, 3=LHS-only) "
+                "requires timeIntegration==11 (implicit) and blockDPLUR==1.");
+        }
+    }
+
     // implicitSolvePrecision (block-DPLUR 線形 solve の double 化) のサポート範囲チェック。
     // 未対応の組み合わせはフラグが黙って無視され「効いていない」事故になるため、明示エラーで停止する。
     // 実装済みは block 経路 (blockDPLUR==1) かつ非 precond (lowMachPrecond 0/1) の implicit (timeIntegration==11) のみ。
@@ -543,10 +562,10 @@ void solverConfig::initTimeIntegrationScheme(int timeIntegration){
                 "implicitSolvePrecision==1 (double solve) is only supported with blockDPLUR==1 "
                 "(5x5 block DPLUR); scalar-diagonal DPLUR (blockDPLUR==0) is not supported.");
         }
-        if (this->lowMachPrecond == 2) {
+        if (this->lowMachPrecond >= 2) {
             throw std::runtime_error(
-                "implicitSolvePrecision==1 (double solve) is not supported with lowMachPrecond==2 "
-                "(full preconditioned block DPLUR). Use lowMachPrecond 0 or 1.");
+                "implicitSolvePrecision==1 (double solve) is not supported with lowMachPrecond>=2 "
+                "(preconditioned block DPLUR: 2=RHS+LHS, 3=LHS-only). Use lowMachPrecond 0 or 1.");
         }
     }
 

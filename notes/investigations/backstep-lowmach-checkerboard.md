@@ -106,6 +106,7 @@ SLAU の質量流束の圧力散逸項 `χ/c_hat·ΔP` が音速 `c_hat` でス�
 | `run_0073` | `lowMachPrecond=1` cfl1 | **DIVERGED (NaN)**。step0 rms_ro 5e-3 に跳ね倍々成長 |
 | `run_0075` | `lowMachPrecond=1` cfl0.3 | NaN回避だが高残差停滞 (rms_roUx 0.41)。P odd-even 21 Pa |
 | `run_0076`/`run_0077`/`run_0079` | **`lowMachPrecond=2` cfl1** (`run_0079`=完全収束 200k 相当) | **NaN無・全残差 falling**。P odd-even **18.4 Pa (−76%)**、rms_roUx **0.29→5.5e-4**・roOmega **1.13→8.9e-4**、quasisteady STEADY |
+| `run_0100`/`run_0101`/`run_0102` | **`lowMachPrecond` 0/2/3 A/B** (同一 build・同一 restart, 10k)。`=3`=LHS のみの完全前処理 (RHS `c'` を行わない新モード) | **機能分離を実証**: ① step0 RHS lmp3=lmp0 (rms_ro 8.45e-4・roe 307.36 bit一致、atomicAdd~1e-6 のみ) vs lmp2 6×/5× 差。② **P odd-even lmp3 43.5 Pa≈lmp0 38.2 (市松残存=解不変)** vs lmp2 5.6 Pa (除去)。③ 収束は lmp0 plateau(roUx0.29) を lmp3=lmp2 ともに打破(roUx0.088)。→ **LHS=収束加速 / RHS `c'`=市松除去**。NaN無 |
 
 `run_0077` (cell lmp2 50k) の角部 P 分布は baseline の ±50 Pa 鋸歯が ±10 Pa 級の小波へ平滑化 (ρ も同様、Ux 不変)。
 図: [`run_0077.../corner_oddeven_lmp2_vs_baseline.png`](../../case/18.backstep/run_0077_cell_lmp2_long/corner_oddeven_lmp2_vs_baseline.png)。

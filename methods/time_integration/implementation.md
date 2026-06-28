@@ -202,7 +202,7 @@ valid な FVS で defect-correction の定常解は不変)。
 (幾何是正後は通常 `0` で良い)。RTX 3060 では FP64=FP32 の 1/32 ゆえ ~×2.8 遅い。
 切り分け・速度の詳細は [`.github/plans/precision-mixed-axisym.md`](../../plans/archived/precision-mixed-axisym.md)
 と [`.github/plans/architecture-axisym-axis-singularity.md`](../../plans/accepted/architecture-axisym-axis-singularity.md)。
-現状 `blockDPLUR=1`・`lowMachPrecond` 0/1 経路のみ対応 (precond=2 / scalar 版は float のまま)。
+現状 `blockDPLUR=1`・`lowMachPrecond` 0/1 経路のみ対応 (precond>=2 / scalar 版は float のまま)。
 
 **低マッハ前処理 (LHS 固有値) は不採用** (2026-06 検証・実装後 revert)。`build_jacobian_split` の
 固有値 `lambda[5]={U+c,U,U,U,U-c}` を前処理固有値 `U±c'` に差し替える案を実装・検証したが、
@@ -244,10 +244,17 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
   NaN 無, 同一収束域)。ただし **TP precond=2 の収束を正で示す低マッハ TP ケースが無く** (超音速 wys は CPG でも precond=2 発散)、
   TP の end-to-end 検証は未。**TP は標準経路 (precond=0/1) が検証済・推奨**。
 
-### `implicit_defect_correction_block_precond_d`（Phase 4: 完全 $\Gamma^{-1}A$ 前処理・`lowMachPrecond=2`）
+### `implicit_defect_correction_block_precond_d`（Phase 4: 完全 $\Gamma^{-1}A$ 前処理・`lowMachPrecond>=2`）
 
-上の LHS 固有値前処理 (不採用) と異なり、**前処理を一貫させた別カーネル**。`blockDPLUR==1 && lowMachPrecond==2`
+上の LHS 固有値前処理 (不採用) と異なり、**前処理を一貫させた別カーネル**。`blockDPLUR==1 && lowMachPrecond>=2`
 のとき wrapper がこちらを起動する (既存 `implicit_defect_correction_block_d` は 0/1 専用・ビット/レジスタ不変)。
+
+- **`lowMachPrecond=2`**: RHS のフラックス散逸も `c'` に是正 (`SLAU_d`) しつつ本 LHS 前処理を併用 → 低マッハ域の
+  **収束解そのものを変える** (自励振動フロアの根治)。
+- **`lowMachPrecond=3` (LHS-only)**: 本 LHS 前処理だけを行い RHS 散逸は `c_hat` のまま (`SLAU_d` 側で `==1||==2`
+  のみ `c'` を使う)。本カーネルは保存形 $(\Gamma_c V/\Delta\tau' + A_c)\Delta Q=-R$ で**前処理は時間項のみ・$A_c$ と
+  $R$ は非前処理**なので、**収束解は `lowMachPrecond=0` とビット一致 (保存性・解ともに不変)**。純粋に低マッハ
+  剛性を除去して収束を加速する LHS 操作として使う。`setDT` の $\Delta\tau'$ 拡大も `>=2` で両モード共通に効く。
 
 - **Sherman-Morrison 解法 (FP64 回避・高速)**: $\Gamma_c=I+\alpha g r^\top$ がランク 1 ゆえ対角ブロックは
   $D=D_0+\gamma g r^\top$ ($D_0$=V/Δτ'·I+物理 FVS+粘性+軸対称=既存 block と同形・良条件、$\gamma=(V/\Delta\tau')\alpha$)。
@@ -261,8 +268,8 @@ LHS は従来の $A^\pm$（物理音速 `sonic`）のまま。低マッハ前処
   ([`theory.md`](theory.md) 参照)。収束は $(\Delta\tau'/V)\Gamma_c^{-1}A_c$ の固有値 $\lambda'$ で一様に前処理される。
   ※当初フラックスも $\hat A_\Gamma=\Gamma_c^{-1}A_c$ のスペクトル半径分割で前処理したが、別系で過散逸ゆえ撤回 (上記が正)。
 - **その他**: 粘性スペクトル半径・軸対称ソースヤコビアン・dual-time 物理 BDF 項 (非前処理) も倍精度で踏襲。
-- **`SLAU_d`** は `lowMachPrecond>=1` で `c'` 散逸を使う (==2 も散逸是正を併用)。$\beta=1$ で $\Gamma_c=I$・$\Delta\tau'=\Delta\tau$・
-  フラックス同一ゆえ現行カーネルと同一組み立て (倍精度の丸め差 ~1e-7、解一致)。
+- **`SLAU_d`** は `lowMachPrecond==1||==2` で `c'` 散逸を使う (==2 は散逸是正を併用、==3 は RHS 散逸を触らず `c_hat`)。
+  $\beta=1$ で $\Gamma_c=I$・$\Delta\tau'=\Delta\tau$・フラックス同一ゆえ現行カーネルと同一組み立て (倍精度の丸め差 ~1e-7、解一致)。
 
 > **検証結果 (2026-06-09・採用)**: `case/23.axi_nozzle` で**低マッハ自励振動を根治**。Phase1 (物理 LHS) が発散した
 > $\epsilon=0.05$ を前処理 LHS が安定化し、chamber 圧振幅 (M<0.08, 4k–20k) を 0.882%→**0.087% (定常収束・振動消滅)**。
