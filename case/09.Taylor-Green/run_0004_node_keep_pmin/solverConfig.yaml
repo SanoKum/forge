@@ -1,0 +1,52 @@
+mesh:
+  meshFormat: "hdf5"
+  meshFileName: "Taylor-Green.h5"
+  valueFileName: "Taylor-Green.h5"
+  discretization: "node"   # node-centered median-dual FVM
+
+gpu: 1 # 0:off , 1:on
+
+solver: "KEEP"   # flux スキーム = KEEP (convMethod は無関係)
+
+physProp:
+  isCompressible: 1   # 0:incomp, 1:compressible
+  thermalMethod: 0    # 0: calorically perfect
+  viscMethod: 0       # 0: 定数粘性 (= visc を使用)
+  ro: 1.4             # ignored for compressible
+  visc: 0.0025        # [Pa*s] 定数粘性
+  thermCond: 0.0241   # [W/(mK)]
+  cp: 0.4
+  gamma: 1.4
+  pMin: 1.0e-6   # 圧力フロア (無次元 TGV: P~0.7)
+  roMin: 1.0e-6
+  tMin: 1.0e-6
+
+time:
+  unsteady: 1   # 時間精度 (uniform global dt)
+  dualTime: 0
+  last:
+    control: 0          # 0:nStep , 1:time base
+    nStepOuter: 2000
+    time: 1.00
+  deltaT:
+    control: 0          # 0:use dt , 1:use cfl
+    dt: 0.007
+    cfl: 0.1
+    cfl_pseudo: 0.5
+    dt_min: 0.00000001
+    dt_max: 1.0
+    detectNaN: 1
+  outStepStart: 0
+  outStepInterval: 200
+  timeIntegration: 4    # 4: 4th-order Runge-Kutta explicit
+
+space:
+  convMethod: 3   # 3: KEEP
+  keepDissipation: 0   # 純粋 KEEP (Roe 散逸無し・非散逸中心流束のみ)
+  limiter: 0      # KEEP は無リミタ
+
+turbulence:
+  LESorRANS: 0    # 乱流モデル無し
+  LESmodel: 0
+
+initial: "Taylor-Green"

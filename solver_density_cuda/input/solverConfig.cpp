@@ -383,6 +383,12 @@ void solverConfig::read(std::string fname)
         //double gamma = getValidatedValue<double>(physProp, "gamma", "physProp");
         this->gamma = getValidatedValue<double>(physProp, "gamma", "physProp");
 
+        // EOS 正値化フロア (任意)。未指定なら従来ハードコード値 (pMin=1.0, roMin=1e-4, tMin=1e-4)。
+        // 無次元・低圧ケースでは小さくしてフロアによる場の破壊を防ぐ。
+        this->pMin  = getOptionalValidatedValue<double>(physProp, "pMin",  1.0,    "physProp");
+        this->roMin = getOptionalValidatedValue<double>(physProp, "roMin", 1.0e-4, "physProp");
+        this->tMin  = getOptionalValidatedValue<double>(physProp, "tMin",  1.0e-4, "physProp");
+
         // 多成分 thermally-perfect gas 設定 (任意, thermalMethod==2 で使用)
         if (physProp["species"]) {
             this->speciesNames.clear();

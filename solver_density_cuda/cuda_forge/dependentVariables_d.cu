@@ -14,6 +14,9 @@ __global__ void dependentVariables_d
  int thermalMethod ,
  flow_float gamma , flow_float cp ,
 
+ // EOS 正値化フロア (config 化。既定: pMin=1.0, roMin=1e-4, tMin=1e-4)
+ flow_float pMin , flow_float roMin , flow_float tMin ,
+
  // thermally-perfect (thermalMethod==2) 用化学種データ
  const SpeciesThermo* sp , int nSpecies , flow_float** roY ,
 
@@ -60,10 +63,9 @@ __global__ void dependentVariables_d
 
     if (ic < nCells_all) {
         // 密度・圧力フロア: 膨張領域で非物理的な ro→0, P→0 が生じても速度爆発を防ぐ。
-        // 1e-6f は実質ゼロと同じ（大気圧比 1e-11）なので物理的に意味のある値にする。
-        // ro_min = 1e-4 kg/m³ (大気密度の 1/12000)
-        // P_min  = 1.0 Pa    (大気圧の 1/100000)
-        ro_temp = max(ro[ic], (flow_float)1.0e-4f);
+        // 既定 ro_min=1e-4 kg/m³, P_min=1.0 Pa は大気スケール想定。無次元・低圧ケースでは
+        // config (physProp.pMin/roMin/tMin) で下げる (既定値は従来ハードコードと同一)。
+        ro_temp = max(ro[ic], roMin);
 
         Ux[ic] = roUx[ic]/ro_temp;
         Uy[ic] = roUy[ic]/ro_temp;
@@ -141,7 +143,7 @@ __global__ void dependentVariables_d
                 oneMg = 1.0 - g_liq;
                 Pnew  = (double)ro_temp * oneMg * Rmix * Tnew;
             }
-            if (Pnew < 1.0) Pnew = 1.0;
+            if (Pnew < (double)pMin) Pnew = (double)pMin;
 
             T[ic]         = (flow_float)Tnew;
             P[ic]         = (flow_float)Pnew;
@@ -173,14 +175,14 @@ __global__ void dependentVariables_d
             if (g_liq > 1.0e-12) {
                 // 二相: e = cv T - g L(T) = intE を Newton で反転、p=(1-g)ρRT。
                 const double e_in = (double)intE;
-                const double Tguess = (double)max(intE/(cp/gamma), (flow_float)1.0e-4f);
+                const double Tguess = (double)max(intE/(cp/gamma), tMin);
                 const CondSpeciesProps cpropsCpg = (condModel == 1) ? condProps_H2O() : condProps_N2();
                 const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Rgas, Tguess, cpropsCpg);
                 const double L = cond_latent(cpropsCpg, Tn);
                 const double e_mix = (cv + g_liq*Rgas)*Tn - g_liq*L;   // = e_in
                 const double oneMg = 1.0 - g_liq;
                 double Pn = oneMg*(double)ro_temp*Rgas*Tn;
-                if (Pn < 1.0) Pn = 1.0;
+                if (Pn < (double)pMin) Pn = (double)pMin;
 
                 T[ic]   = (flow_float)Tn;
                 P[ic]   = (flow_float)Pn;
@@ -190,9 +192,9 @@ __global__ void dependentVariables_d
                 sonic[ic] = (flow_float)sqrt((double)gamma*Rgas*Tn); // 気相 frozen 音速 (loose coupling)
                 Rmix_array[ic] = (flow_float)Rgas;
             } else {
-                // 単相 CPG (従来経路, ビット不変)
-                T_temp = max(intE/(cp/gamma), (flow_float)1.0e-4f);
-                P_temp = max((gamma-1.0)*(roe[ic]-ro_temp*ek),(flow_float)1.0f);
+                // 単相 CPG (従来経路, フロア未指定ならビット不変)
+                T_temp = max(intE/(cp/gamma), tMin);
+                P_temp = max((gamma-1.0)*(roe[ic]-ro_temp*ek), pMin);
 
                 T[ic] = T_temp;
                 P[ic] = P_temp;
@@ -220,6 +222,9 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         // gas properties
         cfg.thermalMethod ,
         cfg.gamma , cfg.cp ,
+
+        // EOS 正値化フロア (config 化)
+        cfg.pMin , cfg.roMin , cfg.tMin ,
 
         // thermally-perfect 用化学種データ。多成分 (M2, nSpecies>=2) では device roY 配列を渡し、
         // 単成分のときは nullptr (混合則は Y={1} に縮退)。

@@ -187,6 +187,14 @@ $$ \mathbf{q} = -k\,\nabla T + \sum_i h_i(T)\,\mathbf{J}_i. $$
 
 物性更新 `gasProperties_d.cu` は `thermalMethod==0` のときだけ `gamma/cp` を定数で埋める。`thermalMethod==2` では `dependentVariables` が毎ステップ `gamma/cp` を設定するため触らない (粘性は viscMethod に従う。kinetic theory は M3)。
 
+#### EOS 正値化フロア (config 化)
+
+`dependentVariables_d` は膨張領域での非物理的な $\rho\to0,\,P\to0$ による速度爆発を防ぐため、密度・圧力・温度に下限フロアを適用する (全 EOS 経路: 単相 CPG / 二相 CPG / TP gas)。フロア値は `physProp.{pMin,roMin,tMin}` で指定でき、既定は従来ハードコード値 (`pMin=1.0` Pa, `roMin=1e-4` kg/m³, `tMin=1e-4` K) と同一のため**未指定なら従来挙動 (ビット不変)**。
+
+- 注意: 既定 `pMin=1.0` Pa は大気スケール想定であり、**無次元・低圧ケースでは場を破壊する**。例えば Taylor-Green は $P_0=1/\gamma\approx0.714$ Pa で圧力場全体が $1.0$ Pa 未満のため、既定フロアが初期場を $P\equiv1.0$ にクランプし保存量も崩れる。ケースの圧力/密度スケールに合わせ `pMin` を下げる (例 `1e-6`)。
+- フロア適用後、単相 CPG 経路は `roe = P_temp/(γ-1) + ρ·ek` で保存量 `roe` をフロア後の `P,ρ` と整合再構成するため、フロアが発火するセルでは `roe` (=全エネルギー) が改変される点に注意。
+- 設計判断は [`plans/accepted/thermophysics-eos-positivity-floor-config.md`](../plans/accepted/thermophysics-eos-positivity-floor-config.md)。
+
 ### 3. 対流流束の TP 整合 `cuda_forge/convectiveFlux_d.cu`
 
 `SLAU_d` / `ROE_d` に `int thermalMethod, const SpeciesThermo* sp, int nSpecies` を追加。ラッパーから `cfg.thermalMethod, thermo_species_device_ptr(), cfg.nSpecies` を渡す。

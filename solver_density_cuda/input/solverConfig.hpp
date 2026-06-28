@@ -202,6 +202,14 @@ public:
     flow_float cp;
     flow_float gamma;
 
+    // EOS 正値化フロア (dependentVariables で適用)。膨張領域の ro→0,P→0 による速度爆発を防ぐ
+    // 安全弁だが、無次元・低圧ケース (例: Taylor-Green は P0=1/γ≈0.71 Pa) では既定 1.0 Pa が
+    // 場全体をクランプして解を破壊する。ケースの圧力/密度スケールに合わせ下げられるよう config 化。
+    // 既定値は従来ハードコード値と同一なので未指定なら従来挙動 (ビット不変)。
+    flow_float pMin  = 1.0;     // 圧力フロア [Pa]
+    flow_float roMin = 1.0e-4;  // 密度フロア [kg/m³]
+    flow_float tMin  = 1.0e-4;  // 温度フロア [K]
+
     // 多成分 thermally-perfect gas (thermalMethod==2)。calorically-perfect 経路では未使用。
     int nSpecies = 1;                          // 化学種数 (既定 1 = 単成分)
     std::vector<std::string> speciesNames;     // 混合を構成する化学種名。順序が index s を定義
