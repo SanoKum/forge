@@ -126,3 +126,10 @@
 > (既定0 は半割面弱形式のみで壁ノード DOF がドリフト、再循環域で負速度)。run_0056(Dir=0) の「x_R=9.59 壁バンド法」は
 > この負ドリフトを拾った**測定アーティファクト**で、第一内層法では 6.71。壁関数 (`ransWallFunction_d.cu`) は速度を読むだけで
 > Ux を書かないので壁すべりは作らない。SU2 cfg は [`run_0058_su2_sst/case.cfg`](run_0058_su2_sst/case.cfg)。
+
+## 3D node ILES (非定常・MUSCL のみ・乱流モデルなし)
+
+`run_node3d_iles_unsteady`: 3D spanwise periodic backstep を **node + MUSCL(convMethod2)+ 乱流モデルなし(LESorRANS=0)+ 分子粘性(visc0.001, Re_H~40000)+ 非定常 explicit RK3** で計算 (ILES: MUSCL の数値散逸が SGS 代替)。2D 収束場を spanwise 複製 + 剪断層に Uz±3 摂動で seed。
+- **node 低マッハ非定常 explicit が安定動作** (従来「node 低マッハ explicit は発散」だったが、ILES 設定=MUSCL 散逸+発達場 restart で安定)。場健全 (ro 1.18..1.20, P/T 物理的, NaN なし)。
+- **解像乱流が発達**: 摂動は最初 2000step (t0.08s=flow-through 14%) では減衰したが、**長く回す (40000step, t1.74s≈2.9 flow-through) と剪断層 KH 不安定から 3D 遷移→乱流再付着が発達** (rms_roUz 0.05→0.53 持続, |Uz|平均1.66, spanwise 渦構造・乱流エディが明瞭)。図 `iles_turbulent.png` (Ux/Uz/変動強度)。
+- **教訓**: LES は数 flow-through 回さないと発達しない (14% で止めると未発達=減衰に見える)。
