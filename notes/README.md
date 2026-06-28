@@ -10,6 +10,7 @@
 
 | ノート | area | 概要 |
 | --- | --- | --- |
+| [convection-central-scheme-oscillation-control.md](investigations/convection-central-scheme-oscillation-control.md) | `convection` | LES/DES における中心差分 (KEEP) のスプリアス振動抑制 技術調査 (振動源4分類の統括) |
 | [convection-pep-scheme-survey.md](investigations/convection-pep-scheme-survey.md) | `convection` | PEP (Pressure-Equilibrium-Preserving) 系スキーム技術調査と forge 実装方針 |
 | [nozzle-optimization-tool-survey.md](investigations/nozzle-optimization-tool-survey.md) | `—` | 超音速・極超音速ノズル最適化ツール — 技術動向調査と開発フロー提案 |
 | [su2-nemo-contact-thermo-investigation.md](investigations/su2-nemo-contact-thermo-investigation.md) | `convection / thermophysics` | SU2-NEMO contact/interface thermo 取り扱い調査 (forge mixed-order face-state 比較) |

@@ -15,6 +15,7 @@
   - [`turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) — 本調査の直接の動機（§4.8 低散逸 flux 設計を本調査で再評価・改訂）
   - [`turbulence-des-wmles-survey.md`](turbulence-des-wmles-survey.md) — DES/WMLES 手法選定サーベイ（SBLI は IDDES-SST+WENO が主流）
   - [`convection-pep-scheme-survey.md`](convection-pep-scheme-survey.md) — KEEP/PEP 系中心スキーム調査（中心枝の保存性側）
+  - [`convection-central-scheme-oscillation-control.md`](convection-central-scheme-oscillation-control.md) — 中心差分の振動抑制の統括（本サーベイは「振動源 #3 衝撃 + RANS↔LES ブレンド」側を担当）
 - **created**: `2026-06-22`
 - **owner**: `CFD Dev`
 - **調査実施**: deep-research ワークフロー（98 エージェント, 16 ソース取得, 25 クレーム検証: 24 確認 / 1 棄却）

@@ -9,12 +9,13 @@
 - **related_docs**:
   - [`methods/convection/theory.md`](../../methods/convection/theory.md)
   - [`methods/convection/implementation.md`](../../methods/convection/implementation.md)
-  - [`methods/thermophysics/theory.md`](../../methods/thermophysics/theory.md)
+  - [`methods/thermophysics.md`](../../methods/thermophysics.md#理論)
 - **related_plans**:
   - [`convection-multispecies-contact-pressure.md`](../../plans/active/convection-multispecies-contact-pressure.md) — 多成分 TP 接触面 limit-cycle の 1D ゲート切り分け (本調査の直接の動機)
   - [`su2-nemo-contact-thermo-investigation.md`](su2-nemo-contact-thermo-investigation.md) — SU2-NEMO の contact 処理棚卸し (double-flux/PEP 補正は SU2 にも無いと確認済み)
   - [`time_integration-general-eos-jacobian.md`](../../plans/accepted/time_integration-general-eos-jacobian.md) — 一般 EOS 固有系 Jacobian (PEP の陰解法側で再利用)
   - [`thermophysics-multicomponent-tpgas.md`](../../plans/accepted/thermophysics-multicomponent-tpgas.md) — NASA-9 TP gas 基盤 (face 内部エネルギー補正の素材)
+  - [`convection-central-scheme-oscillation-control.md`](convection-central-scheme-oscillation-control.md) — 中心差分の振動抑制の統括 (本サーベイは「振動源 #1 のうち接触面圧力平衡 PEP」側を担当; PEP は線形安定を治さない点に注意)
 - **created**: `2026-06-20`
 - **owner**: (未定)
 
