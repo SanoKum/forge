@@ -347,3 +347,11 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   (2) **3D periodic x_R 5.16 == 2D 同コード x_R 5.18 (run_0062) に 0.4% 一致**。
   → **Cartesian periodic (NS+RANS, 陽・陰) が実 RANS ケースで完全検証完了**。残: §4.5.8 回転、sod 3D、x_R の完全 settle と
   wall_y_eff 修正の SST 較正影響 (旧 7.6→5.18、exp 6.26 との比較は別軸の SST 課題)。
+- `2026-06-28` — **sod 3D 検証 (検証ケース 3): periodic setup は健全、node explicit は shock 不安定で未走**。
+  2D/1D sod を 3D box (200×8×8 hex, transverse y,z periodic) に押出し node periodic で検証 (`case/05` run_node3d_periodic_sod)。
+  **cell periodic は完走** (ro 0.125..1.0 正常・x=0.6 で ro std=0=完全 spanwise 均一, run_sod3d_cell_ref) → periodic setup・
+  メッシュ・幾何 gather は正しい。**node explicit は step16-24 で発散** だが slip/z-only/yz periodic 全て同 step16-18 発散
+  (cell は完走) → periodic 非依存の **node-explicit-shock 一般不安定** (TG/backstep/entropy wave と同類)。user 指摘の
+  「multi-way overlap での多重加算」は **無し** (free-stream 3 方向 periodic=8-way コーナーが機械ゼロ=幾何 gather 厳密)。
+  4-way エッジの微小異常 (Ux 7e-7=内部の10倍) は float closure 誤差の蓄積 (8 半割面相殺の項数増) で論理バグでない。
+  → node sod は implicit dual-time 等の安定化が要 (node-explicit-shock 限界、periodic とは別軸)。
