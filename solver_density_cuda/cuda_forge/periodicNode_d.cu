@@ -68,6 +68,43 @@ void periodicNodeGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     gpuErrchkKernelSync();
 }
 
+// 単一配列版 gather/broadcast (勾配など可変本数の配列用)。
+__global__ void periodicGather1ToRoot_d(geom_int nCells, geom_int* root, flow_float* a)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) { const geom_int r = root[ic]; if (r != ic) atomicAdd(&a[r], a[ic]); }
+}
+__global__ void periodicBroadcast1FromRoot_d(geom_int nCells, geom_int* root, flow_float* a)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) { const geom_int r = root[ic]; if (r != ic) a[ic] = a[r]; }
+}
+
+// 勾配の periodic gather (§4.5 拡張)。Green-Gauss 勾配 ∇φ[ic]=(1/V[ic])Σφ_f·S_f は、合併体積
+// (buildPeriodicNodeGroups で V[master]=V[slave]=V合併) のおかげで ∇φ_master+∇φ_slave=(1/V合併)Σ_両側 =
+// 真の合併勾配になる。よって残差と同じ「和→broadcast」で boundary periodic node の片側勾配を厳密合併に直す。
+// 前提: calcGradient_b_d で periodic 半割面を除外し勾配=内部のみにしておくこと (calcGradient_d.cu)。
+// 非軸対称限定 (grad_volume=volume)。軸対称 (A_planar) は §4.5.8 回転で別途。cell/非周期では no-op。
+void periodicGradientGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.discretization != "node" || msh.periodicRoot_d == nullptr || msh.nPeriodicMembers == 0) return;
+    if (cfg.isAxisymmetric == 1) return; // 軸対称は grad_volume=A_planar で sum-trick が成り立たない (回転周期は §4.5.8)
+
+    const char* keys[] = {
+        "dUxdx","dUxdy","dUxdz", "dUydx","dUydy","dUydz", "dUzdx","dUzdy","dUzdz",
+        "drodx","drody","drodz", "dPdx","dPdy","dPdz", "dTdx","dTdy","dTdz", "divU"
+    };
+    for (const char* k : keys) {
+        auto it = var.c_d.find(k);
+        if (it == var.c_d.end() || it->second == nullptr) continue;
+        flow_float* a = it->second;
+        periodicGather1ToRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(msh.nCells, msh.periodicRoot_d, a);
+        gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+        periodicBroadcast1FromRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(msh.nCells, msh.periodicRoot_d, a);
+        gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    }
+}
+
 // block-DPLUR sweep 後の dq ミラー (§4.5.7)。root の補正 dq を member へ broadcast し、
 // 周期同一視ノードの dq drift (多値化→発散) を防ぐ。periodicBroadcastFromRoot_d を dq buffer に流用。
 void periodicMirrorDq_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)

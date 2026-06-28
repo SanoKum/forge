@@ -931,6 +931,9 @@ void assembleResidual(StepContext& s, int stage_index)
             (s.cfg.discretization == "node" && s.cfg.viscMethod != 0)) {
             speciesGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         }
+        // node 周期境界 DOF 同一視 (§4.5 拡張): boundary periodic node の Green-Gauss 勾配を「和→broadcast」で
+        // 厳密合併に直す (calcGradient_b_d で periodic 半割面は除外済み)。2次再構成・粘性の seam 精度向上。
+        periodicGradientGather_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
         axisymmetricGeomTerms_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);

@@ -310,3 +310,11 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   implicit periodic TG が step100 完走・NaN なし・場健全 (`case/35` run_0010)、非 periodic slip と同等プラトー (periodic 固有発散消失,
   従来 run_0008 step64 NaN)。対角/LU の厳密 fold は収束率改善で安定化には不要のため未実装。explicit free-stream は不変 (run_0004 再確認)。
   これで **Cartesian periodic は陽・陰とも node で安定**。残は勾配/RANS/species gather・§4.5.8 回転・検証ケース 3-4。
+- `2026-06-28` — **勾配の periodic gather を実装** (2次再構成・粘性の seam 精度)。Green-Gauss 勾配
+  $\nabla\phi[ic]=(1/V[ic])\sum\phi_f S_f$ は合併体積 ($V_{master}=V_{slave}=V_{合併}$) のおかげで
+  $\nabla\phi_{master}+\nabla\phi_{slave}=$ 真の合併勾配になる → 残差と同じ「和→broadcast」で boundary periodic node の
+  片側勾配を厳密合併に直す。実装: [`calcGradient_d.cu`](../../solver_density_cuda/cuda_forge/calcGradient_d.cu) の node
+  `calcGradient_b_d` ループで **periodic 半割面を除外** (勾配=内部のみ片側) + [`periodicGradientGather_d_wrapper`](../../solver_density_cuda/cuda_forge/periodicNode_d.cu)
+  で 18 勾配配列 (dUxd*,dUyd*,dUzd*,drod*,dPd*,dTd*,divU) を gather。`calcGradient` 直後に呼ぶ。非軸対称限定
+  (grad_volume=volume; 軸対称 A_planar は §4.5.8)。検証: free-stream 機械ゼロ維持・implicit TG 安定不変 (seam viscous が
+  片側→両側へ微修正, run_0011)・非 periodic node/cell は guard で byte 不変。残: RANS(k,ω)/species 勾配の gather・§4.5.8 回転・検証ケース 3-4。

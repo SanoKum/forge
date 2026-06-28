@@ -727,6 +727,9 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     if (cfg.discretization == "node") {
         for (auto& bc : msh.bconds)
         {
+            // periodic は DOF 同一視 (§4.5) で扱うため境界半割面の勾配寄与を加えない。
+            // 勾配は内部双対面のみ (片側) で計算し、後段 periodicGradientGather で両側を厳密合併する。
+            if (bc.bcondKind == "periodic") continue;
             calcGradient_b_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
                 bc.iPlanes.size(),
                 bc.map_bplane_plane_d, bc.map_bplane_cell_d, bc.map_bplane_cell_ghst_d,
