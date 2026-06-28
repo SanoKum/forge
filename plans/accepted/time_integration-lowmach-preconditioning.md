@@ -500,3 +500,18 @@ forge の保存変数パイプラインに侵襲的なため不採用。
      Cf=3.1145e-3/2.816e-3/2.667e-3 が **=0/=2 で 3–4 桁一致** (差 ~0.01% = float レベル)、u_τ も一致。
      → **=2 は標準低速 RANS 解を全く壊さない** (M=0.2 は低マッハ振動が無いため benign)。一般妥当性確認。
      成果物: `run_eps_0p03/08/10/15`・`run_fp_m0`・`run_fp_m2` (residual/wall_law png 付き)。
+
+- `2026-06-28` — **backstep 剥離での追加検証 (=2 が低マッハ odd-even チェッカーボードを根治)**。
+  `case/18.backstep` (M≈0.11 後退段 RANS-SST, block-DPLUR) の長年の残差プラトー
+  (`NOT CONVERGED (needs scheme change)`) の正体が、**段差リップ下の低マッハ再循環域に局在する P・ρ の
+  odd-even チェッカーボード** (角部1セル下流 x≈2.13 の y 分布で P が節点ごと ±50 Pa 鋸歯=2次差分 rms が全振幅の
+  48–54%、Ux は滑らか) と特定。本 plan §9 の機構 (質量流束圧力散逸の `c_hat` スケール縮退) が剥離再循環でも主因。
+  - **`lowMachPrecond=2` (cfl_pseudo=1, ε=0.15) で根治**: P 市松 **−76〜77%** (cell 78→18.4 Pa, node 96→22 Pa)、
+    cell は同一 restart A/B で **rms_roUx 0.29→5.5e-4・roOmega 1.13→8.9e-4・全列 falling で残差プラトー打破** (プラトーの正体=低マッハ市松
+    リミットサイクルと確定)。場は物理的・vt/l 196 (baseline 198)・quasisteady STEADY。node も発散せず平均流残差
+    −2.5〜2.8桁 (node の rms_roOmega プラトーは別の SST 壁 ω 問題で残存)。
+  - **`lowMachPrecond=1` は backstep では不可**: cfl1 で発散 (NaN)、cfl0.3 で高残差停滞。RHS のみ `c'` 化し LHS が
+    `c_hat` のままで不整合 (Phase 2 棄却の帰結)。**剥離・再循環の低マッハ市松には完全前処理 =2 が必要**。
+  - **旧 `run_0042` の node `=2` step0 NaN は explicit RK3 時代の交絡**で、現行 block-DPLUR では node `=2` も安定。
+  - 詳細: [`notes/investigations/backstep-lowmach-checkerboard.md`](../../notes/investigations/backstep-lowmach-checkerboard.md)、
+    run `case/18.backstep/run_0073–0079`。

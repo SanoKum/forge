@@ -57,6 +57,21 @@
 | `run_0066_cell_invar` | **cell ビット不変確認**: 修正ビルドで cell を 2000 step | vis_t/l mean **197.71**・max **994** が baseline 一致 → **cell 経路は無影響** | 記録 (回帰) |
 | `run_0068_node_kdirichlet` | **k Dirichlet 試行** (SU2 SetTurbVars_WF 流): 第一内層ノードで k=ω_w·μt,wall/ρ をハード Dirichlet | **再付着 μt ピーク除去** (vis_t/l max 5769→894=cell 994 並、再付着 vt/l 5834→5、場平均 207→183) **だが x_R 7.63→8.67 と伸びる** (非平衡再付着で u_τ→0→k_wf→0 と乱流抑えすぎ)。トレードオフ | 記録 (診断) |
 | `run_0069_node_kwf_off` / `run_0069_node_kwf_on` | **`nodeKwfDirichlet` フラグ検証** (既定 0) | OFF=**prod-fix と完全一致** (mean 206.8/max 5769/x_R 7.63, k-pin 0 node)。ON=k-Dirichlet (max 893/x_R 8.54, k-pin 472 node)。フラグで opt-in 化、既定は prod-fix | 記録 (回帰) |
+| `run_0071_node_lmp1_eps15` | **P/ρ 市松の打ち手検証**: node + `lowMachPrecond=1` (cfl1)、`run_0067` 収束場から restart | **DIVERGED (NaN)**: step0 rms_ro 0.0126 に跳ね倍々成長。RHS のみ前処理が node で不安定 | 破棄 (記録) |
+| `run_0072_node_ctrl_lmp0` / `run_0074_cell_ctrl_lmp0` | control (lmp0) 10k step、収束場 restart | 残差プラトー据え置き (rms_roUx ~1e-2)。市松 P odd-even ~70 Pa 維持。A/B 基準 | ref |
+| `run_0073_cell_lmp1_eps15` | cell + `lowMachPrecond=1` cfl1 | **DIVERGED (NaN)** (node と同様、RHS/LHS 不整合) | 破棄 (記録) |
+| `run_0075_cell_lmp1_cfl03` | cell + `lowMachPrecond=1` **cfl0.3** | NaN回避だが高残差停滞 (rms_roUx 0.41)。P odd-even 78→21 Pa。前処理は市松を減らすが不整合で収束せず | 記録 (診断) |
+| `run_0076_cell_lmp2_eps15` / `run_0077_cell_lmp2_long` / `run_0079_cell_lmp2_converge` | **打ち手確立: cell + `lowMachPrecond=2` cfl1** (完全前処理 block-DPLUR, [plan Phase4](../../plans/accepted/time_integration-lowmach-preconditioning.md))。`run_0079` は完全収束 (200k 相当) | **NaN無・全残差 falling**。**P 市松 78→18.4 Pa (−76%)**、同一 restart A/B で rms_roUx **0.29→5.5e-4**・roOmega 1.13→8.9e-4 でプラトー打破、quasisteady STEADY。vt/l 196 (baseline 198)。図 `run_0077.../corner_oddeven_lmp2_vs_baseline.png` | active |
+| `run_0078_node_lmp2_eps15` | node + `lowMachPrecond=2` cfl1 | **発散せず** (lmp1 と対照)。**P 市松 96→22 Pa (−77%)**、平均流残差 −2.5〜2.8桁。rms_roOmega は ~9.5 プラトー据え置き (node 既知 ω 問題、市松とは別) | active |
+
+> **P・ρ 振動の正体と打ち手 (run_0071–0079, 2026-06-28)**: node/cell 共通の P・ρ「振動」は **低マッハ再循環域に
+> 局在する odd-even チェッカーボード** (collocated 圧力-速度デカップリング) と確定。段差角を1セル過ぎた x≈2.13 の
+> y 分布で P が節点ごと **±50 Pa 鋸歯** (2次差分 rms=全振幅の 48–54%)、Ux は滑らか。時間リミットサイクル (<10 ppm)・
+> リミッタチャタリング・**float32 桁落ち (振幅 5e-4≫ε、かつ float32 のままスキーム変更で消える) は棄却**。機構は
+> SLAU 質量流束の圧力散逸が `c_hat` スケールで M→0 縮退 ([plan §9](../../plans/accepted/time_integration-lowmach-preconditioning.md))。
+> **打ち手 = `lowMachPrecond=2`** (完全前処理 block-DPLUR): P 市松 **−76〜77%** (cell 78→18, node 96→22 Pa)、cell は同一 restart A/B で
+> **残差プラトー打破** (rms_roUx 0.29→5.5e-4・roOmega 1.13→8.9e-4)。**`lowMachPrecond=1` は LHS 非前処理で不整合→発散/停滞、使わない**。
+> 詳細: [`notes/investigations/backstep-lowmach-checkerboard.md`](../../notes/investigations/backstep-lowmach-checkerboard.md)。
 
 > **メッシュ/面ベクトル検証 (2026-06-21, user 指摘)**: 双対メッシュは正常 — 体積保存 88=88・closure 6.7e-6・負体積0・
 > 体積比4.4・発散種域は均一セル。**面ベクトルの向きも正常** (内部双対面 反転0%/cos min0.936、境界半割面 内向き0/556、
