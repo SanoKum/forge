@@ -23,6 +23,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [boundary-cell-periodic-conservation.md](active/boundary-cell-periodic-conservation.md) | `boundary` | cell 全周期境界の対流非保存バグ (seam 不連続成長=非周期化)。TGV で運動量注入、node は厳密保存。原因を cell 周期 seam に局在化済、修正は次タスク |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
 | [architecture-perphase-profiling-hotspot.md](active/architecture-perphase-profiling-hotspot.md) | `architecture` | per-phase 詳細プロファイリングに基づく host 律速の局所最適化 |
 | [condensation-nonequilibrium.md](active/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
