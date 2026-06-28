@@ -74,11 +74,59 @@ node-centered (median-dual) モードを **3D 混合要素 (tet/prism/hex) + spa
 外向き面ベクトルを分配。マルチマーカ corner (壁∩出口∩periodic) は 2D と同型に各 incident bcond へ 1 枚ずつ
 (`halfByOwner`)。閉性集計 `bnodeAccum` は所有非依存で全半割面。
 
-### 4.5 periodic 双対面対応 (核心)
-周期境界面上のエッジは、partner 面側に同一形状のエッジが存在する。`setPeriodicPartner` のノード対応 (dx,dy,dz 平行移動)
-でエッジ A↔A', B↔B' を対応付け、**周期エッジの双対面を内部双対面として両側 incident cell を繋ぐ** (境界半割面に
-しない)。これにより spanwise の解像乱流が周期方向に連続する。実装: periodic 面を通常境界として半割面化せず、
-partner セルを `dualFaceCells` の他端に設定 (周期 ghost ではなく直接接続、cell モードの `periodicPartner` と同思想)。
+### 4.5 periodic 双対面対応 (核心) — 設計 (2026-06-28 詳細化)
+
+> **方針確定 (user)**: `setPeriodicPartner` 拡張で実装し、partner ノードは**別 CV index のまま維持**する
+> (CV index == primal node index の可視化 1:1 対応を壊さないため)。`nNormalPlanes` 等のループ境界変数・
+> 移流/粘性カーネルのループへの影響に注意する。
+
+#### 4.5.1 幾何的真実 (なぜ素朴な「partner 面接続」では駄目か)
+周期 partner 境界ノード $N_L$ (例 $x=0$) と $N_R$ ($x=L_x$) は **period シフト $(dx,dy,dz)$ で同一視される別ノード**。
+median-dual で物理的に正しい CV は**継ぎ目をまたいで両側の部分 CV を合併したもの** ($N_L$ 内側の部分 CV +
+$N_R$ 内側の部分 CV、両者は周期で隣接)。継ぎ目の 2 つの境界半割面 $S_L,S_R$ は外向きが逆で**大きさが等しく相殺**
+($S_L+S_R=0$) するため、**合併 CV は継ぎ目に面を持たず内部双対面だけで閉じる**。
+→ 当初案「周期エッジの双対面で $N_L$ の CV ↔ partner 側 $N_R$ の CV を繋ぐ内部面を作る」は、$N_L,N_R$ が周期で
+同一視されるため**退化面 (dcc≈0)** になり不正。正しいのは「**面を作る**」でなく「**CV を合併 (DOF 同一視)**」。
+
+#### 4.5.2 現状 (ghost 半割面) が発散する理由 (run_0003 step4, データフロー調査で確定)
+- 周期半割面が**境界 plane** として書かれ、`setMeshMap_d` で convective 主ループの halo 帯 (`normal_halo_planes`
+  の periodic 区間) に入り、`periodic_d` が partner 実セル状態を ghost にコピーして「ghost 結合の境界面」として処理される。
+- だが (a) **node の境界ノードは周期面上に乗る**ので ghost 鏡像の `dcc≈0` で退化 (`calcStructualVariables_d` は
+  シフト未適用)、(b) **粘性ループは `ip<nNormalPlanes` で periodic を完全除外** (継ぎ目に粘性が入らない)。
+  → 幾何退化 + 粘性欠落で発散。
+
+#### 4.5.3 採用設計: node DOF 同一視 (master/slave, `setPeriodicPartner` 拡張)
+partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 index のまま「同一 DOF」として扱う**:
+1. **周期半割面を双対メッシュに emit しない** (`replacePrimalWithDual` で periodic マーカの bcond は半割面 plane
+   を作らず、ノード対応リストだけ残す)。→ 周期 plane は移流/粘性/halo のどのループにも現れない。
+2. **状態 scatter** $Q(N_m)\to Q(N_s)$ を流束計算前に毎ステップ (両側 incident セルが整合した周辺状態を見る)。
+3. **残差 gather** $\mathrm{res}(N_s)$ を assemble 後に $\mathrm{res}(N_m)$ へ集約 (両側部分 CV の寄与を合算)。
+4. **合併体積** $V_m \leftarrow V(N_m)+V(N_s)$ を time integration の master に使う。slave は独立更新せず master に従属。
+5. master を更新→ $Q(N_m)$ を slave に scatter (2 と同じ)。
+- **多重周期の corner/edge** (例 三重周期 box の角): ノードが複数周期境界に属する。**union-find** で全 partner を
+  単一 master に縮約 (slave チェーン $N_s\to N_m\to N_{master}$ を 1 つに)。
+- 継ぎ目の移流・**粘性は両側の内部双対面 (既に `nNormalPlanes` 帯) が担う**ので、periodic を粘性ループへ
+  追加する必要なし (4.5.2(b) のギャップも自動解消)。
+
+#### 4.5.4 ループ境界変数の扱い (user の注意点)
+- `nNormalPlanes`: **不変** (新規内部面を作らない。両側の内部双対面は既存)。
+- 周期半割面を emit しないので、`nBPlanes` / `setMeshMap_d` の periodic 区間 / `nBoundaryHaloPlanes` から周期分が消える。
+  `convPlaneBound`(node) $= n\_normal\_halo - nBoundaryHaloPlanes$ は周期 plane を含まなくなる (= 純 `nNormalPlanes`)。
+  **stale な周期 plane 参照が残らないこと**を確認する (normal_halo 構築・`periodic_d` 呼び出しを node では無効化)。
+- 新規追加カーネル: `periodicScatter_d` (master→slave Q コピー)・`periodicGather_d` (slave→master res 加算)。
+  time integration の体積を master で合併値にする (slave は更新スキップ or master と同値に保つ)。
+
+#### 4.5.5 代替案 (build 時 union-find 合併) — 参考
+`buildMedianDual3D` で周期境界ノードを shift マッチングし **union-find で 1 CV に物理合併**して書き出せば、
+出力メッシュは継ぎ目で完全内部化し **solver 側 periodic コードは一切不要**。ただし CV 数が減り
+**CV↔primal node の 1:1 可視化対応が壊れる** (output で 1 CV→複数 primal node の展開が要る)。user 方針 (別 CV 維持)
+では非採用だが、solver 簡潔さ最優先なら有力。
+
+#### 4.5.6 未確定・実装時に詰める点
+- scatter/gather の実行位置 (`applyBconds` 内 periodic ブランチを node 用に差し替えるか、専用フェーズか)。
+- master/slave 選定規約 (physID 小を master 等) と union-find の corner 縮約順序の決定性。
+- 陰解法 (block-DPLUR) での DOF 同一視: master 行に slave の対角・残差を畳み込む必要があるか (LES は陽 RK3 主体なので
+  まず陽解法で成立させ、陰解法対応は後続)。
 
 ### 4.6 検証量
 - 双対体積総和 = primal 体積総和 (relErr < 1e-6)。
@@ -92,7 +140,8 @@ partner セルを `dualFaceCells` の他端に設定 (周期 ghost ではなく�
 2. **エッジ列**: `gmshReader.hpp` に要素別ローカルエッジテーブル + 一意エッジ構築 + `edge→{cell,face,face}` マップ (§4.1)。
 3. **3D 双対面/体積/重心**: `buildMedianDual()` の `is3D` 分岐を実装 (§4.2–4.3)。Newell 法・四面体体積ヘルパ追加。
 4. **3D 境界半割面**: §4.4 を実装 (2D の `halfByOwner`/`hcentByOwner` を 3D 面サブポリゴンへ一般化)。
-5. **periodic 双対面**: §4.5。`bconds` の periodic マーカを検出し partner ノード対応で双対面を内部接続。
+5. **periodic (node DOF 同一視)**: §4.5.3。`setPeriodicPartner` を拡張し partner ノード対応 (union-find) を作る。
+   `replacePrimalWithDual` で周期半割面を emit しない。`periodicScatter_d`/`periodicGather_d` と master 合併体積を実装。
    `mesh.cpp` の periodic 接続と整合。
 6. **検証チェック**: §4.6 を `buildMedianDual()` 末尾に追加 (体積・closure・負体積)、free-stream は別途 run。
 7. **I/O・solver**: `/DUAL` 3D 書き出し、`output.cpp` Center=Node 3D、`setInitial`/`point_probes` の 3D node 化、
@@ -158,3 +207,11 @@ partner セルを `dualFaceCells` の他端に設定 (周期 ghost ではなく�
   - **未着手**: §4.5 periodic 双対面 (核心・次の主タスク)、free-stream 保存 run (検証ケース 1: closure
     2.5e-6 で幾何的には既に保証、inlet/outlet box の solver run で確認予定)、output.cpp Center=Node 3D 可視化の
     確認、検証ケース 2–4。
+- `2026-06-28` — **§4.5 periodic を設計詳細化 (実装は次タスク)**。cell mode periodic のデータフロー調査
+  (`setPeriodicPartner`→`bint[partnerCellID]`→`periodic_d` が partner 実セル状態を毎ステップ ghost コピー、
+  `calcStructualVariables_d` はシフト未適用、`viscousFlux_d` は `ip<nNormalPlanes` で **periodic を除外**) を踏まえ、
+  当初案「partner 側ノード CV を繋ぐ内部双対面」は **$N_L\equiv N_R$ 同一視で退化面 (dcc≈0) になり誤り**と判明。
+  正しい設計は **node DOF 同一視 (master/slave)**: 周期半割面を emit せず、master→slave 状態 scatter・slave→master
+  残差 gather・合併体積で「両側部分 CV を 1 つの CV」として扱う (継ぎ目面は $S_L+S_R=0$ で消える)。継ぎ目の
+  粘性も両側内部双対面が担うので粘性ループ改変不要。user 方針で partner ノードは別 CV index 維持 (可視化 1:1)。
+  §4.5.1–4.5.6 に記載。実装は陽 RK3 で先行成立 → 陰解法は後続。
