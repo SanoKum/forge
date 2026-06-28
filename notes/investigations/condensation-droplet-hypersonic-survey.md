@@ -84,6 +84,60 @@
 
 ➡️ **あなたの問い (テーマ1) への含意**: 方向性としては「**衝撃背後の昇温で蒸発側**」「**大スケール供試体の衝撃層では蒸発が進みやすい**」。逆に薄い斜め衝撃層・狭隘低温域では残存し得る。ただし**燃焼器内残留・計測汚染の直接データは未確認**であり、定量判定は今後の課題。
 
+### 1-3bis. 供試体・翼・物体まわりの凝縮/蒸発を直接扱う先行研究 (文献追跡で発見)
+
+> クライオ風洞論文 (§1-3) の参照文献とその周辺を追跡したところ、**「供試体/翼/物体まわりの凝縮・蒸発影響」を直接扱った一次文献は複数実在する**ことが判明した。極超音速ピンポイントは依然薄いが、想定より近い。クライオ M6 論文 (§1-3) はこの系統 (Schnerr 系) の直系である。
+> 確証度: 多くは出版社 paywall でアブスト/スニペット確認 (本文取得は限定的)。引用は実在書誌のみ。利用前に原典確認を推奨。
+
+**(a) 表題から本テーマ直撃 — ただし超音速** △
+- **Hansen & Nothwang (1952), NACA TN-2690** — "Condensation of air in supersonic wind tunnels **and its effects on flow about models**"。**模型まわりの流れへの凝縮影響を主題化**した古典。過飽和の上下限・凝縮を含む流れ物性計算法。超音速 (極超音速ではない)。
+  〈出典〉[NTRS 19930083979](https://ntrs.nasa.gov/citations/19930083979)
+
+**(b) 極超音速だが「freestream 凝縮 → 模型計測汚染」の系統** △ (極超音速で本テーマに最も近い)
+- **Daum (1963), AIAA J 1:1043** — "Air Condensation in a Hypersonic Wind Tunnel"。**M=9.5–17**、pitot・static 圧が凝縮で強く影響され大きな見かけの過飽和。極超音速で計測信頼性に直結する一次データ。〈出典〉[arc 10.2514/3.4520 系](https://arc.aiaa.org/doi/abs/10.2514/3.4520)
+- **Daum & Gyarmathy, AIAA J 6:458** — "Condensation of air and nitrogen in hypersonic wind tunnels"。低圧域で空気が実質純窒素として振る舞い窒素自発凝縮が onset。
+- **NTRS 19900050882** (§1-1 で既出) — 純窒素 M=10/14/18、pitot/static/レーザー散乱で onset 観測。
+- **AIAA J 10.2514/1.J052608** — M=10 freestream 凝縮検知 (supersaturation/pitot/Rayleigh)。
+  > これらは**3D 場の解析ではなく freestream→計測誤差**の枠組みである点に注意。
+
+**(c) 翼/物体まわりの凝縮を 3D/2D で直接 CFD (遷音速〜超音速) — クライオ M6 論文の直系** △
+- **Goodheart & Schnerr (2005), J. Aircraft 42:402** — "Condensation on **ONERA M6 and F-16 Wings** in Atmospheric Flight: Numerical Modeling"。**3D 翼まわりの凝縮場**を迎角・粒子数密度で評価。**§1-3 のクライオ M6 論文の直接の先行研究**。〈出典〉[arc 10.2514/1.5137](https://arc.aiaa.org/doi/10.2514/1.5137)
+- **Schnerr & Dohrmann (1990), AIAA J 28:1187** — 翼まわりの均質凝縮による潜熱供給を Euler+CNT+成長で扱う原典。
+- **Ma & Chen (2026), Int. J. Heat Mass Transfer** — 水面近接の**超音速飛翔体 (NACA0012) まわりの非平衡凝縮**を直接計算。最新の「機体まわり凝縮」。〈出典〉[S0017931026002796](https://www.sciencedirect.com/science/article/abs/pii/S0017931026002796)
+
+**(d) ★「膨張で凝縮 → 衝撃越えで蒸発」サイクルを陽に扱う (テーマ1 の核心に最も合致)** ○
+- **"Transonic flow of moist air around an NACA 0012 airfoil with non-equilibrium condensation" (Progress in Natural Science, 2005)** — 翼まわりの**膨張凝縮と衝撃背後の蒸発を両方**扱い、「翼後部での蒸発による昇圧」まで明記。RH90% で圧力抵抗 +160%・上下面交互の**自励振動**。〈出典〉[T&F 10.1080/10020070512331343000](https://www.tandfonline.com/doi/abs/10.1080/10020070512331343000)
+- **Wen et al. (2020), Int. J. Heat Mass Transfer** — **「衝撃波の発生が平衡を変え凝縮液滴の再蒸発を起こす」を明示**。形状は超音速セパレータ (内部流) だが**衝撃背後の再蒸発の物理記述として最も明確**。〈出典〉[S0017931019323816](https://www.sciencedirect.com/science/article/abs/pii/S0017931019323816)
+
+**(e) 凝縮-衝撃結合の不安定性 (forge の非定常凝縮で要注意)** △
+- **Schnerr, Adam, Mundinger 系** — 凝縮の潜熱付加が衝撃と結合し、対称形状でも**斜め衝撃の上流伝播・周期振動・ヒステリシス分岐**を生む。原因は粘性 (境界層) でなく**核生成速度との結合**。〈出典〉[Springer 10.1007/978-3-7091-2688-2_8](https://link.springer.com/chapter/10.1007/978-3-7091-2688-2_8)
+
+➡️ **位置づけ**: 「供試体まわり凝縮・蒸発」「凝縮→衝撃→蒸発サイクル」は **(d) と (a) で確立**。極超音速の計測汚染は **(b)**。ただし**「極超音速 (M>5) × 3D × 模型まわりの凝縮場」を直接扱う一次文献は依然不在** (§5-5)。橋渡しは ① NACA TN-2690 の枠組みを極超音速へ拡張、② Ma & Chen 2026 / Goodheart-Schnerr を M>5・3D へ拡張、の 2 方向。
+
+### 1-3ter. Ma & Chen (2026) の詳細と参照文献 — 「マッハ数が凝縮の有無を支配」
+
+> §1-3bis(c) で挙げた Ma & Chen (2026) は「機体まわり凝縮」の最新一次文献として重要なので、本文要点・参照文献・あなたの極超音速関心への含意を別建てで詳述する。
+> 正確書誌: **Tao Ma, Qi Chen, Jiang Lai, RuHao Hua, JianQiang Chen (2026)**, "Effect of water vapor condensation on a supersonic vehicle in proximity to a water surface", *Int. J. Heat Mass Transfer*, [10.1016/j.ijheatmasstransfer.2026.128603](https://doi.org/10.1016/j.ijheatmasstransfer.2026.128603) (参照 51 件、被引用 0=2026 掲載で後続なし)。確証度: 本文 403、アブスト/出版社スニペット + 構造化書誌 (Crossref/Semantic Scholar) で確認。
+
+**本文要点** — **NACA0012 翼**の超音速 sea-skimming (海面近接=高湿度大気) 飛行で、翼まわりの急膨張による**非平衡凝縮** (均質核生成 + 液滴成長) を直接 CFD。RH・温度・マッハを走査し空力 (CL/CD/Cm) への影響を評価:
+- **マッハ数が凝縮の有無を支配する**。**Ma ≤ 1.2** で過飽和成立 → 凝縮が顕著で圧力分布を変え低マッハで空力改善。
+- **Ma ≥ 2.0 では衝撃波背後の加熱 (shock-induced heating) が過飽和を抑制し凝縮が消失**する。
+- 空力変化: CL 4.72% / CD 1.39% / **Cm 29.04% (モーメントへの影響が最大)**。
+
+> 🎯 **あなたの極超音速関心への重要な含意**: この「**Ma≥2 で衝撃加熱が凝縮を抑制**」は、**極超音速ほど高温化で機体まわりの蒸気凝縮は起きにくい**ことを示唆する強い制約。つまりテーマ1で凝縮が問題化するのは「**低マッハ・高湿度・膨張領域**」側であり、極超音速の弓状/斜め衝撃**背後**ではむしろ蒸発側 (§1-3 の滞留時間依存・蒸発側と整合)。逆に、極超音速機体でも**前縁まわりの強い膨張ファン・最大厚下流の膨張**など局所低温域では凝縮が残り得る — そこが注目点。
+
+**Ma & Chen が引用する、あなたの関心に刺さる参照文献** (51 件中から抽出):
+- **Wen et al. (2020), Int. J. Heat Mass Transfer** — 超音速+衝撃波下の非平衡凝縮 (衝撃背後の**再蒸発**を明示)。本テーマ最有力 ○。[10.1016/j.ijheatmasstransfer.2019.119109](https://doi.org/10.1016/j.ijheatmasstransfer.2019.119109) (§1-3bis(d) と重複)
+- **White & Young (2000), AIP Conf. Proc.** — "Homogeneous nucleation and shock wave interaction in condensing steam flows"。**凝縮→核生成→衝撃波相互作用**のメカニズム。[10.1063/1.1362002](https://doi.org/10.1063/1.1362002) △
+- **Zhang et al. (2025), Aerosp. Sci. Technol.** — "Effect of moist air non-equilibrium condensation on airfoil performance based on a novel model"。**翼まわり凝縮の空力影響**を扱う最新の直接先行 (本論文の方法論的下敷き)。[10.1016/j.ast.2025.110108](https://doi.org/10.1016/j.ast.2025.110108) △
+- **Hill (1966), J. Fluid Mech.** — "Condensation of water vapour during supersonic expansion in nozzles"。**液滴成長則 (Hill) の原典**、本論文の成長モデル中核。[10.1017/S0022112066000284](https://doi.org/10.1017/S0022112066000284) ◎(書誌)
+- **Luo et al. (2006/2007), J. Fluid Mech.** — Ludwieg 管実験+数値による圧縮性均質凝縮の検証 (相転移モデル検証)。[2007: 10.1017/S0022112006003727](https://doi.org/10.1017/S0022112006003727)
+- **Dingilian et al. (2020), Phys. Chem. Chem. Phys.** — "Homogeneous nucleation of **CO2** in supersonic nozzles I"。**CO2 均質核生成**の実験+古典理論検証 (あなたの CO2/燃焼生成物凝縮の関心に直結)。△
+- **Kong et al. (2023), Phys. Fluids** — 超音速 sea-skimming 飛行の数値計算 (DG+AMR、凝縮なし)。本論文の飛行シナリオの直接先行。[10.1063/5.0176472](https://doi.org/10.1063/5.0176472)
+- (古典) **Hermann (1942)** — "Der Kondensationsstoß in Überschall-Windkanaldüsen" (超音速風洞ノズルの凝縮衝撃) / **Prandtl (1936)** — 圧縮性流れ凝縮の最古典。
+
+> **ネガティブ所見**: Ma & Chen の参照 51 件中、**真の極超音速 (Ma≳5) を扱う凝縮文献はゼロ**。凝縮系はほぼ遷音速〜低超音速のノズル/蒸気タービン/超音速分離器。**極超音速の機体まわり凝縮は本論文の射程外** = §5-5 の空白を改めて裏づける。なお Kantrowitz/Gyarmathy 核生成補正は独立引用でなく本文中の式引用と推定 (一次資料は Hill [上記]・Schnerr 経由で辿るのが現実的)。
+
 ### 1-4. vitiation 汚染としての試験データ汚染
 
 地上 scramjet 試験で流入空気を水素/炭化水素燃焼で予熱すると、実飛行に存在しない **H2O・CO2 汚染**が加わり、燃焼過程と燃料の着火特性を実質的に変える ◎:
@@ -163,7 +217,7 @@
 2. **【テーマ1 後半 / 計測汚染】** 風洞 test-section の凝縮物 (N2/H2O/CO2 氷粒子・液滴) が供試体内部 (インテーク〜燃焼室) に残留して燃焼・点火・PIV/圧力/熱流束計測を**実際に汚染した『事例』**を報告した一次文献は見つからなかった。
 3. **【テーマ2 / 燃焼定量】** scramjet/ramjet 燃焼器『そのもの』への water ingestion が失火・着火限界・推力・燃焼効率に与える定量データ (航空ターボエンジン/内燃機関ではなく超音速燃焼器固有の water/air 比 vs 性能低下相関)。機序は確立だが scramjet 固有の定量閾値は未確立。
 4. **【高マッハ外挿】** $\tau$ 規格化でブレイクアップ速度が衝撃強度に依らずほぼ一定という知見は **Mach 2-3 のみ**確認。真の極超音速域 (M≫6、高温・高 We・蒸発 Damköhler 数が支配的になり得る域) でこの規格化や古典相関が成立するかは実験検証付きで未確立。
-5. **【極超音速の供試体/翼まわり3D 凝縮】** 3D の N2 凝縮 CFD は存在するが**遷音速クライオ風洞 (ONERA M6, M≈0.8) のもの** (§1-3 レジーム注記)。**極超音速 (M≫6) の供試体/翼まわりで凝縮物の3D 場・蒸発残存を直接扱った一次研究は確立できなかった**。手法 (CNT+成長+Euler-Euler) は流用可だがレジーム外挿が必要。
+5. **【極超音速の供試体/翼まわり3D 凝縮】** §1-3bis の文献追跡で、**供試体/翼/物体まわりの凝縮・蒸発を直接扱う先行研究は遷音速〜超音速では確立**していると判明 (NACA TN-2690 / Goodheart-Schnerr / Prog. Nat. Sci. 2005 / Wen 2020 / Ma & Chen 2026)。極超音速側は **Daum 系の「freestream 凝縮→計測汚染」(M=9.5-17) 止まり**で 3D 場解析ではない。**「極超音速 (M>5) × 3D × 模型まわりの凝縮場 (蒸発残存含む) を直接扱った一次研究」は依然不在** = 明確な研究空白。橋渡しは ① NACA TN-2690 の枠組みを極超音速へ拡張、② Ma & Chen 2026 / Goodheart-Schnerr を M>5・3D へ拡張。
 
 ---
 
@@ -191,6 +245,22 @@
 - Cryogenics 2020 (S0011227520301673) / Eng. Appl. CFD 2024 — N2 凝縮 翼まわり影響 ◎ (**遷音速クライオ風洞 M≈0.8、極超音速ではない**。手法リファレンスとして有効、§1-3 レジーム注記参照)
 - AIAA 2021-4177 / Acta Mech Sinica 10.1007/s10409-014-0014-0 — vitiation 汚染 ◎
 - (歴史的基準) Wegener & Mack 1958 △
+
+**テーマ1bis (供試体・翼・物体まわりの凝縮/蒸発、§1-3bis)**
+- NACA TN-2690 (Hansen & Nothwang 1952) — 模型まわりへの凝縮影響を主題化 (超音速) △
+- AIAA J 1:1043 (Daum 1963) / AIAA J 6:458 (Daum & Gyarmathy) — 極超音速 freestream 凝縮→計測汚染 (M=9.5-17) △
+- J. Aircraft 42:402 (Goodheart & Schnerr 2005) — ONERA M6/F-16 翼 3D 凝縮 (クライオ M6 論文の先行研究) △
+- AIAA J 28:1187 (Schnerr & Dohrmann 1990) — 翼まわり凝縮潜熱供給の原典 △
+- Prog. Nat. Sci. 2005 (NACA0012 moist air) — **凝縮→衝撃→蒸発サイクルを陽に扱う** ○
+- Int. J. Heat Mass Transfer S0017931019323816 (Wen et al. 2020) — 衝撃背後の再蒸発を明示 ○
+- Int. J. Heat Mass Transfer 10.1016/j.ijheatmasstransfer.2026.128603 (Ma, Chen, Lai, Hua, Chen 2026) — 超音速飛翔体 (NACA0012) まわり非平衡凝縮、**Ma≥2 で衝撃加熱が凝縮抑制** (§1-3ter) △
+- Springer 10.1007/978-3-7091-2688-2_8 (Schnerr-Adam-Mundinger 系) — 凝縮-衝撃結合の自励振動 △
+- AIP Conf. Proc. 10.1063/1.1362002 (White & Young 2000) — 凝縮流の核生成×衝撃波相互作用 △
+- Aerosp. Sci. Technol. 10.1016/j.ast.2025.110108 (Zhang et al. 2025) — 湿り空気凝縮の翼空力影響 (Ma&Chen の先行) △
+- J. Fluid Mech. 10.1017/S0022112066000284 (Hill 1966) — 液滴成長則 (Hill) の原典 ◎(書誌)
+- J. Fluid Mech. 10.1017/S0022112006003727 (Luo et al. 2007) — Ludwieg 管 均質凝縮の検証
+- Phys. Chem. Chem. Phys. (Dingilian et al. 2020) — **CO2** 均質核生成 (超音速ノズル) △
+- Phys. Fluids 10.1063/5.0176472 (Kong et al. 2023) — 超音速 sea-skimming 飛行数値 (凝縮なし)
 
 **テーマ2 (液滴ブレイクアップ/ingestion)**
 - Phys. Fluids 35, 016103 (2023) — Briney & Balachandar, Euler-Lagrange stochastic ◎
