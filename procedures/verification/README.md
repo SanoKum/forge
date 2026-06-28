@@ -25,12 +25,14 @@
 - `20.naca_ml`: 既定の確認先。明示がなければ最初に使う。
 - `08.bump`: line profile 比較を含む既存の回帰確認フローが必要なときに使う。低マッハ・高マッハを陽解法/陰解法で流し、y≈0.3 の数値解の一致と収束度合いの非劣化を自動判定する検証一式 (`case/08.bump/verify/run_verification.sh`) を備える。
 - `13.nozzle_H`: ノズル系の定常計算や、別系統の圧縮性流れで追加確認したいときに使う。
+- `09.Taylor-Green`: **低散逸スキーム (純粋 KEEP) の運動エネルギー・エントロピー保存性**と**周期境界の保存性 (全運動量保存)** を見る非定常ケース。対流スキーム (特に KEEP)・周期境界・node/cell 共有コードの変更時に使う。
 
 ## 個別解説
 
 - `20.naca_ml`: `procedures/verification/20-naca-ml.md`
 - `08.bump`: `procedures/verification/08-bump.md`
 - `13.nozzle_H`: `procedures/verification/13-nozzle-h.md`
+- `09.Taylor-Green`: `procedures/verification/09-taylor-green.md` (KEEP の KE・エントロピー保存性)
 
 ## 運用ルール
 
