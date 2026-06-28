@@ -173,16 +173,26 @@ public:
     // 厳密に 0 に固定する (state 初期化 + 運動量残差射影) のに使う。壁ゴーストを撤廃する代替。
     geom_int* wall_flag_d = nullptr;
 
+    // node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5)。周期 partner ノードを union-find で
+    // グループ化し、各 CV の root(=master) index を持つ。periodicRoot[c]==c なら root/非周期、それ以外は slave。
+    // periodicNodeGather (res 和を group 全員に書く) と合併体積で「両側部分 CV を 1 CV」として扱う。
+    std::vector<geom_int> periodicRoot;       // [nCells] host: 各 CV の group root
+    geom_int* periodicRoot_d = nullptr;       // [nCells] device
+    geom_int  nPeriodicMembers = 0;           // root != self の CV 数 (>0 なら周期同一視を実行)
+
     mesh();
     ~mesh();
-    mesh(geom_int& , geom_int& ,geom_int& , geom_int& , 
+    mesh(geom_int& , geom_int& ,geom_int& , geom_int& ,
          geom_int& , geom_int& ,
          std::vector<node>& , std::vector<plane>& , std::vector<cell>& , std::vector<bcond>& );
 
-    void readMesh(std::string); 
+    void readMesh(std::string);
 
     void setPeriodicPartner();
     void setMeshMap_d();
+    // node モード: setPeriodicPartner の partnerCellID から周期ノード group(union-find) を構築し
+    // periodicRoot/periodicRoot_d を埋め、各 group の合併体積を var_volume へ書き戻す (§4.5.3)。
+    void buildPeriodicNodeGroups(bool nodeMode, geom_float* var_volume_d);
 };
 
 struct matrix

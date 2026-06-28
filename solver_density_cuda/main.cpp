@@ -65,6 +65,7 @@
 
 #include "probe/point_probes.cuh"
 #include "cuda_forge/setDT_d.cuh"
+#include "cuda_forge/periodicNode_d.cuh"
 
 #include <cuda_runtime.h>
 
@@ -821,6 +822,10 @@ cudaConfig initializeSimulation(
     msh.setPeriodicPartner();
 
     var.setStructuralVariables(cfg , cuda_cfg , msh);
+    // node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5): partnerCellID から周期ノード group(union-find)
+    // を構築し、各 group の合併体積を var.c_d["volume"] へ書き戻す。setDT より前 (volume を使うため)。
+    // cell モード / 非周期では no-op。
+    msh.buildPeriodicNodeGroups(cfg.discretization == "node", var.c_d["volume"]);
     speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
     condensationPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // φ = ρφ/ρ (液相モーメント読込済)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
@@ -969,6 +974,10 @@ void assembleResidual(StepContext& s, int stage_index)
     // node-centered 壁 Dirichlet: 壁ノードの運動量残差を 0 に射影し u=0 を保つ (壁ゴースト撤廃の代替)。
     // 軸射影の後に置き、コーナー (壁∩軸はまれだが) でも壁 no-slip を最終確定する。cell/非 node では no-op。
     zeroWallMomentumResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    // node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5): 全 flux/source 積算 + 壁/軸射影の後に、
+    // 周期 group の保存量残差を全員で足し合わせ全員へ書き戻す。合併体積と合わせ両側部分 CV を 1 CV として
+    // 同期更新する (継ぎ目に双対面を作らず、両側内部双対面が res を組む)。cell/非周期では no-op。
+    periodicNodeGather_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // TODO(dual-time): unsteady のとき addUnsteadyTimeTerm(s) で BDF 物理時間項を res_* と
     // 対角に加える。定常では no-op。本体は次フェーズ。
 }

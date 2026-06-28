@@ -619,6 +619,85 @@ void mesh::setPeriodicPartner()
 };
 
 
+// node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5)。
+// setPeriodicPartner が埋めた各 periodic bcond の partnerCellID (= partner ノード CV) を使って、
+// 周期 partner ノードを union-find でグループ化する。各 group は「継ぎ目で割れた 1 つの CV の集合」で、
+// res を group 全員へ足し合わせ (periodicNodeGather) + 合併体積で更新すると 1 CV として振る舞う。
+// cell モード / 非周期では何もしない。
+void mesh::buildPeriodicNodeGroups(bool nodeMode, geom_float* var_volume_d)
+{
+    this->nPeriodicMembers = 0;
+    this->periodicRoot.assign(this->nCells, 0);
+    for (geom_int c = 0; c < this->nCells; ++c) this->periodicRoot[c] = c;
+
+    if (!nodeMode) return;
+
+    // 周期 bcond が無ければ何もしない
+    bool hasPeriodic = false;
+    for (auto& bc : this->bconds) if (bc.bcondKind == "periodic") hasPeriodic = true;
+    if (!hasPeriodic) return;
+
+    // union-find (path halving, iterative なので std::function 不要)
+    auto findRoot = [&](geom_int x) {
+        while (this->periodicRoot[x] != x) {
+            this->periodicRoot[x] = this->periodicRoot[this->periodicRoot[x]];
+            x = this->periodicRoot[x];
+        }
+        return x;
+    };
+    auto unite = [&](geom_int a, geom_int b) {
+        geom_int ra = findRoot(a), rb = findRoot(b);
+        if (ra == rb) return;
+        // 小さい index を root に固定 (決定的)
+        if (rb < ra) { geom_int t = ra; ra = rb; rb = t; }
+        this->periodicRoot[rb] = ra;
+    };
+
+    for (auto& bc : this->bconds) {
+        if (bc.bcondKind != "periodic") continue;
+        if (bc.bint.count("partnerCellID") == 0) {
+            std::cerr << "[buildPeriodicNodeGroups] periodic bcond physID=" << bc.physID
+                      << " has no partnerCellID (setPeriodicPartner not run?). skip.\n";
+            continue;
+        }
+        const auto& partner = bc.bint["partnerCellID"];
+        for (size_t l = 0; l < bc.iPlanes.size(); ++l) {
+            const geom_int ip = bc.iPlanes[l];
+            const geom_int node = this->planes[ip].iCells[0]; // node モードでは CV index
+            if (l >= partner.size()) break;
+            const geom_int part = partner[l];
+            if (node < 0 || node >= this->nCells || part < 0 || part >= this->nCells) continue;
+            unite(node, part);
+        }
+    }
+
+    // 全 root を平坦化 + member 数カウント
+    for (geom_int c = 0; c < this->nCells; ++c) this->periodicRoot[c] = findRoot(c);
+    for (geom_int c = 0; c < this->nCells; ++c) if (this->periodicRoot[c] != c) this->nPeriodicMembers++;
+
+    // 合併体積: group ごとに体積を合算し、group 全員の volume をその合算値にする
+    // (両者が同 res・同 vol で更新され bit 一致同期するため。詳細は plans §4.5.3)。
+    std::vector<geom_float> groupVol(this->nCells, 0.0);
+    for (geom_int c = 0; c < this->nCells; ++c) groupVol[this->periodicRoot[c]] += this->cells[c].volume;
+    std::vector<geom_float> newVol(this->nCells, 0.0);
+    for (geom_int c = 0; c < this->nCells; ++c) {
+        newVol[c] = groupVol[this->periodicRoot[c]];
+        this->cells[c].volume = newVol[c]; // host も整合させる
+    }
+    if (var_volume_d != nullptr) {
+        gpuErrchk(cudaMemcpy(var_volume_d, newVol.data(), sizeof(geom_float)*this->nCells, cudaMemcpyHostToDevice));
+    }
+
+    // device へ root をアップロード
+    gpuErrchk(cudaMalloc((void **)&(this->periodicRoot_d), sizeof(geom_int)*this->nCells));
+    gpuErrchk(cudaMemcpy(this->periodicRoot_d, this->periodicRoot.data(),
+                         sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
+
+    std::cout << "[buildPeriodicNodeGroups] node periodic DOF identification: "
+              << this->nPeriodicMembers << " slave CVs merged into masters (union-find).\n";
+}
+
+
 void mesh::setMeshMap_d()
 {
     gpuErrchk(cudaMalloc((void **)&(this->map_plane_cells_d), sizeof(geom_int)*this->nPlanes*2));

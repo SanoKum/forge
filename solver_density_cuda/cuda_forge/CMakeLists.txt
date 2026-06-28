@@ -54,6 +54,8 @@ add_library(cuda_forge STATIC
     timeIntegration_d.cuh
     setDT_d.cu
     setDT_d.cuh
+    periodicNode_d.cu
+    periodicNode_d.cuh
     #derived_atomic_functions.cu
     #derived_atomic_functions.cuh
     fluct_variables_d.cu

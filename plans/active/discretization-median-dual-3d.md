@@ -271,3 +271,23 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   - §4.5.8 追加 (回転/円周周期, 将来対応): 骨格不変で**運動量3成分の授受に回転 $T(d\theta)$ を挟むだけ**
     (スカラーは恒等)。gather $\mathrm{res}_m=\mathrm{res}_L+T^{-1}\mathrm{res}_R$、ミラー $Q_s=T\,Q_m$、Jacobian $D_m=D_L+T^{-1}D_R T$。
     既存 `periodic_d` の `dtheta` 回転と `setPeriodicPartner` type=1 を流用。検証は円筒成分一様流。Cartesian を先に成立 → 回転は後続。
+- `2026-06-28` — **§4.5 Cartesian periodic を陽 RK3 で実装・検証** (ブランチ `feature/median-dual-3d`)。
+  - 実装: (1) [`mesh.cpp`](../../solver_density_cuda/mesh/mesh.cpp) `buildPeriodicNodeGroups()` — `setPeriodicPartner` の
+    `partnerCellID` から周期ノードを **union-find** でグループ化 (`periodicRoot[]`)、各 group の合併体積を
+    `var.c_d["volume"]` へ書き戻す。(2) [`periodicNode_d.cu`](../../solver_density_cuda/cuda_forge/periodicNode_d.cu)
+    `periodicNodeGather_d_wrapper` — slave 残差を root へ atomicAdd 集約 → group 全員へ broadcast (gather+broadcast)。
+    `assembleResidual` 末尾 (壁/軸射影の後) で毎ステージ呼ぶ。(3) [`convectiveFlux_d.cu`](../../solver_density_cuda/cuda_forge/convection/convectiveFlux_d.cu)
+    node の `convPlaneBound` を `nNormalPlanes` にし **periodic を移流ループから除外** (継ぎ目に双対面を作らない)。
+    `periodic_d` は setDT が ghost を読むため維持 (ghost を valid に保つ、flux では未使用)。`periodicScatter_d` は §4.5.3 の
+    通り不要 (合併体積更新で自動同期)。
+  - 検証 (native, 構造化 periodic 立方体 8³ hex 全方向 periodic, `case/35` run_0004):
+    **free-stream (一様 +x 流) で全 50 step 残差が機械ゼロ** = periodic 境界 CV が gather で正しく閉じる。
+    union-find `217 merged`=729−512 (triperiodic 一意 CV) で corner 8-way/edge 4-way まで完全一致。
+    `conv main planes periodic 0` で除外確認。
+  - **非自明流れ (Taylor-Green M0.1) は別要因で未達**: node 全面 periodic TG は step4 発散だが、**periodic を slip に
+    置換しても同様に発散** (`case/35` run_0006 切り分け) → 発散は periodic 実装でなく **node+低マッハ+explicit RK3 の
+    既知不安定** ([[node-mode-periodic-and-backstep-status]] backstep step18 と同類)。lowMachPrecond=2 explicit も step1 発散。
+    → 非自明 periodic の安定走行は **implicit (§4.5.7 の Jacobian 行 fold) が前提**。RHS gather は実装済なので陰解法対応で
+    完結する見込み。cell モード・非 periodic node はガードで不変。
+  - **残**: §4.5.7 陰解法 fold (非自明 periodic 安定化の鍵)、勾配/RANS/species の periodic gather (現状 NS 保存量5のみ;
+    2次再構成・粘性で boundary node 勾配が片側になる)、§4.5.8 回転、検証ケース 3-4 (sod 3D・backstep 3D)。

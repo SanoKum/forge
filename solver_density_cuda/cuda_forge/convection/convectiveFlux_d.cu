@@ -104,13 +104,15 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
 
     dim3 dimGrid_normal_halo = dim3(ceil(msh.nNormal_halo_Planes / (flow_float)cuda_cfg.blocksize));
 
-    // node-centered 弱形式 (Phase 2): 主対流ループは「内部 + periodic」のみを処理し、末尾に並ぶ全非 periodic 境界 plane
+    // node-centered 弱形式 (Phase 2): 主対流ループは「内部双対面のみ」を処理し、末尾に並ぶ全非 periodic 境界 plane
     // (nBoundaryHaloPlanes = wall+inlet+outlet+slip...) を除外する。全境界は別途 convectiveFlux_boundary_d が bvar を
     // R 状態とする弱形式で担う。これは境界ノードが物理境界上に乗る node-centered で ghost を主ループの右状態に食わせる
     // と退化幾何 (d_along_n=0) により出口列/コーナーで近壁 BL が崩壊するため (case/26 で実証)。
-    // cell モードは全 plane を主ループでゴースト処理 (従来どおり)。
+    // **periodic も除外する** (median-dual M4, §4.5): node の周期境界は DOF 同一視 (periodicNodeGather + 合併体積)
+    // で扱い、継ぎ目に双対面を作らない。周期半割面を主ループに入れると外向き境界パッチを CV 間面と誤用し発散する。
+    // よって node の主ループ境界 = 純内部双対面 (nNormalPlanes)。cell モードは全 plane を主ループでゴースト処理 (従来どおり)。
     const geom_int convPlaneBound = (cfg.discretization == "node")
-                                  ? (msh.nNormal_halo_Planes - msh.nBoundaryHaloPlanes) : msh.nNormal_halo_Planes;
+                                  ? msh.nNormalPlanes : msh.nNormal_halo_Planes;
 
     // (検証A) node 弱形式の plane 振り分けを 1 度だけログ: 主ループ面 = 内部(+periodic)、弱形式面 = 全境界半割面。
     if (cfg.discretization == "node") {
