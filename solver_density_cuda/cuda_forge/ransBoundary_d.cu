@@ -164,6 +164,29 @@ __global__ void compute_wall_y_eff_d(
                     ++cnt;
                 }
             }
+            // 凹コーナー (段差リップ・2壁交線) では全エッジ隣接が壁ノードで cnt==0 になる。
+            // 構造化要素では対角の内部ノードへ直接エッジが無いため、2-ring 探索 (隣接壁ノードの隣接 =
+            // 対角内部ノード) で第一オフ壁距離を拾う。これをしないと wall_dist=0 のコーナー (3D 段差) で
+            // y=kSmall→ω=60ν/(β₁kSmall²) が float overflow し ω=inf になる (2D は偶々 wall_dist>0 で救われていた)。
+            if (cnt == 0) {
+                for (geom_int j = cell_planes_index[ic]; j < cell_planes_index[ic + 1]; ++j) {
+                    const geom_int ip = cell_planes[j];
+                    const geom_int a = plane_cells[2 * ip + 0];
+                    const geom_int b = plane_cells[2 * ip + 1];
+                    const geom_int nb = (a == ic) ? b : a;          // 隣接壁ノード
+                    if (nb >= nCells || wall_flag[nb] != 1) continue;
+                    for (geom_int j2 = cell_planes_index[nb]; j2 < cell_planes_index[nb + 1]; ++j2) {
+                        const geom_int ip2 = cell_planes[j2];
+                        const geom_int a2 = plane_cells[2 * ip2 + 0];
+                        const geom_int b2 = plane_cells[2 * ip2 + 1];
+                        const geom_int other2 = (a2 == nb) ? b2 : a2;
+                        if (other2 < nCells && other2 != ic && wall_flag[other2] == 0) {
+                            ymin = min(ymin, max(wall_dist[other2], kSmall));
+                            ++cnt;
+                        }
+                    }
+                }
+            }
             wall_y_eff[ic] = (cnt > 0) ? ymin : max(wall_dist[ic], kSmall);
         } else {
             wall_y_eff[ic] = wall_dist[ic];
