@@ -239,6 +239,51 @@ forge の GPU カーネル群 (対流・勾配・粘性・block-DPLUR) は、消
 - **閉性チェック**: 各内部ノードで `Σ(双対面ベクトル, 符号付き)` の max ノルムを print。
 - 出力: HDF5 `/DUAL` グループ (可視化用 primal は `/MESH /CELLS` に残す二層構造)。
 
+### 2.5. 3D 双対生成 (M4)
+
+2D では primal **エッジ = `plane`** だったため双対面はそのまま `nPlanes` 枚だが、3D では `plane` は
+primal **面 (tri/quad)** であり、双対面の単位となる**エッジ列が陽に存在しない**。よって 3D 双対生成は
+**一意エッジ列の構築**から始める。配置は 2D と同じ [`buildMedianDual()`](../solver_density_cuda/mesh/gmshReader.hpp)
+の `is3D` 分岐。計画: [`discretization-median-dual-3d.md`](../plans/active/discretization-median-dual-3d.md)。
+
+#### 2.5.1 一意エッジ列と `edge → {cell, face, face}`
+要素 (tet/prism/hex/pyramid) の各局所面 (`elementType.hpp` の `nodesOrderPlanes`) は、その周回ノード対が
+そのままエッジである。全セル・全面の周回エッジを正規化キー $(\min(a,b),\max(a,b))$ で重複除去し `edges[]` を作る。
+**1 エッジは各 incident cell 内でちょうど 2 つの面に属する** (多面体エッジの定義) ので、各 (edge, cell) に対し
+その 2 面 (`F1,F2`) を `edge → {cell, faceA, faceB}` として記録する。これは別途エッジテーブルを持たず、
+既存 primal 面 (`planes` の重心 `centCoords`) をそのまま面重心 $F$ に流用できる利点がある。3D では
+$n_{DF} = $ 一意エッジ数 (2D の $n_{DF}=n_{Planes}$ に相当)。
+
+#### 2.5.2 3D 双対面 (エッジ $\{A,B\}$)
+各 incident cell の寄与は四角パッチ $(M, F_1, G, F_2)$ — $M$=エッジ中点, $F_1,F_2$=エッジを含む 2 面の重心,
+$G$=セル重心。面ベクトルは **Newell 法** (パッチ頂点の外積総和の $1/2$) で非平面四角でも一貫に求め、$A\to B$ 向きに
+統一して全 incident cell 分を加算したものが双対面ベクトル `dualFaceVect`。面積 `dualFaceArea` $=$ ノルム、
+重心 `dualFaceCent` $=$ パッチ面積加重。これは 2D の「midpoint→centroid 区間 (単位厚みで rotate(-90))」を
+3D ポリゴンに一般化したものに相当する。
+
+#### 2.5.3 3D 双対体積 (ノード $A$)
+各 incident cell で $A$ 周りの sub-polyhedron を、$A$・($A$ に接続するエッジの中点)・($A$ を含む面の重心)・$G$ を
+頂点とする**四面体群**へ分割し、符号付き体積 $\frac{1}{6}(\mathbf{r}_1-\mathbf{r}_0)\cdot[(\mathbf{r}_2-\mathbf{r}_0)\times(\mathbf{r}_3-\mathbf{r}_0)]$
+を加算する。全 cell 分の総和が `dualVolume[A]`、重心 `dualCentroid` は四面体重心の体積加重。
+$\sum_A V_A == \sum_{\text{cell}} V_{\text{cell}}$ を検証する。
+
+#### 2.5.4 3D 境界半割面
+境界面 (tri/quad) を median 分割し、各構成ノード $N$ へ $N$・($N$ 接続エッジ中点)・(面重心) のサブポリゴンの
+外向き面ベクトルを分配する。マルチマーカ corner (壁∩出口∩periodic 等) は 2D と同型に各 incident bcond へ
+1 枚ずつ (`halfByOwner`)、閉性集計 `bnodeAccum` は所有非依存で全半割面を集計する。
+
+#### 2.5.5 periodic 双対面対応
+周期境界面上のエッジは partner 面側に同形のエッジが存在する。`setPeriodicPartner` のノード対応 (Cartesian
+$dx,dy,dz$ 平行移動) で $A\leftrightarrow A'$, $B\leftrightarrow B'$ を対応付け、**周期エッジの双対面を境界半割面に
+せず、両側 incident cell を直接繋ぐ内部双対面**として扱う (周期 ghost ではなく直接接続、cell モードの
+`periodicPartner` と同思想)。これにより spanwise の解像乱流が周期方向に連続する。閉性は周期内部面が両側で
+相殺するため通常の内部双対面と同様に成立する。
+
+#### 2.5.6 検証量 (3D)
+$\sum_A V_A == \sum V_{\text{cell}}$ (relErr $<10^{-6}$)、ノード closure $\sum_f \mathbf{S}_f + \sum$ 境界半割面 $= 0$、
+**3D 一定流 (free-stream) で全ノード残差が機械精度**、負体積 0。非平面四角面は Newell 法で近似 (歪み大は警告)、
+polyhedral primal の双対化は対象外。
+
 ### 3. カーネル別の対応状況
 
 | カテゴリ | ソース | node 対応 |

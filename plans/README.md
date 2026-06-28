@@ -30,6 +30,7 @@
 | [convection-multispecies-contact-pressure.md](active/convection-multispecies-contact-pressure.md) | `convection` | 多成分 TP 接触面の圧力振動 (face-state 整合化 → PEP 切り分け) |
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
 | [discretization-median-dual.md](active/discretization-median-dual.md) | `architecture` | cell-centered / node-centered (median-dual) 両対応化 |
+| [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [gpu-implicit-plan.md](active/gpu-implicit-plan.md) | `time_integration` | GPU 陰解法化計画 |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
