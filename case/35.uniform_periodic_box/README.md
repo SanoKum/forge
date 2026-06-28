@@ -15,3 +15,5 @@
 | `run_0005_node_periodic_tg` | node 全面 periodic + Taylor-Green IC (M0.1) explicit RK3 | step4 DIVERGED。union-find `3169 merged`=35937−32768 正。発散は periodic 起因でなく node+低マッハ+explicit 既知不安定(run_0006 で実証) | 破棄予定 |
 | `run_0006_node_slip_tg_isolation` | **切り分け**: run_0005 の periodic を slip に置換(periodic 無し)、他同一 | step4 で**同様に DIVERGED** → TG 発散は periodic 実装でなく node+低マッハ+explicit RK3 の不安定と確定(periodic 無罪) | ref (切り分けエビデンス) |
 | `run_0007_node_periodic_tg_lmp2` | run_0005 + lowMachPrecond=2 (explicit) | step1 DIVERGED。explicit では低マッハ安定化せず(node 低マッハは implicit 必須)。非自明 periodic は implicit(§4.5.7)待ち | 破棄予定 |
+| `run_0008_node_periodic_tg_implicit` | node 全面 periodic + TG + implicit block-DPLUR(lowMachPrecond=2, cfl_pseudo=1, nStepInner=5) | step64 で **NaN 発散**(explicit step4 より大幅に粘るが発散) | 破棄予定 |
+| `run_0009_node_slip_tg_implicit_iso` | **切り分け**: run_0008 の periodic を slip に置換、他同一 | step99 まで **NaN なし**(plateau/roe rising だが発散せず)。**implicit では periodic だけ NaN 発散** → §4.5.7 Jacobian 行 fold が implicit periodic 安定化に必要と確定(RHS gather だけでは LHS 不整合) | ref (§4.5.7 必要性の根拠) |

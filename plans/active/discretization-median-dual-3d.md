@@ -289,5 +289,10 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
     既知不安定** ([[node-mode-periodic-and-backstep-status]] backstep step18 と同類)。lowMachPrecond=2 explicit も step1 発散。
     → 非自明 periodic の安定走行は **implicit (§4.5.7 の Jacobian 行 fold) が前提**。RHS gather は実装済なので陰解法対応で
     完結する見込み。cell モード・非 periodic node はガードで不変。
-  - **残**: §4.5.7 陰解法 fold (非自明 periodic 安定化の鍵)、勾配/RANS/species の periodic gather (現状 NS 保存量5のみ;
+  - **implicit スコープ (§4.5.7 の必要性を実証)**: node periodic TG を implicit block-DPLUR で実行 (`case/35` run_0008) すると
+    step64 まで粘って NaN 発散。一方 **implicit + slip (periodic 無し, run_0009) は step99 まで NaN なし**。explicit では
+    periodic/slip が同一発散 (純 node-lowMach) だったのに対し、**implicit では periodic だけ NaN** → RHS gather だけでは
+    陰解法 LHS が master/slave 不整合 (合併 RHS・合併体積だが対角/非対角は未合併) で、**§4.5.7 の Jacobian 行 fold が
+    implicit periodic 安定化に必要**と確定。これが非自明 periodic 実走の次の主タスク。
+  - **残**: §4.5.7 陰解法 fold (非自明 periodic 安定化の鍵・実証済)、勾配/RANS/species の periodic gather (現状 NS 保存量5のみ;
     2次再構成・粘性で boundary node 勾配が片側になる)、§4.5.8 回転、検証ケース 3-4 (sod 3D・backstep 3D)。
