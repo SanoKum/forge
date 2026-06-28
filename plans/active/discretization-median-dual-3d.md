@@ -355,3 +355,11 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   「multi-way overlap での多重加算」は **無し** (free-stream 3 方向 periodic=8-way コーナーが機械ゼロ=幾何 gather 厳密)。
   4-way エッジの微小異常 (Ux 7e-7=内部の10倍) は float closure 誤差の蓄積 (8 半割面相殺の項数増) で論理バグでない。
   → node sod は implicit dual-time 等の安定化が要 (node-explicit-shock 限界、periodic とは別軸)。
+- `2026-06-28` — **【訂正】sod 3D の node 発散は誤診だった → node sod 3D periodic は動く (検証完結)**。
+  前項で「node-explicit-shock 一般不安定」とした sod node 発散は **壊れた IC が真因** (user 指摘)。`initial:"sod"` は
+  非次元 (P=1) で forge CPG thermo (cp1038.8,R296.8) と非互換 → T≈0.003K で roe 破壊 → **P 均一の異常状態** (停止接触)
+  に node checkerboard が乗り発散、加えて私の cfl 0.4 が過大だった。**run_0002_slau_cpg の物性・IC をそのまま使用**
+  (cpg 物理単位: 左 P1e6/T2000, 右 P1e5/T400, roe=P/(γ-1), cfl0.2) すると **node sod 3D periodic が安定完走** (200 step
+  NaN なし)・物理 sod (ro0.84..1.92, 衝撃右伝播)・**spanwise std=0〜1e-6 完全均一** (`case/05` run_node3d_periodic_sod)。
+  node は cell より衝撃前面がクリーン (決定的 vs atomicAdd ノイズ)。→ **periodic は transient 強衝撃でも node で健全**。
+  双対面ベクトルは closure 3.6e-6 で整合 (user の面ベクトル確認要望も OK)。残: §4.5.8 回転、x_R settle、SST 較正影響。
