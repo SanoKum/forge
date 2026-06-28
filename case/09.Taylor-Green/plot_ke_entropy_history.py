@@ -53,11 +53,10 @@ def series(run_dir):
     return np.array(t), np.array(K), np.array(S)
 
 RUNS = [
-    ("node true-KEEP  visc (Re160)", "run_0007_node_keep_pure_visc", "C0", "-"),
-    ("node true-KEEP  inviscid",     "run_0009_node_keep_pure_eul",  "C2", "-"),
-    ("cell true-KEEP+diss visc (grows!)", "run_0008_cell_keep_diss_visc", "C1", "-"),
-    ("cell true-KEEP  visc (diverges)", "run_0010_cell_keep_pure_visc", "C3", "--"),
-    ("cell ROE=MUSCL+Roe visc (old KEEP)", "run_0012_cell_roe_visc", "C4", ":"),
+    ("node pure-KEEP visc (Re160)", "run_0007_node_keep_pure_visc", "C0", "-"),
+    ("cell pure-KEEP visc (Re160)", "run_0008_cell_pure_visc",      "C1", "--"),
+    ("node pure-KEEP inviscid",     "run_0009_node_keep_pure_eul",  "C2", "-"),
+    ("cell pure-KEEP inviscid",     "run_0010_cell_pure_eul",       "C3", "--"),
 ]
 
 base = os.path.dirname(os.path.abspath(__file__))

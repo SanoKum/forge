@@ -23,7 +23,6 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
-| [boundary-cell-periodic-conservation.md](active/boundary-cell-periodic-conservation.md) | `boundary` | cell 全周期境界の対流非保存バグ (seam 不連続成長=非周期化)。TGV で運動量注入、node は厳密保存。原因を cell 周期 seam に局在化済、修正は次タスク |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
 | [architecture-perphase-profiling-hotspot.md](active/architecture-perphase-profiling-hotspot.md) | `architecture` | per-phase 詳細プロファイリングに基づく host 律速の局所最適化 |
 | [condensation-nonequilibrium.md](active/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
@@ -42,6 +41,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [boundary-cell-periodic-conservation.md](accepted/boundary-cell-periodic-conservation.md) | `boundary` | cell 全周期境界の非保存バグ修正: device `bint_d[partnerCellID]` 未転送で ghost が誤値→運動量注入。setPeriodicPartner 直後に H2D コピーで根治。TGV で cell/node 一致を確認 |
 | [thermophysics-eos-positivity-floor-config.md](accepted/thermophysics-eos-positivity-floor-config.md) | `thermophysics` | EOS 正値化フロア (pMin/roMin/tMin) の config 化。無次元・低圧ケース (Taylor-Green) で既定 1.0 Pa フロアが場を破壊する問題を解消、既定値据え置きでビット不変 |
 | [boundary-inlet-profile.md](accepted/boundary-inlet-profile.md) | `boundary` | 入口分布プロファイル: CSV テーブルで inlet bvar を非一様化 (x/y/z 1D 線形 or xyz 最近傍)、壁法則 helper |
 | [turbulence-node-wall-function-coverage.md](accepted/turbulence-node-wall-function-coverage.md) | `boundary` | node SST 壁関数の生産置換を第一内層ノードにも適用 (近壁 k 暴走修正、cell 不変・x_R が SU2 整合) |

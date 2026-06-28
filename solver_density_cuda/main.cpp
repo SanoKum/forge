@@ -824,6 +824,20 @@ cudaConfig initializeSimulation(
     cudaConfig cuda_cfg(msh);
     msh.setMeshMap_d();
     msh.setPeriodicPartner();
+    // setPeriodicPartner は host の bint["partnerCellID"/"partnerPlnID"] を埋めるが device (bint_d) へは
+    // 転送されない (bcondInitVariables の H2D は yaml uniform=type==1 の bint のみ)。これを怠ると periodic_d が
+    // 未初期化の device partnerCellID を読み、ghost が幾何的に誤ったセル値を取得して cell 周期境界が非保存になる
+    // (node は host の partnerCellID を直接使うため無傷)。明示的に H2D 転送する。
+    for (auto& bc : msh.bconds) {
+        if (bc.bcondKind != "periodic") continue;
+        for (const char* key : {"partnerCellID","partnerPlnID"}) {
+            if (bc.bint.count(key)==0) continue;
+            if (bc.bint_d.count(key)==0 || bc.bint_d[key]==nullptr)
+                gpuErrchk( cudaMalloc(&(bc.bint_d[key]), bc.bint[key].size()*sizeof(geom_int)) );
+            gpuErrchk( cudaMemcpy(bc.bint_d[key], bc.bint[key].data(),
+                       bc.bint[key].size()*sizeof(geom_int), cudaMemcpyHostToDevice) );
+        }
+    }
 
     var.setStructuralVariables(cfg , cuda_cfg , msh);
     // node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5): partnerCellID から周期ノード group(union-find)

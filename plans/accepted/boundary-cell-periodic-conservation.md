@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `boundary`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - [`methods/boundary.md`](../../methods/boundary.md)
   - 検証ケース: [`case/09.Taylor-Green`](../../case/09.Taylor-Green/README.md)
@@ -38,6 +38,23 @@ cell (collocated primal) モードの triply-periodic 境界が**運動量を保
 - 別バグ (本件と独立): [`boundaryCond_d.cu`](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu) `periodic_d_wrapper` が `dtheta` を `bc.inputInts["dtheta"]` (int マップ・存在しないキー→0) から読む。回転周期 (type=1) が常に dtheta=0 で無効化される。Cartesian (type=0) では 0 が正しく無害。`bc.inputFloats["dtheta"]` から読むよう修正が必要。
 - 暫定運用: 全周期の保存性が要るケース (TGV 等) は **node モード**を使う。
 
+## 5. 根本原因と修正 (確定)
+
+**根本原因: `bint_d["partnerCellID"]` (device) が host から転送されていなかった。** `setPeriodicPartner` ([mesh.cpp](../../solver_density_cuda/mesh/mesh.cpp)) は host の `bint["partnerCellID"]` を埋めるが、device への H2D コピーは `bcondInitVariables` の **yaml uniform (type==1) 経路のみ**で、計算値である partnerCellID は転送されない。結果 `periodic_d` が**未初期化の device partnerCellID** を読み、ghost が幾何的に誤ったセルの値を取得していた。
+
+切り分けの決め手 (添字・float 非依存):
+- ghost セル値を解析 TGV(ghost 重心) と照合 → 修正前 6112/6144 が不一致 (誤差 0.43≈M0)、修正後 0 (誤差 1.5e-7)。interior は常に解析と一致 (2e-8) で検査式の妥当性を担保。
+- host double で seam 流束を再計算しても非保存 → **float/double 無関係**。
+- ghost==device partnerCellID は毎ステージ厳密一致 → **ghost 更新タイミングは無関係** (コピー先の device 値自体が誤り)。
+- node は `buildPeriodicNodeGroups` が **host** の partnerCellID を直接使うため無傷だった。
+
+**修正**: [`main.cpp`](../../solver_density_cuda/main.cpp) の `setPeriodicPartner()` 直後に、各 periodic bcond の `partnerCellID`/`partnerPlnID` を `bint_d` へ明示的に `cudaMemcpy` (H2D)。periodic bcond のみ対象なので非周期・cell/node 既存挙動は不変。
+
+## 6. 別バグ (本件と独立, 未修正)
+
+[`boundaryCond_d.cu`](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu) `periodic_d_wrapper` が `dtheta` を `bc.inputInts["dtheta"]` (int マップ・存在しないキー→0) から読む。**回転周期 (type=1) が常に dtheta=0 で無効化される**。Cartesian (type=0) では 0 が正しく無害。`bc.inputFloats["dtheta"]` から読むよう要修正 (別タスク)。
+
 ## 変更ログ
 
-- `2026-06-28` — 調査着手。上記の切り分けを実施し、原因を cell 周期 seam の対流保存に局在化。修正は次タスク。
+- `2026-06-28` — 調査着手。cell 全周期で運動量が線形注入され seam が非周期化することを確認、原因を seam 対流保存に局在化。
+- `2026-06-28` — **根本原因特定・修正完了**。device partnerCellID 未転送が原因 (上記)。修正後、cell pure-KEEP TGV (非粘性) が運動量 ~1e-7・KE 0.4%・エントロピー ~1e-5 で保存し node と一致 (`case/09` run_0008/0010)。修正前に発散した cell pure-KEEP が完走。node・非周期は不変。検証: [`case/09.Taylor-Green/README.md`](../../case/09.Taylor-Green/README.md)。
