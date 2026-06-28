@@ -117,6 +117,43 @@ SLAU の質量流束の圧力散逸項 `χ/c_hat·ΔP` が音速 `c_hat` でス�
 時代の交絡)、P odd-even **96→22 Pa (−77%)**、平均流残差 −2.5〜2.8桁。ただし **rms_roOmega は ~9.5 で依然プラトー**
 = node の omega プラトーは低マッハ市松とは**別問題** (README 既知の壁近傍 ω ソース挙動)。
 
+## omega 残差プラトーの局在 (node 入口×壁コーナー, Thread A)
+
+P 市松とは独立な **rms_roOmega プラトー** (node ~9.5) の正体を、`res_roOmega`/`src_jac_omega`/
+`transport_diag_omega` を出力 (variables.hpp の一時診断追加) して収束場から 200 step で局在化
+(`run_0083` cell / `run_0084` node、図 `run_0084.../res_roOmega_map.png`)。
+
+- **node**: |res_roOmega| 最大は **x=0 入口×壁コーナーノード (0,1.06)・(0,2.94) で 568** = 入口内部 (111) の
+  5倍。入口列 x<0.2 平均 66。→ **user 直感どおり node では入口×壁コーナーが残差ホットスポット**。これが node
+  rms_roOmega ~9.5 プラトーの主因 (lmp2 でも残る)。
+- **cell**: 入口は静か (0.14)。ホットスポットは段差リップ/せん断層 (x≈2.2, mean 29, max 79) と段差後 top 壁。
+
+**根本原因 (node)**: node 入口 Dirichlet (`rans_dirichlet_scalar_boundary_d`) は **primitive `omega[ic]=omegab` のみ
+ピンし、保存量 `roOmega[ic]` をピンしない**。壁 BC (ransBoundary_d.cu:56,72) は `roOmega[ic]=ρ·ω_w` まで整合させ
+`res_roOmega=0` で除外するのに対し、**入口 Dirichlet は保存量を整合させず・残差も除外しない**。結果:
+① 入口ノードで `roOmega/ro` と `omega` が最大 **888727** 不整合 (omega は 348→500 にドリフト)、
+② `res_roOmega` (110–568) が **rms_roOmega を汚染** (= プラトー)。コーナーが最悪なのは入口 plane に属しつつ壁が
+別 omega を要求するため。**Dirichlet/Neumann の競合というより「Dirichlet の保存量ピン+残差除外の欠落」**。
+
+### k / roK も同じ保存量ピン欠落 (ただし残差支配は物理側)
+
+`res_roK` も出力 (`run_0085` cell / `run_0086` node) して確認:
+
+- **保存量不整合は k にも存在**: node 入口で **`roK/ro` が 24–7730 と primitive `k=4` に対し最大 7729 不整合**
+  (k の primitive pin は効くが、omega 同様 **保存量 `roK` がピンされない**)。同一 kernel `rans_dirichlet_scalar_boundary_d`
+  が `k[ic]=kb`/`omega[ic]=omegab` だけ書き `roK`/`roOmega` を放置するのが共通原因。
+- **ただし `res_roK` の局在は物理側が支配的** (omega と対照): node |res_roK| 最大 9.39 は **再付着域 x≈6.7,y=0**
+  (x_R≈6.7=k 生産ピーク・物理)、入口コーナーは 2.31 で副次的。cell は段差リップ (max 18) が支配、入口≈0.003。
+  → **omega プラトー=入口コーナー BC が支配、k 残差=再付着の物理生産が支配**。
+
+### 打ち手 (A4, 未実装 — 要 plan)
+
+壁ピンと同形に、node 入口 (および任意の Dirichlet スカラー境界) で **保存量も整合**: `roOmega[ic]=ρ·omegab` /
+`roK[ic]=ρ·kb` をピン + `res_roOmega[ic]=0` / `res_roK[ic]=0` で除外 (壁 ransBoundary_d.cu:56,72 と同形)。
+cell は ghost 経由で正しく課されるため不変の見込み。behavior 変更のため methods→plan→実装フローを踏む。
+検証: node rms_roOmega プラトーが落ちるか + 入口 roK/roOmega 不整合 (7730/888727) が解消するか + x_R/場 不変 + cell ビット不変。
+注: k は残差支配が物理 (再付着) のため rms_roK プラトー自体は本修正では大きく変わらない見込み (入口不整合の是正が主目的)。
+
 ## 推奨 / 残課題
 
 - **低マッハ剥離・再循環ケースは `lowMachPrecond=2` + `blockDPLUR=1` を既定候補**とする (cfl_pseudo=1 で整合収束)。
