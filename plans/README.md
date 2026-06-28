@@ -40,6 +40,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [boundary-inlet-profile.md](accepted/boundary-inlet-profile.md) | `boundary` | 入口分布プロファイル: CSV テーブルで inlet bvar を非一様化 (x/y/z 1D 線形 or xyz 最近傍)、壁法則 helper |
 | [turbulence-node-wall-function-coverage.md](accepted/turbulence-node-wall-function-coverage.md) | `boundary` | node SST 壁関数の生産置換を第一内層ノードにも適用 (近壁 k 暴走修正、cell 不変・x_R が SU2 整合) |
 | [architecture-axisym-axis-singularity.md](accepted/architecture-axisym-axis-singularity.md) | `architecture` | 軸対称 近軸の数値問題 (軸中心 k スパイク) の根本原因特定 |
 | [architecture-axisym-nozzle-geometry.md](accepted/architecture-axisym-nozzle-geometry.md) | `architecture` | architecture-axisym-nozzle-geometry |

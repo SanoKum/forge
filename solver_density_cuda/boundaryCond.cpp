@@ -7,6 +7,12 @@
 #include "cuda_forge/ransWallFunction_d.cuh"
 #include "cuda_forge/fluct_variables_d.cuh"
 
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <array>
+#include <cuda_runtime.h>
+
 using namespace std;
 
 bcondConfFormat::bcondConfFormat(){};
@@ -143,6 +149,144 @@ void readBcondConfig(solverConfig& cfg , vector<bcond>& bconds)
         bc.bcondInitVariables(cfg.gpu); // allocate and set boundary variables
     }
 };
+
+// ---------------------------------------------------------------------------
+// 入口分布プロファイル: inlet bcond の per-face 境界値 (bvar) を CSV テーブルから
+// face 重心座標で補間してセットする。inlet_* の kernel は per-face の bvar (Uxb 等) を
+// そのまま読むため、kernel 無改修で「一様でない入口分布 (壁法則 BL 等)」を実現できる。
+//
+// 有効化: bcondConfig.yaml の対象 inlet に `ints: {inletProfile: 1}` を付ける。
+// テーブル: run dir の `inlet_profile_<physID>.csv`。1 行目ヘッダで補間方向と量を指定:
+//   - 先頭の連続する x/y/z 列 = 補間座標。1 列 (例 `y`) なら 1D 線形補間、3 列 (`x y z`) なら 3D 最近傍。
+//   - 残り列 = bvar 量名 (Ux Uy Uz Tt Pt Ts Ps ro k omega ...; その inlet が持つ bvar のみ反映)。
+//   例 (1D-y):  `y Ux Uy Uz`\n`1.0 0 0 0`\n`1.1 12 0 0` ...
+//   例 (3D):    `x y z Ux Uy Uz` ...
+// methods/boundary.md, plans/active/boundary-inlet-profile.md 参照。
+// ---------------------------------------------------------------------------
+static std::vector<std::string> splitWS(const std::string& s)
+{
+    std::vector<std::string> out; std::istringstream iss(s); std::string t;
+    while (iss >> t) out.push_back(t);
+    return out;
+}
+
+void applyInletProfiles(solverConfig& cfg , mesh& msh)
+{
+    for (bcond& bc : msh.bconds)
+    {
+        const auto it = bc.inputInts.find("inletProfile");
+        if (it == bc.inputInts.end() || it->second != 1) continue;
+
+        const std::string fname = "inlet_profile_" + std::to_string(bc.physID) + ".csv";
+        std::ifstream fin(fname);
+        if (!fin) {
+            std::cerr << "[applyInletProfiles] inletProfile=1 but file '" << fname
+                      << "' not found (physID=" << bc.physID << ").\n";
+            exit(EXIT_FAILURE);
+        }
+
+        // ---- ヘッダ: 先頭の連続 x/y/z = 補間座標、残り = 量名 ----
+        std::string line;
+        while (std::getline(fin, line)) { // 先頭の空行/コメントを飛ばす
+            std::string t = line; size_t p = t.find_first_not_of(" \t\r\n");
+            if (p == std::string::npos || t[p] == '#') continue;
+            break;
+        }
+        std::vector<std::string> hdr = splitWS(line);
+        std::vector<int> axisIdx;     // 補間軸 (0=x,1=y,2=z) の列
+        size_t ncoord = 0;
+        for (const auto& h : hdr) {
+            if (h == "x") { axisIdx.push_back(0); ncoord++; }
+            else if (h == "y") { axisIdx.push_back(1); ncoord++; }
+            else if (h == "z") { axisIdx.push_back(2); ncoord++; }
+            else break;
+        }
+        if (ncoord == 0) {
+            std::cerr << "[applyInletProfiles] " << fname << ": header must start with x/y/z coordinate column(s).\n";
+            exit(EXIT_FAILURE);
+        }
+        std::vector<std::string> qnames(hdr.begin() + ncoord, hdr.end());
+
+        // ---- データ ----
+        std::vector<std::array<double,3>> rowC;     // 座標 (使う軸のみ有効)
+        std::vector<std::vector<double>>  rowQ;     // 量
+        while (std::getline(fin, line)) {
+            std::vector<std::string> tk = splitWS(line);
+            if (tk.size() < hdr.size()) continue;
+            std::array<double,3> c{0,0,0};
+            for (size_t k = 0; k < ncoord; ++k) c[axisIdx[k]] = std::stod(tk[k]);
+            std::vector<double> q(qnames.size());
+            for (size_t k = 0; k < qnames.size(); ++k) q[k] = std::stod(tk[ncoord + k]);
+            rowC.push_back(c); rowQ.push_back(q);
+        }
+        const int nrow = (int)rowC.size();
+        if (nrow < 1) { std::cerr << "[applyInletProfiles] " << fname << ": no data rows.\n"; exit(EXIT_FAILURE); }
+
+        // 1D の場合は補間軸で昇順ソート (線形補間用)
+        const bool oneD = (ncoord == 1);
+        std::vector<int> order(nrow);
+        for (int i = 0; i < nrow; ++i) order[i] = i;
+        if (oneD) {
+            const int ax = axisIdx[0];
+            std::sort(order.begin(), order.end(), [&](int a, int b){ return rowC[a][ax] < rowC[b][ax]; });
+        }
+
+        // ---- 各 inlet face で補間し bvar をセット ----
+        for (size_t i = 0; i < bc.iPlanes.size(); ++i)
+        {
+            const geom_int ip = bc.iPlanes[i];
+            const double fc[3] = { (double)msh.planes[ip].centCoords[0],
+                                   (double)msh.planes[ip].centCoords[1],
+                                   (double)msh.planes[ip].centCoords[2] };
+            std::vector<double> qv(qnames.size());
+            if (oneD) {
+                const int ax = axisIdx[0];
+                const double cf = fc[ax];
+                // 端はクランプ、内部は線形補間 (order は昇順)
+                if (cf <= rowC[order[0]][ax]) { qv = rowQ[order[0]]; }
+                else if (cf >= rowC[order[nrow-1]][ax]) { qv = rowQ[order[nrow-1]]; }
+                else {
+                    int lo = 0;
+                    while (lo < nrow-1 && rowC[order[lo+1]][ax] < cf) ++lo;
+                    const int a = order[lo], b = order[lo+1];
+                    const double ca = rowC[a][ax], cb = rowC[b][ax];
+                    const double w = (cb > ca) ? (cf - ca)/(cb - ca) : 0.0;
+                    for (size_t k = 0; k < qnames.size(); ++k) qv[k] = (1.0-w)*rowQ[a][k] + w*rowQ[b][k];
+                }
+            } else {
+                // 3D 最近傍
+                int best = 0; double bd = 1e300;
+                for (int r = 0; r < nrow; ++r) {
+                    double d = 0;
+                    for (size_t k = 0; k < ncoord; ++k) { const int ax = axisIdx[k]; const double dd = fc[ax]-rowC[r][ax]; d += dd*dd; }
+                    if (d < bd) { bd = d; best = r; }
+                }
+                qv = rowQ[best];
+            }
+            // bvar へ反映 (その inlet が持つ量のみ)
+            for (size_t k = 0; k < qnames.size(); ++k) {
+                auto bit = bc.bvar.find(qnames[k]);
+                if (bit != bc.bvar.end() && i < bit->second.size()) bit->second[i] = (flow_float)qv[k];
+            }
+        }
+
+        // ---- device へ再アップロード ----
+        if (cfg.gpu == 1) {
+            for (const auto& qn : qnames) {
+                auto bit = bc.bvar.find(qn);
+                auto dit = bc.bvar_d.find(qn);
+                if (bit != bc.bvar.end() && dit != bc.bvar_d.end() && dit->second != nullptr) {
+                    cudaMemcpy(dit->second, bit->second.data(),
+                               bc.iPlanes.size()*sizeof(flow_float), cudaMemcpyHostToDevice);
+                }
+            }
+        }
+        std::cout << "[applyInletProfiles] physID=" << bc.physID << " kind=" << bc.bcondKind
+                  << ": set " << qnames.size() << " quantities from " << fname
+                  << " (" << (oneD ? "1D interp" : "3D nearest") << ", " << nrow << " rows, "
+                  << bc.iPlanes.size() << " faces).\n";
+    }
+}
 
 void applyBconds(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_p , fluct_variables& fluct)
 {

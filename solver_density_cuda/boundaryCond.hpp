@@ -258,3 +258,8 @@ void copyBcondsGradient(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , v
 
 void readBcondConfig(solverConfig& , vector<bcond>& );
 
+// 入口分布プロファイル: inlet bcond の per-face bvar を CSV (`inlet_profile_<physID>.csv`) から
+// face 重心座標で補間してセットする (ints:{inletProfile:1} で有効化)。readBcondConfig の後・
+// 最初の applyBconds より前に呼ぶ。詳細は boundaryCond.cpp の関数ヘッダ参照。
+void applyInletProfiles(solverConfig& cfg , mesh& msh);
+

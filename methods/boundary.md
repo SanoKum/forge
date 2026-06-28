@@ -135,6 +135,27 @@ YAML を読み、各 `bcond` (メッシュ生成側で物理 ID 付き) に `kin
 値型テーブル (`valueTypes`) を紐付け、`bcondInitVariables` で
 GPU/CPU 双方の境界変数バッファを確保する。
 
+### 入口分布プロファイル (inlet profile)
+
+入口 (`inlet_*`) の境界値を**一様でなく分布として**与える機能。inlet カーネルは per-face の
+境界値 `bvar` (`Uxb[ib]`,`Uyb[ib]`,…) をそのまま読むため、**face 重心座標に応じて `bvar` を
+非一様にセットすれば kernel 無改修で分布入口が実現**できる。これを
+[`applyInletProfiles`](../solver_density_cuda/boundaryCond.cpp) が担う。
+
+- **有効化**: 対象 inlet の YAML に `ints: {inletProfile: 1}` を付ける。
+- **入力**: run dir の `inlet_profile_<physID>.csv`。**1 行目ヘッダで補間方向と量を指定**する。
+  - 先頭の連続する `x`/`y`/`z` 列 = **補間座標**。1 列 (例 `y`) → **1D 線形補間** (その軸でテーブルを
+    昇順ソートし線形補間、範囲外は端値クランプ)。3 列 (`x y z`) → **3D 最近傍**。
+  - 残り列 = **bvar 量名** (`Ux Uy Uz Tt Pt Ts Ps ro k omega` 等)。その inlet が持つ bvar のみ反映。
+  - 例 (1D-y): ヘッダ `y Ux Uy Uz` に続けて行 `1.0 0 0 0` / `1.02 30 0 0` …。
+- **適用箇所**: `main.cpp` で `readBcondConfig` (bvar セット) の直後・最初の `applyBconds` より前に
+  `applyInletProfiles(cfg, msh)` を呼ぶ。face 重心 `msh.planes[ip].centCoords` で補間し host `bvar` に
+  セット → `bvar_d` に再アップロード。`inletProfile` 未指定の inlet は一様のまま (挙動不変)。
+- **壁法則 helper**: [`tools/gen_inlet_walllaw.py`](../solver_density_cuda/tools/gen_inlet_walllaw.py) が
+  Reichardt 合成則でチャネル/片側 BL の $u(y)$ を生成し CSV を書く ($u_\tau$ は中央/外縁速度 = `Uc` に
+  なるよう二分法)。設計判断は
+  [`boundary-inlet-profile.md`](../plans/accepted/boundary-inlet-profile.md)。
+
 ### ディスパッチ
 
 [`applyBconds`](../solver_density_cuda/boundaryCond.cpp#L116) が
