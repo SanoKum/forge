@@ -197,9 +197,9 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
 
 新規物理スキーム追加なので、実装前に:
 
-1. `methods/condensation/theory.md` を新規作成 (物理: CNT+Iland, Gyarmathy/Goodheart, moment method,
+1. `methods/condensation.md` を新規作成 (物理: CNT+Iland, Gyarmathy/Goodheart, moment method,
    T_d, N2 物性)。**新エリア `condensation/` を作る** (methods/index.md 目次も同期)。
-2. `methods/condensation/implementation.md` を新規作成 (forge への対応: 追加保存変数, ソース項配置,
+2. `methods/condensation.md` を新規作成 (forge への対応: 追加保存変数, ソース項配置,
    fractional-step, 二相 EOS, 境界・初期, RANS 実装の流用方針)。
 3. `.github/plans/condensation-nonequilibrium.md` を `_template.md` から作成し、`related_docs` で
    上記 2 つをリンク。`.github/plans/README.md` 一覧にも追記。
@@ -225,7 +225,7 @@ forge は既に「移流される追加保存スカラー + stiff ソース項�
 > forge に窒素の非平衡凝縮 (4 モーメント方程式: ρQ0,ρQ1,ρQ2,ρg) を実装したい。まず
 > `.github/plans/condensation-nonequilibrium-session-prompt.md` と
 > `papers/on nitrogen condensation in hypersonic nozzle flows_summary.md` を読み、AGENTS.md の
-> 開発フローに従って (1) methods/condensation/theory.md, (2) methods/condensation/implementation.md,
+> 開発フローに従って (1) methods/condensation.md, (2) methods/condensation.md,
 > (3) .github/plans/condensation-nonequilibrium.md を作成してから実装に入って。実装は既存の RANS
 > 2 方程式 (roK/roOmega) の追加保存スカラー+ソースの骨格を流用する方針で。ただし「設計上の重要論点」
 > (A) 多成分凝縮への一般化 = 凝縮種ごとに 4 モーメント+物性を持ち、**核生成/成長/表面張力モデルと

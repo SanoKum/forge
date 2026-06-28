@@ -5,8 +5,8 @@
 - **area**: `condensation`
 - **status**: `in_progress`  <!-- Phase 1/2/3 実装・検証済 (N2 Fig.2, H2O Wyslouzil Fig.3)。残: 二温度モデル / TP carrier 低温対応 / μ_n 無次元化は future -->
 - **related_docs**:
-  - `methods/condensation/theory.md`
-  - `methods/condensation/implementation.md`
+  - `methods/condensation.md`
+  - `methods/condensation.md`
 - **related_plans**:
   - `.github/plans/condensation-nonequilibrium-session-prompt.md` (着手用プロンプト・コンテキスト)
   - `.github/plans/thermophysics-multicomponent-tpgas.md` (多成分 TP gas、気相多成分化の前提)
@@ -38,8 +38,8 @@ Lin 2014 Fig.11) を再現する。
 
 ## 3. 関連 docs と前提
 
-理論は [`methods/condensation/theory.md`](../../methods/condensation/theory.md)、実装対応は
-[`methods/condensation/implementation.md`](../../methods/condensation/implementation.md)。物理係数の出典は
+理論は [`methods/condensation.md`](../../methods/condensation.md#理論)、実装対応は
+[`methods/condensation.md`](../../methods/condensation.md#実装)。物理係数の出典は
 [`papers/.../_summary.md`](../../papers/on%20nitrogen%20condensation%20in%20hypersonic%20nozzle%20flows_summary.md)。
 前提: case/34 で dry 膨張再現済み ([case/34 README](../../case/34.arthur_n2_nozzle/README.md))。
 
@@ -55,7 +55,7 @@ Lin 2014 Fig.11) を再現する。
 
 二相 EOS の圧力微分 $\kappa=(\rho-\rho g)R/C_v$ (=$\gamma-1$ 相当)、
 $\xi_g=\partial p/\partial(\rho g)=-RT+\kappa(L-RT)$ (新規列)、flux Jacobian への入り方は
-[theory.md](../../methods/condensation/theory.md) 5 節 / [implementation.md](../../methods/condensation/implementation.md) 3 節を参照。
+[theory.md](../../methods/condensation.md#理論) 5 節 / [implementation.md](../../methods/condensation.md#実装) 3 節を参照。
 
 ## 5. 実装ステップ
 
@@ -126,8 +126,8 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 
 ## 8. 完了条件
 
-- [x] `methods/condensation/theory.md` 作成
-- [x] `methods/condensation/implementation.md` 作成
+- [x] `methods/condensation.md` 作成
+- [x] `methods/condensation.md` 作成
 - [x] Phase 1 実装・検証完了 (§6)
 - [x] `.github/plans/README.md` 状態同期
 - [ ] Phase 2/3 着手時に本 plan を更新
@@ -178,7 +178,7 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
   - `condGyarmathyC` (既定 3.18): Gyarmathy Knudsen 係数 1/(1+C·Kn) を可変化。SST C スイープ
     (run_0014..0017) で標準 3.18 が onset/peak を最良再現と確認 (C で成長率→onset 位置が単調変化)。
   - `condTwoTemp` (既定 0): Hertz–Knudsen 経路に液滴温度 T_d を準定常 Hill バランス
-    L·j(T_d)=h(T_d−T_g) で Newton 反復し、成長駆動力 p_v−p_d(T_d) に反映。methods/condensation/theory.md §4
+    L·j(T_d)=h(T_d−T_g) で Newton 反復し、成長駆動力 p_v−p_d(T_d) に反映。methods/condensation.md §4
     に実装式を記載。SST 比較 (run_0018/0019 vs run_0010/0011): **希薄水/N2 では影響小** (p/p0 差 <1%、
     T_d−T_g は onset 前線で局所最大 ~15K だが中央値 ~0.2K、キャリアが潜熱を奪うため)。一温度近似で十分。
 - `2026-06-15` — **核生成/成長モデルの感度スイッチ追加 (Kantrowitz / Gyarmathy)**。ユーザ要望で、
@@ -187,7 +187,7 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
   - `condGrowthModel` (0=Hertz-Knudsen/Goodheart, 1=Gyarmathy): Gyarmathy は N2 Goodheart と前因子を共有し
     Knudsen 内挿を $1/(1+3.18Kn)$ にした熱伝導律速形。carrier では Kn 用平均自由行程に全圧を使用。
   - 実装: `condensationSource_d.{cuh,cu}` の `cond_nucleation`/`cond_growth`/`cond_source_vector` に
-    引数追加 (既定 off でビット不変)、`solverConfig.{hpp,cpp}` にフラグ。methods/condensation/implementation.md 更新。
+    引数追加 (既定 off でビット不変)、`solverConfig.{hpp,cpp}` にフラグ。methods/condensation.md 更新。
   - 検証: case/16 SST で 2×2 (Kantrowitz off/on × HK/Gyarmathy) = run_0010〜0013 を比較。
 - `2026-06-15` — **Phase 3 H2O / Wyslouzil Fig.3 検証成功 + carrier=CPG へ方針変更**。
   - **発散原因究明**: 当初の Option A (thermalMethod 2 / NASA-9 TP で N2+H2O) は、ノズル膨張で気相が
