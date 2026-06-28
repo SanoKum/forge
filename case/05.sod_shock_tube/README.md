@@ -11,3 +11,9 @@
 | `run_node3d_slip_lowcfl` | **IC バグ調査の記録**: 当初 `initial:"sod"` (非次元 P=1) は forge CPG thermo (cp1038.8,R296.8) と非互換で T≈0.003K→roe 破壊→**P 均一の異常状態**。これに node checkerboard が乗り発散していた | 破棄予定 (IC バグ記録) |
 
 **結論**: node sod 3D periodic が **安定・物理的・spanwise 完全均一**で動作 (検証完結)。当初「node-explicit-shock 限界」とした発散は**誤診**で、真因は壊れた IC (非次元→P均一) + 過大 CFL だった (user 指摘で判明)。periodic 実装は transient 衝撃でも健全。
+
+### 厳密 Riemann 解との照合 (t=5e-5s, 3パネル density/pressure/velocity)
+図: `sod3d_density_compare.png`, `sod3d_compare_3panel.png`。**node が厳密解と一致、cell が横方向不安定で破綻**:
+- **node**: 密度(膨張波・接触 ro0.94・衝撃後~1.98(理論2.224をやや平滑化)・右0.842)・圧力(p*4.4e5→1e5)・流速(u*~500)とも厳密 Riemann に一致。理論最大密度2.224 を超えるノード=0、P≤IC範囲。横方向は衝撃面で微小波打ち(x=0.54 std0.43)だが有界・物理的。
+- **cell**: 同一 IC・config なのに rms_roUy=10.13 の横方向不安定で右状態が汚染 (ro 1.59≠0.842, P 6.6e5≠1e5, 局所 ro 4.213 で理論超え1256ノード, P 1.43e6 非物理)。cell atomicAdd 非決定性 / SLAU carbuncle が grid-aligned 衝撃で暴走。
+**結論**: median-dual **node** が 3D Sod を厳密解通り正確に解く (cell より優秀)。periodic も滑らか域で完全均一。残課題: 衝撃面の微小波打ち (SLAU 衝撃感度、roe 等で改善余地)。
