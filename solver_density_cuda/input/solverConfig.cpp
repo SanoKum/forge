@@ -266,6 +266,8 @@ void solverConfig::read(std::string fname)
         this->precondEps = getOptionalValidatedValue<double>(deltaT, "precondEps", 0.15, "time.deltaT");
         // Thornber 型低マッハ再構成補正: 既定 0 で従来挙動 (ビット不変)。lowMachPrecond と直交・併用可。
         this->lowMachThornber = getOptionalValidatedValue<int>(deltaT, "lowMachThornber", 0, "time.deltaT");
+        // KEEP 散逸切替 (space セクション。既定 1 = KEEP+Roe)。0 で純粋 KEEP (Roe 散逸無し)。
+        this->keepDissipation = getOptionalValidatedValue<int>(config["space"], "keepDissipation", 1, "space");
         this->dt_max = getValidatedValue<double>(deltaT, "dt_max", "time.deltaT");
         this->dt_min = getValidatedValue<double>(deltaT, "dt_min", "time.deltaT");
 

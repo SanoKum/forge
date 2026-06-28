@@ -85,6 +85,8 @@ public:
                                    // ε=0.15: M4 ノズルで limit-cycle 振幅 −32% (検証済), ε=0.3: −17%。
     int lowMachThornber = 0;       // 0: off (従来), 1: Thornber 型再構成補正 (SLAU の L/R 速度ジャンプを
                                    // z=min(M,1) で縮約)。lowMachPrecond と直交・併用可。SLAU 経路のみ。
+    int keepDissipation = 1;       // KEEP スキーム専用。1: KEEP 中心流束 + Roe 行列散逸 (既定)、
+                                   // 0: 純粋 KEEP (Roe 散逸無し・非散逸中心流束のみ。診断/LES 用)。
     flow_float dt_max;
     flow_float dt_min;
 

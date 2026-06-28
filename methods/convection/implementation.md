@@ -252,8 +252,14 @@ Ducros 補正は通さず、`limiter_*[ic0/ic1]` を直接 `interp_dispatch` に
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
   周回 (境界 plane は 1 次化、専用境界カーネルは skip)、node 弱形式は内部双対面のみ周回し境界は
   `convectiveFlux_boundary_d` が担う。`massflux[ip]` に散逸込みの総質量流束を書きスカラー輸送と整合。
+- **散逸切替 `keepDissipation`** (`space` セクション, 既定 1): `0` で純粋 KEEP (Roe 散逸無し・非散逸中心流束のみ)。
+  診断で確認: 純粋 KEEP は homogeneous 方向で **低マッハ圧力 odd-even checkerboard を抑えられず** (backstep spanwise で
+  ~130 Pa peak-to-peak の市松・残差上昇)、**Roe 散逸が必須**。WALE の渦粘性は非粘性の圧力デカップリングを減衰しない。
+- **periodic 継ぎ目の残留振動 (既知)**: KEEP+Roe は内部 checkerboard を ~2 Pa まで抑えるが、**node periodic 継ぎ目で
+  P が ~90 Pa 振動**する (slip 境界では clean)。periodic 半割面は移流ループから除外され DOF 同一視 (残差和) で扱うため、
+  継ぎ目に Roe 散逸が効かないのが原因と推定。継ぎ目への散逸付与が課題 ([plan](../../plans/active/convection-keep-revive-node.md))。
 - **今後の課題**: 低マッハ/LES では Roe 散逸が過多になり得る。Ducros センサ (`duc` は計算済・未使用)
-  での散逸スケーリングや低マッハ補正は段階導入予定 ([plans/active/convection-keep-revive-node.md](../../plans/active/convection-keep-revive-node.md))。
+  での散逸スケーリングや低マッハ補正は段階導入予定。
 
 legacy の `KEEP_SLAU_d` / `AUSMp_d` / `AUSMp_UP_d` は依然 `legacy/` に退避され到達不能。
 

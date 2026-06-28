@@ -15,6 +15,7 @@
 __global__ void KEEP_d
 (
  int conv_scheme, int limit_scheme,
+ int keepDissipation, // 1: KEEP 中心流束 + Roe 行列散逸、0: 純粋 KEEP (散逸無し)
  flow_float ga,
  CondArgs      cnd,    // (CPG KEEP では未使用。dispatch 統一のため受け取る)
  FaceGeom      geom,
@@ -118,6 +119,11 @@ __global__ void KEEP_d
         flow_float U_L = (Ux_L*sxx + Uy_L*syy + Uz_L*szz)/sss;
         flow_float U_R = (Ux_R*sxx + Uy_R*syy + Uz_R*szz)/sss;
 
+        // 散逸込み残差 (keepDissipation==0 では Roe 散逸を加えず純粋 KEEP 中心流束のみ)
+        flow_float res_ro_temp = 0.0, res_roe_temp = 0.0;
+        flow_float res_roUx_temp = 0.0, res_roUy_temp = 0.0, res_roUz_temp = 0.0;
+
+      if (keepDissipation != 0) {
         // ---- Roe 特性行列散逸 (L 状態評価) ----
         flow_float ua = Ux_L, va = Uy_L, wa = Uz_L, Ha = Ht_L;
         flow_float ca = sqrt(max((ga-1.0)*(Ha-0.5*(ua*ua+va*va+wa*wa)), small_a2));
@@ -150,11 +156,11 @@ __global__ void KEEP_d
         for (i=0;i<5;i++) difQ1[i]=lam[i]*dW[i];
         for (i=0;i<5;i++) { difQ2[i]=0.0; for (j=0;j<5;j++) difQ2[i]+=R[i][j]*difQ1[j]; }
 
-        flow_float res_ro_temp   = 0.5*difQ2[0]*sss;
-        flow_float res_roe_temp  = 0.5*difQ2[1]*sss;
-        flow_float res_roUx_temp = 0.5*difQ2[2]*sss;
-        flow_float res_roUy_temp = 0.5*difQ2[3]*sss;
-        flow_float res_roUz_temp = 0.5*difQ2[4]*sss;
+        res_ro_temp   = 0.5*difQ2[0]*sss;
+        res_roe_temp  = 0.5*difQ2[1]*sss;
+        res_roUx_temp = 0.5*difQ2[2]*sss;
+        res_roUy_temp = 0.5*difQ2[3]*sss;
+        res_roUz_temp = 0.5*difQ2[4]*sss;
 
         // ---- Roe 特性行列散逸 (R 状態評価) ----
         ua=Ux_R; va=Uy_R; wa=Uz_R; Ha=Ht_R;
@@ -188,6 +194,7 @@ __global__ void KEEP_d
         res_roUx_temp -= 0.5*difQ2[2]*sss;
         res_roUy_temp -= 0.5*difQ2[3]*sss;
         res_roUz_temp -= 0.5*difQ2[4]*sss;
+      } // keepDissipation
 
         // ---- KEEP 中心流束 (隣接対の生値; KE/エントロピー保存) ----
         flow_float Ctilde  = 0.5*(ro[ic0]+ro[ic1])*0.5*( (Ux[ic0]+Ux[ic1])*nx
