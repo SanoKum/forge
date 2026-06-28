@@ -54,12 +54,42 @@ P・ρ の「振動」が node/cell 共通で観測されていた。代表 run:
 収束後 (step≥50000) の固定点プローブの snapshot 間変動: P std 0.5–7 ppm、ρ ~1 ppm。`limiter_P` は 0.97–0.99 で安定
 (チャタリングなし)。→ **大振幅の時間振動でもリミッタ起因でもない**。残差プラトーは微小振幅リミットサイクル。
 
-### (4) 精度 — float32 桁落ちは棄却
+### (4) 精度 — float32 桁落ちは棄却 (倍精度ビルド 2×2 で決定的に確認)
 
 市松振幅 ±50 Pa / 1e5 ≈ **5e-4 (相対)** は float32 ε≈1.2e-7 の数千倍 → round-off ではなく**スキームが減衰
-させない実在の数値モード**。さらに後述のとおり **float32 のままスキーム散逸を変える `lowMachPrecond=2` で大幅減衰**
-するため、精度は主因でない (倍精度ビルドの A/B は不要と判断)。`mixed-precision-axisym-refuted` と同じ「精度に見えて
-スキーム」のパターン。
+させない実在の数値モード**。**`build-double` (全 float64) を現行 HEAD で再ビルドし、precond × precision の 2×2 を
+同一 restart・10k step で実施** (cell):
+
+| case | build | precond | P odd-even [Pa] | rms_roUx | rms_roOmega |
+| --- | --- | --- | --- | --- | --- |
+| B0 (`run_0074`) | float | lmp0 | 69.9 | 0.291 | 1.13 |
+| B1 (`run_0080`) | **double** | lmp0 | **69.9** | 0.291 | 1.13 |
+| B2 (`run_0076`) | float | lmp2 | 18.5 | 0.086 | 0.20 |
+| B3 (`run_0081`) | **double** | lmp2 | **18.5** | 0.086 | 0.20 |
+
+**B1=B0・B3=B2 が完全一致** → **倍精度は市松にも残差にも全く効かない。改善は 100% `lowMachPrecond=2` の前処理物理**。
+`lowMachPrecond=2` 経路は内部で Jacobian 組立・1/β 分母を部分倍精度化 (timeIntegration_d.cu:153/1055) するが、
+**全 double 化 (B3) で float lmp2 (B2) と一致**するため内部 double も勝因でない。`mixed-precision-axisym-refuted` と
+同じ「精度に見えてスキーム」のパターンを実データで確認。
+注: `build-double` は double のレジスタ消費増で既定 `blocksize=512` が起動上限超過 → `FORGE_CUDA_BLOCKSIZE=128` で実行。
+
+#### (4b) c' 前処理「物理」 vs double Jacobian「構築」の決定的切り分け
+
+`lowMachPrecond=2` は (a) RHS 流束を c' 散逸化 + (b) LHS 前処理 Jacobian を **double 構築**
+(`build_jacobian_split`/`eos_split_jacobian_general_closed`、`lowMachPrecond=0/1` は float の `accumulate_split_jacobian_cf`)。
+「市松を直すのは (a) 物理か (b) double 構築か」を **2 つの既存ノブで分離** (cell, 同一 restart, 10k):
+
+| run | c' 前処理 (RHS) | double Jacobian (LHS) | P odd-even [Pa] |
+| --- | :---: | :---: | --- |
+| `run_0074` lmp0 float | ✗ | ✗ | 69.9 |
+| `run_0082` lmp0 + `implicitSolvePrecision=1` | ✗ | **✓** | **69.9** (= baseline・bit 一致、残差も 0074 と同値) |
+| `run_0075` lmp1 (cfl0.3) | **✓** | ✗ (float) | **21.1** |
+| `run_0076` lmp2 | ✓ | ✓ | 18.5 |
+
+→ **double Jacobian 単独 (c' なし) は市松に全く効かない** (0082=0074)。**c' 前処理は float Jacobian のまま 78→21 Pa と
+大半を落とす** (0075, `lowMachPrecond=1` は float の `accumulate_split_jacobian_cf` を使う)。lmp2 の double Jacobian は
+21→18.5 の僅かな上積みで、本質的役割は**前処理系 (Γ⁻¹A の ~1/β 悪条件) を安定に solve すること** (lmp1 は停滞、lmp2 は収束)。
+**結論: 市松を直すのは c' 前処理の物理。double は前処理系の数値条件付け (収束安定化) のためで、市松除去の主因ではない。**
 
 ### 機構
 

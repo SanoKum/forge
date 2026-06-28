@@ -63,6 +63,8 @@
 | `run_0075_cell_lmp1_cfl03` | cell + `lowMachPrecond=1` **cfl0.3** | NaN回避だが高残差停滞 (rms_roUx 0.41)。P odd-even 78→21 Pa。前処理は市松を減らすが不整合で収束せず | 記録 (診断) |
 | `run_0076_cell_lmp2_eps15` / `run_0077_cell_lmp2_long` / `run_0079_cell_lmp2_converge` | **打ち手確立: cell + `lowMachPrecond=2` cfl1** (完全前処理 block-DPLUR, [plan Phase4](../../plans/accepted/time_integration-lowmach-preconditioning.md))。`run_0079` は完全収束 (200k 相当) | **NaN無・全残差 falling**。**P 市松 78→18.4 Pa (−76%)**、同一 restart A/B で rms_roUx **0.29→5.5e-4**・roOmega 1.13→8.9e-4 でプラトー打破、quasisteady STEADY。vt/l 196 (baseline 198)。図 `run_0077.../corner_oddeven_lmp2_vs_baseline.png` | active |
 | `run_0078_node_lmp2_eps15` | node + `lowMachPrecond=2` cfl1 | **発散せず** (lmp1 と対照)。**P 市松 96→22 Pa (−77%)**、平均流残差 −2.5〜2.8桁。rms_roOmega は ~9.5 プラトー据え置き (node 既知 ω 問題、市松とは別) | active |
+| `run_0080_cell_lmp0_double` / `run_0081_cell_lmp2_double` | **精度切り分け (2×2)**: `build-double` (全 float64, `FORGE_CUDA_BLOCKSIZE=128`) で lmp0/lmp2 を再計算 | **倍精度は市松に全く効かない**: lmp0 double=float (P odd-even 69.9=69.9)、lmp2 double=float (18.5=18.5)。**改善は 100% `lowMachPrecond=2` の前処理物理、精度は無関係**と確定 (float32 桁落ち仮説を決定的に棄却) | 記録 (診断) |
+| `run_0082_cell_lmp0_dsolve` | **c' 物理 vs double Jacobian 切り分け**: lmp0 + `implicitSolvePrecision=1` (block-DPLUR Jacobian+solve を double, c' なし) | **double Jacobian 単独は市松に無効**: P odd-even **69.9 (=lmp0 float, bit 一致)**。対して lmp1 (c' + float Jac) は 21.1。→ **市松を直すのは c' 前処理の物理、lmp2 の double Jacobian は前処理系の条件付け (収束安定化) 用で主因でない** | 記録 (診断) |
 
 > **P・ρ 振動の正体と打ち手 (run_0071–0079, 2026-06-28)**: node/cell 共通の P・ρ「振動」は **低マッハ再循環域に
 > 局在する odd-even チェッカーボード** (collocated 圧力-速度デカップリング) と確定。段差角を1セル過ぎた x≈2.13 の
