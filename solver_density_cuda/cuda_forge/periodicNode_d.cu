@@ -49,6 +49,18 @@ __global__ void periodicBroadcastFromRoot_d
     }
 }
 
+// 単一配列版 gather/broadcast (k/ω 残差・勾配など可変本数の配列用)。
+__global__ void periodicGather1ToRoot_d(geom_int nCells, geom_int* root, flow_float* a)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) { const geom_int r = root[ic]; if (r != ic) atomicAdd(&a[r], a[ic]); }
+}
+__global__ void periodicBroadcast1FromRoot_d(geom_int nCells, geom_int* root, flow_float* a)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) { const geom_int r = root[ic]; if (r != ic) a[ic] = a[r]; }
+}
+
 void periodicNodeGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (cfg.discretization != "node" || msh.periodicRoot_d == nullptr || msh.nPeriodicMembers == 0) return;
@@ -66,18 +78,33 @@ void periodicNodeGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
+
+    // RANS SST: k/ω 残差も merged CV で合算する (周期境界の k/ω DOF 同一視)。1配列版を使う。
+    if (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) {
+        for (const char* k : {"res_roK", "res_roOmega"}) {
+            auto it = var.c_d.find(k);
+            if (it == var.c_d.end() || it->second == nullptr) continue;
+            periodicGather1ToRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(msh.nCells, msh.periodicRoot_d, it->second);
+            gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+            periodicBroadcast1FromRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(msh.nCells, msh.periodicRoot_d, it->second);
+            gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+        }
+    }
 }
 
-// 単一配列版 gather/broadcast (勾配など可変本数の配列用)。
-__global__ void periodicGather1ToRoot_d(geom_int nCells, geom_int* root, flow_float* a)
+// RANS SST: k/ω 状態 (roK, roOmega) を周期 group の root から member へミラー (§4.5)。
+// point-implicit SST (applySSTPointImplicit) は per-cell 対角で更新するため master/slave が別値になり
+// drift する。更新直後に master 値を共有させて同一視を保つ (dq ミラーの k/ω 版)。SST 更新の直後に呼ぶ。
+void periodicMirrorScalarState_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
-    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
-    if (ic < nCells) { const geom_int r = root[ic]; if (r != ic) atomicAdd(&a[r], a[ic]); }
-}
-__global__ void periodicBroadcast1FromRoot_d(geom_int nCells, geom_int* root, flow_float* a)
-{
-    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
-    if (ic < nCells) { const geom_int r = root[ic]; if (r != ic) a[ic] = a[r]; }
+    if (cfg.discretization != "node" || msh.periodicRoot_d == nullptr || msh.nPeriodicMembers == 0) return;
+    if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1)) return;
+    for (const char* k : {"roK", "roOmega"}) {
+        auto it = var.c_d.find(k);
+        if (it == var.c_d.end() || it->second == nullptr) continue;
+        periodicBroadcast1FromRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(msh.nCells, msh.periodicRoot_d, it->second);
+        gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    }
 }
 
 // 勾配の periodic gather (§4.5 拡張)。Green-Gauss 勾配 ∇φ[ic]=(1/V[ic])Σφ_f·S_f は、合併体積
@@ -92,7 +119,9 @@ void periodicGradientGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
 
     const char* keys[] = {
         "dUxdx","dUxdy","dUxdz", "dUydx","dUydy","dUydz", "dUzdx","dUzdy","dUzdz",
-        "drodx","drody","drodz", "dPdx","dPdy","dPdz", "dTdx","dTdy","dTdz", "divU"
+        "drodx","drody","drodz", "dPdx","dPdy","dPdz", "dTdx","dTdy","dTdz", "divU",
+        // RANS SST 勾配 (未割当ならスキップ): k/ω の seam 拡散・生産の片側勾配を合併
+        "dKdx","dKdy","dKdz", "dOmegadx","dOmegady","dOmegadz"
     };
     for (const char* k : keys) {
         auto it = var.c_d.find(k);

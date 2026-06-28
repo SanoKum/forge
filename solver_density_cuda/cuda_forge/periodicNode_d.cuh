@@ -25,3 +25,7 @@ void periodicMirrorDq_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh&
 // Green-Gauss 勾配を「和→broadcast」で厳密合併に直す (片側勾配 → 両側)。2次再構成・粘性の精度に効く。
 // 前提: calcGradient_b_d で periodic 半割面を除外しておく。非軸対称限定。cell/非周期では no-op。
 void periodicGradientGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// RANS SST: k/ω 状態 (roK, roOmega) を周期 group root から member へミラー (§4.5)。point-implicit SST 更新の
+// 直後に呼び、周期同一視ノードの k/ω drift を防ぐ。非 SST / cell / 非周期では no-op。
+void periodicMirrorScalarState_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

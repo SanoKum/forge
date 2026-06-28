@@ -1102,6 +1102,8 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     if (scalarResidualEnabled(s.cfg) && !freezeTurb) {
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+            // node 周期 DOF 同一視 (§4.5): point-implicit SST 更新後に k/ω 状態を root→member ミラーし drift を防ぐ。
+            periodicMirrorScalarState_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         });
     }
 
@@ -1260,6 +1262,7 @@ void advanceImplicitDualTime(StepContext& s)
         if (include_scalar) {
             s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
                 applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+                periodicMirrorScalarState_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var); // §4.5 k/ω 周期ミラー
             });
         }
         // 液相モーメント (非平衡凝縮) を segregated point-implicit で更新。condensation==0 で no-op。
