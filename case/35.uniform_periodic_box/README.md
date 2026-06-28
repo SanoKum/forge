@@ -10,3 +10,4 @@
 | --- | --- | --- | --- |
 | `run_0001_uniform` | cell モード一様流ベースライン (convMethod=0) | `res_*.h5`, `residual_history.csv` | ref |
 | `run_0002_node_dualcheck` | node モード (`discretization: node`) で 3D median-dual 生成の幾何検証 | 体積 dual=248.05=primal (relErr 3.5e-8)・closure normalized 2.5e-6・負体積 0 (`convert.log`)。solver run は未実施 | active |
+| `run_0003_node_periodic_smoke` | node 3D で全面 periodic の forge smoke (20 step) | **step 4 で DIVERGED**。`setPeriodicPartner` は periodic 半割面を主面接続するが、半割面は外向き境界パッチで CV 間面でないため幾何が誤り → §4.5 periodic 双対面の実装が必要と確認 | 破棄予定 |

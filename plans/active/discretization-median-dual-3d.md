@@ -146,5 +146,15 @@ partner セルを `dualFaceCells` の他端に設定 (周期 ghost ではなく�
       normalized=2.5e-6、境界半割面積=primal 面積、負体積 0。
     - **tet** (生成した単位 box, 197 tetra): 体積 dual=1=primal=1 (relErr 3.1e-7)、closure 9.7e-8。
     - prism/pyramid は同一コードパス (tri/quad 面プリミティブ・table 駆動) で未実行 run のみ。
-  - **未着手**: §4.5 periodic 双対面 (現状は周期境界も通常境界として半割面化)、free-stream 保存 run
-    (検証ケース 1、solver/IO の 3D node 化=ステップ 7 が前提)、ステップ 7 (I/O・solver 接続)、検証ケース 2–4。
+  - **スコープ結果 (solver/IO 3D node = ステップ 7)**: dual-as-primary-mesh 設計のおかげで **solver 側は
+    ほぼ無変更で 3D node が動く**ことを確認。非 periodic の tet box (slip 箱, Taylor-Green IC) で forge が
+    10 step 完走し全保存量残差が NaN なしで低下 (`/tmp.../scratchpad`)。mesh read・dual 接続・流束・残差・dt は
+    3D node で機能する。→ ステップ 7 の大半は既存機構で充足。
+  - **periodic は要 §4.5 (確認済)**: 全面 periodic box (`case/35` run_0003) は **step 4 で発散**。ログ
+    `conv main planes = internal 104544 + periodic 6534` の通り `setPeriodicPartner` は周期半割面を主面接続するが、
+    **半割面は外向き境界パッチで CV 間を繋ぐ面でない**ため幾何が不整合 → 発散。§4.5 は周期エッジの双対面を
+    「N の CV ↔ partner 側隣接ノード CV」を繋ぐ内部双対面として構築し、周期半割面から除外する必要がある
+    (現状の半割面化では不可)。
+  - **未着手**: §4.5 periodic 双対面 (核心・次の主タスク)、free-stream 保存 run (検証ケース 1: closure
+    2.5e-6 で幾何的には既に保証、inlet/outlet box の solver run で確認予定)、output.cpp Center=Node 3D 可視化の
+    確認、検証ケース 2–4。
