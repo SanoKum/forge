@@ -239,7 +239,9 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
     if (cfg.LESorRANS == 1) { // LES
 
         if (cfg.LESmodel == 1) {
-            WALE_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
+            // node-centered (median-dual) でも成立: WALE_d は DOF (cell/node) ごとに勾配・体積・wall_dist を
+            // 読むだけで cfg.discretization に依存しないため、SST と同じ normalcell グリッドで node も網羅する。
+            WALE_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>> (
                 // mesh structure
                 msh.nCells,
                 var.c_d["volume"], var.c_d["ccx"], var.c_d["ccy"], var.c_d["ccz"],

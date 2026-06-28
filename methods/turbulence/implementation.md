@@ -90,6 +90,14 @@ NS のみを想定しているため、初期実装では `scalarTransport_d.*` 
 - `LESorRANS == 1`: 既存 WALE
 - `LESorRANS == 2 && RANSmodel == 1`: SST
 
+**node-centered での WALE (`LESmodel==1`)**: `WALE_d` は DOF (cell/node) ごとに速度勾配・体積・
+`wall_dist` を読み `vis_turb[ic]` を書くだけで `cfg.discretization` に依存しない。したがって SST と
+同じ `dimGrid_normalcell` グリッドで起動すれば node の双対 CV (median-dual) も自動で網羅する
+(以前は `dimGrid_cell` 固定で node では起動されず `vis_turb=0` = LES OFF 相当だった)。LES 時の
+`vis_turb` は粘性流束で $\mu_{\rm eff}=\mu+\mu_{\rm sgs}$ として効き、RANS (SST) と同じ `vis_turb`
+配列を共有する。node + KEEP + WALE の LES 構成は
+[`plans/active/convection-keep-revive-node.md`](../../plans/active/convection-keep-revive-node.md)。
+
 ### 3.5 境界条件
 
 境界条件は既存の `wall`, `wall_isothermal`, `inlet_*`, `outlet_*`, `slip` などに

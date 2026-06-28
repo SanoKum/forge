@@ -27,7 +27,8 @@ forge の対流フラックス計算の実装と、ソース上の対応関係�
 | `"SLAU2"` | `SLAU_d` (`slauVariant=2`) | 有効 (圧力束のみ SLAU2、低マッハ改良) |
 | `"HLLE"` | `HLLE_d` | 有効 |
 | `"ROE"`  | `ROE_d`  | 有効 |
-| `"AUSM+"`, `"AUSM+UP"`, `"KEEP_FVS"`, `"KEEP_SLAU"` | (実装あり) | ラッパでコメントアウト中、`exit(EXIT_FAILURE)` |
+| `"KEEP"` | `KEEP_d` | 有効 (KEEP 中心流束 + Roe 行列散逸。LES/ILES 向け。cell/node 両対応) |
+| `"AUSM+"`, `"AUSM+UP"`, `"KEEP_SLAU"` | (legacy に実装あり) | ラッパに分岐なし・到達不能 (`legacy/`) |
 
 呼び出し直前に `res_ro`, `res_roUx`, `res_roUy`, `res_roUz`, `res_roe` を
 `cudaMemset` でゼロクリアする。
@@ -235,15 +236,26 @@ if (lowMachThornber == 1) {
 
 Ducros 補正は通さず、`limiter_*[ic0/ic1]` を直接 `interp_dispatch` に渡す。
 
-### KEEP / AUSM 系
+### `KEEP_d` ([convectiveFlux_keep_d.inc.cuh](../../solver_density_cuda/cuda_forge/convection/convectiveFlux_keep_d.inc.cuh))
 
-[`KEEP_FVS_d`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu#L864),
-[`KEEP_SLAU_d`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu#L1827),
-[`AUSMp_d`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu#L461),
-[`AUSMp_UP_d`](../../solver_density_cuda/cuda_forge/convectiveFlux_d.cu#L646)
-は実装されているがラッパで現在無効化されている。`境界処理の見直し中` という
-コメントが残っているので、復活時はゴーストセルとの整合 (`ic1 >= nCells` 分岐)
-を再確認する。
+**KEEP (Kinetic Energy & Entropy Preserving) 中心流束 + Roe 特性行列散逸**。LES/ILES 向けの
+低散逸対流スキームで、SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
+`KEEP_FVS_d` (中心流束が `if(false)` で無効・単純中心平均のみ稼働) を modern bundled API
+(`FaceGeom`/`PrimState`/...) へ移植し、**KEEP 中心流束を有効化**したもの。
+
+- **中心流束**: 隣接対 `(ic0,ic1)` の生値で構成 (KE/エントロピー保存)。
+  $\tilde C = \overline{\rho}\,\overline{U}_n S$, 運動量 $\tilde M_i = \tilde C\,\overline{u_i} + \overline{p}\,n_i S$,
+  エネルギー $= (\tilde K + \tilde I + \tilde P)S$ ($\tilde K=\tilde C\,\tfrac12\sum u_{i,0}u_{i,1}$,
+  $\tilde I=\tilde C\,\tfrac12(p_0/\rho_0+p_1/\rho_1)/(\gamma-1)$, $\tilde P$ は圧力仕事の split)。
+- **散逸**: MUSCL 再構成した L/R 状態の Roe 行列 $R|\Lambda|L$ を L 側・R 側それぞれで評価し
+  $0.5(|A_L|Q_L - |A_R|Q_R)$ の FVS 型で加える。境界 ghost (`ic1>=nCells`) では 1 次化。
+- **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
+  周回 (境界 plane は 1 次化、専用境界カーネルは skip)、node 弱形式は内部双対面のみ周回し境界は
+  `convectiveFlux_boundary_d` が担う。`massflux[ip]` に散逸込みの総質量流束を書きスカラー輸送と整合。
+- **今後の課題**: 低マッハ/LES では Roe 散逸が過多になり得る。Ducros センサ (`duc` は計算済・未使用)
+  での散逸スケーリングや低マッハ補正は段階導入予定 ([plans/active/convection-keep-revive-node.md](../../plans/active/convection-keep-revive-node.md))。
+
+legacy の `KEEP_SLAU_d` / `AUSMp_d` / `AUSMp_UP_d` は依然 `legacy/` に退避され到達不能。
 
 ## 並列化メモ
 
@@ -264,7 +276,7 @@ Ducros 補正は通さず、`limiter_*[ic0/ic1]` を直接 `interp_dispatch` に
 
 ## 既知の TODO / 注意点
 
-- KEEP / AUSM 経路が無効化中 (境界とのカップリング再整理待ち)。
+- KEEP (`KEEP_d`) は復活済み (cell/node 両対応)。`KEEP_SLAU` / `AUSM` 系は依然 legacy で無効。
 - `c_hat` の中央平均は単純算術平均。Roe 平均の方が低マッハ性に望ましい場面あり。
 - リミッタは `interp_dispatch` 経由で各成分 (`ro, Ux, Uy, Uz, P`) 独立。
   限界保証 (TVD) は厳密には未保証 (MUSCL 2/3 次経路は無リミット)。

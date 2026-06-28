@@ -17,6 +17,8 @@
 
 #include "convectiveFlux_roe_d.inc.cuh"
 
+#include "convectiveFlux_keep_d.inc.cuh"
+
 #include "legacy/convectiveFlux_keepslau_d.inc.cuh"
 
 #include "convectiveFlux_boundary_d.inc.cuh"
@@ -195,9 +197,17 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cnd, geom, st, reso, lim, grd
         );
 
+    } else if (cfg.solver == "KEEP") {
+        // KEEP 中心流束 + Roe 行列散逸 (LES/ILES 向け低散逸対流。SGS は WALE が担う)。
+        KEEP_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
+            cfg.convMethod, cfg.limiter,
+            cfg.gamma,
+            cnd, geom, st, reso, lim, grd
+        );
+
     } else {
         std::cerr << "Error: unsupported solver name " << cfg.solver
-                  << " (enabled: SLAU, HLLE, ROE)" << std::endl;
+                  << " (enabled: SLAU, HLLE, ROE, KEEP)" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -215,7 +225,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
                                && (cfg.solver == "SLAU"
                                 || cfg.solver == "SLAU2"
                                 || cfg.solver == "ROE"
-                                || cfg.solver == "HLLE");
+                                || cfg.solver == "HLLE"
+                                || cfg.solver == "KEEP");
 
     for (auto& bc : msh.bconds)
     {
