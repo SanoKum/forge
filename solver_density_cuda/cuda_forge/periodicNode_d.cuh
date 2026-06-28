@@ -14,3 +14,9 @@
 // 同 res・同 vol で更新され「1 つの CV」として bit 一致同期する。assembleResidual の末尾
 // (全 flux/source 積算 + 壁/軸射影の後) に毎反復呼ぶ。cell モード / 非周期では no-op。
 void periodicNodeGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// block-DPLUR の各 sweep 後に呼ぶ (§4.5.7)。周期 group の補正 dq を root(master) から member(slave) へ
+// ミラー (slave=master) し、同一視ノードが多値化 (drift) して発散するのを防ぐ。master/slave は別 plane を
+// 持つため別 dq が出るが、両者は同じ DOF なので master 解を共有させる。blockDPLUR=1 は dq_block_old_*、
+// =0 は dq_*_old を対象にする。cell/非周期では no-op。
+void periodicMirrorDq_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

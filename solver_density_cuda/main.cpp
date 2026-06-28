@@ -1033,6 +1033,10 @@ void blockDPLURSolve(StepContext& s)
         } else {
             swapScalarImplicitCorrectionBuffers(s.var);
         }
+        // node-centered 周期境界 DOF 同一視 (§4.5.7): swap 後の最新補正 dq_*_old を root から member へミラー。
+        // 周期同一視ノードが master/slave で別 dq になり drift→発散するのを防ぐ。次 sweep の隣接 dq 読みと
+        // 最終 commit を整合させる。cell/非周期では no-op。
+        periodicMirrorDq_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     }
 }
 

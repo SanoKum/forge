@@ -67,3 +67,26 @@ void periodicNodeGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
 }
+
+// block-DPLUR sweep 後の dq ミラー (§4.5.7)。root の補正 dq を member へ broadcast し、
+// 周期同一視ノードの dq drift (多値化→発散) を防ぐ。periodicBroadcastFromRoot_d を dq buffer に流用。
+void periodicMirrorDq_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.discretization != "node" || msh.periodicRoot_d == nullptr || msh.nPeriodicMembers == 0) return;
+
+    if (cfg.blockDPLUR == 1) {
+        periodicBroadcastFromRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+            msh.nCells, msh.periodicRoot_d,
+            var.c_d["dq_block_old_0"], var.c_d["dq_block_old_1"], var.c_d["dq_block_old_2"],
+            var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"]
+        );
+    } else {
+        periodicBroadcastFromRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+            msh.nCells, msh.periodicRoot_d,
+            var.c_d["dq_ro_old"], var.c_d["dq_roUx_old"], var.c_d["dq_roUy_old"],
+            var.c_d["dq_roUz_old"], var.c_d["dq_roe_old"]
+        );
+    }
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}

@@ -149,6 +149,14 @@ block-DPLUR の各成分が partner で加算:
   `axis_flag`/wall Dirichlet) の隣に periodic の行 fold を足す形。LES は陽 RK3 / dual-time 主体なので**陽解法を先に成立させ
   陰解法 fold は後続**。
 
+> **実装状況 (2026-06-28, 実装・検証済)**: forge の block-DPLUR は対角/LU を kernel 内で cell の plane 走査で構築し、
+> master/slave は別 plane を持つため別 dq が出て drift→発散する (run_0008 step64 NaN)。これを **`blockDPLURSolve` の各
+> sweep 後の dq ミラー** ([`periodicMirrorDq_d_wrapper`](../../solver_density_cuda/cuda_forge/periodicNode_d.cu)、root→member の
+> `dq_*_old` broadcast) で解消。**ミラーだけで安定化を達成**: implicit periodic TG が step100 完走・NaN なし・場健全
+> (ρ 0.83–1.02, P/T/roe 有界、`case/35` run_0010)、非 periodic slip (run_0009) と同等のプラトー挙動になり periodic 固有の
+> 発散が消えた。対角 $D_m=D_L+D_R$・LU 和の厳密 fold は**収束「率」の改善**であり安定化には不要だったため未実装 (将来精緻化)。
+> ミラーは implicit 専用パスなので explicit free-stream (run_0004 機械ゼロ) は不変。
+
 #### 4.5.8 回転 (円周) 周期 — 運動量回転 $T(d\theta)$ の挿入 (将来対応)
 回転周期では partner $N_L$ ($\theta=0$ 側) と $N_R$ ($\theta=\Delta\theta$ 側) は**別の物理位置**で、流れは軸まわり回転
 $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等しく、運動量だけ回転)。→ Cartesian の「同一 DOF」が
@@ -294,5 +302,11 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
     periodic/slip が同一発散 (純 node-lowMach) だったのに対し、**implicit では periodic だけ NaN** → RHS gather だけでは
     陰解法 LHS が master/slave 不整合 (合併 RHS・合併体積だが対角/非対角は未合併) で、**§4.5.7 の Jacobian 行 fold が
     implicit periodic 安定化に必要**と確定。これが非自明 periodic 実走の次の主タスク。
-  - **残**: §4.5.7 陰解法 fold (非自明 periodic 安定化の鍵・実証済)、勾配/RANS/species の periodic gather (現状 NS 保存量5のみ;
-    2次再構成・粘性で boundary node 勾配が片側になる)、§4.5.8 回転、検証ケース 3-4 (sod 3D・backstep 3D)。
+  - **残**: 勾配/RANS/species の periodic gather (現状 NS 保存量5のみ; 2次再構成・粘性で boundary node 勾配が片側になる)、
+    §4.5.8 回転、検証ケース 3-4 (sod 3D・backstep 3D)。
+- `2026-06-28` — **§4.5.7 陰解法 periodic 安定化を実装・検証** (dq ミラー)。block-DPLUR の `blockDPLURSolve` 各 sweep 後に
+  [`periodicMirrorDq_d_wrapper`](../../solver_density_cuda/cuda_forge/periodicNode_d.cu) で root の補正 dq を member へ broadcast
+  (`dq_block_old_*` / scalar `dq_*_old`)。master/slave が別 plane で別 dq になる drift→発散を解消。**ミラーだけで安定化達成**:
+  implicit periodic TG が step100 完走・NaN なし・場健全 (`case/35` run_0010)、非 periodic slip と同等プラトー (periodic 固有発散消失,
+  従来 run_0008 step64 NaN)。対角/LU の厳密 fold は収束率改善で安定化には不要のため未実装。explicit free-stream は不変 (run_0004 再確認)。
+  これで **Cartesian periodic は陽・陰とも node で安定**。残は勾配/RANS/species gather・§4.5.8 回転・検証ケース 3-4。

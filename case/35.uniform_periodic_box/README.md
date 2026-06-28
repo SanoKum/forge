@@ -17,3 +17,4 @@
 | `run_0007_node_periodic_tg_lmp2` | run_0005 + lowMachPrecond=2 (explicit) | step1 DIVERGED。explicit では低マッハ安定化せず(node 低マッハは implicit 必須)。非自明 periodic は implicit(§4.5.7)待ち | 破棄予定 |
 | `run_0008_node_periodic_tg_implicit` | node 全面 periodic + TG + implicit block-DPLUR(lowMachPrecond=2, cfl_pseudo=1, nStepInner=5) | step64 で **NaN 発散**(explicit step4 より大幅に粘るが発散) | 破棄予定 |
 | `run_0009_node_slip_tg_implicit_iso` | **切り分け**: run_0008 の periodic を slip に置換、他同一 | step99 まで **NaN なし**(plateau/roe rising だが発散せず)。**implicit では periodic だけ NaN 発散** → §4.5.7 Jacobian 行 fold が implicit periodic 安定化に必要と確定(RHS gather だけでは LHS 不整合) | ref (§4.5.7 必要性の根拠) |
+| `run_0010_node_periodic_tg_implicit_mirror` | **§4.5.7 実装後**: run_0008 + sweep ごと dq ミラー(slave=master) | **step100 完走・NaN なし・場健全**(ρ 0.83–1.02, P/T/roe 有界, 渦発達)。run_0009(slip)と同等プラトーになり periodic 固有発散消失。**implicit periodic 安定化達成** | ref (§4.5.7 検証エビデンス) |
