@@ -842,6 +842,8 @@ cudaConfig initializeSimulation(
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
+    // 初期 setup でも周期勾配 gather を適用 (assembleResidual と整合; res_0 出力と初期診断を正しい合併勾配にする)。
+    periodicGradientGather_d_wrapper(cfg , cuda_cfg , msh , var);
     axisymmetricGeomTerms_d_wrapper(cfg , cuda_cfg , msh , var);
     updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
     speciesUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);  // roY{s}N/M ベースライン

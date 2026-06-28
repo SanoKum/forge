@@ -318,3 +318,9 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   で 18 勾配配列 (dUxd*,dUyd*,dUzd*,drod*,dPd*,dTd*,divU) を gather。`calcGradient` 直後に呼ぶ。非軸対称限定
   (grad_volume=volume; 軸対称 A_planar は §4.5.8)。検証: free-stream 機械ゼロ維持・implicit TG 安定不変 (seam viscous が
   片側→両側へ微修正, run_0011)・非 periodic node/cell は guard で byte 不変。残: RANS(k,ω)/species 勾配の gather・§4.5.8 回転・検証ケース 3-4。
+- `2026-06-28` — **勾配 gather の定量検証 + 初期 setup gather 追加** (user 指摘で判明)。各 periodic partner の per-CV 勾配は
+  「**半割面を片側無視 + 体積2倍 (合併体積) → 0.5·∇φ**」で、gather (和) が 0.5+0.5=∇φ に合成する。Taylor-Green の解析勾配
+  $\partial u_x/\partial x=M_0\cos x\cos y\cos z$ と照合: **境界 (合併) 勾配 mean|err|=5.3e-4 (|g|max 0.398 vs 解析 0.4)、内部 5.8e-4 と同等精度**で
+  master==slave 一致 (diff 2.9e-7) — periodic 境界の勾配が内部と同等に正しいと確認 (`case/35` run_0012)。当初 res_0 が 0.5×解析に見えたのは
+  **初期 calcGradient (時間ループ前) に gather を入れていなかった**ため (res_0 が片側出力)。[`main.cpp`](../../solver_density_cuda/main.cpp)
+  の初期 setup calcGradient 直後にも `periodicGradientGather` を追加し res_0・初期診断も合併勾配にした。
