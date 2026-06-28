@@ -181,6 +181,27 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   (正しいタイル張りの条件) をサニティチェック。単一 passage なら問題にならない。
 - **順序**: Cartesian 並進周期を先に成立 → 回転周期を後続で追加。
 
+#### 4.5.9 保存量 state ミラー (実装済・seam 圧力欠陥の真因と解消)
+§4.5.3 は「残差 gather + 合併体積で master/slave は自動同期し続ける」と設計したが、これは**両者が初期から一致し
+かつ更新が完全一致する場合のみ**。実際には次で desync する:
+- **初期 desync**: 非周期な seed 摂動 (例: 剪断層に `Uz±3` を z 非対称に与える)、cross-mesh restart、丸め。
+- 残差 gather は「**同じ res を異なる state に足す**」だけなので、初期差を**永続させる** (補正しない)。
+
+desync すると、継ぎ目隣接面 (master の z 内面 / slave の z 内面) が **master/slave で別 state** を読み、フラックスが
+不整合になる。低散逸 KEEP + 非定常で顕在化し、**継ぎ目に ~90–150 Pa の定常 P 欠陥**を生む (backstep `run_node3d_keep_wale`)。
+
+**切り分け** (`run_node3d_keep_{slip,pure,1storder,euler}`): slip では消える=periodic 固有 / 純粋KEEPは全域 checkerboard=
+Roe散逸は必須 / **1 次・Euler でも seam 残存**=2 次再構成も粘性勾配も無関係。実測で master/slave の **Uz が最大 14.9 m/s・
+Uy 4.8 m/s 食い違い** (ro/roe/Ux は同期) → seed の Uz 摂動由来の desync と確定。合併体積は比=1.0 で無罪。
+
+**解消**: NS 保存量 `(ρ,ρu_x,ρu_y,ρu_z,ρe)` を root→member ミラー (`periodicMirrorNSState_d_wrapper`、§4.5.8 表の
+「state ミラー $Q_s=Q_m$」の Cartesian 版を実体化)。**(a) 初期化時** (`readValueHDF5` 後・`dependentVariables` 前)、
+**(b) 各 RK stage の保存量更新直後** に呼び slave=master を強制 → DOF を真に 1 個にする。結果: **継ぎ目 P 欠陥 150→0.2 Pa、
+master/slave 差→機械ゼロ、NaN なし** (`run_node3d_keep_mirror`)。陰解法は init ミラー + §4.5.7 dq ミラーで同期維持。
+
+> 教訓: 「残差を足すだけ」では DOF を 1 個にしたことにならない。**state の同一視が必須**。回転周期 (§4.5.8) では
+> ミラーを $Q_s=T(d\theta)Q_m$ にする。
+
 ### 4.6 検証量
 - 双対体積総和 = primal 体積総和 (relErr < 1e-6)。
 - ノード closure: `Σ_f (符号付き双対面ベクトル) + Σ 境界半割面 = 0` (periodic 内部面は両側で相殺)。

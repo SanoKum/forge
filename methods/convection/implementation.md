@@ -255,9 +255,12 @@ Ducros 補正は通さず、`limiter_*[ic0/ic1]` を直接 `interp_dispatch` に
 - **散逸切替 `keepDissipation`** (`space` セクション, 既定 1): `0` で純粋 KEEP (Roe 散逸無し・非散逸中心流束のみ)。
   診断で確認: 純粋 KEEP は homogeneous 方向で **低マッハ圧力 odd-even checkerboard を抑えられず** (backstep spanwise で
   ~130 Pa peak-to-peak の市松・残差上昇)、**Roe 散逸が必須**。WALE の渦粘性は非粘性の圧力デカップリングを減衰しない。
-- **periodic 継ぎ目の残留振動 (既知)**: KEEP+Roe は内部 checkerboard を ~2 Pa まで抑えるが、**node periodic 継ぎ目で
-  P が ~90 Pa 振動**する (slip 境界では clean)。periodic 半割面は移流ループから除外され DOF 同一視 (残差和) で扱うため、
-  継ぎ目に Roe 散逸が効かないのが原因と推定。継ぎ目への散逸付与が課題 ([plan](../../plans/active/convection-keep-revive-node.md))。
+- **periodic 継ぎ目の P 振動 (原因特定・解消済)**: 当初 KEEP+Roe periodic で継ぎ目に ~90-150 Pa の P 欠陥が出た。
+  散逸不足でも 2 次再構成でもなく (1 次・Euler でも残存)、真因は **node periodic 合併 DOF の保存量 state が
+  master/slave で desync** していたこと (非周期な seed 摂動を残差 gather が永続させ、実測 Uz が ~15 m/s 食い違い)。
+  継ぎ目隣接面が master/slave で別 state を読みフラックス不整合を生んでいた。**保存量 state を root→member ミラー**
+  (§4.5.9 / `periodicMirrorNSState`) で解消 (継ぎ目 P 振動 150→0.2 Pa、master/slave 差→機械ゼロ)。
+  詳細は [median-dual-3d plan §4.5.9](../../plans/active/discretization-median-dual-3d.md)。
 - **今後の課題**: 低マッハ/LES では Roe 散逸が過多になり得る。Ducros センサ (`duc` は計算済・未使用)
   での散逸スケーリングや低マッハ補正は段階導入予定。
 

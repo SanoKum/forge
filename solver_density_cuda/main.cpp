@@ -830,6 +830,10 @@ cudaConfig initializeSimulation(
     // を構築し、各 group の合併体積を var.c_d["volume"] へ書き戻す。setDT より前 (volume を使うため)。
     // cell モード / 非周期では no-op。
     msh.buildPeriodicNodeGroups(cfg.discretization == "node", var.c_d["volume"]);
+    // node 周期境界 DOF 同一視 (§4.5.9): 読み込んだ保存量を root→member ミラーで slave=master に初期同期する。
+    // seed (2D複製+非周期 Uz 摂動 / restart / 丸め) で周期ペアの保存量が desync していることがあり、残差 gather だけ
+    // では desync が永続して継ぎ目フラックス不整合 (seam 圧力欠陥) を生む。dependentVariables より前に揃える。
+    periodicMirrorNSState_d_wrapper(cfg , cuda_cfg , msh , var);
     speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
     condensationPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // φ = ρφ/ρ (液相モーメント読込済)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
@@ -1164,6 +1168,9 @@ void advanceExplicitRK(StepContext& s)
         logResidualSnapshot(s, iloop);
         s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
             timeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
+            // node 周期境界 DOF 同一視 (§4.5.9): NS 保存量更新直後に root→member ミラーで slave=master を強制。
+            // 残差 gather だけでは初期 desync (非周期 seed 摂動) が残り継ぎ目フラックス不整合を生むため。cell/非周期で no-op。
+            periodicMirrorNSState_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
             ransTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             speciesTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // ρY_s>=0, ΣρY_s=ρ

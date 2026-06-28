@@ -92,7 +92,21 @@ void periodicNodeGather_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     }
 }
 
-// RANS SST: k/ω 状態 (roK, roOmega) を周期 group の root から member へミラー (§4.5)。
+// NS 保存量 (ro,roUx,roUy,roUz,roe) を周期 group root から member へミラー (§4.5.9)。
+// 残差 gather だけでは初期 desync・丸めで master/slave の保存量が drift する (実測: Uz が seam で ~15 m/s 食い違い)。
+// 継ぎ目隣接面が master/slave で別 state を読みフラックス不整合→seam 圧力欠陥を生むため、保存量更新直後に slave=master を強制する。
+void periodicMirrorNSState_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.discretization != "node" || msh.periodicRoot_d == nullptr || msh.nPeriodicMembers == 0) return;
+    periodicBroadcastFromRoot_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.periodicRoot_d,
+        var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"]
+    );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
+// RANS SST: k/ω 状態 (roK, roOmega) を周期 group の root へ member からミラー (§4.5)。
 // point-implicit SST (applySSTPointImplicit) は per-cell 対角で更新するため master/slave が別値になり
 // drift する。更新直後に master 値を共有させて同一視を保つ (dq ミラーの k/ω 版)。SST 更新の直後に呼ぶ。
 void periodicMirrorScalarState_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)

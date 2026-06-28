@@ -74,6 +74,8 @@
 | `run_node3d_keep_wale` | **node + KEEP + WALE LES** (`solver:KEEP` 復活 + `LESorRANS:1 LESmodel:1` node WALE 有効化, MUSCL explicit RK3 cfl0.3)。res_80000 発達場 seed。40000 step | **安定**: NaN/cfl0 ゼロ、残差健全低下 (rms_roUx 36→0.3)、**WALE SGS 稼働** (vis_turb max0.31/mean0.05 vs vis_lam0.001=~50×)、node 弱形式パス確認。ただし **periodic 継ぎ目 (z=0/z=4) で P が ~90 Pa 振動** (内部 ~2 Pa)。[plan](../../plans/active/convection-keep-revive-node.md) | active |
 | `run_node3d_keep_slip` | **切り分け①**: run_node3d_keep_wale の spanwise を **periodic→slip** に。12000 step | **継ぎ目振動が消えて clean** (P-mean vs z が滑らかな勾配 ±10 Pa・odd-even 無し)。→ 振動は **periodic 機構固有** (一般の KEEP 低マッハ checkerboard でない) | ref (診断) |
 | `run_node3d_keep_pure` | **切り分け②**: `keepDissipation:0` で **純粋 KEEP** (Roe 散逸無し), periodic。12000 step | **全域で激しい spanwise odd-even checkerboard** (~130 Pa peak-to-peak, 教科書的市松)・残差上昇 (rms_roUx 1.14)。→ **KEEP 中心流束は非散逸で低マッハ圧力 checkerboard を抑えられず、Roe 散逸が必須**と確定 | ref (診断) |
+| `run_node3d_keep_1storder` / `run_node3d_keep_euler` | **切り分け③④**: KEEP+Roe periodic を **1次 (convMethod0)** / **完全Euler (visc0,thermCond0,SGS off)** で。seam欠陥場から restart | **どちらも seam 欠陥が残存** (Euler は 1次LESと数値完全一致 -105.7/60.1)。→ **2次再構成・勾配ブレンド・粘性/WALE すべて棄却**。原因は periodic マージ機構そのものと確定 | ref (診断) |
+| `run_node3d_keep_mirror` | **真因特定→解消**: master(z=0)/slave(z=4) の保存量 desync を実測 (**Uz 最大 14.9 m/s 差**, ro/roe/Ux は同期; 体積比=1.0で無罪)。**NS 保存量 root→member ミラー** (`periodicMirrorNSState`, 初期化+各RK stage) を実装し seam欠陥場から restart | **seam 欠陥 150→0.2 Pa・master/slave 差→機械ゼロ**で解消。NaN無・WALE稼働。[plan §4.5.9](../../plans/active/discretization-median-dual-3d.md) | **解消確認** |
 
 > **P・ρ 振動の正体と打ち手 (run_0071–0079, 2026-06-28)**: node/cell 共通の P・ρ「振動」は **低マッハ再循環域に
 > 局在する odd-even チェッカーボード** (collocated 圧力-速度デカップリング) と確定。段差角を1セル過ぎた x≈2.13 の
