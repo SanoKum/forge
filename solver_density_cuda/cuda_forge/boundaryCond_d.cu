@@ -1704,7 +1704,8 @@ void periodic_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc , m
         bc.map_bplane_cell_ghst_d,
 
         bc.bint_d["partnerCellID"],
-        bc.inputInts["dtheta"],
+        bc.inputFloats["dtheta"],   // 回転周期の回転角 [rad] (float)。inputInts から読むと常に 0 で回転周期が無効化される。
+                                    // Cartesian (type=0) はキー無し → 0.0 で恒等 (従来どおり無害)。
 
         var.p_d["x"],  
         var.p_d["y"],  

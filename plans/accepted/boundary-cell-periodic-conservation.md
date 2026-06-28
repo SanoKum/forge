@@ -50,11 +50,12 @@ cell (collocated primal) モードの triply-periodic 境界が**運動量を保
 
 **修正**: [`main.cpp`](../../solver_density_cuda/main.cpp) の `setPeriodicPartner()` 直後に、各 periodic bcond の `partnerCellID`/`partnerPlnID` を `bint_d` へ明示的に `cudaMemcpy` (H2D)。periodic bcond のみ対象なので非周期・cell/node 既存挙動は不変。
 
-## 6. 別バグ (本件と独立, 未修正)
+## 6. 別バグ (本件と独立, 修正済)
 
-[`boundaryCond_d.cu`](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu) `periodic_d_wrapper` が `dtheta` を `bc.inputInts["dtheta"]` (int マップ・存在しないキー→0) から読む。**回転周期 (type=1) が常に dtheta=0 で無効化される**。Cartesian (type=0) では 0 が正しく無害。`bc.inputFloats["dtheta"]` から読むよう要修正 (別タスク)。
+[`boundaryCond_d.cu`](../../solver_density_cuda/cuda_forge/boundaryCond_d.cu) `periodic_d_wrapper` が `dtheta` を `bc.inputInts["dtheta"]` (int マップ・存在しないキー→0) から読んでいた。**回転周期 (type=1) が常に dtheta=0 で無効化される**バグ。Cartesian (type=0) では 0 で無害。**修正**: `bc.inputFloats["dtheta"]` から読むよう変更 (`setPeriodicPartner` の `inputFloats["dtheta"]` および bcondConfig の `floats:` ブロックと整合)。Cartesian はキー無しで 0.0 になり従来挙動不変 (TGV cell で運動量保存が不変なことを確認)。回転周期のテストケースは未整備のため動作確認は今後。
 
 ## 変更ログ
 
 - `2026-06-28` — 調査着手。cell 全周期で運動量が線形注入され seam が非周期化することを確認、原因を seam 対流保存に局在化。
 - `2026-06-28` — **根本原因特定・修正完了**。device partnerCellID 未転送が原因 (上記)。修正後、cell pure-KEEP TGV (非粘性) が運動量 ~1e-7・KE 0.4%・エントロピー ~1e-5 で保存し node と一致 (`case/09` run_0008/0010)。修正前に発散した cell pure-KEEP が完走。node・非周期は不変。検証: [`case/09.Taylor-Green/README.md`](../../case/09.Taylor-Green/README.md)。
+- `2026-06-28` — **§6 の dtheta バグも修正** (`periodic_d_wrapper` を `inputFloats["dtheta"]` 読みに変更)。Cartesian は不変 (TGV cell 運動量保存を確認)、回転周期を有効化。
