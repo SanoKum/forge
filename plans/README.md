@@ -66,6 +66,7 @@
 | [turbulence-enhanced-wall-treatment.md](accepted/turbulence-enhanced-wall-treatment.md) | `turbulence` | SST Enhanced (Automatic / y⁺ 非依存) Wall Treatment |
 | [turbulence-kato-launder.md](accepted/turbulence-kato-launder.md) | `その他 (turbulence)` | SST 生産項 Kato–Launder 補正 (`katoLaunder`) |
 | [turbulence-node-sst-wallfunction.md](accepted/turbulence-node-sst-wallfunction.md) | `turbulence` | node-centered SST 壁関数の代表点修正 + τ_w 付与 (ic=壁ノード u=0 トラップ) |
+| [turbulence-node-inlet-dirichlet-conserved.md](accepted/turbulence-node-inlet-dirichlet-conserved.md) | `turbulence` | node 入口 Dirichlet の保存量整合+残差除外 (rms_roOmega プラトー根治、cell 不変、x_R が実験に接近) |
 | [turbulence-sst-freestream-init.md](accepted/turbulence-sst-freestream-init.md) | `turbulence` | SST 初期乱流の freestream 初期化 (kInit / omegaInit) |
 
 ## archived (superseded / 終了)

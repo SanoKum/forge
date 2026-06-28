@@ -98,6 +98,10 @@ public:
         // (保存量 roK_wf = ρ·k_wf, k_wf=ω_w·μ_t,wall/ρ = SU2 SetTurbVars_WF 流)。非対象セルは -1 (inactive)。
         // >=0 のノードで k をこの値にハード Dirichlet し近壁 k 蓄積 (再付着 μ_t ピーク) を断つ。cell では常に -1。
         "roK_wf",
+        // node 入口 (Dirichlet スカラー境界) ピン識別: rans_dirichlet_scalar_boundary_d が入口ノードで 1 に
+        // セットし、ransSource が ==1 のセルで res_roK/res_roOmega/src_jac_* を 0 化 (保存量整合+残差除外)。
+        // 既定 0 (非入口)。cell では常に 0 (node 分岐を通らない)。
+        "scalarDirichletPin",
         // 診断 (k 収支調査用, node/cell 近壁 SST 比較): ransSource が確定した最終 k 生産項 P_k
         // (wall-function 置換後)。res_roK へ加える値そのもの。non-RANS では未使用。
         "Pk_diag",
@@ -168,6 +172,10 @@ public:
         // k 収支調査 (node/cell 近壁 SST 比較, 一時診断): 壁関数生産 wf_pk(>=0=壁関数処理/-1=未処理),
         // k Dirichlet 値 roK_wf, 最終 k 生産 Pk_diag, 消散ヤコビ src_jac_k, k 輸送対角 transport_diag_k
         "wf_pk" , "roK_wf" , "Pk_diag" , "src_jac_k" , "transport_diag_k" ,
+
+        // omega 残差収支調査 (入口×壁コーナー残差プラトーの局在, 一時診断): 残差 res_roOmega,
+        // 源項ヤコビ src_jac_omega, 輸送対角 transport_diag_omega
+        "res_roOmega" , "src_jac_omega" , "transport_diag_omega" , "res_roK" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des"

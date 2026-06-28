@@ -146,13 +146,44 @@ P 市松とは独立な **rms_roOmega プラトー** (node ~9.5) の正体を、
   (x_R≈6.7=k 生産ピーク・物理)、入口コーナーは 2.31 で副次的。cell は段差リップ (max 18) が支配、入口≈0.003。
   → **omega プラトー=入口コーナー BC が支配、k 残差=再付着の物理生産が支配**。
 
-### 打ち手 (A4, 未実装 — 要 plan)
+### 打ち手 (A4, **実装・検証済 done**)
 
 壁ピンと同形に、node 入口 (および任意の Dirichlet スカラー境界) で **保存量も整合**: `roOmega[ic]=ρ·omegab` /
-`roK[ic]=ρ·kb` をピン + `res_roOmega[ic]=0` / `res_roK[ic]=0` で除外 (壁 ransBoundary_d.cu:56,72 と同形)。
-cell は ghost 経由で正しく課されるため不変の見込み。behavior 変更のため methods→plan→実装フローを踏む。
-検証: node rms_roOmega プラトーが落ちるか + 入口 roK/roOmega 不整合 (7730/888727) が解消するか + x_R/場 不変 + cell ビット不変。
-注: k は残差支配が物理 (再付着) のため rms_roK プラトー自体は本修正では大きく変わらない見込み (入口不整合の是正が主目的)。
+`roK[ic]=ρ·kb` をピン + `res_roOmega[ic]=0` / `res_roK[ic]=0` で除外 (`scalarDirichletPin` フラグで識別、壁
+ransBoundary_d.cu:56,72 と同形)。cell は node 分岐を通らず不変。実装は plan
+[`turbulence-node-inlet-dirichlet-conserved.md`](../../plans/accepted/turbulence-node-inlet-dirichlet-conserved.md)。
+
+**検証結果** (`run_0091` node 75k 収束): **rms_roOmega プラトー 9.5→5.1e-3 (−約3桁)**、入口不整合
+`roOmega/ro`-`omega` 888727→2.5e-5・`roK/ro`-`k` 7729→20、コーナー res 568→0。cell ビット不変 (atomicAdd ノイズ床内)。
+**ただし x_R を 5.63→6.67 と変える** (旧実装が入口近傍乱流を保存量不整合で汚していた是正の帰結。実験 6.26 に接近=改善)。
+注: k は残差支配が物理 (再付着) のため rms_roK プラトー自体は大きく変わらない (入口不整合是正が主目的)。
+
+## SU2 三者クロスチェック: 市松はスキーム(RHS散逸)で決まり LHS solver では消せない (2026-06-28)
+
+ユーザー仮説「SU2 は LHS(完全陰解法)で振動を抑えている」を検証するため、**同一 planar mesh・同一 BC で
+SU2 のスキームを Roe/SLAU/SLAU2 に振り**、forge と角部再循環 (y<0.95) の P odd-even を比較した。
+SU2 は「Standard Roe without low-dissipation function」+ entropy fix 0.001 + MUSCL/Venkata + **Euler implicit +
+FGMRES + ILU(0)**、**低マッハ前処理なし** (su2.log で確認)。
+
+| code | scheme | LHS solver | P odd-even [Pa] |
+| --- | --- | --- | --- |
+| forge | SLAU | block-DPLUR | 92 |
+| **SU2** | **SLAU** | **FGMRES+ILU(0)** | **94** |
+| **SU2** | **SLAU2** | **FGMRES+ILU(0)** | **93** |
+| forge | ROE | block-DPLUR | 25 |
+| SU2 | ROE | FGMRES+ILU(0) | 9.7 |
+| forge | SLAU+c' (lmp2) | block-DPLUR | 7.6 |
+
+**結論**:
+1. **市松はスキームの低マッハ圧力散逸 (RHS) で決まる**。SLAU/SLAU2 は LHS solver に依らず市松 (forge block-DPLUR 92,
+   SU2 FGMRES+ILU 94/93 = ほぼ同一)。Roe だけが抑制 (9.7–25)。**SU2 の gold-standard 完全陰解法でも SLAU 市松は消えない**。
+2. **LHS solver は副次**: Roe で 25→9.7 を稼ぐが、SLAU の市松 (94) は救えない。
+3. **SLAU2 (改良圧力流束) でも消えない** (93)。**→ SLAU でやるなら `lowMachPrecond=2` (lmp2, c' 散逸付加) にしないと市松は消えない**。
+4. Roe の「低マッハ精度問題 (過剰散逸)」が、逆に市松を減衰させている (散逸が消えないため)。SLAU は精度のため散逸を消す→市松復活。
+
+**含意**: 純粋な LHS-only では SLAU 市松を抑制できない (SU2 が実証)。抑制には必ず RHS 散逸が要る — ① Roe に切替、
+② SLAU+c' (lmp2)、のいずれか。`lowMachPrecond=1` は LHS 非整合で発散/停滞のため不可、完全前処理 `=2` が必須。
+run: `case/18.backstep/run_0092–0095` (forge ROE / SU2 SLAU / SU2 SLAU2)。
 
 ## 推奨 / 残課題
 
