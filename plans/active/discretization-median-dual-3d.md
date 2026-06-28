@@ -336,3 +336,14 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
     **3D node SST 壁関数バグ** (wf_pk が 3D 壁で inf)。`wallTreatmentSST=0` では inf 消失・NaN なし完走だが coarse mesh で
     低-Re 不適。→ **次タスク = 3D node SST 壁関数修正** ([[turbulence-node-wall-function-coverage]] 系)。periodic + k/ω gather
     自体は完成・有効化済。残: SST 壁関数修正後の backstep 3D RANS x_R 照合 (2D ~7.6 と一致確認)、§4.5.8 回転、sod 3D。
+- `2026-06-28` — **backstep 3D spanwise periodic RANS で periodic を完全検証 (3D node SST コーナーバグ修正後)**。
+  blocker だった omega inf の真因: SST omega 壁 BC $\omega=60\nu/(\beta_1 y^2)$ で、壁ノードの実効 y を内部隣接の
+  wall_dist に置換する `compute_wall_y_eff_d` が、段差凹コーナー (2壁交線) では全エッジ隣接が壁ノードで `cnt==0` に
+  なり kSmall fallback → 3D は wall_dist=0 で $y=$kSmall → omega float overflow (2D は偶々 wall_dist≈0.015 で救われていた)。
+  **修正**: `cnt==0` のとき 2-ring 探索 (隣接壁ノードの隣接=対角内部ノード) で第一オフ壁距離を拾う
+  ([`ransBoundary_d.cu`](../../solver_density_cuda/cuda_forge/ransBoundary_d.cu) commit `da22836`)。flat 壁 (cnt>0)・cell は不変。
+  **検証 (`case/18` run_0060, 修正後)**: 3D backstep RANS が安定収束 (rms_ro 1.57e-5)。**periodic 完全検証**:
+  (1) spanwise で x_R=5.163–5.170 (mean 5.167, std 0.003) = 解が z 非依存 = periodic が継ぎ目を完全接続、
+  (2) **3D periodic x_R 5.16 == 2D 同コード x_R 5.18 (run_0062) に 0.4% 一致**。
+  → **Cartesian periodic (NS+RANS, 陽・陰) が実 RANS ケースで完全検証完了**。残: §4.5.8 回転、sod 3D、x_R の完全 settle と
+  wall_y_eff 修正の SST 較正影響 (旧 7.6→5.18、exp 6.26 との比較は別軸の SST 課題)。
