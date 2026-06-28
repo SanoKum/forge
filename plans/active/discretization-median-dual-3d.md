@@ -324,3 +324,15 @@ $T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等し�
   master==slave 一致 (diff 2.9e-7) — periodic 境界の勾配が内部と同等に正しいと確認 (`case/35` run_0012)。当初 res_0 が 0.5×解析に見えたのは
   **初期 calcGradient (時間ループ前) に gather を入れていなかった**ため (res_0 が片側出力)。[`main.cpp`](../../solver_density_cuda/main.cpp)
   の初期 setup calcGradient 直後にも `periodicGradientGather` を追加し res_0・初期診断も合併勾配にした。
+- `2026-06-28` — **RANS k/ω periodic gather を実装 + backstep 3D 検証着手 (SST 壁関数 blocker)**。
+  - 実装: [`periodicNode_d.cu`](../../solver_density_cuda/cuda_forge/periodicNode_d.cu) に k/ω 対応を追加 — 残差 gather
+    (res_roK/res_roOmega を 1配列版で merged CV へ合算)・勾配 gather (dKd*/dOmegad* を keys に追加)・状態ミラー
+    `periodicMirrorScalarState` (roK/roOmega を root→member、`applySSTPointImplicit` 直後; point-implicit は per-cell 対角で
+    drift するため)。全 SST-guard (LESorRANS==2 && RANSmodel==1)。
+  - 検証ケース backstep 3D (`case/18` run_0060): 2D planar backstep を spanwise 4H×8層 hex 押し出し、side1↔side2 Cartesian
+    periodic、run_0059 収束場を 2D→3D 最近傍移植 (interp_field は node 双対 CONNE 非対応のため CELLS/MESH COORD 直読の自作)
+    で restart。**periodic 機構は動作** (union-find 10997 spanwise merge、periodic を移流から除外、NS 残差 step0 有限)。
+  - **blocker (periodic 非依存)**: `wallTreatmentSST=1` で rms_roK=inf at step0。**slip 置換でも同 inf** → periodic でなく
+    **3D node SST 壁関数バグ** (wf_pk が 3D 壁で inf)。`wallTreatmentSST=0` では inf 消失・NaN なし完走だが coarse mesh で
+    低-Re 不適。→ **次タスク = 3D node SST 壁関数修正** ([[turbulence-node-wall-function-coverage]] 系)。periodic + k/ω gather
+    自体は完成・有効化済。残: SST 壁関数修正後の backstep 3D RANS x_R 照合 (2D ~7.6 と一致確認)、§4.5.8 回転、sod 3D。
