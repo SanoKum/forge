@@ -79,8 +79,12 @@ __global__ void rans_dirichlet_scalar_boundary_d(
     geom_int nb,
     geom_int* bplane_cell,
     geom_int* bplane_cell_ghst,
+    flow_float* ro,
     flow_float* k,
     flow_float* omega,
+    flow_float* roK,
+    flow_float* roOmega,
+    flow_float* scalarDirichletPin,
     flow_float* kb,
     flow_float* omegab,
     int isNode)
@@ -98,9 +102,15 @@ __global__ void rans_dirichlet_scalar_boundary_d(
         // そのまま境界値に使う設計。壁は omega[ic]=omega_w をピンするが、入口 Dirichlet が ghost しか
         // 書かないと境界ノードがピンされず、入口 k/ω が freestream から drift する (実測 1000→918)。
         // node では境界ノードを Dirichlet 値に直接ピンする (cell は ghost 経由で正しく課されるので不変)。
+        // primitive だけでなく保存量 roK/roOmega も ρ·Dirichlet 値に整合させ (放置すると roOmega/ro vs omega が
+        // 最大 888727 不整合し残差が rms を汚染、入口×壁コーナーで最大化)、scalarDirichletPin を立てて
+        // ransSource で残差除外する。詳細: plans/active/turbulence-node-inlet-dirichlet-conserved.md。
         if (isNode != 0) {
-            k[ic]     = kb[ib];
-            omega[ic] = omegab[ib];
+            k[ic]       = kb[ib];
+            omega[ic]   = omegab[ib];
+            roK[ic]     = ro[ic] * kb[ib];
+            roOmega[ic] = ro[ic] * omegab[ib];
+            scalarDirichletPin[ic] = static_cast<flow_float>(1.0);
         }
     }
 }
@@ -213,8 +223,12 @@ void ransBoundary_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond& bc
             static_cast<geom_int>(bc.iPlanes.size()),
             bc.map_bplane_cell_d,
             bc.map_bplane_cell_ghst_d,
+            var.c_d["ro"],
             var.c_d["k"],
             var.c_d["omega"],
+            var.c_d["roK"],
+            var.c_d["roOmega"],
+            var.c_d["scalarDirichletPin"],
             bc.bvar_d["k"],
             bc.bvar_d["omega"],
             (cfg.discretization == "node") ? 1 : 0);

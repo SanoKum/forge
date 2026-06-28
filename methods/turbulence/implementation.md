@@ -121,6 +121,15 @@ NS のみを想定しているため、初期実装では `scalarTransport_d.*` 
 ghost セル側へ反射して入れる。
 将来、非対称な距離配置にするなら、理論側の距離比の式へ切り替える。
 
+**node 入口 (Dirichlet スカラー境界) の保存量整合と残差除外** (`rans_dirichlet_scalar_boundary_d`):
+node-centered では境界ノードが実 DOF なので、`omega[ic]=omegab`/`k[ic]=kb` の **primitive ピンだけでは
+保存量 `roOmega`/`roK` が解かれ続けて不整合**になる (実測 `roOmega/ro` vs `omega` 888727、`roK/ro` vs `k` 7729)。
+さらにその残差 `res_roOmega`/`res_roK` が `rms` を汚染し、入口×壁コーナーで最大化して node の `rms_roOmega`
+プラトーを作る。よって壁ピン (§3.7) と同形に、node 入口では **保存量 `roOmega[ic]=ρ·omegab`/`roK[ic]=ρ·kb` を
+整合ピン + `res_roOmega`/`res_roK`/`src_jac_*` を 0 化** する (フラグ `scalarDirichletPin` で識別、ransSource で除外)。
+cell モードは ghost 経由で正しく課されるため不変。設計詳細は
+[`plans/active/turbulence-node-inlet-dirichlet-conserved.md`](../../plans/active/turbulence-node-inlet-dirichlet-conserved.md)。
+
 ### 3.6 出力と診断
 
 `output_cellValNames` に次を追加する。
