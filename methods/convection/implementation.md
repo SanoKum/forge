@@ -27,7 +27,7 @@ forge の対流フラックス計算の実装と、ソース上の対応関係�
 | `"SLAU2"` | `SLAU_d` (`slauVariant=2`) | 有効 (圧力束のみ SLAU2、低マッハ改良) |
 | `"HLLE"` | `HLLE_d` | 有効 |
 | `"ROE"`  | `ROE_d`  | 有効 |
-| `"KEEP"` | `KEEP_d` | 有効 (KEEP 中心流束 + Roe 行列散逸。LES/ILES 向け。cell/node 両対応) |
+| `"KEEP"` | `KEEP_d` | 有効 (純粋 KEEP 中心流束・散逸なし。LES/ILES 向け。cell/node 両対応) |
 | `"AUSM+"`, `"AUSM+UP"`, `"KEEP_SLAU"` | (legacy に実装あり) | ラッパに分岐なし・到達不能 (`legacy/`) |
 
 呼び出し直前に `res_ro`, `res_roUx`, `res_roUy`, `res_roUz`, `res_roe` を
@@ -238,31 +238,29 @@ Ducros 補正は通さず、`limiter_*[ic0/ic1]` を直接 `interp_dispatch` に
 
 ### `KEEP_d` ([convectiveFlux_keep_d.inc.cuh](../../solver_density_cuda/cuda_forge/convection/convectiveFlux_keep_d.inc.cuh))
 
-**KEEP (Kinetic Energy & Entropy Preserving) 中心流束 + Roe 特性行列散逸**。LES/ILES 向けの
-低散逸対流スキームで、SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
-`KEEP_FVS_d` (中心流束が `if(false)` で無効・単純中心平均のみ稼働) を modern bundled API
-(`FaceGeom`/`PrimState`/...) へ移植し、**KEEP 中心流束を有効化**したもの。
+**純粋 KEEP (Kinetic Energy & Entropy Preserving) 中心流束**。**散逸項を持たない**低散逸対流スキームで、
+SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の `KEEP_FVS_d` (中心流束が `if(false)` で
+無効・単純中心平均のみ稼働) を modern bundled API (`FaceGeom`/`PrimState`/...) へ移植して KEEP 中心流束を
+有効化し、その後 **Roe 行列散逸・MUSCL 再構成・リミタ・Ducros を撤去**して純粋 KEEP に簡素化した。
 
 - **中心流束**: 隣接対 `(ic0,ic1)` の生値で構成 (KE/エントロピー保存)。
   $\tilde C = \overline{\rho}\,\overline{U}_n S$, 運動量 $\tilde M_i = \tilde C\,\overline{u_i} + \overline{p}\,n_i S$,
   エネルギー $= (\tilde K + \tilde I + \tilde P)S$ ($\tilde K=\tilde C\,\tfrac12\sum u_{i,0}u_{i,1}$,
   $\tilde I=\tilde C\,\tfrac12(p_0/\rho_0+p_1/\rho_1)/(\gamma-1)$, $\tilde P$ は圧力仕事の split)。
-- **散逸**: MUSCL 再構成した L/R 状態の Roe 行列 $R|\Lambda|L$ を L 側・R 側それぞれで評価し
-  $0.5(|A_L|Q_L - |A_R|Q_R)$ の FVS 型で加える。境界 ghost (`ic1>=nCells`) では 1 次化。
+- **散逸なし**: Roe 行列散逸は持たない。安定化散逸が要る用途は SLAU/ROE を使う。引数も簡素化され
+  `KEEP_d(ga, geom, st, reso)` のみ (リミタ/勾配/Ducros/`keepDissipation` は受け取らない)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
-  周回 (境界 plane は 1 次化、専用境界カーネルは skip)、node 弱形式は内部双対面のみ周回し境界は
-  `convectiveFlux_boundary_d` が担う。`massflux[ip]` に散逸込みの総質量流束を書きスカラー輸送と整合。
-- **散逸切替 `keepDissipation`** (`space` セクション, 既定 1): `0` で純粋 KEEP (Roe 散逸無し・非散逸中心流束のみ)。
-  診断で確認: 純粋 KEEP は homogeneous 方向で **低マッハ圧力 odd-even checkerboard を抑えられず** (backstep spanwise で
-  ~130 Pa peak-to-peak の市松・残差上昇)、**Roe 散逸が必須**。WALE の渦粘性は非粘性の圧力デカップリングを減衰しない。
-- **periodic 継ぎ目の P 振動 (原因特定・解消済)**: 当初 KEEP+Roe periodic で継ぎ目に ~90-150 Pa の P 欠陥が出た。
-  散逸不足でも 2 次再構成でもなく (1 次・Euler でも残存)、真因は **node periodic 合併 DOF の保存量 state が
-  master/slave で desync** していたこと (非周期な seed 摂動を残差 gather が永続させ、実測 Uz が ~15 m/s 食い違い)。
-  継ぎ目隣接面が master/slave で別 state を読みフラックス不整合を生んでいた。**保存量 state を root→member ミラー**
-  (§4.5.9 / `periodicMirrorNSState`) で解消 (継ぎ目 P 振動 150→0.2 Pa、master/slave 差→機械ゼロ)。
-  詳細は [median-dual-3d plan §4.5.9](../../plans/active/discretization-median-dual-3d.md)。
-- **今後の課題**: 低マッハ/LES では Roe 散逸が過多になり得る。Ducros センサ (`duc` は計算済・未使用)
-  での散逸スケーリングや低マッハ補正は段階導入予定。
+  周回 (境界面は ic1=ghost の生値で中心流束、専用境界カーネルは skip)、node 弱形式は内部双対面のみ
+  周回し境界は `convectiveFlux_boundary_d` が担う。`massflux[ip]` に総質量流束を書きスカラー輸送と整合。
+- **保存性 (Taylor-Green M0.4, $32^3$)**: cell・node とも運動量 ~1e-7・KE 0.4%・エントロピー ~1e-5 で保存
+  (非粘性)。検証 [`case/09.Taylor-Green`](../../case/09.Taylor-Green/README.md)。なお cell 全周期の保存には
+  partnerCellID の device 転送修正が前提 ([boundary-cell-periodic-conservation](../../plans/accepted/boundary-cell-periodic-conservation.md))。
+- **注意 (低マッハ checkerboard)**: 純粋 KEEP は非散逸ゆえ低マッハ圧力 odd-even を抑えない。homogeneous
+  方向で市松が出る場合は `lowMachPrecond` や SLAU 系を併用する (Roe 散逸を KEEP に混ぜる旧 `keepDissipation`
+  経路は廃止した)。
+- **periodic 継ぎ目の P 振動 (node, 解消済)**: node periodic 合併 DOF の保存量 state が master/slave で desync
+  していた件は **root→member ミラー** (§4.5.9 / `periodicMirrorNSState`) で解消済。詳細は
+  [median-dual-3d plan §4.5.9](../../plans/active/discretization-median-dual-3d.md)。
 
 legacy の `KEEP_SLAU_d` / `AUSMp_d` / `AUSMp_UP_d` は依然 `legacy/` に退避され到達不能。
 

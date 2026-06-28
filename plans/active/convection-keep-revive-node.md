@@ -66,3 +66,8 @@ KEEP は運動エネルギー・エントロピー保存の低散逸中心流束
 ## 7. 変更ログ
 
 - 2026-06-28: KEEP_d 移植 + dispatch、node WALE 有効化、methods 更新。ビルド・backstep 計算で検証中。
+- 2026-06-28: **KEEP_d を純粋 KEEP に簡素化** (user 依頼)。Roe 行列散逸・MUSCL 再構成・リミタ・Ducros・
+  `keepDissipation` 切替を撤去し、引数を `KEEP_d(ga, geom, st, reso)` に縮約。`space.keepDissipation`
+  config も廃止 (残っていても無視)。検証: Taylor-Green M0.4 で cell・node とも運動量~1e-7・KE0.4%・
+  エントロピー~1e-5 保存 (`case/09`)、回帰 smoke PASS。**注意**: 低マッハ checkerboard 抑制の散逸が無くなったため、
+  homogeneous 方向の市松は `lowMachPrecond`/SLAU 併用で対処する (旧 keepDissipation=1 経路は廃止)。
