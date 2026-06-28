@@ -95,16 +95,22 @@ $N_R$ 内側の部分 CV、両者は周期で隣接)。継ぎ目の 2 つの境�
   シフト未適用)、(b) **粘性ループは `ip<nNormalPlanes` で periodic を完全除外** (継ぎ目に粘性が入らない)。
   → 幾何退化 + 粘性欠落で発散。
 
-#### 4.5.3 採用設計: node DOF 同一視 (master/slave, `setPeriodicPartner` 拡張)
-partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 index のまま「同一 DOF」として扱う**:
-1. **周期半割面を双対メッシュに emit しない** (`replacePrimalWithDual` で periodic マーカの bcond は半割面 plane
-   を作らず、ノード対応リストだけ残す)。→ 周期 plane は移流/粘性/halo のどのループにも現れない。
-2. **状態 scatter** $Q(N_m)\to Q(N_s)$ を流束計算前に毎ステップ (両側 incident セルが整合した周辺状態を見る)。
-3. **残差 gather** $\mathrm{res}(N_s)$ を assemble 後に $\mathrm{res}(N_m)$ へ集約 (両側部分 CV の寄与を合算)。
-4. **合併体積** $V_m \leftarrow V(N_m)+V(N_s)$ を time integration の master に使う。slave は独立更新せず master に従属。
-5. master を更新→ $Q(N_m)$ を slave に scatter (2 と同じ)。
+#### 4.5.3 採用設計: node DOF 同一視 (master/slave, `setPeriodicPartner` 拡張) — 最小形
+partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 index のまま「同一 DOF」として扱う**。
+本質は「**残差も体積も足すだけ + 更新後ミラー**」で、毎ステップ状態 scatter や面の幾何合成は不要 (下記)。
+
+- **(a) 周期半割面を emit しない**: `replacePrimalWithDual` で periodic マーカの bcond は半割面 plane を作らず、
+  partner ノード対応リストだけ残す。→ 周期 plane は移流/粘性/halo のどのループにも現れない。
+- **(b) 残差 gather (足すだけ)**: assemble 後 $\mathrm{res}_m \mathrel{+}= \mathrm{res}_s$。
+- **(c) 体積も足す**: $V_m \leftarrow V(N_m)+V(N_s)$ を time integration の master に使う (これだけは省けない。
+  さもないと $V_m\neq V_s$ でペアがドリフトし「同一 DOF」が崩れる)。slave は独立更新しない。
+- **(d) 更新後ミラー**: $Q(N_s)\leftarrow Q(N_m)$ を更新の最後に 1 回コピー。
+- **scatter は不要**: 周期 IC で $Q_m=Q_s$ から始まり、毎ステップ「和を同じだけ当てる ((b)–(d))」を守れば
+  両者は自動同期し続ける ((c) の合併体積で更新が一致するため)。→ 旧 §4.5.3 の `periodicScatter_d` は廃止。
+- **free-stream 保存の証明**: closure より $\mathrm{res}_L=F\cdot(-S_{L,\text{半割}})$, $\mathrm{res}_R=F\cdot(-S_{R,\text{半割}})$、
+  継ぎ目で $S_L=-S_R$。よって $\mathrm{res}_L+\mathrm{res}_R = -F\cdot(S_L+S_R)=0$ → 一様流で残差和=0 が自動成立。
 - **多重周期の corner/edge** (例 三重周期 box の角): ノードが複数周期境界に属する。**union-find** で全 partner を
-  単一 master に縮約 (slave チェーン $N_s\to N_m\to N_{master}$ を 1 つに)。
+  単一 master に縮約 (slave チェーン $N_s\to N_m\to N_{master}$ を 1 つに)。残差・体積は全メンバを master へ集約。
 - 継ぎ目の移流・**粘性は両側の内部双対面 (既に `nNormalPlanes` 帯) が担う**ので、periodic を粘性ループへ
   追加する必要なし (4.5.2(b) のギャップも自動解消)。
 
@@ -113,8 +119,8 @@ partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 i
 - 周期半割面を emit しないので、`nBPlanes` / `setMeshMap_d` の periodic 区間 / `nBoundaryHaloPlanes` から周期分が消える。
   `convPlaneBound`(node) $= n\_normal\_halo - nBoundaryHaloPlanes$ は周期 plane を含まなくなる (= 純 `nNormalPlanes`)。
   **stale な周期 plane 参照が残らないこと**を確認する (normal_halo 構築・`periodic_d` 呼び出しを node では無効化)。
-- 新規追加カーネル: `periodicScatter_d` (master→slave Q コピー)・`periodicGather_d` (slave→master res 加算)。
-  time integration の体積を master で合併値にする (slave は更新スキップ or master と同値に保つ)。
+- 新規追加カーネル: `periodicGather_d` (slave→master res 加算) と更新後ミラー (master→slave Q コピー) の 2 つだけ。
+  time integration の体積を master で合併値にする (slave は更新スキップ or master と同値に保つ)。`periodicScatter_d` は不要 (§4.5.3)。
 
 #### 4.5.5 代替案 (build 時 union-find 合併) — 参考
 `buildMedianDual3D` で周期境界ノードを shift マッチングし **union-find で 1 CV に物理合併**して書き出せば、
@@ -123,10 +129,49 @@ partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 i
 では非採用だが、solver 簡潔さ最優先なら有力。
 
 #### 4.5.6 未確定・実装時に詰める点
-- scatter/gather の実行位置 (`applyBconds` 内 periodic ブランチを node 用に差し替えるか、専用フェーズか)。
+- gather/ミラーの実行位置 (`applyBconds` 内 periodic ブランチを node 用に差し替えるか、専用フェーズか)。
 - master/slave 選定規約 (physID 小を master 等) と union-find の corner 縮約順序の決定性。
-- 陰解法 (block-DPLUR) での DOF 同一視: master 行に slave の対角・残差を畳み込む必要があるか (LES は陽 RK3 主体なので
-  まず陽解法で成立させ、陰解法対応は後続)。
+
+#### 4.5.7 陰解法 (block-DPLUR) の partner 行 fold
+陽解法の「残差を足す」は陰解法では「**行を足す (slave 行を master 行へ fold)**」に一般化される。$Q_m=Q_s$ より
+block-DPLUR の各成分が partner で加算:
+
+| 成分 | 合併ルール |
+| --- | --- |
+| 対角ブロック $D$ | $D_m = D_L + D_R$ (体積項 $V/dt$ を内包 → 合併体積が自動) |
+| RHS 残差 | $\mathrm{res}_m = \mathrm{res}_L + \mathrm{res}_R$ (= 陽解法と同じ) |
+| 非対角 (LU sweep 和) | $LU_m = LU_L + LU_R$ (両側隣接面の寄与を union で加算) |
+
+- partner 間の**直接結合ブロック $J(N_L,N_R)$ は存在しない** (継ぎ目に面が無い)。両者は「同じ 1 行」で、変な結合項は不要。
+- **sweep ごとにミラー** $\Delta Q_s\leftarrow\Delta Q_m$ (outer sweep 後に 1 回): slave を隣接に持つセルが正しい補正を
+  読めるようにする。これで DPLUR の固定点が合併方程式に一致する。
+- forge の既存**壁/軸の行 decouple 機構** ([discretization-node-wall-implicit-dirichlet](discretization-node-wall-implicit-dirichlet.md),
+  `axis_flag`/wall Dirichlet) の隣に periodic の行 fold を足す形。LES は陽 RK3 / dual-time 主体なので**陽解法を先に成立させ
+  陰解法 fold は後続**。
+
+#### 4.5.8 回転 (円周) 周期 — 運動量回転 $T(d\theta)$ の挿入 (将来対応)
+回転周期では partner $N_L$ ($\theta=0$ 側) と $N_R$ ($\theta=\Delta\theta$ 側) は**別の物理位置**で、流れは軸まわり回転
+$T(d\theta)$ で関係する (スカラー $\rho,\rho e,P,T,$ species は等しく、運動量だけ回転)。→ Cartesian の「同一 DOF」が
+「**回転で結ばれた DOF**」になる。骨格 (§4.5.3/4.5.7) は不変で、ベクトル (運動量3成分) の授受に $T$ が挟まるだけ:
+
+| 操作 | Cartesian | 回転周期 |
+| --- | --- | --- |
+| 残差 gather | $\mathrm{res}_m=\mathrm{res}_L+\mathrm{res}_R$ | $\mathrm{res}_m=\mathrm{res}_L+T^{-1}(\mathrm{res}_R)$ |
+| state ミラー | $Q_s=Q_m$ | $Q_s=T(d\theta)\,Q_m$ |
+| Jacobian 対角 | $D_m=D_L+D_R$ | $D_m=D_L+T^{-1}D_R\,T$ (運動量ブロックの相似変換) |
+
+- $T$ は軸 ($x$ 想定) まわりの 2D 回転で $(\rho u_y,\rho u_z)$ に作用、$\rho u_x$・スカラーは恒等。回転は直交=内積保存
+  なので継ぎ目相殺 $\mathrm{res}_L+T^{-1}(\mathrm{res}_R)=0$ は frame 整合後に成立 (法線が逆向き)。散逸も入らない。
+- **既存資産流用**: cell モード `periodic_d` が既に `dtheta` で運動量を回してゴーストにコピー済 / `setPeriodicPartner`
+  type=1 が回転マッチング済。この $T$ を node の gather/ミラー/Jacobian-fold に流用する。
+- **検証状態が変わる**: 回転周期では Cartesian 一様流は周期的でない。free-stream 検証は**円筒成分一様** (一定軸流 +
+  剛体旋回) で $\mathrm{res}_L+T^{-1}(\mathrm{res}_R)=0$ を確認する。
+- **軸 ($r=0$) 干渉**: セクタが回転軸を含むと軸特異性
+  ([architecture-axisym-axis-singularity](architecture-axisym-axis-singularity.md)) と二重に絡む。環状 (軸を含まない)
+  passage で先に成立させる。
+- **回転合成整合**: corner で複数周期/回転が連鎖するとき union-find チェーンで合成した回転が**閉ループで恒等**になること
+  (正しいタイル張りの条件) をサニティチェック。単一 passage なら問題にならない。
+- **順序**: Cartesian 並進周期を先に成立 → 回転周期を後続で追加。
 
 ### 4.6 検証量
 - 双対体積総和 = primal 体積総和 (relErr < 1e-6)。
@@ -141,7 +186,8 @@ partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 i
 3. **3D 双対面/体積/重心**: `buildMedianDual()` の `is3D` 分岐を実装 (§4.2–4.3)。Newell 法・四面体体積ヘルパ追加。
 4. **3D 境界半割面**: §4.4 を実装 (2D の `halfByOwner`/`hcentByOwner` を 3D 面サブポリゴンへ一般化)。
 5. **periodic (node DOF 同一視)**: §4.5.3。`setPeriodicPartner` を拡張し partner ノード対応 (union-find) を作る。
-   `replacePrimalWithDual` で周期半割面を emit しない。`periodicScatter_d`/`periodicGather_d` と master 合併体積を実装。
+   `replacePrimalWithDual` で周期半割面を emit しない。`periodicGather_d` (残差和) + 合併体積 + 更新後ミラーを実装
+   (陽 RK3)。陰解法は §4.5.7 の partner 行 fold、回転周期は §4.5.8 の $T(d\theta)$ を後続で追加。
    `mesh.cpp` の periodic 接続と整合。
 6. **検証チェック**: §4.6 を `buildMedianDual()` 末尾に追加 (体積・closure・負体積)、free-stream は別途 run。
 7. **I/O・solver**: `/DUAL` 3D 書き出し、`output.cpp` Center=Node 3D、`setInitial`/`point_probes` の 3D node 化、
@@ -215,3 +261,13 @@ partner ペアの一方を master $N_m$、他方を slave $N_s$ とし、**別 i
   残差 gather・合併体積で「両側部分 CV を 1 つの CV」として扱う (継ぎ目面は $S_L+S_R=0$ で消える)。継ぎ目の
   粘性も両側内部双対面が担うので粘性ループ改変不要。user 方針で partner ノードは別 CV index 維持 (可視化 1:1)。
   §4.5.1–4.5.6 に記載。実装は陽 RK3 で先行成立 → 陰解法は後続。
+- `2026-06-28` — **§4.5 を最小形に整理 + 陰解法/回転を追記** (user 議論を反映)。
+  - §4.5.3 最小形: 本質は「**残差も体積も足すだけ + 更新後ミラー**」。周期 IC で $Q_m=Q_s$ から始まれば
+    毎ステップの合併体積更新で両者が自動同期するため、**毎ステップ状態 scatter (`periodicScatter_d`) は不要**と判明し廃止。
+    残すは `periodicGather_d` (残差和) + 合併体積 + ミラー 1 回。free-stream 保存を closure と $S_L=-S_R$ から証明。
+  - §4.5.7 追加 (陰解法 block-DPLUR): 陽の「残差を足す」は「**slave 行を master 行へ fold**」に一般化。対角 $D$・RHS・
+    非対角 LU 和がすべて partner で加算され、partner 間直接結合ブロックは無し。sweep ごとに $\Delta Q$ をミラー。
+    既存の壁/軸 行 decouple 機構の隣に置く。
+  - §4.5.8 追加 (回転/円周周期, 将来対応): 骨格不変で**運動量3成分の授受に回転 $T(d\theta)$ を挟むだけ**
+    (スカラーは恒等)。gather $\mathrm{res}_m=\mathrm{res}_L+T^{-1}\mathrm{res}_R$、ミラー $Q_s=T\,Q_m$、Jacobian $D_m=D_L+T^{-1}D_R T$。
+    既存 `periodic_d` の `dtheta` 回転と `setPeriodicPartner` type=1 を流用。検証は円筒成分一様流。Cartesian を先に成立 → 回転は後続。
