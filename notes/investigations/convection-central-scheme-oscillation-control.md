@@ -29,7 +29,7 @@
 2. **圧縮性では運動エネルギー保存 (KEP) だけでは非線形安定に不十分**。一次保存量 (primary invariants) の大域保存も同時に要る。split form 族の中で **KGP (Kennedy-Gruber/Pirozzoli) 三重分割が全エネルギー方程式形式で最も頑健** (Coppola et al. 2019, 検証済)。forge は保存形 FV なので大域保存は満たすが、「どの split を使うか」は KGP が安全側。
 3. **エントロピー保存 (EC) も圧力平衡保持 (PEP) も、中心スキームの局所線形安定を治さない**。EC two-point flux には固有の **anti-diffusion** 機構があり、密度波テストは CFL・時間積分法に依らず短時間で破綻。KEP+PEP 同時flux (Shima) でも正実部固有値が残る (Ranocha-Gassner 2021, 検証済)。→ **既存 PEP サーベイ (b) の成果は「接触面の圧力振動」を消すが「安定化」はしない**。両者を混同しないこと。
 4. **したがって中心/split スキームには「明示的な散逸層」が必須**。これは2段構えにする:
-   - **(i) de-aliasing 基盤の散逸**: KE 安定かつエントロピー整合な **matrix/entropy-variable 散逸** (Chandrashekar 2013, FV 構成・forge に移植可)。粗格子・通常の乱流で常時効かせる薄い散逸。
+   - **(i) de-aliasing 基盤の散逸**: **entropy-variable matrix 散逸** $\tfrac12 R|\Lambda|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, FV 構成)。エントロピー安定 (KE 安定は音響固有値の追加条件が要る・§2.4 訂正)。粗格子・通常の乱流で常時効かせる薄い散逸。一般 EOS/多成分は非自明。
    - **(ii) 不連続用の局所衝撃捕獲**: エントロピー安定だけでは Gibbs 振動 (振動源 #3) は消えない。**低次 FV と高次作用素の convex blend** (Hennemann-Gassner の subcell FV/DG) か **localized artificial diffusivity (LAD)** をセンサ駆動で局所適用 (検証済: 「ES だけでは衝撃振動を抑えない・追加の shock-capturing が要る」)。
 5. **forge への最重要含意**: 非構造で **KEEP 性と2次精度を保つには cell-vertex (= node-centered / median-dual) 離散化が必要** (Okumura-Kuya-Sawada 2023, 検証済)。**forge の median-dual 路線が KEEP の正しい置き場であり、pure cell-centered は KEEP に不利**。
 6. **3つの棄却結論 (過強主張)**: 「split form は強安定/KEP を**保証**する」「split form は**散逸を足さずに**頑健性を上げる」は棄却 (0-3 / 1-2)。**split form 単体は安定保証ではない** → 上記 (i)(ii) の散逸層は省略不可。
@@ -71,10 +71,25 @@
 - **Ranocha & Gassner (*CAMC* 2021, arXiv:2009.13139)** "Preventing Pressure Oscillations Does Not Fix Local Linear Stability...": 「PEP 性は EC flux の安定問題の治療ではない。単純な密度波で依然破綻し、CFL・時間積分法に鈍感」。「局所線形安定の欠如は **EC two-point flux に固有の anti-diffusion 機構**と強く関係」。「Shima の KEP+PEP flux のスペクトルも同様に**正実部固有値**を持つ」。
 - **forge 含意**: **PEP サーベイ (b) の成果 (接触面圧力振動の除去) を「安定化」と読み替えてはいけない**。安定化は別途 §2.4 の散逸層が担う。CAVEAT: 高次 split-form DG での証明。**2次 median-dual FV で同じ anti-diffusion 強度が出るかは未確立** (→ open question)。
 
-### 2.4 必要な散逸層の作り方 (Chandrashekar)
+### 2.4 必要な散逸層の作り方 (Chandrashekar) — 式を訂正 (外部レビュー反映 2026-06-29)
 
-- **Chandrashekar (*Comm. Comput. Phys.* 14(5):1252-1286, 2013, arXiv:1209.4994)**: 中心 KEP flux は未決定自由度を持つが、**エントロピー整合を課すと全項が一意に決まる** (KEP+EC flux)。「中心 flux は衝撃や粗格子では散逸を足す必要がある。**KE 安定かつエントロピー条件を満たす scalar 人工散逸**を構成」。「**entropy-variable ベースの matrix (Roe 様) 散逸**は KE・エントロピー安定で、かつ original Roe と違いエントロピー違反解を生まない」。
-- **forge 含意**: これは **FV 構成で密度ベース forge に直接移植可能**。現 `KEEP_SLAU` の散逸を「SLAU」から「entropy-variable matrix dissipation」に置き換える/補強するのが原理的に正しい方向。CAVEAT: 厳密 iff の運動量 flux 形 (`f_m=f_ρ·u_avg+p̃`) は **棄却 (1-2)** なので「算術平均速度形が KEP の必要十分」とは扱わない。
+- **Chandrashekar (*Comm. Comput. Phys.* 14(5):1252-1286, 2013, arXiv:1209.4994)**: 中心 KEP flux は未決定自由度を持つが、**エントロピー整合を課すと全項が一意に決まる** (KEP+EC flux)。「中心 flux は衝撃や粗格子では散逸を足す必要がある」。**entropy-variable ベースの matrix (Roe 様) 散逸**は original Roe と違いエントロピー違反解を生まない。
+- **正しい散逸形 (★ 重要・初稿の式は誤りだった)**:
+$$
+F = F_\mathrm{EC/KEEP} - \tfrac12\,D,\qquad D = R\,|\Lambda|\,S\,R^{\mathsf T}\,(w_R - w_L)
+$$
+  - $w=\partial\eta/\partial U$ = エントロピー変数、$S$ = エントロピースケーリング行列。鍵は **$R^{-1}$ ではなく $S R^{\mathsf T}$**: 保存変数とエントロピー変数の変換 $H=\partial U/\partial w = R S R^{\mathsf T}$ から $R^{-1}\Delta U \approx S R^{\mathsf T}\Delta w$ が出る (Tadmor / Barth / Ismail-Roe / Chandrashekar)。**初稿で書いた $R|\Lambda|R^{-1}(w_R-w_L)$ は次元不整合で誤り**。
+  - **エントロピー安定の根拠**: $Q=R|\Lambda|SR^{\mathsf T}$ は対称半正定値 → $\Delta w^{\mathsf T}Q\Delta w\ge0$ で離散エントロピー不等式。
+  - **「KE 安定」は自動ではない**: 上の対称 PSD 形で得られるのは**エントロピー安定のみ**。運動エネルギー非増加 (KE 安定) は**音響固有値の扱いに追加条件**が要る (Chandrashekar はそこを別途課す)。初稿の「KE 安定かつエントロピー安定」は雑だった。
+- **forge 含意**: 原理的方向は正しい (現 `KEEP_SLAU` の散逸を entropy-variable matrix へ置換/補強) が、**一般 EOS・多成分では「素材が揃っている」は楽観的すぎた**。保存変数 Jacobian の固有系だけでは不足で、**エントロピー変数 $w=\partial\eta/\partial U$ とスケーリング $H=RSR^{\mathsf T}$ の一般 EOS 版**が別途要る (多成分はこれが単成分理想気体より相当厄介・密度ゼロ極限/正値性も別問題)。CAVEAT: 厳密 iff の運動量 flux 形 (`f_m=f_ρ·u_avg+p̃`) は **棄却 (1-2)**。
+
+### 2.6 中心 flux 側のアップグレード: KEEP-PEP / AEC (外部レビュー由来・本サーベイ未検証)
+
+> 散逸の話とは別に、**中心 flux 自体**を熱力学的に綺麗にする近年 (2023-2026) の系統。本サーベイの deep-research では未検証 (外部レビューで surface)。
+
+- **De Michele-Coppola (2023)** / **Kawai-Kawai (2025) KEEP-PEP / KEEP-G(N)**: 厳密 EC flux に現れる**対数平均** $a^\mathrm{ln}=(a_R-a_L)/(\ln a_R-\ln a_L)$ を、算術/幾何/調和平均の組合せで**代数的に近似** (対数関数・ゼロ割回避が要らず GPU 向き)。KEP・PEP を保ったまま**エントロピー保存誤差を高次に小さく** (asymptotically EC)。質量平均には逆数が付き内部エネルギー平均には付かない、という非対称が PEP を保つ鍵。
+- **位置づけ (レビューの釘刺し)**: これは**中心 flux のアップグレードであって振動の治療薬ではない** (非散逸スキームとして提案され、検証も density wave と非粘性 TGV)。格子スケール振動 (#2 市松/高波数) を減衰させる機構は**持たない**。
+- **forge 含意**: node/median-dual と相性が良い (二点流束を edge-pair に対称に乗せるだけ・[[node-mode-periodic-and-backstep-status]])。**2023 非構造 cell-vertex KEEP の幾何 (§6 P0) + 2025 KEEP-G の質量/内部エネルギー平均**の組合せが自然。ただし MUSCL を素朴に被せると保存証明が崩れるので二点 flux/flux-differencing として入れる。**振動対策は別レイヤ (§3-§5)**。
 
 ### 2.5 split/skew-symmetric の基盤 (Abe / Pirozzoli / Tadmor)
 
@@ -185,6 +200,22 @@ $$
 - 構造的には **§5.1-5.2 の対称保存 + 離散 GCL ($\sum_f A_f=0$) + 同一再構成 Jacobian** を median-dual に移植 (Trias 2014 精読が前提)。
 - odd-even/checkerboard は forge では `lowMachPrecond=2` で既に根治 ([[backstep-lowmach-checkerboard-precond2]]) だが、中心比率を上げると再燃しうるので #2 のフィルタ/LAD μ\* と合わせて監視。
 
+### 5.5 ★ 診断ファースト: 「KEEP で低マッハ滑らか流れが振動する」の切り分け (外部レビュー反映)
+
+> 実観測「Roe で抑制・SLAU/KEEP で振動」への対処。**flux を替える前に振動の型を判定する**こと。中心 flux のアップグレード (§2.6 KEEP-PEP) では治らない型が多い。
+
+**判定テスト (時間を進めない)**: 一様流に**市松状の圧力摂動** $p_i=p_0+(-1)^i\epsilon$ を与え、**RHS を1回だけ評価**する。
+
+| 観測 | 振動の型 | 治療 (替えても無駄なもの) |
+|------|---------|--------------------------|
+| 摂動に対し質量・運動量残差がほぼゼロ | **checkerboard / 圧力-速度デカップリング** (離散 null-mode) | **圧力カップリング**が処方箋。中心flux平均 (KEEP-PEP) も entropy 散逸も**効かない** |
+| せん断層で速度がギザギザ | **高波数散逸不足** | 弱い**低マッハスケール**散逸 (§2.4 の $\tfrac12 R|\Lambda|SR^{\mathsf T}\Delta w$ + 音響固有値の低マッハスケーリング, Berberich-Klingenberg) |
+| 領域全体が時間的に鳴る | **音響CFL/前処理/境界/陰解法 Jacobian 不整合** | flux でなく時間積分・BC 側 |
+
+**forge 固有の最有力仮説 (要検証)**: 「Roe で出ない・KEEP で出る」は **checkerboard が濃厚**。forge は同型の低マッハ市松を `lowMachPrecond=2` で根治済 ([[backstep-lowmach-checkerboard-precond2]]) なので、**`lowMachPrecond` が `duc→0` の純 KEEP 経路に効いているか**を疑う。前処理散逸が SLAU 枝にしか入っていなければ、中心比率を上げた途端に圧力-速度カップリングが抜けて市松が出る。→ **まず純 KEEP 経路で `lowMachPrecond=2` が機能するか確認**。効いていなければ Rhie-Chow 型の高波数圧力補正 $\delta p^{HF}_{ij}=(p_j-p_i)-\nabla p_{ij}\cdot d_{ij}$ を質量流束へ弱く入れる。
+
+**定量指標** (残差だけでなく): 高波数圧力 $E^{HF}_p=\sum_{ij}[(p_j-p_i)-\nabla p_{ij}\cdot d_{ij}]^2/\sum_i p_i^2$ と同型の $E^{HF}_u$ を見ると、見た目より定量比較できる。
+
 ---
 
 ## 6. forge への接ぎ木: 優先度付き推奨
@@ -193,10 +224,13 @@ $$
 
 | 優先度 | 施策 | 根拠 (検証済) | forge での具体 |
 |--------|------|--------------|---------------|
+| **P0** | **★ 振動が出たら先に型を診断** (flux を替える前に) | 外部レビュー (§5.5); KEEP-PEP も entropy 散逸も「型」を外すと無駄 | §5.5 の市松摂動 1-RHS テスト。checkerboard か高波数不足か音響かを切り分けてから対処を選ぶ |
 | **P0** | **散逸を完全には消さない**。KEEP 単体は線形不安定なので、常時薄い KE/entropy 整合散逸を残す | Ranocha-Gassner (EC/PEP≠安定, anti-diffusion) / Coppola (KEP単独不十分) / split保証は棄却 | `KEEP_SLAU` の `duc` フロア (0.05) を**撤廃しない**。むしろ「LES 域でも 0 にしない」を原則化 |
+| **P0** | **★ 純 KEEP 経路で `lowMachPrecond` が効くか確認** | 外部レビュー + [[backstep-lowmach-checkerboard-precond2]] (forge は同型市松を `=2` で根治済) | 「Roe で出ない・KEEP で出る」振動は checkerboard 濃厚。前処理が `duc→0` 中心枝に届いていなければ再燃。届いていなければ Rhie-Chow 型 $\delta p^{HF}$ を質量流束へ |
 | **P0** | **median-dual (node) を KEEP の主戦場にする** | Okumura-Kuya-Sawada 2023 (cell-vertex で KEEP 性+2次精度) | [[node-mode-periodic-and-backstep-status]] の median-dual を KEEP-LES の既定離散とする。pure cell-centered KEEP は KEEP 性が劣化する前提で扱う |
 | **P0** | **★ メトリック幾何量 (体積・面積ベクトル・法線・wall_dist) のみ FP64 化** | Karp et al. 2506.05150 (フル FP32 メトリック→非 watertight→free-stream 喪失・早期遷移; メトリックのみ FP64 で回復, 検証 3-0) | forge 既知の [[forge-freestream-nonorthogonal]] と機構一致。**全体 double 化より遥かに安価な即効処方箋**。幾何セットアップを FP64 で計算し FP32 へ格納/転送。中心化を進める前提 |
-| **P1** | **基盤散逸を entropy-variable matrix dissipation 化** | Chandrashekar 2013 (KE+entropy 安定, Roe のエントロピー違反を回避, FV 構成) | `KEEP_SLAU` の散逸枝を SLAU から/に加えて entropy-consistent matrix 散逸へ。defect-correction で陰解法と両立 ([[implicit-blockdplur-config]]) |
+| **P1** | **基盤散逸を entropy-variable matrix dissipation 化** ($\tfrac12 R|\Lambda|SR^{\mathsf T}\Delta w$, §2.4 訂正式) | Chandrashekar 2013 (エントロピー安定・Roe のエントロピー違反を回避, FV 構成; KE 安定は音響固有値の追加条件が要る) | `KEEP_SLAU` の散逸枝を SLAU から/に加えて entropy-scaled matrix 散逸へ。**低マッハは音響固有値スケーリング** (Berberich-Klingenberg)。一般 EOS/多成分はエントロピー変数 $w$・$H=RSR^{\mathsf T}$ の一般版が要り**非自明**。defect-correction で陰解法と両立 ([[implicit-blockdplur-config]]) |
+| **P1/P2** | **中心 flux を KEEP-PEP / AEC にアップグレード** (振動対策ではなく熱力学的整合) | De Michele-Coppola 2023 / Kawai-Kawai 2025 (外部レビュー由来・本サーベイ未検証) | 対数平均を代数近似 (GPU 向き)・PEP 維持・asymptotically EC。**2023 cell-vertex 幾何 + 2025 KEEP-G 平均**を median-dual の二点 flux に。MUSCL を素朴に被せない。**振動は別レイヤ (§5.5) で対処** |
 | **P1** | **3レイヤを分離設計**: ①RANS↔LES f_d ブレンド (既存(a)) / ②#1 de-alias 薄散逸 / ③#3 衝撃局所散逸 | ES だけでは衝撃振動を抑えない (3-0) | f_d (既存) ・matrix 散逸フロア・Ducros×Heaviside の LAD を**独立**に重ねる。limiter を衝撃センサ流用しない (既存(a)の結論) |
 | **P1** | **衝撃捕獲を directional LAD で** (Kawai-Lele μ\*/β\*/κ\*+D\*) | Kawai-Shankar-Lele 2010 / Olson-Lele 2013 directional (検証 3-0); スカラー LAD は AR で dt∝1/AR | $\beta^*$=Cβ(1.75) + $f_\mathrm{sw}$=H(−∇·u)Ducros、$\mu^*$(Cμ=0.002) は #2 高波数も兼ねる。**directional 必須** (forge は BL 高 AR)。既存 `ducrosSensor_d` を流用。多成分は $D^*$ も |
 | **P2** | **split は KGP 系を採る/確認** | Coppola 2019 (KGP 最頑健) | 現 `KEEP_SLAU` 中心枝の分割形を確認、非KGPなら移行検討。forge は保存形なので大域保存は OK |
@@ -262,6 +296,12 @@ $$
 | 19 | Bull & Jameson, *JCP* (2015) [PDF](http://aero-comlab.stanford.edu/Papers/JBull_JCP_2015.pdf) | 非構造 differential filter (#2, fetch 済・最終未検証) |
 | 20 | Reiss & Sesterhenn (2014) [arXiv:1308.6672](https://arxiv.org/pdf/1308.6672) | split-form が FD でエイリアシングを増やしうる (#2) |
 
+**外部レビュー由来・本サーベイの deep-research では未検証 (実装時に一次精読すべき)**:
+- 中心 flux アップグレード: **De Michele & Coppola (2023)** AEC (調和/幾何平均) / **Kawai & Kawai (2025)** KEEP-PEP・対数平均近似 / Aiello-De Michele-Coppola (2025-26) 一般 EOS EC/KEP/PEP
+- 低マッハ ES 散逸: **Berberich & Klingenberg** (Chandrashekar 型 ES/KES flux に低マッハ音響固有値スケーリング)
+- 多成分: Fujiwara-Tamaki-Kawai (2023) 多成分界面 PEP / Badrkhani (2025) ES+Double-Flux+hybrid
+- entropy 散逸の正準形 (式訂正の根拠): Tadmor / Barth (1999 entropy scaling) / Ismail-Roe (2009)
+
 ---
 
 ## 9. open questions (穴埋め後に残る = 実装前に詰める)
@@ -271,10 +311,14 @@ $$
 3. **#3 directional LAD の非構造定義**: Olson-Lele の方向別 ($\xi,\eta,\zeta$) を、構造化方向を持たない median-dual で**どう定義するか** (面法線方向ベース? エッジベース?)。4階微分作用素の非構造 GPU 評価コスト・精度、JST との優劣。
 4. **#2 非構造フィルタの要否**: KEEP の暗黙 de-alias + LAD μ\* で 2Δ odd-even が足りるか、Bull-Jameson differential filter (ヘルムホルツ型・陰的・GPU コスト) が要るか。**Taylor-Green / backstep で実測**。
 5. **Ranocha-Gassner の anti-diffusion は 2次 median-dual FV で出るか**: 高次 DG 現象か、forge の実離散でも効くか。**median-dual KEEP が実際にどれだけの (どんな形の) 散逸を要するか**を実測。既存 `KEEP_SLAU` ブレンドで足りるかの実証が起点。
+6. **★ 実観測「KEEP で低マッハ滑らか流れが振動」の型判定**: §5.5 の市松摂動 1-RHS テストで checkerboard か高波数不足か音響かを確定。**`lowMachPrecond` が純 KEEP (`duc→0`) 経路に効いているか**を実コードで確認 (最有力仮説)。これが本筋の振動原因切り分け。
+7. **entropy-variable matrix 散逸の一般 EOS/多成分版**: $w=\partial\eta/\partial U$・$H=RSR^{\mathsf T}$ を forge の NASA-9 TP 混合で導出できるか・コスト。低マッハ音響スケーリング (Berberich-Klingenberg) と PEP の両立。
+8. **KEEP-PEP / AEC (Kawai-Kawai 2025 / De Michele-Coppola 2023) の検証**: 本サーベイ未検証。median-dual 二点 flux への移植可否・対数平均代数近似の精度/コスト。
 
 ---
 
 ## 変更ログ
 
 - `2026-06-29` — 初稿 (調査専用)。第1回 deep-research (105 エージェント / 23 ソース / 25 クレーム検証: 22 確認・3 棄却) + forge コンテキストを統合。既存2サーベイ ((a) DES flux / (b) PEP) の上位に立つ統括として「振動源4分類」を定義。核心結論: KEEP/split は de-alias を与えるが圧縮性の安定は保証しない (Coppola/Ranocha-Gassner)、entropy-consistent matrix 散逸 (Chandrashekar) + 局所衝撃捕獲の2段散逸が必須、非構造では cell-vertex/median-dual が KEEP の正しい置き場 (Okumura-Kuya-Sawada)。
-- `2026-06-29` — **穴埋め**: 第2回 deep-research (102 エージェント / 20 ソース / 25 クレーム検証: 23 確認・2 棄却) で #2/#3/#4 を grounding。§4 (LAD: μ\*/β\*/κ\* 式・係数・$f_\mathrm{sw}$・directional LAD)・§5 (free-stream: 歪対称性=KE保存・離散 GCL・**★Karp の FP32 メトリック→free-stream 喪失/FP64 で回復**)・§3 (#2 は KEEP 限界の反証側で grounding、フィルタ具体は medium) を確定。§6 推奨に **P0「メトリックのみ FP64 化」** (forge 既知発散弱点の即効処方箋) と **P1「directional LAD」** を追加。残る open question は非構造一般化 (Trias 2014)・混合精度実証・directional の非構造定義・#2 要否・anti-diffusion の 2次 FV 実測。
+- `2026-06-29` — **穴埋め**: 第2回 deep-research (102 エージェント / 20 ソース / 25 クレーム検証: 23 確認・2 棄却) で #2/#3/#4 を grounding。§4 (LAD: μ\*/β\*/κ\* 式・係数・$f_\mathrm{sw}$・directional LAD)・§5 (free-stream: 歪対称性=KE保存・離散 GCL・**★Karp の FP32 メトリック→free-stream 喪失/FP64 で回復**)・§3 (#2 は KEEP 限界の反証側で grounding、フィルタ具体は medium) を確定。§6 推奨に **P0「メトリックのみ FP64 化」** (forge 既知発散弱点の即効処方箋) と **P1「directional LAD」** を追加。
+- `2026-06-29` — **外部レビュー反映**: (1) §2.4 の entropy 散逸式を訂正 — 初稿 $R|\Lambda|R^{-1}(w_R-w_L)$ は誤りで、正しくは **$R|\Lambda|SR^{\mathsf T}(w_R-w_L)$** ($S$=entropy scaling, $H=RSR^{\mathsf T}$)。「KE 安定」は自動でなく音響固有値の追加条件が要る、一般 EOS/多成分は「素材が揃う」は楽観的すぎ、と訂正。(2) §2.6 追加 — 中心 flux アップグレード KEEP-PEP/AEC (De Michele-Coppola 2023 / Kawai-Kawai 2025, 対数平均代数近似・PEP維持) は**振動の治療薬でなく熱力学的整合**との釘刺し。(3) §5.5 追加 — **診断ファースト**: 市松摂動 1-RHS テストで振動の型 (checkerboard / 高波数不足 / 音響) を切り分け、forge 最有力仮説「`lowMachPrecond` が純 KEEP 経路に効いていない」を明記。§6 に P0「診断」「純 KEEP で lowMachPrecond 確認」を追加。これらは外部レビュー由来で本サーベイの deep-research では未検証 (§8 末尾に明記)。
