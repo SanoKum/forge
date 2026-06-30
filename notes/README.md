@@ -11,6 +11,8 @@
 | ノート | area | 概要 |
 | --- | --- | --- |
 | [condensation-droplet-hypersonic-survey.md](investigations/condensation-droplet-hypersonic-survey.md) | `condensation / multiphase` | 極超音速燃焼風洞・飛翔体における凝縮液滴/雨滴の挙動 (風洞凝縮の蒸発vs成長・燃焼器到達 end-to-end・迎角依存) |
+| [condensation-nitrogen-nozzle-flows-summary.md](investigations/condensation-nitrogen-nozzle-flows-summary.md) | `condensation` | "On Nitrogen Condensation in Hypersonic Nozzle Flows" 論文精読まとめ + Arthur 1952 形状の forge dry 再現 (PDF: [papers/condensation/](../papers/condensation/)) |
+| [nozzle-pintle-literature-review.md](investigations/nozzle-pintle-literature-review.md) | `nozzle` | ピントル/ニードル弁式 超音速ノズル推力調整機構 — 文献・特許まとめ (PDF/成果物: [papers/pintle_nozzle/](../papers/pintle_nozzle/)) |
 | [convection-central-scheme-oscillation-control.md](investigations/convection-central-scheme-oscillation-control.md) | `convection` | LES/DES における中心差分 (KEEP) のスプリアス振動抑制 技術調査 (振動源4分類の統括) |
 | [convection-pep-scheme-survey.md](investigations/convection-pep-scheme-survey.md) | `convection` | PEP (Pressure-Equilibrium-Preserving) 系スキーム技術調査と forge 実装方針 |
 | [nozzle-optimization-tool-survey.md](investigations/nozzle-optimization-tool-survey.md) | `—` | 超音速・極超音速ノズル最適化ツール — 技術動向調査と開発フロー提案 |
