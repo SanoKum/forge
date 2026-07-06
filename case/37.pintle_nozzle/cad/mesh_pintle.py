@@ -38,6 +38,10 @@ MAXH            = 0.4
 GRADING         = 0.3
 CURVATURESAFETY = 2.0
 
+# 出力座標スケール。CAD/メッシュは mm で作るが forge は SI (m) 前提のため既定 0.001。
+# (これを 1.0 で書くと 35mm ノズルが 35m になる。旧 run_0001/0002 はこのバグ持ち。)
+SCALE = 0.001
+
 # --- 近壁解像度 ---
 # (A) 壁面近傍の tet 細分 (推奨・堅牢): 壁 face に局所 maxh を与え近壁を細かくする。
 #     prism 無し・クラッシュ無し。壁関数 (y+~30-80) と相性が良い。None で無効。
@@ -116,7 +120,7 @@ def write_msh41(mesh, path):
         for i in range(1, N + 1):
             f.write("%d\n" % i)
         for x, y, z in pts:
-            f.write("%.10g %.10g %.10g\n" % (x, y, z))
+            f.write("%.10g %.10g %.10g\n" % (x * SCALE, y * SCALE, z * SCALE))
         f.write("$EndNodes\n")
         # Elements: 面グループ別の三角形ブロック + 四面体ブロック (タグは 1..nElem 連番)
         f.write("$Elements\n%d %d 1 %d\n" % (len(SURF_ENT) + 1, nElem, nElem))
@@ -136,15 +140,17 @@ def write_msh41(mesh, path):
 
 
 def main():
-    global STEP, OUT, MAXH, WALL_MAXH
+    global STEP, OUT, MAXH, WALL_MAXH, SCALE
     ap = argparse.ArgumentParser(description="STEP -> Netgen tet mesh -> forge msh4.1")
     ap.add_argument("--step", default=STEP)
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--maxh", type=float, default=MAXH)
     ap.add_argument("--wall-maxh", type=float, default=WALL_MAXH,
                     help="壁 face の局所メッシュ長 [mm] (省略=無効)")
+    ap.add_argument("--scale", type=float, default=SCALE,
+                    help="出力座標スケール (既定 0.001 = mm->m, forge は SI)")
     a = ap.parse_args()
-    STEP, OUT, MAXH, WALL_MAXH = a.step, a.out, a.maxh, a.wall_maxh
+    STEP, OUT, MAXH, WALL_MAXH, SCALE = a.step, a.out, a.maxh, a.wall_maxh, a.scale
 
     shape = OCCGeometry(STEP).shape
     cnt = defaultdict(int)

@@ -17,16 +17,31 @@
 
 ## ワークフロー
 
+2 経路ある。**prism 境界層が要るなら Salome 経路 (推奨)**、tet のみで良ければ Netgen 経路。
+
 ```
+[A: Salome 経路 (prism BL 付き, 推奨)]
 FreeCAD (cad/build_geom.py) -> pintle_fluid_half.step
-   -> Netgen (cad/mesh_pintle.py: 面命名 + tet + 任意でprism BL + msh4.1書出)
-   -> forge.msh -> convertGmshToForge -> forge.h5 -> forge
+   -> Salome headless (cad/mesh_salome.py: NETGEN + SMESH ViscousLayers) -> MED
+   -> cad/med_to_msh41.py -> forge.msh -> convertGmshToForge -> forge.h5
+
+[B: Netgen 経路 (pip のみ, tet + 近壁細分)]
+FreeCAD (cad/build_geom.py) -> pintle_fluid_half.step
+   -> Netgen (cad/mesh_pintle.py: 面命名 + tet + WALL_MAXH 近壁細分 + msh4.1書出)
+   -> forge.msh -> convertGmshToForge -> forge.h5
 ```
 
-Salome は公式バイナリが登録必須で自動化に乗らないため**不採用**。Salome が内部で使う
-NETGEN エンジン (STEP取込 + viscous layers) を pip の `netgen-mesher` で直接使い、
-GUI/登録なしで完全スクリプト化する。面の境界グループ分けも面重心の幾何条件で自動分類する
-(対話ピック不要・再現可能)。
+- **Salome 9.14 は直リンクで取得可能** (登録不要; `files.salome-platform.org` は **Referer
+  ヘッダ必須** — 無いと 403)。`/home/sano/opt/salome/` に導入済み (「環境」参照)。
+- netgen 生 API (pip) の prism BL はこの形状の凹角で破綻するが、**SMESH の
+  StdMeshers_ViscousLayers は凹角の層縮退処理を持ち、同じ形状で成功する** (prism 2.4万生成)。
+- 面の境界グループ分けは両経路とも面重心の幾何条件で自動分類 (対話ピック不要・再現可能)。
+
+**単位 (重要)**: CAD/STEP は mm で作るが **forge は SI (m) 前提**。
+- Salome 経路: ImportSTEP が mm->m 変換するため MED/forge.h5 は自動的に m (正しい)。
+  `mesh_salome.py` は bbox から unit_scale を自動検出してしきい値を合わせる。
+- Netgen 経路: `mesh_pintle.py` の `SCALE=0.001` (mm->m) で書き出す (`--scale` で変更可)。
+  SCALE 1.0 で書くと 35mm ノズルが 35m になる (初期 run_0001/0002 はこのバグ持ち -> 再生成済)。
 
 - **形状**: `cad/build_geom.py` をパラメトリック編集 (`freecadcmd build_geom.py`)。
   clean な単一閉ソリッドの半割 STEP を出す (OCC boolean の取りこぼし対策に fuzzy fuse +
@@ -48,10 +63,25 @@ GUI/登録なしで完全スクリプト化する。面の境界グループ分�
 | ツール | 用途 | 所在 / 起動 |
 | --- | --- | --- |
 | FreeCAD 1.1.1 | 形状作成 (STEP) | `/home/sano/opt/squashfs-root/usr/bin/freecadcmd` (AppImage展開済, `QT_QPA_PLATFORM=offscreen`) |
-| netgen-mesher 6.2 | メッシュ + 境界層 | venv `/home/sano/work/forge/.venv-mesh` |
-| meshio 5.3 + h5py | 補助 (MED/変換) | 同 venv |
+| SALOME 9.14.0 | SMESH ViscousLayers (prism BL) | `/home/sano/opt/salome/SALOME-9.14.0-native-UB24.04-SRC/salome` (下記「Salome 起動の注意」) |
+| netgen-mesher 6.2 | メッシュ (tet) | venv `/home/sano/work/forge/.venv-mesh` |
+| meshio 5.3 + h5py | MED 読取・変換 | 同 venv |
 | gmsh | 2D確認・形式変換 | `/usr/bin/gmsh` (既存) |
 | convertGmshToForge | msh4.1 -> forge.h5 | `solver_density_cuda/build-native/convertGmshToForge` (tet/prism/pyramid 対応) |
+
+### Salome 起動の注意 (sudo 無し環境)
+
+- DL は Referer 必須: `curl -e "https://www.salome-platform.org/" -A "Mozilla/5.0" <files.salome-platform.org のURL>`。
+- native ビルドはシステム python3 とシステム .so を使う。sudo 無しでは:
+  - `pip install --user --break-system-packages psutil` (KERNEL 必須)。
+  - 不足 .so (boost 等) は `apt-get download <pkg> && dpkg -x` で
+    `/home/sano/opt/salome/syslibs/` に展開済み。
+- **起動は `--keep-paths` + LD_LIBRARY_PATH が必須** (launcher が環境を上書きするため):
+
+```bash
+export LD_LIBRARY_PATH=/home/sano/opt/salome/syslibs/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+/home/sano/opt/salome/SALOME-9.14.0-native-UB24.04-SRC/salome --keep-paths -t cad/mesh_salome.py
+```
 
 ```bash
 # 形状
@@ -93,11 +123,10 @@ ER=3.0 / 2.5=Rt のみ**。図は径方向が非スケールのため Rc・収�
   面ごと equiangle skew / 全辺 AR で判定; 準2D は従来の x-y 射影を維持)。pintle mesh は
   **3D モードで AR max 2.9 / skew max 0.657 / PASS**。旧 FAIL (skew 36%・AR=inf) は x-y 射影
   アーティファクトで実体でなかった。→ 品質チューニングは不要。
-- ⚠️ **prism 境界層は現状この形状では不可**: netgen `boundary_layers` は凹角 (T字給気・
-  スロート・ピントル基部) で失敗 (`project_boundaries` 無し=segfault、有りでも体積充填が
-  "too many attempts")。正しい API は `mesh_pintle.py` に実装済 (`USE_BL`) だが fillet 済み
-  形状が前提。代替として **近壁 tet 細分** (`WALL_MAXH`, 例 0.12) が堅牢に動作し、壁関数
-  (y+~30-80) と相性が良い。
+- ✅ **prism 境界層は Salome (SMESH ViscousLayers) で成功** (`run_0003`, prism 2.4万)。
+  netgen 生 API (pip) の `boundary_layers` は同じ形状の凹角 (T字給気・スロート・ピントル基部)
+  で失敗する (`project_boundaries` 無し=segfault、有りでも体積充填 "too many attempts") ため、
+  BL には Salome 経路を使う。Netgen 経路の代替は **近壁 tet 細分** (`WALL_MAXH`, 壁関数前提)。
 - ⏳ 実機の給気管/ベンド実寸が分かれば PARAMS を更新 (現状は暫定)。
 - ⏳ solverConfig (安定レシピ + γ=1.274/Tc=2889K)・bcondConfig 実値 (全圧/全温) で forge 投入。
 
@@ -139,8 +168,9 @@ forge 投入で非直交由来の不安定が出て切り分けが要るとき�
 
 | run | 目的・主要設定差分 | 主要結果・成果物 | 状態 |
 | --- | --- | --- | --- |
-| `run_0001_slau_baseline/` | 論文スケール形状の初期メッシュ実体化。Netgen tet (maxh=0.4)。solverConfig は仮 (cell-mode placeholder, 物性/BC 未実値) | `forge.msh` (14002節点/60322 tet), `forge.h5`, 品質 **PASS** (3Dモード AR2.9/skew0.657) | active (メッシュ確定・**未投入**; solverConfig/bcondConfig 実値化待ち) |
-| `run_0002_slau_wallref/` | 近壁 tet 細分版 (`mesh_pintle.py --wall-maxh 0.12 --maxh 0.5`)。等方細分であり prism 押し出し境界層ではない (壁関数前提) | `forge.msh`/`forge.h5` (120317節点/535854 tet, 141M), 品質 **PASS** (AR3.5/skew0.725) | active (**未投入**; 設定は run_0001 と同じ仮) |
+| `run_0001_slau_baseline/` | 論文スケール形状の一様 tet (Netgen maxh=0.4)。solverConfig は仮 (cell-mode placeholder, 物性/BC 未実値) | `forge.msh` (14002節点/60322 tet), `forge.h5` (m 単位・再生成済), 品質 **PASS** (3Dモード AR2.9/skew0.657) | active (**未投入**; solverConfig/bcondConfig 実値化待ち) |
+| `run_0002_slau_wallref/` | 近壁 tet 細分版 (`mesh_pintle.py --wall-maxh 0.12 --maxh 0.5`)。等方細分 (prism BL ではない, 壁関数前提) | `forge.msh`/`forge.h5` (~54万 tet, m 単位・再生成済), 品質 **PASS** | active (**未投入**; 設定は run_0001 と同じ仮) |
+| `run_0003_slau_salome_bl/` | **Salome SMESH ViscousLayers の prism 境界層付き** (総厚0.25mm/4層/stretch1.3, maxh0.5)。`cad/mesh_salome.py` -> `cad/med_to_msh41.py` | `pintle_salome.med`, `forge.msh`/`forge.h5` (22203節点: tet 40022 + **prism 24492** + pyram 32, m 単位), 品質 **PASS** (AR20.7/skew0.876) | active (**未投入**; 本命メッシュ。solverConfig 実値化待ち) |
 
 > メッシュ本体 (`forge.msh`/`forge.h5`) はこの run ディレクトリにある (git には入れない)。
 > 再生成は `cad/build_geom.py` → `cad/mesh_pintle.py` → `convertGmshToForge`。
