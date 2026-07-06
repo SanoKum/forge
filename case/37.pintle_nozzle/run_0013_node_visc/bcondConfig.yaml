@@ -1,0 +1,43 @@
+# pintle nozzle 試計算 第1段 (Euler 起動)。physID は cad/mesh_pintle.py / mesh_salome.py の PHYS と一致。
+# - inlet: 亜音速圧力入口 (燃焼室 Pt/Tt)。IC 全圧と一致させ起動過渡を穏やかに。
+# - outlet: 設計膨張比3.0で出口超音速 -> outflow (全量外挿)。
+# - 壁は第1段は slip (Euler)。第2段以降で wall (no-slip) に上げる。
+
+wall:
+  physID: 10
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:
+
+inlet:
+  physID: 11
+  kind: inlet_Pressure
+  outputHDFflg: 1
+  ints:
+  floats:
+    Pt: 3.0e6      # [Pa] 燃焼室全圧 (試計算値)
+    Tt: 2889.0     # [K]  論文の燃焼温度
+    k: 1.0
+    omega: 1000.0
+
+outlet:
+  physID: 12
+  kind: outflow
+  outputHDFflg: 1
+  ints:
+  floats:
+
+symmetry:
+  physID: 13
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+
+wall_pintle:
+  physID: 14
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:

@@ -47,6 +47,9 @@ P = dict(
     r_tip    = 0.4,                 # 先端の小半径 (>0)。尖らせると軸上に退化頂点ができ
                                     # Netgen 表面メッシュが破綻するため blunt 化する
     eps      = 0.5,                 # 取付壁を貫通させる余白 (壁裏に薄膜を残さない)
+    # --- 外部プルーム領域 (出口 x_exit から下流の円筒; plume_L=0 で無効) ---
+    plume_L  = 60.0,                # プルーム長さ (x_exit -> x_exit+plume_L, ~14 Re)
+    plume_R  = 25.0,                # プルーム半径 (~6 Re)
 )
 
 
@@ -107,7 +110,11 @@ def main():
     yneg = Part.makeBox(big, big, big, Vector(-big / 2, -big, -big / 2))  # y<0 領域
 
     def assemble():
-        f = make_chamber_nozzle(P).fuse(make_feed(P), FUZ)  # 流体 = チャンバー + パイプ (一括)
+        parts = make_feed(P)
+        if P.get('plume_L', 0) > 0:   # 外部プルーム円筒 (出口から下流)
+            parts = parts + [Part.makeCylinder(P['plume_R'], P['plume_L'],
+                                               Vector(P['x_exit'], 0, 0), Vector(1, 0, 0))]
+        f = make_chamber_nozzle(P).fuse(parts, FUZ)  # 流体 = チャンバー + パイプ + プルーム (一括)
         f = f.cut(make_pintle(P))                           # ピントルを引く
         f = f.cut(yneg)                                     # 半割: y<0 を削る (y>=0 を残す)
         return f.removeSplitter()                           # 同一面の継ぎ目を統合 (メッシュに優しい)
@@ -118,9 +125,10 @@ def main():
     for attempt in range(5):
         fluid = assemble()
         b = fluid.BoundBox
+        x_end = P['x_exit'] + P.get('plume_L', 0)
         ok = (len(fluid.Solids) == 1 and bool(fluid.Shells) and fluid.Shells[0].isClosed()
-              and abs(b.YMin) < 1e-2 and abs(b.XMax - P['x_exit']) < 1e-2
-              and abs(b.ZMin - P['z_bot']) < 1e-2)
+              and abs(b.YMin) < 1e-2 and abs(b.XMax - x_end) < 1e-2
+              and abs(b.ZMin - min(P['z_bot'], -P.get('plume_R', 0) if P.get('plume_L', 0) > 0 else P['z_bot'])) < 1e-2)
         if ok:
             break
         print(f"  retry {attempt}: bad bbox x[{b.XMin:.1f},{b.XMax:.1f}] "

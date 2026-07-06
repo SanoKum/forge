@@ -184,7 +184,13 @@ forge 投入で非直交由来の不安定が出て切り分けが要るとき�
 | `run_0008_slau_statpress_pr30/` | 第2段: Ps=1e6 (PR3) restart | ✅ チョーク+拡大部衝撃 M max 2.32, NaN 0。VERDICT: NOT CONVERGED (衝撃が出口付近で plateau) | active (第2段の場) |
 | `run_0009_slau_outflow_full/` | outflow へ早期切替 (出口リップに亜音速ポケット残存のまま) | **step1109 NaN** (出口リップ r=2.7-4.2mm)。亜音速セルの全量外挿は ill-posed → 切替は出口全面超音速後に | ref (失敗診断) |
 | `run_0010_slau_statpress_pr100/` | 第3段: Ps=3e5 (PR10) restart → 衝撃を出口外へ | ✅ **出口全面超音速 (M min 2.25)**, M max 2.46, P min 1.41e5≈設計出口圧。全残差下降 (2.3-4.1桁, still converging), NaN 0 | active |
-| `run_0011_slau_outflow_super/` | **最終段: outlet=`outflow`** (論文と同じ超音速外挿) restart | ✅ 10000step 完走・NaN 0。場は 0010 と実質不変 (M max 2.46, T max=Tt=2889K 物理的)。VERDICT: NOT CONVERGED (残差は極低絶対値 rms_ro~2e-10 で plateau) | **active (試計算の最終場)** |
+| `run_0011_slau_outflow_super/` | **最終段: outlet=`outflow`** (論文と同じ超音速外挿) restart | ✅ 10000step 完走・NaN 0。場は 0010 と実質不変 (M max 2.46, T max=Tt=2889K 物理的)。VERDICT: NOT CONVERGED (残差は極低絶対値 rms_ro~2e-10 で plateau) | active (cell 試計算の最終場) |
+| `run_0012_node_euler/` | **node (median-dual) 化**: node 変換 (dual閉性1.9e-6) + run_0011 場を3D最近傍移植。Euler+slip+1次+陰解法 | ✅ **VERDICT: PASS (converged)** 全列4.2-5.3桁下降。M max 2.38 | active (node ベースライン) |
+| `run_0013_node_visc/` | ② 粘性 no-slip (μ=9e-5, k=0.215, `nodeWallDirichlet=1`) restart | ✅ **PASS (converged)** 3.1-4.0桁。**壁ノード4739個 \|U\|=0.000** (no-slip 厳密)。M max 2.34 | active |
+| `run_0014_node_sst/` | ③ SST (k/ω 全域非ゼロ init k=4/ω=500, wallTreatmentSST=1) restart | ✅ roK **5.9桁**/roOmega **6.0桁** 下降・NaN 0。μt/μ max 38。VERDICT: NOT CONVERGED は ro/roe が restart 時点で float32 床 (~e-11) のための表示 | active |
+| `run_0015_node_sst_2nd/` | ① 2次精度化 (convMethod 1 + Venkat, bndFirstOrder=1) restart | ✅ 全列3-4桁後の低レベル plateau (2次+SSTの微振動)・NaN 0。**M max 2.52** (2次化で膨張シャープ化) | active (ノズル単体の最終場) |
+| `run_0016_node_plume/` | **外部プルーム領域追加** (円筒 L60/R25mm, 8境界: +plume_out/plume_far/base)。SMESH 再メッシュ (tet54k+prism25k+pyram176, lip局所0.3mm, SOFT-PASS 0.01%)。IC=ノズル0015移植+プルーム大気 (x>35mm のみ指数ブレンド)。plume_far=`outlet_statPress` (双方向) | ✅ 10000step 完走・NaN 0。**プルームに不足膨張ジェットの衝撃セル構造** (P 0.75-1.75e5 振動)、M max 2.52。VERDICT: NOT CONVERGED (ジェット発達中) | active |
+| `run_0017_node_plume_cont/` | 0016 の継続 (20000step) — ジェット発達 | (実行中) | active |
 
 > メッシュ本体 (`forge.msh`/`forge.h5`) はこの run ディレクトリにある (git には入れない)。
 > 再生成は `cad/build_geom.py` → `cad/mesh_pintle.py` → `convertGmshToForge`。

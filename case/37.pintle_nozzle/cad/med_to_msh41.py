@@ -17,9 +17,13 @@ from collections import defaultdict
 import meshio
 import numpy as np
 
+# 既知グループ -> physID。MED に存在するものだけ書き出す (outlet はプルーム無し形状のみ、
+# plume_* / base はプルームあり形状のみ)。physID は bcondConfig.yaml と一致させること。
 PHYS = {"fluid": (3, 1), "wall": (2, 10), "inlet": (2, 11),
-        "outlet": (2, 12), "symmetry": (2, 13), "wall_pintle": (2, 14)}
-SURF_ENT = {"wall": 1, "inlet": 2, "outlet": 3, "symmetry": 4, "wall_pintle": 5}
+        "outlet": (2, 12), "symmetry": (2, 13), "wall_pintle": (2, 14),
+        "plume_out": (2, 15), "plume_far": (2, 16), "base": (2, 17)}
+SURF_ENT = {"wall": 1, "inlet": 2, "outlet": 3, "symmetry": 4, "wall_pintle": 5,
+            "plume_out": 6, "plume_far": 7, "base": 8}
 GMSH_TYPE = {"triangle": (2, 3), "quad": (3, 4),
              "tetra": (4, 4), "hexahedron": (5, 8), "wedge": (6, 6), "pyramid": (7, 5)}
 SURF_TYPES = ("triangle", "quad")
@@ -52,9 +56,14 @@ def main():
                     surf[nm][blk.type].append(row)
         elif blk.type in VOL_TYPES:
             vol[blk.type].extend(blk.data)
-    missing = set(SURF_ENT) - set(surf)
-    if missing:
-        raise SystemExit("ERROR: MED に面グループ %s が無い" % missing)
+    # MED に存在するグループのみ書く (最低限 inlet/wall/symmetry/wall_pintle は必須)
+    need = {"inlet", "wall", "symmetry", "wall_pintle"} - set(surf)
+    if need:
+        raise SystemExit("ERROR: MED に必須面グループ %s が無い" % need)
+    unknown = set(surf) - set(SURF_ENT)
+    if unknown:
+        raise SystemExit("ERROR: 未知の面グループ %s (PHYS/SURF_ENT に追加を)" % unknown)
+    ents = {nm: et for nm, et in SURF_ENT.items() if nm in surf}
 
     nsurf = sum(len(v) for d in surf.values() for v in d.values())
     nvol = sum(len(v) for v in vol.values())
@@ -64,12 +73,13 @@ def main():
 
     with open(dst, "w") as f:
         f.write("$MeshFormat\n4.1 0 8\n$EndMeshFormat\n")
-        f.write("$PhysicalNames\n%d\n" % len(PHYS))
-        for nm, (d, pid) in PHYS.items():
+        pnames = {nm: PHYS[nm] for nm in list(ents) + ["fluid"]}
+        f.write("$PhysicalNames\n%d\n" % len(pnames))
+        for nm, (d, pid) in pnames.items():
             f.write('%d %d "%s"\n' % (d, pid, nm))
         f.write("$EndPhysicalNames\n")
-        f.write("$Entities\n0 0 %d 1\n" % len(SURF_ENT))
-        for nm, et in sorted(SURF_ENT.items(), key=lambda kv: kv[1]):
+        f.write("$Entities\n0 0 %d 1\n" % len(ents))
+        for nm, et in sorted(ents.items(), key=lambda kv: kv[1]):
             f.write("%d 0 0 0 0 0 0 1 %d 0\n" % (et, PHYS[nm][1]))
         f.write("1 0 0 0 0 0 0 1 %d 0\n" % PHYS["fluid"][1])
         f.write("$EndEntities\n")
@@ -82,7 +92,7 @@ def main():
         f.write("$EndNodes\n")
         f.write("$Elements\n%d %d 1 %d\n" % (nblocks, nsurf + nvol, nsurf + nvol))
         tag = 1
-        for nm, et in sorted(SURF_ENT.items(), key=lambda kv: kv[1]):
+        for nm, et in sorted(ents.items(), key=lambda kv: kv[1]):
             for mtype, rows in surf[nm].items():
                 gt, nn = GMSH_TYPE[mtype]
                 f.write("2 %d %d %d\n" % (et, gt, len(rows)))
