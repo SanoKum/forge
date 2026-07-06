@@ -18,27 +18,55 @@ import SMESH  # noqa: E402
 from salome.geom import geomBuilder  # noqa: E402
 from salome.smesh import smeshBuilder  # noqa: E402
 
-# ===== 設定 (mesh_pintle.py と整合) =====
-STEP = "pintle_fluid_half.step"
-OUT = "pintle_salome.med"
-if len(sys.argv) > 1 and "," in ",".join(sys.argv):  # salome -t script args:a,b
-    pass
+# ===== 設定 =====
+# 既定値。cwd に mesh_salome_config.json があれば上書き (テンプレは cad/ に同梱)。
+# 実際に使った値は OUT と同じ場所に mesh_settings_used.json として保存する。
+import json
+import os
+
+CFG = dict(
+    step="pintle_fluid_half.step",
+    out="pintle_salome.med",
+    # 設計寸法 [mm] (面分類しきい値; build_geom.py の PARAMS と整合させる)
+    geometry=dict(x_in=0.0, x_exit=35.0, x_tip=15.0, z_bot=-20.0, Rp=1.5, Rt=2.5,
+                  tip_len=3.0),
+    # 大域メッシュ [mm]
+    maxh_mm=0.5,
+    minh_mm=0.05,
+    fineness=3,                # NETGEN Fineness (0-5, 3=Moderate)
+    # ピントル先端 (ノーズ+キャップ) の局所細分 [mm]。強曲率 (r_tip~0.4mm) で
+    # Viscous Layers が層を落とすのを防ぐ。None で無効。
+    tip_maxh_mm=0.12,
+    # Viscous Layers: 総厚 / 層数 / stretch (第一層厚 ~ TOTAL*(s-1)/(s^N-1))
+    vl_total_mm=0.25,
+    vl_nlayers=4,
+    vl_stretch=1.3,
+)
+if os.path.exists("mesh_salome_config.json"):
+    with open("mesh_salome_config.json") as _f:
+        _user = json.load(_f)
+    for _k, _v in _user.items():
+        if _k == "geometry" and isinstance(_v, dict):
+            CFG["geometry"].update(_v)
+        else:
+            CFG[_k] = _v
+    print("loaded mesh_salome_config.json:", _user)
+
 argv = sys.argv[1:]
 if argv:
     if len(argv) >= 1 and argv[0]:
-        STEP = argv[0]
+        CFG["step"] = argv[0]
     if len(argv) >= 2 and argv[1]:
-        OUT = argv[1]
+        CFG["out"] = argv[1]
 
-# 設計寸法 [mm]。Salome は STEP の mm 単位を m へ変換して取り込むことがあるため、
-# 取り込み後の bbox から unit_scale を自動検出し、しきい値・メッシュ長をスケールする。
-G_MM = dict(x_in=0.0, x_exit=35.0, x_tip=15.0, z_bot=-20.0, Rp=1.5, Rt=2.5)
-MAXH_MM = 0.5
-MINH_MM = 0.05
-# Viscous Layers: 総厚 / 層数 / stretch (第一層厚 ~ TOTAL*(s-1)/(s^N-1))
-VL_TOTAL_MM = 0.25
-VL_NLAYER = 4
-VL_STRETCH = 1.3
+STEP = CFG["step"]
+OUT = CFG["out"]
+G_MM = CFG["geometry"]
+MAXH_MM = CFG["maxh_mm"]
+MINH_MM = CFG["minh_mm"]
+VL_TOTAL_MM = CFG["vl_total_mm"]
+VL_NLAYER = CFG["vl_nlayers"]
+VL_STRETCH = CFG["vl_stretch"]
 
 geompy = geomBuilder.New()
 smesh = smeshBuilder.New()
@@ -73,10 +101,12 @@ def classify(x, y, z):
 
 
 bins = {}
+face_cdg = {}
 for f in faces:
     cm = geompy.MakeCDG(f)
     x, y, z = geompy.PointCoordinates(cm)
     bins.setdefault(classify(x, y, z), []).append(f)
+    face_cdg[f] = (x, y, z)
 print("face groups:", {k: len(v) for k, v in bins.items()})
 missing = {"inlet", "outlet", "symmetry", "wall", "wall_pintle"} - set(bins)
 if missing:
@@ -95,9 +125,23 @@ algo = mesh.Tetrahedron(smeshBuilder.NETGEN_1D2D3D)
 par = algo.Parameters()
 par.SetMaxSize(MAXH)
 par.SetMinSize(MINH)
-par.SetFineness(3)          # Moderate
+par.SetFineness(CFG["fineness"])
 par.SetSecondOrder(0)       # forge は線形要素のみ
 par.SetOptimize(1)
+
+# ピントル先端 (ノーズ+キャップ) の局所細分。強曲率 (r_tip) 面で Viscous Layers が
+# 層を落とすのを防ぐ (実測: 局所細分なしだと先端の層あり率 78%)。
+if CFG.get("tip_maxh_mm"):
+    tip_maxh = CFG["tip_maxh_mm"] * unit_scale
+    x_nose = (G_MM["x_tip"] - G_MM["tip_len"]) * unit_scale
+    n_tip = 0
+    for f in bins["wall_pintle"]:
+        if face_cdg[f][0] >= x_nose:
+            # SetLocalSizeOnShape は study 登録済みオブジェクトが必要 -> 先に publish
+            geompy.addToStudyInFather(shape, f, "tip_face_%d" % n_tip)
+            par.SetLocalSizeOnShape(f, tip_maxh)
+            n_tip += 1
+    print("tip local size %.4g on %d faces" % (tip_maxh, n_tip))
 
 # Viscous Layers: 層を張らない面 = inlet/outlet/symmetry (isFacesToIgnore=True)
 ignore_ids = []
@@ -119,3 +163,11 @@ print("nodes:", mesh.NbNodes(), "tet:", mesh.NbTetras(), "prism:", mesh.NbPrisms
       "pyram:", mesh.NbPyramids(), "hex:", mesh.NbHexas())
 mesh.ExportMED(OUT)
 print("wrote", OUT)
+
+# 使った設定を成果物と並べて保存 (トレーサビリティ; run ディレクトリに残る)
+used = dict(CFG)
+used["unit_scale"] = unit_scale
+used_path = os.path.join(os.path.dirname(os.path.abspath(OUT)), "mesh_settings_used.json")
+with open(used_path, "w") as f:
+    json.dump(used, f, indent=2, ensure_ascii=False)
+print("wrote", used_path)

@@ -1,0 +1,21 @@
+{
+  "_comment": "mesh_salome.py の設定。実行 cwd にこの名前で置くと既定値を上書きする。単位: mm。geometry は build_geom.py の PARAMS と整合させること。tip_maxh_mm はピントル先端の局所細分 (null で無効; 無効だと先端の viscous layer が欠ける)。vl_* は境界層の総厚/層数/stretch。使用値は mesh_settings_used.json として出力先に保存される。",
+  "step": "pintle_fluid_half.step",
+  "out": "pintle_salome.med",
+  "geometry": {
+    "x_in": 0.0,
+    "x_exit": 35.0,
+    "x_tip": 15.0,
+    "z_bot": -20.0,
+    "Rp": 1.5,
+    "Rt": 2.5,
+    "tip_len": 3.0
+  },
+  "maxh_mm": 0.5,
+  "minh_mm": 0.05,
+  "fineness": 3,
+  "tip_maxh_mm": 0.12,
+  "vl_total_mm": 0.25,
+  "vl_nlayers": 4,
+  "vl_stretch": 1.3
+}
