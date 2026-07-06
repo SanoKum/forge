@@ -22,7 +22,7 @@
 import math
 from collections import defaultdict
 from netgen.occ import OCCGeometry
-from netgen.meshing import MeshingParameters
+from netgen.meshing import MeshingParameters, BoundaryLayerParameters
 
 # ===== 設定 (build_geom.py の PARAMS と整合させる。品質 FAIL 時はここを詰める) =====
 STEP = "pintle_fluid_half.step"
@@ -37,11 +37,21 @@ MAXH            = 0.4
 GRADING         = 0.3
 CURVATURESAFETY = 2.0
 
-# 境界層 (prism)。USE_BL=True で wall 系のみに付ける (symmetry/inlet/outlet には付けない)。
-# 壁関数 y+~30-80 想定。総厚/層数/各層厚は要調整。凹角 (throat/pintle 基部) で失敗しやすい。
-USE_BL    = False
-BL_THICK  = [0.02, 0.035, 0.06, 0.10]  # 各層厚 [mm] (壁から外向き)
-BL_BOUND  = "wall.*"                   # 正規表現で wall, wall_pintle にマッチ
+# --- 近壁解像度 ---
+# (A) 壁面近傍の tet 細分 (推奨・堅牢): 壁 face に局所 maxh を与え近壁を細かくする。
+#     prism 無し・クラッシュ無し。壁関数 (y+~30-80) と相性が良い。None で無効。
+#     例: WALL_MAXH=0.12 + MAXH=0.5 で ~50万 tet (小型形状のため細分は cell 数増に注意)。
+WALL_MAXH = None          # 壁面の局所メッシュ長 [mm] (None=無効)
+
+# (B) prism 境界層 (netgen boundary_layers)。
+#     ** 現状この形状 (T字給気・スロート・ピントル基部の凹角) では BL 生成が失敗する **
+#     project_boundaries 無し=segfault、有りでも "too many attempts" で体積充填が失敗。
+#     使うには凹角エッジを fillet 化する必要がある。USE_BL=True は fillet 済み形状でのみ。
+#     半割では project_boundaries で層を対称面/入口/出口に沿わせるのが必須。
+USE_BL     = False
+BL_THICK   = [0.02, 0.035, 0.06, 0.10]  # 各層厚 [mm] (壁から外向き)
+BL_BOUND   = "wall.*"                   # 正規表現で wall, wall_pintle にマッチ
+BL_PROJECT = "symmetry|inlet|outlet"    # 層をこれらの面に沿って終端させる (半割で必須)
 
 # 物理 ID 割り当て (bcondConfig.yaml と一致させること)
 PHYS = {"fluid": (3, 1), "wall": (2, 10), "inlet": (2, 11),
@@ -75,6 +85,11 @@ def write_msh41(mesh, path):
     N = len(mesh.Points())
     pts = [mesh.Points()[i].p for i in range(1, N + 1)]
     tets = [[v.nr for v in e.vertices] for e in mesh.Elements3D()]
+    # 現状 tet のみ対応。prism/pyramid (境界層 USE_BL 有効時) が出たら node 順マップが必要
+    # なので silent 不正を避けて明示的に失敗させる。
+    if any(len(t) != 4 for t in tets):
+        raise SystemExit("ERROR: 非 tet の 3D 要素あり (prism/pyramid)。write_msh41 は tet のみ対応。"
+                         " 境界層を使うなら gmsh type 6/7 の書き出しと node 順マップを追加すること。")
     tris = defaultdict(list)
     for e in mesh.Elements2D():
         tris[mesh.GetBCName(e.index - 1)].append([v.nr for v in e.vertices])
@@ -125,6 +140,8 @@ def main():
     for f in shape.faces:
         nm = classify(*face_center(f))
         f.name = nm
+        if WALL_MAXH is not None and nm in ("wall", "wall_pintle"):
+            f.maxh = WALL_MAXH                       # (A) 近壁 tet 細分
         cnt[nm] += 1
     for s in shape.solids:
         s.name = "fluid"
@@ -134,10 +151,13 @@ def main():
         raise SystemExit("ERROR: 未検出の面グループ %s (classify しきい値を見直す)" % missing)
 
     mp = MeshingParameters(maxh=MAXH, grading=GRADING, curvaturesafety=CURVATURESAFETY)
-    mesh = OCCGeometry(shape).GenerateMesh(mp=mp)
-    if USE_BL:
-        mesh.BoundaryLayer(boundary=BL_BOUND, thickness=BL_THICK,
-                           material="fluid", domains="fluid", outside=False)
+    if USE_BL:  # (B) prism 境界層 (現状この形状では失敗する。凹角 fillet 化が前提)
+        blp = BoundaryLayerParameters(boundary=BL_BOUND, thickness=BL_THICK,
+                                      new_material=None, domain="fluid", outside=False,
+                                      project_boundaries=BL_PROJECT)
+        mesh = OCCGeometry(shape).GenerateMesh(mp=mp, boundary_layers=[blp])
+    else:
+        mesh = OCCGeometry(shape).GenerateMesh(mp=mp)
     print("mesh: 3D", len(mesh.Elements3D()), "2D", len(mesh.Elements2D()),
           "pts", len(mesh.Points()))
 

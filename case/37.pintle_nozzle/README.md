@@ -34,8 +34,9 @@ GUI/登録なしで完全スクリプト化する。面の境界グループ分�
   (尖らせると Netgen 表面メッシュが退化頂点で破綻)。給気は垂直円柱でチャンバー下面へ
   (sharp/smooth エルボは sliver/boolean 破綻のため将来改良)。
 - **メッシュ**: `cad/mesh_pintle.py` (`netgen-mesher`)。`wall_pintle` を別グループにして
-  ピントル軸力を面積分できるようにする。prism 境界層は `USE_BL=True` で `wall.*` のみに付与
-  (symmetry/inlet/outlet には付けない)。`MAXH` は throat 環状すきま (Rt-Rp=2mm) を割る値に。
+  ピントル軸力を面積分できるようにする。近壁解像度は `WALL_MAXH` (壁 face の局所細分・堅牢)
+  を推奨。prism 境界層 (`USE_BL`) は現状この凹角形状では失敗する (下記「現状と次タスク」参照)。
+  `MAXH` は throat 環状すきま (Rt-Rp=1mm) を割る値に。
 - **取り込み**: Netgen の "Gmsh2 Format" 出力は `$PhysicalNames` を書かず convertGmshToForge が
   読めないため、`mesh_pintle.py` が forge 必須要件 (下記) を満たす **gmsh 4.1 を直接書く**。
 - **forge 制約**: float32 の非直交 free-stream 保存が弱い。**1次風上 + 陰解法 (block-DPLUR)
@@ -92,7 +93,11 @@ ER=3.0 / 2.5=Rt のみ**。図は径方向が非スケールのため Rc・収�
   面ごと equiangle skew / 全辺 AR で判定; 準2D は従来の x-y 射影を維持)。pintle mesh は
   **3D モードで AR max 2.9 / skew max 0.657 / PASS**。旧 FAIL (skew 36%・AR=inf) は x-y 射影
   アーティファクトで実体でなかった。→ 品質チューニングは不要。
-- ⏳ (任意) prism 境界層 (`USE_BL=True`) を壁関数 y+ に合わせて付与。
+- ⚠️ **prism 境界層は現状この形状では不可**: netgen `boundary_layers` は凹角 (T字給気・
+  スロート・ピントル基部) で失敗 (`project_boundaries` 無し=segfault、有りでも体積充填が
+  "too many attempts")。正しい API は `mesh_pintle.py` に実装済 (`USE_BL`) だが fillet 済み
+  形状が前提。代替として **近壁 tet 細分** (`WALL_MAXH`, 例 0.12) が堅牢に動作し、壁関数
+  (y+~30-80) と相性が良い。
 - ⏳ 実機の給気管/ベンド実寸が分かれば PARAMS を更新 (現状は暫定)。
 - ⏳ solverConfig (安定レシピ + γ=1.274/Tc=2889K)・bcondConfig 実値 (全圧/全温) で forge 投入。
 
