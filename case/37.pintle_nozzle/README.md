@@ -140,6 +140,7 @@ forge 投入で非直交由来の不安定が出て切り分けが要るとき�
 | run | 目的・主要設定差分 | 主要結果・成果物 | 状態 |
 | --- | --- | --- | --- |
 | `run_0001_slau_baseline/` | 論文スケール形状の初期メッシュ実体化。Netgen tet (maxh=0.4)。solverConfig は仮 (cell-mode placeholder, 物性/BC 未実値) | `forge.msh` (14002節点/60322 tet), `forge.h5`, 品質 **PASS** (3Dモード AR2.9/skew0.657) | active (メッシュ確定・**未投入**; solverConfig/bcondConfig 実値化待ち) |
+| `run_0002_slau_wallref/` | 近壁 tet 細分版 (`mesh_pintle.py --wall-maxh 0.12 --maxh 0.5`)。等方細分であり prism 押し出し境界層ではない (壁関数前提) | `forge.msh`/`forge.h5` (120317節点/535854 tet, 141M), 品質 **PASS** (AR3.5/skew0.725) | active (**未投入**; 設定は run_0001 と同じ仮) |
 
 > メッシュ本体 (`forge.msh`/`forge.h5`) はこの run ディレクトリにある (git には入れない)。
 > 再生成は `cad/build_geom.py` → `cad/mesh_pintle.py` → `convertGmshToForge`。

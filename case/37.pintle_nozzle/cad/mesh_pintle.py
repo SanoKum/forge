@@ -19,6 +19,7 @@
 
 面命名は STEP の面重心の幾何条件で自動分類 (対話ピック不要・再現可能)。
 """
+import argparse
 import math
 from collections import defaultdict
 from netgen.occ import OCCGeometry
@@ -135,6 +136,16 @@ def write_msh41(mesh, path):
 
 
 def main():
+    global STEP, OUT, MAXH, WALL_MAXH
+    ap = argparse.ArgumentParser(description="STEP -> Netgen tet mesh -> forge msh4.1")
+    ap.add_argument("--step", default=STEP)
+    ap.add_argument("--out", default=OUT)
+    ap.add_argument("--maxh", type=float, default=MAXH)
+    ap.add_argument("--wall-maxh", type=float, default=WALL_MAXH,
+                    help="壁 face の局所メッシュ長 [mm] (省略=無効)")
+    a = ap.parse_args()
+    STEP, OUT, MAXH, WALL_MAXH = a.step, a.out, a.maxh, a.wall_maxh
+
     shape = OCCGeometry(STEP).shape
     cnt = defaultdict(int)
     for f in shape.faces:
