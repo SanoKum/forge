@@ -177,7 +177,14 @@ forge 投入で非直交由来の不安定が出て切り分けが要るとき�
 | `run_0001_slau_baseline/` | 論文スケール形状の一様 tet (Netgen maxh=0.4)。solverConfig は仮 (cell-mode placeholder, 物性/BC 未実値) | `forge.msh` (14002節点/60322 tet), `forge.h5` (m 単位・再生成済), 品質 **PASS** (3Dモード AR2.9/skew0.657) | active (**未投入**; ⚠キャップ symmetry 誤分類バグ持ち・使う前に再生成) |
 | `run_0002_slau_wallref/` | 近壁 tet 細分版 (`mesh_pintle.py --wall-maxh 0.12 --maxh 0.5`)。等方細分 (prism BL ではない, 壁関数前提) | `forge.msh`/`forge.h5` (~54万 tet, m 単位・再生成済), 品質 **PASS** | active (**未投入**; ⚠キャップ symmetry 誤分類バグ持ち・使う前に再生成) |
 | `run_0003_slau_salome_bl/` | Salome SMESH ViscousLayers の prism 境界層付き初版 (総厚0.25mm/4層, maxh0.5)。先端層欠け+**キャップ symmetry 誤分類 (BC slip) バグ持ち** | `pintle_salome.med`, `forge.h5` (tet 40022 + prism 24492), 品質 PASS | ref (比較用; 計算には使わない。本命は run_0004) |
-| `run_0004_slau_bl_tipref/` | **本命 BL メッシュ**: 先端局所細分 (`tip_maxh_mm=0.10`; 0.07 は表面自己交差で不可) + **面分類バグ修正** (先端キャップが symmetry 誤分類→BC slip・層除外になっていた; wall_pintle を先に判定)。**先端キャップ含め wall_pintle 層あり率 100%**。設定 `mesh_salome_config.json` (使用値 `mesh_settings_used.json`) | `pintle_salome.med`, `forge.msh`/`forge.h5` (33332節点: tet 64557 + **prism 36384**, m 単位), 品質 **PASS** (AR20.6/skew0.849) | active (**未投入**; 本命。solverConfig 実値化待ち) |
+| `run_0004_slau_bl_tipref/` | **本命 BL メッシュ**: 先端局所細分 (`tip_maxh_mm=0.10`; 0.07 は表面自己交差で不可) + **面分類バグ修正** (先端キャップが symmetry 誤分類→BC slip・層除外になっていた; wall_pintle を先に判定)。**先端キャップ含め wall_pintle 層あり率 100%**。設定 `mesh_salome_config.json` (使用値 `mesh_settings_used.json`) | `pintle_salome.med`, `forge.msh`/`forge.h5` (33332節点: tet 64557 + **prism 36384**, m 単位), 品質 **PASS** (AR20.6/skew0.849) | ref (メッシュ正本; 計算は run_0005 以降) |
+| `run_0005_slau_trial/` | 試計算 第0段: Euler+slip+1次+陰解法(cfl_pseudo1)+pRef3e6, IC=滞留一様(p=Pt=3e6,T=2889K), outlet=`outflow` | 5000step 完走・残差機械ゼロ = **滞留平衡が完全保存** (outflow+平衡ICは流れを駆動しない)。メッシュ/BC/pRef の保存性 sanity 合格 | ref (平衡保存の確認) |
+| `run_0006_slau_trial_diaphragm/` | ダイヤフラム IC (スロートで 3e6/3e5 仕切り) | **step4 NaN** (ピントル先端すきまの薄 prism にジャンプ直撃)。ダイヤフラム起動はこの形状では不可 | ref (失敗診断; res_nan_4.h5) |
+| `run_0007_slau_statpress_pr15/` | **段階起動 第1段**: outlet を `outlet_statPress` Ps=2e6 (PR1.5, 非チョーク) に変更, IC=滞留一様 | ✅ 5000step 完走・NaN 0。M max 0.93, P[1.29e6,3.05e6], 場は物理的。VERDICT: NOT CONVERGED (発展途中) | active (第1段の場) |
+| `run_0008_slau_statpress_pr30/` | 第2段: Ps=1e6 (PR3) restart | ✅ チョーク+拡大部衝撃 M max 2.32, NaN 0。VERDICT: NOT CONVERGED (衝撃が出口付近で plateau) | active (第2段の場) |
+| `run_0009_slau_outflow_full/` | outflow へ早期切替 (出口リップに亜音速ポケット残存のまま) | **step1109 NaN** (出口リップ r=2.7-4.2mm)。亜音速セルの全量外挿は ill-posed → 切替は出口全面超音速後に | ref (失敗診断) |
+| `run_0010_slau_statpress_pr100/` | 第3段: Ps=3e5 (PR10) restart → 衝撃を出口外へ | ✅ **出口全面超音速 (M min 2.25)**, M max 2.46, P min 1.41e5≈設計出口圧。全残差下降 (2.3-4.1桁, still converging), NaN 0 | active |
+| `run_0011_slau_outflow_super/` | **最終段: outlet=`outflow`** (論文と同じ超音速外挿) restart | ✅ 10000step 完走・NaN 0。場は 0010 と実質不変 (M max 2.46, T max=Tt=2889K 物理的)。VERDICT: NOT CONVERGED (残差は極低絶対値 rms_ro~2e-10 で plateau) | **active (試計算の最終場)** |
 
 > メッシュ本体 (`forge.msh`/`forge.h5`) はこの run ディレクトリにある (git には入れない)。
 > 再生成は `cad/build_geom.py` → `cad/mesh_pintle.py` → `convertGmshToForge`。
