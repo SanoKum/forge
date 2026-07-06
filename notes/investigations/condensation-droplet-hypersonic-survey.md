@@ -122,7 +122,8 @@
 
 **(d) ★「膨張で凝縮 → 衝撃越えで蒸発」サイクルを陽に扱う (テーマ1 の核心に最も合致)** ○
 - **"Transonic flow of moist air around an NACA 0012 airfoil with non-equilibrium condensation" (Progress in Natural Science, 2005)** — 翼まわりの**膨張凝縮と衝撃背後の蒸発を両方**扱い、「翼後部での蒸発による昇圧」まで明記。RH90% で圧力抵抗 +160%・上下面交互の**自励振動**。〈出典〉[T&F 10.1080/10020070512331343000](https://www.tandfonline.com/doi/abs/10.1080/10020070512331343000)
-- **Wen et al. (2020), Int. J. Heat Mass Transfer** — **「衝撃波の発生が平衡を変え凝縮液滴の再蒸発を起こす」を明示**。形状は超音速セパレータ (内部流) だが**衝撃背後の再蒸発の物理記述として最も明確**。〈出典〉[S0017931019323816](https://www.sciencedirect.com/science/article/abs/pii/S0017931019323816)
+- **Wen et al. (2020), Int. J. Heat Mass Transfer** — **「衝撃波の発生が平衡を変え凝縮液滴の再蒸発を起こす」を明示**。形状は超音速セパレータ (内部流) だが**衝撃背後の再蒸発の物理記述として最も明確**。〈出典〉[S0017931019323816](https://www.sciencedirect.com/science/article/abs/pii/S0017931019323816) 📁
+  - ⚠️ **本文精読 (2026-07-07)**: 手法は 2 方程式 wet steam (液分率 Y + 液滴数 N, 単分散, Young 成長則 [蒸発可], CNT+Kantrowitz) であり**モーメント法ではない** (forge 4 モーメントの縮約版に相当。N は蒸発で減らない素朴な扱い)。実験検証は**衝撃のない Hedbäck 高圧蒸気ノズル G37-B (13.83 MPa/674 K, 静圧+液滴半径の図上一致) のみ**で、**核心の「衝撃背後の再蒸発」自体は実験比較なしの純数値予測**。§9 課題 A では code-to-code 比較先と位置づけ、蒸発則の較正は Huang & Zhang (1D 衝撃管) 側で行うこと。
 
 **(e) 凝縮-衝撃結合の不安定性 (forge の非定常凝縮で要注意)** △
 - **Schnerr, Adam, Mundinger 系** — 凝縮の潜熱付加が衝撃と結合し、対称形状でも**斜め衝撃の上流伝播・周期振動・ヒステリシス分岐**を生む。原因は粘性 (境界層) でなく**核生成速度との結合**。〈出典〉[Springer 10.1007/978-3-7091-2688-2_8](https://link.springer.com/chapter/10.1007/978-3-7091-2688-2_8)
