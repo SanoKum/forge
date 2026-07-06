@@ -1,0 +1,45 @@
+# pintle_nozzle 境界条件テンプレート (physID は cad/mesh_pintle.py の PHYS と一致させること)。
+# convertGmshToForge / forge は cwd の bcondConfig.yaml を読むので、使う run_* にコピーして使う。
+#
+# kind は当面のプレースホルダ。投入前に procedures/divergence-and-startup.md と
+# procedures/solver-settings.md に従い、安定レシピ向けの実 kind / 値に直すこと:
+#   - inlet       : 亜音速圧力入口 (燃焼室 全圧 Pt / 全温 Tt)
+#   - outlet      : 超音速出口 (outflow, 外挿)
+#   - wall系       : 断熱 no-slip 壁
+#   - symmetry    : 対称面
+# wall_pintle を wall と別 physID にしてあるのは、ピントルに働く軸力を面積分するため。
+
+wall:
+  physID: 10
+  kind: wall          # 要確認: 断熱 no-slip 壁
+  outputHDFflg: 1
+  ints:
+  floats:
+
+inlet:
+  physID: 11
+  kind: slip          # 要確認: 亜音速圧力入口 (Pt/Tt) に変更
+  outputHDFflg: 1
+  ints:
+  floats:
+
+outlet:
+  physID: 12
+  kind: slip          # 要確認: 超音速 outflow に変更
+  outputHDFflg: 1
+  ints:
+  floats:
+
+symmetry:
+  physID: 13
+  kind: slip          # 要確認: symmetry / slip
+  outputHDFflg: 1
+  ints:
+  floats:
+
+wall_pintle:
+  physID: 14
+  kind: wall          # 要確認: 断熱 no-slip 壁 (軸力評価用に wall と分離)
+  outputHDFflg: 1
+  ints:
+  floats:
