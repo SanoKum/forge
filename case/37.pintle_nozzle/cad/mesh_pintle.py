@@ -78,10 +78,12 @@ def classify(cx, cy, cz):
         return "inlet"
     if abs(cx - G['x_exit']) < 1.0:
         return "outlet"
-    if abs(cy) < 0.5:                                    # y=0 対称面 (複数枚)
-        return "symmetry"
+    # wall_pintle を symmetry より先に判定 (順序が重要): ピントル先端キャップ (底面) は
+    # 重心 y~0 のため |y| 判定を先にすると symmetry に誤分類され BC が slip になる。
     if (G['x_in'] - 2 <= cx <= G['x_tip'] + 2) and r < 0.5 * (G['Rp'] + G['Rt']):
         return "wall_pintle"                            # 軸近傍 x<=tip -> ピントル
+    if abs(cy) < 0.5:                                    # y=0 対称面 (複数枚)
+        return "symmetry"
     return "wall"
 
 

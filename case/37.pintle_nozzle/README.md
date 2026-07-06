@@ -35,8 +35,10 @@ FreeCAD (cad/build_geom.py) -> pintle_fluid_half.step
   ヘッダ必須** — 無いと 403)。`/home/sano/opt/salome/` に導入済み (「環境」参照)。
 - **メッシュ設定は `mesh_salome_config.json`** (テンプレ: `cad/`, 単位 mm)。実行 cwd に置くと
   既定値を上書きし、使用値が `mesh_settings_used.json` として出力先に保存される
-  (run ごとの設定トレーサビリティ)。ピントル先端は強曲率で viscous layer が欠けるため
-  `tip_maxh_mm` の局所細分が必須 (無し=78% -> 0.10 で 93%; 0.07 は表面自己交差で失敗)。
+  (run ごとの設定トレーサビリティ)。ピントル先端の層欠けは 2 要因あった:
+  ① **先端キャップ (底面) の symmetry 誤分類** (主因; BC も slip になる実害バグ。分類順の
+  修正で解消) ② ノーズ強曲率での層縮退 (`tip_maxh_mm=0.10` の局所細分で解消;
+  0.07 は表面自己交差で失敗)。両修正後は wall_pintle 層あり率 100%。
 - netgen 生 API (pip) の prism BL はこの形状の凹角で破綻するが、**SMESH の
   StdMeshers_ViscousLayers は凹角の層縮退処理を持ち、同じ形状で成功する** (prism 2.4万生成)。
 - 面の境界グループ分けは両経路とも面重心の幾何条件で自動分類 (対話ピック不要・再現可能)。
@@ -172,10 +174,10 @@ forge 投入で非直交由来の不安定が出て切り分けが要るとき�
 
 | run | 目的・主要設定差分 | 主要結果・成果物 | 状態 |
 | --- | --- | --- | --- |
-| `run_0001_slau_baseline/` | 論文スケール形状の一様 tet (Netgen maxh=0.4)。solverConfig は仮 (cell-mode placeholder, 物性/BC 未実値) | `forge.msh` (14002節点/60322 tet), `forge.h5` (m 単位・再生成済), 品質 **PASS** (3Dモード AR2.9/skew0.657) | active (**未投入**; solverConfig/bcondConfig 実値化待ち) |
-| `run_0002_slau_wallref/` | 近壁 tet 細分版 (`mesh_pintle.py --wall-maxh 0.12 --maxh 0.5`)。等方細分 (prism BL ではない, 壁関数前提) | `forge.msh`/`forge.h5` (~54万 tet, m 単位・再生成済), 品質 **PASS** | active (**未投入**; 設定は run_0001 と同じ仮) |
-| `run_0003_slau_salome_bl/` | Salome SMESH ViscousLayers の prism 境界層付き初版 (総厚0.25mm/4層, maxh0.5)。**ピントル先端の層あり率 78%** (強曲率で層欠け) | `pintle_salome.med`, `forge.h5` (tet 40022 + prism 24492), 品質 PASS | ref (先端層欠けの比較用; 本命は run_0004) |
-| `run_0004_slau_bl_tipref/` | **先端局所細分を追加した本命 BL メッシュ** (`tip_maxh_mm=0.10`; 0.07 は表面自己交差で不可)。先端層あり率 **93%** / wall_pintle 全体 99.3%。設定は `mesh_salome_config.json` (使用値 `mesh_settings_used.json`) | `pintle_salome.med`, `forge.msh`/`forge.h5` (33179節点: tet 64492 + **prism 36080** + pyram 56, m 単位), 品質 **PASS** (AR20.6/skew0.829) | active (**未投入**; 本命。solverConfig 実値化待ち) |
+| `run_0001_slau_baseline/` | 論文スケール形状の一様 tet (Netgen maxh=0.4)。solverConfig は仮 (cell-mode placeholder, 物性/BC 未実値) | `forge.msh` (14002節点/60322 tet), `forge.h5` (m 単位・再生成済), 品質 **PASS** (3Dモード AR2.9/skew0.657) | active (**未投入**; ⚠キャップ symmetry 誤分類バグ持ち・使う前に再生成) |
+| `run_0002_slau_wallref/` | 近壁 tet 細分版 (`mesh_pintle.py --wall-maxh 0.12 --maxh 0.5`)。等方細分 (prism BL ではない, 壁関数前提) | `forge.msh`/`forge.h5` (~54万 tet, m 単位・再生成済), 品質 **PASS** | active (**未投入**; ⚠キャップ symmetry 誤分類バグ持ち・使う前に再生成) |
+| `run_0003_slau_salome_bl/` | Salome SMESH ViscousLayers の prism 境界層付き初版 (総厚0.25mm/4層, maxh0.5)。先端層欠け+**キャップ symmetry 誤分類 (BC slip) バグ持ち** | `pintle_salome.med`, `forge.h5` (tet 40022 + prism 24492), 品質 PASS | ref (比較用; 計算には使わない。本命は run_0004) |
+| `run_0004_slau_bl_tipref/` | **本命 BL メッシュ**: 先端局所細分 (`tip_maxh_mm=0.10`; 0.07 は表面自己交差で不可) + **面分類バグ修正** (先端キャップが symmetry 誤分類→BC slip・層除外になっていた; wall_pintle を先に判定)。**先端キャップ含め wall_pintle 層あり率 100%**。設定 `mesh_salome_config.json` (使用値 `mesh_settings_used.json`) | `pintle_salome.med`, `forge.msh`/`forge.h5` (33332節点: tet 64557 + **prism 36384**, m 単位), 品質 **PASS** (AR20.6/skew0.849) | active (**未投入**; 本命。solverConfig 実値化待ち) |
 
 > メッシュ本体 (`forge.msh`/`forge.h5`) はこの run ディレクトリにある (git には入れない)。
 > 再生成は `cad/build_geom.py` → `cad/mesh_pintle.py` → `convertGmshToForge`。

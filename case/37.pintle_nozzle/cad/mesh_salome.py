@@ -92,11 +92,14 @@ def classify(x, y, z):
         return "inlet"
     if abs(x - G["x_exit"]) < TOL_BIG:
         return "outlet"
-    if abs(y) < TOL_SYM:
-        return "symmetry"
+    # wall_pintle を symmetry より先に判定する (順序が重要)。
+    # ピントル先端キャップ (底面) は重心 y~0 のため、|y| 判定を先にすると
+    # symmetry に誤分類され viscous layer の除外リストに入る + BC も slip になる。
     if (G["x_in"] - 2 * TOL_BIG <= x <= G["x_tip"] + 2 * TOL_BIG) \
             and r < 0.5 * (G["Rp"] + G["Rt"]):
         return "wall_pintle"
+    if abs(y) < TOL_SYM:
+        return "symmetry"
     return "wall"
 
 
