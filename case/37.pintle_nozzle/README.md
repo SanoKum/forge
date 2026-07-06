@@ -190,7 +190,7 @@ forge 投入で非直交由来の不安定が出て切り分けが要るとき�
 | `run_0014_node_sst/` | ③ SST (k/ω 全域非ゼロ init k=4/ω=500, wallTreatmentSST=1) restart | ✅ roK **5.9桁**/roOmega **6.0桁** 下降・NaN 0。μt/μ max 38。VERDICT: NOT CONVERGED は ro/roe が restart 時点で float32 床 (~e-11) のための表示 | active |
 | `run_0015_node_sst_2nd/` | ① 2次精度化 (convMethod 1 + Venkat, bndFirstOrder=1) restart | ✅ 全列3-4桁後の低レベル plateau (2次+SSTの微振動)・NaN 0。**M max 2.52** (2次化で膨張シャープ化) | active (ノズル単体の最終場) |
 | `run_0016_node_plume/` | **外部プルーム領域追加** (円筒 L60/R25mm, 8境界: +plume_out/plume_far/base)。SMESH 再メッシュ (tet54k+prism25k+pyram176, lip局所0.3mm, SOFT-PASS 0.01%)。IC=ノズル0015移植+プルーム大気 (x>35mm のみ指数ブレンド)。plume_far=`outlet_statPress` (双方向) | ✅ 10000step 完走・NaN 0。**プルームに不足膨張ジェットの衝撃セル構造** (P 0.75-1.75e5 振動)、M max 2.52。VERDICT: NOT CONVERGED (ジェット発達中) | active |
-| `run_0017_node_plume_cont/` | 0016 の継続 (20000step) — ジェット発達 | (実行中) | active |
+| `run_0017_node_plume_cont/` | 0016 の継続 (20000step) — ジェット発達 | ✅ 完走・NaN 0。M max 2.53, μt/μ max 234 (せん断層)。ただし **rms_roOmega が step~4000 から 1.33e16 で凍結** = 出口リップ (x=35, r=4.3mm; skew0.915+pyramid+BL終端) の少数ノードで ω がリミッタにピン留め。場は局所以外健全。**リップの面取り/細分が次の改善点** | active (プルーム最新場; 単一スナップショット定性。定常主張なし) |
 
 > メッシュ本体 (`forge.msh`/`forge.h5`) はこの run ディレクトリにある (git には入れない)。
 > 再生成は `cad/build_geom.py` → `cad/mesh_pintle.py` → `convertGmshToForge`。
