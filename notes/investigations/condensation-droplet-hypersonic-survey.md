@@ -104,7 +104,8 @@
 - **Smolders 博士論文 (TU/e 1992)** ◎📁 `Smolders_1992_PhD_thesis_nonlinear_waves_gas_vapour_phase_transition.pdf` — シード実験 2 本+それを再現する数値モデル (核生成/成長/蒸発+RCM/Euler 解法) の完全版 (190p, OA)。
 - **Huang & Zhang (2020)**, *Phys. Fluids* 32:123315, [10.1063/5.0035968](https://doi.org/10.1063/5.0035968) ○📁 `Huang_Zhang_2020_PoF_shock_evaporating_water_droplets_interaction.pdf` — **Goossens 1988 の条件 (66 kPa/275 K, Ms=1.17-1.6) をそのまま初期条件に採用**した Euler-Lagrange (OpenFOAM) 双方向結合。ICLASS 2021 (§1-3 上記) の元論文。
 - **Kersey, Loth & Lankford (2010)**, "Effects of Evaporating Droplets on Shock Waves", *AIAA J* 48(9), [10.2514/1.J050162](https://doi.org/10.2514/1.J050162) △ — 蒸発液滴による衝撃減衰の 1D+Lagrangian 古典再現 (paywall)。
-- **現代版の実験**: **Duke-Walker, Allen, Maxon & McFarland (2020)**, IJMF 133:103464 (PDPA による衝撃駆動多相不安定での蒸発定量) ○📁 / **Duke-Walker, Musick & McFarland (2023)**, IJMF 161:104389 (**高 We の分裂+蒸発同時測定** — シード実験の現代版として最有力) ○📁 / 対応する数値 **JFM 908:A13 (2021)** ○📁。Hanson 2005 のジャーナル完全版は **Phys. Fluids 19:056104 (2007)** で、全データは **T.C. Hanson 博士論文 (Stanford 2005)** 📁 に収録。
+- **現代版の実験**: **Duke-Walker, Allen, Maxon & McFarland (2020)**, IJMF 133:103464 (Q-PLIF/PIV による衝撃駆動多相不安定 SDMI での蒸発定量) ○📁 / **Duke-Walker, Musick & McFarland (2023)**, IJMF 161:104389 (**アセトン液滴 10-40 μm × M~2.09 平面衝撃、PDPA+shadowgraphy で高 We の分裂+蒸発同時測定**) ○📁 / 対応する数値 **JFM 908:A13 (2021)** (蒸発モデルを実験検証した E-L, 低 Re/低 We の新分裂モデル込み) ○📁。Hanson 2005 のジャーナル完全版は **Phys. Fluids 19:056104 (2007)** で、全データは **T.C. Hanson 博士論文 (Stanford 2005)** 📁 に収録。
+  - ⚠️ **適性注記 (本文精読)**: Duke-Walker 系は**作動流体がアセトン**で、SDMI 構成 (液滴雲界面の衝撃加速) は**速度スリップ・分裂・2D 混合形態が支配** = Lagrangian solver の検証用に設計されている。**forge 課題 A (Euler モーメント法、無スリップ・分裂なし) の検証には不向き**で、**課題 D (Lagrangian 液滴モジュール) の D2/D3 段の検証ターゲット**と位置づけるのが正しい。課題 A の実験アンカーはあくまで 1D 緩和域の Goossens/Smolders (μm 級水滴・スリップ緩和が速く無スリップ近似が成立)。
 - **蒸発モデルの適用限界**: **Finneran, Garner & Nadal (2021)**, *Proc. R. Soc. A* 477:20210078 ○📁 — 準定常 (d²-law 系) モデルからの逸脱を系統定量 (気相過渡だけで寿命 80% 過大の条件を提示)。**衝撃直後の急加熱過渡に準定常成長則を使う妥当性判定に直接使える**。/ Sazhin (2017), *Fuel* 196:69 — 液滴加熱・蒸発モデルの包括レビュー (paywall)。/ **Luo, Cao & Qin (2018)**, IJHMT 117:1032 — **モーメント法に速度スリップを入れる phase-slip moment method** (forge 拡張の参考, paywall)。
 
 **極低温風洞 N2 凝縮の翼まわり影響** ◎ — 局所ガス温度が飽和線を越えかつ臨界 (過冷却/Wilson) 点より低温になって初めて、流れ特性 (圧力・温度・マッハ数) を顕著に変える量の凝縮物が生じる。凝縮影響は**圧力係数 $C_p$・抗力係数 $C_d$** として解析。3D 化 (ONERA M6 翼、NASA Langley TCT 条件) も Euler-Euler+古典核生成+液滴成長モデルで実施。
@@ -425,6 +426,53 @@
 - DiVA 1793877 — WFR vs 燃焼温度 (MSc thesis) △📁 `Linkoping_thesis_2023_fuel_water_injection_diva1793877.pdf`
 - SAGE 09544100231162425 — IPS 水膜形成 ◎
 
+### 未入手 (paywall) 文献一覧 (2026-07-07 時点)
+
+OA 探索 (Unpaywall / arXiv / NTRS / DTIC / 機関リポジトリ / Wayback) を実施した上で入手できなかったもの。**「代替」列に OA の実質的代替があるものは急がない**。優先度は forge の検証・設計への直結度。
+
+| 優先 | 文献 | DOI / ID | 関連節 | 代替・備考 |
+|---|---|---|---|---|
+| 高 | Lin et al. 2018, Shock Waves 28:321 (燃焼加熱風洞 凝縮縮約モデル) | 10.1007/s00193-017-0724-x | §1-2, 課題C | 先行 Lin 2014 は papers/ に収蔵済み |
+| 高 | Huang, Zhu & Davy 2025, FTaC 114:243 (We 10-4758 網羅) | 10.1007/s10494-024-00581-z | §2-2 | 先行 Huang & Zhang 2020 PoF は 📁 |
+| 高 | Goossens et al. 1988, Exp. Fluids 6:561 (衝撃誘起蒸発 d²-law) | 10.1007/BF00196603 | §1-3, 課題A | 条件・データの大部分は Smolders 博論 📁 に収録 |
+| 高 | Smolders & van Dongen 1992, Shock Waves 2:255 | 10.1007/BF01414761 | §1-3, 課題A | **Smolders 博論 📁 で実質代替可** |
+| 高 | Luo et al. 2006, JFM 548:403 (蒸発+脱核 Euler 型) | 10.1017/S0022112005007809 | §1-3, 課題A | **Luo 博論 📁 で実質代替可** |
+| 高 | Peters & Paikert 1994, IJHMT 37:293 (単分散液滴の成長/蒸発) | 10.1016/0017-9310(94)90100-7 | 課題A | クリーンな 0D/1D 検証点。代替なし |
+| 高 | Hill 1966, JFM 25:593 (液滴成長則の原典) | 10.1017/S0022112066000284 | §1-3ter | 二次資料 (Luo 博論等) で式は追える |
+| 高 | Griffith, Yanta & Ragsdale 1994, JFM 269:283 (N2 過冷却 22-25K) | 10.1017/S0022112094001564 (要確認) | §1-1 | アブストで数値確認済み |
+| 高 | Ma & Chen 2026, IJHMT 262:128603 (Ma≥2 凝縮抑制) | 10.1016/j.ijheatmasstransfer.2026.128603 | §1-3ter, 課題B | Ma≤1.2 閾値の本文確認が残 |
+| 高 | AIAA 2025-1500 / 1501 / 1503 (M5-30 shock-droplet, EL+蒸発) | 10.2514/6.2025-1500 等 | §2-4 | LLNL 2023 ポスター 📁 が部分代替 |
+| 高 | Pilch & Erdman 1987, IJMF 13:741 (We_c=f(Oh) 原典) | 10.1016/0301-9322(87)90063-2 | §2-2 | 式は多数の二次資料で確認済み |
+| 中 | Mahmoudian et al. 2021, IJMF 134:103473 (TUSQ 凝縮衝撃) | 10.1016/j.ijmultiphaseflow.2020.103473 | §1-1 | |
+| 中 | Lax & Leonov 2020, AIAA J 58(11) (N2 半経験モデル) | 10.2514/1.J059519 | §1-1 | CO2 総説 (同著者) は 📁 |
+| 中 | Lederer et al. 1990, AIAA 90-1392 (M10/14/18 N2 実験) | NTRS 19900050882 (アブストのみ) | §1-1 | JFM 1994 と重複データ |
+| 中 | Daum 1963 / Daum & Gyarmathy 1968, AIAA J (air/N2 onset 相関) | 10.2514/3.1722 / 10.2514/3.4520 | §1-3bis | Grossir 2014 📁 に onset 図の replot あり |
+| 中 | Goodheart & Schnerr 2005, J. Aircraft 42:402 | 10.2514/1.5137 | §1-3quater | **博論 📁 で実質代替可** |
+| 中 | Balla, Rhode & Everhart 2014, AIAA J 52:1452 (Langley M10 過飽和マップ) | 10.2514/1.J052608 | §1-1bis | |
+| 中 | AIAA 1994-199 (Tunnel 9 過冷却限界) | 10.2514/6.1994-199 | §1-1bis | |
+| 中 | Hanson et al. 2007, PoF 19:056104 (aerosol 蒸発 journal 版) | 10.1063/1.2736082 | §1-3, 課題A | **Hanson 博論 📁 で実質代替可** |
+| 中 | Kersey, Loth & Lankford 2010, AIAA J 48(9) (蒸発液滴×衝撃減衰) | 10.2514/1.J050162 | §1-3 | |
+| 中 | Xiong et al. 2020, Energy 200:117477 (scramjet 水噴射) | 10.1016/j.energy.2020.117477 | §2-5, 課題D | |
+| 中 | Boyd & Jarrahbashi 2021, PRF 6:113601 (遷臨界 shock-droplet) | 10.1103/PhysRevFluids.6.113601 | §7 蒸発系 | Boyd 2024 arXiv 📁 が後続 |
+| 中 | Theofanous, Li & Dinh 2004, J. Fluids Eng. 126:516 (We-Ma-Kn) | 10.1115/1.1777234 | §2-4 | |
+| 中 | Guildenbecher et al. 2009 / Theofanous 2011 (二次微粒化レビュー) | 10.1007/s00348-008-0593-2 / 10.1146/annurev-fluid-122109-160638 | §2-2 | |
+| 中 | Zhang et al. 2025, AST 161:110108 / PoF 38:036129 / PoF 38:043307 (2026) | 10.1016/j.ast.2025.110108 / 10.1063/5.0320450 等 | §1-3quater | 043307 は △ 格下げ済み・本文確認待ち |
+| 中 | Sazhin 2017, Fuel 196:69 (蒸発モデル包括レビュー) | 10.1016/j.fuel.2017.01.048 | 課題A | 旧版 PECS 2006 も paywall |
+| 中 | Stebbins & Loth 2024 (氷粒子×極超音速前胴) | 10.2514/6.2024-0887 | §2-6 | |
+| 中 | Gonuleri et al. 2023 (雨滴衝突損傷 CFD 連成) | 10.2514/6.2023-2024 | §2-6 | |
+| 低 | Wegener & Mack 1958, Adv. Appl. Mech. 5:307 (歴史的基準) | 10.1016/S0065-2156(08)70022-X (要確認) | §1-1 | 書籍章。Pope & Goin (書籍) も未入手 |
+| 低 | Schnerr & Dohrmann 1990 / Adam & Schnerr 1997 / White & Young 2000 (凝縮×衝撃振動系) | AIAA J 28:1187 / JFM 348 / 10.1063/1.1362002 | §1-3bis(e), 課題E | |
+| 低 | Rusak & Lee 2000, JFM 403:173 / Karabelas & Markatos 2008 / Prog. Nat. Sci. 2005 | — | §1-3quater | |
+| 低 | Luo et al. 2007, JFM 572:339 / Cheng, Luo & van Dongen 2010, JFM 651:145 (Ludwieg 管) | 10.1017/S0022112006003727 / 10.1017/S0022112009993879 | §1-3 | 大枠は Luo 博論 📁 に包含 |
+| 低 | Smolders, Niessen & van Dongen 1992, Comput. Fluids 21:63 (RCM 数値法) | 10.1016/0045-7930(92)90033-R | 課題A | 博論 📁 に包含 |
+| 低 | Hess et al. AIAA 2021-0751 (ブレイクアップモデル評価) | 10.2514/6.2021-0751 | §2-1 | |
+| 低 | Hargis 2020 RSI / Chauvin 2011 PoF / Paudel 2018 IJMF / Dai 2015 IJHMT / Golubkina 2022 / Yeom & Chang 2010 / Hrebtov 2020 | — | §1-3, §2 | 周辺文献 |
+| 低 | Lin et al. 2026, PoF 38:013311 (dfHighSpeedFoam, 蒸発つき EL OSS) | 10.1063/5.0309688 | 課題D | コード自体は公開 |
+| 低 | Luo, Cao & Qin 2018, IJHMT 117:1032 (phase-slip moment) | 10.1016/j.ijheatmasstransfer.2017.11.028 | 課題A 発展 | |
+| 低 | Schmitt (AFML) rain erosion 原典群 / SAGE IPS 水膜 / Harada ATREX / ATE precooler 2022-2023 | — | §2-6, §1-5 | |
+| 低 | Halonen et al. 2021, PCCP 23:4517 (CO2 MD Part II) | 10.1039/D0CP05653G | §1-3ter | AM は HTML のみ取得可 |
+| 低 | Federal Register 00-3702 (本文) | — | §2-5 | 内容は AC 33.78-1 📁 で検証済み |
+
 ---
 
 ## §8. forge への含意・次アクション候補
@@ -445,11 +493,11 @@
 - **ギャップ**: テーマ1 の核心「凝縮物は供試体の衝撃層で蒸発するか残存するか」(§1-3) を forge で解くには蒸発が必須だが、現行は $dr/dt<0$ をクランプしており**凝縮の一方通行**。
 - **やること**: `condensationSource_d` の成長則を蒸発側 ($p_v<p_{sat}$, $\bar r>r_*$ 崩れ) へ拡張。難所はモーメント法の realizability — 蒸発で $\bar r\to0$ に向かうときの液滴消滅 (Q0 の sink) の閉包で、分布仮定つき消滅モデルか最小径カットオフが要る。**この閉包は Luo et al. (2006, JFM 548) が「脱核 (de-nucleation)」として定式化し実験検証済み** — Luo 博士論文 📁 が設計の一次資料 (§1-3)。準定常成長則を衝撃直後の急加熱過渡に使う妥当性は Finneran 2021 📁 の逸脱マップで判定。$g\to0$ での単相復帰と保存性 (総水・全エンタルピー) の検証を含む。
 - **検証データ (実験アンカーを軸に 3 層)**:
-  1. **実験 = Smolders & van Dongen 1992, Shock Waves 2:255** —「希薄波で凝縮 → 衝撃で再蒸発」の全サイクルを衝撃管で実測 (P/T/飽和度/液滴径)。**課題 A の一次検証ターゲット** (1D 衝撃管なので forge の擬 1D ケースで直接再現可能。実験詳細は Smolders 博士論文 📁 に完全収録)。補助に **Goossens et al. 1988, Exp. Fluids 6:561** (d²-law と蒸発時間 vs 衝撃強度 M=1.2-2.1)、Hanson et al. 2007 PoF 19:056104 (高温 475-870 K の蒸発率、全データは Hanson 博士論文 📁)、現代版は **Duke-Walker & McFarland 2020/2023 IJMF** 📁 (PDPA、高 We の分裂+蒸発同時測定)。詳細は §1-3。
+  1. **実験 = Smolders & van Dongen 1992, Shock Waves 2:255** —「希薄波で凝縮 → 衝撃で再蒸発」の全サイクルを衝撃管で実測 (P/T/飽和度/液滴径)。**課題 A の一次検証ターゲット** (1D 衝撃管なので forge の擬 1D ケースで直接再現可能。実験詳細は Smolders 博士論文 📁 に完全収録)。補助に **Goossens et al. 1988, Exp. Fluids 6:561** (d²-law と蒸発時間 vs 衝撃強度 M=1.2-2.1)、Hanson et al. 2007 PoF 19:056104 (高温 475-870 K の蒸発率、全データは Hanson 博士論文 📁)。※ Duke-Walker & McFarland 2020/2023 📁 は現代版だが SDMI 構成 (アセトン・スリップ/分裂支配) のため**課題 D 向き** — §1-3 適性注記。詳細は §1-3。
   1'. **先行数値再現 = Luo et al. 2006 (JFM 548, 蒸発+脱核入り Euler 型を同系実験で検証)** と **Huang & Zhang 2020 (PoF 32, Goossens 条件を E-L で再現)** 📁 — forge の結果をこれらと突き合わせれば実験・他手法の両面から挟める。
   2. **code-to-code = Wen et al. 2020** 📁 — セパレータのノズル+衝撃系での再蒸発プロファイル比較。ただし**同論文の再蒸発は実験比較のない純数値予測** (検証は衝撃なしノズルのみ) なので、あくまでモデル間比較 (§1-3bis(d) 注記)。
   3. **定性 = Huang & Zhang (ICLASS 2021)** 📁 — 弱衝撃ケース (30/50 μm で蒸発径減少 ~0.2 μm) との傾向比較。
-- **新規性/価値**: それ自体の新規性は中程度だが、**課題 B・C の前提**であり、「凝縮→衝撃→蒸発サイクル」(§1-3bis(d)) を極超音速に持ち込む鍵。
+- **新規性/価値**: それ自体の新規性は中程度だが、**課題 B・C の前提**であり、「凝縮→衝撃→蒸発サイクル」(§1-3bis(d)) を極超音速に持ち込む鍵。なお**商用コード (ANSYS CFX/Fluent) の非平衡湿り蒸気モデルは 2 方程式 (液分率+液滴数)・単分散**で、蒸発 (負の質量ソース) は入るが **Luo 2006 型の脱核閉包や多モーメントは入っていない** (Fluent Theory Guide / Grübel et al. 2018 の CFX 実装評価より。CFX は核生成物性を液滴温度で評価する既知の実装癖もあり)。4 モーメント+蒸発+脱核を検証付きで持つ forge は商用比でも差別化になる。
 - **前段の即効タスク (実装ゼロ)**: 衝撃層滞留時間 vs Hertz-Knudsen 蒸発時間の比 (蒸発 Damköhler) を既存 `res_*.h5` から出す**後処理ツール** (§8 で既提案)。課題 A の検証にもそのまま使える。
 
 ### 課題 B: 極超音速 (M>5) 供試体まわりの 2D/3D 凝縮場 — §5-5 の空白を直接埋める (直近・中規模)
