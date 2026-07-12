@@ -1,0 +1,53 @@
+# pintle nozzle + plume (node)。physID は med_to_msh41.py の PHYS と一致。
+wall:
+  physID: 10
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:
+inlet:
+  physID: 11
+  kind: inlet_Pressure
+  outputHDFflg: 1
+  ints:
+  floats:
+    Pt: 3.0e6
+    Tt: 2889.0
+    k: 4.0
+    omega: 500.0
+symmetry:
+  physID: 13
+  kind: slip
+  outputHDFflg: 1
+  ints:
+  floats:
+wall_pintle:
+  physID: 14
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:
+plume_out:
+  physID: 15
+  kind: outlet_statPress
+  outputHDFflg: 1
+  ints:
+  floats:
+    Ps: 1.0e5      # 大気圧
+    Pt: 1.0e5      # 逆流用
+    Tt: 300.0
+plume_far:
+  physID: 16
+  kind: outlet_statPress   # 双方向: 流出=Ps, 流入(エントレインメント)=Pt/Tt
+  outputHDFflg: 1
+  ints:
+  floats:
+    Ps: 1.0e5
+    Pt: 1.0e5
+    Tt: 300.0
+base:
+  physID: 17
+  kind: wall
+  outputHDFflg: 1
+  ints:
+  floats:
