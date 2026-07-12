@@ -41,6 +41,7 @@ CFG = dict(
     # Viscous Layers が層を落とすのを防ぐ。None で無効。
     tip_maxh_mm=0.12,
     lip_maxh_mm=0.3,           # 出口リップ円エッジの局所細分 (プルームあり時の skew 対策)
+    bl_on_base=True,           # base (リップ接続壁板) にも viscous layer を張る
     # Viscous Layers: 総厚 / 層数 / stretch (第一層厚 ~ TOTAL*(s-1)/(s^N-1))
     vl_total_mm=0.25,
     vl_nlayers=4,
@@ -164,9 +165,13 @@ if CFG.get("tip_maxh_mm"):
             n_tip += 1
     print("tip local size %.4g on %d faces" % (tip_maxh, n_tip))
 
-# Viscous Layers: 層を張らない面 = inlet/outlet/symmetry (isFacesToIgnore=True)
+# Viscous Layers: 層を張らない面 = inlet/outlet/symmetry (isFacesToIgnore=True)。
+# bl_on_base=True (既定) なら base (出口リップに接続する外側の壁板) にも層を張る:
+# リップ角を prism が両側から巻き、リップ近傍のセル品質と ω の挙動が改善する。
 no_layer = ["inlet", "symmetry"] + \
-           (["plume_out", "plume_far", "base"] if HAS_PLUME else ["outlet"])
+           (["plume_out", "plume_far"] if HAS_PLUME else ["outlet"])
+if HAS_PLUME and not CFG.get("bl_on_base", True):
+    no_layer.append("base")
 ignore_ids = []
 for n in no_layer:
     for f in bins.get(n, []):

@@ -48,8 +48,8 @@ P = dict(
                                     # Netgen 表面メッシュが破綻するため blunt 化する
     eps      = 0.5,                 # 取付壁を貫通させる余白 (壁裏に薄膜を残さない)
     # --- 外部プルーム領域 (出口 x_exit から下流の円筒; plume_L=0 で無効) ---
-    plume_L  = 60.0,                # プルーム長さ (x_exit -> x_exit+plume_L, ~14 Re)
-    plume_R  = 25.0,                # プルーム半径 (~6 Re)
+    plume_L  = 120.0,               # プルーム長さ (x_exit -> x_exit+plume_L, ~28 Re)
+    plume_R  = 50.0,                # プルーム半径 (~12 Re)
 )
 
 

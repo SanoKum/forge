@@ -1,0 +1,26 @@
+{
+  "step": "pintle_fluid_half.step",
+  "out": "pintle_salome.med",
+  "geometry": {
+    "x_in": 0.0,
+    "x_exit": 35.0,
+    "x_tip": 15.0,
+    "z_bot": -20.0,
+    "Rp": 1.5,
+    "Rt": 2.5,
+    "tip_len": 3.0,
+    "plume_L": 120.0,
+    "plume_R": 50.0,
+    "Re": 4.33
+  },
+  "maxh_mm": 2.0,
+  "minh_mm": 0.05,
+  "fineness": 3,
+  "nozzle_maxh_mm": 0.33,
+  "tip_maxh_mm": 0.1,
+  "lip_maxh_mm": 0.2,
+  "bl_on_base": true,
+  "vl_total_mm": 0.25,
+  "vl_nlayers": 4,
+  "vl_stretch": 1.3
+}
