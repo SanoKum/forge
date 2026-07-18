@@ -25,3 +25,5 @@
 | `run_0016_cell_slau_cbd_ref` | 同 IC + SLAU (対照) | SLAU は市松を ro/roUx/roe 全部で見る (rms 即非ゼロ)。A_cb 1e-3→1.2e-8 | ref (対照) |
 | `run_0017_cell_keep_cbd_diss005` | 同 IC + keepDissType=1 **σ=0.05** (較正) | A_cb 1e-3→1.3e-7 (~4桁減衰/400step)。TGV KE cost 2.7% (case/09 run_0024) とのバランスで **σ=0.05 を既定に採用** | ref (σ 較正) |
 | `run_0018_cell_keep_cbd_dissmat005` | 同 IC + **keepDissType=2 (matrix ES, σ=0.05)** | A_cb 1e-3→**7.1e-8** (scalar σ=0.05 の 1.3e-7 より良) — 音響のみ c' 込み固有値の選択的減衰が市松に有効 | ref (Step 2 matrix L1b) |
+| `run_0019_cell_keep_cbd_dissmat005_fullc` | matrix σ=0.05 を**フル c** (lowMachPrecond=0, 旧結線) で | A_cb 1e-3→**9.2e-9** (最速)。ただし TGV KE cost 4.35% (case/09 run_0026) と3.2倍悪化 → c' の価値の実測 | ref (c' vs フル c 切り分け) |
+| `run_0020_cell_keep_cbd_dissmat005_knobchk` | **keepDissCprime ノブ分離後**の動作確認 (lowMachPrecond=0 + 既定 keepDissCprime=1) | A_cb→7.5e-8 ≈ run_0018 (c' 挙動を lowMachPrecond と独立に再現、差は atomicAdd ノイズ級) | ref (ノブ分離検証) |

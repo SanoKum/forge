@@ -203,7 +203,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         KEEP_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.gamma,
             cfg.keepDissType, cfg.keepDissCoeff,
-            cfg.lowMachPrecond, cfg.precondEps,
+            cfg.keepDissCprime, cfg.precondEps,
             geom, st, reso
         );
 

@@ -88,3 +88,7 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   - **L2 (`case/09...run_0025_cell_keep_dissmat005_l2`)**: KE cost **1.36%** = scalar (2.71%) の**半分**。市松減衰同等以上で渦を守る選択性を実証。
   - **推奨**: LES 用途は `keepDissType: 2` を第一候補 (σ=0.05)。scalar (1) は頑健フォールバック。
   - 残: Step 3 (TP 単成分)・Step 4 (多成分)・node モード検証・L3 (粘性 TGV Re=1600 で WALE との共存確認)。
+- `2026-07-19` — **c' の要否切り分け + `keepDissCprime` ノブ分離** (ユーザー指摘「lowMachPrecond=1 への相乗りが不安」を受け):
+  - **フル c 実測** (`case/35...run_0019` / `case/09...run_0026`, matrix σ=0.05): 市松掃除は 9.2e-9 と最速だが **TGV KE cost 4.35% = c' 比 3.2 倍悪化** (scalar+c' の 2.71% より悪い)。渦の ΔUn が音響固有ベクトルに射影されフル c で食われる = Guillard-Viozat/Thornber の c·Δu 汚染の実測。**c' は市松退治には不要だが KE 保護に実質的に効く**。
+  - **設計修正**: KEEP 散逸レイヤの音響波速を `keepDissCprime` (既定 1=c') で制御し **`lowMachPrecond` から完全独立化** (グローバル旗への相乗り廃止)。c' は散逸係数のみに入り伝播・中心flux・LHS は不変。SLAU の c' への不信はこの用途には転移しない (opt-in σ=0.05 の追加項の係数、λ_A はゼロにならない、M≥1 で厳密 c 復帰)。
+  - ノブ動作確認 (`run_0020`): lowMachPrecond=0 + 既定で c' 挙動を再現 (7.5e-8 ≈ 7.1e-8, atomicAdd ノイズ級)。

@@ -18,7 +18,7 @@ __global__ void KEEP_d
 (
  flow_float ga,
  int keepDissType, flow_float keepDissCoeff,      // opt-in ES 散逸レイヤ (0: off=ビット不変)
- int lowMachPrecond, flow_float precondEps,       // λ' の音速スケール (>=1 で c'=lowMachCprime)
+ int keepDissCprime, flow_float precondEps,       // 散逸波速: 1 で音響 c'=lowMachCprime (lowMachPrecond から独立)
  FaceGeom      geom,
  PrimState     st,
  ResidualOut   reso
@@ -101,7 +101,7 @@ __global__ void KEEP_d
             const flow_float uzF = 0.5*(Uz[ic0]+Uz[ic1]);
             const flow_float Un  = uxF*nx + uyF*ny + uzF*nz;
             const flow_float c   = sqrt(ga*PsF/roF);
-            const flow_float cd  = (lowMachPrecond >= 1)
+            const flow_float cd  = (keepDissCprime == 1)
                                  ? lowMachCprime(c, sqrt(uxF*uxF+uyF*uyF+uzF*uzF), Un, precondEps)
                                  : c;
             const flow_float coef = 0.5*keepDissCoeff*(fabs(Un) + cd)*sss;
@@ -146,7 +146,7 @@ __global__ void KEEP_d
             const flow_float t2x = ny*t1z - nz*t1y, t2y = nz*t1x - nx*t1z, t2z = nx*t1y - ny*t1x;
 
             // 固有値: 音響のみ c(') 込み、せん断/エントロピーは |Un| (渦を守る)
-            const flow_float cd  = (lowMachPrecond >= 1)
+            const flow_float cd  = (keepDissCprime == 1)
                                  ? lowMachCprime(c, sqrt(qF), Un, precondEps)
                                  : c;
             const flow_float lamA = fabs(Un) + cd;   // 音響 (±両波共通の安全上界)

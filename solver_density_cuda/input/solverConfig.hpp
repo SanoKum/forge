@@ -98,6 +98,10 @@ public:
                                    //    (λ'=|Un|+c', lowMachPrecond>=1 なら c'=lowMachCprime, else c。
                                    //     LLF 型は Δw·ΔU>=0 で ES。KE 非増加は非保証 → σ は TGV L2 で較正)
     flow_float keepDissCoeff = 0.05; // 上記 σ。0 で実質 off。既定 0.05 (L1: 市松~4桁減衰/400step, L2: TGV KE cost 2.7%)。過大は解像乱流を殺す (σ=0.15 で 8.4%)。
+    int keepDissCprime = 1;        // KEEP 散逸レイヤの音響波速に c'=lowMachCprime を使うか (lowMachPrecond から独立)。
+                                   // 1 (既定): c' — 渦の ΔUn が音響固有ベクトル経由で食われる漏れを塞ぐ
+                                   //   (matrix σ=0.05: KE cost 1.36% vs フル c 4.35%、市松減衰は 7.1e-8 で十分)。
+                                   // 0: フル c — 市松掃除は最速 (9.2e-9) だが KE cost 3.2 倍。掃除優先の診断用。
     flow_float dt_max;
     flow_float dt_min;
 

@@ -258,6 +258,10 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     エントロピー $\rho(\gamma-1)/\gamma$・せん断 $p$ ([tools/verify_entropy_scaling.py](../../solver_density_cuda/tools/verify_entropy_scaling.py)
     で数値検証済)。$|\Lambda'|$ は**音響のみ** $|U_n|+c'$、せん断/エントロピーは $|U_n|$ →
     **市松減衰は scalar 同等以上 (7.1e-8/400step) で KE cost 半分 (1.36%)**。
+  - **音響波速 $c'$ は `keepDissCprime` (既定 1) で制御し `lowMachPrecond` から独立** (グローバル旗への
+    相乗りを廃止)。$c'$ は散逸係数のみに入り伝播は不変。フル $c$ (`keepDissCprime: 0`) は市松掃除最速
+    (9.2e-9) だが、渦の $\Delta U_n$ が音響固有ベクトル経由で食われ **KE cost 3.2 倍 (4.35%)** — c' が
+    この漏れを塞ぐ (Guillard-Viozat/Thornber の $c\cdot\Delta u$ 汚染の実測)。
   σ は L1 (市松減衰) と L2 (TGV KE) の両ゲートで較正
   ([convection-keep-es-dissipation](../../plans/active/convection-keep-es-dissipation.md) 変更ログ参照)。
   `massflux[ip]` は散逸込み総質量流束 (スカラー輸送と整合)。
