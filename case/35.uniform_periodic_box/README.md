@@ -27,3 +27,5 @@
 | `run_0018_cell_keep_cbd_dissmat005` | 同 IC + **keepDissType=2 (matrix ES, σ=0.05)** | A_cb 1e-3→**7.1e-8** (scalar σ=0.05 の 1.3e-7 より良) — 音響のみ c' 込み固有値の選択的減衰が市松に有効 | ref (Step 2 matrix L1b) |
 | `run_0019_cell_keep_cbd_dissmat005_fullc` | matrix σ=0.05 を**フル c** (lowMachPrecond=0, 旧結線) で | A_cb 1e-3→**9.2e-9** (最速)。ただし TGV KE cost 4.35% (case/09 run_0026) と3.2倍悪化 → c' の価値の実測 | ref (c' vs フル c 切り分け) |
 | `run_0020_cell_keep_cbd_dissmat005_knobchk` | **keepDissCprime ノブ分離後**の動作確認 (lowMachPrecond=0 + 既定 keepDissCprime=1) | A_cb→7.5e-8 ≈ run_0018 (c' 挙動を lowMachPrecond と独立に再現、差は atomicAdd ノイズ級) | ref (ノブ分離検証) |
+| `run_0021_cell_keep_cbd_dissmat_fullc_s0015` | フル c で σ 弱化の代替可否: σ=0.015 | A_cb→**3.9e-8** = c' σ=0.05 (7.1e-8) と同等以上。**単一マッハ領域なら σ 弱化で c' 代替可** (KE も 1.10% = case/09 run_0027) | ref (σ掃引・c'代替検証) |
+| `run_0022_cell_keep_cbd_dissmat_fullc_s004` | 同 σ=0.04 | A_cb→3.1e-10。**σ=0.05 (9.2e-9) より速い非単調** = 2Δ 定在音響波の過減衰領域を観測 | ref (σ非単調の記録) |

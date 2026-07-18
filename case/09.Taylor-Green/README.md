@@ -68,7 +68,9 @@ KEEP を陰解法化するときの flux Jacobian 方針 ([`plans/active/convect
 | `run_0023_cell_keep_diss015_l2` | keepDissType=1, σ=0.15, lowMachPrecond=1 | **8.37%** (市松6桁減衰の対価) | ref (σ 較正上限) |
 | `run_0024_cell_keep_diss005_l2` | 同 σ=0.05 | **2.71%** (市松~4桁減衰で十分 → **既定採用**) | ref (σ 較正・既定根拠) |
 | `run_0025_cell_keep_dissmat005_l2` | **keepDissType=2 (matrix ES)**, σ=0.05 | **1.36%** (scalar の半分。市松減衰は同等以上=case/35 run_0018) — せん断/エントロピー波に \|Un\| のみの選択性が効く | ref (Step 2 matrix L2) |
-| `run_0026_cell_keep_dissmat005fullc_l2` | matrix σ=0.05 **フル c** (c' 無し) | **4.35%** (c' 比 3.2 倍) — 渦の ΔUn が音響固有ベクトル経由で食われる漏れを c' が塞いでいる実測。`keepDissCprime: 1` 既定の根拠 | ref (c' 価値の切り分け) |
+| `run_0026_cell_keep_dissmat005fullc_l2` | matrix σ=0.05 **フル c** (c' 無し) | **4.35%** (同一 σ 比較では c' 比 3.2 倍) — ただし下記 σ 掃引で「σ 弱化すれば同等 Pareto 点に到達」と判明 (同一 σ 比較は設計比較としては誤導) | ref (c' 切り分け・同一σ) |
+| `run_0027_cell_keep_dissmat_fullc_s0015_l2` | フル c **σ=0.015** (σ 弱化で c' 代替) | **1.10%** (市松 3.9e-8 = case/35 run_0021)。**単一マッハ領域では c' 不要・σ 弱化で十分**。c' の残存価値はマッハ混在流の面ごと自動調整のみ | ref (σ掃引・c'代替検証) |
+| `run_0028_cell_keep_dissmat_fullc_s004_l2` | フル c σ=0.04 | 3.43% (σ にほぼ線形) | ref (σ掃引) |
 
 **所見**: (1) KEEP+block-DPLUR は **CFL≈16 (explicit の320倍) まで NaN なしで完走** — Roe-Jacobian LHS の流用で
 陰解法が安定動作。(2) 物理CFL≤2 では explicit と KE/エントロピー保存が一致 (matched CFL.05 は K/K0=1.0033 で
