@@ -200,8 +200,15 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     } else if (cfg.solver == "KEEP") {
         // 純粋 KEEP 中心流束 + opt-in ES 散逸レイヤ (keepDissType, 既定 0=散逸なし・ビット不変)。
         // LES/ILES 向け低散逸対流。SGS 散逸は WALE が担う。
+        // TP (thermalMethod==2) は単成分のみ対応 (Step 3)。多成分は Step 4 で対応予定。
+        if (cfg.thermalMethod == 2 && cfg.nSpecies > 1) {
+            std::cerr << "Error: solver KEEP with thermalMethod=2 supports single species only"
+                      << " (multicomponent is Step 4 of convection-keep-es-dissipation)" << std::endl;
+            exit(EXIT_FAILURE);
+        }
         KEEP_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.gamma,
+            cfg.thermalMethod, thermo_species_device_ptr(),
             cfg.keepDissType, cfg.keepDissCoeff,
             cfg.keepDissCprime, cfg.precondEps,
             geom, st, reso

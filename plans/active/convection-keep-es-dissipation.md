@@ -33,7 +33,7 @@ $$F_f = F_f^\mathrm{KEEP} - \tfrac12\,\sigma\,D_f$$
 | --- | --- | --- |
 | 1 | **単成分 CPG・スカラー ES 散逸**: $D_f=\lambda'\,\Delta U$, $\lambda'=\|U_n\|+c'$ (`lowMachPrecond>=1` で `lowMachCprime`、else $c$)。config `keepDissType`(0=off 既定・ビット不変/1=scalar)・`keepDissCoeff`(σ) | 本実装 |
 | 2 | 単成分 CPG・**matrix 版**: $D_f=R\|\Lambda'\|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, entropy-scaled)。音響のみ $\|U_n\|+c'$、せん断/エントロピーは $\|U_n\|$ | **実装+検証済** |
-| 3 | TP 単成分 ($s^0(T)$ 多項式=`thermo_s0_mass` 流用) | 将来 |
+| 3 | TP 単成分 ($s^0(T)$ 多項式=`thermo_s0_mass` 流用) | **実装+検証済** |
 | 4 | **多成分** (Chalot-Hughes-Shakib のエントロピー変数 + Gouasmi スケーリング + `thermoHrefTemp` datum/ゼロ濃度種対策) | 将来 |
 
 **やらない**:
@@ -108,3 +108,8 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   - cell との桁差 (4.15 vs 2.17 桁/400step) は **node の dt が半分 (4.46e-2 vs 8.92e-2)** なだけ。**単位時間あたりは 0.122 vs 0.116 桁/時間で一致 — 散逸レイヤは node で cell と完全同等**。
   - mirror/gather のコード確認: 両方ともステージごとに実行されており健全 (main.cpp:1187, assembleResidual 末尾)。
   - 新規の軽微 open: **node periodic の dt が合併前 half-CV 体積の CFL で不必要に半分** (正しさでなく効率の問題、2倍コスト)。setDT の周期 group 合併体積使用で回復可能 → median-dual plan 側の改善候補。
+- `2026-07-19` — **L3 σ 掛引 (0.02/0.03) + Step 3 (TP 単成分) 実装・検証完了**。
+  - **L3 掛引** (`case/09...run_0033/0034`): σ=0.02 → K/K0(10)=0.594・層流期 3.1% / σ=0.03 → **0.557 (DNS帯 0.50-0.57 内)**・4.1%。**LES 実用帯 = σ0.02-0.03** (0.02=層流期重視、0.03=終値重視)。32³ では両指標の同時充足は不可 (解像度律速)。
+  - **Step 3 (TP)**: 実装前に `tools/verify_entropy_scaling_tp.py` で TP の $w=\frac1T[g-\frac12|u|^2,\mathbf u,-1]$ (Chalot-Hughes-Shakib)・**S 閉形式 = 音響 $\rho/(2\gamma R)$・エントロピー $\rho/c_p(T)$・せん断 $\rho T$**・エントロピー波 $r_E=\frac12 q+e-c_vT$ を数値検証 (PASS, datum 不変も確認)。実装: KEEP 中心 `Itilde` を TP では保存量 roe ベースに (EOS 整合)、scalar は Δroe=保存量ジャンプ+sonic、matrix は TP w/S (thermo 評価 double・`thermoHrefTemp` 焼き込み係数で自動 datum 整合)。多成分は wrapper でエラー (Step 4)。CPG 経路は分岐分離でビット不変。
+  - **L1-TP 検証** (`case/35...run_0025/0026/0027`, N2, P=238kPa/T=705K/u=10m/s): pure で null-mode 不変 (TP でも成立)、matrix σ0.05 で **3.9桁/400step 減衰**、scalar も同等。全 NaN なし。
+  - 残: Step 4 (多成分: Chalot w + Gouasmi スケーリング + ゼロ濃度種/datum 対策)。

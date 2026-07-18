@@ -17,6 +17,7 @@
 __global__ void KEEP_d
 (
  flow_float ga,
+ int thermalMethod, const SpeciesThermo* sp,      // Step 3: TP 単成分 (thermalMethod==2)。CPG では未使用
  int keepDissType, flow_float keepDissCoeff,      // opt-in ES 散逸レイヤ (0: off=ビット不変)
  int keepDissCprime, flow_float precondEps,       // 散逸波速: 1 で音響 c'=lowMachCprime (lowMachPrecond から独立)
  FaceGeom      geom,
@@ -32,7 +33,7 @@ __global__ void KEEP_d
     geom_float *sx=geom.sx, *sy=geom.sy, *sz=geom.sz, *ss=geom.ss;
     flow_float* massflux=geom.massflux;
 
-    flow_float *ro=st.ro, *Ux=st.Ux, *Uy=st.Uy, *Uz=st.Uz, *Ps=st.Ps;
+    flow_float *ro=st.ro, *Ux=st.Ux, *Uy=st.Uy, *Uz=st.Uz, *Ps=st.Ps, *roe_c=st.roe;
 
     flow_float *res_ro=reso.res_ro, *res_roUx=reso.res_roUx, *res_roUy=reso.res_roUy, *res_roUz=reso.res_roUz, *res_roe=reso.res_roe;
     // --- ローカル展開ここまで ---
@@ -58,7 +59,18 @@ __global__ void KEEP_d
         flow_float Mtildey = Ctilde*(Uy[ic0]+Uy[ic1])*0.5;
         flow_float Mtildez = Ctilde*(Uz[ic0]+Uz[ic1])*0.5;
         flow_float Ktilde  = Ctilde*0.5*(Ux[ic0]*Ux[ic1] +Uy[ic0]*Uy[ic1] +Uz[ic0]*Uz[ic1]);
-        flow_float Itilde  = Ctilde*0.5*(Ps[ic0]/ro[ic0] +Ps[ic1]/ro[ic1])/(ga-1.0);
+        flow_float Itilde;
+        if (thermalMethod == 2) {
+            // TP (Step 3): 内部エネルギーを保存量 roe から取る (EOS 非依存・保存整合)。
+            // CPG の P/ρ/(γ-1) は TP では e(T) と不一致になるため使わない。
+            const flow_float e0c = roe_c[ic0]/ro[ic0]
+                                 - 0.5*(Ux[ic0]*Ux[ic0]+Uy[ic0]*Uy[ic0]+Uz[ic0]*Uz[ic0]);
+            const flow_float e1c = roe_c[ic1]/ro[ic1]
+                                 - 0.5*(Ux[ic1]*Ux[ic1]+Uy[ic1]*Uy[ic1]+Uz[ic1]*Uz[ic1]);
+            Itilde = Ctilde*0.5*(e0c + e1c);
+        } else {
+            Itilde = Ctilde*0.5*(Ps[ic0]/ro[ic0] +Ps[ic1]/ro[ic1])/(ga-1.0);   // CPG (ビット不変)
+        }
         flow_float Gtildex = 0.5*(Ps[ic0]+Ps[ic1])*nx;
         flow_float Gtildey = 0.5*(Ps[ic0]+Ps[ic1])*ny;
         flow_float Gtildez = 0.5*(Ps[ic0]+Ps[ic1])*nz;
@@ -87,11 +99,17 @@ __global__ void KEEP_d
             const flow_float droUx = ro[ic1]*Ux[ic1] - ro[ic0]*Ux[ic0];
             const flow_float droUy = ro[ic1]*Uy[ic1] - ro[ic0]*Uy[ic0];
             const flow_float droUz = ro[ic1]*Uz[ic1] - ro[ic0]*Uz[ic0];
-            const flow_float roe0  = Ps[ic0]/(ga-1.0)
-                                   + 0.5*ro[ic0]*(Ux[ic0]*Ux[ic0]+Uy[ic0]*Uy[ic0]+Uz[ic0]*Uz[ic0]);
-            const flow_float roe1  = Ps[ic1]/(ga-1.0)
-                                   + 0.5*ro[ic1]*(Ux[ic1]*Ux[ic1]+Uy[ic1]*Uy[ic1]+Uz[ic1]*Uz[ic1]);
-            const flow_float droe  = roe1 - roe0;
+            // TP では保存量 roe のジャンプそのもの (EOS 非依存)、CPG は従来式 (ビット不変)
+            flow_float droe;
+            if (thermalMethod == 2) {
+                droe = roe_c[ic1] - roe_c[ic0];
+            } else {
+                const flow_float roe0  = Ps[ic0]/(ga-1.0)
+                                       + 0.5*ro[ic0]*(Ux[ic0]*Ux[ic0]+Uy[ic0]*Uy[ic0]+Uz[ic0]*Uz[ic0]);
+                const flow_float roe1  = Ps[ic1]/(ga-1.0)
+                                       + 0.5*ro[ic1]*(Ux[ic1]*Ux[ic1]+Uy[ic1]*Uy[ic1]+Uz[ic1]*Uz[ic1]);
+                droe = roe1 - roe0;
+            }
 
             // 面代表の波速 λ' = |Un| + c(') (面平均状態で評価)
             const flow_float roF = 0.5*(ro[ic0]+ro[ic1]);
@@ -100,7 +118,9 @@ __global__ void KEEP_d
             const flow_float uyF = 0.5*(Uy[ic0]+Uy[ic1]);
             const flow_float uzF = 0.5*(Uz[ic0]+Uz[ic1]);
             const flow_float Un  = uxF*nx + uyF*ny + uzF*nz;
-            const flow_float c   = sqrt(ga*PsF/roF);
+            const flow_float c   = (thermalMethod == 2)
+                                 ? 0.5*(st.sonic[ic0]+st.sonic[ic1])   // TP: dependent vars の凍結音速
+                                 : sqrt(ga*PsF/roF);                   // CPG (ビット不変)
             const flow_float cd  = (keepDissCprime == 1)
                                  ? lowMachCprime(c, sqrt(uxF*uxF+uyF*uyF+uzF*uzF), Un, precondEps)
                                  : c;
@@ -112,8 +132,8 @@ __global__ void KEEP_d
             res_roUz_temp -= coef*droUz;
             res_roe_temp  -= coef*droe;
         }
-        else if (keepDissType == 2) {
-            // ---- matrix ES 散逸: D = R|Λ'|S Rᵀ Δw ----
+        else if (keepDissType == 2 && thermalMethod != 2) {
+            // ---- matrix ES 散逸 (CPG): D = R|Λ'|S Rᵀ Δw ----
             // Δw (エントロピー変数ジャンプ): w=[(γ-s)/(γ-1)-β|u|², 2βu, -2β], β=ρ/(2p), s=ln p-γ ln ρ
             const flow_float b0 = ro[ic0]/(2.0*Ps[ic0]);
             const flow_float b1 = ro[ic1]/(2.0*Ps[ic1]);
@@ -178,6 +198,92 @@ __global__ void KEEP_d
             const flow_float DroUy = z1*(uyF-c*ny) + z2*uyF + z3*t1y + z4*t2y + z5*(uyF+c*ny);
             const flow_float DroUz = z1*(uzF-c*nz) + z2*uzF + z3*t1z + z4*t2z + z5*(uzF+c*nz);
             const flow_float Droe  = z1*(Ht-c*Un) + z2*0.5*qF + z3*ut1 + z4*ut2 + z5*(Ht+c*Un);
+
+            res_ro_temp   -= coef*Dro;
+            res_roUx_temp -= coef*DroUx;
+            res_roUy_temp -= coef*DroUy;
+            res_roUz_temp -= coef*DroUz;
+            res_roe_temp  -= coef*Droe;
+        }
+        else if (keepDissType == 2) {
+            // ---- matrix ES 散逸 (TP 単成分, Step 3): D = R|Λ'|S Rᵀ Δw ----
+            // 次元付きエントロピー η=-ρs, w=[(g-½|u|²)/T, u/T, -1/T] (Chalot-Hughes-Shakib),
+            // S: 音響 ρ/(2γR)・エントロピー ρ/cp(T)・せん断 ρT、エントロピー波 r_E=½q+e-cv·T
+            // (tools/verify_entropy_scaling_tp.py で H=RSRᵀ・Ar=λr・SPD を数値検証済、datum 不変)。
+            // thermo 評価は double (thermoHrefTemp datum 焼き込み係数をそのまま使用 → w も自動整合)。
+            const double Rg  = THERMO_RU / sp[0].MW;
+            const double q0d = (double)Ux[ic0]*Ux[ic0]+(double)Uy[ic0]*Uy[ic0]+(double)Uz[ic0]*Uz[ic0];
+            const double q1d = (double)Ux[ic1]*Ux[ic1]+(double)Uy[ic1]*Uy[ic1]+(double)Uz[ic1]*Uz[ic1];
+            const double T0d = (double)Ps[ic0]/((double)ro[ic0]*Rg);
+            const double T1d = (double)Ps[ic1]/((double)ro[ic1]*Rg);
+            const double PsFd = 0.5*((double)Ps[ic0]+(double)Ps[ic1]);
+            // s_i (基準圧 pref=PsF: log 引数 ~1 で桁落ち回避。pref は Δw で相殺)
+            const double s0d = thermo_s0_mass(sp[0], T0d) - Rg*log((double)Ps[ic0]/PsFd);
+            const double s1d = thermo_s0_mass(sp[0], T1d) - Rg*log((double)Ps[ic1]/PsFd);
+            const double g0d = thermo_h_mass(sp[0], T0d) - T0d*s0d;
+            const double g1d = thermo_h_mass(sp[0], T1d) - T1d*s1d;
+            const flow_float dw0 = (flow_float)((g1d-0.5*q1d)/T1d - (g0d-0.5*q0d)/T0d);
+            const flow_float dw1 = (flow_float)((double)Ux[ic1]/T1d - (double)Ux[ic0]/T0d);
+            const flow_float dw2 = (flow_float)((double)Uy[ic1]/T1d - (double)Uy[ic0]/T0d);
+            const flow_float dw3 = (flow_float)((double)Uz[ic1]/T1d - (double)Uz[ic0]/T0d);
+            const flow_float dw4 = (flow_float)(-(1.0/T1d - 1.0/T0d));
+
+            // 面平均状態 (γ,cp,cv は面平均温度で凍結評価)
+            const flow_float roF = 0.5*(ro[ic0]+ro[ic1]);
+            const flow_float uxF = 0.5*(Ux[ic0]+Ux[ic1]);
+            const flow_float uyF = 0.5*(Uy[ic0]+Uy[ic1]);
+            const flow_float uzF = 0.5*(Uz[ic0]+Uz[ic1]);
+            const flow_float qF  = uxF*uxF+uyF*uyF+uzF*uzF;
+            const flow_float Un  = uxF*nx + uyF*ny + uzF*nz;
+            const double TFd  = 0.5*(T0d+T1d);
+            const double cpFd = thermo_cp_mass(sp[0], TFd);
+            const double cvFd = cpFd - Rg;
+            const double gaFd = cpFd/cvFd;
+            const flow_float c  = (flow_float)sqrt(gaFd*Rg*TFd);      // 凍結音速 (面平均 T)
+            // Ht・e は保存量から (EOS 厳密・datum 整合)
+            const flow_float Ht = 0.5*( (roe_c[ic0]+Ps[ic0])/ro[ic0] + (roe_c[ic1]+Ps[ic1])/ro[ic1] );
+            const flow_float eF = 0.5*( (flow_float)(roe_c[ic0]/ro[ic0]-0.5*q0d)
+                                       +(flow_float)(roe_c[ic1]/ro[ic1]-0.5*q1d) );
+            const flow_float r2E = 0.5*qF + eF - (flow_float)(cvFd*TFd);  // エントロピー波エネルギー成分
+
+            // 接線基底
+            flow_float ax, ay, az;
+            if (fabs(nx) < 0.9) { ax=1.0; ay=0.0; az=0.0; } else { ax=0.0; ay=1.0; az=0.0; }
+            flow_float t1x = ny*az - nz*ay, t1y = nz*ax - nx*az, t1z = nx*ay - ny*ax;
+            const flow_float t1n = sqrt(t1x*t1x+t1y*t1y+t1z*t1z);
+            t1x/=t1n; t1y/=t1n; t1z/=t1n;
+            const flow_float t2x = ny*t1z - nz*t1y, t2y = nz*t1x - nx*t1z, t2z = nx*t1y - ny*t1x;
+
+            // 固有値 (音響のみ c(') 込み) と TP スケーリング
+            const flow_float cd  = (keepDissCprime == 1)
+                                 ? lowMachCprime(c, sqrt(qF), Un, precondEps)
+                                 : c;
+            const flow_float lamA = fabs(Un) + cd;
+            const flow_float lamU = fabs(Un);
+            const flow_float sA = (flow_float)((double)roF/(2.0*gaFd*Rg));
+            const flow_float sE = (flow_float)((double)roF/cpFd);
+            const flow_float sS = (flow_float)((double)roF*TFd);
+
+            // z_k = S_k |λ_k| (r_k · Δw) → D = Σ z_k r_k (エントロピー波のみ r_E=r2E)
+            const flow_float ut1 = uxF*t1x + uyF*t1y + uzF*t1z;
+            const flow_float ut2 = uxF*t2x + uyF*t2y + uzF*t2z;
+            const flow_float rd1 = dw0 + (uxF-c*nx)*dw1 + (uyF-c*ny)*dw2 + (uzF-c*nz)*dw3 + (Ht-c*Un)*dw4;
+            const flow_float rd2 = dw0 + uxF*dw1 + uyF*dw2 + uzF*dw3 + r2E*dw4;
+            const flow_float rd3 = t1x*dw1 + t1y*dw2 + t1z*dw3 + ut1*dw4;
+            const flow_float rd4 = t2x*dw1 + t2y*dw2 + t2z*dw3 + ut2*dw4;
+            const flow_float rd5 = dw0 + (uxF+c*nx)*dw1 + (uyF+c*ny)*dw2 + (uzF+c*nz)*dw3 + (Ht+c*Un)*dw4;
+            const flow_float z1 = sA*lamA*rd1;
+            const flow_float z2 = sE*lamU*rd2;
+            const flow_float z3 = sS*lamU*rd3;
+            const flow_float z4 = sS*lamU*rd4;
+            const flow_float z5 = sA*lamA*rd5;
+
+            const flow_float coef = 0.5*keepDissCoeff*sss;
+            const flow_float Dro   = z1 + z2 + z5;
+            const flow_float DroUx = z1*(uxF-c*nx) + z2*uxF + z3*t1x + z4*t2x + z5*(uxF+c*nx);
+            const flow_float DroUy = z1*(uyF-c*ny) + z2*uyF + z3*t1y + z4*t2y + z5*(uyF+c*ny);
+            const flow_float DroUz = z1*(uzF-c*nz) + z2*uzF + z3*t1z + z4*t2z + z5*(uzF+c*nz);
+            const flow_float Droe  = z1*(Ht-c*Un) + z2*r2E + z3*ut1 + z4*ut2 + z5*(Ht+c*Un);
 
             res_ro_temp   -= coef*Dro;
             res_roUx_temp -= coef*DroUx;

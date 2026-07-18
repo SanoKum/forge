@@ -31,3 +31,6 @@
 | `run_0022_cell_keep_cbd_dissmat_fullc_s004` | 同 σ=0.04 | A_cb→3.1e-10。**σ=0.05 (9.2e-9) より速い非単調** = 2Δ 定在音響波の過減衰領域を観測 | ref (σ非単調の記録) |
 | `run_0023_node_keep_cbd_pure` | **node L1**: node 変換 (median-dual 35937CV) + 市松 IC (COORD パリティ・17969/17968)、pure KEEP | **node でも null-mode 実証** (step0 全 rms ~1e-10 = 機械ゼロ、A_cb 400step 不変)。explicit RK3 でも発散せず | ref (node L1a) |
 | `run_0024_node_keep_cbd_dissmat005` | node + matrix σ=0.05 (既定) | **[訂正済]** 初報の「継ぎ目 3.3e-4 停滞」は**測定バイアス** (境界サブセットの sum(par)=2≠0 × 平均圧の DC 項 = 予測 3.25e-4 と一致)。共分散射影では **all/interior/boundary が 6.8e-6 に完全一致 = 継ぎ目弱化なし・一様減衰**。cell (7.1e-8) との桁差は **node dt が半分 (4.46e-2 vs 8.92e-2, 周期 half-CV 体積の CFL 律速) なだけ**で、**単位時間あたり減衰率は node 0.116 vs cell 0.122 桁/時間で一致**。plot_checkerboard_decay.py は共分散射影に修正済 | ref (node L1b・バイアス訂正) |
+| `run_0025_cell_keep_tp_cbd_pure` | **Step 3 (TP 単成分) L1**: thermalMethod=2 [N2], 次元付き一様場 (P_eff=238kPa, T=705K, u=10m/s) + 市松 ΔP (modify-p-only IC) + pure KEEP | A_cb 9.58e-4 が 400step **不変** = **null-mode は TP でも成立**・発散なし | ref (TP L1a) |
+| `run_0026_cell_keep_tp_cbd_dissmat005` | 同 + **matrix ES (TP 版: w=(g-½q)/T 系, S=ρ/(2γR)/ρ/cp/ρT)** σ=0.05 | A_cb → **1.18e-7 (~3.9桁/400step)**・NaN なし。TP matrix 散逸の動作実証 | ref (TP L1b matrix) |
+| `run_0027_cell_keep_tp_cbd_scalar005` | 同 + scalar ES (TP: Δroe=保存量ジャンプ・c=sonic) σ=0.05 | A_cb → 1.10e-7・NaN なし | ref (TP L1b scalar) |

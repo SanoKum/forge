@@ -106,6 +106,8 @@ explicit と4桁一致) → **LHS の Roe 散逸は収束解を汚染しない**
 | `run_0029_node_keep_dissmat005_l2` | **node L2**: node TGV M0.4 + matrix σ=0.05 (run_0009 σ=0 と比較) | KE cost **+1.371%**/500step = cell (+1.356%) と一致。**散逸レイヤは node 内部で cell 同等** | ref (node L2 PASS) |
 | `run_0030_cell_keep_wale_re1600_s0` | **L3 基準**: 粘性 Re=1600 (visc 2.5e-4, Pr0.71) + WALE, keepDissType=0, 3600step (t*≈10) | ε* ピーク 0.066 @ t*=10.1、K/K0(10)=0.71。層流期はほぼ無散逸 (正)。32³ ゆえピーク過小・遅め | ref (L3 基準) |
 | `run_0031_cell_keep_wale_re1600_diss` | L3 + matrix **σ=0.05** | ピーク 0.083 @ t*=8.1、K/K0(10)=0.49。**層流期 (t*<4) に 5-6% 食う = 滑らか場への連続ドレインが強すぎ**。LES 用には過大 | ref (L3 σ過大の記録) |
-| `run_0032_cell_keep_wale_re1600_diss0015` | L3 + matrix **σ=0.015** | ピーク 0.080 @ t*=8.4、K/K0(10)=0.60、**層流期損失 0.6% に改善**。**WALE 併用 LES の推奨 σ** | ref (L3 推奨設定) |
+| `run_0032_cell_keep_wale_re1600_diss0015` | L3 + matrix **σ=0.015** | ピーク 0.080 @ t*=8.4、K/K0(10)=0.60、層流期損失 2.6% | ref (L3 σ掛引) |
+| `run_0033_cell_keep_wale_re1600_diss002` | L3 + matrix **σ=0.02** | ピーク 0.082 @ t*=8.4、K/K0(10)=**0.594**、層流期 3.1% | ref (L3 σ掛引) |
+| `run_0034_cell_keep_wale_re1600_diss003` | L3 + matrix **σ=0.03** | ピーク 0.083 @ t*=8.4、K/K0(10)=**0.557 (DNS帯 0.50-0.57 内)**、層流期 4.1% | ref (L3 σ掛引) |
 
-L3 の判定は定性ゲート (ピークが t*≈9±1・カーブ滑らか・NaN なし): 3 run とも通過。DNS (Brachet/DeBonis, t*≈9 ピーク) との定量比較は 32³ が粗く M0.4 圧縮性 TGV のため参考値に留める (成果物 `dissipation_rate_L3.png`, `plot_dissipation_rate.py`)。
+L3 の判定は定性ゲート (ピークが t*≈9±1・カーブ滑らか・NaN なし): 全 run 通過。**σ 掛引の結論: LES 実用帯は σ=0.02-0.03** (0.02=層流期重視/0.03=終値 K/K0 が DNS 帯内)。DNS 参考値 (K/K0(10)≈0.50-0.57, 層流期損失 1.5-2%, ピーク ε*=0.0127@t*=9.03) はアンカー2点+積分近似で ±0.05 幅、32³ では層流期と終値を同時に満たす σ は無い (解像度律速)。定量合否は 64³ + digitize した DNS で (成果物 `dissipation_rate_L3.png`, `plot_dissipation_rate.py`)。
