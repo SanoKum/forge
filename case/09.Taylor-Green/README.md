@@ -98,3 +98,14 @@ explicit と4桁一致) → **LHS の Roe 散逸は収束解を汚染しない**
   KEEP 中心流束は `Revive KEEP` (79b4e67) で初めて有効化された (この periodic バグが顕在化したのもそのため)。
 - 旧 `run_keep` が現バイナリで回らないのは solver 退行ではなく①config スキーマ進化②圧力フロア (`pMin` 既定 1.0 Pa
   が無次元低圧場をクランプ) であり、modern config + `pMin` 引き下げで解消する。
+
+### node L2 / L3 (WALE 込み粘性 TGV Re=1600) — keepDiss 検証続き
+
+| `run_*` | 目的・設定差分 | 主要結果 | 状態 |
+| --- | --- | --- | --- |
+| `run_0029_node_keep_dissmat005_l2` | **node L2**: node TGV M0.4 + matrix σ=0.05 (run_0009 σ=0 と比較) | KE cost **+1.371%**/500step = cell (+1.356%) と一致。**散逸レイヤは node 内部で cell 同等** | ref (node L2 PASS) |
+| `run_0030_cell_keep_wale_re1600_s0` | **L3 基準**: 粘性 Re=1600 (visc 2.5e-4, Pr0.71) + WALE, keepDissType=0, 3600step (t*≈10) | ε* ピーク 0.066 @ t*=10.1、K/K0(10)=0.71。層流期はほぼ無散逸 (正)。32³ ゆえピーク過小・遅め | ref (L3 基準) |
+| `run_0031_cell_keep_wale_re1600_diss` | L3 + matrix **σ=0.05** | ピーク 0.083 @ t*=8.1、K/K0(10)=0.49。**層流期 (t*<4) に 5-6% 食う = 滑らか場への連続ドレインが強すぎ**。LES 用には過大 | ref (L3 σ過大の記録) |
+| `run_0032_cell_keep_wale_re1600_diss0015` | L3 + matrix **σ=0.015** | ピーク 0.080 @ t*=8.4、K/K0(10)=0.60、**層流期損失 0.6% に改善**。**WALE 併用 LES の推奨 σ** | ref (L3 推奨設定) |
+
+L3 の判定は定性ゲート (ピークが t*≈9±1・カーブ滑らか・NaN なし): 3 run とも通過。DNS (Brachet/DeBonis, t*≈9 ピーク) との定量比較は 32³ が粗く M0.4 圧縮性 TGV のため参考値に留める (成果物 `dissipation_rate_L3.png`, `plot_dissipation_rate.py`)。

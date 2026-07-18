@@ -29,3 +29,5 @@
 | `run_0020_cell_keep_cbd_dissmat005_knobchk` | **keepDissCprime ノブ分離後**の動作確認 (lowMachPrecond=0 + 既定 keepDissCprime=1) | A_cb→7.5e-8 ≈ run_0018 (c' 挙動を lowMachPrecond と独立に再現、差は atomicAdd ノイズ級) | ref (ノブ分離検証) |
 | `run_0021_cell_keep_cbd_dissmat_fullc_s0015` | フル c で σ 弱化の代替可否: σ=0.015 | A_cb→**3.9e-8** = c' σ=0.05 (7.1e-8) と同等以上。**単一マッハ領域なら σ 弱化で c' 代替可** (KE も 1.10% = case/09 run_0027) | ref (σ掃引・c'代替検証) |
 | `run_0022_cell_keep_cbd_dissmat_fullc_s004` | 同 σ=0.04 | A_cb→3.1e-10。**σ=0.05 (9.2e-9) より速い非単調** = 2Δ 定在音響波の過減衰領域を観測 | ref (σ非単調の記録) |
+| `run_0023_node_keep_cbd_pure` | **node L1**: node 変換 (median-dual 35937CV) + 市松 IC (COORD パリティ・17969/17968)、pure KEEP | **node でも null-mode 実証** (step0 全 rms ~1e-10 = 機械ゼロ、A_cb 400step 不変)。explicit RK3 でも発散せず | ref (node L1a) |
+| `run_0024_node_keep_cbd_dissmat005` | node + matrix σ=0.05 (既定) | A_cb 1.03e-3→3.5e-5 (**1.5桁**)。**cell (4.2桁) より大幅に遅い**: 内部 2.7e-5 に対し**周期継ぎ目ノードが 3.3e-4 (0.6桁) で律速**、継ぎ目から染み戻る。node periodic の合併 DOF 周りの散逸の効きが弱い (state mirror タイミング等、要別調査) | ref (node L1b・既知の弱点記録) |

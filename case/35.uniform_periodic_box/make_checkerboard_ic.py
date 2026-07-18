@@ -24,18 +24,30 @@ ap.add_argument("--gamma", type=float, default=1.4)
 a = ap.parse_args()
 
 with h5py.File(a.h5, "r+") as f:
-    coord = np.array(f["MESH/COORD"]).reshape(-1, 3)
     nc = f["VALUE/ro"].shape[0]
-    conn, offs, _ = parse_conne(np.array(f["MESH/CONNE"]), nc)
-    cc = np.zeros((nc, 3)); s = 0
-    for i, o in enumerate(offs):
-        cc[i] = coord[conn[s:o]].mean(axis=0); s = o
+    coord0 = np.array(f["MESH/COORD"]).reshape(-1, 3)
+    if coord0.shape[0] == nc:
+        # node モード: COORD がノード座標そのもの (CV と 1:1・格子点上で厳密)。
+        # centCoords は境界で双対体積重心にシフトするため使わない
+        # (architecture-node-centroid-value-position 未完)。
+        cc = coord0
+    elif "CELLS/centCoords" in f and f["CELLS/centCoords"].shape[0] == 3*nc:
+        # cell モード: CV 重心座標。
+        cc = np.array(f["CELLS/centCoords"]).reshape(-1, 3)
+    else:
+        conn, offs, _ = parse_conne(np.array(f["MESH/CONNE"]), nc)
+        cc = np.zeros((nc, 3)); s = 0
+        for i, o in enumerate(offs):
+            cc[i] = coord0[conn[s:o]].mean(axis=0); s = o
 
     # 一様格子前提で重心→整数インデックス (方向ごとに一意重心座標の rank)
     idx = np.zeros((nc, 3), dtype=np.int64)
     for d in range(3):
+        lo, hi = cc[:, d].min(), cc[:, d].max()
+        # 一様格子前提: 格子間隔 h を「最小の正の座標差」から推定し rint で整数化 (丸め耐性)
         u = np.unique(np.round(cc[:, d], 9))
-        idx[:, d] = np.searchsorted(u, np.round(cc[:, d], 9))
+        h = np.median(np.diff(u)) if len(u) > 1 else 1.0  # median: ノイズ由来の微小 diff に頑健
+        idx[:, d] = np.rint((cc[:, d] - lo) / h).astype(np.int64)
     parity = np.where((idx.sum(axis=1) % 2) == 0, 1.0, -1.0)
 
     P0 = 1.0 / a.gamma; ro0 = 1.0

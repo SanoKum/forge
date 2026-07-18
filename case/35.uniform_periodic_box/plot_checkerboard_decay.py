@@ -18,16 +18,27 @@ a = ap.parse_args()
 
 def parity_of(h5path):
     with h5py.File(h5path, "r") as f:
-        coord = np.array(f["MESH/COORD"]).reshape(-1, 3)
         nc = f["VALUE/ro"].shape[0]
-        conn, offs, _ = parse_conne(np.array(f["MESH/CONNE"]), nc)
-        cc = np.zeros((nc, 3)); s = 0
-        for i, o in enumerate(offs):
-            cc[i] = coord[conn[s:o]].mean(axis=0); s = o
+        coord0 = np.array(f["MESH/COORD"]).reshape(-1, 3)
+        if coord0.shape[0] == nc:
+            # node モード: COORD がノード座標そのもの (CV と 1:1)。centCoords は境界で
+            # 双対体積重心にシフトするため使わない (architecture-node-centroid-value-position 未完)。
+            cc = coord0
+        elif "CELLS/centCoords" in f and f["CELLS/centCoords"].shape[0] == 3*nc:
+            cc = np.array(f["CELLS/centCoords"]).reshape(-1, 3)  # cell/node 両対応 (input h5)
+        else:
+            coord = np.array(f["MESH/COORD"]).reshape(-1, 3)
+            conn, offs, _ = parse_conne(np.array(f["MESH/CONNE"]), nc)
+            cc = np.zeros((nc, 3)); s = 0
+            for i, o in enumerate(offs):
+                cc[i] = coord[conn[s:o]].mean(axis=0); s = o
     idx = np.zeros((nc, 3), dtype=np.int64)
     for d in range(3):
+        lo, hi = cc[:, d].min(), cc[:, d].max()
+        # 一様格子前提: 格子間隔 h を「最小の正の座標差」から推定し rint で整数化 (丸め耐性)
         u = np.unique(np.round(cc[:, d], 9))
-        idx[:, d] = np.searchsorted(u, np.round(cc[:, d], 9))
+        h = np.median(np.diff(u)) if len(u) > 1 else 1.0  # median: ノイズ由来の微小 diff に頑健
+        idx[:, d] = np.rint((cc[:, d] - lo) / h).astype(np.int64)
     return np.where((idx.sum(axis=1) % 2) == 0, 1.0, -1.0)
 
 import matplotlib
@@ -42,7 +53,11 @@ for run in a.runs:
     files = [p for p in files if "nan" not in p]
     if not files:
         print(f"[skip] {run}: res なし"); continue
-    par = parity_of(files[0])
+    # パリティは run dir の input h5 (CELLS/centCoords 保持) から取る。無ければ最初の res から
+    import glob as _g
+    inp = [q for q in _g.glob(os.path.join(run, "*.h5"))
+           if "res_" not in os.path.basename(q)]
+    par = parity_of(inp[0] if inp else files[0])
     steps, amp = [], []
     for p in files:
         with h5py.File(p, "r") as f:
