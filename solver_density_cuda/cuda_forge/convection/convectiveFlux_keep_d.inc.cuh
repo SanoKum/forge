@@ -17,7 +17,8 @@
 __global__ void KEEP_d
 (
  flow_float ga,
- int thermalMethod, const SpeciesThermo* sp,      // Step 3: TP 単成分 (thermalMethod==2)。CPG では未使用
+ int thermalMethod, const SpeciesThermo* sp,      // Step 3/4: TP (thermalMethod==2)。CPG では未使用
+ int nSpecies, flow_float** roY,                  // Step 4: 多成分の組成 (nSpecies<=1 なら未参照)
  int keepDissType, flow_float keepDissCoeff,      // opt-in ES 散逸レイヤ (0: off=ビット不変)
  int keepDissCprime, flow_float precondEps,       // 散逸波速: 1 で音響 c'=lowMachCprime (lowMachPrecond から独立)
  FaceGeom      geom,
@@ -206,22 +207,47 @@ __global__ void KEEP_d
             res_roe_temp  -= coef*Droe;
         }
         else if (keepDissType == 2) {
-            // ---- matrix ES 散逸 (TP 単成分, Step 3): D = R|Λ'|S Rᵀ Δw ----
-            // 次元付きエントロピー η=-ρs, w=[(g-½|u|²)/T, u/T, -1/T] (Chalot-Hughes-Shakib),
-            // S: 音響 ρ/(2γR)・エントロピー ρ/cp(T)・せん断 ρT、エントロピー波 r_E=½q+e-cv·T
-            // (tools/verify_entropy_scaling_tp.py で H=RSRᵀ・Ar=λr・SPD を数値検証済、datum 不変)。
+            // ---- matrix ES 散逸 (TP, Step 3/4): D = R|Λ'|S Rᵀ Δw ----
+            // 次元付きエントロピー η=-ρs_mix, w=[(g-½|u|²)/T, u/T, -1/T] (Chalot-Hughes-Shakib),
+            // S: 音響 ρ/(2γR_mix)・エントロピー ρ/cp_mix(T,Y)・せん断 ρT、エントロピー波 r_E=½q+e-cv·T
+            // (tools/verify_entropy_scaling_tp.py + 凍結組成混合の数値検証で H=RSRᵀ・Ar=λr・SPD 確認済)。
+            // 多成分 (Step 4): 混合物性 (R_mix/cp_mix/s0_mix) + 混合エントロピー -ΣY_kR_k ln X_k
+            //   (Y ln X → 0 でゼロ濃度種でも正則)。組成一様なら凍結組成の TP 1 気体に厳密縮退。
+            //   組成ジャンプ面では全系の厳密 ES は主張しない (Q は SPD なので無条件に散逸的=安定)。
+            //   種輸送は散逸込み massflux 経由で連続式と整合 (種方程式自体への行列散逸は将来課題)。
             // thermo 評価は double (thermoHrefTemp datum 焼き込み係数をそのまま使用 → w も自動整合)。
-            const double Rg  = THERMO_RU / sp[0].MW;
+            const int ns = (nSpecies > 1) ? nSpecies : 1;
+            double Y0[THERMO_MAX_SPECIES], Y1[THERMO_MAX_SPECIES], YF[THERMO_MAX_SPECIES];
+            if (nSpecies > 1) {
+                for (int k = 0; k < ns; k++) {
+                    Y0[k] = fmax((double)roY[k][ic0]/(double)ro[ic0], 0.0);
+                    Y1[k] = fmax((double)roY[k][ic1]/(double)ro[ic1], 0.0);
+                    YF[k] = 0.5*(Y0[k]+Y1[k]);
+                }
+            } else { Y0[0] = 1.0; Y1[0] = 1.0; YF[0] = 1.0; }
+            const double R0g = thermo_R_mix(sp, ns, Y0);
+            const double R1g = thermo_R_mix(sp, ns, Y1);
             const double q0d = (double)Ux[ic0]*Ux[ic0]+(double)Uy[ic0]*Uy[ic0]+(double)Uz[ic0]*Uz[ic0];
             const double q1d = (double)Ux[ic1]*Ux[ic1]+(double)Uy[ic1]*Uy[ic1]+(double)Uz[ic1]*Uz[ic1];
-            const double T0d = (double)Ps[ic0]/((double)ro[ic0]*Rg);
-            const double T1d = (double)Ps[ic1]/((double)ro[ic1]*Rg);
+            const double T0d = (double)Ps[ic0]/((double)ro[ic0]*R0g);
+            const double T1d = (double)Ps[ic1]/((double)ro[ic1]*R1g);
             const double PsFd = 0.5*((double)Ps[ic0]+(double)Ps[ic1]);
+            // 混合エントロピー項 -Σ Y_k R_k ln X_k (単成分では 0)
+            double mixent0 = 0.0, mixent1 = 0.0;
+            if (nSpecies > 1) {
+                double mol0 = 0.0, mol1 = 0.0;
+                for (int k = 0; k < ns; k++) { mol0 += Y0[k]/sp[k].MW; mol1 += Y1[k]/sp[k].MW; }
+                for (int k = 0; k < ns; k++) {
+                    const double Rk = THERMO_RU/sp[k].MW;
+                    if (Y0[k] > 0.0) mixent0 -= Y0[k]*Rk*log(fmax(Y0[k]/sp[k].MW/mol0, 1e-300));
+                    if (Y1[k] > 0.0) mixent1 -= Y1[k]*Rk*log(fmax(Y1[k]/sp[k].MW/mol1, 1e-300));
+                }
+            }
             // s_i (基準圧 pref=PsF: log 引数 ~1 で桁落ち回避。pref は Δw で相殺)
-            const double s0d = thermo_s0_mass(sp[0], T0d) - Rg*log((double)Ps[ic0]/PsFd);
-            const double s1d = thermo_s0_mass(sp[0], T1d) - Rg*log((double)Ps[ic1]/PsFd);
-            const double g0d = thermo_h_mass(sp[0], T0d) - T0d*s0d;
-            const double g1d = thermo_h_mass(sp[0], T1d) - T1d*s1d;
+            const double s0d = thermo_s0_mix(sp, ns, Y0, T0d) + mixent0 - R0g*log((double)Ps[ic0]/PsFd);
+            const double s1d = thermo_s0_mix(sp, ns, Y1, T1d) + mixent1 - R1g*log((double)Ps[ic1]/PsFd);
+            const double g0d = thermo_h_mix(sp, ns, Y0, T0d) - T0d*s0d;
+            const double g1d = thermo_h_mix(sp, ns, Y1, T1d) - T1d*s1d;
             const flow_float dw0 = (flow_float)((g1d-0.5*q1d)/T1d - (g0d-0.5*q0d)/T0d);
             const flow_float dw1 = (flow_float)((double)Ux[ic1]/T1d - (double)Ux[ic0]/T0d);
             const flow_float dw2 = (flow_float)((double)Uy[ic1]/T1d - (double)Uy[ic0]/T0d);
@@ -236,10 +262,11 @@ __global__ void KEEP_d
             const flow_float qF  = uxF*uxF+uyF*uyF+uzF*uzF;
             const flow_float Un  = uxF*nx + uyF*ny + uzF*nz;
             const double TFd  = 0.5*(T0d+T1d);
-            const double cpFd = thermo_cp_mass(sp[0], TFd);
-            const double cvFd = cpFd - Rg;
+            const double RFg  = thermo_R_mix(sp, ns, YF);
+            const double cpFd = thermo_cp_mix(sp, ns, YF, TFd);
+            const double cvFd = cpFd - RFg;
             const double gaFd = cpFd/cvFd;
-            const flow_float c  = (flow_float)sqrt(gaFd*Rg*TFd);      // 凍結音速 (面平均 T)
+            const flow_float c  = (flow_float)sqrt(gaFd*RFg*TFd);     // 凍結音速 (面平均 T, 面平均組成)
             // Ht・e は保存量から (EOS 厳密・datum 整合)
             const flow_float Ht = 0.5*( (roe_c[ic0]+Ps[ic0])/ro[ic0] + (roe_c[ic1]+Ps[ic1])/ro[ic1] );
             const flow_float eF = 0.5*( (flow_float)(roe_c[ic0]/ro[ic0]-0.5*q0d)
@@ -260,7 +287,7 @@ __global__ void KEEP_d
                                  : c;
             const flow_float lamA = fabs(Un) + cd;
             const flow_float lamU = fabs(Un);
-            const flow_float sA = (flow_float)((double)roF/(2.0*gaFd*Rg));
+            const flow_float sA = (flow_float)((double)roF/(2.0*gaFd*RFg));
             const flow_float sE = (flow_float)((double)roF/cpFd);
             const flow_float sS = (flow_float)((double)roF*TFd);
 

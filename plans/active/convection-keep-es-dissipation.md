@@ -34,7 +34,7 @@ $$F_f = F_f^\mathrm{KEEP} - \tfrac12\,\sigma\,D_f$$
 | 1 | **単成分 CPG・スカラー ES 散逸**: $D_f=\lambda'\,\Delta U$, $\lambda'=\|U_n\|+c'$ (`lowMachPrecond>=1` で `lowMachCprime`、else $c$)。config `keepDissType`(0=off 既定・ビット不変/1=scalar)・`keepDissCoeff`(σ) | 本実装 |
 | 2 | 単成分 CPG・**matrix 版**: $D_f=R\|\Lambda'\|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, entropy-scaled)。音響のみ $\|U_n\|+c'$、せん断/エントロピーは $\|U_n\|$ | **実装+検証済** |
 | 3 | TP 単成分 ($s^0(T)$ 多項式=`thermo_s0_mass` 流用) | **実装+検証済** |
-| 4 | **多成分** (Chalot-Hughes-Shakib のエントロピー変数 + Gouasmi スケーリング + `thermoHrefTemp` datum/ゼロ濃度種対策) | 将来 |
+| 4 | **多成分** (混合物性 w/S + 混合エントロピー) | **部分完了**: scalar (type1) 検証済 / **matrix (type2) は未解決バグで封印** (下記) |
 
 **やらない**:
 - 衝撃捕獲 (衝撃レイヤは当面 SLAU ブレンド、中期に directional LAD を別 plan で)
@@ -113,3 +113,8 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   - **Step 3 (TP)**: 実装前に `tools/verify_entropy_scaling_tp.py` で TP の $w=\frac1T[g-\frac12|u|^2,\mathbf u,-1]$ (Chalot-Hughes-Shakib)・**S 閉形式 = 音響 $\rho/(2\gamma R)$・エントロピー $\rho/c_p(T)$・せん断 $\rho T$**・エントロピー波 $r_E=\frac12 q+e-c_vT$ を数値検証 (PASS, datum 不変も確認)。実装: KEEP 中心 `Itilde` を TP では保存量 roe ベースに (EOS 整合)、scalar は Δroe=保存量ジャンプ+sonic、matrix は TP w/S (thermo 評価 double・`thermoHrefTemp` 焼き込み係数で自動 datum 整合)。多成分は wrapper でエラー (Step 4)。CPG 経路は分岐分離でビット不変。
   - **L1-TP 検証** (`case/35...run_0025/0026/0027`, N2, P=238kPa/T=705K/u=10m/s): pure で null-mode 不変 (TP でも成立)、matrix σ0.05 で **3.9桁/400step 減衰**、scalar も同等。全 NaN なし。
   - 残: Step 4 (多成分: Chalot w + Gouasmi スケーリング + ゼロ濃度種/datum 対策)。
+- `2026-07-19` — **Step 4 (多成分) 部分完了 + matrix×多成分の未解決バグを封印**。
+  - 設計: 種輸送は forge の scalar 輸送に任せ (散逸込み massflux で連続式と整合)、**5式側の散逸を混合物性で評価** (w に混合エントロピー −ΣY_kR_k ln X_k を含む; Y ln X→0 でゼロ濃度種正則)。凍結組成では TP 1気体に厳密縮退 (python 検証 PASS)。組成ジャンプ面は「Q が SPD なので無条件散逸的」までで全系厳密 ES は主張しない。
+  - **検証結果**: pure=null-mode 不変 (多成分でも成立, `case/35...run_0028`)・**scalar (type1) 多成分=クリーン減衰 1.1e-7** (`run_0033`)・組成半割 smoke=NaN なし場有界 (`run_0030`)。
+  - **★未解決バグ (matrix type2 × nSpecies≥2)**: 市松が最初 ~50step 正常減衰後 **2.3e-4 プラトー** (`run_0029`)。bisect で確定した事実: (i) ns=1 は新バイナリでも健全 (`run_0031`)、(ii) **Y=[1,0] 縮退 (物理的に純 N2) でも再現** (`run_0032`) → 実在混合の物理でなく ns≥2 コード経路、(iii) scalar は同条件でクリーン (`run_0033`) → 種輸送機構は無罪。潰した容疑: thermo _mix 関数 (質量重み和で Y=[1,0] 等価)・mixent 符号 (Y=[1,0] で 0)・periodic_d の roY ghost コピー (実装あり)・配列サイズ (nCells_all 確保)・組成ドリフト (厳密 [1,0] 維持)・res_0 状態 (7桁一致)。**残る謎: step0 の rms_roUx のみ 0.07% 差 (rms_ro/rms_roe は一致) = 初手から運動量散逸だけ違う**。プラトー減衰率はエントロピー/せん断波レート (|Un|) に整合 → 基底の運動量成分に ns≥2 でのみ入る差異が疑われる。
+  - **処置**: wrapper で `keepDissType==2 && nSpecies>1` をエラー封印 (scalar は許可)。多成分 LES は当面 type1 (KE cost は type2 の 2 倍だが正しく動く)。再開時はこの bisect 事実から。

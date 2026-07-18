@@ -34,3 +34,9 @@
 | `run_0025_cell_keep_tp_cbd_pure` | **Step 3 (TP 単成分) L1**: thermalMethod=2 [N2], 次元付き一様場 (P_eff=238kPa, T=705K, u=10m/s) + 市松 ΔP (modify-p-only IC) + pure KEEP | A_cb 9.58e-4 が 400step **不変** = **null-mode は TP でも成立**・発散なし | ref (TP L1a) |
 | `run_0026_cell_keep_tp_cbd_dissmat005` | 同 + **matrix ES (TP 版: w=(g-½q)/T 系, S=ρ/(2γR)/ρ/cp/ρT)** σ=0.05 | A_cb → **1.18e-7 (~3.9桁/400step)**・NaN なし。TP matrix 散逸の動作実証 | ref (TP L1b matrix) |
 | `run_0027_cell_keep_tp_cbd_scalar005` | 同 + scalar ES (TP: Δroe=保存量ジャンプ・c=sonic) σ=0.05 | A_cb → 1.10e-7・NaN なし | ref (TP L1b scalar) |
+| `run_0028_cell_keep_mc_cbd_pure` | **Step 4 (多成分) L1**: [N2,O2] Y=0.7/0.3 一様混合 (P=230kPa/T=709K) + 市松, pure KEEP | 一様混合 400step 安定 (プローブ)・市松に対し **null-mode 不変** (多成分でも成立) | ref (MC L1a) |
+| `run_0029_cell_keep_mc_cbd_dissmat005` | 同 + matrix ES σ=0.05 | **★未解決バグ**: 最初の 50step は正常減衰後、**2.3e-4 でプラトー** (単成分は 1.2e-7 まで減衰) | ref (MC matrix バグ再現) |
+| `run_0030_cell_keep_mc_comp_smoke` | 組成半割 (N2\|O2) + matrix σ=0.05 (安定性 smoke) | 400step NaN なし・場有界 (P 209-244kPa, T 681-751K)。ゼロ濃度種の正則性 (Y ln X ガード) は動作 | ref (MC 安定 smoke) |
+| `run_0031_cell_keep_tp_rerun_newbin` | **bisect①**: 単成分 TP を新バイナリ (_mix 経由 ns=1) で再実行 | 9.6e-4→**1.2e-7** = 旧バイナリと一致 → **ns=1 経路に退行なし** | ref (bisect) |
+| `run_0032_cell_keep_mc_y10_bisect` | **bisect②**: 2種だが Y=[1,0] (物理的に純 N2) + matrix | **プラトー再現 (2.2e-4)** → バグは実在混合でなく **ns≥2 コード経路**。組成は厳密に [1,0] 維持・res_0 は ns=1 と 7桁一致なのに **step0 の rms_roUx のみ 0.07% 差** (rms_ro/rms_roe は一致) — 原因未特定 | ref (bisect・バグ切り分け) |
+| `run_0033_cell_keep_mc_y10_scalar_bisect` | **bisect③**: 同 Y=[1,0] で **scalar** (type 1) | **1.1e-7 までクリーン減衰** = 多成分ソルバ機構 (種輸送/renormalize/依存変数) は無罪。**バグは matrix×ns≥2 に限定** | ref (bisect・scalar 多成分 OK) |
