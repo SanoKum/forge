@@ -317,8 +317,37 @@ $$
 
 ---
 
+## 10. 検証ラダー (LES/DES・軽量優先)
+
+KEEP 中心スキーム + 振動抑制を検証するラダー。**各段で1性質を分離**し、軽い順に積む。forge には既存ケースが多く、再利用が基本。**L0-L2 は激軽で修正-検証ループに使う**。
+
+| L | ケース | 分離する性質 | メッシュ/コスト | スキーム設定 | 合否ライン | 参照 | forge 対応 |
+|---|--------|-------------|----------------|-------------|-----------|------|-----------|
+| **L0** | free-stream (歪み hex) | #4 metric/free-stream 保存・**FP32 桁落ち** | 10³・1〜数 step (激軽) | 一様流・KEEP・visc=0 | 残差**機械ゼロ**維持 | 一様場不変 | **case/33.wavy_hex_freestream** |
+| **L1** | 低マッハ市松診断 | #4b checkerboard・**KEEP 圧力カップリング** | 16³-32³・1-RHS or 数百 step (激軽) | 一様流+市松圧力摂動・KEEP・M~0.1 | L1a で null-mode 確認→L1b で圧力カップリング項 on で $E^{HF}_p$ 減衰 | §5.5 の 1-RHS test | **case/35.uniform_periodic_box** (発散実績 run_0005-0008) |
+| **L2** | 非粘性 TGV (KEP試験) | #1 KE/エントロピー保存・de-alias・**線形安定** | 32³・explicit RK4 (軽) | pure KEEP (`keepDissipation:0`)・visc=0・乱流なし | KE/エントロピー総和が**機械精度で保存**・発散しない | 理論保存 | **case/09** run_0009/0010 |
+| **L3** | 粘性 TGV Re=1600 | LES 数値散逸の質 (−dK/dt) | 64³・explicit (中) | KEEP+薄い散逸・visc有・ILES or WALE | 散逸率が **t\*≈9 ピーク**で DNS 整合・過散逸なし | **Brachet 1983 / DeBonis 2013 (AIAA) 512³ DNS** | case/09 拡張 (Re 変更) |
+| **L4** | 非構造/median-dual TGV | #1+#4: **KEEP が median-dual で成立するか** | prism/node双対・32³相当 (中) | node KEEP・implicit | KE 履歴が cell と同等・発散しない | L2/L3 自己比較 | **case/11.Taylor-Green_prism** / case/09 node |
+| **L5** | (任意) 減衰等方乱流 CBC | −5/3 慣性域・SGS+数値の相互作用 | 32³-64³ (中) | KEEP+WALE | スペクトルに **−5/3**・実験整合 | **Comte-Bellot-Corrsin 1971** | 新規 (周期箱・case/35 流用可) |
+| **DES** | backstep 3D | DES 機能・剥離せん断層の解像乱流 | 3D スパン (重) | SST-DDES・非定常 | 再付着 $x_R/H$=6.26・f_d・u_rms | Driver-Seegmiller (TMR 2DBFS) | **case/18.backstep** ([iddes plan](../../plans/active/turbulence-iddes-sst.md) T1-B) |
+
+### L1 詳細 (振動対策の linchpin)
+
+- **メッシュ**: case/35 の全面 periodic 構造化 hex (16³/32³)。構造化なのでセル index パリティが定義でき 2Δ モードを厳密に置ける。
+- **初期値** (無次元・`pMin=1e-6`): $\rho_0=1$, $P_0=1/\gamma\approx0.714$, $\mathbf{u}_0=(0.1,0,0)$ ($c_0=1$ → $M_0=0.1$)。**圧力だけに市松摂動** $P(i,j,k)=P_0[1+\epsilon(-1)^{i+j+k}]$, $\epsilon=10^{-3}$。速度・密度は一様。
+- **L1a (静的・1-RHS)**: RHS 1 回評価。**解析予言**: 中心圧力流束 $\tilde G=0.5(P_{i0}+P_{i1})\mathbf{n}$ は隣接逆パリティで摂動が平均相殺 → $\approx P_0$ → 市松が**見えず運動量残差≈0** = null-mode。これが「純 KEEP が市松る」理由の実証。
+- **L1b (トランジェント)**: 数百 step 回し市松振幅 $E^{HF}_p=\sum_{ij}(p_j-p_i)^2/\sum p_i^2$ を追う。pure KEEP は成長/持続、圧力カップリング項 on で減衰。
+- **合否**: L1a で null-mode 確認 → L1b で項 on の減衰 + L2 の KE 保存を壊さない。
+
+### 回し方 (軽量優先)
+
+**L0→L1→L2 (全て激軽) を先に**。各数分で回るので「`KEEP_d` に圧力カップリング項追加 → L1 で市松消失 → L2 で KE 保存維持」の**修正-検証ループが軽く回る**。L3 以降 (DNS 比較・非構造・DES) は土台確立後。**LES 数値 (L0-L4) が通らないまま DES に行かない** (IDDES plan §5.7 の「f_d は立つが乱流が死ぬ」灰色領域を避ける)。各 run は forge 規律 (run_* 明示・README run 表・NaN/収束/準定常チェック) に従う。
+
+---
+
 ## 変更ログ
 
 - `2026-06-29` — 初稿 (調査専用)。第1回 deep-research (105 エージェント / 23 ソース / 25 クレーム検証: 22 確認・3 棄却) + forge コンテキストを統合。既存2サーベイ ((a) DES flux / (b) PEP) の上位に立つ統括として「振動源4分類」を定義。核心結論: KEEP/split は de-alias を与えるが圧縮性の安定は保証しない (Coppola/Ranocha-Gassner)、entropy-consistent matrix 散逸 (Chandrashekar) + 局所衝撃捕獲の2段散逸が必須、非構造では cell-vertex/median-dual が KEEP の正しい置き場 (Okumura-Kuya-Sawada)。
 - `2026-06-29` — **穴埋め**: 第2回 deep-research (102 エージェント / 20 ソース / 25 クレーム検証: 23 確認・2 棄却) で #2/#3/#4 を grounding。§4 (LAD: μ\*/β\*/κ\* 式・係数・$f_\mathrm{sw}$・directional LAD)・§5 (free-stream: 歪対称性=KE保存・離散 GCL・**★Karp の FP32 メトリック→free-stream 喪失/FP64 で回復**)・§3 (#2 は KEEP 限界の反証側で grounding、フィルタ具体は medium) を確定。§6 推奨に **P0「メトリックのみ FP64 化」** (forge 既知発散弱点の即効処方箋) と **P1「directional LAD」** を追加。
+- `2026-06-29` — **§10 検証ラダー追加**: LES/DES の軽量優先ラダー L0-L5+DES を定義。既存ケース (case/33 free-stream・case/35 uniform box (発散実績)・case/09 TGV・case/11 prism・case/18 backstep) に対応付け。L1 (低マッハ市松診断) を詳細化 — case/35 で $P=P_0[1+\epsilon(-1)^{i+j+k}]$ の市松摂動を置き、L1a 静的 1-RHS で null-mode を実証・L1b で圧力カップリング項の効果を測る。L0→L1→L2 の激軽ループで `KEEP_d` 修正-検証を回す方針。
 - `2026-06-29` — **外部レビュー反映**: (1) §2.4 の entropy 散逸式を訂正 — 初稿 $R|\Lambda|R^{-1}(w_R-w_L)$ は誤りで、正しくは **$R|\Lambda|SR^{\mathsf T}(w_R-w_L)$** ($S$=entropy scaling, $H=RSR^{\mathsf T}$)。「KE 安定」は自動でなく音響固有値の追加条件が要る、一般 EOS/多成分は「素材が揃う」は楽観的すぎ、と訂正。(2) §2.6 追加 — 中心 flux アップグレード KEEP-PEP/AEC (De Michele-Coppola 2023 / Kawai-Kawai 2025, 対数平均代数近似・PEP維持) は**振動の治療薬でなく熱力学的整合**との釘刺し。(3) §5.5 追加 — **診断ファースト**: 市松摂動 1-RHS テストで振動の型 (checkerboard / 高波数不足 / 音響) を切り分け、forge 最有力仮説「`lowMachPrecond` が純 KEEP 経路に効いていない」を明記。§6 に P0「診断」「純 KEEP で lowMachPrecond 確認」を追加。これらは外部レビュー由来で本サーベイの deep-research では未検証 (§8 末尾に明記)。
