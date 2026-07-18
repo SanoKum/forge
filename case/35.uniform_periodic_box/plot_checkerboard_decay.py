@@ -63,7 +63,9 @@ for run in a.runs:
         with h5py.File(p, "r") as f:
             P = np.array(f["VALUE/P"], dtype=np.float64)
         steps.append(int(re.search(r"res_(\d+)\.h5", p).group(1)))
-        amp.append(abs(np.mean(P * par)) / P0)
+        # 共分散射影: サブセットで sum(par)!=0 のとき mean(P)*mean(par) の DC バイアスが
+        # 乗る (境界 6146 ノードで 3.3e-4 を「残存市松」と誤認した事故の再発防止)。
+        amp.append(abs(np.mean(P * par) - np.mean(P) * np.mean(par)) / P0)
     label = os.path.basename(run.rstrip("/"))
     ax.semilogy(steps, np.maximum(amp, 1e-12), "o-", label=label)
     print(f"{label}: A_cb {amp[0]:.3e} -> {amp[-1]:.3e} (step {steps[0]}..{steps[-1]})")
