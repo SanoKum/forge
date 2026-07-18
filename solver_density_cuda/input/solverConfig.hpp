@@ -93,7 +93,8 @@ public:
     // (旧 keepDissipation は廃止。以下 keepDissType は別設計: KEEP 中心流束は不変のまま独立な散逸レイヤを加算する)
     int keepDissType = 0;          // KEEP 用 opt-in 散逸レイヤ (plans/active/convection-keep-es-dissipation.md)。
                                    // 0: off (純粋 KEEP・散逸なし・ビット不変, 既定)
-                                   // 1: scalar entropy-stable 散逸 F -= 0.5*σ*λ'*ΔU
+                                   // 1: scalar ES 散逸 F -= 0.5*σ*λ'*ΔU (全成分同一 λ' → 渦も食う)
+                                   // 2: matrix ES 散逸 F -= 0.5*σ*R|Λ'|S Rᵀ Δw (音響のみ c' 込み → 渦を守る)
                                    //    (λ'=|Un|+c', lowMachPrecond>=1 なら c'=lowMachCprime, else c。
                                    //     LLF 型は Δw·ΔU>=0 で ES。KE 非増加は非保証 → σ は TGV L2 で較正)
     flow_float keepDissCoeff = 0.05; // 上記 σ。0 で実質 off。既定 0.05 (L1: 市松~4桁減衰/400step, L2: TGV KE cost 2.7%)。過大は解像乱流を殺す (σ=0.15 で 8.4%)。

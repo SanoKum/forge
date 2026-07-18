@@ -214,8 +214,8 @@ void solverConfig::read(std::string fname)
         // KEEP 用 opt-in 散逸レイヤ (solver=="KEEP" のみ有効。plans/active/convection-keep-es-dissipation.md)
         this->keepDissType  = getOptionalValidatedValue<int>(config, "keepDissType", 0, "");
         this->keepDissCoeff = getOptionalValidatedValue<double>(config, "keepDissCoeff", 0.05, "");
-        if (this->keepDissType < 0 || this->keepDissType > 1) {
-            std::cerr << "Error: keepDissType must be 0 (off) or 1 (scalar ES), got "
+        if (this->keepDissType < 0 || this->keepDissType > 2) {
+            std::cerr << "Error: keepDissType must be 0 (off), 1 (scalar ES) or 2 (matrix ES), got "
                       << this->keepDissType << std::endl;
             std::exit(EXIT_FAILURE);
         }

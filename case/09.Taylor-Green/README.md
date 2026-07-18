@@ -67,6 +67,7 @@ KEEP を陰解法化するときの flux Jacobian 方針 ([`plans/active/convect
 | `run_0022_cell_keep_dissoff_l2` | keepDissType=0 (新バイナリで無散逸経路の不変確認) | **−0.33%** (run_0011 参照と同挙動, 差は atomicAdd ノイズ級) | ref (不変確認) |
 | `run_0023_cell_keep_diss015_l2` | keepDissType=1, σ=0.15, lowMachPrecond=1 | **8.37%** (市松6桁減衰の対価) | ref (σ 較正上限) |
 | `run_0024_cell_keep_diss005_l2` | 同 σ=0.05 | **2.71%** (市松~4桁減衰で十分 → **既定採用**) | ref (σ 較正・既定根拠) |
+| `run_0025_cell_keep_dissmat005_l2` | **keepDissType=2 (matrix ES)**, σ=0.05 | **1.36%** (scalar の半分。市松減衰は同等以上=case/35 run_0018) — せん断/エントロピー波に \|Un\| のみの選択性が効く | ref (Step 2 matrix L2) |
 
 **所見**: (1) KEEP+block-DPLUR は **CFL≈16 (explicit の320倍) まで NaN なしで完走** — Roe-Jacobian LHS の流用で
 陰解法が安定動作。(2) 物理CFL≤2 では explicit と KE/エントロピー保存が一致 (matched CFL.05 は K/K0=1.0033 で

@@ -32,7 +32,7 @@ $$F_f = F_f^\mathrm{KEEP} - \tfrac12\,\sigma\,D_f$$
 | Step | 内容 | 状態 |
 | --- | --- | --- |
 | 1 | **単成分 CPG・スカラー ES 散逸**: $D_f=\lambda'\,\Delta U$, $\lambda'=\|U_n\|+c'$ (`lowMachPrecond>=1` で `lowMachCprime`、else $c$)。config `keepDissType`(0=off 既定・ビット不変/1=scalar)・`keepDissCoeff`(σ) | 本実装 |
-| 2 | 単成分 CPG・**matrix 版**: $D_f=R\|\Lambda'\|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, entropy-scaled)。音響固有値のみ c' スケール | 将来 |
+| 2 | 単成分 CPG・**matrix 版**: $D_f=R\|\Lambda'\|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, entropy-scaled)。音響のみ $\|U_n\|+c'$、せん断/エントロピーは $\|U_n\|$ | **実装+検証済** |
 | 3 | TP 単成分 ($s^0(T)$ 多項式=`thermo_s0_mass` 流用) | 将来 |
 | 4 | **多成分** (Chalot-Hughes-Shakib のエントロピー変数 + Gouasmi スケーリング + `thermoHrefTemp` datum/ゼロ濃度種対策) | 将来 |
 
@@ -81,3 +81,10 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   - **σ 既定を 0.05 に決定** (市松~4桁減衰/400step と KE cost 2.7% のバランス)。ケース次第で 0.15 まで上げてよい。
   - 全 run NaN なし。これらは非定常保存テストであり定常収束は主張しない (VERDICT は record として各 run に生成済)。
   - 残: Step 2 (matrix 版)・Step 3 (TP)・Step 4 (多成分) は未着手。node モードでの L1 相当も未実施 (cell のみ検証)。
+- `2026-07-19` — **Step 2 (matrix ES) 実装+検証完了** (`keepDissType: 2`)。
+  - **式検証を実装前に実施** (`solver_density_cuda/tools/verify_entropy_scaling.py`): $w=\partial\eta/\partial U$・$S=R^{-1}HR^{-\mathsf T}$ が対角で文献値 (音響 $\rho/2\gamma$・エントロピー $\rho(\gamma-1)/\gamma$・せん断 $p$) に一致・小ジャンプで Roe 型と漸近一致・$Q$ SPD、を数値確認 (PASS)。
+  - 実装: $D=R|\Lambda'|SR^{\mathsf T}\Delta w$、$|\Lambda'|$ は**音響のみ** $|U_n|+c'$ (lowMachPrecond>=1 で `lowMachCprime`)、せん断/エントロピーは $|U_n|$。$\Delta w$ は logf×2/face のみの追加コスト。
+  - **L1b (`case/35...run_0018_cell_keep_cbd_dissmat005`)**: A_cb 1e-3 → **7.1e-8** (scalar σ=0.05 の 1.3e-7 より良)。
+  - **L2 (`case/09...run_0025_cell_keep_dissmat005_l2`)**: KE cost **1.36%** = scalar (2.71%) の**半分**。市松減衰同等以上で渦を守る選択性を実証。
+  - **推奨**: LES 用途は `keepDissType: 2` を第一候補 (σ=0.05)。scalar (1) は頑健フォールバック。
+  - 残: Step 3 (TP 単成分)・Step 4 (多成分)・node モード検証・L3 (粘性 TGV Re=1600 で WALE との共存確認)。

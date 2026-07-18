@@ -24,3 +24,4 @@
 | `run_0015_cell_keep_cbd_diss` | 同 IC + **keepDissType=1 (σ=0.15, lowMachPrecond=1)** | rms_roe のみ非ゼロ (散逸が Δp 経由でのみ市松を見る=設計通り)。**A_cb 1e-3→8.0e-10 (6桁減衰/400step)** | ref (L1b 減衰エビデンス) |
 | `run_0016_cell_slau_cbd_ref` | 同 IC + SLAU (対照) | SLAU は市松を ro/roUx/roe 全部で見る (rms 即非ゼロ)。A_cb 1e-3→1.2e-8 | ref (対照) |
 | `run_0017_cell_keep_cbd_diss005` | 同 IC + keepDissType=1 **σ=0.05** (較正) | A_cb 1e-3→1.3e-7 (~4桁減衰/400step)。TGV KE cost 2.7% (case/09 run_0024) とのバランスで **σ=0.05 を既定に採用** | ref (σ 較正) |
+| `run_0018_cell_keep_cbd_dissmat005` | 同 IC + **keepDissType=2 (matrix ES, σ=0.05)** | A_cb 1e-3→**7.1e-8** (scalar σ=0.05 の 1.3e-7 より良) — 音響のみ c' 込み固有値の選択的減衰が市松に有効 | ref (Step 2 matrix L1b) |

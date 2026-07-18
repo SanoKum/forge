@@ -249,11 +249,16 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
   エネルギー $= (\tilde K + \tilde I + \tilde P)S$ ($\tilde K=\tilde C\,\tfrac12\sum u_{i,0}u_{i,1}$,
   $\tilde I=\tilde C\,\tfrac12(p_0/\rho_0+p_1/\rho_1)/(\gamma-1)$, $\tilde P$ は圧力仕事の split)。
 - **散逸レイヤ (opt-in・`keepDissType`)**: 既定 (`keepDissType: 0`) は散逸ゼロの純粋 KEEP でビット不変。
-  `keepDissType: 1` で **scalar entropy-stable 散逸** $F \mathrel{-}= \tfrac12\sigma\lambda'\Delta U$
-  ($\sigma$=`keepDissCoeff` 既定 0.05, $\lambda'=|U_n|+c'$; `lowMachPrecond>=1` なら $c'$=`lowMachCprime`
-  低マッハスケール、else $c$) を全 5 式に加える。LLF 型は $\Delta w^{\mathsf T}\Delta U\ge0$ (エントロピー凸性)
-  で ES。**KE 非増加は保証しない**ので σ は L2 (TGV) で較正済:
-  σ=0.05 で市松 ~4桁減衰/400step・TGV KE cost 2.7%/500step、σ=0.15 で ~6桁減衰・8.4%
+  σ=`keepDissCoeff` (既定 0.05)、$c'$ は `lowMachPrecond>=1` で `lowMachCprime` 低マッハスケール。
+  - `1` (**scalar ES**): $F \mathrel{-}= \tfrac12\sigma\lambda'\Delta U$, $\lambda'=|U_n|+c'$ を全 5 式に。
+    LLF 型は $\Delta w^{\mathsf T}\Delta U\ge0$ で ES。全成分同一 λ' なので渦も食う
+    (市松 ~4桁減衰/400step・TGV KE cost 2.7%@σ=0.05)。頑健フォールバック。
+  - `2` (**matrix ES, LES 第一候補**): $F \mathrel{-}= \tfrac12\sigma R|\Lambda'|SR^{\mathsf T}\Delta w$
+    (entropy-scaled Roe 型)。$w=\partial\eta/\partial U$、$H=RSR^{\mathsf T}$ の $S$ は音響 $\rho/2\gamma$・
+    エントロピー $\rho(\gamma-1)/\gamma$・せん断 $p$ ([tools/verify_entropy_scaling.py](../../solver_density_cuda/tools/verify_entropy_scaling.py)
+    で数値検証済)。$|\Lambda'|$ は**音響のみ** $|U_n|+c'$、せん断/エントロピーは $|U_n|$ →
+    **市松減衰は scalar 同等以上 (7.1e-8/400step) で KE cost 半分 (1.36%)**。
+  σ は L1 (市松減衰) と L2 (TGV KE) の両ゲートで較正
   ([convection-keep-es-dissipation](../../plans/active/convection-keep-es-dissipation.md) 変更ログ参照)。
   `massflux[ip]` は散逸込み総質量流束 (スカラー輸送と整合)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
