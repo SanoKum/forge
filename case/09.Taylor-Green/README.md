@@ -38,6 +38,44 @@ $m=2^{(境界方向数)}$ で割って一意 1 個分に補正する (`plot_ke_e
 | `run_0008_cell_pure_visc` | cell (primal hex) | pure KEEP, 粘性 | **修正後: 運動量 ~1e-7 保存・KE 物理減衰 K/K0→0.661** (node とほぼ一致; 残差は primal/dual メッシュ差)。修正前は KE×8 スプリアス増殖 | active ✅ |
 | `run_keep`, `run_keep_M0.1` | cell | 旧参照入力 (旧スキーマ config) | — | ref |
 
+### KEEP 陰解法 (block-DPLUR dual-time) 物理CFL掃引 (2026-06-29)
+
+KEEP を陰解法化するときの flux Jacobian 方針 ([`plans/active/convection-keep-revive-node.md`](../../plans/active/convection-keep-revive-node.md) §7)
+の検証。**新規コードゼロ** (`solver: KEEP` + `dualTime: 1` + `blockDPLUR: 1`, `timeIntegration: 11`) で、LHS は
+既存の Roe 分割ヤコビアン (`accumulate_split_jacobian_cf`) を流用。全 cell・非粘性・共通 T≈3.5。explicit は
+物理CFL≈0.05 (dt=0.007)、implicit は dt を上げて物理CFLを掃引。掃引解析は
+[`analyze_implicit_sweep.py`](analyze_implicit_sweep.py) → [`implicit_sweep_ke_entropy.png`](implicit_sweep_ke_entropy.png)。
+
+| run_* | 物理CFL | 主要設定差分 | K/K0 (T末, 理想=1) | dS/\|S0\| | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| `run_0011_cell_keep_expl_ref` | 0.05 | explicit RK4 (基準) | 1.0033 | -1.1e-6 | active ✅ |
+| `run_0012_cell_keep_impl_cfl005` | 0.05 | implicit, dt=explicitと一致 | **1.0033 (explicitと一致)** | -5.7e-7 | active ✅ |
+| `run_0013_cell_keep_impl_cfl02` | 0.2 | implicit dt=0.028 | 1.0032 | -8.0e-7 | active ✅ |
+| `run_0014_cell_keep_impl_cfl05` | 0.5 | implicit dt=0.07 | 1.0032 | 1.8e-6 | active ✅ |
+| `run_0015_cell_keep_impl_cfl1` | 1.0 | implicit dt=0.14 | 1.0031 | 1.1e-5 | active ✅ |
+| `run_0016_cell_keep_impl_cfl2` | 2.0 | implicit dt=0.28 | 1.0020 | 4.7e-5 | active ✅ |
+| `run_0017_cell_keep_impl_cfl4` | 4.0 | implicit dt=0.56 | 0.9983 | 1.8e-4 | active ✅ |
+| `run_0018_cell_keep_impl_cfl8` | 8.0 | implicit dt=1.12 | 0.9865 | 6.1e-4 | active ✅ |
+| `run_0019_cell_keep_impl_cfl16` | 16 | implicit dt=2.24 | 0.9542 | 1.8e-3 | active ✅ |
+| `run_0020_cell_keep_impl_cfl2_sub50` | 2.0 | CFL2 で nSubIterDualTime 20→50 | 1.0020 (sub20と完全一致) | 4.7e-5 | active ✅ |
+| `run_0021_cell_keep_impl_cfl16_sub80` | 16 | CFL16 で nSubIterDualTime 20→80 | 0.9536 (sub20とほぼ同一) | 1.8e-3 | active ✅ |
+
+### keepDissType (ES 散逸レイヤ) L2 較正 run ([plan](../../plans/active/convection-keep-es-dissipation.md))
+
+| `run_*` | 目的・設定差分 | KE drop (500step, M0.4, RK4) | 状態 |
+| --- | --- | --- | --- |
+| `run_0022_cell_keep_dissoff_l2` | keepDissType=0 (新バイナリで無散逸経路の不変確認) | **−0.33%** (run_0011 参照と同挙動, 差は atomicAdd ノイズ級) | ref (不変確認) |
+| `run_0023_cell_keep_diss015_l2` | keepDissType=1, σ=0.15, lowMachPrecond=1 | **8.37%** (市松6桁減衰の対価) | ref (σ 較正上限) |
+| `run_0024_cell_keep_diss005_l2` | 同 σ=0.05 | **2.71%** (市松~4桁減衰で十分 → **既定採用**) | ref (σ 較正・既定根拠) |
+
+**所見**: (1) KEEP+block-DPLUR は **CFL≈16 (explicit の320倍) まで NaN なしで完走** — Roe-Jacobian LHS の流用で
+陰解法が安定動作。(2) 物理CFL≤2 では explicit と KE/エントロピー保存が一致 (matched CFL.05 は K/K0=1.0033 で
+explicit と4桁一致) → **LHS の Roe 散逸は収束解を汚染しない**。(3) CFL を上げると KE が単調減衰 (CFL16 で
+-4.6%)・エントロピー増。**ただしこの劣化は内部反復不足 (LHS散逸漏れ) ではなく BDF2 dual-time の時間離散誤差**が
+支配: CFL2 で内部残差は 6.8e-5→3e-9 と完全収束し sub20≡sub50、CFL16 でも sub20≈sub80 で KE が回復しない
+(サブ反復を増やしても改善しない=温度離散誤差は irreducible)。→ **LHS の Jacobian 選択は解の質にほぼ無関係**で、
+大 dt での精度限界は外側の時間積分 (BDF2) が決める。LES では物理 dt を時間精度が許す範囲に保つこと。
+
 成果物: KE・エントロピー時間履歴 [`ke_entropy_history.png`](ke_entropy_history.png)、ポストスクリプト
 [`plot_ke_entropy_history.py`](plot_ke_entropy_history.py) (旧 `plot_taylorGreen.py` の現行版=res ベース・多重度補正付き)。
 各 run の VERDICT は `CONVERGENCE_VERDICT.txt` (非定常 TGV のため定常収束ツールは `NOT CONVERGED`=正常)。

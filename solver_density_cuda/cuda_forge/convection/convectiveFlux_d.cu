@@ -198,9 +198,13 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         );
 
     } else if (cfg.solver == "KEEP") {
-        // 純粋 KEEP 中心流束 (散逸なし)。LES/ILES 向け低散逸対流。SGS 散逸は WALE が担う。
+        // 純粋 KEEP 中心流束 + opt-in ES 散逸レイヤ (keepDissType, 既定 0=散逸なし・ビット不変)。
+        // LES/ILES 向け低散逸対流。SGS 散逸は WALE が担う。
         KEEP_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
-            cfg.gamma, geom, st, reso
+            cfg.gamma,
+            cfg.keepDissType, cfg.keepDissCoeff,
+            cfg.lowMachPrecond, cfg.precondEps,
+            geom, st, reso
         );
 
     } else {

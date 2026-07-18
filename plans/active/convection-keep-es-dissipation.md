@@ -1,0 +1,83 @@
+# KEEP 用 entropy-stable 散逸レイヤ (段階導入)
+
+## メタ
+
+- **area**: `convection`
+- **status**: `in_progress`
+- **related_docs**:
+  - [`methods/convection/implementation.md`](../../methods/convection/implementation.md) (`KEEP_d` 節)
+  - [`methods/convection/theory.md`](../../methods/convection/theory.md)
+- **related_plans**:
+  - [`convection-central-scheme-oscillation-control.md`](../../notes/investigations/convection-central-scheme-oscillation-control.md) — 本計画の背景サーベイ (振動源4分類・§10 検証ラダー)
+  - [`turbulence-iddes-sst.md`](turbulence-iddes-sst.md) — Phase 1.5 低散逸 flux の受け皿 (KEEP を LES 域で使う動機)
+  - [`time_integration-lowmach-preconditioning.md`](../accepted/time_integration-lowmach-preconditioning.md) — `lowMachCprime` (c') の出典
+  - [`time_integration-general-eos-jacobian.md`](../accepted/time_integration-general-eos-jacobian.md) — Step 2 matrix 版の固有系素材
+- **created**: `2026-07-07`
+- **owner**: `CFD Dev`
+
+## 1. 目的
+
+純粋 KEEP (`solver: KEEP`) は散逸ゼロの中心流束であり、(a) 低マッハで圧力 odd-even 市松 (checkerboard) を減衰できない (離散 null-mode)、(b) EC/KEP 系固有の線形不安定 (anti-diffusion, Ranocha-Gassner) を持つ。**`lowMachPrecond` は SLAU 散逸の中の c' 置換であり、散逸を持たない KEEP には作用しない** (前処理する対象が無い)。
+
+本計画は KEEP の中心流束を汚さずに、**独立な opt-in 散逸レイヤ**を段階導入する:
+
+$$F_f = F_f^\mathrm{KEEP} - \tfrac12\,\sigma\,D_f$$
+
+完了時: LES/ILES 用の KEEP が低マッハでも市松らず、KE 保存性の劣化が定量管理された状態で回る。
+
+## 2. スコープ
+
+**やる (段階導入)**:
+
+| Step | 内容 | 状態 |
+| --- | --- | --- |
+| 1 | **単成分 CPG・スカラー ES 散逸**: $D_f=\lambda'\,\Delta U$, $\lambda'=\|U_n\|+c'$ (`lowMachPrecond>=1` で `lowMachCprime`、else $c$)。config `keepDissType`(0=off 既定・ビット不変/1=scalar)・`keepDissCoeff`(σ) | 本実装 |
+| 2 | 単成分 CPG・**matrix 版**: $D_f=R\|\Lambda'\|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, entropy-scaled)。音響固有値のみ c' スケール | 将来 |
+| 3 | TP 単成分 ($s^0(T)$ 多項式=`thermo_s0_mass` 流用) | 将来 |
+| 4 | **多成分** (Chalot-Hughes-Shakib のエントロピー変数 + Gouasmi スケーリング + `thermoHrefTemp` datum/ゼロ濃度種対策) | 将来 |
+
+**やらない**:
+- 衝撃捕獲 (衝撃レイヤは当面 SLAU ブレンド、中期に directional LAD を別 plan で)
+- KEEP 中心流束自体の変更 (KEEP-PEP/AEC 化は別 plan)
+- RANS↔LES f_d ブレンド ([turbulence-iddes-sst](turbulence-iddes-sst.md) §4.8 側)
+
+## 3. 理論 (Step 1)
+
+スカラー LLF/Rusanov 型散逸 $D=\lambda'\Delta U$ ($\lambda'>0$) は、エントロピー $\eta$ の凸性より
+$\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar H$=経路平均の $\partial U/\partial w$、SPD) で**エントロピー散逸的** (Tadmor)。低マッハスケール $c\to c'$ は $\lambda'>0$ を保つので ES 性は不変。
+
+- **KE 非増加は保証しない** (Chandrashekar の釘: KE 安定には別条件)。σ を小さく取り、L2 (TGV) で KE 劣化を実測管理する。
+- **市松への効果**: 面ジャンプ $\Delta U$ は 2Δ モードを最大感度で見る (中心流束の null-mode と対照的)。L1 の市松圧力摂動は $\Delta(\rho e)=\Delta p/(\gamma-1)$ 経由で減衰する。
+- σ の既定 0.15 は仮置き。L1 (減衰) と L2 (KE 保存) のトレードオフで較正する。
+
+## 4. 実装設計 (Step 1)
+
+- **config** (`solverConfig.hpp/.cpp`): `keepDissType` (int, 0 既定, 0..1)・`keepDissCoeff` (flow_float, 0.15 既定)。`keepDissType==0` で既存 `KEEP_d` とビット不変。
+- **カーネル** (`convectiveFlux_keep_d.inc.cuh`): 引数追加 `(keepDissType, keepDissCoeff, lowMachPrecond, precondEps)`。face で保存量ジャンプ $\Delta U$ (primitives から構成)・$\lambda'=|U_n|+c'$ を計算し、`temp -= 0.5*σ*λ'*ΔU*sss` を全 5 式に加算。`massflux[ip]` は散逸込みの総質量流束 (スカラー輸送と整合)。
+- **cell/node 両対応**: CV 抽象のまま (面ジャンプ+面法線のみ使用)。node は内部双対面のみ (境界は既存どおり別カーネル)。
+- **陰解法**: RHS のみの変更。LHS は defect-correction で凍結のまま (収束解は σ に依存して変わる=スキームが変わるため当然)。
+
+## 5. 検証 (サーベイ §10 ラダー)
+
+- **L1 (case/35, 激軽)**: 一様低マッハ流 ($M_0=0.1$, $\rho_0=1$, $P_0=1/\gamma$) + 市松圧力摂動 $P=P_0[1+\epsilon(-1)^{i+j+k}]$, $\epsilon=10^{-3}$ (python で input h5 の VALUE を直接生成、パリティは重心から)。
+  - **L1a**: pure KEEP (σ=0) で初期 RHS が機械ゼロ (null-mode の実証)。
+  - **L1b**: σ>0 で市松振幅 $E^{HF}_p$ が減衰。
+- **L2 (case/09, 軽)**: TGV M0.4 32³ explicit RK4。σ=0 が既存とビット不変・σ>0 の KE 減衰率を定量化 (SLAU 比で桁小)。
+- 全 run: 新規 `run_*`・README run 表・NaN 監視・`residual_history.png`。
+
+## 6. リスク・注意
+
+- **stale build**: config struct 変更 → **full rebuild 必須** (既知の罠)。
+- σ 過大は L2 で KE を殺し LES の意味を失う。σ 過小は L1b で市松が残る。両ゲートで挟む。
+- Step 4 (多成分) の float32 桁落ちは `thermoHrefTemp` datum + thermo 層が double であることで対処見込み (サーベイ open question 7 の評価済み)。
+
+## 変更ログ
+
+- `2026-07-07` — 計画作成 (Step 1 実装開始)。背景は [convection-central-scheme-oscillation-control.md](../../notes/investigations/convection-central-scheme-oscillation-control.md) §5.5/§6/§10。
+- `2026-07-19` — **Step 1 実装+検証完了**。config `keepDissType`/`keepDissCoeff` + `KEEP_d` に scalar ES 散逸 (λ'=|Un|+c', lowMachPrecond>=1 で `lowMachCprime`)。full rebuild 後 L1/L2 検証:
+  - **L1a (null-mode 実証, `case/35...run_0014_cell_keep_cbd_pure`)**: 市松圧摂動に対し pure KEEP の全 rms 残差が**厳密ゼロ** = 市松は純 KEEP の厳密な離散 null-mode (机上予言と一致)。SLAU 対照 (`run_0016`) は即座に非ゼロ。
+  - **L1b (減衰, `run_0015` σ=0.15 / `run_0017` σ=0.05)**: A_cb 1e-3 → 8.0e-10 (6桁) / 1.3e-7 (~4桁)。散逸は rms_roe のみ非ゼロ (Δp 経由で設計通り選択的)。
+  - **L2 (KE cost, `case/09...run_0022/0023/0024`)**: σ=0 は既存参照と同挙動 (−0.33%, 不変確認)。σ=0.15: KE −8.37%、σ=0.05: −2.71%。
+  - **σ 既定を 0.05 に決定** (市松~4桁減衰/400step と KE cost 2.7% のバランス)。ケース次第で 0.15 まで上げてよい。
+  - 全 run NaN なし。これらは非定常保存テストであり定常収束は主張しない (VERDICT は record として各 run に生成済)。
+  - 残: Step 2 (matrix 版)・Step 3 (TP)・Step 4 (多成分) は未着手。node モードでの L1 相当も未実施 (cell のみ検証)。

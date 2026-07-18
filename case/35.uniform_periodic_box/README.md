@@ -20,3 +20,7 @@
 | `run_0010_node_periodic_tg_implicit_mirror` | **§4.5.7 実装後**: run_0008 + sweep ごと dq ミラー(slave=master) | **step100 完走・NaN なし・場健全**(ρ 0.83–1.02, P/T/roe 有界, 渦発達)。run_0009(slip)と同等プラトーになり periodic 固有発散消失。**implicit periodic 安定化達成** | ref (§4.5.7 検証エビデンス) |
 | `run_0011_node_periodic_tg_gradgather` | **勾配 periodic gather 実装後**: run_0010 同設定で勾配 gather 有効 | step100 安定・場健全(ρ 0.825–1.017)で run_0010 と実質不変、seam viscous が片側→両側へ微修正(回帰なし)。free-stream も機械ゼロ維持 | ref (勾配 gather 検証) |
 | `run_0012_gradcheck` | **勾配 gather 定量検証**: TG 解析勾配 ∂ux/∂x=M0cosx cosy cosz と照合 | 境界(合併)勾配 mean\|err\|=5.3e-4(\|g\|max 0.398 vs 解析0.4)で内部5.8e-4と同等、master==slave一致(2.9e-7)。periodic境界勾配が内部同等に正しいと確認 | ref (勾配検証エビデンス) |
+| `run_0014_cell_keep_cbd_pure` | **L1a/b 市松診断** (ラダー L1, [survey §10](../../notes/investigations/convection-central-scheme-oscillation-control.md)): cell 32³, 一様 M0.1 流+圧力のみ市松摂動 ε=1e-3 (`make_checkerboard_ic.py`), pure KEEP (keepDissType=0) | **null-mode 実証**: 全 rms 残差が厳密ゼロ (中心平均が市松を相殺し原理的に見えない)・A_cb=1e-3 が 400step 後も**不変** | ref (L1a null-mode エビデンス) |
+| `run_0015_cell_keep_cbd_diss` | 同 IC + **keepDissType=1 (σ=0.15, lowMachPrecond=1)** | rms_roe のみ非ゼロ (散逸が Δp 経由でのみ市松を見る=設計通り)。**A_cb 1e-3→8.0e-10 (6桁減衰/400step)** | ref (L1b 減衰エビデンス) |
+| `run_0016_cell_slau_cbd_ref` | 同 IC + SLAU (対照) | SLAU は市松を ro/roUx/roe 全部で見る (rms 即非ゼロ)。A_cb 1e-3→1.2e-8 | ref (対照) |
+| `run_0017_cell_keep_cbd_diss005` | 同 IC + keepDissType=1 **σ=0.05** (較正) | A_cb 1e-3→1.3e-7 (~4桁減衰/400step)。TGV KE cost 2.7% (case/09 run_0024) とのバランスで **σ=0.05 を既定に採用** | ref (σ 較正) |

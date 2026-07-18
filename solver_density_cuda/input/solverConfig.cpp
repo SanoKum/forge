@@ -211,6 +211,15 @@ void solverConfig::read(std::string fname)
         // solver関連
         this->solver = getValidatedValue<std::string>(config, "solver");
 
+        // KEEP 用 opt-in 散逸レイヤ (solver=="KEEP" のみ有効。plans/active/convection-keep-es-dissipation.md)
+        this->keepDissType  = getOptionalValidatedValue<int>(config, "keepDissType", 0, "");
+        this->keepDissCoeff = getOptionalValidatedValue<double>(config, "keepDissCoeff", 0.05, "");
+        if (this->keepDissType < 0 || this->keepDissType > 1) {
+            std::cerr << "Error: keepDissType must be 0 (off) or 1 (scalar ES), got "
+                      << this->keepDissType << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
         // GPU設定
         this->gpu = getValidatedValue<int>(config, "gpu");
 

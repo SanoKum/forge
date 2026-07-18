@@ -90,7 +90,13 @@ public:
                                    // ε=0.15: M4 ノズルで limit-cycle 振幅 −32% (検証済), ε=0.3: −17%。
     int lowMachThornber = 0;       // 0: off (従来), 1: Thornber 型再構成補正 (SLAU の L/R 速度ジャンプを
                                    // z=min(M,1) で縮約)。lowMachPrecond と直交・併用可。SLAU 経路のみ。
-    // (旧 keepDissipation は廃止。KEEP_d は純粋 KEEP 中心流束のみ = 常に散逸なし。散逸が要る用途は SLAU/ROE を使う)
+    // (旧 keepDissipation は廃止。以下 keepDissType は別設計: KEEP 中心流束は不変のまま独立な散逸レイヤを加算する)
+    int keepDissType = 0;          // KEEP 用 opt-in 散逸レイヤ (plans/active/convection-keep-es-dissipation.md)。
+                                   // 0: off (純粋 KEEP・散逸なし・ビット不変, 既定)
+                                   // 1: scalar entropy-stable 散逸 F -= 0.5*σ*λ'*ΔU
+                                   //    (λ'=|Un|+c', lowMachPrecond>=1 なら c'=lowMachCprime, else c。
+                                   //     LLF 型は Δw·ΔU>=0 で ES。KE 非増加は非保証 → σ は TGV L2 で較正)
+    flow_float keepDissCoeff = 0.05; // 上記 σ。0 で実質 off。既定 0.05 (L1: 市松~4桁減衰/400step, L2: TGV KE cost 2.7%)。過大は解像乱流を殺す (σ=0.15 で 8.4%)。
     flow_float dt_max;
     flow_float dt_min;
 

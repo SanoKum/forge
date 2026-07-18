@@ -248,17 +248,25 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
   $\tilde C = \overline{\rho}\,\overline{U}_n S$, 運動量 $\tilde M_i = \tilde C\,\overline{u_i} + \overline{p}\,n_i S$,
   エネルギー $= (\tilde K + \tilde I + \tilde P)S$ ($\tilde K=\tilde C\,\tfrac12\sum u_{i,0}u_{i,1}$,
   $\tilde I=\tilde C\,\tfrac12(p_0/\rho_0+p_1/\rho_1)/(\gamma-1)$, $\tilde P$ は圧力仕事の split)。
-- **散逸なし**: Roe 行列散逸は持たない。安定化散逸が要る用途は SLAU/ROE を使う。引数も簡素化され
-  `KEEP_d(ga, geom, st, reso)` のみ (リミタ/勾配/Ducros/`keepDissipation` は受け取らない)。
+- **散逸レイヤ (opt-in・`keepDissType`)**: 既定 (`keepDissType: 0`) は散逸ゼロの純粋 KEEP でビット不変。
+  `keepDissType: 1` で **scalar entropy-stable 散逸** $F \mathrel{-}= \tfrac12\sigma\lambda'\Delta U$
+  ($\sigma$=`keepDissCoeff` 既定 0.05, $\lambda'=|U_n|+c'$; `lowMachPrecond>=1` なら $c'$=`lowMachCprime`
+  低マッハスケール、else $c$) を全 5 式に加える。LLF 型は $\Delta w^{\mathsf T}\Delta U\ge0$ (エントロピー凸性)
+  で ES。**KE 非増加は保証しない**ので σ は L2 (TGV) で較正済:
+  σ=0.05 で市松 ~4桁減衰/400step・TGV KE cost 2.7%/500step、σ=0.15 で ~6桁減衰・8.4%
+  ([convection-keep-es-dissipation](../../plans/active/convection-keep-es-dissipation.md) 変更ログ参照)。
+  `massflux[ip]` は散逸込み総質量流束 (スカラー輸送と整合)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
   周回 (境界面は ic1=ghost の生値で中心流束、専用境界カーネルは skip)、node 弱形式は内部双対面のみ
   周回し境界は `convectiveFlux_boundary_d` が担う。`massflux[ip]` に総質量流束を書きスカラー輸送と整合。
 - **保存性 (Taylor-Green M0.4, $32^3$)**: cell・node とも運動量 ~1e-7・KE 0.4%・エントロピー ~1e-5 で保存
   (非粘性)。検証 [`case/09.Taylor-Green`](../../case/09.Taylor-Green/README.md)。なお cell 全周期の保存には
   partnerCellID の device 転送修正が前提 ([boundary-cell-periodic-conservation](../../plans/accepted/boundary-cell-periodic-conservation.md))。
-- **注意 (低マッハ checkerboard)**: 純粋 KEEP は非散逸ゆえ低マッハ圧力 odd-even を抑えない。homogeneous
-  方向で市松が出る場合は `lowMachPrecond` や SLAU 系を併用する (Roe 散逸を KEEP に混ぜる旧 `keepDissipation`
-  経路は廃止した)。
+- **注意 (低マッハ checkerboard)**: 純粋 KEEP (`keepDissType: 0`) は非散逸ゆえ低マッハ圧力 odd-even
+  (2Δ 市松) を**原理的に減衰できない** (中心平均が市松モードを相殺して見えない=離散 null-mode)。
+  **`lowMachPrecond` は SLAU 散逸内の c' 置換であり、散逸を持たない純 KEEP には作用しない** (前処理対象が無い)。
+  市松が出る場合は `keepDissType: 1` (低マッハスケール scalar ES 散逸) を使う。検証は
+  [case/35](../../case/35.uniform_periodic_box/README.md) の市松摂動ケース (L1) 参照。
 - **periodic 継ぎ目の P 振動 (node, 解消済)**: node periodic 合併 DOF の保存量 state が master/slave で desync
   していた件は **root→member ミラー** (§4.5.9 / `periodicMirrorNSState`) で解消済。詳細は
   [median-dual-3d plan §4.5.9](../../plans/active/discretization-median-dual-3d.md)。
