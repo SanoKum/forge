@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `convection`
-- **status**: `draft`
+- **status**: `done`
 - **related_docs**:
   - `methods/convection/theory.md`
   - `methods/convection/implementation.md`
@@ -141,17 +141,16 @@ species 流束は同一 face 組成の upwind: `F_{ρY_s}=ṁ_f·Y_{s,upwind}^f`
 
 ## 9. 完了条件 / 回帰
 
-- [ ] `methods/convection/theory.md` 更新 (mixed-order, 整合 face composition, positivity/simplex)。
-- [ ] `methods/convection/implementation.md` 更新 (現行フロー survey + 変更)。
-- [ ] 1D ベンチ + CFL sweep + 指標表、case/28 比較、fallback/renorm 統計。
-- [ ] **回帰**: `speciesFaceReconstruction=0` で step-0 完全一致 (face state/dt_local/residual/flux)。
-      単成分 CPG/TP・非軸対称・既存多成分・case/23・case/28 baseline がビット不変
-      (atomicAdd 非決定性のため長時間完全一致は不要、step-0 一致で no-op 証明)。
-- [ ] 判定ゲートの結論 + 次の推奨を報告。
-- [ ] commit 分離: `test: add multispecies material-contact benchmark` /
-      `feat: reconstruct consistent multispecies face composition` / `test/docs: validate contact pressure`。
-- [ ] `plans/README.md` 同期、本 plan `status` 更新、§10 に変更ログ。
-- [ ] **コード変更後は自動で PEP 実装へ進まず、結果と解釈を先に報告する。**
+- [x] `methods/convection/theory.md` 更新 (mixed-order, S2 整合 face composition, ρ–Y 同一再構成原理。2026-07-19)。
+- [x] `methods/convection/implementation.md` 更新 (`speciesFaceReconstruction` 0/1/2 の表。2026-07-19)。
+- [x] 1D ベンチ + CFL sweep + 指標表、case/28 比較、fallback/renorm 統計 (§11–15)。
+- [x] **回帰**: 既定 0 でビット不変 (Phase A+B commit 7ceaade で確認)。
+- [x] 判定ゲートの結論 + 次の推奨を報告 (§13–15: S2 production / S3 棄却 / 本質は高 CFL defect-correction)。
+- [x] commit 分離 (7ceaade / 21b92f5 / S3 系列)。
+- [x] `plans/README.md` 同期、本 plan `status` 更新、§10 に変更ログ。
+- [x] **コード変更後は自動で PEP 実装へ進まず、結果と解釈を先に報告する** (S2 で十分・double-flux/PEP は不要と結論)。
+- [ ] (follow-up, 未着手) 多成分 contact の自動回帰テスト登録 (`tests/regression/` へ S2 step-0 一致 + case/28 短縮版)。
+      回帰スイート拡充の一環として別途実施 (監査 [notes/investigations/plans-active-audit-weak-model-readiness.md](../../notes/investigations/plans-active-audit-weak-model-readiness.md) 横断アクション 5)。
 
 ## 11. 実装ログ (S2/S3 face 整合再構成)
 
@@ -302,6 +301,14 @@ time:
     S3 を局所 1 次化しただけ → S2 を production 推奨で維持; C でも高 CFL 発散/大振幅なら LHS(1次)/RHS(2次)
     defect-correction か 1 次 species 散逸除去が支配 → S3 は experimental 棚上げ。
     **結果が出るまで S2 を production 候補とする結論は維持**。
+- `2026-07-19` — **クローズ (status=done, accepted へ移動)**。結論: **S2 (`speciesFaceReconstruction:1`,
+  ρ-limiter) を production 採用** (cfl2 で A_P −77% / cfl4 で −48%)。S3 (移流 2 次化) は棄却
+  (1 次移流散逸が limit-cycle を減衰させており、2 次化は defect-correction で ~10× 悪化)、S2c
+  (中心補間) は高 CFL 発散で劣位、double-flux / 完全 PEP は不要と判断。統一原理「ρ と Y は同一
+  再構成で揃える」を 3 実験で確立。docs 反映済み (`methods/convection/{theory,implementation}.md`,
+  `procedures/solver-settings.md`)。残る follow-up は自動回帰テスト登録のみ (§9 参照)。
+  limit-cycle の本質 (高 CFL defect-correction) を根治する species LHS 2 次化は、必要が生じたら
+  別 plan として起票する。
 
 ## 14. rho-Y 共通リミタ診断結果 (2026-06-20, `multispeciesRhoYCommonLimiter`)
 

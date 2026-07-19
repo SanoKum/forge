@@ -87,6 +87,27 @@ mesh:
 1. `convMethod: 0, limiter: 2` で安定した解を得る（例：10000ステップ）
 2. その結果を `valueFileName` で引き継ぎ、`convMethod: 1, limiter: 2` で計算する
 
+## speciesFaceReconstruction — 多成分 TP の face 組成整合
+
+`time.deltaT.speciesFaceReconstruction` (任意, 既定 `0`)。多成分 thermally-perfect (`thermalMethod: 2`,
+`nSpecies > 1`) 専用。face thermo に使う組成の再構成次数を制御する。
+
+| 値 | 動作 | 使いどころ |
+|---|---|---|
+| `0` | face thermo はセル値 Y (1次, mixed-order) | 既定・ビット不変 |
+| `1` | **S2**: Y を ρ と同一リミッタで face へ 2 次再構成し thermo に使用 | **多成分 TP で contact/混合層の圧力振動・残差床を下げたいとき (production 推奨)** |
+| `2` | S2+S3: species 移流も同一 face 組成 | **使用しない** (cfl≤2 限定の experimental。高 CFL で発散) |
+
+```yaml
+time:
+  deltaT:
+    speciesFaceReconstruction: 1   # 多成分 TP の face thermo 組成を ρ と同次数で整合
+```
+
+効果の実測 (case/28 He/空気 coaxial): 圧力振動振幅 cfl2 で −77% / cfl4 で −48%。単成分・CPG では
+無効果 (組成を thermo に使わないため)。詳細は [`../methods/convection/theory.md`](../methods/convection/theory.md)
+の「多成分 TP の face 組成整合」節。
+
 ## discretization / bndFirstOrder — 離散化レイアウト (node-centered)
 
 `mesh.discretization` (任意, 既定 `"cell"`)。`"node"` で node-centered (中点双対 median-dual) 化。

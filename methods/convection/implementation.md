@@ -61,6 +61,21 @@ limiter = (duc > 0.8) ? max(0.0, (1.0 - duc) * limiter) : limiter;
 
 を適用する (Ducros 値が高い、すなわち圧縮性ショック近傍で再構成を抑制)。
 
+### 多成分 TP の face 組成整合 (`speciesFaceReconstruction`)
+
+`convectiveFlux_d.cu` の `thermalMethod==2` (TP) 分岐で、face thermo ($R_\mathrm{mix}, T, h$) に使う
+組成 $Y_{s,f}$ を切り替える (理論と検証は [theory.md](theory.md) の同名節、設計判断は
+[`plans/accepted/convection-multispecies-contact-pressure.md`](../../plans/accepted/convection-multispecies-contact-pressure.md))。
+
+| 値 | 動作 | 位置づけ |
+| --- | --- | --- |
+| `0` (既定) | face thermo にセル値 $Y_s$ (1 次) — mixed-order | ビット不変の従来挙動 |
+| `1` (**S2**) | $\nabla Y_s$ (Green-Gauss) + **$\psi_\rho$ (ρ と同一リミッタ)** で $Y_{s,L/R}$ を再構成し thermo に使用。clamp + $\Sigma Y=1$ 正規化 | **多成分 TP の production 推奨** |
+| `2` (S2+S3) | 加えて species 移流も同一 face 組成の upwind (`species_advection_faceY_d`) | **experimental・cfl≤2 限定** (1 次 LHS との defect-correction 不整合で高 CFL 発散) |
+
+関連: `multispeciesRhoYCommonLimiter` (既定 0) は ρ–Y 共通リミッタの診断オプション、
+`limiter_Y` ($\psi_Y$) は診断用残置 ($Y$ 再構成には使わない — $\min(\psi_\rho,\psi_Y)$ は発散実績あり)。
+
 ## 各カーネルの構造
 
 共通する処理パターン:

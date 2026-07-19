@@ -25,7 +25,6 @@
 | --- | --- | --- |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
-| [convection-multispecies-contact-pressure.md](active/convection-multispecies-contact-pressure.md) | `convection` | 多成分 TP 接触面の圧力振動 (face-state 整合化 → PEP 切り分け) |
 | [convection-keep-revive-node.md](active/convection-keep-revive-node.md) | `convection / turbulence` | KEEP スキーム復活 (modern API・cell/node) + node WALE で LES/ILES |
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
 | [discretization-median-dual.md](active/discretization-median-dual.md) | `architecture` | cell-centered / node-centered (median-dual) 両対応化 |
@@ -56,6 +55,7 @@
 | [convection-keep-diss-recon-jump.md](accepted/convection-keep-diss-recon-jump.md) | `convection` | KEEP ES 散逸の再構成ジャンプ化 (keepDissJump: 市松無傷で解像スケール保護, node LES 推奨構成) |
 | [turbulence-wale-fix.md](accepted/turbulence-wale-fix.md) | `turbulence` | WALE 不活性バグ (壁なしメッシュ wall_dist≡0) + Sd テンソル誤式の修正; 64³ TGV では WALE off の ILES+ES が最良と判明 |
 | [turbulence-sigma-model.md](accepted/turbulence-sigma-model.md) | `turbulence` | σ-model SGS (Nicoud 2011, LESmodel:2) 追加; 64³ TGV では WALE 同様過散逸で ILES+ES が最良のまま |
+| [convection-multispecies-contact-pressure.md](accepted/convection-multispecies-contact-pressure.md) | `convection` | 多成分 TP contact 圧力振動: S2 (`speciesFaceReconstruction:1`, ρ-limiter face 組成) を production 採用。S3/中心補間/PEP は棄却 |
 | [convection-slau2-lowmach.md](accepted/convection-slau2-lowmach.md) | `convection` | SLAU2 圧力流束 (低マッハ圧力–速度カップリング是正) |
 | [diffusion-node-boundary-real-distance.md](accepted/diffusion-node-boundary-real-distance.md) | `diffusion` | node 境界半割面 拡散の実距離 over-relax 化 (∇·S 弱形式の置換) |
 | [diffusion-node-wall-viscous-distance.md](accepted/diffusion-node-wall-viscous-distance.md) | `diffusion` | node-centered 粘性壁 flux の法線距離修正 (mirror-ghost 退化対策) |

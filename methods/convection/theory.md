@@ -56,7 +56,31 @@ $$
 を用い、$\mathrm{duc} > 0.8$ の領域で $\psi \leftarrow (1 - \mathrm{duc}) \psi$ と
 減衰させる。
 
-## 数値フラックススキーム
+### 多成分 TP の face 組成整合 (mixed-order の解消, `speciesFaceReconstruction`)
+
+多成分 thermally-perfect (TP) では、face の熱力学量 ($R_\mathrm{mix}, T, h, c, H$) が組成 $Y_s$ に
+依存する。既定 (`speciesFaceReconstruction: 0`) の face 状態は **mixed-order** である:
+$\rho_f, p_f, u_f$ は 2 次再構成だが、thermo 用の $Y_{s,f}$ はセル値 (1 次) を使う。有限厚さの
+混合層 ($\nabla Y \neq 0$, $\psi > 0$) ではこの不整合が face 温度誤差
+$\Delta T_f^{MO} = T_f(R_\mathrm{mix}(Y_\mathrm{cell})) - T_f(R_\mathrm{mix}(Y_\mathrm{face}))$ を生み、
+実測で最大 ~30 K ($T\sim300$ K の 10%)。これが高 CFL 陰解法の contact 圧力振動
+(擬似時間 limit-cycle) の一因になる。
+
+`speciesFaceReconstruction: 1` (**S2**, production 推奨) は thermo 用の $Y_{s,f}$ を
+$\rho$ と**同一リミッタ $\psi_\rho$** で face へ 2 次再構成し (clamp + $\Sigma Y = 1$ 正規化)、
+この誤差を消す。**species の移流自体は 1 次風上のまま**変えない。
+
+検証済みの設計原理 (`plans/accepted/convection-multispecies-contact-pressure.md` に 3 実験の詳細):
+
+- **$\rho$ と $Y$ は同一再構成で揃えなければならない**。$\min(\psi_\rho, \psi_Y)$ の非対称
+  リミッタ・中心補間 $Y_f$ (S2c)・移流だけ 2 次化 (S3) はいずれも $\rho$–$Y$ 不整合を再生産し、
+  高 CFL で発散または振動悪化する。sharp face で $\psi_\rho \to 0$ のとき $\rho$ と $Y$ が
+  **揃って** 1 次化することが安定性の要。
+- **species 移流の 2 次化 (S3, `:2`) は棄却**: 1 次移流の散逸が limit-cycle を減衰させており、
+  2 次化 (+1 次 LHS 対角) は defect-correction 不整合で振動を ~10 倍悪化させる。cfl≤2 専用の
+  experimental 扱い。
+- 効果 (case/28 He/空気 contact): S2 で圧力振動振幅が cfl2 で −77%、cfl4 で −48%、残差も低下。
+  limit-cycle 自体は高 CFL の defect-correction 現象で cfl1 では S0/S2 差がほぼ消える。
 
 forge には以下が実装されている。括弧内は現状のラッパで有効化されているか。
 
