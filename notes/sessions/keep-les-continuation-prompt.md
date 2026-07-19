@@ -1,72 +1,83 @@
-# 引き継ぎプロンプト: KEEP-LES 安定化の続き (2026-07-19 セッションから)
+# 引き継ぎプロンプト: KEEP-LES 基盤完成後の展開 (2026-07-19 セッション末更新)
 
-> 新セッションの冒頭にこのファイルを読ませる。前セッションで「KEEP を LES/DES で安定に回す」基盤が完成した。
-> ここから先の候補タスクと、踏んだ罠・運用ルールをまとめる。
+> 新セッションの冒頭にこのファイルを読ませる。KEEP-LES の数値基盤 (散逸設計・free-stream 保存・
+> SGS 整理) が実測+DNS 裏付きで完成した。ここから先の候補タスクと、罠・運用ルールをまとめる。
 
 ## 完了済み (再調査・再実装しないこと)
 
-1. **KEEP 用 entropy-stable 散逸レイヤ — 完成・accepted 済**
-   [`plans/accepted/convection-keep-es-dissipation.md`](../../plans/accepted/convection-keep-es-dissipation.md) が正本 (経緯・全検証 run・教訓)。
-   - config: `keepDissType` (0=off/1=scalar/2=**matrix 推奨**)・`keepDissCoeff` (σ)・`keepDissCprime` (既定1, lowMachPrecond から独立)
-   - **σ の使い分け (較正済)**: 低マッハ市松対策=0.05 (既定) / **WALE 併用の解像 LES=0.02 (64³+実DNS で確定, 候補3参照)**
-   - CPG/TP 単成分/多成分すべて検証済。多成分 matrix のプラトーバグは根治済 (真因: ΣρY≠ρ 共通モードノイズ → カーネル内 Y 正規化で除去)
-   - 市松 null-mode の実証・診断ケースは `case/35.uniform_periodic_box` README の run 表 (L1)、TGV は `case/09.Taylor-Green` (L2/L3)
-2. **pRef free-stream 修復の KEEP 展開 — 済**
-   `case/33.wavy_hex_freestream` run_0004-0006: KEEP は pRef 無しで step11 発散 → `space.pRef=動作静圧` で 3.96e-12 機械精度。散逸レイヤ込みでも無害。
-   plan: [`plans/active/convection-freestream-preserving-flux.md`](../../plans/active/convection-freestream-preserving-flux.md) (まだ active、残課題あり)
-3. **背景サーベイ**: [`notes/investigations/convection-central-scheme-oscillation-control.md`](../investigations/convection-central-scheme-oscillation-control.md)
-   (振動源4分類・検証ラダー L0-L5・優先度表。外部レビュー反映済み)
-
-## 次の候補タスク (優先度順の提案)
-
-1. ~~**U∞≠0 の動く一様流保存**~~ **済 (2026-07-19)**: 実測で「M0.1 でも KEEP/SLAU 全発散・
-   エネルギー ρuH 項が支配」と確定し、移流基準差分ゲージ (`space.roRef`+`space.uRef`) を
-   KEEP CPG×cell に実装・機械精度根治 (case/33 run_0007-0013)。正本:
+1. **ES 散逸レイヤ完成形**: `keepDissType:2` (matrix) + **`keepDissJump:2`** (再構成ジャンプ
+   + sign-property クリップ = **証明付き ES**)。市松減衰無傷・解像スケール保護
+   (64³ TGV K/K0(10) −1.4%)。正本: [convection-keep-diss-recon-jump](../../plans/accepted/convection-keep-diss-recon-jump.md)。
+   振幅センサ案は棄却済 (乱流 2Δ 帯と市松は振幅で分離不能) — 再挑戦しない。
+2. **σ=0.02 を実 DNS で確定**: 参照は `case/09.Taylor-Green/ref_dns/TGV_Re1600.dat`
+   (Dairay+2017 512³, 要引用; K/K0(10)=0.596, ε*ピーク 0.1029@t*=8.98)。旧近似帯 0.50-0.57 は
+   誤りだった。σ は物理較正でなく「L1 を満たす最小値」。node=cell 同等検証済。
+3. **移流基準差分ゲージ** (`space.roRef`+`uRef`): U∞≠0 一様流の float32 桁落ち根治
+   (エネルギー 6.5 桁改善)。**スコープ: KEEP CPG×cell のみ** (node 境界半割面は fail-fast 中)。
    [freestream-preserving plan §8](../../plans/active/convection-freestream-preserving-flux.md)。
-   **残**: TP 枝 e∞ / node 境界半割面 (config で fail-fast 中) / SLAU / 種輸送 massflux。
-   非直交メッシュ LES では pRef に加え roRef/uRef=平均流を設定すること。
-2. **IDDES Phase 1.5 統合**: [`plans/active/turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) §4.8。
-   f_d ブレンドの LES 枝の基盤散逸として keepDissType=2 (σ~0.02) を使う設計に更新して実装。
-3. ~~**64³ TGV + digitize した DNS 参照で L3 定量化**~~ **済 (2026-07-19)**: 実 DNS
-   (Dairay+2017 512³, `case/09/ref_dns/`) との 64³ 比較で **σ=0.02 を解像 LES 推奨として確定**
-   (K/K0 誤差 ≤1.6%、σ=0 と DNS を対称に挟む)。σ=0.03 は撤回 (旧 DNS 近似帯が誤りだった)。
-   σ は「L1 を満たす最小値」で選ぶ (最適は解像度と共に低下)。case/09 README 64³ 節参照。
-4. **メトリック FP64 化 (Karp 2506.05150)**: pRef+移流対策で足りない場合の本丸。RTX は FP64 1/32 なので
-   「セットアップだけ double・格納 float」等の設計検討から ([memory: fp32-metric-freestream-fix])
-5. 小粒: ROE/AUSM への pRef 展開 / node periodic の dt 半減の解消 (setDT が合併前 half-CV 体積を使う、効率のみ) /
-   node モードでの多成分 L1 (未実施)
+4. **WALE 2 バグ修正**: ①壁なしメッシュで wall_dist≡0→不活性 (読込後 1e30 ガードで修正)
+   ②Sd テンソルが成分2乗の誤式→行列2乗へ。**過去の TGV「WALE 併用」は全部 ILES だった**
+   (結果は ILES として有効)。[turbulence-wale-fix](../../plans/accepted/turbulence-wale-fix.md)。
+5. **σ-model 追加** (`LESmodel:2`, Nicoud 2011): 実装・検証済だが 64³ TGV では WALE より散逸的
+   (−5.5%)。**解像/遷移流では静的 SGS はどちらも逆効果 = ILES+ES が最良**。σ-model の本領
+   (壁乱流・未解像高Re) 評価は未実施。[turbulence-sigma-model](../../plans/accepted/turbulence-sigma-model.md)。
+6. **定常局所 dt の音響過渡不安定**: unsteady:0 は閉じた周期系の波でスキーム/メッシュ/CFL 不問で
+   数 step 発散 (CFL 下げても同 step = 指紋)。**過渡ケースは unsteady:1 必須**。
+   case/33 の旧「発散」報告はこれとの交絡 (訂正済)。
+7. (前セッションから継続) ES 散逸の CPG/TP/多成分対応・多成分 matrix プラトー根治 (Y 正規化)・
+   pRef の KEEP 展開は accepted 済: [convection-keep-es-dissipation](../../plans/accepted/convection-keep-es-dissipation.md)。
 
-## 罠・ルール (このテーマ固有)
-
-- **市松振幅の測定は必ず共分散射影** (`case/35/plot_checkerboard_decay.py` 使用)。サブセット射影の
-  sum(parity)≠0 DC バイアスで「継ぎ目散逸弱化」を誤認した事故あり (存在しなかった)
-- **「強い散逸で問題が見えない」は無罪証明にならない** (scalar が多成分バグを隠した)
-- **別カーネルで更新される保存量の比 (Y=ρY/ρ 等) をカーネルで使うときは正規化必須**
-- 式をコードに書く前に python で数値検証する (`solver_density_cuda/tools/verify_entropy_scaling*.py` が型)。
-  初出の $R^{-1}$ 形は誤りだった (正: $R|\Lambda|SR^{\mathsf T}\Delta w$)
-- config struct 変更後は full rebuild ([memory: stale-build-struct-layout-trap])
-- forge 実行は必ず `solver_density_cuda/tools/run_case.sh <run_dir>` 経由・新 run dir・README run 表同期
-- node dt は cell の半分 (周期 half-CV の CFL 律速)。減衰を「ステップ数」で比較しない (単位時間で比較)
-
-## KEEP-LES の推奨設定 (現時点)
+## KEEP-LES 推奨設定 (確定版)
 
 ```yaml
 solver: "KEEP"
-keepDissType: 2        # matrix ES 散逸
-keepDissCoeff: 0.02    # 解像 LES (WALE 併用)。市松頑健性優先なら 0.05
-keepDissJump: 2        # 再構成後ジャンプ + sign-property クリップ (2026-07-19): 市松無傷のまま
-                       #   KE コスト減 (終値-1.4%) かつ ES 証明付き。1=証明なし最軽量 (-0.8%)
-                       #   (plans/accepted/convection-keep-diss-recon-jump.md, node/cell 両検証済)
-keepDissCprime: 1      # マッハ混在流。単一低マッハ領域なら 0 + σ そのまま
-space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>, 0, 0]}
-  # 非直交メッシュでは pRef 必須 (無いと発散)。U∞≠0 (平均流あり) なら roRef/uRef も必須
-  # (M0.1 でも移流桁落ちで発散: plan §8)。CPG×cell のみ対応 (node/TP は fail-fast)
-turbulence: {LESorRANS: 0, LESmodel: 0}   # 解像/遷移流は WALE off (ILES+ES が最良; 2026-07-19 訂正)
-  # 旧「WALE 併用」は不活性バグで実は ILES だった。本物 WALE は 64³ TGV で悪化 (先回り散逸)。
-  # 未解像高 Re 乱流でのみ LESorRANS:1 を検討 (要検証; plans/accepted/turbulence-wale-fix.md)
+keepDissType: 2
+keepDissCoeff: 0.02      # 市松頑健性優先なら 0.05
+keepDissJump: 2          # 証明付き ES・市松無傷・渦保護 (1=証明なし最軽量)
+keepDissCprime: 1
+space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>,0,0]}
+  # 非直交+平均流で必須。roRef/uRef は cell のみ (node は fail-fast 中 → 候補1)
+turbulence: {LESorRANS: 0, LESmodel: 0}   # 解像/遷移流は ILES (静的 SGS は逆効果と実測済)
+time: {unsteady: 1}                        # 過渡は必ず物理 dt
 ```
+
+## 次の候補タスク (優先度順の提案)
+
+1. **advective gauge の node 対応** (node ベース方針の要): 境界半割面
+   (`convectiveFlux_boundary_d`) にも同じ差分形ゲージを載せ fail-fast を解除する。
+   ゲージは CV の**全**面に載らないと telescoping が破れる点に注意 (plan §8.2)。
+   これが済むと「非直交メッシュ+平均流の node LES」が解禁される。
+2. **実形状 LES パイロット** (node): backstep (case/18) か case/36 系に確定版スタックを投入。
+   壁があるので σ-model vs WALE vs ILES の「本領」比較がここで初めて意味を持つ。
+   wall_dist ガード・SGS 選択・ES 散逸の総合実地試験。
+3. **IDDES Phase 1.5 統合** ([turbulence-iddes-sst](../../plans/active/turbulence-iddes-sst.md) §4.8):
+   LES 枝の基盤散逸を「ILES + keepDissType:2 σ0.02 jump2」とする設計に更新して実装
+   (旧案の「WALE を LES 枝に」は今日の結果で見直し)。
+4. **256³ 準 DNS** (RTX3060 で ~6h@CFL 引き上げ, メモリ ~4GB): forge 自身で DNS に肉薄し
+   LES 設定を自前検証。検証インフラ (--dns 重ね描き・--node-mesh dedupe) がそのまま使える。
+5. **回帰スイート整備** (小): naca_slau/rans_flat_plate_sst の baseline 陳腐化 (96c12c0 から未更新・
+   変更前バイナリでも同値で FAIL = 既存問題) + ハーネスが古い `.build-native` バイナリを
+   `build/` より優先する罠の解消。
+6. 小粒: gauge の TP 枝 e∞ / SLAU / 種輸送 massflux / メトリック FP64 (Karp,
+   [memory: fp32-metric-freestream-fix]) / node periodic dt 半減 (setDT が合併前 half-CV 体積) /
+   定常局所 dt 不安定の深掘り (運用ルールで回避中) / node 多成分 L1。
+
+## 罠・ルール (恒久)
+
+- **SGS を使う run は vis_turb≠0 を必ず確認** (WALE 不活性を見逃した教訓)。
+- 過渡ケースは `unsteady: 1`。unsteady:0 で数 step 発散したら CFL を疑う前にこれ
+  ([memory: steady-localdt-acoustic-transient-instability])。
+- node の KE 等の体積積分は周期 slave ミラー重複を除外 (`plot_dissipation_rate.py --node-mesh`)。
+- 市松振幅は共分散射影 (`case/35/plot_checkerboard_decay.py`) でのみ測る。
+- 式をコードに書く前に python で数値検証 (`tools/verify_advective_gauge.py` /
+  `verify_sigma_model.py` が型)。実装前にオフラインで効果を測る (再構成ジャンプの事前測定が型)。
+- config struct 変更後は full rebuild ([memory: stale-build-struct-layout-trap])。
+- forge 実行は `tools/run_case.sh` 経由・新 run dir・README run 表同期。
+- DNS 比較は実データ (`case/09/ref_dns/`) のみ (近似帯の誤りで判定を間違えた事故あり)。
+- node dt は周期 half-CV の CFL 律速で cell の半分 (fixed-dt なら影響なし)。
+- ユーザー方針: **node ベース主体**。新機能・検証は node 一次、cell は回帰対照。
 
 ## 関連 memory (自動ロードされる)
 
-keep-es-dissipation-status / fp32-metric-freestream-fix / backstep-unsteady-not-convergence-failure /
-node-mode-periodic-and-backstep-status / verify-node-and-cell-both
+keep-es-dissipation-status / wale-inactive-fix / advective-gauge-uref /
+steady-localdt-acoustic-transient-instability / user-prefers-node-base / verify-node-and-cell-both
