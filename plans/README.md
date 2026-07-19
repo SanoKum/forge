@@ -30,7 +30,6 @@
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
-| [turbulence-sigma-model.md](active/turbulence-sigma-model.md) | `turbulence` | σ-model SGS (Nicoud 2011) を `LESmodel: 2` として追加 (WALE の遷移前倒し対策) |
 
 ## accepted (現役の設計判断)
 

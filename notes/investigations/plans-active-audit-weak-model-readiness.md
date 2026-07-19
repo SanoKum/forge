@@ -154,3 +154,16 @@ plan の多くは (b) を満たす。最大のリスクは次の 3 点:
    (a) case/29 node viscous の ghostless 後再検証、(b) species×node 経路、
    (c) `run_0021` 系 prism/pyramid の 3D 双対 (同一コードパスだが未実行)。
    回帰スイート拡充の候補にすること。
+
+## 追記 (2026-07-19 反映後の訂正)
+
+- **turbulence-sigma-model の所見は撤回**: 監査時に読んだ `plans/active/turbulence-sigma-model.md`
+  (41 行, in_progress) は stale な下書きの重複だった。実体は commit 92fd11f で**最初から
+  `plans/accepted/` に完了済みとして追加**されており (結論: σ-model も 64³ TGV では WALE 同様に
+  過散逸で、ILES+ES 散逸が最良のまま)、README の accepted 表にも掲載済み。active 表への追記は不要
+  だった (反映作業中に是正済み)。
+- 反映済みアクション: クローズ 6 件 (perphase / gpu-implicit / condensation / multispecies+docs /
+  pseudoshock Phase1 / median-dual 親)、整合メモ 3 件、ユーザー判断 2 件の plan 書き込み
+  (omega BC 踏襲・LSQ ゲート)、case/29 再検証の ghostless への移管。**未反映**:
+  convection-freestream-preserving-flux のクローズ (残課題の別 plan 化含む) は当該セッションの
+  依頼により保留 (a648e50 後の内容を前提に実施すること)。
