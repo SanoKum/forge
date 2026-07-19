@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `condensation`
-- **status**: `in_progress`  <!-- Phase 1/2/3 実装・検証済 (N2 Fig.2, H2O Wyslouzil Fig.3)。残: 二温度モデル / TP carrier 低温対応 / μ_n 無次元化は future -->
+- **status**: `done`  <!-- Phase 1/2/3 実装・検証済 (N2 Fig.2, H2O Wyslouzil Fig.3)。残項目は 2026-07-19 クローズ注記を参照 -->
 - **related_docs**:
   - `methods/condensation/theory.md`
   - `methods/condensation/implementation.md`
@@ -130,9 +130,21 @@ digitize: `case/16.nozzle_wys/wyslouzil_fig3_1kPa.csv`。
 - [x] `methods/condensation/implementation.md` 作成
 - [x] Phase 1 実装・検証完了 (§6)
 - [x] `.github/plans/README.md` 状態同期
-- [ ] Phase 2/3 着手時に本 plan を更新
+- [x] Phase 2/3 着手時に本 plan を更新 (下記変更ログ参照・検証済)
 
 ## 9. 変更ログ
+
+- `2026-07-19` — **クローズ (status=done, accepted へ移動)**。Phase 1 (受動スカラー骨格・dry 回帰一致)、
+  Phase 2 (N2: Arthur Fig.2 壁圧比 1–2% 一致)、Phase 3 (H2O/carrier: Wyslouzil Fig.3 ~5% 一致・
+  分圧スイープ 3 条件で汎化) まで完了・検証済み。**意図的に見送る残項目**:
+  - **TP carrier の <200K 対応**: 真因は thermo でなく「TP 離散化の冷・高マッハ域での数値不安定」
+    (温度成長振動、フラックスレベルの計装が要る) と切り分け済み (2026-06-16 追記)。>200K では TP 安定・
+    実用可、極低温は CPG が正。**再開する場合は convection/thermophysics 側の別 plan として起票**し、
+    診断 run (`case/16` run_0025〜0045) と Tt スイープの再現から始めること。
+  - **μ_n 無次元化**: チェッカーボードは気相 odd-even (pre-existing・モーメント精度問題でない) と
+    確定済みのため不要 (2026-06-14 低優先トリオ評価)。
+  - **二温度モデル**: `condTwoTemp` として実装済み・希薄水/N2 では影響 <1% で一温度が既定
+    (2026-06-15)。追加開発は不要。
 
 - `2026-06-16` — **TP gas (thermalMethod 2) + 凝縮を wys で検証 → 真因 = sub-200K の NASA-9 外挿不安定**。
   ユーザ要望で TP 気相 + 凝縮を case/16 wys (`run_0025` 系) で計算しようとしたが、dry TP すら step8-14 で

@@ -24,7 +24,6 @@
 | Plan | area | 概要 |
 | --- | --- | --- |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
-| [condensation-nonequilibrium.md](active/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
 | [convection-multispecies-contact-pressure.md](active/convection-multispecies-contact-pressure.md) | `convection` | 多成分 TP 接触面の圧力振動 (face-state 整合化 → PEP 切り分け) |
 | [convection-keep-revive-node.md](active/convection-keep-revive-node.md) | `convection / turbulence` | KEEP スキーム復活 (modern API・cell/node) + node WALE で LES/ILES |
@@ -64,6 +63,7 @@
 | [diffusion-viscous-shear-flux.md](accepted/diffusion-viscous-shear-flux.md) | `diffusion` | 粘性せん断フラックスの修正 (内部面の法線項 + 壁面 no-slip 抗力) |
 | [discretization-node-wall-implicit-dirichlet.md](accepted/discretization-node-wall-implicit-dirichlet.md) | `boundary / time_integration` | node-centered 壁 no-slip の implicit Jacobian Dirichlet 化 (SU2 DeleteValsRowi 相当) |
 | [output-node-wall-surface-viz.md](accepted/output-node-wall-surface-viz.md) | `architecture` | node 壁サーフェス出力の修正 (primal 面トポロジ退避 + h5 スキーマ + 壁関数 twall の ρu_τ² 化) |
+| [condensation-nonequilibrium.md](accepted/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント)。N2=Arthur Fig.2 1–2% / H2O=Wyslouzil Fig.3 ~5% 一致。TP<200K は棚上げ (CPG が正) |
 | [thermophysics-multicomponent-tpgas.md](accepted/thermophysics-multicomponent-tpgas.md) | `thermophysics` | 多成分 thermally-perfect gas ソルバ機能 |
 | [tooling-quasisteady-check.md](accepted/tooling-quasisteady-check.md) | `architecture` | 準定常確認ツール check_quasisteady.py と運用ルール (残差収束 ≠ 量の定常化) |
 | [thermophysics-species-implicit-coupling.md](accepted/thermophysics-species-implicit-coupling.md) | `time_integration` | 化学種の陰解法緩和整合 (matched-relaxation scalar-DPLUR) |
