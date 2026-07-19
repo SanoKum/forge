@@ -43,5 +43,6 @@
 | `run_0034_cell_keep_mc_cbd_dissmat005_fix` | **バグ根治後**: 実混合 N2/O2 0.7/0.3 + matrix σ=0.05 (run_0029 と同 IC) | A_cb 9.77e-4→**4.79e-8 (完全減衰)**。プラトー根治を実混合で確認 | ref (Step 4 matrix 根治検証) |
 | `run_0035_cell_keep_tp_regr_fix` | 根治後の単成分回帰 (run_0031 と同 IC) | 1.18e-7 で不変 (回帰なし) | ref (回帰確認) |
 | `run_0036_cell_keep_mc_comp_smoke_fix` | 根治後の組成半割 smoke | NaN なし・場有界 (P 212-242kPa, T 684-741K) | ref (smoke 再確認) |
+| `run_0037_node_keep_cbd_regr_advgaugebin` | **回帰**: 移流基準差分 (advGauge, [plan §8](../../plans/active/convection-freestream-preserving-flux.md)) 実装後バイナリで run_0023 (node KEEP 市松 pure) を再実行 | step0 全 rms ~1e-10 機械ゼロ・400step 安定 = run_0023 と同挙動 → **node KEEP 経路に advGauge 実装の影響なし** (node は roRef 未対応で config が fail-fast) | ref (advGauge node 回帰) |
 
 **matrix×多成分プラトーの根治記録 (2026-07-19 深掘り)**: 真因 = **ΣρY_k ≠ ρ の共通モードノイズ** (ρY と ρ は別カーネル/別 atomicAdd 順で更新されるため ~1e-7 の不一致が発生)。未正規化の Y=ρY_k/ρ がこのノイズを持ち込み、エントロピー変数の s⁰ 項 (×~10) と ln X (対数微分特異) が w 空間ノイズに増幅、matrix 散逸の弱減衰 (エントロピー/せん断) 方向に注入され続けて市松減衰がプラトー化していた (scalar は全モード強減衰のため隠蔽)。**修正 = カーネル内で Y を正規化 (Σ=1 強制)**。切り分けの一時 run (dbg_*: 面単位ビット比較で KEEP_d 散逸は同一と証明→pure/scalar 対照→ns=1 強制 bisect で経路特定→Y 正規化で根治確認) は削除済み。

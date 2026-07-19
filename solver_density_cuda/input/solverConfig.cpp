@@ -315,6 +315,28 @@ void solverConfig::read(std::string fname)
         // free-stream 保存用の基準静圧 (既定 0.0 = 従来挙動・ビット不変)
         this->pRef = getOptionalValidatedValue<double>(space, "pRef", 0.0, "space");
 
+        // 移流項の基準差分 (U∞≠0 の動く一様流保存, KEEP CPG)。roRef>0 で有効 (既定 0.0 = off・ビット不変)。
+        this->roRef = getOptionalValidatedValue<double>(space, "roRef", 0.0, "space");
+        if (space["uRef"]) {
+            std::vector<double> u;
+            for (const auto& v : space["uRef"]) u.push_back(v.as<double>());
+            if (u.size() != 3) {
+                throw std::runtime_error("Key 'uRef' in 'space' must be a list of 3 floats [x, y, z].");
+            }
+            this->uRefX = u[0]; this->uRefY = u[1]; this->uRefZ = u[2];
+            std::cout << "'uRef' in 'space': [" << u[0] << ", " << u[1] << ", " << u[2] << "]\n";
+        }
+        if (this->roRef > 0.0) {
+            if (this->pRef <= 0.0) {
+                throw std::runtime_error("'roRef' in 'space' requires 'pRef' > 0 (advective gauge uses e_inf = pRef/roRef).");
+            }
+            if (this->discretization == "node") {
+                // node の境界半割面は convectiveFlux_boundary_d 側で、ゲージが CV の全面に載らず
+                // telescoping が破れるため未対応 (plan §8.2 スコープ)。
+                throw std::runtime_error("'roRef' in 'space' is not supported with discretization: node yet (boundary half-faces are not gauged).");
+            }
+        }
+
         // turbulence model
         auto turb = config["turbulence"];
         this->LESorRANS = getValidatedValue<int>(turb, "LESorRANS", "turbulence");

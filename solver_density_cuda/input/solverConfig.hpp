@@ -133,6 +133,13 @@ public:
     // 既定 0.0 で従来挙動(ビット不変)。一様基準(動作/フリーストリーム)静圧を入れる。
     flow_float  pRef = 0.0;
 
+    // U∞≠0 の動く一様流保存: KEEP (CPG) の移流項を参照一様流 (roRef, uRef) の流束 F∞(s) との
+    // 差分形因数分解で組む (plans/active/convection-freestream-preserving-flux.md §8)。
+    // F∞ は s 線形の定数流束なので保存厳密・セル和は解析ゼロのゲージ。既定 roRef=0.0 = off (ビット不変)。
+    flow_float  roRef = 0.0;
+    flow_float  uRefX = 0.0;
+    flow_float  uRefY = 0.0;
+    flow_float  uRefZ = 0.0;
 
     int LESorRANS; // 0:no 1:LES 2:RANS
     int LESmodel; // 1:WALE

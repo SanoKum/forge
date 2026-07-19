@@ -19,9 +19,12 @@
 
 ## 次の候補タスク (優先度順の提案)
 
-1. **U∞≠0 の動く一様流保存** (激安・次のボトルネック判定):
-   `case/33` に U≠0 一様流 run を追加し、移流項 (ρu·s, ρH u·s) の float32 桁落ちが KEEP でどれだけ効くか実測。
-   効くなら移流項の基準差分 (ρ_ref u_ref 差し引き) を設計 — freestream-preserving plan の残課題そのもの。
+1. ~~**U∞≠0 の動く一様流保存**~~ **済 (2026-07-19)**: 実測で「M0.1 でも KEEP/SLAU 全発散・
+   エネルギー ρuH 項が支配」と確定し、移流基準差分ゲージ (`space.roRef`+`space.uRef`) を
+   KEEP CPG×cell に実装・機械精度根治 (case/33 run_0007-0013)。正本:
+   [freestream-preserving plan §8](../../plans/active/convection-freestream-preserving-flux.md)。
+   **残**: TP 枝 e∞ / node 境界半割面 (config で fail-fast 中) / SLAU / 種輸送 massflux。
+   非直交メッシュ LES では pRef に加え roRef/uRef=平均流を設定すること。
 2. **IDDES Phase 1.5 統合**: [`plans/active/turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) §4.8。
    f_d ブレンドの LES 枝の基盤散逸として keepDissType=2 (σ~0.02) を使う設計に更新して実装。
 3. **64³ TGV + digitize した DNS 参照で L3 定量化** (σ 最適の確定。32³ では層流期と終値を同時に満たせない=解像度律速と判明済)
@@ -49,7 +52,9 @@ solver: "KEEP"
 keepDissType: 2        # matrix ES 散逸
 keepDissCoeff: 0.02    # 解像 LES (WALE 併用)。市松頑健性優先なら 0.05
 keepDissCprime: 1      # マッハ混在流。単一低マッハ領域なら 0 + σ そのまま
-space: {pRef: <動作静圧>}   # 非直交メッシュでは必須 (無いと発散)
+space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>, 0, 0]}
+  # 非直交メッシュでは pRef 必須 (無いと発散)。U∞≠0 (平均流あり) なら roRef/uRef も必須
+  # (M0.1 でも移流桁落ちで発散: plan §8)。CPG×cell のみ対応 (node/TP は fail-fast)
 turbulence: {LESorRANS: 1, LESmodel: 1}   # WALE
 ```
 

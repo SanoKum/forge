@@ -53,6 +53,17 @@ __global__ void KEEP_d
         geom_float nx = sxx/sss, ny = syy/sss, nz = szz/sss;
 
         // ---- 純粋 KEEP 中心流束 (隣接対の生値; KE/エントロピー保存・散逸なし) ----
+        // U∞≠0 の動く一様流保存 (advGauge, plan §8.2): roRef>0 (CPG のみ) では中心流束を
+        // 「元の流束 − 参照一様流束 F∞(s)」の差分形因数分解 ((差分)×(平均)+(参照)×(差分)) で組む。
+        // F∞ は s に線形な定数流束: 内部面で等価逆符号のまま=保存厳密、セル和は F∞(Σs)=0 の解析ゲージ。
+        // 一様場 (ρ,u,p)=(ρ∞,u∞,p∞) では全因子がビット単位ゼロ → free-stream を機械精度で保存。
+        // 式は tools/verify_advective_gauge.py で (1)解析等価 (2)一様 float32 ビット零
+        // (3)orig−gauged==F∞(r_c) の telescoping を数値検証済。roRef=0 (既定) は従来経路でビット不変。
+        const bool advGauge = (d_roRef > 0.0) && (thermalMethod != 2);
+        flow_float res_ro_temp, res_roe_temp, res_roUx_temp, res_roUy_temp, res_roUz_temp;
+        flow_float CinfS = 0.0;   // 参照質量流束 F∞·s (massflux の物理化用)
+
+        if (!advGauge) {
         flow_float Ctilde  = 0.5*(ro[ic0]+ro[ic1])*0.5*( (Ux[ic0]+Ux[ic1])*nx
                                                         +(Uy[ic0]+Uy[ic1])*ny
                                                         +(Uz[ic0]+Uz[ic1])*nz );
@@ -83,11 +94,47 @@ __global__ void KEEP_d
                                   +(Uy[ic0]*Ps[ic1] + Uy[ic1]*Ps[ic0])*ny
                                   +(Uz[ic0]*Ps[ic1] + Uz[ic1]*Ps[ic0])*nz );
 
-        flow_float res_ro_temp   = Ctilde*sss;
-        flow_float res_roe_temp  = (Ktilde + Itilde + Ptilde)*sss;
-        flow_float res_roUx_temp = (Mtildex + Gtildex)*sss;
-        flow_float res_roUy_temp = (Mtildey + Gtildey)*sss;
-        flow_float res_roUz_temp = (Mtildez + Gtildez)*sss;
+        res_ro_temp   = Ctilde*sss;
+        res_roe_temp  = (Ktilde + Itilde + Ptilde)*sss;
+        res_roUx_temp = (Mtildex + Gtildex)*sss;
+        res_roUy_temp = (Mtildey + Gtildey)*sss;
+        res_roUz_temp = (Mtildez + Gtildez)*sss;
+        } else {
+        // ---- advGauge: 差分形因数分解 (小さい量を先に作る; 一様場で各因子がビット単位ゼロ) ----
+        const flow_float d0x = Ux[ic0]-d_uRefX, d0y = Uy[ic0]-d_uRefY, d0z = Uz[ic0]-d_uRefZ;
+        const flow_float d1x = Ux[ic1]-d_uRefX, d1y = Uy[ic1]-d_uRefY, d1z = Uz[ic1]-d_uRefZ;
+        const flow_float dro = 0.5*((ro[ic0]-d_roRef)+(ro[ic1]-d_roRef));
+        const flow_float dux = 0.5*(d0x+d1x), duy = 0.5*(d0y+d1y), duz = 0.5*(d0z+d1z);
+        const flow_float uxb = 0.5*(Ux[ic0]+Ux[ic1]);
+        const flow_float uyb = 0.5*(Uy[ic0]+Uy[ic1]);
+        const flow_float uzb = 0.5*(Uz[ic0]+Uz[ic1]);
+        const flow_float Unb = uxb*nx + uyb*ny + uzb*nz;
+        const flow_float dUn = dux*nx + duy*ny + duz*nz;
+        const flow_float UnR = d_uRefX*nx + d_uRefY*ny + d_uRefZ*nz;
+        const flow_float Cinf = d_roRef*UnR;
+        const flow_float dC   = dro*Unb + d_roRef*dUn;              // = Ctilde − C∞
+        // 圧力項 (p−pRef) は従来 Gtilde と同一
+        const flow_float dpr0 = Ps[ic0]-d_pRef, dpr1 = Ps[ic1]-d_pRef;
+        const flow_float Gp = 0.5*(dpr0+dpr1);
+        // エネルギー: K̃, Ĩ, P̃ を各々 (差分)×(平均)+(参照)×(差分) で
+        const flow_float kb = 0.5*(Ux[ic0]*Ux[ic1] +Uy[ic0]*Uy[ic1] +Uz[ic0]*Uz[ic1]);
+        const flow_float kdiff = 0.5*( d0x*Ux[ic1] + d0y*Uy[ic1] + d0z*Uz[ic1]
+                                      + d_uRefX*d1x + d_uRefY*d1y + d_uRefZ*d1z );   // = k̄ − ½|u∞|²
+        const flow_float eRefG = d_pRef/d_roRef;                    // (γ−1)e∞ (同一 float 除算でビット整合)
+        const flow_float pr0 = Ps[ic0]/ro[ic0], pr1 = Ps[ic1]/ro[ic1];
+        const flow_float ebar = 0.5*(pr0+pr1)/(ga-1.0);
+        const flow_float de   = 0.5*((pr0-eRefG)+(pr1-eRefG))/(ga-1.0);
+        const flow_float dP = 0.5*( (d0x*Ps[ic1] + d_uRefX*dpr1 + d1x*Ps[ic0] + d_uRefX*dpr0)*nx
+                                   +(d0y*Ps[ic1] + d_uRefY*dpr1 + d1y*Ps[ic0] + d_uRefY*dpr0)*ny
+                                   +(d0z*Ps[ic1] + d_uRefZ*dpr1 + d1z*Ps[ic0] + d_uRefZ*dpr0)*nz );
+
+        CinfS = Cinf*sss;
+        res_ro_temp   = dC*sss;
+        res_roUx_temp = (dC*uxb + Cinf*dux + Gp*nx)*sss;
+        res_roUy_temp = (dC*uyb + Cinf*duy + Gp*ny)*sss;
+        res_roUz_temp = (dC*uzb + Cinf*duz + Gp*nz)*sss;
+        res_roe_temp  = (dC*kb + Cinf*kdiff + dC*ebar + Cinf*de + dP)*sss;
+        }
 
         // ---- opt-in entropy-stable 散逸レイヤ (keepDissType 1: scalar / 2: matrix) ----
         //   1 (scalar): F -= 0.5*σ*λ'*ΔU。LLF 型は Δw·ΔU>=0 で ES。全成分同一 λ' なので
@@ -337,7 +384,9 @@ __global__ void KEEP_d
         }
 
         // スカラー輸送用の面質量流束 (連続式と整合: 散逸込みの総流束 ic0->ic1)
-        massflux[ip] = res_ro_temp;
+        // advGauge 時は参照流束 C∞·s を戻して物理流束にする (係数が場に依存する種輸送には
+        // F∞ が telescoping しないためゲージ不可。種の free-stream 桁落ちは plan §8.2 の残課題)
+        massflux[ip] = advGauge ? (res_ro_temp + CinfS) : res_ro_temp;
 
         atomicAdd(&res_ro[ic0]  , -res_ro_temp);
         atomicAdd(&res_roUx[ic0], -res_roUx_temp);

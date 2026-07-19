@@ -33,6 +33,17 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         flow_float pRef_h = static_cast<flow_float>(cfg.pRef);
         CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_pRef, &pRef_h, sizeof(flow_float)));
     }
+    // U∞≠0 の移流基準差分 (KEEP CPG): 参照一様流を device 定数へ (既定 0.0 = off でビット不変)
+    {
+        flow_float roRef_h = static_cast<flow_float>(cfg.roRef);
+        flow_float uRefX_h = static_cast<flow_float>(cfg.uRefX);
+        flow_float uRefY_h = static_cast<flow_float>(cfg.uRefY);
+        flow_float uRefZ_h = static_cast<flow_float>(cfg.uRefZ);
+        CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_roRef, &roRef_h, sizeof(flow_float)));
+        CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_uRefX, &uRefX_h, sizeof(flow_float)));
+        CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_uRefY, &uRefY_h, sizeof(flow_float)));
+        CHECK_CUDA_ERROR(cudaMemcpyToSymbol(d_uRefZ, &uRefZ_h, sizeof(flow_float)));
+    }
 
     // D2a/D4 診断フラグを env から 1 度だけ device へ設定 (既定 off = ビット不変)。
     {

@@ -13,6 +13,14 @@
 // 偽運動量源)を抑える。詳細: plans/active/convection-freestream-preserving-flux.md
 __constant__ flow_float d_pRef;
 
+// U∞≠0 の動く一様流保存 (KEEP CPG): 移流項を参照一様流 (d_roRef, d_uRef*) の流束 F∞(s) との
+// 差分形因数分解で組むための参照状態。wrapper で cfg.roRef/uRef* を cudaMemcpyToSymbol。
+// 既定 0.0 = off (ビット不変)。詳細: plans/active/convection-freestream-preserving-flux.md §8
+__constant__ flow_float d_roRef;
+__constant__ flow_float d_uRefX;
+__constant__ flow_float d_uRefY;
+__constant__ flow_float d_uRefZ;
+
 // D2a/D4 診断 (env ゲート, 既定 off = ビット不変): 多成分 TP の contact 混合層 limit-cycle 切り分け。
 //   FORGE_CONTACT_1ST=1 : 面組成センサ s_Y=max_s|Y_sR-Y_sL|/(Y_sR+Y_sL+ε) が g_contactThresh を超える
 //                         内部面で flow(ρ,p,u) の MUSCL 再構成を無効化し1次 (セル値) にする (D2a)。species は不変。

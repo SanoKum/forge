@@ -269,6 +269,19 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
   (SLAU と同処方)。非直交メッシュの float32 桁落ちによる偽運動量源を除去し、
   `case/33` 歪み hex で機械精度 (4e-12) の一様場保存。**非直交メッシュで KEEP を使うときは
   `pRef` に動作静圧を必ず設定** (無指定 0.0 は従来挙動=非直交で発散)。
+- **動く一様流の保存 (`space.roRef` + `space.uRef`, advGauge)**: pRef は静止一様場のみ守る。
+  U∞≠0 では移流項 $(\rho u,\ \rho u u,\ \rho u H)\cdot r_c$ の桁落ちが効き (エネルギー
+  $\rho u H\sim10^7$ が支配的)、M0.1 でも KEEP/SLAU とも数十 step で発散する
+  (`case/33` run_0008-0010)。対策として参照一様流 $(\rho_\infty,\mathbf u_\infty,p_\infty{=}\texttt{pRef})$
+  の厳密流束 $F_\infty(s)$ (s 線形の定数流束: 保存厳密・セル和 $F_\infty(\Sigma s)=0$ の解析ゲージ)
+  を面ごとに引く。要点は**差分形因数分解** ((差分)×(平均)+(参照)×(差分)) で大きな積を作る前に
+  引くこと (式と検証は [plan §8](../../plans/active/convection-freestream-preserving-flux.md)、
+  数値検証 [tools/verify_advective_gauge.py](../../solver_density_cuda/tools/verify_advective_gauge.py))。
+  M0.1 動く一様流で step0 残差 1.3e-2 → 5.6e-9 (機械精度・6.5桁改善)・300step 安定 (run_0011)。
+  `uRef` は平均流/フリーストリーム速度。**スコープ: KEEP CPG × cell** (TP は $e_\infty$ の thermo
+  評価が未対応、node は境界半割面がゲージ外で telescoping が破れるため config で fail-fast。
+  スカラー輸送 `massflux` は物理流束のまま=種の free-stream 桁落ちは残課題)。
+  既定 `roRef: 0.0` = off (ビット不変)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
   周回 (境界面は ic1=ghost の生値で中心流束、専用境界カーネルは skip)、node 弱形式は内部双対面のみ
   周回し境界は `convectiveFlux_boundary_d` が担う。`massflux[ip]` に総質量流束を書きスカラー輸送と整合。
