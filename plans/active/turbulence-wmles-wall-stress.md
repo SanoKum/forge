@@ -238,5 +238,9 @@ SST 壁関数の Newton (固定 5 回) は**変更しない**。共通化する�
     (wallTreatmentSST=1 稼働・wallLaw 昇格後 vs HEAD) で全 12 フィールドの差が atomicAdd
     ノイズフロアと同水準 → 昇格は数値的に不変。node 経路の同等確認は未実施 (残タスク)。
   - ビルドは full rebuild で成功 (clean configure は `-DCMAKE_CUDA_ARCHITECTURES=86` 必須)。
+  - **機能スモーク (cell/node 両方)**: `case/24.laminar_channel_bl` `run_wmles_smoke_cell`
+    (RK3) / `run_wmles_smoke_node` (implicit)、各 2000 step。両方とも完走・NaN 無し・WMLES 経路
+    稼働 (ログ `[WMLES]` カウンタ)。層流チャネル (y+≪1) のため u_τ Newton は設計どおり
+    laminar fallback が主で、乱流域 (y+~50-100) での実効検証はチャネル LES (§6.2) 待ち。
   - **残タスク**: §5-7 体積力 config (チャネル駆動)、§5-8 チャネル検証 (Reτ550→2000)、
-    node SST 壁関数経路の回帰、`wallModelLES` 実流での cell/node 機能確認。
+    node SST 壁関数経路の回帰。
