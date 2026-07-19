@@ -379,9 +379,14 @@ __global__ void wall_isothermal_d
 
         Psb[ib] = P[ic];
         rob[ib] = Psb[ib]/(R*Tsb[ib]);
-        T[ig]   = Tsb[ib];
+        // ghost 温度は鏡像外挿 (セル-ghost 中点=壁面で T=Tw になる)。Tw 直置きは壁熱流束
+        // (Ts[ig]-Ts[ic])/dcc が dcc=2y1 と組んで正しい値の 1/2 に縮む (純伝導検証 2026-07-20,
+        // case/24 run_isoT_cond* で確定)。強冷却壁 (Tc>2Tw) での負温度は 0.2Tw でクランプ。
+        const flow_float Tg = max(static_cast<flow_float>(2.0)*Tsb[ib] - T[ic],
+                                  static_cast<flow_float>(0.2)*Tsb[ib]);
+        T[ig]   = Tg;
 
-        ro[ig]   = rob[ib];
+        ro[ig]   = Psb[ib]/(R*Tg);
         Ux[ig]   = -roUx[ic]/ro[ic];
         Uy[ig]   = -roUy[ic]/ro[ic];
         Uz[ig]   = -roUz[ic]/ro[ic];
@@ -390,17 +395,18 @@ __global__ void wall_isothermal_d
         roUz[ig] = -rob[ib]*Uz[ig];
         P[ig]    = P[ic];
         if (thermalMethod == 2) {
-            // 等温壁 ghost を T=Tsb と整合: roe=ρ(e_NASA(Tsb)+ek), sonic=√(γ_mix P/ρ)。
+            // 等温壁 ghost を T=Tg (鏡像) と整合: roe=ρ(e_NASA(Tg)+ek), sonic=√(γ_mix P/ρ)。
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
-            const double Tw  = (double)Tsb[ib];
-            const double e   = mix ? thermo_e_mix(sp, nSpecies, Yc, Tw)
-                                   : (thermo_h_mass(sp[0], Tw) - (double)R*Tw);
-            const double cpv = mix ? thermo_cp_mix(sp, nSpecies, Yc, Tw) : thermo_cp_mass(sp[0], Tw);
+            const double Tgd = (double)Tg;
+            const double e   = mix ? thermo_e_mix(sp, nSpecies, Yc, Tgd)
+                                   : (thermo_h_mass(sp[0], Tgd) - (double)R*Tgd);
+            const double cpv = mix ? thermo_cp_mix(sp, nSpecies, Yc, Tgd) : thermo_cp_mass(sp[0], Tgd);
             const double gmx = cpv/((cpv-(double)R) > 1.0e-6 ? (cpv-(double)R) : 1.0e-6);
             roe[ig]  = (flow_float)((double)ro[ig]*(e + (double)ekg));
             sonic[ig]= (flow_float)sqrt(gmx*(double)P[ig]/(double)ro[ig]);
         } else {
-            roe[ig]  = roe[ic];
+            const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
+            roe[ig]  = P[ig]/(ga - static_cast<flow_float>(1.0)) + ro[ig]*ekg;
             sonic[ig]= sqrt(ga*P[ig]/ro[ig]);
         }
         Ht[ig]   = (roe[ig] + P[ig])/ro[ig];

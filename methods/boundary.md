@@ -27,7 +27,7 @@ forge は密度ベース有限体積で **ゴーストセル方式** を採用�
 | --- | --- | --- |
 | `slip` | 滑り壁 (オイラー壁) | 法線速度を反転 ($\mathbf u_R = \mathbf u_L - 2 U_n \hat{\mathbf n}$)。圧力・密度は同値 |
 | `wall` | 非滑り断熱壁 | $\mathbf u_R = -\mathbf u_L$、$P_R = P_L$、$T_R = T_L$ (断熱) |
-| `wall_isothermal` | 非滑り等温壁 | $\mathbf u_R = -\mathbf u_L$、$T_R = 2 T_{\text{wall}} - T_L$ |
+| `wall_isothermal` | 非滑り等温壁 | $\mathbf u_R = -\mathbf u_L$、$T_R = 2 T_{\text{wall}} - T_L$ (負温度ガード $T_R \ge 0.2\,T_{\text{wall}}$)。旧実装は $T_R = T_{\text{wall}}$ 直置きで、壁熱流束 $(T_R-T_L)/d_{cc}$ ($d_{cc}=2y_1$) が正しい値の 1/2 になるバグがあった (2026-07-20 修正。純伝導厳密解 `case/24` `run_isoT_cond*` で検証: 修正後は線形場が機械精度の不動点・$q_w$ 誤差 +0.02%) |
 | `inlet_uniformVelocity` | 均一速度流入 | $\mathbf u_R, \rho_R$ を指定値に固定、$P_R = P_L$ |
 | `inlet_fluctVelocity` | 速度変動つき流入 | uniformVelocity に変動成分を加算 (`fluct_variables`) |
 | `outlet_statPress` | 静圧固定流出 | $P_R = P_{\text{back}}$ を課し、$\rho$・速度は内部エントロピー＋外向き Riemann 不変量で構成 (亜音速)。逆流時も同じ静圧アンカー |
