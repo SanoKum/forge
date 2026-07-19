@@ -35,6 +35,7 @@
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [gpu-implicit-plan.md](active/gpu-implicit-plan.md) | `time_integration` | GPU 陰解法化計画 |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
+| [turbulence-sigma-model.md](active/turbulence-sigma-model.md) | `turbulence` | σ-model SGS (Nicoud 2011) を `LESmodel: 2` として追加 (WALE の遷移前倒し対策) |
 | [verification-passive-pseudoshock-control.md](active/verification-passive-pseudoshock-control.md) | `verification` | 多孔壁パッシブコントロールによる擬似衝撃波抑制の逆解析 (case/36) |
 
 ## accepted (現役の設計判断)
