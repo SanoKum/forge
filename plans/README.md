@@ -27,7 +27,6 @@
 | [architecture-perphase-profiling-hotspot.md](active/architecture-perphase-profiling-hotspot.md) | `architecture` | per-phase 詳細プロファイリングに基づく host 律速の局所最適化 |
 | [condensation-nonequilibrium.md](active/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
-| [convection-keep-es-dissipation.md](active/convection-keep-es-dissipation.md) | `convection` | KEEP 用 entropy-stable 散逸レイヤ (段階導入: scalar→matrix→TP→多成分) |
 | [convection-multispecies-contact-pressure.md](active/convection-multispecies-contact-pressure.md) | `convection` | 多成分 TP 接触面の圧力振動 (face-state 整合化 → PEP 切り分け) |
 | [convection-keep-revive-node.md](active/convection-keep-revive-node.md) | `convection / turbulence` | KEEP スキーム復活 (modern API・cell/node) + node WALE で LES/ILES |
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
@@ -54,6 +53,7 @@
 | [architecture-rans-sst.md](accepted/architecture-rans-sst.md) | `architecture` | architecture-rans-sst — RANS SST 親計画 |
 | [architecture-residual-monitor-async.md](accepted/architecture-residual-monitor-async.md) | `architecture` | 残差モニタの device 常駐化 (per-step host 同期の除去) |
 | [boundary-outlet-characteristic-backflow.md](accepted/boundary-outlet-characteristic-backflow.md) | `boundary` | 静圧固定流出 BC の特性ベース化と逆流統一 |
+| [convection-keep-es-dissipation.md](accepted/convection-keep-es-dissipation.md) | `convection` | KEEP 用 entropy-stable 散逸レイヤ (scalar/matrix, CPG/TP/多成分, σ較正済) |
 | [convection-slau2-lowmach.md](accepted/convection-slau2-lowmach.md) | `convection` | SLAU2 圧力流束 (低マッハ圧力–速度カップリング是正) |
 | [diffusion-node-boundary-real-distance.md](accepted/diffusion-node-boundary-real-distance.md) | `diffusion` | node 境界半割面 拡散の実距離 over-relax 化 (∇·S 弱形式の置換) |
 | [diffusion-node-wall-viscous-distance.md](accepted/diffusion-node-wall-viscous-distance.md) | `diffusion` | node-centered 粘性壁 flux の法線距離修正 (mirror-ghost 退化対策) |

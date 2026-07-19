@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `convection`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - [`methods/convection/implementation.md`](../../methods/convection/implementation.md) (`KEEP_d` 節)
   - [`methods/convection/theory.md`](../../methods/convection/theory.md)

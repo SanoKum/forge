@@ -60,7 +60,7 @@ KEEP を陰解法化するときの flux Jacobian 方針 ([`plans/active/convect
 | `run_0020_cell_keep_impl_cfl2_sub50` | 2.0 | CFL2 で nSubIterDualTime 20→50 | 1.0020 (sub20と完全一致) | 4.7e-5 | active ✅ |
 | `run_0021_cell_keep_impl_cfl16_sub80` | 16 | CFL16 で nSubIterDualTime 20→80 | 0.9536 (sub20とほぼ同一) | 1.8e-3 | active ✅ |
 
-### keepDissType (ES 散逸レイヤ) L2 較正 run ([plan](../../plans/active/convection-keep-es-dissipation.md))
+### keepDissType (ES 散逸レイヤ) L2 較正 run ([plan](../../plans/accepted/convection-keep-es-dissipation.md))
 
 | `run_*` | 目的・設定差分 | KE drop (500step, M0.4, RK4) | 状態 |
 | --- | --- | --- | --- |

@@ -263,7 +263,7 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     (9.2e-9) だが、渦の $\Delta U_n$ が音響固有ベクトル経由で食われ **KE cost 3.2 倍 (4.35%)** — c' が
     この漏れを塞ぐ (Guillard-Viozat/Thornber の $c\cdot\Delta u$ 汚染の実測)。
   σ は L1 (市松減衰) と L2 (TGV KE) の両ゲートで較正
-  ([convection-keep-es-dissipation](../../plans/active/convection-keep-es-dissipation.md) 変更ログ参照)。
+  ([convection-keep-es-dissipation](../../plans/accepted/convection-keep-es-dissipation.md) 変更ログ参照)。
   `massflux[ip]` は散逸込み総質量流束 (スカラー輸送と整合)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
   周回 (境界面は ic1=ghost の生値で中心流束、専用境界カーネルは skip)、node 弱形式は内部双対面のみ

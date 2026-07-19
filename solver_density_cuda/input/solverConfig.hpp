@@ -91,7 +91,7 @@ public:
     int lowMachThornber = 0;       // 0: off (従来), 1: Thornber 型再構成補正 (SLAU の L/R 速度ジャンプを
                                    // z=min(M,1) で縮約)。lowMachPrecond と直交・併用可。SLAU 経路のみ。
     // (旧 keepDissipation は廃止。以下 keepDissType は別設計: KEEP 中心流束は不変のまま独立な散逸レイヤを加算する)
-    int keepDissType = 0;          // KEEP 用 opt-in 散逸レイヤ (plans/active/convection-keep-es-dissipation.md)。
+    int keepDissType = 0;          // KEEP 用 opt-in 散逸レイヤ (plans/accepted/convection-keep-es-dissipation.md)。
                                    // 0: off (純粋 KEEP・散逸なし・ビット不変, 既定)
                                    // 1: scalar ES 散逸 F -= 0.5*σ*λ'*ΔU (全成分同一 λ' → 渦も食う)
                                    // 2: matrix ES 散逸 F -= 0.5*σ*R|Λ'|S Rᵀ Δw (音響のみ c' 込み → 渦を守る)

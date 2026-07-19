@@ -3,7 +3,7 @@
 //   - 純粋 KEEP (Kinetic Energy & Entropy Preserving) 中心流束。**中心部は散逸項なし**。
 //     隣接セル/ノード対 (ic0,ic1) の生値で中心流束を構成する (KE/エントロピー保存)。
 //     Roe 行列散逸・MUSCL 再構成・リミタ・Ducros は持たない (低散逸 LES/ILES 用; SGS は WALE が担う)。
-//   - opt-in 散逸レイヤ (keepDissType, plans/active/convection-keep-es-dissipation.md):
+//   - opt-in 散逸レイヤ (keepDissType, plans/accepted/convection-keep-es-dissipation.md):
 //     keepDissType==0 で従来どおり散逸ゼロ (ビット不変)。==1 で scalar entropy-stable 散逸
 //     F -= 0.5*σ*λ'*ΔU を全 5 式に加算 (λ'=|Un|+c'; lowMachPrecond>=1 なら c'=lowMachCprime 低マッハ
 //     スケール、else c)。LLF 型は Δw·ΔU>=0 (エントロピー凸性) で ES。純 KEEP は低マッハ圧力 2Δ 市松を
