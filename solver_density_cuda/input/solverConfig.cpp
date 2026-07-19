@@ -216,6 +216,10 @@ void solverConfig::read(std::string fname)
         this->keepDissCoeff = getOptionalValidatedValue<double>(config, "keepDissCoeff", 0.05, "");
         this->keepDissCprime = getOptionalValidatedValue<int>(config, "keepDissCprime", 1, "");
         this->keepDissJump = getOptionalValidatedValue<int>(config, "keepDissJump", 0, "");
+        this->keepDissPrecond = getOptionalValidatedValue<int>(config, "keepDissPrecond", 0, "");
+        if (this->keepDissPrecond < 0 || this->keepDissPrecond > 1) {
+            throw std::runtime_error("Key 'keepDissPrecond' must be 0 (off) or 1 (Turkel-preconditioned acoustic dissipation, matrix CPG only).");
+        }
         if (this->keepDissJump < 0 || this->keepDissJump > 2) {
             throw std::runtime_error("Key 'keepDissJump' must be 0 (raw jump), 1 (reconstructed jump), "
                                      "or 2 (reconstructed + sign-property clip, provably entropy-stable).");

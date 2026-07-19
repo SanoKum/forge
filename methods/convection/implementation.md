@@ -289,6 +289,20 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     **エントロピー散逸性が証明付きで成立**。KE コストは jump=1 と生の中間 (64³ TGV 終値 −1.4%)。
     ghost 面 (`ip>=nNormalPlanes`) と再構成正値性 NG の面は生ジャンプへフォールバック。
     設計判断と検証: [convection-keep-diss-recon-jump](../../plans/accepted/convection-keep-diss-recon-jump.md)。
+  - **`keepDissPrecond` (matrix CPG 枝, 既定 0=従来・ビット不変)**: `1` で音響対の散逸を
+    **Weiss–Smith/Turkel 前処理散逸**に置き換える (**低マッハ壁付き LES の推奨設定**)。
+    $c'$ (固有値縮小のみ = 圧力ジャンプ散逸も一緒に弱る) と異なり、前処理は音響 2×2
+    サブシステム $D_p=\Gamma|\Gamma^{-1}A_2|$ (閉形 $|M_2|=\varphi_1M_2+\varphi_2 I$,
+    固有ベクトル不要) の**行列構造**を変え、**速度ジャンプ散逸を $\rho\,U_r\,\Delta U_n$ へ縮小**
+    (低マッハ精度, Guillard–Viozat) しつつ**圧力ジャンプ散逸を $\Delta p/U_r$ へ増強**
+    (連続式への圧力 Laplacian = Rhie–Chow 相当の市松キラー)。$M\ge1$ で標準 Roe $|A_2|$ に厳密復帰、
+    sym(K) は全域正定値 = **ES 性維持** ([tools/verify_precond_dissipation.py](../../solver_density_cuda/tools/verify_precond_dissipation.py)
+    全 6 検証 PASS・完全 Weiss–Smith 5×5 と 6e-4 一致)。実測: **真の市松 (case/35 L1) を
+    c' 版の 142 分の 1 へ減衰** (node 4.3桁/400step) しつつ物理コストは c' 版以下
+    (backstep Uy rms 6.94 vs 6.89)。有効時 `keepDissCprime` は不使用。せん断/エントロピー波は
+    従来どおり $|U_n|$。`keepDissJump` と直交して合成可。なお backstep 型の「ギリギリ解像の
+    2-4Δ 物理」による見かけの縞は散逸では消えない (メッシュ解像の仕事)。
+    設計・検証: [convection-keep-diss-lowmach-precond](../../plans/active/convection-keep-diss-lowmach-precond.md)。
 - **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む
   (SLAU と同処方)。非直交メッシュの float32 桁落ちによる偽運動量源を除去し、
   `case/33` 歪み hex で機械精度 (4e-12) の一様場保存。**非直交メッシュで KEEP を使うときは
@@ -302,8 +316,10 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
   引くこと (式と検証は [plan §8](../../plans/active/convection-freestream-preserving-flux.md)、
   数値検証 [tools/verify_advective_gauge.py](../../solver_density_cuda/tools/verify_advective_gauge.py))。
   M0.1 動く一様流で step0 残差 1.3e-2 → 5.6e-9 (機械精度・6.5桁改善)・300step 安定 (run_0011)。
-  `uRef` は平均流/フリーストリーム速度。**スコープ: KEEP CPG × cell** (TP は $e_\infty$ の thermo
-  評価が未対応、node は境界半割面がゲージ外で telescoping が破れるため config で fail-fast。
+  `uRef` は平均流/フリーストリーム速度。**スコープ: KEEP CPG × cell/node** (node は境界半割面
+  `convectiveFlux_boundary_d` にも upwind 差分形ゲージを実装し CV 全面で telescoping を維持
+  ([plan §8.5](../../plans/active/convection-freestream-preserving-flux.md)、`case/33` run_0017-0020 で
+  cell と同水準の機械精度を検証)。TP は $e_\infty$ の thermo 評価が未対応で off。
   スカラー輸送 `massflux` は物理流束のまま=種の free-stream 桁落ちは残課題)。
   既定 `roRef: 0.0` = off (ビット不変)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を

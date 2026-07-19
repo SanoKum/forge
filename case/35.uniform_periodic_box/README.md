@@ -49,5 +49,7 @@
 | `run_0040_cell_keep_cbd_dissmat005_jump` | L1 **cell** × keepDissJump=1 (run_0018 と同一 IC) | A_cb → 6.29e-8 = 生 (7.09e-8) と同等以上 → cell 経路も健全 | ref (recon-jump L1 cell) |
 | `run_0041_node_keep_cbd_regr_jumpbin` | 回帰: keepDissJump 実装後バイナリで run_0024 (既定 off) 再実行 | A_cb → 6.781e-6 = run_0024 (6.782e-6) と 4 桁一致 → **既定 off に回帰なし** | ref (回帰エビデンス) |
 | `run_0042_node_keep_cbd_dissmat005_jump2` | L1 node × **keepDissJump=2 (sign-property クリップ)** | A_cb → 6.99e-6 = 生 (6.78e-6)/jump=1 (6.73e-6) と同等 → **証明付き ES 化でも市松減衰維持** | ref (jump=2 L1) |
+| `run_0043_node_keep_cbd_dissmat005_precond` | **L1 node × `keepDissPrecond=1`** (Turkel 前処理音響散逸, [plan](../../plans/active/convection-keep-diss-lowmach-precond.md)): run_0024 と同一 IC + 前処理 2×2 (Δp 散逸 ∝c²/Ur 増強) | A_cb 1e-3 → **4.78e-8 (4.3桁/400step)** = c' 版 run_0024 (6.78e-6) の **142 分の 1** → 真の市松への設計効果を実証 | ref (precond L1 node) |
+| `run_0044_cell_keep_cbd_dissmat005_precond` | 同 **cell** (run_0018 対照) | A_cb → **1.51e-8** vs run_0018 の 7.09e-8 (**4.7×**) = cell でも改善 | ref (precond L1 cell) |
 
 **matrix×多成分プラトーの根治記録 (2026-07-19 深掘り)**: 真因 = **ΣρY_k ≠ ρ の共通モードノイズ** (ρY と ρ は別カーネル/別 atomicAdd 順で更新されるため ~1e-7 の不一致が発生)。未正規化の Y=ρY_k/ρ がこのノイズを持ち込み、エントロピー変数の s⁰ 項 (×~10) と ln X (対数微分特異) が w 空間ノイズに増幅、matrix 散逸の弱減衰 (エントロピー/せん断) 方向に注入され続けて市松減衰がプラトー化していた (scalar は全モード強減衰のため隠蔽)。**修正 = カーネル内で Y を正規化 (Σ=1 強制)**。切り分けの一時 run (dbg_*: 面単位ビット比較で KEEP_d 散逸は同一と証明→pure/scalar 対照→ns=1 強制 bisect で経路特定→Y 正規化で根治確認) は削除済み。

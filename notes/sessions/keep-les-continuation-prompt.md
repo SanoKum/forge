@@ -32,10 +32,11 @@
 
 ```yaml
 solver: "KEEP"
-keepDissType: 2
+keepDissType: 2          # ★ keepDiss* は top-level キー! space 配下は黙って無視される
 keepDissCoeff: 0.02      # 市松頑健性優先なら 0.05
 keepDissJump: 2          # 証明付き ES・市松無傷・渦保護 (1=証明なし最軽量)
-keepDissCprime: 1
+keepDissPrecond: 1       # Turkel 前処理音響散逸 (2026-07-19 後段): 真の市松を c' 版の 142 分の 1 に
+                         # 減衰しつつ物理コストは c' 以下。低マッハ壁付き LES の推奨。cprime を上書き
 space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>,0,0]}
   # 非直交+平均流で必須。roRef/uRef は cell/node 両対応 (KEEP CPG のみ; SLAU/TP は off のまま)
 turbulence: {LESorRANS: 0, LESmodel: 0}   # 解像/遷移流は ILES (静的 SGS は逆効果と実測済)
@@ -49,9 +50,15 @@ time: {unsteady: 1}                        # 過渡は必ず物理 dt
    (plan §8.5, case/33 run_0017-0020)。「非直交メッシュ+平均流の node LES」解禁。
    node メッシュは `case/33/mesh/make_wavy_node_msh.py` で wavy.h5 から復元した
    `wavy_node.msh` を使う (旧 .msh 散逸のため)。
-2. **実形状 LES パイロット** (node): backstep (case/18) か case/36 系に確定版スタックを投入。
-   壁があるので σ-model vs WALE vs ILES の「本領」比較がここで初めて意味を持つ。
-   wall_dist ガード・SGS 選択・ES 散逸の総合実地試験。
+2. **実形状 LES パイロット** (node, backstep case/18): **着手済・大きな収穫 2 件 (2026-07-19 後段)**。
+   ①σ/c' 掃引 (run_0109-0118) で「一様固有値スケーリングは単一トレードオフ曲線に縮退し
+   市松と 2-4Δ 物理を分離できない」を実測 → ②**Turkel 前処理音響散逸 `keepDissPrecond` を
+   実装・検証** ([plan](../../plans/active/convection-keep-diss-lowmach-precond.md), 真の市松 142×減衰・
+   物理コスト c' 以下・ES 維持・cell/node 両検証)。**backstep の残存縞 (~22 Pa) は数値市松でなく
+   リップ Δx=0.13 の解像限界物理と確定** → 根治はメッシュ細分化。SGS 3 者比較 (ILES/WALE/σ) は
+   **未完** (キャンペーン中断 run_0112 は破棄予定)。再開時は precond σ0.05 スタックで、
+   現メッシュ続行かリップ細分化メッシュ新調かをユーザーと決める。seed は run_0097 res_11000。
+   ⚠ keepDiss* を space 配下に書く config 事故に注意 ([memory: keepdiss-keys-toplevel-trap])。
 3. **IDDES Phase 1.5 統合** ([turbulence-iddes-sst](../../plans/active/turbulence-iddes-sst.md) §4.8):
    LES 枝の基盤散逸を「ILES + keepDissType:2 σ0.02 jump2」とする設計に更新して実装
    (旧案の「WALE を LES 枝に」は今日の結果で見直し)。

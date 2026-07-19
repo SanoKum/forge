@@ -22,6 +22,7 @@ __global__ void KEEP_d
  int keepDissType, flow_float keepDissCoeff,      // opt-in ES 散逸レイヤ (0: off=ビット不変)
  int keepDissCprime, flow_float precondEps,       // 散逸波速: 1 で音響 c'=lowMachCprime (lowMachPrecond から独立)
  int keepDissJump,                                // 散逸ジャンプ: 0=生 (既定) / 1=再構成後 (matrix CPG 枝のみ)
+ int keepDissPrecond,                             // 1: 音響対散逸を Turkel 前処理 2×2 に置換 (matrix CPG 枝のみ)
  GradFields    grd,
  FaceGeom      geom,
  PrimState     st,
@@ -300,11 +301,41 @@ __global__ void KEEP_d
                 rd4 = (rd4*rr4 <= 0.0) ? 0.0 : (fabs(rd4) < fabs(rr4) ? rd4 : rr4);
                 rd5 = (rd5*rr5 <= 0.0) ? 0.0 : (fabs(rd5) < fabs(rr5) ? rd5 : rr5);
             }
-            const flow_float z1 = sA*lamA*rd1;
+            flow_float z1, z5;
+            if (keepDissPrecond == 1) {
+                // ---- Turkel 前処理音響散逸 (plans/active/convection-keep-diss-lowmach-precond.md §3) ----
+                // α∓ = S_A rd∓ (clip/再構成適用済) を特性成分 (Δp, ΔUn) に写像し、前処理 2×2
+                //   D_p = Γ|Γ⁻¹A2| (閉形 |M2| = φ1 M2 + φ2 I, 固有ベクトル不要) を掛けて z∓ に戻す。
+                // 漸近: Δp 散逸 ∝ c²/Ur (連続式への圧力 Laplacian = Rhie-Chow 相当の市松キラー)、
+                //   ΔUn 散逸 ∝ Ur (Guillard-Viozat の低マッハ過散逸を解消)。β=1 (M>=1) で標準 Roe |A2| に復帰。
+                // sym(K) は全 (M,Un) で正定値 → ES 性維持 (tools/verify_precond_dissipation.py 全 6 検証 PASS,
+                //   完全 Weiss-Smith 5×5 との一致 6e-4)。keepDissCprime は本枝では不使用 (前処理が上位互換)。
+                const flow_float velMag = sqrt(qF);
+                const flow_float Ur   = lowMachUr(c, velMag, precondEps);
+                const flow_float beta = (Ur/c)*(Ur/c);
+                const flow_float up   = 0.5*(1.0+beta)*Un;
+                const flow_float cp   = lowMachCprime(c, velMag, Un, precondEps);
+                const flow_float lp = up + cp, lm = up - cp;
+                const flow_float phi1 = (fabs(lp) - fabs(lm))/(2.0*cp);
+                const flow_float phi2 = (lp*fabs(lm) - lm*fabs(lp))/(2.0*cp);
+                const flow_float d11 = phi1*Un + phi2/beta;
+                const flow_float d12 = phi1*roF*c*c;
+                const flow_float d21 = phi1/roF;
+                const flow_float d22 = phi1*Un + phi2;
+                const flow_float am = sA*rd1, ap = sA*rd5;
+                const flow_float dpc = c*c*(ap + am);        // Δp (特性成分)
+                const flow_float dun = c*(ap - am)/roF;      // ΔUn (特性成分)
+                const flow_float fp = d11*dpc + d12*dun;
+                const flow_float fu = d21*dpc + d22*dun;
+                z1 = 0.5*(fp - roF*c*fu)/(c*c);
+                z5 = 0.5*(fp + roF*c*fu)/(c*c);
+            } else {
+                z1 = sA*lamA*rd1;
+                z5 = sA*lamA*rd5;
+            }
             const flow_float z2 = sE*lamU*rd2;
             const flow_float z3 = sS*lamU*rd3;
             const flow_float z4 = sS*lamU*rd4;
-            const flow_float z5 = sA*lamA*rd5;
 
             // D = Σ z_k r_k、flux -= 0.5σ D S
             const flow_float coef = 0.5*keepDissCoeff*sss;

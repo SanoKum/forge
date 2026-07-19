@@ -99,6 +99,9 @@ public:
                                    //     LLF 型は Δw·ΔU>=0 で ES。KE 非増加は非保証 → σ は TGV L2 で較正)
     flow_float keepDissCoeff = 0.05; // 上記 σ。0 で実質 off。既定 0.05 (L1: 市松~4桁減衰/400step, L2: TGV KE cost 2.7%)。過大は解像乱流を殺す (σ=0.15 で 8.4%)。
     int keepDissCprime = 1;        // KEEP 散逸レイヤの音響波速に c'=lowMachCprime を使うか (lowMachPrecond から独立)。
+    int keepDissPrecond = 0;       // 1: matrix CPG 枝の音響対散逸を Turkel 前処理 2×2 に置換 (既定 0=従来・ビット不変)。
+                                   //    Δp 散逸 ∝ c²/Ur 増強 (低マッハ市松キラー)・ΔUn 散逸 ∝ Ur 縮小 (渦保護)、
+                                   //    M>=1 で標準 Roe |A| に復帰。plans/active/convection-keep-diss-lowmach-precond.md
     int keepDissJump = 0;          // 散逸ジャンプ: 0=生 (既定・ビット不変) / 1=再構成後ジャンプ /
                                    // 2=再構成+sign-property クリップ (TeCNO 型・証明付き ES, 推奨)。
                                    // matrix CPG 枝のみ。市松 (2Δ) は中心勾配ゼロで再構成が効かずフル減衰のまま、
