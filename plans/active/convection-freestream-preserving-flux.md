@@ -65,7 +65,13 @@ forge (float32) は非直交メッシュで一様場 (free-stream) を保持で�
 
 ## 6. 残課題 (別 plan 化)
 
-- ROE/AUSM/KEEP への pRef 展開 (現状 SLAU のみ)。
+- ~~KEEP への pRef 展開~~ **済 (2026-07-19)**: `KEEP_d` の運動量圧力項 Gtilde を `(Ps−d_pRef)` 化
+  (エネルギー Ptilde は −pRef∇·u で方程式が変わるため対象外 = SLAU と同判断)。検証
+  `case/33...run_0004` (pRef 無 = step11 発散) / `run_0005` (pRef = **3.96e-12 機械精度・300step**) /
+  `run_0006` (matrix ES 散逸込みでも 4.07e-12 = 散逸レイヤは一様場で厳密ゼロ)。
+  **KEEP-LES を非直交実メッシュへ載せる前提条件が成立**。
+- ROE/AUSM への pRef 展開 (現状 SLAU/KEEP)。
+- 移流項 (ρu·s, ρH u·s) の基準差分 — **U∞≠0 の動く一様流**の保存 (LES の平均流で効く)。
 - `methods/convection/implementation.md` への反映と回帰テスト登録。
 
 ## 7. 「流れありで発散」の決着 (2026-06-14) — pRef とは別問題だった

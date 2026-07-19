@@ -265,6 +265,10 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
   σ は L1 (市松減衰) と L2 (TGV KE) の両ゲートで較正
   ([convection-keep-es-dissipation](../../plans/accepted/convection-keep-es-dissipation.md) 変更ログ参照)。
   `massflux[ip]` は散逸込み総質量流束 (スカラー輸送と整合)。
+- **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む
+  (SLAU と同処方)。非直交メッシュの float32 桁落ちによる偽運動量源を除去し、
+  `case/33` 歪み hex で機械精度 (4e-12) の一様場保存。**非直交メッシュで KEEP を使うときは
+  `pRef` に動作静圧を必ず設定** (無指定 0.0 は従来挙動=非直交で発散)。
 - **cell/node 両対応**: 周回面は `geom.nLoopPlanes` (= `convPlaneBound`)。cell は内部+境界 ghost を
   周回 (境界面は ic1=ghost の生値で中心流束、専用境界カーネルは skip)、node 弱形式は内部双対面のみ
   周回し境界は `convectiveFlux_boundary_d` が担う。`massflux[ip]` に総質量流束を書きスカラー輸送と整合。

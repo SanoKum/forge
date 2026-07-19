@@ -72,9 +72,13 @@ __global__ void KEEP_d
         } else {
             Itilde = Ctilde*0.5*(Ps[ic0]/ro[ic0] +Ps[ic1]/ro[ic1])/(ga-1.0);   // CPG (ビット不変)
         }
-        flow_float Gtildex = 0.5*(Ps[ic0]+Ps[ic1])*nx;
-        flow_float Gtildey = 0.5*(Ps[ic0]+Ps[ic1])*ny;
-        flow_float Gtildez = 0.5*(Ps[ic0]+Ps[ic1])*nz;
+        // free-stream 保存: 運動量圧力項は基準静圧 d_pRef を面ごとに差し引いて組む
+        // (定数ゲージシフト: Σs=0 解析的に解不変。float32 の p·s 桁落ちによる偽運動量源を除去。
+        //  SLAU と同じ処方 = plans/active/convection-freestream-preserving-flux.md。
+        //  エネルギー圧力仕事 Ptilde は -pRef∇·u で方程式が変わるため差分しない。pRef=0 でビット不変)
+        flow_float Gtildex = 0.5*((Ps[ic0]-d_pRef)+(Ps[ic1]-d_pRef))*nx;
+        flow_float Gtildey = 0.5*((Ps[ic0]-d_pRef)+(Ps[ic1]-d_pRef))*ny;
+        flow_float Gtildez = 0.5*((Ps[ic0]-d_pRef)+(Ps[ic1]-d_pRef))*nz;
         flow_float Ptilde  = 0.5*( (Ux[ic0]*Ps[ic1] + Ux[ic1]*Ps[ic0])*nx
                                   +(Uy[ic0]*Ps[ic1] + Uy[ic1]*Ps[ic0])*ny
                                   +(Uz[ic0]*Ps[ic1] + Uz[ic1]*Ps[ic0])*nz );
