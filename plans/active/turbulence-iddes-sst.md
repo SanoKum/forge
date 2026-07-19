@@ -381,6 +381,19 @@ main.cpp:954  ransSource_d_wrapper           … Dk 計算（ここで l_des を
 
 ### 4.8 DES 用低散逸 flux（Phase 1.5 — SBLI 物理検証の前提）★
 
+> **⚠ 整合メモ (2026-07-19・Phase 1.5 着手前に必読)**: 本節の本命設計「`solver: KEEP_SLAU` の
+> `duc` に f_d 注入」は**現行コードでは前提が消失している**。`KEEP_SLAU_d` は
+> `cuda_forge/convection/legacy/` に退避され dispatch から到達不能 (現行 `cfg.solver` は
+> SLAU/SLAU2/HLLE/ROE/KEEP のみ)。KEEP 系はその後「純 KEEP 中心流束 + 独立な ES 散逸レイヤ
+> (`keepDissType` / `keepDissJump` / σ)」に再編された
+> ([`convection-keep-es-dissipation`](../accepted/convection-keep-es-dissipation.md) /
+> [`convection-keep-diss-recon-jump`](../accepted/convection-keep-diss-recon-jump.md)、σ 較正は
+> memory [[keep-es-dissipation-status]])。Phase 1.5 の実装時は KEEP_SLAU 復活ではなく、
+> **ES 散逸レイヤの散逸強度 (σ または blend) を f_d で駆動する**設計に読み替えて再設計し、
+> 先に本節を更新してから実装すること (LES 域 σ≈0.02 ↔ RANS/衝撃域フル散逸、という対応は
+> 本節の設計原理 (§survey の Travin 型連続ブレンド・f_d 主導) をそのまま踏襲できる)。
+> 以降の本文は 2026-06-21 時点の設計記録として残す。
+
 **外部レビューが最大の失敗要因と指摘した箇所。** DDES length scale が正しくても、
 LES 領域（f_d≈1）で対流スキームの数値散逸が強いと解像乱流が育たず、SBLI で
 「剥離せん断層の KH 成長が遅れ、剥離泡が短く、非定常圧力変動が弱い」結果になる。
