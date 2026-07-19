@@ -899,6 +899,16 @@ void mesh::setMeshMap_d()
         gpuErrchk(cudaMalloc((void **)&(this->wall_flag_d), sizeof(geom_int)*this->nCells));
         gpuErrchk(cudaMemcpy(this->wall_flag_d, wf.data(),
                              sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
+
+        // 等温壁ノードフラグ (エネルギー行 decouple 用)。壁∩等温壁コーナーは等温側を優先 (T ピン対象)。
+        std::vector<geom_int> iwf(this->nCells, 0);
+        for (bcond& bc : this->bconds)
+            if (bc.bcondKind == "wall_isothermal")
+                for (geom_int ic : bc.iCells)
+                    if (ic >= 0 && ic < this->nCells) iwf[ic] = 1;
+        gpuErrchk(cudaMalloc((void **)&(this->iso_wall_flag_d), sizeof(geom_int)*this->nCells));
+        gpuErrchk(cudaMemcpy(this->iso_wall_flag_d, iwf.data(),
+                             sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
     }
 };
 

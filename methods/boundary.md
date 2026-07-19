@@ -135,6 +135,25 @@ YAML を読み、各 `bcond` (メッシュ生成側で物理 ID 付き) に `kin
 値型テーブル (`valueTypes`) を紐付け、`bcondInitVariables` で
 GPU/CPU 双方の境界変数バッファを確保する。
 
+#### node 等温壁の壁ノード温度ピン (2026-07-20)
+
+node (median-dual) の `wall_isothermal` は、壁ノードの温度状態を BC 壁温に**強制ピン**する
+(運動量の `nodeWallDirichlet` の熱版。`nodeWallDirichlet: 1` [既定] のとき有効)。3 点セット:
+
+1. **状態ピン** (`applyNodeIsothermalWallPin`): applyBconds 位相で壁ノードの T/roe/P/sonic を
+   Tw に整合させる (WMLES 等温壁の `wmles_pin_wall_temperature_d` を流用)。
+2. **残差ゼロ化** (`zeroNodeIsothermalEnergyResidual`): 壁ノードの `res_roe` を 0 に射影
+   (Dirichlet ノードの残差は BC 強制であり物理不均衡でない)。
+3. **陰解法 Jacobian 整合** (`iso_wall_flag_d`): block-DPLUR の 5×5 対角ブロックで壁ノードの
+   エネルギー行 (row 4) を単位行化 + rhs=0 (SU2 `DeleteValsRowi` 相当、壁運動量 3 行 decouple と
+   同型)。**これ無しで状態ピンだけ行うと implicit は数 step で発散する** (2026-07-20 実測)。
+
+検証 (case/24 純伝導・厳密解シード): 壁ノード T = BC 値厳密 (350.0000/300.0000)、中央部熱流束
+厳密 (+0.00%)。既知の残課題: 第 1 スペーシングの勾配に −15% 程度の局所バイアス (W-I 弱形式閉包の
+離散化誤差・O(Δ))、implicit の実用擬似 CFL 上限 ~5 (エネルギー行 decouple により境界が実効陽扱いの
+ため。cfl_pseudo 20 は発散)。ピン導入前は壁ノード T が壁 CV 平均に緩み (~0.1 K オフセット)、
+第 1 スペーシング勾配 −24% だった。
+
 #### WMLES 壁モデルの指定 (`wallModelLES`)
 
 `wall` / `wall_isothermal` の `ints:` に `wallModelLES: 1` を書くと、その壁の粘性流束が

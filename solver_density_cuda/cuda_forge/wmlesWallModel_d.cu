@@ -327,6 +327,64 @@ bool wmlesNodeIsothermalActive(const solverConfig& cfg, const mesh& msh)
     return false;
 }
 
+bool nodeIsothermalPinActive(const solverConfig& cfg, const mesh& msh)
+{
+    if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return false;
+    for (const auto& bc : msh.bconds)
+        if (bc.bcondKind == "wall_isothermal" && !wmlesActiveForBcond(cfg, bc)) return true;
+    return false;
+}
+
+// 素の node 等温壁 (非 WMLES): 壁ノード温度状態を BC 壁温にピンする (nodeWallDirichlet の熱版)。
+// 旧来はエネルギーだけ弱形式で、壁ノード T が壁 CV 平均に緩み (ny=64 で ~0.1 K オフセット)
+// 第 1 スペーシングの勾配が −24% 歪んだ (case/24 純伝導検証 2026-07-20)。運動量 Dirichlet と
+// 対称に温度も強制する。残差側は zeroNodeIsothermalEnergyResidual が res_roe を 0 化する。
+void applyNodeIsothermalWallPin(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (!nodeIsothermalPinActive(cfg, msh)) return;
+    for (auto& bc : msh.bconds) {
+        if (bc.bcondKind != "wall_isothermal") continue;
+        if (wmlesActiveForBcond(cfg, bc)) continue;   // WMLES 側で同一ピン適用済み
+        if (bc.iPlanes.empty()) continue;
+        wmles_pin_wall_temperature_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
+            static_cast<geom_int>(bc.iPlanes.size()),
+            bc.map_bplane_cell_d,
+            cfg.thermalMethod, cfg.gamma, cfg.cp,
+            thermo_species_device_ptr(), species_roY_device_ptr(), cfg.nSpecies,
+            bc.bvar_d["Ts"],
+            var.c_d["ro"], var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
+            var.c_d["T"], var.c_d["P"], var.c_d["roe"], var.c_d["sonic"]);
+    }
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
+namespace {
+// res_roe を bcond の壁ノードで 0 化 (Dirichlet ノードの残差は BC 強制であり物理不均衡でない)
+__global__ void zero_res_roe_bplane_d(geom_int nb, geom_int* bplane_cell, flow_float* res_roe)
+{
+    const geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ib >= nb) return;
+    res_roe[bplane_cell[ib]] = static_cast<flow_float>(0.0);
+}
+} // namespace
+
+void zeroNodeIsothermalEnergyResidual(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (!nodeIsothermalPinActive(cfg, msh)) return;
+    for (auto& bc : msh.bconds) {
+        if (bc.bcondKind != "wall_isothermal") continue;
+        if (wmlesActiveForBcond(cfg, bc)) continue;
+        if (bc.iPlanes.empty()) continue;
+        zero_res_roe_bplane_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
+            static_cast<geom_int>(bc.iPlanes.size()),
+            bc.map_bplane_cell_d,
+            var.c_d["res_roe"]);
+    }
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
 void applyWmlesWallModel(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (!wmlesAnyActive(cfg, msh)) return;

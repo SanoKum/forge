@@ -258,3 +258,10 @@ SST 壁関数の Newton (固定 5 回) は**変更しない**。共通化する�
   - **node slip バグ発見 (未修正・別件)**: slip 境界 + 接線密度勾配で市松状スプリアス接線流
     (0.47 m/s) が定在。[調査ノート](../../notes/investigations/node-slip-tangential-density-spurious-flow.md)。
     **チャネル検証 (周期+壁のみ) には影響しない**が、slip を使う node ケースは要注意。
+- `2026-07-20` — **node 等温壁の壁ノード温度ピンを実装** (前項の「壁ノード T が CV 平均に緩む」への
+  対策。methods/boundary.md「node 等温壁の壁ノード温度ピン」)。状態ピン (`applyNodeIsothermalWallPin`,
+  WMLES pin カーネル流用) + `res_roe` ゼロ化 + **block-DPLUR エネルギー行 decouple (`iso_wall_flag_d`,
+  SU2 DeleteValsRowi 相当)** の 3 点セット。decouple 無しの状態ピンは implicit で数 step 発散する
+  (今回実測 — **既存の WMLES 等温 node + implicit も同リスクだったが本 decouple が共通で解消**)。
+  検証: case/24 `run_isoT_condN_node` — 壁ノード T 厳密・q_mid +0.00%・explicit 健全・implicit
+  cfl_pseudo≤5 安定 (上限 ~5, 20 発散)。回帰 4/4 PASS。残: W-I 閉包の第 1 スペーシング O(Δ) バイアス −15%。

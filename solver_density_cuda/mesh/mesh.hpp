@@ -173,6 +173,11 @@ public:
     // 厳密に 0 に固定する (state 初期化 + 運動量残差射影) のに使う。壁ゴーストを撤廃する代替。
     geom_int* wall_flag_d = nullptr;
 
+    // 等温壁 CV フラグ [nCells] (wall_isothermal bcond の CV=1)。node-centered 等温壁の壁ノード
+    // T ピン (applyNodeIsothermalWallPin / WMLES pin) と対で、block-DPLUR のエネルギー行 (row4) を
+    // decouple するのに使う (運動量 wall_flag と同型。state ピンと Jacobian の不整合による発散防止)。
+    geom_int* iso_wall_flag_d = nullptr;
+
     // node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5)。周期 partner ノードを union-find で
     // グループ化し、各 CV の root(=master) index を持つ。periodicRoot[c]==c なら root/非周期、それ以外は slave。
     // periodicNodeGather (res 和を group 全員に書く) と合併体積で「両側部分 CV を 1 CV」として扱う。

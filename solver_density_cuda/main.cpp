@@ -863,6 +863,7 @@ cudaConfig initializeSimulation(
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
     applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
     applyWmlesWallModel(cfg , cuda_cfg , msh , var);   // WMLES 壁応力モデル (wallModelLES 壁のみ, §10)
+    applyNodeIsothermalWallPin(cfg , cuda_cfg , msh , var);   // 素の node 等温壁の壁ノード T ピン
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
@@ -945,6 +946,7 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
         applyRansScalarBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyWmlesWallModel(s.cfg , s.cuda_cfg , s.msh , s.var);   // WMLES 壁応力モデル (§10)
+        applyNodeIsothermalWallPin(s.cfg , s.cuda_cfg , s.msh , s.var);   // 素の node 等温壁 T ピン
         applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyCondensationBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });

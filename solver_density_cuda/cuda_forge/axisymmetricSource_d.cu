@@ -230,6 +230,9 @@ void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
+
+    // 素の node 等温壁 (非 WMLES): 壁ノード T ピン (applyNodeIsothermalWallPin) と対で res_roe を 0 化
+    zeroNodeIsothermalEnergyResidual(cfg , cuda_cfg , msh , var);
 }
 
 void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
