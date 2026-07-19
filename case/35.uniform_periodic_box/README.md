@@ -40,3 +40,8 @@
 | `run_0031_cell_keep_tp_rerun_newbin` | **bisect①**: 単成分 TP を新バイナリ (_mix 経由 ns=1) で再実行 | 9.6e-4→**1.2e-7** = 旧バイナリと一致 → **ns=1 経路に退行なし** | ref (bisect) |
 | `run_0032_cell_keep_mc_y10_bisect` | **bisect②**: 2種だが Y=[1,0] (物理的に純 N2) + matrix | **プラトー再現 (2.2e-4)** → バグは実在混合でなく **ns≥2 コード経路**。組成は厳密に [1,0] 維持・res_0 は ns=1 と 7桁一致なのに **step0 の rms_roUx のみ 0.07% 差** (rms_ro/rms_roe は一致) — 原因未特定 | ref (bisect・バグ切り分け) |
 | `run_0033_cell_keep_mc_y10_scalar_bisect` | **bisect③**: 同 Y=[1,0] で **scalar** (type 1) | **1.1e-7 までクリーン減衰** = 多成分ソルバ機構 (種輸送/renormalize/依存変数) は無罪。**バグは matrix×ns≥2 に限定** | ref (bisect・scalar 多成分 OK) |
+| `run_0034_cell_keep_mc_cbd_dissmat005_fix` | **バグ根治後**: 実混合 N2/O2 0.7/0.3 + matrix σ=0.05 (run_0029 と同 IC) | A_cb 9.77e-4→**4.79e-8 (完全減衰)**。プラトー根治を実混合で確認 | ref (Step 4 matrix 根治検証) |
+| `run_0035_cell_keep_tp_regr_fix` | 根治後の単成分回帰 (run_0031 と同 IC) | 1.18e-7 で不変 (回帰なし) | ref (回帰確認) |
+| `run_0036_cell_keep_mc_comp_smoke_fix` | 根治後の組成半割 smoke | NaN なし・場有界 (P 212-242kPa, T 684-741K) | ref (smoke 再確認) |
+
+**matrix×多成分プラトーの根治記録 (2026-07-19 深掘り)**: 真因 = **ΣρY_k ≠ ρ の共通モードノイズ** (ρY と ρ は別カーネル/別 atomicAdd 順で更新されるため ~1e-7 の不一致が発生)。未正規化の Y=ρY_k/ρ がこのノイズを持ち込み、エントロピー変数の s⁰ 項 (×~10) と ln X (対数微分特異) が w 空間ノイズに増幅、matrix 散逸の弱減衰 (エントロピー/せん断) 方向に注入され続けて市松減衰がプラトー化していた (scalar は全モード強減衰のため隠蔽)。**修正 = カーネル内で Y を正規化 (Σ=1 強制)**。切り分けの一時 run (dbg_*: 面単位ビット比較で KEEP_d 散逸は同一と証明→pure/scalar 対照→ns=1 強制 bisect で経路特定→Y 正規化で根治確認) は削除済み。

@@ -219,11 +219,24 @@ __global__ void KEEP_d
             const int ns = (nSpecies > 1) ? nSpecies : 1;
             double Y0[THERMO_MAX_SPECIES], Y1[THERMO_MAX_SPECIES], YF[THERMO_MAX_SPECIES];
             if (nSpecies > 1) {
+                // ★ Y はカーネル内で正規化 (Σ_k Y_k = 1 を強制)。ρY と ρ は別カーネル/atomicAdd で
+                //   更新されるため Σ ρY_k ≠ ρ の共通モードノイズ (~1e-7) が乗り、これが s⁰ (×~10) と
+                //   ln X (対数微分特異) で増幅されて w ノイズ→弱減衰モードへ注入され、市松減衰が
+                //   プラトー化する (Y=[1,0] 縮退 bisect で確定)。正規化で共通モードを除去する。
+                double sum0 = 0.0, sum1 = 0.0;
                 for (int k = 0; k < ns; k++) {
-                    Y0[k] = fmax((double)roY[k][ic0]/(double)ro[ic0], 0.0);
-                    Y1[k] = fmax((double)roY[k][ic1]/(double)ro[ic1], 0.0);
+                    Y0[k] = fmax((double)roY[k][ic0], 0.0);
+                    Y1[k] = fmax((double)roY[k][ic1], 0.0);
+                    sum0 += Y0[k]; sum1 += Y1[k];
+                }
+                const double inv0 = (sum0 > 1e-300) ? 1.0/sum0 : 0.0;
+                const double inv1 = (sum1 > 1e-300) ? 1.0/sum1 : 0.0;
+                for (int k = 0; k < ns; k++) {
+                    Y0[k] *= inv0; Y1[k] *= inv1;
                     YF[k] = 0.5*(Y0[k]+Y1[k]);
                 }
+                if (sum0 <= 1e-300) { Y0[0] = 1.0; YF[0] = 0.5*(Y0[0]+Y1[0]); }
+                if (sum1 <= 1e-300) { Y1[0] = 1.0; YF[0] = 0.5*(Y0[0]+Y1[0]); }
             } else { Y0[0] = 1.0; Y1[0] = 1.0; YF[0] = 1.0; }
             const double R0g = thermo_R_mix(sp, ns, Y0);
             const double R1g = thermo_R_mix(sp, ns, Y1);

@@ -200,15 +200,9 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
     } else if (cfg.solver == "KEEP") {
         // 純粋 KEEP 中心流束 + opt-in ES 散逸レイヤ (keepDissType, 既定 0=散逸なし・ビット不変)。
         // LES/ILES 向け低散逸対流。SGS 散逸は WALE が担う。
-        // TP (thermalMethod==2): 単成分 (Step 3) は scalar/matrix 対応。多成分 (Step 4) は
-        // scalar (type 1, EOS 非依存) のみ検証済。matrix (type 2) は多成分で市松減衰が
-        // プラトー化する未解決バグがあり封印 (plan 変更ログ 2026-07-19 Step 4 参照。
-        // Y=[1,0] 縮退でも再現・step0 運動量残差のみ 0.07% 差・原因未特定)。
-        if (cfg.thermalMethod == 2 && cfg.nSpecies > 1 && cfg.keepDissType == 2) {
-            std::cerr << "Error: keepDissType=2 (matrix ES) with multicomponent TP is not verified"
-                      << " (known checkerboard-decay plateau bug; use keepDissType=1)" << std::endl;
-            exit(EXIT_FAILURE);
-        }
+        // TP (thermalMethod==2): 単成分 (Step 3)・多成分 (Step 4) とも scalar/matrix 対応。
+        // 多成分 matrix の市松プラトーバグは根治済 (真因: ΣρY≠ρ 共通モードノイズの w 増幅。
+        // カーネル内 Y 正規化で除去。plan 変更ログ 2026-07-19 深掘り参照)。
         KEEP_d<<<dimGrid_normal_halo , cuda_cfg.dimBlock>>> (
             cfg.gamma,
             cfg.thermalMethod, thermo_species_device_ptr(),

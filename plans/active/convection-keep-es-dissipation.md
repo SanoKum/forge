@@ -34,7 +34,7 @@ $$F_f = F_f^\mathrm{KEEP} - \tfrac12\,\sigma\,D_f$$
 | 1 | **単成分 CPG・スカラー ES 散逸**: $D_f=\lambda'\,\Delta U$, $\lambda'=\|U_n\|+c'$ (`lowMachPrecond>=1` で `lowMachCprime`、else $c$)。config `keepDissType`(0=off 既定・ビット不変/1=scalar)・`keepDissCoeff`(σ) | 本実装 |
 | 2 | 単成分 CPG・**matrix 版**: $D_f=R\|\Lambda'\|SR^{\mathsf T}\Delta w$ (Chandrashekar 2013, entropy-scaled)。音響のみ $\|U_n\|+c'$、せん断/エントロピーは $\|U_n\|$ | **実装+検証済** |
 | 3 | TP 単成分 ($s^0(T)$ 多項式=`thermo_s0_mass` 流用) | **実装+検証済** |
-| 4 | **多成分** (混合物性 w/S + 混合エントロピー) | **部分完了**: scalar (type1) 検証済 / **matrix (type2) は未解決バグで封印** (下記) |
+| 4 | **多成分** (混合物性 w/S + 混合エントロピー + カーネル内 Y 正規化) | **完了** (プラトーバグ根治済・下記) |
 
 **やらない**:
 - 衝撃捕獲 (衝撃レイヤは当面 SLAU ブレンド、中期に directional LAD を別 plan で)
@@ -118,3 +118,9 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   - **検証結果**: pure=null-mode 不変 (多成分でも成立, `case/35...run_0028`)・**scalar (type1) 多成分=クリーン減衰 1.1e-7** (`run_0033`)・組成半割 smoke=NaN なし場有界 (`run_0030`)。
   - **★未解決バグ (matrix type2 × nSpecies≥2)**: 市松が最初 ~50step 正常減衰後 **2.3e-4 プラトー** (`run_0029`)。bisect で確定した事実: (i) ns=1 は新バイナリでも健全 (`run_0031`)、(ii) **Y=[1,0] 縮退 (物理的に純 N2) でも再現** (`run_0032`) → 実在混合の物理でなく ns≥2 コード経路、(iii) scalar は同条件でクリーン (`run_0033`) → 種輸送機構は無罪。潰した容疑: thermo _mix 関数 (質量重み和で Y=[1,0] 等価)・mixent 符号 (Y=[1,0] で 0)・periodic_d の roY ghost コピー (実装あり)・配列サイズ (nCells_all 確保)・組成ドリフト (厳密 [1,0] 維持)・res_0 状態 (7桁一致)。**残る謎: step0 の rms_roUx のみ 0.07% 差 (rms_ro/rms_roe は一致) = 初手から運動量散逸だけ違う**。プラトー減衰率はエントロピー/せん断波レート (|Un|) に整合 → 基底の運動量成分に ns≥2 でのみ入る差異が疑われる。
   - **処置**: wrapper で `keepDissType==2 && nSpecies>1` をエラー封印 (scalar は許可)。多成分 LES は当面 type1 (KE cost は type2 の 2 倍だが正しく動く)。再開時はこの bisect 事実から。
+- `2026-07-19` — **★matrix×多成分プラトーバグ根治 (深掘り完遂)・封印解除**。
+  - **切り分け過程**: ①カーネル printf で z/y/x 全法線の面をビット比較 → **KEEP_d 散逸は ns=1/ns=2 で完全同一** (矛盾の深化)。②step0 の rms_roUx 差 0.07% は**圧力フラックス巨大相殺 (p·S~9e3 vs 残差~7e-3) 上の atomicAdd 丸め増幅ノイズ**と判明 (rms_roUy/z は両者厳密ゼロ)。③pure 400step: ns=1≡ns=2 (基盤ソルバ無罪)。④**カーネル内で ns=1 経路を強制する in-place bisect → プラトー消滅** = roY 読み〜混合評価に限定。
+  - **真因**: ρY_k と ρ が**別カーネル・別 atomicAdd 順で更新**されるため Σρ Y_k ≠ ρ の**共通モードノイズ (~1e-7)** が生じ、未正規化 Y=ρY_k/ρ 経由でエントロピー変数へ。$s^0$ 項が ×~10 (s⁰/T·Δ換算)、混合エントロピー $\ln X$ が対数微分特異で増幅し、**matrix 散逸が弱くしか舐めないエントロピー/せん断方向へ毎ステップ注入** → 市松の弱減衰成分がプラトー化。scalar (type1) は全モードを音響レートで減衰するため同ノイズを隠蔽していた (「scalar は無罪証明」の誤読に注意)。
+  - **修正**: matrix ブランチのカーネル内で **Y を正規化 (Σ_k Y_k=1 強制)** し共通モードを除去 (`bc_cell_Y` と同じ流儀)。ゼロ和フォールバック付き。
+  - **検証**: 実混合 N2/O2 0.7/0.3 → A_cb 9.77e-4→**4.79e-8 完全減衰** (`case/35...run_0034`)・単成分回帰不変 1.18e-7 (`run_0035`)・組成半割 smoke NaN なし (`run_0036`)。**wrapper の封印を解除し、多成分でも matrix (type2) を第一候補に昇格**。
+  - 教訓: (a) 別々に更新される保存量の**比**をカーネルで使うときは正規化必須 (共通モードノイズが対数/エントロピー項で増幅される)。(b) 「強い散逸で問題が見えない」ことは無罪証明にならない。
