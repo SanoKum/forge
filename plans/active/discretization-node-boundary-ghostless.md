@@ -5,8 +5,8 @@
 - **area**: `boundary` / `architecture`
 - **status**: `in_progress`
 - **related_docs**:
-  - `methods/discretization/theory.md` (§6.3 壁 Dirichlet, §6.4 コーナー所有優先)
-  - `methods/discretization/implementation.md` (§7.2 ゴースト全撤廃へ)
+  - `methods/discretization.md` (§6.3 壁 Dirichlet, §6.4 コーナー所有優先)
+  - `methods/discretization.md` (§7.2 ゴースト全撤廃へ)
 - **related_plans**:
   - 親: [`discretization-median-dual.md`](discretization-median-dual.md) (node 化本計画)
   - 関連: [`architecture-axisym-axis-singularity.md`](../accepted/architecture-axisym-axis-singularity.md) (軸 corner, 残差射影の先例)
@@ -31,8 +31,8 @@ node-centered (median-dual) の境界はcell-centered 用の**ミラーゴース
 
 ## 3. 関連 docs と前提
 
-- 理論: [theory.md](../../methods/discretization/theory.md) §6 (ゴースト vs 弱形式, §6.3 壁 Dirichlet, §6.4 コーナー所有)。
-- 実装方針: [implementation.md](../../methods/discretization/implementation.md) §7 / §7.2。
+- 理論: [theory.md](../../methods/discretization.md#理論) §6 (ゴースト vs 弱形式, §6.3 壁 Dirichlet, §6.4 コーナー所有)。
+- 実装方針: [implementation.md](../../methods/discretization.md#実装) §7 / §7.2。
 - 先例: 軸対称 near-axis の**残差射影** (`zeroAxisRadialResidual_d`) が block-DPLUR と整合した
   ([architecture-axisym-axis-singularity.md](../accepted/architecture-axisym-axis-singularity.md))。**state 直書きは Mach1000 発散**
   実績があるため、壁 no-slip も残差射影で実装する。
@@ -158,12 +158,12 @@ flux 寄与は不要。
   `cuda_forge/axisymmetricSource_d.cu`/`.cuh`, `boundaryCond.cpp`, `main.cpp`。(Phase 2 で convertGmshToForge/
   境界 flux 経路一式)。
 - 既存ケース: cell モードは無変更・ビット一致。node モードの壁挙動が変わる (改善)。
-- docs: `methods/discretization/theory.md` §6.3/§6.4, `implementation.md` §7.2 (更新済み)、`methods/index.md` は項目既存。
+- docs: `methods/discretization.md` §6.3/§6.4, `implementation.md` §7.2 (更新済み)、`methods/index.md` は項目既存。
 
 ## 8. 完了条件
 
-- [x] 関連 `methods/discretization/theory.md` 更新済み
-- [x] 関連 `methods/discretization/implementation.md` 更新済み
+- [x] 関連 `methods/discretization.md` 更新済み
+- [x] 関連 `methods/discretization.md` 更新済み
 - [ ] 実装・検証完了 (§6 を満たす)
 - [ ] `plans/README.md` の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
@@ -274,3 +274,15 @@ flux 寄与は不要。
     node 正しいことを確認 (本監査の coverage)。
   - 注意: species + node は検証ケース未整備のため上記 species 修正は **未検証** (構造は k/ω の実証済み
     パターンに準拠)。node 単成分 SST と cell は回帰確認済み。
+
+## 変更ログ (追補 2026-07-19 — 整合メモ)
+
+- **5c (壁ノード→内部隣接 CSR + `viscousFlux_wall_node_d`) の位置づけを「必須」から「精度改善
+  オプション」に格下げ**。当初 5c の目的とされた u_τ/Cf 乖離は、実際には omega 壁ピン
+  (commit 2b19d1d) + wall_dist の壁ノード座標修正 (8b60f2c) + 境界 massflux (0f6d53d) の 3 点で
+  解消し、node SST は cell 基準 (run_0009) と一致済み (Cf/Schlichting 0.89–0.93)。5c に着手する
+  場合は「BL 崩壊解消」ではなく**壁せん断の離散化精度 (検証D) の向上を単独目的**として、効果を
+  分離検証すること。
+- **species×node 境界修正 (2026-06-26 追補) は未検証のまま**。多成分 TP × node を実計算に使う前に
+  検証ケース (例: case/28 の node 版) を整備して検証すること
+  ([監査](../../notes/investigations/plans-active-audit-weak-model-readiness.md) 横断アクション 5)。
