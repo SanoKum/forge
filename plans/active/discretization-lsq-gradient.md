@@ -5,13 +5,26 @@
 - **area**: `gradient / architecture`
 - **status**: `in_progress`  <!-- 実装済・GPU 検証未 -->
 - **related_docs**:
-  - `methods/discretization/implementation.md` (§7.3 LSQ 勾配)
-  - `methods/gradient/theory.md` (既知の制約: LSQ は node 限定)
+  - `methods/discretization.md` (§7.3 LSQ 勾配)
+  - `methods/gradient.md` (既知の制約: LSQ は node 限定)
 - **related_plans**:
   - `discretization-median-dual.md` (親: cell/node 両対応化)
   - `discretization-node-boundary-ghostless.md` (兄弟: node 境界弱形式)
 - **created**: `2026-06-14`
 - **owner**: `CFD Dev`
+
+## 0. 次の一手 = 動機の再検証ゲート (2026-07-19 ユーザー承認・必読)
+
+**修正候補 (§9 の ①double 蓄積 / ②QR・列スケーリング / ③GG フォールバック) に着手しないこと。**
+LSQ は近壁で発散する負結果 (§9) で停止中であり、かつ導入動機だった「GG の近壁 checkerboard」は
+本ケース (case/29 node viscous) で **GG が問題なく収束** (rms_ro 5e-8)・`nodeMidpointFx` (fx=0.5) で
+checkerboard roughness −36% 低減済み、と動機自体が揺らいでいる。
+
+- **ゲート (安価・これだけやる)**: 固定した GG 収束場の上で勾配 checkerboard 指標 (近壁 `dUxdy` の
+  隣接符号反転率・roughness) を測り、**せん断応力・壁面量に実害が出ているケースを特定する**。
+  対象は case/29 node viscous と、動機の出所とされる平板系 (case/26)。
+- **実害が確認できなければ本 plan を `archived/` へ移す** (動機消滅・LSQ 実装は gated のまま残置)。
+  実害があった場合のみ、そのケースを検証ケースに据えて修正候補①〜③を再評価する。
 
 ## 1. 目的
 
@@ -33,8 +46,8 @@ cell モードおよび `gradLSQ=0` の node モードは従来とビット不�
 
 ## 3. 関連 docs と前提
 
-- 理論: GG 勾配は [`methods/gradient/theory.md`](../../methods/gradient/theory.md)。LSQ の動機・式・実装は
-  [`methods/discretization/implementation.md`](../../methods/discretization/implementation.md) §7.3。
+- 理論: GG 勾配は [`methods/gradient.md`](../../methods/gradient.md#理論)。LSQ の動機・式・実装は
+  [`methods/discretization.md`](../../methods/discretization.md#実装) §7.3。
 - 前提: node 弱形式境界 (§7.2, commit 97e190a 系列) と bvar 境界値が利用可能であること。
 - 親計画 `discretization-median-dual.md` の node-centered パイプラインに乗る。
 
@@ -75,13 +88,13 @@ $w_{ij}=1/|\mathbf d_{ij}|^2$、$\mathbf d_{ij}=\mathbf x_j-\mathbf x_i$。
 ## 7. 影響範囲
 
 - 触るモジュール: `calcGradient_d.cu`、`input/solverConfig.{hpp,cpp}`。
-- docs: `methods/discretization/implementation.md` §7.3、`methods/gradient/theory.md`、`methods/index.md`。
+- docs: `methods/discretization.md` §7.3、`methods/gradient.md`、`methods/index.md`。
 - 既存実行手順: `gradLSQ` 未指定時は無影響 (既定 GG)。
 
 ## 8. 完了条件
 
-- [x] 関連 `methods/gradient/theory.md` 更新済み
-- [x] 関連 `methods/discretization/implementation.md` (§7.3) 更新済み
+- [x] 関連 `methods/gradient.md` 更新済み
+- [x] 関連 `methods/discretization.md` (§7.3) 更新済み
 - [ ] 実装・検証完了 (本 plan の §6 を満たす) — **GPU 検証が未**
 - [ ] `plans/README.md` の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
