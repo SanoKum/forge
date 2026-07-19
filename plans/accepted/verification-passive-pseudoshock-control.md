@@ -3,10 +3,21 @@
 ## メタ
 
 - **area**: `verification` (検証ケース; 既存ソルバ機能を用いた現象再現)
-- **status**: `in_progress`
+- **status**: `done`  <!-- Phase 1 (2D 現象再現) としてクローズ。拡張は別 plan で起票 -->
+
+## 0. 最終結論 (2026-07-19 クローズ, Phase 1)
+
+**論文の主張機構を 2D で定性再現した**: porous vs solid の matched-Ps 比較 (Ps=1.82–1.84 MPa 窓) で、
+多孔壁が中心軸静圧の波状 (shock train) を **~30% 低減**し、圧力上昇を多孔壁上で早期化 = 擬似衝撃波の
+弱化 (ショックレス化) を確認 (`porous_vs_solid_centerline.png`、構造格子・背圧 sweep 全点安定)。
+変更ログには初期セッションの「未達」報告と後続セッションの「再現」報告が併存するが、**後者
+(構造格子 + matched-Ps 比較) が最終結論**である。留保: 残差フロア steady・上下非対称は物理 (対称
+メッシュ+対称 IC でも成長)・2D スリット近似。**拡張候補 (3D 丸穴化・10°ディフューザ+チャンバ・
+katoLaunder 感度) は必要になったら別 plan として起票する** (ユーザー判断 2026-07-19)。
+run 一覧は [case/36 README](../../case/36.passive_pseudoshock_control/README.md)。
 - **related_docs**:
   - `methods/convection/implementation.md` (SLAU / MUSCL)
-  - `methods/boundary/implementation.md` (inlet_uniformVelocity / outlet_statPress / slip / wall)
+  - `methods/boundary.md` (inlet_uniformVelocity / outlet_statPress / slip / wall)
 - **related_plans**: なし
 - **created**: `2026-06-21`
 - **owner**: CFD Dev
@@ -98,11 +109,11 @@ Matsuo et al. (1988)「境界層のパッシブコントロールが擬似衝撃
 ## 8. 完了条件
 
 - [x] 形状確定・2D メッシュ生成 (porous/solid)
-- [ ] 層流で超音速場確立 + 背圧掃引で擬似衝撃波形成
+- [x] 層流で超音速場確立 + 背圧掃引で擬似衝撃波形成 (SST wall-res + seed/chain 手順確立、sweep 全点安定)
 - [x] 固体壁 vs 多孔壁の静圧分布比較、ショックレス再現可否の判定 → **再現 (Ps=1.82-1.84 窓で多孔壁が中心軸波状を ~30% 低減・圧力上昇が壁上で早期化)**
-- [ ] (後段) 10°ディフューザ+チャンバ追加、RANS SST 化
-- [ ] `plans/README.md` の一覧へ追記
-- [ ] 結論を case README の run 一覧と本 §9 に記録
+- [ ] (後段・見送り) 10°ディフューザ+チャンバ追加、3D 丸穴化、katoLaunder 感度 → 必要時に別 plan で起票
+- [x] `plans/README.md` の一覧へ追記
+- [x] 結論を case README の run 一覧と本 §9 に記録
 
 ## 9. 変更ログ
 

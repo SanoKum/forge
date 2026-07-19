@@ -32,7 +32,6 @@
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sigma-model.md](active/turbulence-sigma-model.md) | `turbulence` | σ-model SGS (Nicoud 2011) を `LESmodel: 2` として追加 (WALE の遷移前倒し対策) |
-| [verification-passive-pseudoshock-control.md](active/verification-passive-pseudoshock-control.md) | `verification` | 多孔壁パッシブコントロールによる擬似衝撃波抑制の逆解析 (case/36) |
 
 ## accepted (現役の設計判断)
 
@@ -78,6 +77,7 @@
 | [turbulence-node-sst-wallfunction.md](accepted/turbulence-node-sst-wallfunction.md) | `turbulence` | node-centered SST 壁関数の代表点修正 + τ_w 付与 (ic=壁ノード u=0 トラップ) |
 | [turbulence-node-inlet-dirichlet-conserved.md](accepted/turbulence-node-inlet-dirichlet-conserved.md) | `turbulence` | node 入口 Dirichlet の保存量整合+残差除外 (rms_roOmega プラトー根治、cell 不変、x_R が実験に接近) |
 | [turbulence-sst-freestream-init.md](accepted/turbulence-sst-freestream-init.md) | `turbulence` | SST 初期乱流の freestream 初期化 (kInit / omegaInit) |
+| [verification-passive-pseudoshock-control.md](accepted/verification-passive-pseudoshock-control.md) | `verification` | 多孔壁パッシブコントロールの逆解析 (case/36)。2D で中心軸波状 ~30% 低減=ショックレス化を定性再現 (Phase 1 完了) |
 
 ## archived (superseded / 終了)
 
