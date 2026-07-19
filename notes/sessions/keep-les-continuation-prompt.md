@@ -50,15 +50,16 @@ time: {unsteady: 1}                        # 過渡は必ず物理 dt
    (plan §8.5, case/33 run_0017-0020)。「非直交メッシュ+平均流の node LES」解禁。
    node メッシュは `case/33/mesh/make_wavy_node_msh.py` で wavy.h5 から復元した
    `wavy_node.msh` を使う (旧 .msh 散逸のため)。
-2. **実形状 LES パイロット** (node, backstep case/18): **着手済・大きな収穫 2 件 (2026-07-19 後段)**。
-   ①σ/c' 掃引 (run_0109-0118) で「一様固有値スケーリングは単一トレードオフ曲線に縮退し
-   市松と 2-4Δ 物理を分離できない」を実測 → ②**Turkel 前処理音響散逸 `keepDissPrecond` を
-   実装・検証** ([plan](../../plans/active/convection-keep-diss-lowmach-precond.md), 真の市松 142×減衰・
-   物理コスト c' 以下・ES 維持・cell/node 両検証)。**backstep の残存縞 (~22 Pa) は数値市松でなく
-   リップ Δx=0.13 の解像限界物理と確定** → 根治はメッシュ細分化。SGS 3 者比較 (ILES/WALE/σ) は
-   **未完** (キャンペーン中断 run_0112 は破棄予定)。再開時は precond σ0.05 スタックで、
-   現メッシュ続行かリップ細分化メッシュ新調かをユーザーと決める。seed は run_0097 res_11000。
-   ⚠ keepDiss* を space 配下に書く config 事故に注意 ([memory: keepdiss-keys-toplevel-trap])。
+2. ~~**実形状 LES パイロット**~~ **完了 (2026-07-19 後段, case/18 run_0103-0124)**。収穫:
+   ①σ/c' 掃引で「一様固有値スケーリングは単一トレードオフ曲線に縮退」を実測 →
+   ②**Turkel 前処理音響散逸 `keepDissPrecond` を実装・検証** ([plan](../../plans/active/convection-keep-diss-lowmach-precond.md),
+   真の市松 142×減衰・物理コスト c' 以下・ES 維持・cell/node 両検証・commit 56a2ede)。
+   ③backstep の残存縞 (~22 Pa) は数値市松でなくリップ Δx=0.13 の**解像限界物理**と確定。
+   ④SGS 3 者 (ILES 0122 / WALE 0123 / σ 0124, 共通 3D 乱流 seed) が **cfl1.0 で全て安定**・
+   vis_turb 正常 (σ は WALE の 1.7 倍散逸的 = TGV 傾向と整合)。
+   **定量 x_R 比較はスコープ外と judgment** (入口一様 Pt/Tt = 流入 BL 不整合、near-wall 未解像で
+   壁モデル無し)。→ 定量化には (a) `inletProfile`+合成乱流、(b) **IDDES (候補3)** が前提。
+   ⚠ keepDiss* は top-level キー ([memory: keepdiss-keys-toplevel-trap])。
 3. **IDDES Phase 1.5 統合** ([turbulence-iddes-sst](../../plans/active/turbulence-iddes-sst.md) §4.8):
    LES 枝の基盤散逸を「ILES + keepDissType:2 σ0.02 jump2」とする設計に更新して実装
    (旧案の「WALE を LES 枝に」は今日の結果で見直し)。

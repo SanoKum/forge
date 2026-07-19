@@ -89,6 +89,16 @@
 | `run_0117_es_probe_s010_cp0` / `run_0118_es_probe_s002_cp0jst` | σ0.10+full c / σ0.02+full c (JST k₄ 相当の文献アナログ点) | 7.4 Pa (Uy 5.98) / 17.3 Pa (Uy 6.57)。**σ・c' はどちらを動かしても同一トレードオフ曲線上** (σ0.02fullc≈σ0.10c', σ0.05fullc≈σ0.20c') = 一様固有値スケーリングでは市松と 2-4Δ 物理を分離不能 → 前処理散逸 plan 起案の根拠 | ref (曲線縮退の実証) |
 | `run_0119_es_regr_s005_cp1_newbin` | 回帰: `keepDissPrecond` 実装後バイナリで run_0110 再実行 (precond=0) | x-oddeven 22.14/54.14・Uy 6.885 = **run_0110 と一致 (既定経路無影響)** | ref (回帰) |
 | `run_0120_es_probe_precond_s005` / `run_0121_es_probe_precond_s002` | **Turkel 前処理散逸** (`keepDissPrecond:1`, [plan](../../plans/active/convection-keep-diss-lowmach-precond.md)) σ0.05 / σ0.02 | 安定・NaN無。d2 メトリクス 22.3 / 27.5 Pa = c' 版と同水準**だが物理は改善** (Uy 6.94/7.16 ≥ c' 版 6.89/7.12)。case/35 L1 で真の市松は 142× 減衰 → **backstep の ~22 Pa 床は数値市松でなくリップ 2-4Δx の解像限界物理と確定** (根治はメッシュ細分化) | ref (precond 検証・床の帰属確定) |
+| `run_0122_les40k_iles_precond` | **SGS 比較①: ILES** (precond σ0.05 jump2 + advGauge, seed=run_0097 res_11000, cfl1.0・出力1000毎)。step29847 でユーザー判断により区切り | **cfl1.0 安定** (run_0096 の cfl1 発散は旧散逸+一様IC 起因と切り分け)・NaN無。**rms_roUz 4e-4→0.163 (roUx/roUy 並み) = 3D 遷移完了、本物の 3D 乱流場に到達**。res_29000 が 0123/0124 の共通 seed。VERDICT=NOT CONVERGED rising (非定常LESの想定) | active (SGS 比較 seed) |
+| `run_0123_les40k_wale_precond` | 同**②: WALE** (`LESmodel:1`)。**seed=run_0122 res_29000 (発達 3D 乱流場)**、30k 完走 | **安定・NaN無・vis_turb 稼働** (mean 0.0036≈3.6×分子, nonzero 96%)。せん断層 Uy/Uz rms 6.4/6.8 = 乱流維持。VERDICT=NOT CONVERGED plateau (非定常想定) | active (SGS 比較 WALE) |
+| `run_0124_les40k_sigma_precond` | 同**③: σ-model** (`LESmodel:2`)。同 seed。step10636 でユーザー判断により終了 | 安定・NaN無・vis_turb mean **0.0060 = WALE の 1.7 倍散逸的** (TGV での σ>WALE 散逸傾向と整合)。res_10000 まで | active (SGS 比較 σ, 短縮) |
+
+**SGS パイロットの総括 (2026-07-19)**: 目的 (確定版 KEEP-LES スタックの実地統合試験) は達成 —
+node×KEEP×precond ES 散逸×advGauge×WALE/σ/ILES が cfl1.0 で全て安定・3D 乱流を維持・SGS 活性正常。
+**定量的な再付着位置比較 (Driver–Seegmiller x_R=6.26) は本構成では狙わない (ユーザー判断)**:
+①入口が一様 Pt/Tt で流入境界層の厚み・乱流度が合っていない (要 `inletProfile` + 合成乱流/リサイクリング)、
+②near-wall 未解像 (y+~数十) で壁モデル無し (要 wall-modeled LES または IDDES = [turbulence-iddes-sst plan](../../plans/active/turbulence-iddes-sst.md))。
+残存する x 方向縞 (~22 Pa) はリップ Δx=0.13 の解像限界物理 (run_0109-0121 で帰属確定)。
 
 > **P・ρ 振動の正体と打ち手 (run_0071–0079, 2026-06-28)**: node/cell 共通の P・ρ「振動」は **低マッハ再循環域に
 > 局在する odd-even チェッカーボード** (collocated 圧力-速度デカップリング) と確定。段差角を1セル過ぎた x≈2.13 の
