@@ -1,0 +1,6 @@
+xmin_wall: {physID: 1, kind: slip}
+xmax_outlet: {physID: 2, kind: slip}
+ymin_inlet: {physID: 3, kind: slip}
+ymax_wall: {physID: 4, kind: slip}
+zmin: {physID: 5, kind: slip}
+zmax: {physID: 6, kind: slip}

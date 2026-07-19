@@ -13,8 +13,9 @@
    (Dairay+2017 512³, 要引用; K/K0(10)=0.596, ε*ピーク 0.1029@t*=8.98)。旧近似帯 0.50-0.57 は
    誤りだった。σ は物理較正でなく「L1 を満たす最小値」。node=cell 同等検証済。
 3. **移流基準差分ゲージ** (`space.roRef`+`uRef`): U∞≠0 一様流の float32 桁落ち根治
-   (エネルギー 6.5 桁改善)。**スコープ: KEEP CPG×cell のみ** (node 境界半割面は fail-fast 中)。
-   [freestream-preserving plan §8](../../plans/active/convection-freestream-preserving-flux.md)。
+   (エネルギー 6.5 桁改善)。**スコープ: KEEP CPG × cell/node 両対応** (node 境界半割面ゲージは
+   2026-07-19 後段に実装済 = 旧候補1 完了。case/33 run_0017-0020 で cell と同水準の機械精度を
+   検証)。[freestream-preserving plan §8/§8.5](../../plans/active/convection-freestream-preserving-flux.md)。
 4. **WALE 2 バグ修正**: ①壁なしメッシュで wall_dist≡0→不活性 (読込後 1e30 ガードで修正)
    ②Sd テンソルが成分2乗の誤式→行列2乗へ。**過去の TGV「WALE 併用」は全部 ILES だった**
    (結果は ILES として有効)。[turbulence-wale-fix](../../plans/accepted/turbulence-wale-fix.md)。
@@ -36,17 +37,18 @@ keepDissCoeff: 0.02      # 市松頑健性優先なら 0.05
 keepDissJump: 2          # 証明付き ES・市松無傷・渦保護 (1=証明なし最軽量)
 keepDissCprime: 1
 space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>,0,0]}
-  # 非直交+平均流で必須。roRef/uRef は cell のみ (node は fail-fast 中 → 候補1)
+  # 非直交+平均流で必須。roRef/uRef は cell/node 両対応 (KEEP CPG のみ; SLAU/TP は off のまま)
 turbulence: {LESorRANS: 0, LESmodel: 0}   # 解像/遷移流は ILES (静的 SGS は逆効果と実測済)
 time: {unsteady: 1}                        # 過渡は必ず物理 dt
 ```
 
 ## 次の候補タスク (優先度順の提案)
 
-1. **advective gauge の node 対応** (node ベース方針の要): 境界半割面
-   (`convectiveFlux_boundary_d`) にも同じ差分形ゲージを載せ fail-fast を解除する。
-   ゲージは CV の**全**面に載らないと telescoping が破れる点に注意 (plan §8.2)。
-   これが済むと「非直交メッシュ+平均流の node LES」が解禁される。
+1. ~~**advective gauge の node 対応**~~ **済 (2026-07-19 後段)**: 境界半割面
+   (`convectiveFlux_boundary_d`) に upwind 差分形ゲージを実装し fail-fast 解除
+   (plan §8.5, case/33 run_0017-0020)。「非直交メッシュ+平均流の node LES」解禁。
+   node メッシュは `case/33/mesh/make_wavy_node_msh.py` で wavy.h5 から復元した
+   `wavy_node.msh` を使う (旧 .msh 散逸のため)。
 2. **実形状 LES パイロット** (node): backstep (case/18) か case/36 系に確定版スタックを投入。
    壁があるので σ-model vs WALE vs ILES の「本領」比較がここで初めて意味を持つ。
    wall_dist ガード・SGS 選択・ES 散逸の総合実地試験。

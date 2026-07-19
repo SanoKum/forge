@@ -335,11 +335,8 @@ void solverConfig::read(std::string fname)
             if (this->pRef <= 0.0) {
                 throw std::runtime_error("'roRef' in 'space' requires 'pRef' > 0 (advective gauge uses e_inf = pRef/roRef).");
             }
-            if (this->discretization == "node") {
-                // node の境界半割面は convectiveFlux_boundary_d 側で、ゲージが CV の全面に載らず
-                // telescoping が破れるため未対応 (plan §8.2 スコープ)。
-                throw std::runtime_error("'roRef' in 'space' is not supported with discretization: node yet (boundary half-faces are not gauged).");
-            }
+            // node は境界半割面 (convectiveFlux_boundary_d) にも同じゲージを載せて対応済 (plan §8.5)。
+            // 有効化条件 (KEEP && CPG) は wrapper が主ループ/境界で厳密に揃える。
         }
 
         // turbulence model

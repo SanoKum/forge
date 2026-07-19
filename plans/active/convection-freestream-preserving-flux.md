@@ -131,6 +131,7 @@ $F_\infty(s) = (\rho_\infty U_{n\infty},\ \rho_\infty U_{n\infty}\mathbf u_\inft
   TP 枝 ($e_\infty$ に thermo 評価が要る)・node 境界半割面 (`convectiveFlux_boundary_d`)・SLAU は
   フォローアップ (ゲージは CV の**全**面に載らないと telescoping が破れるため、node は境界
   カーネル側の対応とセットで入れる)。node+roRef>0 は config で fail-fast。
+  → **node は §8.5 で対応済 (2026-07-19 後段)、fail-fast 解除**。
 
 ### 8.3 実装・検証 (2026-07-19, 済)
 
@@ -168,6 +169,59 @@ $F_\infty(s) = (\rho_\infty U_{n\infty},\ \rho_\infty U_{n\infty}\mathbf u_\inft
   発散 = 局所 dt 相対ミスマッチ起因を示唆)。過渡を含むケースは `unsteady: 1` で回すこと。
   必要なら別 plan で深掘り。
 
+### 8.5 node 境界半割面への展開 (2026-07-19 設計)
+
+node 弱形式では境界半割面の対流流束を `convectiveFlux_boundary_d` が担う (主ループは内部+
+periodic 双対面のみ)。ゲージは CV の**全**面に載らないと telescoping が破れる (一部の面だけ
+から $F_\infty(s_f)$ を引くと残差が解析的に $-F_\infty(\sum_{subset} s_f)\neq0$ ずれる) ため、
+境界カーネル側にも同じ参照流束差分を載せて node の fail-fast を解除する。
+
+- **境界流束の形**: $F=(\dot m,\ a\,\mathbf u_p+b\,\mathbf u_m+(p_R{-}p_{ref})\mathbf s,\ a\,h_p+b\,h_m)$、
+  $a=\tfrac12(\dot m{+}|\dot m|),\ b=\tfrac12(\dot m{-}|\dot m|),\ \dot m=\rho_R U_{nR} S$。
+  内部 SLAU と異なり **$\dot m$ が R 状態に線形**なので、upwind 切替があっても
+  $a+b=\dot m$ を使った厳密恒等式で差分形因数分解できる:
+  - 質量: $dC\,S = S\,[(\rho_R-\rho_\infty)U_{nR} + \rho_\infty\,(\mathbf u_R-\mathbf u_\infty)\!\cdot\!\mathbf n]$
+  - 運動量: $a\,(\mathbf u_p-\mathbf u_\infty) + b\,(\mathbf u_m-\mathbf u_\infty) + dC\,S\,\mathbf u_\infty$ (+既存 $(p_R-p_{ref})\mathbf s$)
+  - エネルギー: $a\,(h_p-H_\infty) + b\,(h_m-H_\infty) + dC\,S\,H_\infty$,
+    $H_\infty = \tfrac{\gamma}{\gamma-1}p_\infty/\rho_\infty + \tfrac12|\mathbf u_\infty|^2$
+- **h−H∞ の丸め**: $h_p$=前計算 `Ht[ic]` と $H_\infty$ の演算順差で一様場でも O(H·ε) 残るが、
+  一様場では全セル同一定数 $\delta h$ → CV 和は $\delta h\sum_f \dot m_f = \delta h\,O(\rho u\, r_c)$
+  の 2 次小で無害 (質量/運動量の因数はビット零)。
+- **壁/slip 面** ($U_{nR}=0$ 強制) ではゲージ済流束が $-F_\infty(s)$ 級に大きいが、厳密な
+  定数係数×s なので CV 内の他面と telescoping で相殺 (これがゲージの定義どおりの挙動)。
+  case/33 の平坦 slip 壁 ($\mathbf u_\infty\perp\mathbf n$) では $C_\infty=0$ でそもそも消える。
+- **all-or-nothing の徹底**: 有効化は host 判定 (`solver==KEEP && thermalMethod!=2 && roRef>0`)
+  をカーネル引数 `advGauge` で渡し、主ループ KEEP_d の advGauge 条件と厳密に一致させる
+  (SLAU/TP では両方 off)。`massflux[ip]` は従来どおり物理 $\dot m$ (種/k-ω 移流整合)。
+  implicit Jacobian は定数流束の減算で不変 = 無変更。
+
+**実装・検証 (2026-07-19, 済)**:
+
+- 式の事前数値検証: `tools/verify_advective_gauge.py` に (B1) 解析等価 (float64 rel err 7.2e-15)、
+  (B2) 一様場 float32 全項ビット零 (エネルギー含む — Ht roundtrip が同値になった)、(B3) 平坦
+  slip 壁でビット零、(B4) 内部 KEEP 面+境界 upwind 面の混成 CV telescoping (gauged 和 0.0 vs
+  ungauged 2.65) を追加、全 PASS。
+- 実装: `convectiveFlux_boundary_d.inc.cuh` (advGauge 枝) / `convectiveFlux_d.cu` (host 判定を
+  引数で渡す) / `solverConfig.cpp` (node fail-fast 削除)。
+- node メッシュ: wavy の .msh が散逸していたため `case/33/mesh/make_wavy_node_msh.py` で
+  wavy.h5 から同一節点・同一結線の `wavy_node.msh` を復元し (境界 quad は面平面判定で physID
+  1-6 復元、xmin/xmax の (y,z) 節点厳密一致 = node periodic 可)、`convertGmshToForge`
+  (discretization: node) で median-dual 化 (closure 5.4e-7 正規化)。
+- 検証 (case/33, README run 表):
+  - `run_0017_node_advgauge_uxM01_xperiodic`: **node**+advGauge U∞=M0.1 で step0 rms
+    4.5e-14/7.8e-12/1.9e-9 = **cell (run_0011) と同水準の機械精度**・300step 安定、最終場は
+    厳密一様のまま (ro/P/Ux が min=max)。
+  - `run_0018_node_nogauge_uxM01_xperiodic`: ゲージ無し対照 = step0 roe rms **9.9e-3**
+    (cell run_0008 の 1.3e-2 と同水準のノイズ床)・定常局所 dt モードで step15 発散
+    → node でも移流桁落ちが同機構で、ゲージで 6 桁級改善・根治。
+  - `run_0020_node_advgauge_dissmat_uxM01`: matrix ES σ=0.05 併用でも 1.5e-7・300step 安定
+    (cell run_0013 と同水準)。
+  - 回帰: `run_0019_cell_advgauge_regr_newbin` (cell 経路 = run_0011 と一致、境界カーネルは
+    cell でスキップ+advGauge=0 経路ビット不変) / tests/regression の implicit_bump_slau・
+    tp_sod_n2 PASS (naca_slau は既知の baseline 陳腐化 FAIL で本件無関係)。
+- **これで「非直交メッシュ+平均流の node KEEP-LES」が解禁** (KEEP-LES 推奨設定の roRef/uRef
+  が node でも使用可)。
+
 ## 7. 「流れありで発散」の決着 (2026-06-14) — pRef とは別問題だった
 
 当初「inlet/outflow で流れを与えると発散」を free-stream/inlet-3D の問題と疑ったが、
@@ -188,16 +242,17 @@ hex/tet/prism の Fluent メッシュが forge で計算可能と実証。レシ
 
 ## 変更ログ
 
+- 2026-07-19 (後段): **advGauge を node 境界半割面 (`convectiveFlux_boundary_d`) に展開し
+  node fail-fast を解除** (§8.5)。upwind 境界流束は $a{+}b{=}\dot m$ の厳密恒等式で差分形
+  因数分解 (verify_advective_gauge.py B1-B4 で事前検証)。node U∞=M0.1 一様流で cell と同水準の
+  機械精度保存 (run_0017: step0 roe 1.9e-9, ゲージ無し対照 run_0018 は 9.9e-3・step15 発散)。
+  matrix ES 併用可 (run_0020)。cell 経路・回帰スイート無影響 (run_0019, implicit_bump_slau/
+  tp_sod_n2 PASS)。**非直交+平均流の node KEEP-LES が解禁**。
 - 2026-07-19: **移流項の基準差分 (advGauge) を KEEP CPG×cell に実装** (§8)。U∞=M0.1 の動く
   一様流で全スキーム発散する移流桁落ちを実測・帰属確定 (run_0008-0010) し、参照一様流束の
   差分形因数分解ゲージ (`space.roRef`/`uRef`) で機械精度保存に根治 (run_0011, 6.5桁改善)。
-  式は `tools/verify_advective_gauge.py` で事前数値検証。残: TP 枝 / node 境界 / SLAU / 種輸送。
-- 2026-06-14: SLAU に pRef 差分を実装。case/33 (歪みhex 静止) で free-stream を machine zero 化。
-- 2026-06-14: 「流れあり発散」を切り分け、原因は実行設定 (静止IC と入口流れの不整合 / 出口逆流
-  Pt/Tt 欠落 / 初手から難条件) と確定。pRef は静止場の free-stream に寄与。陰解法は収束に有利だが
-  陽解法+定常も可 (発散主因ではない)。Fluent メッシュ (fan/StaticMixer) の実行を実証。
-
-## 変更ログ
-
-- 2026-06-14: SLAU に pRef 差分を実装。case/33・fan・StaticMixer の静止場発散を解消 (machine zero)。
-  流れありの発散は別機構として残課題に分離。
+  式は `tools/verify_advective_gauge.py` で事前数値検証。残: TP 枝 / SLAU / 種輸送。
+- 2026-06-14: SLAU に pRef 差分を実装。case/33 (歪みhex 静止)・fan・StaticMixer の静止場発散を
+  解消 (machine zero)。流れありの発散は別機構として切り分け、原因は実行設定 (静止IC と入口流れの
+  不整合 / 出口逆流 Pt/Tt 欠落 / 初手から難条件) と確定。Fluent メッシュ (fan/StaticMixer) の
+  実行を実証。

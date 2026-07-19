@@ -257,6 +257,9 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
         }
         convectiveFlux_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
             cfg.gamma,
+            // 移流基準差分 (plan §8.5): 主ループ KEEP_d の advGauge (d_roRef>0 && CPG) と厳密同条件。
+            // CV の全面に載らないと telescoping が破れるため、境界だけの on/off は不可。
+            ((cfg.solver == "KEEP" && cfg.roRef > 0.0 && cfg.thermalMethod != 2) ? 1 : 0),
             // mesh structure
             bc.iPlanes.size(),
             bc.map_bplane_plane_d,  

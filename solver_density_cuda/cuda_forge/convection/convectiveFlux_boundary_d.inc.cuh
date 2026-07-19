@@ -7,8 +7,11 @@
 // =============================================================================
 
 __global__ void convectiveFlux_boundary_d // slau
-( 
+(
  flow_float ga,
+ int advGauge,   // 移流基準差分 (plan §8.5): 主ループ KEEP_d の advGauge と厳密に同条件で on/off
+                 // (host 判定 solver==KEEP && CPG && roRef>0)。ゲージは CV の全面に載らないと
+                 // telescoping が破れるため、片側だけの有効化は禁止。
 
   // mesh structure
  geom_int nb,
@@ -178,12 +181,37 @@ __global__ void convectiveFlux_boundary_d // slau
         // cell モードは主ループが境界 massflux を書くので二重書き回避のため nullptr (書かない)。
         if (massflux != nullptr) massflux[ip] = mdot;
 
-        flow_float res_ro_temp   = mdot;
+        flow_float res_ro_temp, res_roUx_temp, res_roUy_temp, res_roUz_temp, res_roe_temp;
         flow_float p_tilde_r = p_tilde - d_pRef;   // free-stream 保存: 基準静圧を差し引く (境界面)
-        flow_float res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde_r*sxx;
-        flow_float res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde_r*syy;
-        flow_float res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde_r*szz;
-        flow_float res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
+        if (advGauge == 0) {
+        res_ro_temp   = mdot;
+        res_roUx_temp = 0.5*(mdot+abs(mdot))*u_p +0.5*(mdot-abs(mdot))*u_m +p_tilde_r*sxx;
+        res_roUy_temp = 0.5*(mdot+abs(mdot))*v_p +0.5*(mdot-abs(mdot))*v_m +p_tilde_r*syy;
+        res_roUz_temp = 0.5*(mdot+abs(mdot))*w_p +0.5*(mdot-abs(mdot))*w_m +p_tilde_r*szz;
+        res_roe_temp  = 0.5*(mdot+abs(mdot))*h_p +0.5*(mdot-abs(mdot))*h_m ;
+        } else {
+        // ---- advGauge (plan §8.5): F − F∞(s) を差分形因数分解で組む ----
+        // mdot は R 状態に線形なので a+b=mdot の厳密恒等式で upwind のまま因数分解できる:
+        //   質量:   dCS = S[(ρ_R−ρ∞)Un_R + ρ∞ (u_R−u∞)·n]            (= mdot − C∞S)
+        //   運動量: a(u_p−u∞) + b(u_m−u∞) + dCS·u∞ (+ (p_R−pRef)s)
+        //   エネルギー: a(h_p−H∞) + b(h_m−H∞) + dCS·H∞
+        // 一様場 (bvar=自由流) で全因子がビット単位ゼロ。壁/slip (Un_R=0 強制) では −F∞(s) 級だが
+        // 厳密な定数係数×s なので CV 内の他面 (主ループ KEEP_d のゲージ済流束) と telescoping で相殺。
+        // 式は tools/verify_advective_gauge.py (B1)-(B4) で数値検証済。massflux は物理 mdot のまま。
+        const flow_float a = 0.5*(mdot+abs(mdot));
+        const flow_float b = 0.5*(mdot-abs(mdot));
+        const flow_float dLx = u_p - d_uRefX, dLy = v_p - d_uRefY, dLz = w_p - d_uRefZ;
+        const flow_float dRx = u_m - d_uRefX, dRy = v_m - d_uRefY, dRz = w_m - d_uRefZ;
+        const flow_float dUnR = (dRx*sxx + dRy*syy + dRz*szz)/sss;
+        const flow_float dCS  = sss*((ro_R - d_roRef)*Vn_m + d_roRef*dUnR);   // = mdot − C∞S
+        const flow_float kRef = 0.5*(d_uRefX*d_uRefX + d_uRefY*d_uRefY + d_uRefZ*d_uRefZ);
+        const flow_float Hinf = ga/(ga-1.0)*d_pRef/d_roRef + kRef;
+        res_ro_temp   = dCS;
+        res_roUx_temp = a*dLx + b*dRx + dCS*d_uRefX + p_tilde_r*sxx;
+        res_roUy_temp = a*dLy + b*dRy + dCS*d_uRefY + p_tilde_r*syy;
+        res_roUz_temp = a*dLz + b*dRz + dCS*d_uRefZ + p_tilde_r*szz;
+        res_roe_temp  = a*(h_p - Hinf) + b*(h_m - Hinf) + dCS*Hinf;
+        }
 
         atomicAdd(&res_ro[ic]  , -res_ro_temp);
         atomicAdd(&res_roUx[ic], -res_roUx_temp);
