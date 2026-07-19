@@ -100,6 +100,66 @@ __global__ void WALE_d
 }
 
 
+// σ-model (Nicoud, Toda, Cabrit, Bose, Lee, PoF 2011): 静的 SGS の改良版。
+//   ν_t = (C_σ Δ)² D_σ,  D_σ = σ3(σ1−σ2)(σ2−σ3)/σ1²,  Δ = V^{1/3},  C_σ = 1.35。
+//   σ1≥σ2≥σ3 は速度勾配 g の特異値 (= G=gᵀg の固有値の平方根、SPD 3×3 の三角関数閉形式)。
+//   設計性質: 2成分流 (TG 初期場含む)・純せん断・剛体回転・等方/軸対称伸長で **厳密に 0**
+//   → WALE の遷移前倒し (層流勾配で偽 ν_t) への構造的耐性。壁減衰も D_σ 自身が担うため
+//   wall_dist 不要。式は tools/verify_sigma_model.py で SVD と突き合わせ検証済
+//   (plans/active/turbulence-sigma-model.md)。固有値は double で評価 (縮退近傍の丸め対策)。
+__global__ void SIGMA_d
+(
+ geom_int nCells,
+ geom_float* vol,
+ flow_float* ro,
+ flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+ flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+ flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+ flow_float* vis_turb
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const double Csig = 1.35;
+        const double g11=dUxdx[ic], g12=dUxdy[ic], g13=dUxdz[ic];
+        const double g21=dUydx[ic], g22=dUydy[ic], g23=dUydz[ic];
+        const double g31=dUzdx[ic], g32=dUzdy[ic], g33=dUzdz[ic];
+        // G = gᵀ g (SPD)
+        const double G11 = g11*g11 + g21*g21 + g31*g31;
+        const double G12 = g11*g12 + g21*g22 + g31*g32;
+        const double G13 = g11*g13 + g21*g23 + g31*g33;
+        const double G22 = g12*g12 + g22*g22 + g32*g32;
+        const double G23 = g12*g13 + g22*g23 + g32*g33;
+        const double G33 = g13*g13 + g23*g23 + g33*g33;
+        const double I1 = G11 + G22 + G33;
+        const double I2 = G11*G22 + G11*G33 + G22*G33 - (G12*G12 + G13*G13 + G23*G23);
+        const double I3 = G11*(G22*G33 - G23*G23) - G12*(G12*G33 - G23*G13) + G13*(G12*G23 - G22*G13);
+        double a1 = I1*I1/9.0 - I2/3.0;      a1 = fmax(a1, 0.0);
+        double a2 = I1*I1*I1/27.0 - I1*I2/6.0 + I3/2.0;
+        const double s  = sqrt(a1);
+        const double dn = a1*s;              // a1^{3/2}
+        double arg = (dn > 0.0) ? a2/dn : 0.0;
+        arg = fmin(1.0, fmax(-1.0, arg));
+        const double a3 = acos(arg)/3.0;
+        const double PI3 = 1.0471975511965976; // π/3
+        double l1 = I1/3.0 + 2.0*s*cos(a3);
+        double l2 = I1/3.0 - 2.0*s*cos(PI3 + a3);
+        double l3 = I1/3.0 - 2.0*s*cos(PI3 - a3);
+        // 閉形式は l1 >= l3 >= l2 の順で返る (検証済) が、丸め対策で明示ソート
+        double t;
+        if (l1 < l2) { t=l1; l1=l2; l2=t; }
+        if (l1 < l3) { t=l1; l1=l3; l3=t; }
+        if (l2 < l3) { t=l2; l2=l3; l3=t; }
+        const double s1 = sqrt(fmax(l1, 0.0));
+        const double s2 = sqrt(fmax(l2, 0.0));
+        const double s3 = sqrt(fmax(l3, 0.0));
+        const double Dsig = (s1 > 0.0) ? s3*(s1-s2)*(s2-s3)/(s1*s1) : 0.0;
+        const double delta = cbrt((double)vol[ic]);
+        vis_turb[ic] = (flow_float)((double)ro[ic] * (Csig*delta)*(Csig*delta) * fmax(Dsig, 0.0));
+    }
+}
+
+
 // SST 渦粘性: mu_t = rho * a1 * k / max(a1 * omega, S * F2)
 // 軸対称 (isAxisymmetric=1) では planar 速度勾配に現れないフープひずみ
 // S_thetatheta = u_r/r (= axisym_uy_over_r) を S^2 に加える (methods/turbulence/theory.md §7.2)。
@@ -277,6 +337,17 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
                 var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
                 var.c_d["vis_turb"] , var.c_d["wall_dist"]
             ) ;
+        } else if (cfg.LESmodel == 2) {
+            // σ-model (Nicoud 2011)。WALE と同じ normalcell グリッドで cell/node 両対応。
+            SIGMA_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>> (
+                msh.nCells,
+                var.c_d["volume"],
+                var.c_d["ro"],
+                var.c_d["dUxdx"] , var.c_d["dUxdy"] , var.c_d["dUxdz"],
+                var.c_d["dUydx"] , var.c_d["dUydy"] , var.c_d["dUydz"],
+                var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
+                var.c_d["vis_turb"]
+            );
         }
 
     } else if (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) { // RANS SST

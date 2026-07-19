@@ -127,6 +127,8 @@ DNS 参照を実データ化: [`ref_dns/TGV_Re1600.dat`](ref_dns/README.md) (**D
 | `run_0041_node_keep_wale64_re1600_diss002_jump2` | 0.02 (**node, keepDissJump=2**) | +0.7% | −1.4% | 0.089 | **8.96** | ref (**sign-property L3**) |
 | `run_0042_node_keep_wale64fix_s0` | 0 (**修正後の本物 WALE**) | −0.3% | −3.4% | 0.087 | **7.84 (早すぎ)** | ref (real-WALE 基準) |
 | `run_0043_node_keep_wale64fix_diss002_jump2` | 0.02 jump2 (**本物 WALE 併用**) | −0.4% | −3.6% | 0.085 | 7.84 | ref (real-WALE+ES) |
+| `run_0044_node_keep_sigma64_s0` | 0 (**σ-model** LESmodel:2) | −0.5% | −5.5% | 0.082 | 7.84 | ref (σ-model 基準) |
+| `run_0045_node_keep_sigma64_diss002_jump2` | 0.02 jump2 (**σ-model 併用**) | −0.5% | −5.6% | 0.082 | 7.84 | ref (σ-model+ES) |
 
 **結論 (σ 確定)**: 64³ では層流期・終値とも全 σ≤0.03 で ±3% 内 = 32³ の「両立不可」は解像度律速と確定。σ=0 (+1.7%) と σ=0.02 (−1.5%) が DNS をほぼ対称に挟み、**解像 LES の推奨は σ=0.02** (市松頑健性 L1 を持ちつつ KE 追従 ≤1.6%)。σ=0.03 は 64³ では一律に劣る (旧「0.03=帯内」判定は撤回)。TGV 追従だけなら最適 σ≈0.01 だが、σ は物理較正ノブではなく市松ロバスト性の床 — 解像度を上げるほど最適値は下がる (32³: ~0.02 → 64³: ~0.01) ので、「L1 を満たす最小 σ」で選ぶ。ε* ピーク高さは 64³+WALE の解像限界で全 run 8 割どまり (LES として正常)。成果物 `dissipation_rate_L3_64.png`。
 
@@ -161,3 +163,9 @@ ILES より悪化**。64³ TGV 級の解像/遷移流では **WALE off の ILES 
 最良 (−1.4%, ピーク 8.96)** = **解像 LES の推奨は LESorRANS: 0 + ES 散逸**。WALE は「本当に
 未解像の高 Re 乱流」用オプションとし、その適用検証は今後の課題。成果物
 `dissipation_rate_L3_64_walefix.png`。
+
+**σ-model (run_0044/0045)**: 静的モデル改良版 (LESmodel:2) も検証したが、層流期 ν_t は設計どおり
+WALE 比 −25% になるものの圧縮性 TG の早期 3 次元化でゼロ性質の効く時間が短く、発達後は C_σ=1.35 の
+散逸が勝って **−5.5% (WALE より悪い)・ピーク 7.84**。**64³ TGV 級では静的 SGS はどちらも逆効果、
+ILES+ES (σ=0.02, jump=2) が最良のまま**。σ-model の本領 (壁乱流・回転流・未解像高 Re) の検証は今後
+([plan](../../plans/accepted/turbulence-sigma-model.md))。成果物 `dissipation_rate_L3_64_sigma.png`。

@@ -107,6 +107,12 @@ NS のみを想定しているため、初期実装では `scalarTransport_d.*` 
 **解像/遷移流は `LESorRANS: 0` + KEEP matrix ES 散逸 (σ=0.02, keepDissJump=2) を推奨**。
 WALE は未解像の高 Re 乱流用オプション (適用検証は未実施)。
 
+**σ-model (`LESmodel: 2`, Nicoud+2011)**: $\nu_t=(C_\sigma\Delta)^2\,\sigma_3(\sigma_1-\sigma_2)(\sigma_2-\sigma_3)/\sigma_1^2$
+($\sigma_i$=速度勾配の特異値, $C_\sigma=1.35$, $\Delta=V^{1/3}$, wall_dist 不要)。2成分流・純せん断・
+剛体回転・等方/軸対称伸長で厳密に $\nu_t=0$ (検証: `tools/verify_sigma_model.py`)。ただし 64³ TGV
+では発達後の散逸が WALE より強く (K/K0(10) −5.5%)、**解像/遷移流の推奨は依然 ILES+ES**。
+本領は壁乱流・回転流・未解像高 Re (適用検証は今後; [turbulence-sigma-model](../../plans/accepted/turbulence-sigma-model.md))。
+
 ### 3.5 境界条件
 
 境界条件は既存の `wall`, `wall_isothermal`, `inlet_*`, `outlet_*`, `slip` などに

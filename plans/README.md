@@ -56,6 +56,7 @@
 | [convection-keep-es-dissipation.md](accepted/convection-keep-es-dissipation.md) | `convection` | KEEP 用 entropy-stable 散逸レイヤ (scalar/matrix, CPG/TP/多成分, σ較正済) |
 | [convection-keep-diss-recon-jump.md](accepted/convection-keep-diss-recon-jump.md) | `convection` | KEEP ES 散逸の再構成ジャンプ化 (keepDissJump: 市松無傷で解像スケール保護, node LES 推奨構成) |
 | [turbulence-wale-fix.md](accepted/turbulence-wale-fix.md) | `turbulence` | WALE 不活性バグ (壁なしメッシュ wall_dist≡0) + Sd テンソル誤式の修正; 64³ TGV では WALE off の ILES+ES が最良と判明 |
+| [turbulence-sigma-model.md](accepted/turbulence-sigma-model.md) | `turbulence` | σ-model SGS (Nicoud 2011, LESmodel:2) 追加; 64³ TGV では WALE 同様過散逸で ILES+ES が最良のまま |
 | [convection-slau2-lowmach.md](accepted/convection-slau2-lowmach.md) | `convection` | SLAU2 圧力流束 (低マッハ圧力–速度カップリング是正) |
 | [diffusion-node-boundary-real-distance.md](accepted/diffusion-node-boundary-real-distance.md) | `diffusion` | node 境界半割面 拡散の実距離 over-relax 化 (∇·S 弱形式の置換) |
 | [diffusion-node-wall-viscous-distance.md](accepted/diffusion-node-wall-viscous-distance.md) | `diffusion` | node-centered 粘性壁 flux の法線距離修正 (mirror-ghost 退化対策) |
