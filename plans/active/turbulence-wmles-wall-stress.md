@@ -265,3 +265,18 @@ SST 壁関数の Newton (固定 5 回) は**変更しない**。共通化する�
   (今回実測 — **既存の WMLES 等温 node + implicit も同リスクだったが本 decouple が共通で解消**)。
   検証: case/24 `run_isoT_condN_node` — 壁ノード T 厳密・q_mid +0.00%・explicit 健全・implicit
   cfl_pseudo≤5 安定 (上限 ~5, 20 発散)。回帰 4/4 PASS。残: W-I 閉包の第 1 スペーシング O(Δ) バイアス −15%。
+- `2026-07-20` — **等温壁検証の残り 3 件を完了** (ユーザー指示: SST ギャップ実測 / Couette / slip 診断)。
+  - **SST EWT × 等温壁の熱壁関数ギャップ実測** (case/26 `run_0023_isoT_fine_ref` [y+0.35 基準,
+    通算 70k, q_w ドリフト 0.2%/10k 静定] vs `run_0024_isoT_yp30_wf` [y+30 EWT, 0.6% 静定]):
+    **y+30 EWT は q_w を +39〜+49% (平均 +45%) 過大予測** (Tw=320K, 発達域 x=0.2-0.95)。原因は
+    第 1 セルの大きな μt を線形勾配に掛け sublayer 熱抵抗を無視するため。**等温壁×粗 y+ の RANS には
+    Kader 熱壁関数の移植が必要** (本 plan の `wallLaw_d.cuh` Kader 部品を `ransWallFunction` 側へ
+    流用すれば実装可能・未着手/別タスク)。
+  - **移動壁対応 + 粘性加熱 Couette 厳密解検証** (cell): `wall_isothermal` の ghost 速度を
+    $2u_w - u_c$ に一般化 ($u_w=0$ でビット同一・回帰 4/4 PASS)。定物性圧縮性 Couette
+    (Uw=100, 厳密解: u 線形・T 放物線 0.94 K・q_w=9.05 W/m²) で **u 0.012%・T 0.0004 K・
+    q_w ±0.2%・τ_w −0.02%** (case/24 `run_couette_cell`) — **対流条件込みで cell 等温壁 (修正後
+    ghost) と粘性仕事項の正しさを確定**。node 移動壁は未対応 (nodeWallDirichlet が u=0 固定)。
+  - **node slip 市松の追加診断**: 1 次風上でも不変 (0.45 vs 0.48 m/s) → 再構成でなく slip 閉包自体。
+    修正は ghostless plan の slip 再実装に移管 ([調査ノート](../../notes/investigations/node-slip-tangential-density-spurious-flow.md)
+    追試節)。回帰テストケースとして `run_isoT_condL_node` 構成 (厳密解シード+静止保持) を指定済み。

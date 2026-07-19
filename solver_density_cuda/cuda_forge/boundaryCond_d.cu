@@ -387,9 +387,12 @@ __global__ void wall_isothermal_d
         T[ig]   = Tg;
 
         ro[ig]   = Psb[ib]/(R*Tg);
-        Ux[ig]   = -roUx[ic]/ro[ic];
-        Uy[ig]   = -roUy[ic]/ro[ic];
-        Uz[ig]   = -roUz[ic]/ro[ic];
+        // 移動壁対応: ghost 速度は壁速度 (bvar, YAML Ux/Uy/Uz) 回りの鏡像 2U_w−U_c
+        // (面平均が U_w になる)。U_w=0 (既定) では従来の −U_c とビット同一。粘性仕事項
+        // τ·U_b は viscousFlux_wall_d が bvar 面速度で既に加算する。
+        Ux[ig]   = static_cast<flow_float>(2.0)*Uxb[ib] - roUx[ic]/ro[ic];
+        Uy[ig]   = static_cast<flow_float>(2.0)*Uyb[ib] - roUy[ic]/ro[ic];
+        Uz[ig]   = static_cast<flow_float>(2.0)*Uzb[ib] - roUz[ic]/ro[ic];
         roUx[ig] = -rob[ib]*Ux[ig];
         roUy[ig] = -rob[ib]*Uy[ig];
         roUz[ig] = -rob[ib]*Uz[ig];
