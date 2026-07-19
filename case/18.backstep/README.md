@@ -94,6 +94,9 @@
 | `run_0124_les40k_sigma_precond` | 同**③: σ-model** (`LESmodel:2`)。同 seed。step10636 でユーザー判断により終了 | 安定・NaN無・vis_turb mean **0.0060 = WALE の 1.7 倍散逸的** (TGV での σ>WALE 散逸傾向と整合)。res_10000 まで | active (SGS 比較 σ, 短縮) |
 
 | `run_0125_ddes_keep_es` | **DDES × 単一スキーム KEEP+ES** ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)): run_0035 と同一 (3D 857k, DESmode:1, implicit) で flux のみ KEEP+matrix ES (σ0.05 jump2 precond)、500 step 機能確認 | **NaN 無し・f_d zoning 正常** (せん断層 0.974 = SLAU 0.976、泡内 0.000)。付着 BL 帯 f_d 0.43 vs SLAU 0.28 (遮蔽保持、要観察)。**Phase 1.5 前提検証②合格** | ref (KEEP+ES DDES 機能確認) |
+| `run_0126_ddes_keep_es_dev` | **DDES 発達 run**: run_0125 res_500 から **unsteady:1 物理 dt + RK3 cfl1.0** 30k step (「剥離域は本当に LES 化するか」の実データ回答) | **LES 化を実証**: ①f_d(せん断層)=1.000 で LES モード固定・f_d(付着BL)=0.3 で遮蔽保持、②**解像 3D 乱流がゼロから発達し飽和** (せん断層 Uz rms 0→4.8-5.4 m/s ≈13%U∞, 10k step で飽和)、③モデル化 νt/ν はせん断層 77 (RANS 由来値 98 の 79%、粗 Δ~0.1 の Smagorinsky 相当水準で妥当)・付着 BL 9.3 維持。NaN 無し・SST×RK3 も KEEP+ES では安定。VERDICT=NOT CONVERGED plateau (非定常想定) | active (DDES LES 化実証) |
+
+| `run_0127_ddes_keep_es_inletprof` | **入口流速分布版 DDES** (ユーザー指示): run_0126 res_30000 seed、inlet を `inlet_uniformVelocity`+`inletProfile:1` (壁法則 channel, Uc=43.1, `gen_inlet_walllaw.py` 生成) に変更、他は run_0126 と同一 30k step | **安定・NaN 無・プロファイル正常適用** (2560 faces, 入口 Ux(y) 30→43→30)。一様入口 (0126) 比: せん断層 Uz rms 4.8→**8.1 m/s** (乱流強化)、瞬時再循環は主泡が x/H≈4.3 で終端 (0126 は ≈6.8) + x≈9-11 に二次剥離パッチ = **入口 BL がせん断層の巻き上がりを早め再付着を短縮する方向** (物理的に妥当)。ただし**瞬時 2snap 値であり定常 x_R として報告しない** (要時間統計) | active (入口分布 A/B) |
 
 **SGS パイロットの総括 (2026-07-19)**: 目的 (確定版 KEEP-LES スタックの実地統合試験) は達成 —
 node×KEEP×precond ES 散逸×advGauge×WALE/σ/ILES が cfl1.0 で全て安定・3D 乱流を維持・SGS 活性正常。
