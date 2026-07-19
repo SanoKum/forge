@@ -135,3 +135,9 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   - **結論: 解像 LES の推奨 σ=0.02 で確定** (KE 追従 ≤1.6% + 市松 L1 頑健性)。σ=0.03 は 64³ で
     一律劣化。σ は物理較正ノブでなく市松ロバスト性の床 (TGV 最適は解像度と共に低下: 32³~0.02→64³~0.01)
     であり「L1 を満たす最小 σ」で選ぶ。成果物 `dissipation_rate_L3_64.png` (`plot_dissipation_rate.py --dns`)。
+- `2026-07-19` — **node 64³ L3 検証** (ユーザ方針: 今後は node ベース主体)。同条件 node
+  (median-dual 274625 CV, 周期 DOF 合併 12481 厳密) で σ=0.02+WALE は cell とカーブ一致
+  (K/K0(4) −0.7%/K/K0(10) −2.1% vs DNS; cell は −0.6%/−1.5%。ε* ピーク時刻 8.96 は DNS 8.98 に
+  cell の 8.68 より近い)。**node×σ=0.02 を解像 LES 推奨として cell 同等に確定**
+  (`case/09...run_0038`)。KE 集計は周期 slave ミラー重複の除外が必要
+  (`plot_dissipation_rate.py --node-mesh`)。

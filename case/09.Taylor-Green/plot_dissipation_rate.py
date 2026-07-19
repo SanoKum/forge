@@ -16,7 +16,19 @@ ap.add_argument("--v0", type=float, default=0.4)
 ap.add_argument("--out", default="dissipation_rate_L3.png")
 ap.add_argument("--dns", default=None,
                 help="DNS 参照 (ref_dns/TGV_Re1600.dat)。K/K0=Ek/0.125, ε*=ε_t/0.125 で重ね描き")
+ap.add_argument("--node-mesh", default=None,
+                help="node モード run の入力メッシュ h5。周期 slave CV (座標が 2π 面上) を除外して"
+                     " K を数える (slave は master のミラー重複のため素朴な総和は周期面を過重み)")
 a = ap.parse_args()
+
+node_mask = None
+if a.node_mesh:
+    with h5py.File(a.node_mesh, "r") as f:
+        cc = np.array(f["CELLS/centCoords"], dtype=np.float64).reshape(-1, 3)
+    L = 2.0*np.pi
+    h = L/64.0
+    node_mask = np.all(cc < L - 0.5*h, axis=1)
+    print(f"node dedupe: {node_mask.sum()}/{len(node_mask)} unique CVs (half-open box)")
 
 import matplotlib
 matplotlib.use("Agg")
@@ -33,7 +45,10 @@ for run in a.runs:
             ro = np.array(f["VALUE/ro"], dtype=np.float64)
             u = [np.array(f[f"VALUE/U{c}"], dtype=np.float64) for c in "xyz"]
         steps.append(int(re.search(r"res_(\d+)\.h5", p).group(1)))
-        K.append(float(np.sum(0.5*ro*(u[0]**2+u[1]**2+u[2]**2))))
+        ke = 0.5*ro*(u[0]**2+u[1]**2+u[2]**2)
+        if node_mask is not None and len(ke) == len(node_mask):
+            ke = ke[node_mask]
+        K.append(float(np.sum(ke)))
     steps = np.array(steps); K = np.array(K)
     tstar = steps*a.dt*a.v0
     Kn = K/K[0]
