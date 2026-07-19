@@ -54,6 +54,8 @@
 solver: "KEEP"
 keepDissType: 2        # matrix ES 散逸
 keepDissCoeff: 0.02    # 解像 LES (WALE 併用)。市松頑健性優先なら 0.05
+keepDissJump: 1        # 再構成後ジャンプ (2026-07-19): 市松無傷のまま KE コスト 1/4 (終値-0.8%)
+                       #   (plans/accepted/convection-keep-diss-recon-jump.md, node/cell 両検証済)
 keepDissCprime: 1      # マッハ混在流。単一低マッハ領域なら 0 + σ そのまま
 space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>, 0, 0]}
   # 非直交メッシュでは pRef 必須 (無いと発散)。U∞≠0 (平均流あり) なら roRef/uRef も必須

@@ -122,6 +122,8 @@ DNS 参照を実データ化: [`ref_dns/TGV_Re1600.dat`](ref_dns/README.md) (**D
 | `run_0036_cell_keep_wale64_re1600_diss002` | 0.02 | −0.6% | **−1.5%** | 0.081 | 8.68 | ref (64³ σ掛引・**推奨確定**) |
 | `run_0037_cell_keep_wale64_re1600_diss003` | 0.03 | −1.3% | −2.8% | 0.079 | 8.68 | ref (64³ σ掛引) |
 | `run_0038_node_keep_wale64_re1600_diss002` | 0.02 (**node**) | −0.7% | −2.1% | 0.082 | **8.96** | ref (64³ node L3) |
+| `run_0039_node_keep_wale64_re1600_s0` | 0 (**node**) | +0.7% | −0.4% | 0.092 | 9.24 | ref (64³ node σ=0 基準) |
+| `run_0040_node_keep_wale64_re1600_diss002_jump` | 0.02 (**node, keepDissJump=1**) | **+0.7%** | **−0.8%** | **0.088** | **8.96** | ref (**recon-jump L3**) |
 
 **結論 (σ 確定)**: 64³ では層流期・終値とも全 σ≤0.03 で ±3% 内 = 32³ の「両立不可」は解像度律速と確定。σ=0 (+1.7%) と σ=0.02 (−1.5%) が DNS をほぼ対称に挟み、**解像 LES の推奨は σ=0.02** (市松頑健性 L1 を持ちつつ KE 追従 ≤1.6%)。σ=0.03 は 64³ では一律に劣る (旧「0.03=帯内」判定は撤回)。TGV 追従だけなら最適 σ≈0.01 だが、σ は物理較正ノブではなく市松ロバスト性の床 — 解像度を上げるほど最適値は下がる (32³: ~0.02 → 64³: ~0.01) ので、「L1 を満たす最小 σ」で選ぶ。ε* ピーク高さは 64³+WALE の解像限界で全 run 8 割どまり (LES として正常)。成果物 `dissipation_rate_L3_64.png`。
 
@@ -130,3 +132,11 @@ cell とカーブがほぼ重なり (K/K0(10) で node −2.1% vs cell −1.5%�
 8.98 により近い)、**node×σ=0.02 も解像 LES として cell 同等に検証済**。KE 集計は周期 slave CV の
 ミラー重複を除くため `plot_dissipation_rate.py --node-mesh` (半開区間 dedupe) を使うこと
 (素朴な総和は周期面を 2-8 倍過重み)。成果物 `dissipation_rate_L3_64_node.png`。
+
+**再構成ジャンプ散逸 (keepDissJump=1, run_0039/0040)**: matrix 散逸の Δw を再構成後ジャンプで
+組むと ([recon-jump plan](../../plans/accepted/convection-keep-diss-recon-jump.md))、σ=0.02 の
+KE コストが**終値 −2.1%→−0.8%・層流期 −0.7%→+0.7% (=σ=0 と同一・実質ゼロ)** に縮み、遷移期の
+ε\* の早すぎる立ち上がりも解消、ピーク時刻 8.96 (σ=0 単独は 9.24 と遅い) は維持 — つまり
+**市松頑健性と σ=0 並みの KE 追従を両立**。市松減衰は無傷 (case/35 run_0039/0040)。
+**node LES の新推奨: `keepDissType: 2, keepDissCoeff: 0.02, keepDissJump: 1`**。
+成果物 `dissipation_rate_L3_64_node_jump.png`。

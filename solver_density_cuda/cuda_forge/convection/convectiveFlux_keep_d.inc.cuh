@@ -21,6 +21,8 @@ __global__ void KEEP_d
  int nSpecies, flow_float** roY,                  // Step 4: 多成分の組成 (nSpecies<=1 なら未参照)
  int keepDissType, flow_float keepDissCoeff,      // opt-in ES 散逸レイヤ (0: off=ビット不変)
  int keepDissCprime, flow_float precondEps,       // 散逸波速: 1 で音響 c'=lowMachCprime (lowMachPrecond から独立)
+ int keepDissJump,                                // 散逸ジャンプ: 0=生 (既定) / 1=再構成後 (matrix CPG 枝のみ)
+ GradFields    grd,
  FaceGeom      geom,
  PrimState     st,
  ResidualOut   reso
@@ -186,16 +188,46 @@ __global__ void KEEP_d
         }
         else if (keepDissType == 2 && thermalMethod != 2) {
             // ---- matrix ES 散逸 (CPG): D = R|Λ'|S Rᵀ Δw ----
+            // keepDissJump==1 (再構成後ジャンプ): Δw を面へ線形再構成した L/R 状態
+            //   q_L = q_i + g_i·(x_f−x_i), q_R = q_j + g_j·(x_f−x_j) (κ=0・リミタ無し) から組む。
+            //   純 2Δ モード (市松) は中心勾配が厳密ゼロ → Δ 不変でフル減衰のまま、滑らかな場は
+            //   Δ が O(h)→O(h³) に落ち解像スケールのドレインを桁減 (実測: 市松 1.00 / TGV 層流期
+            //   0.006 / 遷移期 0.16 / ピーク 0.45。plans/active/convection-keep-diss-recon-jump.md)。
+            //   ghost 面 (cell の ip>=nNormalPlanes) は ghost 勾配/重心が無効なので生ジャンプへ
+            //   フォールバック。node の主ループは内部双対面のみで勾配 gather 済 → 常に再構成可。
+            //   再構成で ρ/p が非正になる面も生ジャンプへ (リミタ無しの正値性ガード)。
+            //   面平均量 (roF, c, Ht 等) は従来どおりセル生値 (ビット不変性は keepDissJump=0 で担保)。
+            flow_float ro0j = ro[ic0], ro1j = ro[ic1];
+            flow_float ux0j = Ux[ic0], uy0j = Uy[ic0], uz0j = Uz[ic0];
+            flow_float ux1j = Ux[ic1], uy1j = Uy[ic1], uz1j = Uz[ic1];
+            flow_float p0j  = Ps[ic0], p1j  = Ps[ic1];
+            if (keepDissJump == 1 && ip < geom.nNormalPlanes) {
+                const geom_float d0x = geom.pcx[ip]-geom.ccx[ic0], d0y = geom.pcy[ip]-geom.ccy[ic0], d0z = geom.pcz[ip]-geom.ccz[ic0];
+                const geom_float d1x = geom.pcx[ip]-geom.ccx[ic1], d1y = geom.pcy[ip]-geom.ccy[ic1], d1z = geom.pcz[ip]-geom.ccz[ic1];
+                const flow_float roL = ro[ic0] + grd.drodx[ic0]*d0x + grd.drody[ic0]*d0y + grd.drodz[ic0]*d0z;
+                const flow_float roR = ro[ic1] + grd.drodx[ic1]*d1x + grd.drody[ic1]*d1y + grd.drodz[ic1]*d1z;
+                const flow_float pL  = Ps[ic0] + grd.dPdx[ic0]*d0x + grd.dPdy[ic0]*d0y + grd.dPdz[ic0]*d0z;
+                const flow_float pR  = Ps[ic1] + grd.dPdx[ic1]*d1x + grd.dPdy[ic1]*d1y + grd.dPdz[ic1]*d1z;
+                if (roL > 0.0 && roR > 0.0 && pL > 0.0 && pR > 0.0) {
+                    ro0j = roL; ro1j = roR; p0j = pL; p1j = pR;
+                    ux0j = Ux[ic0] + grd.dUxdx[ic0]*d0x + grd.dUxdy[ic0]*d0y + grd.dUxdz[ic0]*d0z;
+                    uy0j = Uy[ic0] + grd.dUydx[ic0]*d0x + grd.dUydy[ic0]*d0y + grd.dUydz[ic0]*d0z;
+                    uz0j = Uz[ic0] + grd.dUzdx[ic0]*d0x + grd.dUzdy[ic0]*d0y + grd.dUzdz[ic0]*d0z;
+                    ux1j = Ux[ic1] + grd.dUxdx[ic1]*d1x + grd.dUxdy[ic1]*d1y + grd.dUxdz[ic1]*d1z;
+                    uy1j = Uy[ic1] + grd.dUydx[ic1]*d1x + grd.dUydy[ic1]*d1y + grd.dUydz[ic1]*d1z;
+                    uz1j = Uz[ic1] + grd.dUzdx[ic1]*d1x + grd.dUzdy[ic1]*d1y + grd.dUzdz[ic1]*d1z;
+                }
+            }
             // Δw (エントロピー変数ジャンプ): w=[(γ-s)/(γ-1)-β|u|², 2βu, -2β], β=ρ/(2p), s=ln p-γ ln ρ
-            const flow_float b0 = ro[ic0]/(2.0*Ps[ic0]);
-            const flow_float b1 = ro[ic1]/(2.0*Ps[ic1]);
-            const flow_float q0 = Ux[ic0]*Ux[ic0]+Uy[ic0]*Uy[ic0]+Uz[ic0]*Uz[ic0];
-            const flow_float q1 = Ux[ic1]*Ux[ic1]+Uy[ic1]*Uy[ic1]+Uz[ic1]*Uz[ic1];
-            const flow_float ds = log(Ps[ic1]/Ps[ic0]) - ga*log(ro[ic1]/ro[ic0]);
+            const flow_float b0 = ro0j/(2.0*p0j);
+            const flow_float b1 = ro1j/(2.0*p1j);
+            const flow_float q0 = ux0j*ux0j+uy0j*uy0j+uz0j*uz0j;
+            const flow_float q1 = ux1j*ux1j+uy1j*uy1j+uz1j*uz1j;
+            const flow_float ds = log(p1j/p0j) - ga*log(ro1j/ro0j);
             const flow_float dw0 = -ds/(ga-1.0) - (b1*q1 - b0*q0);
-            const flow_float dw1 = 2.0*(b1*Ux[ic1] - b0*Ux[ic0]);
-            const flow_float dw2 = 2.0*(b1*Uy[ic1] - b0*Uy[ic0]);
-            const flow_float dw3 = 2.0*(b1*Uz[ic1] - b0*Uz[ic0]);
+            const flow_float dw1 = 2.0*(b1*ux1j - b0*ux0j);
+            const flow_float dw2 = 2.0*(b1*uy1j - b0*uy0j);
+            const flow_float dw3 = 2.0*(b1*uz1j - b0*uz0j);
             const flow_float dw4 = -2.0*(b1 - b0);
 
             // 面平均状態と固有系 (python 検証済の正規化: r=[1,u∓cn,Ht∓c·Un] 等)

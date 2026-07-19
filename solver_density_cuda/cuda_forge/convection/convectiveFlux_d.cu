@@ -220,6 +220,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.nSpecies, species_roY_device_ptr(),
             cfg.keepDissType, cfg.keepDissCoeff,
             cfg.keepDissCprime, cfg.precondEps,
+            cfg.keepDissJump, grd,
             geom, st, reso
         );
 
