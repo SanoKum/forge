@@ -309,7 +309,7 @@ setDT とは別の独立スペクトル半径を使っていないか確認)。
 
 - 分析プロンプト(H1–H5 切り分け): `.github/plans/cutler-tp-multispecies-cfl-analysis-prompt.md`
 - plan: `.github/plans/thermophysics-multicomponent-tpgas.md`(§10 多成分 implicit 結合)
-- docs: `methods/thermophysics/theory.md`(sensible-enthalpy datum)/`implementation.md`, `methods/time_integration/`
+- docs: `methods/thermophysics.md`(sensible-enthalpy datum)/`implementation.md`, `methods/time_integration/`
 - case README: `case/28.cutler_coaxial_jet/README.md`(CPG vs TP / CFL 上限節), `case/16.nozzle_wys/README.md`
 - memory: [[cutler-cpg-vs-tp-dplur-sst]] / [[wys-tp-divergence-is-cold-not-multispecies]] /
   [[implicit-blockdplur-config]] / [[forge-implicit-inner-cfl-tuning]]
