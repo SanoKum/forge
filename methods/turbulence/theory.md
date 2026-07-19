@@ -765,3 +765,87 @@ WMLES モードの**定量**評価は解像乱流の存在が前提 (周期チ�
 軸対称 SST の幾何 source (§7.1–7.4) は子 plan
 [`architecture-axisym-sst.md`](../../plans/accepted/architecture-axisym-sst.md)
 で実装・検証する。その他は別 plan または後続フェーズで扱う。
+---
+
+## 10. WMLES 代数壁応力モデル (Reichardt + Kader)
+
+計画: [`turbulence-wmles-wall-stress.md`](../../plans/active/turbulence-wmles-wall-stress.md)。
+壁モデル LES (WMLES) では第一解点を対数層 ($y^+\approx 50\text{–}100$) に置き、壁面せん断応力
+$\tau_w$ と壁面熱流束 $q_w$ を代数壁法則で与えて壁の粘性流束を置き換える。SST automatic wall
+treatment (§6.5) と同じ Reichardt 則を速度に、Kader 則を温度に使う平衡壁モデルである。
+`LESorRANS==1` (LES) 系の機能であり、SST の $\omega$ ピン・$P_k$ 置換 (§6.5(b)(d)) は関与しない。
+
+### 10.1 マッチング点と壁面状態
+
+- マッチング点 = 壁に最も近い内側の解点。cell: 壁第一セル中心 ($y=$ `wall_dist`)。
+  node: SU2 Normal_Neighbor 流に壁ノードの内部双対面から内向き法線 cos 最大の内部ノード
+  ($y=(\mathbf x_I-\mathbf x_W)\cdot(-\hat{\mathbf n})$)。§6.5(a) の代表点選択と同一機構。
+- 壁面状態 $T_w, p_w$: node は壁ノードの解、cell は ghost との面平均 (断熱ミラーでは内点値に一致)。
+  等温壁は指定 $T_\mathrm{wall}$ を優先する。
+- 壁面物性: $\rho_w = p_w/(R_w T_w)$、$\mu_w=\mu(T_w)$、$\lambda_w=\lambda(T_w)$、
+  $c_{p,w}=c_p(T_w)$。`viscMethod` (定数 / Sutherland / 分子論) と `thermalMethod` (CPG/TP) に
+  整合した式で評価し、$\gamma$ 一定・$c_p$ 一定を焼き込まない。
+  $\mathrm{Pr}=\mu_w c_{p,w}/\lambda_w$ もその場評価する (層流 Pr の設定キーは存在しない)。
+
+### 10.2 運動量 — Reichardt 則の逆解き (warm start Newton)
+
+壁平行速度 $u_{\parallel,i}=u_{i,m}-(u_{j,m}n_j)n_i$ に対し、Reichardt 則 (§6.5(a) と同一式)
+$u^+=f(y^+)$ を
+
+$$
+F(u_\tau) = u_\tau f\!\big(y^+(u_\tau)\big) - u_\parallel = 0 ,\qquad
+F'(u_\tau) = f(y^+) + y^+ f'(y^+)
+$$
+
+の形で Newton 反復して $u_\tau$ を求める。SST 壁関数の残差形 $U_t/u_\tau - u^+$ (§6.5(a)) と根は
+同一だが、この形は $u_\tau\to 0$ で正則であり warm start (前 step の面ごと $u_\tau$ を初期値に採用)
+と相性が良い。初回・無効値は粘性則 $u_\tau^{(0)}=\sqrt{\mu_w u_\parallel/(\rho_w d)}$。
+収束判定は相対 $10^{-6}$・最大 20 回。不収束時は層流応力 $\tau_w=\mu_w u_\parallel/d$ に
+フォールバックしカウンタを残す。$u_\parallel$ が機械精度近傍なら Newton をスキップして層流極限。
+出力は $\tau_w=\rho_w u_\tau^2$、向きはマッチング点瞬時速度 $\hat e_{\parallel}$ (cell)。
+
+### 10.3 エネルギー — Kader 温度壁法則と回復温度
+
+等温壁のみ計算する (断熱壁は $q_w=0$ で閉じ、壁温は解に含まれる摩擦加熱込みの値)。
+
+$$
+T^+ = \mathrm{Pr}\,y^+ e^{-\Gamma} + \left[\mathrm{Pr}_t\,(u^+ + P(\mathrm{Pr}))\right] e^{-1/\Gamma},
+\qquad
+\Gamma = \frac{0.01\,(\mathrm{Pr}\,y^+)^4}{1 + 5\,\mathrm{Pr}^3 y^+}
+$$
+
+$$
+P(\mathrm{Pr}) = \left(3.85\,\mathrm{Pr}^{1/3} - 1.3\right)^2 + 2.12\ln \mathrm{Pr},
+\qquad \mathrm{Pr}_t = 0.9
+$$
+
+駆動温度差は回復温度 $T_r = T_m + r\,u_\parallel^2/(2c_{p,w})$ ($r=\mathrm{Pr}^{1/3}$、
+$c_p$ ベースで $\gamma$/Mach を使わない) を用い
+
+$$
+q_w = \frac{\rho_w\,c_{p,w}\,u_\tau\,(T_r - T_w)}{T^+}
+$$
+
+($q_w>0$ が壁→流体)。$T_m$ を直接使うと高速流で摩擦加熱分を誤るため $T_r$ を使う。
+$y^+, u^+$ は §10.2 で収束した値を再利用する。
+
+### 10.4 流束の適用先 (cell / node)
+
+- **cell**: 壁境界面の粘性流束を置換する。運動量は接線せん断を $\tau_w$ (向き $-\hat e_\parallel$)
+  に、エネルギー熱流束を $q_w S$ に置き換える。壁面 no-slip のため粘性仕事は 0。法線粘性・
+  体積項は落とす (§6.5(c) の SST 分岐と同じ処方)。
+- **node**: 壁ノードは速度 Dirichlet で運動量残差がゼロ化されるため、壁境界半割面の置換では
+  内点に応力が届かない。SST node と同じく壁ノードに $\tau_w=\rho_w u_\tau^2$ を格納し、
+  W↔I 内部双対面の解像 traction を大きさ $\tau_w$ に再スケールする (AddTauWall, §6.5(e))。
+  向きは面ごとの解像接線方向 (瞬時場に追随)。エネルギーも対称に、W↔I 面の解像伝導熱流束を
+  $q_w$ ベースに再スケールする (AddQWall)。等温壁では壁ノード温度を $T_\mathrm{wall}$ に
+  Dirichlet ピンする。
+- SGS 渦粘性は壁面流束評価には使わない (壁モデルが全応力を与える)。内部領域の SGS・対流
+  (KEEP+ES 散逸)・勾配計算は不変。
+
+### 10.5 適用限界
+
+平衡壁法則 (§10.2–10.3) は付着・準平衡境界層が前提。強い非平衡 (衝撃波直下・剥離点近傍) では
+$\tau_w$ を誤り、高 Re の緩剥離では標準 SGS 係数との組合せで剥離を見逃す実例がある
+([`turbulence-des-wmles-survey.md`](../../notes/investigations/turbulence-des-wmles-survey.md))。
+剥離を含むケースでは SGS 係数・ES 散逸 $\sigma$ の感度確認を必須とする。

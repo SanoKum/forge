@@ -170,6 +170,12 @@ public:
     flow_float omegaInit = 0.0; // 初期 ω [1/s]   (roOmega 欠落時 roOmega=ro*omegaInit)
     flow_float turbulentPrandtl = 0.85; // 乱流プラントル数 Pr_t。乱流熱伝導 k_t=cp*mu_t/Pr_t に使用 (既定 0.85)
 
+    // WMLES 代数壁応力モデル (Reichardt+Kader, methods/turbulence §10)。有効化は bcondConfig の
+    // 壁単位 ints: wallModelLES=1 (LESorRANS!=2 のみ)。以下はモデルパラメータ (turbulence セクション)。
+    flow_float wmlesNewtonTol = 1.0e-6; // u_τ Newton の相対許容誤差
+    int        wmlesNewtonMaxIt = 20;   // u_τ Newton の最大反復 (warm start 時は 1-3 回で収束想定)
+    flow_float wmlesPrt = 0.9;          // Kader 温度壁法則の乱流プラントル数 (SGS 側 turbulentPrandtl とは独立)
+
     // SST-DES (Detached-Eddy Simulation) length scale 修正。SST k 消滅項を
     //   D_k = β* ρ k ω = ρ k^{3/2}/l_RANS  →  ρ k^{3/2}/l_DDES
     // へ切り替え、剥離域のみ LES、付着 BL は RANS のままにする (methods/turbulence §8)。

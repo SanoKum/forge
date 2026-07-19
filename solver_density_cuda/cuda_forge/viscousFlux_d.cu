@@ -1,4 +1,5 @@
 #include "convection/convectiveFlux_d.cuh"
+#include "cuda_forge/wmlesWallModel_d.cuh"   // wmlesActiveForBcond / wmlesNodeActive (WMLES ゲート)
 #include <cstdlib>
 #include <cstdio>
 #include <vector>
@@ -46,10 +47,14 @@ __global__ void viscousFlux_d
  // τθθ ソース (axisymmetricSource_d) と整合させるため planar 面でもフープ項込みの divu を使う。
  int isAxisymmetric, flow_float* axisym_divU,
 
- // SST automatic wall treatment (node, wallTreatmentSST==1): 壁ノードに格納した τ_w=ρu_τ² (>0)。
- // 片端だけ壁ノードの内部双対面 (W-I) で接線粘性応力を τ_w に再スケールする (SU2 AddTauWall)。
- // cell/非壁関数では Tau_Wall≡-1 で再スケール無効 (ビット不変)。nullptr 可 (常に無効)。
- flow_float* Tau_Wall
+ // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node): 壁ノードに格納した
+ // τ_w=ρu_τ² (>0)。片端だけ壁ノードの内部双対面 (W-I) で接線粘性応力を τ_w に再スケールする
+ // (SU2 AddTauWall)。cell/非壁関数では Tau_Wall≡-1 で再スケール無効 (ビット不変)。nullptr 可 (常に無効)。
+ flow_float* Tau_Wall,
+
+ // WMLES 等温壁 (node): 壁ノードに格納した q_w [W/m²] (壁→流体正, 非対象は -1)。片端だけ壁ノードの
+ // W-I 面で解像伝導熱流束を q_w·S に置換する (AddQWall, methods/turbulence §10.4)。nullptr で無効。
+ flow_float* Qw_Wall
 )
 {
     geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
@@ -175,6 +180,22 @@ __global__ void viscousFlux_d
         flow_float heatflux = tc_face*((Ts[ic1] -Ts[ic0])/dcc)*delta;
         heatflux += tc_face*(dTdxf*k_x +dTdyf*k_y +dTdzf*k_z);
 
+        // WMLES 等温壁 (node, AddQWall): 片端のみ壁ノードの W-I 面で、解像伝導熱流束を壁モデルの
+        // q_w·S に置換する (AddTauWall の熱版)。粗い y+ メッシュでは解像 ∇T が q_w を過小評価する
+        // ため、Kader 由来の q_w を内部ノード I のエネルギーへ正しく伝える (壁ノード側 res_roe は
+        // Qw_Wall マーカで別途ゼロ化)。q_w>0 = 壁→流体。非対象面 (Qw_Wall=-1) は解像値のまま。
+        if (Qw_Wall != nullptr) {
+            const flow_float q0 = Qw_Wall[ic0];
+            const flow_float q1 = Qw_Wall[ic1];
+            const bool wq0 = (q0 > (flow_float)-0.5);
+            const bool wq1 = (q1 > (flow_float)-0.5);
+            if (wq0 != wq1) {                          // 片端のみ壁ノード (xor)
+                const flow_float qw = wq0 ? q0 : q1;
+                // 符号: res_roe[ic0]+=heatflux / res_roe[ic1]-=heatflux。内部側が +q_w·S を受ける向き。
+                heatflux = (wq1 ? qw : -qw) * sss;
+            }
+        }
+
         flow_float res_ro_temp   = 0.0;
         flow_float res_roUx_temp = tau_x;
         flow_float res_roUy_temp = tau_y;
@@ -257,9 +278,11 @@ __global__ void viscousFlux_wall_d
  // 軸対称: 完全発散 (u_r/r 込み) を体積粘性項に使う (内部面と同趣旨)
  int isAxisymmetric, flow_float* axisym_divU,
 
- // SST automatic wall treatment (methods/turbulence §6.5 (c)):
- //   wallTreatment==1 で接線せん断を modeled τ_w=ρu_τ² に置換。utau_b は事前算出済み u_τ。
- int wallTreatment, flow_float* utau_b,
+ // 壁処理: 0=なし (解像壁) / 1=SST automatic wall treatment (methods/turbulence §6.5 (c)):
+ //   接線せん断を modeled τ_w=ρu_τ² に置換。utau_b は事前算出済み u_τ。
+ // 2=WMLES 代数壁応力モデル (§10.4): wmlesWallModel が書いた twall_*_b (流束/面積) と
+ //   qwall_b (q_w, 壁→流体正) で粘性流束を置換。
+ int wallTreatment, flow_float* utau_b, flow_float* qwall_b,
  // node-centered (1): 壁法線 Laplacian/熱流束を ghost+dcc でなくセル勾配 ∇φ·S (bvar 壁閉包) で評価。
  // 壁ノードが壁面に乗り dcc≈0 に退化するのを回避する。cell (0) は従来の (φ[ig]-φ[ic])/dcc。
  int isNode
@@ -363,12 +386,22 @@ __global__ void viscousFlux_wall_d
             tau_y = -tauw*ety*sss;
             tau_z = -tauw*etz*sss;
         }
+        else if (wallTreatment == 2) {
+            // WMLES: 壁モデル (wmlesWallModel) が算出済みの τ_w ベクトル (流束/面積, 向き -ê_∥ は
+            // マッチング点瞬時速度) で置換。法線粘性・体積項は落とす (壁モデルが全応力を与える)。
+            // node では壁ノード残差は Dirichlet でゼロ化されるため実効は cell のみ (書いても無害)。
+            tau_x = twall_x_b[ib]*sss;
+            tau_y = twall_y_b[ib]*sss;
+            tau_z = twall_z_b[ib]*sss;
+        }
 
         // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。断熱壁ではミラーゴーストで
         // Ts[ig]=Ts[ic] のため寄与 0、isothermal 壁では有効。
         flow_float tc_w = thermCond[ic] + cp[ic]*v_turb/Prt;
         // 熱流束法線項: node は ∇T·S (セル勾配) で退化 dcc を回避。cell は従来の (Ts[ig]-Ts[ic])/dcc。
-        flow_float heatflux = (isNode != 0) ? tc_w*(dTdx[ic]*sxx +dTdy[ic]*syy +dTdz[ic]*szz)
+        // WMLES (wallTreatment==2) は壁モデルの q_w·S で置換 (断熱は q_w=0 厳密。解像 ∇T は使わない)。
+        flow_float heatflux = (wallTreatment == 2) ? qwall_b[ib]*sss
+                            : (isNode != 0) ? tc_w*(dTdx[ic]*sxx +dTdy[ic]*syy +dTdz[ic]*szz)
                                             : tc_w*((Ts[ig]- Ts[ic])/dcc)*sss;
 
         flow_float res_ro_temp   = 0.0;
@@ -398,9 +431,9 @@ __global__ void viscousFlux_wall_d
         flow_float twall = sqrt(tau_x*tau_x + tau_y*tau_y + tau_z*tau_z)/sss;
         flow_float utau = sqrt(twall/ro[ic]);
 
-        // mode 1 では壁関数カーネル (ransWallFunction) が y⁺=u_τ y/ν_lam を既に格納済み。
+        // mode 1/2 では壁関数/壁モデルカーネルが y⁺=u_τ y/ν を既に格納済み。
         // ここで dcc/mu_total ベースの値で上書きすると定義が不整合になるため mode 0 のみ更新する。
-        if (wallTreatment != 1) {
+        if (wallTreatment == 0) {
             ypls_b[ib] = ro[ic]*utau*dcc/mu_total;
         }
         //if (ib == 1) {
@@ -688,9 +721,13 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         var.c_d["dUzdx"] , var.c_d["dUzdy"] , var.c_d["dUzdz"],
         var.c_d["dTdx"] , var.c_d["dTdy"] , var.c_d["dTdz"],
         cfg.isAxisymmetric, var.c_d["axisym_divU"],
-        // node SST 壁関数のとき Tau_Wall を渡し AddTauWall 再スケール。それ以外は nullptr (Tau_Wall 未初期化のため)。
-        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
-            ? var.c_d["Tau_Wall"] : nullptr
+        // node SST 壁関数 / node WMLES のとき Tau_Wall を渡し AddTauWall 再スケール。
+        // それ以外は nullptr (Tau_Wall 未初期化のため)。
+        ((cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
+         || wmlesNodeActive(cfg, msh))
+            ? var.c_d["Tau_Wall"] : nullptr,
+        // node WMLES 等温壁のとき Qw_Wall を渡し AddQWall (W-I 熱流束置換)。それ以外は nullptr。
+        wmlesNodeIsothermalActive(cfg, msh) ? var.c_d["Qw_Wall"] : nullptr
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
@@ -755,9 +792,11 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 //bc.bvar_d["sz"]
                 cfg.isAxisymmetric, var.c_d["axisym_divU"],
 
-                // SST automatic wall treatment: modeled τ_w 用の flag と u_τ (ransWallFunction で算出済み)
-                (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) ? cfg.wallTreatmentSST : 0,
-                bc.bvar_d["utau"],
+                // 壁処理: SST automatic wall treatment (1, ransWallFunction 算出の u_τ) /
+                //         WMLES 壁応力モデル (2, wmlesWallModel 算出の twall_*/qwall bvar)
+                (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) ? cfg.wallTreatmentSST
+                    : (wmlesActiveForBcond(cfg, bc) ? 2 : 0),
+                bc.bvar_d["utau"], bc.bvar_d["qwall"],
                 (cfg.discretization == "node") ? 1 : 0   // node: 壁法線/熱流束を ∇φ·S で評価 (ghostless)
             ) ;
         }
@@ -795,9 +834,10 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 cfg.isAxisymmetric, var.c_d["axisym_divU"],
 
                 bc.bvar_d["twall_x"], bc.bvar_d["twall_y"], bc.bvar_d["twall_z"],
-                // 壁関数 active のときだけ Tau_Wall=ρu_τ² を渡し twall を再スケール。それ以外は nullptr
-                // (Tau_Wall 未初期化のため; カーネルは nullptr で再スケール無し=解像値のまま)。
-                (cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
+                // 壁関数 / WMLES active のときだけ Tau_Wall=ρu_τ² を渡し twall を再スケール。それ以外は
+                // nullptr (Tau_Wall 未初期化のため; カーネルは nullptr で再スケール無し=解像値のまま)。
+                ((cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
+                 || wmlesActiveForBcond(cfg, bc))
                     ? var.c_d["Tau_Wall"] : nullptr
             ) ;
         }

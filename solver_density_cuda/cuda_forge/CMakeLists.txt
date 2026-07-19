@@ -16,6 +16,9 @@ add_library(cuda_forge STATIC
     ransBoundary_d.cuh
     ransWallFunction_d.cu
     ransWallFunction_d.cuh
+    wmlesWallModel_d.cu
+    wmlesWallModel_d.cuh
+    wallLaw_d.cuh
     calcGradient_d.cu
     calcGradient_d.cuh
     limiter_d.cu

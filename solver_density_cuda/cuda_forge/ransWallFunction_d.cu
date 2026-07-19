@@ -1,42 +1,20 @@
 #include "ransWallFunction_d.cuh"
 
 #include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/wallLaw_d.cuh"
 
 // SST automatic wall treatment の摩擦速度 u_τ を Reichardt 普遍速度則の逆解きで求める。
 // 理論は methods/turbulence/theory.md §6.5 (a)。粘性低層・バッファ・対数を 1 式で繋ぐため
 // 第一セルの y⁺ 位置に依存せず妥当な u_τ を返す。
+// Reichardt u⁺(y⁺)/du⁺dy⁺ は wallLaw_d.cuh へ昇格 (WMLES 壁モデルと共有、演算列は不変)。
 namespace {
 
-constexpr flow_float kKappa    = static_cast<flow_float>(0.41);  // von Karman 定数
-constexpr flow_float kSmall    = static_cast<flow_float>(1.0e-12);
+constexpr flow_float kKappa    = kWallLawKappa;                  // von Karman 定数
+constexpr flow_float kSmall    = kWallLawSmall;
 constexpr int        kNewtonIt = 5;                              // Newton 反復回数
 constexpr flow_float kSstBeta1  = static_cast<flow_float>(0.075); // SST β₁ (ω_vis 用)
 constexpr flow_float kSstBetaSt = static_cast<flow_float>(0.09);  // SST β* (ω_log・k_wf 用)
 constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
-
-// Reichardt 則 u⁺(y⁺)
-__device__ inline flow_float reichardt_uplus(flow_float yp)
-{
-    const flow_float lg = log(static_cast<flow_float>(1.0) + kKappa * yp) / kKappa;
-    const flow_float e1 = exp(-yp / static_cast<flow_float>(11.0));
-    const flow_float e2 = exp(-yp / static_cast<flow_float>(3.0));
-    const flow_float tr = static_cast<flow_float>(7.8) *
-        (static_cast<flow_float>(1.0) - e1 - (yp / static_cast<flow_float>(11.0)) * e2);
-    return lg + tr;
-}
-
-// du⁺/dy⁺
-__device__ inline flow_float reichardt_duplus_dyp(flow_float yp)
-{
-    const flow_float dlg = static_cast<flow_float>(1.0) / (static_cast<flow_float>(1.0) + kKappa * yp);
-    const flow_float e1  = exp(-yp / static_cast<flow_float>(11.0));
-    const flow_float e2  = exp(-yp / static_cast<flow_float>(3.0));
-    // d/dy⁺ [1 - e1 - (y⁺/11) e2] = e1/11 - e2/11 + (y⁺/33) e2
-    const flow_float dtr = static_cast<flow_float>(7.8) *
-        (e1 / static_cast<flow_float>(11.0) - e2 / static_cast<flow_float>(11.0)
-         + (yp / static_cast<flow_float>(33.0)) * e2);
-    return dlg + dtr;
-}
 
 // wf_pk・Tau_Wall・roK_wf を全セル -1 (inactive) に初期化する。
 __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf)
@@ -156,8 +134,8 @@ __global__ void compute_wall_friction_sst_d(
     for (int it = 0; it < kNewtonIt; ++it) {
         utau = max(utau, kSmall);
         const flow_float yp = utau * y / nu;
-        const flow_float f  = Ut / utau - reichardt_uplus(yp);
-        const flow_float df = -Ut / (utau * utau) - reichardt_duplus_dyp(yp) * (y / nu);
+        const flow_float f  = Ut / utau - wallLaw_reichardt_uplus(yp);
+        const flow_float df = -Ut / (utau * utau) - wallLaw_reichardt_duplus_dyp(yp) * (y / nu);
         if (fabs(df) < kSmall) break;
         utau -= f / df;
     }
@@ -167,7 +145,7 @@ __global__ void compute_wall_friction_sst_d(
     // (methods/turbulence §6.5(d))。粘性低層 g→1 で P_k→0 (壁解像極限を保つ)、対数層 g→1/(κy⁺) で
     // P_k→ρu_τ³/(κy)。これと ω ピン留めで k が平衡値 u_τ²/√β* に収束し runaway を断つ。
     const flow_float yp1 = utau * y / nu;
-    const flow_float g   = reichardt_duplus_dyp(yp1);
+    const flow_float g   = wallLaw_reichardt_duplus_dyp(yp1);
     const flow_float pk_wf = max(rho * utau * utau * utau * utau / nu * g * (static_cast<flow_float>(1.0) - g),
                     static_cast<flow_float>(0.0));
     wf_pk[ic] = pk_wf;

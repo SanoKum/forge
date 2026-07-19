@@ -397,6 +397,14 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Key 'turbulentPrandtl' in 'turbulence' must be positive.");
         }
 
+        // WMLES 代数壁応力モデル (methods/turbulence §10)。有効化は bcondConfig の壁単位 wallModelLES。
+        this->wmlesNewtonTol   = getOptionalValidatedValue<flow_float>(turb, "wmlesNewtonTol", 1.0e-6, "turbulence");
+        this->wmlesNewtonMaxIt = getOptionalValidatedValue<int>(turb, "wmlesNewtonMaxIt", 20, "turbulence");
+        this->wmlesPrt         = getOptionalValidatedValue<flow_float>(turb, "wmlesPrt", 0.9, "turbulence");
+        if (this->wmlesNewtonTol <= 0.0 || this->wmlesNewtonMaxIt < 1 || this->wmlesPrt <= 0.0) {
+            throw std::runtime_error("Keys 'wmlesNewtonTol'/'wmlesNewtonMaxIt'/'wmlesPrt' in 'turbulence' must be positive.");
+        }
+
         if (this->LESorRANS < 0 || this->LESorRANS > 2) {
             throw std::runtime_error("Key 'LESorRANS' in 'turbulence' must be one of 0, 1, or 2.");
         }

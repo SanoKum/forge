@@ -51,6 +51,7 @@ struct bcondConfFormat{
               {"twall_y",0},
               {"twall_z",0},
               {"utau",0},
+              {"qwall",0},   // WMLES 壁モデルの q_w (断熱では 0。viscousFlux wallTreatment==2 が消費)
           }},
 
           {"wall_isothermal", {
@@ -73,6 +74,7 @@ struct bcondConfFormat{
               {"twall_y",0},
               {"twall_z",0},
               {"utau",0},
+              {"qwall",0},   // WMLES 壁モデルの q_w (Kader。viscousFlux wallTreatment==2 が消費)
 
           }},
 

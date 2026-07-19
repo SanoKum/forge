@@ -62,7 +62,7 @@ public:
         "Ux"   , "Uy"   , "Uz"   , "Tt"   , "Pt"   , "Ts" , "Ps",
         "k"    , "omega", "kb", "omegab",
         "Ux0"  , "Uy0"  , "Uz0"  , 
-        "ypls" , "twall_x" , "twall_y" , "twall_z" , "utau"
+        "ypls" , "twall_x" , "twall_y" , "twall_z" , "utau" , "qwall"
     };
 
     std::list<std::string> bplaneIntNames =  

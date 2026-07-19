@@ -418,3 +418,36 @@ strain-based 生産の stagnation/加速アノマリー (theory.md §7.5) を抑
 2. laminar / LES case で null regression
 3. その後、airfoil 系で壁面境界層と `vis_turb` の立ち上がり確認
 4. 最後に 3D case と軸対称子 plan へ展開
+## 8. WMLES 代数壁応力モデルの実装
+
+理論は [`theory.md`](theory.md) §10、計画は
+[`turbulence-wmles-wall-stress.md`](../../plans/active/turbulence-wmles-wall-stress.md)。
+
+### 8.1 ソース構成
+
+- `cuda_forge/wallLaw_d.cuh` — 壁法則デバイス関数群 (共有ヘッダ)。Reichardt
+  `wallLaw_reichardt_uplus` / `wallLaw_reichardt_duplus_dyp` (SST 壁関数 `ransWallFunction_d.cu`
+  から昇格、数値経路ビット不変)、WMLES 用 warm start Newton `wallLaw_solve_utau`、Kader
+  `wallLaw_kader_tplus`、`viscMethod`/`thermalMethod` 整合の壁面物性 helper。
+- `cuda_forge/wmlesWallModel_d.cu` — 壁境界面並列カーネル。取得層 (cell/node の
+  マッチング点・壁面状態) → 壁モデル → `bvar_d["utau"/"ypls"/"twall_*"]`、node 用
+  `Tau_Wall` / `Qw_Wall` (per-CV) 書き込み。呼び出しは SST 壁関数と同位相
+  (`applyBconds` 後・`viscousFlux` 前)。
+- `viscousFlux_d.cu` — 壁面カーネルの `wallTreatment` を 3 値化
+  (0: なし / 1: SST 壁関数 / 2: WMLES)。2 では cell の接線せん断置換 + 熱流束置換、
+  node は AddTauWall / AddQWall (W↔I 再スケール)。
+
+### 8.2 設定
+
+- bcondConfig: `wall` / `wall_isothermal` の `ints:` に `wallModelLES: 1` (壁単位・既定 0)。
+- solverConfig `turbulence` セクション: `wmlesNewtonTol` (既定 1e-6) /
+  `wmlesNewtonMaxIt` (既定 20) / `wmlesPrt` (既定 0.9)。
+- 有効条件: `LESorRANS != 2` (LES/ILES) かつ当該壁の `wallModelLES==1`。SST
+  (`LESorRANS==2`) 経路は従来ロジックのままビット不変。
+- node は `nodeWallDirichlet=1` (既定) が前提。
+
+### 8.3 診断
+
+- `bvar_d["utau"]` は warm start を兼ねる永続配列 (restart には含めない。初回数 step で回復)。
+- Newton 不収束カウンタと $u_\tau/y^+/\tau_w$ の面統計 (min/max/mean) をログ可能にする。
+- 単体検証は `tools/verify_wall_law.py` (python 参照実装との突合)。

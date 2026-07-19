@@ -56,6 +56,7 @@
 #include "cuda_forge/limiter_d.cuh"
 #include "cuda_forge/ducrosSensor_d.cuh"
 #include "cuda_forge/axisymmetricSource_d.cuh"
+#include "cuda_forge/wmlesWallModel_d.cuh"
 #include "cuda_forge/turbulent_viscosity_d.cuh"
 #include "cuda_forge/residualMonitor_d.cuh"
 
@@ -861,6 +862,7 @@ cudaConfig initializeSimulation(
 
     applyBconds(cfg , cuda_cfg , msh , var, mat_ns , fluct);
     applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
+    applyWmlesWallModel(cfg , cuda_cfg , msh , var);   // WMLES 壁応力モデル (wallModelLES 壁のみ, §10)
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
@@ -942,6 +944,7 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureWall(ProfileSection::ApplyBconds, [&]() {
         applyRansScalarBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
+        applyWmlesWallModel(s.cfg , s.cuda_cfg , s.msh , s.var);   // WMLES 壁応力モデル (§10)
         applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyCondensationBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });

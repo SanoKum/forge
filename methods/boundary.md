@@ -135,6 +135,22 @@ YAML を読み、各 `bcond` (メッシュ生成側で物理 ID 付き) に `kin
 値型テーブル (`valueTypes`) を紐付け、`bcondInitVariables` で
 GPU/CPU 双方の境界変数バッファを確保する。
 
+#### WMLES 壁モデルの指定 (`wallModelLES`)
+
+`wall` / `wall_isothermal` の `ints:` に `wallModelLES: 1` を書くと、その壁の粘性流束が
+代数壁応力モデル (Reichardt + Kader, [`methods/turbulence/theory.md`](turbulence/theory.md) §10)
+で置き換わる (既定 0 = 従来の解像壁)。LES/ILES (`LESorRANS != 2`) でのみ有効で、
+SST automatic wall treatment (`wallTreatmentSST`) とはコードパスが分離されている。
+
+```yaml
+2:
+  physID: 2
+  kind: wall            # 断熱 WMLES 壁 (等温は kind: wall_isothermal + floats: {Ts: ...})
+  outputHDFflg: 1
+  ints: { wallModelLES: 1 }
+  floats: {}
+```
+
 ### 入口分布プロファイル (inlet profile)
 
 入口 (`inlet_*`) の境界値を**一様でなく分布として**与える機能。inlet カーネルは per-face の

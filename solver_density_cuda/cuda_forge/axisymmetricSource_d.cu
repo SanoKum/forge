@@ -1,5 +1,6 @@
 #include "axisymmetricSource_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/wmlesWallModel_d.cuh"   // wmlesNodeIsothermalActive (res_roe ピンのゲート)
 
 
 // 軸対称 (B 流儀) — 半径方向運動量の圧力・粘性ソース項を residual に加算する。
@@ -186,7 +187,11 @@ __global__ void zeroWallMomentumResidual_d
     // SST: 壁ノードで ω は Dirichlet ピン (rans_wall_scalar_boundary_d) なので残差を 0 に射影する。
     // Dirichlet ノードの残差は BC 強制であり物理的不均衡でない → rms_roOmega の汚染 (収束判定の誤検出) を防ぐ。
     // nullptr で無効 (非 SST)。k はノイマンなので res_roK は触らない。
-    flow_float* res_roOmega
+    flow_float* res_roOmega,
+    // WMLES 等温壁 (node): 壁ノード温度は wmles_pin_wall_temperature_d で Dirichlet ピンされるため
+    // res_roe も 0 に射影する。対象ノードの識別は Qw_Wall マーカ (>-0.5 = 等温 WMLES 壁ノード)。
+    // nullptr で無効 (断熱 WMLES / 非 WMLES はエネルギー残差を触らない)。
+    flow_float* Qw_Wall, flow_float* res_roe
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -195,6 +200,7 @@ __global__ void zeroWallMomentumResidual_d
         res_roUy[ic] = (flow_float)0.0;
         res_roUz[ic] = (flow_float)0.0;
         if (res_roOmega != nullptr) res_roOmega[ic] = (flow_float)0.0;
+        if (Qw_Wall != nullptr && Qw_Wall[ic] > (flow_float)-0.5) res_roe[ic] = (flow_float)0.0;
     }
 }
 
@@ -214,10 +220,13 @@ void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg
 {
     if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return;
     const bool sst = (cfg.LESorRANS == 2 && cfg.RANSmodel == 1);
+    const bool wmlesIso = wmlesNodeIsothermalActive(cfg, msh);
     zeroWallMomentumResidual_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells, msh.wall_flag_d,
         var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"],
-        sst ? var.c_d["res_roOmega"] : nullptr
+        sst ? var.c_d["res_roOmega"] : nullptr,
+        wmlesIso ? var.c_d["Qw_Wall"] : nullptr,
+        wmlesIso ? var.c_d["res_roe"] : nullptr
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

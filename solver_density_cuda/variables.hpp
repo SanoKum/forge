@@ -105,11 +105,15 @@ public:
         // 診断 (k 収支調査用, node/cell 近壁 SST 比較): ransSource が確定した最終 k 生産項 P_k
         // (wall-function 置換後)。res_roK へ加える値そのもの。non-RANS では未使用。
         "Pk_diag",
-        // SST automatic wall treatment (node, wallTreatmentSST==1) 用: 壁ノードの壁関数せん断応力
-        // τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ壁ノードの内部双対面
-        // (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。cell モードでは常に -1
-        // (cell は viscousFlux_wall_d の壁面 modeled τ_w を内部セルに課すため不要)。
+        // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
+        // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
+        // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。
+        // cell モードでは常に -1 (cell は viscousFlux_wall_d の壁面 modeled τ_w を内部セルに課すため不要)。
         "Tau_Wall",
+        // WMLES 等温壁 (node) 用: 壁ノードのモデル壁熱流束 q_w [W/m²] (壁→流体正, 非対象は -1)。
+        // viscousFlux_d の AddQWall (W-I 熱流束置換) と zeroWallMomentumResidual の res_roe ピン
+        // マーカを兼ねる (methods/turbulence §10.4)。断熱 WMLES / cell では常に -1。
+        "Qw_Wall",
         // SST 陰解法用: k/ω 輸送項（移流+拡散）のヤコビアン対角（point-implicit）[m³/s]。
         // 1次風上移流の Σ_f max(±ṁ,0)/ρ と拡散 Σ_f (μ_face/ρ)(|δ|/dcc) を面ループで集計し、
         // D_φ = V/Δτ + V·src_jac + transport_diag に加える。壁近傍の細セルで陽的輸送 stiff 性を
