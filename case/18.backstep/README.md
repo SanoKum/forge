@@ -93,6 +93,8 @@
 | `run_0123_les40k_wale_precond` | 同**②: WALE** (`LESmodel:1`)。**seed=run_0122 res_29000 (発達 3D 乱流場)**、30k 完走 | **安定・NaN無・vis_turb 稼働** (mean 0.0036≈3.6×分子, nonzero 96%)。せん断層 Uy/Uz rms 6.4/6.8 = 乱流維持。VERDICT=NOT CONVERGED plateau (非定常想定) | active (SGS 比較 WALE) |
 | `run_0124_les40k_sigma_precond` | 同**③: σ-model** (`LESmodel:2`)。同 seed。step10636 でユーザー判断により終了 | 安定・NaN無・vis_turb mean **0.0060 = WALE の 1.7 倍散逸的** (TGV での σ>WALE 散逸傾向と整合)。res_10000 まで | active (SGS 比較 σ, 短縮) |
 
+| `run_0125_ddes_keep_es` | **DDES × 単一スキーム KEEP+ES** ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)): run_0035 と同一 (3D 857k, DESmode:1, implicit) で flux のみ KEEP+matrix ES (σ0.05 jump2 precond)、500 step 機能確認 | **NaN 無し・f_d zoning 正常** (せん断層 0.974 = SLAU 0.976、泡内 0.000)。付着 BL 帯 f_d 0.43 vs SLAU 0.28 (遮蔽保持、要観察)。**Phase 1.5 前提検証②合格** | ref (KEEP+ES DDES 機能確認) |
+
 **SGS パイロットの総括 (2026-07-19)**: 目的 (確定版 KEEP-LES スタックの実地統合試験) は達成 —
 node×KEEP×precond ES 散逸×advGauge×WALE/σ/ILES が cfl1.0 で全て安定・3D 乱流を維持・SGS 活性正常。
 **定量的な再付着位置比較 (Driver–Seegmiller x_R=6.26) は本構成では狙わない (ユーザー判断)**:

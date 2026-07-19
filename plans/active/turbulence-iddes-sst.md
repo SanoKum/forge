@@ -381,6 +381,30 @@ main.cpp:954  ransSource_d_wrapper           … Dk 計算（ここで l_des を
 
 ### 4.8 DES 用低散逸 flux（Phase 1.5 — SBLI 物理検証の前提）★
 
+> **★ 設計更新 (2026-07-19 後段, ユーザー承認済み・現行の本命)**: Phase 1.5 は flux ブレンドを
+> やめ、**全域単一スキーム `KEEP` + matrix ES 散逸 (`keepDissType:2, keepDissJump:2,
+> keepDissPrecond:1, σ0.05`) を第一候補**とする。根拠:
+> (1) RANS が upwind を要求するわけではなく、中心+人工散逸の RANS は JST (SU2 既定の一つ) として
+> 主流実績がある — KEEP+matrix ES は構造的に JST 同族 (σ≈k₄)、
+> (2) `keepDissPrecond` (2026-07-19 実装, [convection-keep-diss-lowmach-precond](../active/convection-keep-diss-lowmach-precond.md))
+> により低マッハ市松は行列構造レベルで解決済み (真の市松 142×減衰・物理コスト c' 以下・ES 維持)、
+> (3) 単一スキームなら f_d ブレンドの実装・グレーゾーン不整合・LES 域散逸の f_d 依存が全て消える。
+> **前提検証 (この順)**: ① flat plate SST を KEEP+ES(+implicit) で回し BL プロファイル/Cf が
+> SLAU・SU2 と一致すること (KEEP+implicit は未検証領域)、② backstep DDES の再実行で NaN 無し・
+> f_d 分布維持、③ SBLI 系へ伸ばす時点で**衝撃センサ駆動の σ ブースト (JST k₂ の ES 版, Ducros×σ
+> ランプ) を別 plan で追加** (現 ES レイヤは shock capturing を持たない)。
+> ①② が躓いた場合のフォールバックが下記の f_d 主導ブレンド (旧本命・設計は有効なまま残す)。
+>
+> **前提検証の結果 (2026-07-19 後段, ①②とも合格)**:
+> ① flat plate SST (case/26 `run_0012`/`run_0013`): KEEP+ES+implicit cfl20 で安定・Cf 完全収束
+> (ドリフト ≤0.04%/20k)・**Cf/Schl 0.88/0.91/0.94 = SLAU 基準比 −3.6〜−3.9%** (本 case の
+> スキーム間ばらつき node vs cell MUSCL −3.4〜−3.9% と同帯) → **KEEP+ES の SST-RANS は成立**。
+> 注: 最初の試行 (run_0004/0005) は Cf 未検証の run_0003 土俵で不適だった。
+> ② backstep DDES (case/18 `run_0125`): 3D 857k cells + implicit で 500 step NaN 無し、
+> f_d = せん断層 0.974 (SLAU 0.976)・泡内 0.000 と zoning 正常。付着 BL 帯の f_d が SLAU より
+> やや高い (0.43 vs 0.28, 遮蔽は保持) — Phase 2 で νt 依存性として要観察。
+> → **単一スキーム案で Phase 1.5 は実質完了。次は Phase 2 (IDDES 関数群) に進める。**
+
 > **⚠ 整合メモ (2026-07-19・Phase 1.5 着手前に必読)**: 本節の本命設計「`solver: KEEP_SLAU` の
 > `duc` に f_d 注入」は**現行コードでは前提が消失している**。`KEEP_SLAU_d` は
 > `cuda_forge/convection/legacy/` に退避され dispatch から到達不能 (現行 `cfg.solver` は
