@@ -5,8 +5,8 @@
 - **area**: `diffusion`
 - **status**: `superseded` <!-- → architecture-node-centroid-value-position.md (centCoords=node + ghostless で根治。ncx 別配列は廃止) -->
 - **related_docs**:
-  - `methods/diffusion/implementation.md`
-  - `methods/discretization/implementation.md` (node 近壁・axisCentroidShift)
+  - `methods/diffusion.md`
+  - `methods/discretization.md` (node 近壁・axisCentroidShift)
 - **related_plans**:
   - 同根: [`diffusion-node-wall-viscous-distance.md`](../accepted/diffusion-node-wall-viscous-distance.md) (壁面の dcc 退化。本 plan は内部面)
   - 関連: [`discretization-node-wall-implicit-dirichlet.md`](../accepted/discretization-node-wall-implicit-dirichlet.md)
@@ -55,11 +55,11 @@ node-centered で SST RANS が omega 爆発で起動できない (case/36: roOme
 ## 7. 影響範囲
 
 - 触るファイル: `variables.{hpp,cpp}`, `cuda_forge/scalarTransport_d.cu`, `cuda_forge/viscousFlux_d.cu`。
-- ドキュメント: `methods/diffusion/implementation.md`。
+- ドキュメント: `methods/diffusion.md`。
 
 ## 8. 完了条件
 
-- [x] `methods/diffusion/implementation.md` に node 座標 dcc を追記
+- [x] `methods/diffusion.md` に node 座標 dcc を追記
 - [ ] 残発散 (case/36 step1657) の追加対策 (対流 fx/dcc・勾配の node 座標化、または near-convergence 安定化) を別 plan/§9 で判断
 - [ ] [`plans/README.md`](../README.md) を更新
 - [ ] `status: done` 化 (残発散の整理後)

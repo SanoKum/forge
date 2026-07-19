@@ -5,9 +5,9 @@
 - **area**: `diffusion`
 - **status**: `done`
 - **related_docs**:
-  - `methods/diffusion/theory.md`
-  - `methods/diffusion/implementation.md`
-  - `methods/boundary/implementation.md`
+  - `methods/diffusion.md`
+  - `methods/diffusion.md`
+  - `methods/boundary.md`
 - **created**: `2026-06-06`
 - **owner**: `未定`
 
@@ -38,9 +38,9 @@
 
 ## 3. 関連 docs と前提
 
-- 正しい離散化: [`methods/diffusion/theory.md`](../../methods/diffusion/theory.md)「Over-relaxed 離散化」「壁面寄与」。
-- 現状実装と不具合: [`methods/diffusion/implementation.md`](../../methods/diffusion/implementation.md) `viscousFlux_wall_d` 節。
-- 壁 BC のゴースト構成 (速度反転ミラー): [`methods/boundary/implementation.md`](../../methods/boundary/implementation.md)、
+- 正しい離散化: [`methods/diffusion.md`](../../methods/diffusion.md#理論)「Over-relaxed 離散化」「壁面寄与」。
+- 現状実装と不具合: [`methods/diffusion.md`](../../methods/diffusion.md#実装) `viscousFlux_wall_d` 節。
+- 壁 BC のゴースト構成 (速度反転ミラー): [`methods/boundary.md`](../../methods/boundary.md#実装)、
   `cuda_forge/boundaryCond_d.cu` の `wall_d` (`Ux[ig]=-Ux[ic]`)。対流側は no-penetration の
   みを保証し、接線 no-slip は粘性束に依存する点が前提。
 
@@ -127,13 +127,13 @@ tau_x += -mu*2.0/3.0*divu*sxx;                       // 発散項
 - 既存ケースへの影響: **粘性を含む全ケース**で法線方向の物理粘性が増える(内部面修正)。
   特に軸平行格子のケースで挙動が変わる。加えて全粘性壁ケースの壁摩擦・$y^+$・抗力係数が
   動く(壁面修正)。RANS/LES 含む検証ケースは広く再ベースラインが必要。
-- docs: `methods/diffusion/theory.md`・`methods/diffusion/implementation.md` 更新済み、
+- docs: `methods/diffusion.md`・`methods/diffusion.md` 更新済み、
   実装完了後に `methods/index.md` との整合を確認。
 
 ## 8. 完了条件
 
-- [x] 関連 `methods/diffusion/theory.md` 更新済み
-- [x] 関連 `methods/diffusion/implementation.md` 更新済み
+- [x] 関連 `methods/diffusion.md` 更新済み
+- [x] 関連 `methods/diffusion.md` 更新済み
 - [x] 実装・検証完了 (本 plan の §6、case 24 で SU2 と一致を確認)
 - [x] `.github/plans/README.md` の状態を `done` に更新
 - [x] 本 plan の `status` を `done` に変更し、§9 に変更ログを記載
@@ -170,6 +170,6 @@ tau_x += -mu*2.0/3.0*divu*sxx;                       // 発散項
   完全発散 `axisym_divU` を使う $\tau_{\theta\theta}$ 源項 ([axisymmetricSource_d.cu](../../solver_density_cuda/cuda_forge/axisymmetricSource_d.cu))
   と不整合だった ($\tau_{xx},\tau_{rr}$ だけ $u_r/r$ 落ち)。修正: `viscousFlux_d`/`viscousFlux_wall_d` に
   `isAxisymmetric`・`axisym_divU` を渡し、軸対称時 planar `divu` を `axisym_divU` の面補間 (壁はセル値) に置換。
-  非軸対称はガード下で**ビット不変**。methods/diffusion/implementation.md に追記。検証は case/29 軸対称 viscous の
+  非軸対称はガード下で**ビット不変**。methods/diffusion.md に追記。検証は case/29 軸対称 viscous の
   cell (`run_divufix_cell_before` vs `_after`) / node (`run_lsq_gg` vs `run_divufix_node_after`) before/after 比較
   (定量結果は応答および case/29 README run 表)。

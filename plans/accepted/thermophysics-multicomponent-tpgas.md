@@ -5,8 +5,8 @@
 - **area**: `thermophysics` (新規。理論/実装は `methods/thermophysics/`)
 - **status**: `done` (M1-M4 + TP-BC + 陰解法 γ[ic]。後続改良は §10)
 - **related_docs**:
-  - `methods/thermophysics/theory.md`
-  - `methods/thermophysics/implementation.md`
+  - `methods/thermophysics.md`
+  - `methods/thermophysics.md`
   - `methods/convection/` (流束の TP 整合)
   - `methods/diffusion/` (化学種拡散・エンタルピー拡散)
 - **created**: `2026-06-09`
@@ -23,13 +23,13 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 
 ## 3. 関連 docs と前提
 
-- 理論: `methods/thermophysics/theory.md`、実装: `methods/thermophysics/implementation.md` (本 plan 着手前に作成済み)。
+- 理論: `methods/thermophysics.md`、実装: `methods/thermophysics.md` (本 plan 着手前に作成済み)。
 - 既存の汎用スカラ輸送 `scalarTransport_d` / RANS `ransTransport_d` を化学種輸送のミラー元とする。
 - `flow_float` は FP32。熱力学/輸送のカーネル内計算は double で行う。
 
 ## 4. 設計方針
 
-詳細は `methods/thermophysics/implementation.md`。要点:
+詳細は `methods/thermophysics.md`。要点:
 - 熱力学コア `cuda_forge/thermo_d.{cuh,cu}` (NASA-9, 混合則, Newton 反転)。化学種データは device pointer で渡す。
 - `dependentVariables_d` に `thermalMethod==2` の Newton 反転を追加し `T,P,Ht,sonic,gamma,cp` を更新。
 - 対流流束は被移流全エンタルピーを NASA 化 (SLAU 最小修正、ROE は有効γ̃の段階A)。
@@ -60,8 +60,8 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 
 ## 8. 完了条件
 
-- [x] `methods/thermophysics/theory.md` 作成
-- [x] `methods/thermophysics/implementation.md` 作成
+- [x] `methods/thermophysics.md` 作成
+- [x] `methods/thermophysics.md` 作成
 - [x] M1-M4 実装・検証完了 (§9 変更ログ参照)
 - [x] TP 境界条件整合化 (slip/wall/inlet_Pressure/outflow + outlet_statPress/wall_isothermal/inlet_Pressure_dir/inlet_uniformVelocity)
 - [x] 陰解法 block-DPLUR Jacobian の per-cell γ 化
@@ -79,7 +79,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
 - **MUSCL + 陰解法の安定化**: 2次 MUSCL × 高 cfl_pseudo で発散 (block DPLUR)。limiter freezing / CFL ランプで陰解法高速化の余地。
 - **低Mach preconditioning の TP 実効検証**: 超音速で発散は正常 (M≪1 用)。真の低Mach TP ケースで `gamma[ic]` 修正後の収束加速を未確認。
 - **粘性 / RANS SST + TP のエンドツーエンド検証**: CEA 照合は非粘性。RANS×TP・乱流化学種拡散 `μ_t/Sc_t`・M3 輸送係数の実粘性 TP 流れは未検証。
-- **TP-gas 性能最適化 (M6, 実装・検証完了 → 変更ログ 2026-06-10)**: consumer GPU (RTX 3060, FP64=FP32/64) で TP コアの `double` 演算が律速。精度方針を「桁落ちのある絶対エンタルピーだけ double、輸送係数・cp・混合則・面エンタルピー増分は FP32」に改める。①輸送係数 (`thermo_mu/lambda/Dbinary/Dmix/omega/wilke`) の FP32 化、②`thermo_T_from_e/h` の cp+h 融合評価 (`thermo_cph_mix`, 係数・T冪・lnT 共有でビット同等)、③`SLAU_d` 面エンタルピーの per-cell `Rmix[ic]` キャッシュ。詳細は `methods/thermophysics/implementation.md` §6b。残レバー: エンタルピー反転自体の FP32 化 (不活性種のみ安全) / 温度ルックアップテーブル。
+- **TP-gas 性能最適化 (M6, 実装・検証完了 → 変更ログ 2026-06-10)**: consumer GPU (RTX 3060, FP64=FP32/64) で TP コアの `double` 演算が律速。精度方針を「桁落ちのある絶対エンタルピーだけ double、輸送係数・cp・混合則・面エンタルピー増分は FP32」に改める。①輸送係数 (`thermo_mu/lambda/Dbinary/Dmix/omega/wilke`) の FP32 化、②`thermo_T_from_e/h` の cp+h 融合評価 (`thermo_cph_mix`, 係数・T冪・lnT 共有でビット同等)、③`SLAU_d` 面エンタルピーの per-cell `Rmix[ic]` キャッシュ。詳細は `methods/thermophysics.md` §6b。残レバー: エンタルピー反転自体の FP32 化 (不活性種のみ安全) / 温度ルックアップテーブル。
 - (スコープ外: 有限速度化学 Arrhenius。設計拡張点としてのみ)
 
 ## 9. 変更ログ
@@ -115,7 +115,7 @@ forge を単一成分・熱量的完全気体 (CPG) から**多成分 thermally-
   - **3 成分 [He,O2,N2]**: vol→mass 変換 (jet He-O2 95/5 → Y=[0.704,0.296,0], air → Y=[0,0.233,0.767]) で組成入口 BC を 3 成分検証 (`run_0011_he_o2_n2`)。$\sum_{s=0}^{2} Y_s=1$ 厳密、coflow 組成厳密一致、NaN なし。`gen_ternary_ic.py` (air ambient NASA-IC + roY)。
   - **化学種の陰解法配線**: `timeIntegration==11` (block-DPLUR) は化学種を `assembleResidual` で残差計算するが**更新を呼ばず組成が凍結**していた。`scalarTimeIntegration_d` に `timeIntegration==11` 分岐 (point-implicit forward-Euler, coef 1/0/1) を追加し、`implicitNonlinearUpdate` に `speciesUpdateOuter→speciesTimeIntegration(0)→renormalize→primitive` を配線 (各 wrapper は `nSpecies<2` で no-op)。flat_plate 陰解法 (単成分) 回帰が不変 (NaN なし, rms 2.2e-9 維持) で安全性確認。
   - **陰解法・高 cfl の適用限界 (記録)**: `case/28` の Mach1.8 He/空気ジェットは強衝撃 + 大密度比でスティフ。陰解法 block-DPLUR は cfl_pseudo=5 で step6, =1 で step728 発散。陽解法 RK3 も発達場からでも cfl=1.0 で step19, cfl=1.5 で step9 発散。**安定域は陽解法 cfl≲0.6** (既知 pitfall を再確認)。block-DPLUR の近似 Jacobian は亜音速 RANS (flat_plate/pipe/backstep) 向けで、本ケースの超音速衝撃には非ロバスト。発達には長時間の陽解法 (cfl 0.5) が必要 (`run_0013_he_o2_n2_viscSST`, 120k 步 で発達中)。超音速での陰解法高速化は別途 (衝撃ロバストな implicit / matrix-free GMRES 等) が課題。
-- `2026-06-10` — **M6 TP-gas 性能最適化 (consumer GPU FP64 律速対策, 実装・検証完了)**。RTX 3060 (FP64=FP32 の 1/64) で TP コアの `double` 演算が律速になる問題に対し「桁落ちのある絶対エンタルピーだけ double、それ以外は FP32」の精度方針を実装。詳細は `methods/thermophysics/implementation.md` §6b。
+- `2026-06-10` — **M6 TP-gas 性能最適化 (consumer GPU FP64 律速対策, 実装・検証完了)**。RTX 3060 (FP64=FP32 の 1/64) で TP コアの `double` 演算が律速になる問題に対し「桁落ちのある絶対エンタルピーだけ double、それ以外は FP32」の精度方針を実装。詳細は `methods/thermophysics.md` §6b。
   - **① 輸送係数の FP32 化**: `thermo_omega11/22`・`thermo_mu_species/mix`・`thermo_lambda_species/mix`・`thermo_wilke_phi`・`thermo_Dbinary`・`thermo_Dmix_species` を FP32 (`expf/powf/sqrtf`) 化 (化学種 DB は double のまま読み評価のみ float)。`gasProperties_d` (viscMethod==2) の $O(n_{sp}^2)$ pow/exp/sqrt と `species_diffusion_d` の拡散係数評価という最重量パスを FP32 へ。
   - **② Newton 反転の cp+h 融合評価**: `thermo_cph_molar/cph_mix` を追加し係数選択・$T$ 冪・`lnT` を共有。`thermo_T_from_e`/`thermo_T_from_h`/`dependentVariables_d` の反転後ブロックに適用 (反復あたり多項式仕事ほぼ半減、演算順序のみでビット同等)。
   - **③ per-cell `Rmix` キャッシュ**: `variables.hpp` に `Rmix` セル変数を追加、`dependentVariables_d` で `R_mix(Y)` を毎ステップ計算し、`SLAU_d` 面エンタルピーが毎面 `thermo_R_mix` の種ループを回す代わりに `Rmix_cell[ic]` を読む (正規化済 Y なので ρ 非依存で一致)。CPG 分岐は $R=(\gamma-1)c_p/\gamma$ を埋めるのみ (単成分 SLAU 経路は未使用)。

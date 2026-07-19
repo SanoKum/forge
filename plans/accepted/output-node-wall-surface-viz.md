@@ -5,7 +5,7 @@
 - **area**: `architecture` (出力 / 壁診断)
 - **status**: `done`
 - **related_docs**:
-  - `methods/diffusion/implementation.md` 「node-centered の壁摩擦応力 twall」節
+  - `methods/diffusion.md` 「node-centered の壁摩擦応力 twall」節
 - **related_plans**:
   - `plans/accepted/diffusion-node-wall-viscous-distance.md` (node 壁 twall 集約)
   - `plans/accepted/architecture-node-centroid-value-position.md` (node viz は primal セル + Center='Node')
@@ -61,7 +61,7 @@ Triangle(4)/Quad(5) は `[type, node...]` とする。
 3. `mesh/mesh.cpp`: `readMesh` で復元。
 4. `output/output.cpp`: 壁 CONNE/値/xmf を node 面・Center='Node' 対応、XDMF エンコーダ修正。
 5. `cuda_forge/viscousFlux_d.cu`: カーネル改名 + `Tau_Wall` 引数 + 再スケール (ガードは AddTauWall と同形)。
-6. `methods/diffusion/implementation.md` 同節を更新。
+6. `methods/diffusion.md` 同節を更新。
 
 ## 6. 検証
 
@@ -73,7 +73,7 @@ Triangle(4)/Quad(5) は `[type, node...]` とする。
 
 - h5 スキーマ追加 (`/BCONDS/<id>/vizBface*`) → **既存 node メッシュ h5 は `convertGmshToForge` 再変換が必要**
   (無くても cell は不変、node 壁は旧挙動)。cell モード・cell の res_wall は挙動不変 (XDMF は spec 準拠化)。
-- `methods/diffusion/implementation.md` 更新。
+- `methods/diffusion.md` 更新。
 
 ## 8. 完了条件
 

@@ -5,8 +5,8 @@
 - **area**: `time_integration` / `thermophysics`
 - **status**: `done` (案B 実装・検証完了。**結論=案B は要因2 の打ち手として無効**。詳細 §9)
 - **related_docs**:
-  - `methods/thermophysics/theory.md` (§3.1 陰解法での緩和整合)
-  - `methods/thermophysics/implementation.md` (§4b matched-relaxation scalar-DPLUR)
+  - `methods/thermophysics.md` (§3.1 陰解法での緩和整合)
+  - `methods/thermophysics.md` (§4b matched-relaxation scalar-DPLUR)
   - `methods/time_integration/`
 - **related_plans**:
   - `thermophysics-multicomponent-tpgas.md` (§10 残課題「多成分 implicit 結合の恒久修正 (要因2)」の具体化)
@@ -41,7 +41,7 @@
 
 ## 4. 設計方針
 
-詳細は [implementation.md §4b](../../methods/thermophysics/implementation.md)。要点:
+詳細は [implementation.md §4b](../../methods/thermophysics.md#実装)。要点:
 
 - **緩和整合**: `ρY_s` は受動移流 (接触波速のみ)。流れ 5×5 block に同梱せず、スカラ DPLUR で同一緩和に
   そろえる。凍結 Jacobian の対角 `D=V/Δτ + transport_diag_Y{s}`、非対角 = 流入 `max(∓ṁ,0)/ρ_nbr`。
@@ -82,8 +82,8 @@
 
 ## 8. 完了条件
 
-- [x] `methods/thermophysics/theory.md` §3.1 更新
-- [x] `methods/thermophysics/implementation.md` §4b 更新
+- [x] `methods/thermophysics.md` §3.1 更新
+- [x] `methods/thermophysics.md` §4b 更新
 - [x] 実装・検証完了 (§6) — **案B は無効と判明 (§9)**
 - [x] `.github/plans/README.md` の状態を同期
 - [x] 本 plan の `status` を更新し §9 に変更ログ

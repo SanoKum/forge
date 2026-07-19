@@ -7,7 +7,7 @@
 - **related_docs**:
   - `methods/time_integration/theory.md` (block-DPLUR A± 分割の一般EOS化)
   - `methods/time_integration/implementation.md`
-  - `methods/thermophysics/theory.md` (EOS 微分 κ, χ)
+  - `methods/thermophysics.md` (EOS 微分 κ, χ)
 - **related_plans**:
   - `thermophysics-multicomponent-tpgas.md` (§10 / γ[ic] 化の上位修正)
   - `thermophysics-species-implicit-coupling.md` (要因2。本件はその上位律速)

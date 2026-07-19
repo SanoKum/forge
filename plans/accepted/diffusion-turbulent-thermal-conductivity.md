@@ -5,8 +5,8 @@
 - **area**: `diffusion`
 - **status**: `done`
 - **related_docs**:
-  - `methods/diffusion/theory.md`
-  - `methods/diffusion/implementation.md`
+  - `methods/diffusion.md`
+  - `methods/diffusion.md`
 - **created**: `2026-06-14`
 - **owner**: `CFD Dev`
 

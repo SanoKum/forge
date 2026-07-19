@@ -5,9 +5,9 @@
 - **area**: `diffusion`
 - **status**: `done` (§11 node 壁摩擦応力 twall=内部双対面集約; §1-10 の mirror-ghost 法線距離は別軸で保留)
 - **related_docs**:
-  - `methods/diffusion/theory.md`
-  - `methods/diffusion/implementation.md`
-  - `methods/discretization/implementation.md`
+  - `methods/diffusion.md`
+  - `methods/diffusion.md`
+  - `methods/discretization.md`
 - **created**: `2026-06-20`
 - **owner**: `未定`
 
@@ -577,7 +577,7 @@ node ではそうならない** ([`gmshReader.hpp:1685-1687`](../../solver_densi
 ### 11.5 実装・検証結果 (2026-06-24, 隔離 worktree)
 
 `solverConfig.{hpp,cpp}` (フラグ `nodeWallStressEdgeKernel` 既定1)、`cuda_forge/viscousFlux_d.cu`
-(カーネル `viscousFlux_wall_node_d` + wrapper 配線)、`methods/diffusion/implementation.md` を実装。native build
+(カーネル `viscousFlux_wall_node_d` + wrapper 配線)、`methods/diffusion.md` を実装。native build
 (RelWithDebInfo→Release, arch86) **クリーン (exit0)**。検証 run (main tree, worktree binary):
 `case/36.passive_pseudoshock_control/run_node_wallstress_{off,on,off2}/` (node SST, wallTreatmentSST=1,
 nodeWallDirichlet=1, 既存発達場から 30 step)。

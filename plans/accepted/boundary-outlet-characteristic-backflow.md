@@ -5,8 +5,8 @@
 - **area**: `boundary`
 - **status**: `done`
 - **related_docs**:
-  - `methods/boundary/theory.md`
-  - `methods/boundary/implementation.md`
+  - `methods/boundary.md`
+  - `methods/boundary.md`
 - **related_plans**:
   - `.github/plans/discretization-node-boundary-ghostless.md` (node 境界の弱形式化、壁∩出口コーナー退化幾何)
   - `.github/plans/diffusion-node-wall-viscous-distance.md` (AddTauWall, node 壁関数)
@@ -32,7 +32,7 @@
 
 ## 3. 関連 docs と前提
 
-- `methods/boundary/theory.md` / `implementation.md` の `outlet_statPress` 節。
+- `methods/boundary.md` / `implementation.md` の `outlet_statPress` 節。
 - SU2 クロスチェック: `CEulerSolver::BC_Outlet` は常に静圧 `P_Exit` をアンカーし、方向分岐せず、
   $V_n$ のクランプもしない (全圧 stagnation 構成は `BC_Inlet` TOTAL_CONDITIONS 専用)。
 

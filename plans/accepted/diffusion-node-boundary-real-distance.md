@@ -5,8 +5,8 @@
 - **area**: `diffusion`
 - **status**: `done`
 - **related_docs**:
-  - `methods/diffusion/theory.md`
-  - `methods/diffusion/implementation.md`
+  - `methods/diffusion.md`
+  - `methods/diffusion.md`
 - **related_plans**:
   - `.github/plans/discretization-node-boundary-ghostless.md` (親: node 境界 ghostless)
   - `.github/plans/architecture-node-centroid-value-position.md` (centCoords=node 統一)

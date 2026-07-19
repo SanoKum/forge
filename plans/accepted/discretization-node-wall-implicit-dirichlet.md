@@ -5,8 +5,8 @@
 - **area**: `boundary / time_integration`
 - **status**: `done`
 - **related_docs**:
-  - `methods/discretization/theory.md` (§6.3 壁 Dirichlet)
-  - `methods/discretization/implementation.md` (§ 軸 MARKER_SYM の in-Jacobian decouple 先例)
+  - `methods/discretization.md` (§6.3 壁 Dirichlet)
+  - `methods/discretization.md` (§ 軸 MARKER_SYM の in-Jacobian decouple 先例)
 - **related_plans**:
   - 親: [`discretization-node-boundary-ghostless.md`](../active/discretization-node-boundary-ghostless.md) (Phase 1 で残差射影 Dirichlet を実装。本 plan はその implicit 整合化)
   - 先例: [`architecture-axisym-axis-singularity.md`](architecture-axisym-axis-singularity.md) (軸 roUy 行の in-Jacobian decouple)
@@ -33,7 +33,7 @@ node-centered の壁 no-slip Dirichlet (`nodeWallDirichlet=1`) は現在 **残�
 ## 3. 関連 docs と前提
 
 - **理論的位置づけ**: 壁 no-slip は「壁ノードの運動量方程式を `u=0` (Dirichlet) に置換、連続・エネルギーは保存式のまま」。SU2 (vertex-centered median-dual) も同じで、implicit では `Jacobian.DeleteValsRowi(momentum rows)` により運動量行を単位行化する。forge は残差のみ 0 にして Jacobian を放置しているのが差分。
-- **先例 (重要)**: 軸対称 MARKER_SYM で「残差射影だけでは implicit/block-DPLUR に非整合 (Mach~1000 発散)、in-Jacobian で roUy 行 (index2) を decouple すれば整合」が確立済み ([methods/discretization/implementation.md](../../methods/discretization/implementation.md) の SU2 比較節)。本 plan は同じ機構を**壁の運動量3行**へ適用する。
+- **先例 (重要)**: 軸対称 MARKER_SYM で「残差射影だけでは implicit/block-DPLUR に非整合 (Mach~1000 発散)、in-Jacobian で roUy 行 (index2) を decouple すれば整合」が確立済み ([methods/discretization.md](../../methods/discretization.md#実装) の SU2 比較節)。本 plan は同じ機構を**壁の運動量3行**へ適用する。
 - **既存インフラ**: `implicit_defect_correction_block_d` は既に `axis_flag` 引数と decouple コード ([timeIntegration_d.cu:837](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu#L837)) を持ち、`wall_flag_d` も node モードで構築済み ([mesh.cpp:803](../../solver_density_cuda/mesh/mesh.cpp#L803))。新規データ構造は不要。
 - 理論変更は軽微 (既存 SU2 比較節に壁を追記) のため、実装前に methods/discretization/{theory,implementation}.md に壁 in-Jacobian decouple の小節を追記する。
 
@@ -82,12 +82,12 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 
 - 触るファイル: `cuda_forge/timeIntegration_d.cu` (カーネル引数 + decouple 数行 + 起動配線)。`mesh`/`solverConfig` は不変 (`wall_flag_d` 既存)。
 - 既存ケース: cell・`nodeWallDirichlet=0`・explicit は無影響 (`wall_flag=nullptr` か非 block 経路)。
-- ドキュメント: `methods/discretization/theory.md` §6.3 (壁 Dirichlet の implicit 整合)、`methods/discretization/implementation.md` (SU2 比較節に壁 in-Jacobian decouple を追記)、`methods/index.md` の整合確認。
+- ドキュメント: `methods/discretization.md` §6.3 (壁 Dirichlet の implicit 整合)、`methods/discretization.md` (SU2 比較節に壁 in-Jacobian decouple を追記)、`methods/index.md` の整合確認。
 
 ## 8. 完了条件
 
-- [ ] `methods/discretization/theory.md` に壁 in-Jacobian Dirichlet を追記
-- [ ] `methods/discretization/implementation.md` の SU2 比較節に壁を追記
+- [ ] `methods/discretization.md` に壁 in-Jacobian Dirichlet を追記
+- [ ] `methods/discretization.md` の SU2 比較節に壁を追記
 - [ ] 実装・検証完了 (§6 の判定基準を満たす)
 - [ ] [`plans/README.md`](../README.md) の状態を `done` に更新
 - [ ] 本 plan の `status` を `done` に変更し、§9 に変更ログ (壁 drift・KE シンク・近壁 dP/dy の before/after を数値で) を記載
