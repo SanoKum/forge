@@ -14,6 +14,8 @@ ap.add_argument("runs", nargs="+")
 ap.add_argument("--dt", type=float, default=0.007)
 ap.add_argument("--v0", type=float, default=0.4)
 ap.add_argument("--out", default="dissipation_rate_L3.png")
+ap.add_argument("--dns", default=None,
+                help="DNS 参照 (ref_dns/TGV_Re1600.dat)。K/K0=Ek/0.125, ε*=ε_t/0.125 で重ね描き")
 a = ap.parse_args()
 
 import matplotlib
@@ -43,7 +45,15 @@ for run in a.runs:
     ipk = int(np.argmax(eps))
     print(f"{lab}: K/K0(end)={Kn[-1]:.4f}  ε*ピーク={eps[ipk]:.4f} @ t*={tstar[ipk]:.2f}")
 
-ax2.axvline(9.0, color="gray", ls=":", lw=1, label="DNS peak t*≈9")
+if a.dns:
+    d = np.loadtxt(a.dns)
+    Ek0 = d[0, 1]  # = 0.125
+    ax1.plot(d[:, 0], d[:, 1]/Ek0, "k-", lw=1.2, label="DNS 512^3 (Dairay+2017)")
+    ax2.plot(d[:, 0], d[:, 2]/Ek0, "k-", lw=1.2, label="DNS 512^3 (Dairay+2017)")
+    i10 = int(np.argmin(np.abs(d[:, 0]-10.0))); ipk = int(np.argmax(d[:, 2]))
+    print(f"DNS: K/K0(10)={d[i10,1]/Ek0:.4f}  ε*ピーク={d[ipk,2]/Ek0:.4f} @ t*={d[ipk,0]:.2f}")
+else:
+    ax2.axvline(9.0, color="gray", ls=":", lw=1, label="DNS peak t*≈9")
 ax1.set_xlabel(r"$t^*$"); ax1.set_ylabel(r"$K/K_0$"); ax1.grid(alpha=0.3); ax1.legend(fontsize=7)
 ax2.set_xlabel(r"$t^*$"); ax2.set_ylabel(r"$\varepsilon^*=-d(K/K_0)/dt^*$")
 ax2.grid(alpha=0.3); ax2.legend(fontsize=7)

@@ -8,7 +8,7 @@
 1. **KEEP 用 entropy-stable 散逸レイヤ — 完成・accepted 済**
    [`plans/accepted/convection-keep-es-dissipation.md`](../../plans/accepted/convection-keep-es-dissipation.md) が正本 (経緯・全検証 run・教訓)。
    - config: `keepDissType` (0=off/1=scalar/2=**matrix 推奨**)・`keepDissCoeff` (σ)・`keepDissCprime` (既定1, lowMachPrecond から独立)
-   - **σ の使い分け (較正済)**: 低マッハ市松対策=0.05 (既定) / **WALE 併用の解像 LES=0.02-0.03**
+   - **σ の使い分け (較正済)**: 低マッハ市松対策=0.05 (既定) / **WALE 併用の解像 LES=0.02 (64³+実DNS で確定, 候補3参照)**
    - CPG/TP 単成分/多成分すべて検証済。多成分 matrix のプラトーバグは根治済 (真因: ΣρY≠ρ 共通モードノイズ → カーネル内 Y 正規化で除去)
    - 市松 null-mode の実証・診断ケースは `case/35.uniform_periodic_box` README の run 表 (L1)、TGV は `case/09.Taylor-Green` (L2/L3)
 2. **pRef free-stream 修復の KEEP 展開 — 済**
@@ -27,7 +27,10 @@
    非直交メッシュ LES では pRef に加え roRef/uRef=平均流を設定すること。
 2. **IDDES Phase 1.5 統合**: [`plans/active/turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) §4.8。
    f_d ブレンドの LES 枝の基盤散逸として keepDissType=2 (σ~0.02) を使う設計に更新して実装。
-3. **64³ TGV + digitize した DNS 参照で L3 定量化** (σ 最適の確定。32³ では層流期と終値を同時に満たせない=解像度律速と判明済)
+3. ~~**64³ TGV + digitize した DNS 参照で L3 定量化**~~ **済 (2026-07-19)**: 実 DNS
+   (Dairay+2017 512³, `case/09/ref_dns/`) との 64³ 比較で **σ=0.02 を解像 LES 推奨として確定**
+   (K/K0 誤差 ≤1.6%、σ=0 と DNS を対称に挟む)。σ=0.03 は撤回 (旧 DNS 近似帯が誤りだった)。
+   σ は「L1 を満たす最小値」で選ぶ (最適は解像度と共に低下)。case/09 README 64³ 節参照。
 4. **メトリック FP64 化 (Karp 2506.05150)**: pRef+移流対策で足りない場合の本丸。RTX は FP64 1/32 なので
    「セットアップだけ double・格納 float」等の設計検討から ([memory: fp32-metric-freestream-fix])
 5. 小粒: ROE/AUSM への pRef 展開 / node periodic の dt 半減の解消 (setDT が合併前 half-CV 体積を使う、効率のみ) /
