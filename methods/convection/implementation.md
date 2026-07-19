@@ -268,9 +268,12 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
   - **`keepDissJump` (matrix CPG 枝, 既定 0=生ジャンプ・ビット不変)**: `1` で Δw を**再構成後
     ジャンプ** ($\Delta_{rec}=\Delta_{raw}-\tfrac12(g_i+g_j)\cdot d_{ij}$, κ=0 線形・リミタ無し) から
     組む。純 2Δ モード (市松) は中心勾配が厳密ゼロで再構成が効かずフル減衰のまま、滑らかな場の
-    ドレインは桁減 (実測: 市松 1.00 / TGV 層流期 0.006 / 遷移期 0.16 / ピーク 0.45)。ghost 面・
-    node 周期合併 CV 接続面は $d_{ij}$ が壊れるため生ジャンプへフォールバック (per-plane マスク)。
-    設計判断と検証: [convection-keep-diss-recon-jump](../../plans/active/convection-keep-diss-recon-jump.md)。
+    ドレインは桁減 (実測: 市松 1.00 / TGV 層流期 0.006 / 遷移期 0.16 / ピーク 0.45)。
+    `2` (**推奨**) はさらに再構成/生の両ジャンプを特性空間へ射影し成分ごと minmod
+    (**sign-property クリップ, TeCNO 型**): 各波で $rd_{used}\cdot rd_{raw}\ge0$ が構造保証され
+    **エントロピー散逸性が証明付きで成立**。KE コストは jump=1 と生の中間 (64³ TGV 終値 −1.4%)。
+    ghost 面 (`ip>=nNormalPlanes`) と再構成正値性 NG の面は生ジャンプへフォールバック。
+    設計判断と検証: [convection-keep-diss-recon-jump](../../plans/accepted/convection-keep-diss-recon-jump.md)。
 - **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む
   (SLAU と同処方)。非直交メッシュの float32 桁落ちによる偽運動量源を除去し、
   `case/33` 歪み hex で機械精度 (4e-12) の一様場保存。**非直交メッシュで KEEP を使うときは

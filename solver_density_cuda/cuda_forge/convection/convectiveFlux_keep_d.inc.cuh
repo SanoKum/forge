@@ -197,11 +197,17 @@ __global__ void KEEP_d
             //   フォールバック。node の主ループは内部双対面のみで勾配 gather 済 → 常に再構成可。
             //   再構成で ρ/p が非正になる面も生ジャンプへ (リミタ無しの正値性ガード)。
             //   面平均量 (roF, c, Ht 等) は従来どおりセル生値 (ビット不変性は keepDissJump=0 で担保)。
+            //   keepDissJump==2 (sign-property, TeCNO 型): 再構成ジャンプの特性射影 rd_k を
+            //   生ジャンプ射影と minmod し、各波で rd_used·rd_raw >= 0 を構造的に保証
+            //   → エントロピー散逸性 Σ S_k λ_k rd_used_k rd_raw_k >= 0 が証明付きで復活
+            //   (Fjordholm-Mishra-Tadmor の sign property の射影クリップ版)。
+            //   事前測定: 符号反転は (面,波) の 27-37% だが負寄与は総散逸の 1-2% で、
+            //   minmod 後の散逸総量は jump=1 とほぼ同一 (市松 0.996 / 遷移期 0.32)。
             flow_float ro0j = ro[ic0], ro1j = ro[ic1];
             flow_float ux0j = Ux[ic0], uy0j = Uy[ic0], uz0j = Uz[ic0];
             flow_float ux1j = Ux[ic1], uy1j = Uy[ic1], uz1j = Uz[ic1];
             flow_float p0j  = Ps[ic0], p1j  = Ps[ic1];
-            if (keepDissJump == 1 && ip < geom.nNormalPlanes) {
+            if (keepDissJump >= 1 && ip < geom.nNormalPlanes) {
                 const geom_float d0x = geom.pcx[ip]-geom.ccx[ic0], d0y = geom.pcy[ip]-geom.ccy[ic0], d0z = geom.pcz[ip]-geom.ccz[ic0];
                 const geom_float d1x = geom.pcx[ip]-geom.ccx[ic1], d1y = geom.pcy[ip]-geom.ccy[ic1], d1z = geom.pcz[ip]-geom.ccz[ic1];
                 const flow_float roL = ro[ic0] + grd.drodx[ic0]*d0x + grd.drody[ic0]*d0y + grd.drodz[ic0]*d0z;
@@ -264,11 +270,36 @@ __global__ void KEEP_d
             // z_k = S_k |λ_k| (r_k · Δw)
             const flow_float ut1 = uxF*t1x + uyF*t1y + uzF*t1z;
             const flow_float ut2 = uxF*t2x + uyF*t2y + uzF*t2z;
-            const flow_float rd1 = dw0 + (uxF-c*nx)*dw1 + (uyF-c*ny)*dw2 + (uzF-c*nz)*dw3 + (Ht-c*Un)*dw4; // r(un-c)·Δw
-            const flow_float rd2 = dw0 + uxF*dw1 + uyF*dw2 + uzF*dw3 + 0.5*qF*dw4;                          // r(entropy)·Δw
-            const flow_float rd3 = t1x*dw1 + t1y*dw2 + t1z*dw3 + ut1*dw4;                                   // r(shear1)·Δw
-            const flow_float rd4 = t2x*dw1 + t2y*dw2 + t2z*dw3 + ut2*dw4;                                   // r(shear2)·Δw
-            const flow_float rd5 = dw0 + (uxF+c*nx)*dw1 + (uyF+c*ny)*dw2 + (uzF+c*nz)*dw3 + (Ht+c*Un)*dw4; // r(un+c)·Δw
+            flow_float rd1 = dw0 + (uxF-c*nx)*dw1 + (uyF-c*ny)*dw2 + (uzF-c*nz)*dw3 + (Ht-c*Un)*dw4; // r(un-c)·Δw
+            flow_float rd2 = dw0 + uxF*dw1 + uyF*dw2 + uzF*dw3 + 0.5*qF*dw4;                          // r(entropy)·Δw
+            flow_float rd3 = t1x*dw1 + t1y*dw2 + t1z*dw3 + ut1*dw4;                                   // r(shear1)·Δw
+            flow_float rd4 = t2x*dw1 + t2y*dw2 + t2z*dw3 + ut2*dw4;                                   // r(shear2)·Δw
+            flow_float rd5 = dw0 + (uxF+c*nx)*dw1 + (uyF+c*ny)*dw2 + (uzF+c*nz)*dw3 + (Ht+c*Un)*dw4; // r(un+c)·Δw
+            if (keepDissJump == 2) {
+                // sign-property クリップ: 生ジャンプ Δw_raw の特性射影と成分ごと minmod。
+                // 符号一致なら小さい方 (通常は再構成側=高次の利得維持)、反転なら 0 (ES 保証)。
+                // 再構成が発動しなかった面 (ghost/正値性 fallback) は dw==dw_raw で恒等。
+                const flow_float br0 = ro[ic0]/(2.0*Ps[ic0]);
+                const flow_float br1 = ro[ic1]/(2.0*Ps[ic1]);
+                const flow_float qr0 = Ux[ic0]*Ux[ic0]+Uy[ic0]*Uy[ic0]+Uz[ic0]*Uz[ic0];
+                const flow_float qr1 = Ux[ic1]*Ux[ic1]+Uy[ic1]*Uy[ic1]+Uz[ic1]*Uz[ic1];
+                const flow_float dsr = log(Ps[ic1]/Ps[ic0]) - ga*log(ro[ic1]/ro[ic0]);
+                const flow_float dwr0 = -dsr/(ga-1.0) - (br1*qr1 - br0*qr0);
+                const flow_float dwr1 = 2.0*(br1*Ux[ic1] - br0*Ux[ic0]);
+                const flow_float dwr2 = 2.0*(br1*Uy[ic1] - br0*Uy[ic0]);
+                const flow_float dwr3 = 2.0*(br1*Uz[ic1] - br0*Uz[ic0]);
+                const flow_float dwr4 = -2.0*(br1 - br0);
+                const flow_float rr1 = dwr0 + (uxF-c*nx)*dwr1 + (uyF-c*ny)*dwr2 + (uzF-c*nz)*dwr3 + (Ht-c*Un)*dwr4;
+                const flow_float rr2 = dwr0 + uxF*dwr1 + uyF*dwr2 + uzF*dwr3 + 0.5*qF*dwr4;
+                const flow_float rr3 = t1x*dwr1 + t1y*dwr2 + t1z*dwr3 + ut1*dwr4;
+                const flow_float rr4 = t2x*dwr1 + t2y*dwr2 + t2z*dwr3 + ut2*dwr4;
+                const flow_float rr5 = dwr0 + (uxF+c*nx)*dwr1 + (uyF+c*ny)*dwr2 + (uzF+c*nz)*dwr3 + (Ht+c*Un)*dwr4;
+                rd1 = (rd1*rr1 <= 0.0) ? 0.0 : (fabs(rd1) < fabs(rr1) ? rd1 : rr1);
+                rd2 = (rd2*rr2 <= 0.0) ? 0.0 : (fabs(rd2) < fabs(rr2) ? rd2 : rr2);
+                rd3 = (rd3*rr3 <= 0.0) ? 0.0 : (fabs(rd3) < fabs(rr3) ? rd3 : rr3);
+                rd4 = (rd4*rr4 <= 0.0) ? 0.0 : (fabs(rd4) < fabs(rr4) ? rd4 : rr4);
+                rd5 = (rd5*rr5 <= 0.0) ? 0.0 : (fabs(rd5) < fabs(rr5) ? rd5 : rr5);
+            }
             const flow_float z1 = sA*lamA*rd1;
             const flow_float z2 = sE*lamU*rd2;
             const flow_float z3 = sS*lamU*rd3;

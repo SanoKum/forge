@@ -216,8 +216,9 @@ void solverConfig::read(std::string fname)
         this->keepDissCoeff = getOptionalValidatedValue<double>(config, "keepDissCoeff", 0.05, "");
         this->keepDissCprime = getOptionalValidatedValue<int>(config, "keepDissCprime", 1, "");
         this->keepDissJump = getOptionalValidatedValue<int>(config, "keepDissJump", 0, "");
-        if (this->keepDissJump < 0 || this->keepDissJump > 1) {
-            throw std::runtime_error("Key 'keepDissJump' must be 0 (raw jump) or 1 (reconstructed jump).");
+        if (this->keepDissJump < 0 || this->keepDissJump > 2) {
+            throw std::runtime_error("Key 'keepDissJump' must be 0 (raw jump), 1 (reconstructed jump), "
+                                     "or 2 (reconstructed + sign-property clip, provably entropy-stable).");
         }
         if (this->keepDissType < 0 || this->keepDissType > 2) {
             std::cerr << "Error: keepDissType must be 0 (off), 1 (scalar ES) or 2 (matrix ES), got "
