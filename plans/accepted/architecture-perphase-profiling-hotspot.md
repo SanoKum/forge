@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - `methods/architecture/overview.md`
 - **related_plans**:
@@ -217,3 +217,9 @@
     ノイズ内 → occupancy 律速でない再確認。
   - **性能フェーズ総括**: 13.38s → **~5.9s (−56%)**。残るレバー (DPLUR 帯域/SLAU 演算/CUDA Graph) は algorithmic で
     コスパ低 → 性能はここで一区切り推奨。
+- 2026-07-19: **クローズ (status=done, accepted へ移動)**。目的 (計測駆動の局在化と個別最適化) は達成:
+  累計 13.38→5.9s/2000step (−56%)、host overhead 42%→15%、律速は GPU compute へ移行済み。
+  **残レバーは意図的に不採用**とする — CUDA Graph (伸びしろ ~0.55ms/step だが高リスク)、メッシュ
+  renumbering (structured メッシュでは効果なしと実証・raw tet 向け将来レバー)、DPLUR/SLAU カーネル
+  最適化 (algorithmic でコスパ低)。再開する場合は本 plan の計測手順 (FORGE_PROFILE + ncu 突合) を
+  そのまま再利用すること。

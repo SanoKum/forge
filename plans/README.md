@@ -24,7 +24,6 @@
 | Plan | area | 概要 |
 | --- | --- | --- |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
-| [architecture-perphase-profiling-hotspot.md](active/architecture-perphase-profiling-hotspot.md) | `architecture` | per-phase 詳細プロファイリングに基づく host 律速の局所最適化 |
 | [condensation-nonequilibrium.md](active/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
 | [convection-multispecies-contact-pressure.md](active/convection-multispecies-contact-pressure.md) | `convection` | 多成分 TP 接触面の圧力振動 (face-state 整合化 → PEP 切り分け) |
@@ -53,6 +52,7 @@
 | [architecture-detect-nan.md](accepted/architecture-detect-nan.md) | `architecture` | detectNaN — NaN/Inf 検知・自動ダンプ診断オプション |
 | [architecture-rans-sst.md](accepted/architecture-rans-sst.md) | `architecture` | architecture-rans-sst — RANS SST 親計画 |
 | [architecture-residual-monitor-async.md](accepted/architecture-residual-monitor-async.md) | `architecture` | 残差モニタの device 常駐化 (per-step host 同期の除去) |
+| [architecture-perphase-profiling-hotspot.md](accepted/architecture-perphase-profiling-hotspot.md) | `architecture` | per-phase 計測駆動の host 律速最適化 (13.4→5.9s/2000step, −56%)。残レバー (CUDA Graph/renumbering) は不採用理由ごと記録 |
 | [boundary-outlet-characteristic-backflow.md](accepted/boundary-outlet-characteristic-backflow.md) | `boundary` | 静圧固定流出 BC の特性ベース化と逆流統一 |
 | [convection-keep-es-dissipation.md](accepted/convection-keep-es-dissipation.md) | `convection` | KEEP 用 entropy-stable 散逸レイヤ (scalar/matrix, CPG/TP/多成分, σ較正済) |
 | [convection-keep-diss-recon-jump.md](accepted/convection-keep-diss-recon-jump.md) | `convection` | KEEP ES 散逸の再構成ジャンプ化 (keepDissJump: 市松無傷で解像スケール保護, node LES 推奨構成) |
