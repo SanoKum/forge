@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `time_integration`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - [`methods/time_integration/theory.md`](../../methods/time_integration/theory.md)
   - [`methods/time_integration/implementation.md`](../../methods/time_integration/implementation.md)
@@ -319,3 +319,12 @@ SST (k/ω) を **segregated point-implicit** で実装済み（7×7 連成では
 - 2026-06: **非定常 dual-time 陰解法を実装**。`advanceImplicitDualTime` が 1 物理ステップ = 時間レベルシフト (`shiftDualTimeLevels_d`) → 擬似時間サブ反復 `nSubIterDualTime` 回（各回: `assembleResidual` + BDF 物理時間項 `addUnsteadyTimeTerm_d` (`res*=res-(V/Δt)(aQ-bQ^n+cQ^{n-1})`) + block DPLUR (対角に `aV/Δt` を `cfg.unsteadyDiagCoef` 経由で加算) + in-place commit `applyBlockImplicitCorrectionInPlace_d`) → 物理時間前進。BDF1(初回)/BDF2(以降)、SST k/ω も BDF＋point-implicit 対応。config: `nSubIterDualTime`(既定20), `bdfOrder`(既定2)。使用条件 `unsteady=1,dualTime=1,blockDPLUR=1,control=0`。検証 (`case/20.naca_ml`): 各物理ステップで擬似サブ反復が R* を ~4 桁低減（rms_roe 22.9→0.0035, ~10 反復で収束）、陽解法 CFL 上限超の Δt でも安定（Δt=2e-6 vs 陽解法限界 ~9e-7）、同一 Δt=5e-7 で陽解法時間精度解と壁面静圧一致（平均 0.006%, 最大 0.2%=RK3/BDF2 の O(Δt²) スキーム差）。
 
 - 残: dual-time の scalar 対角版 (`blockDPLUR==0`) 対応、より厳密な非定常検証ケース（渦放出等）は後続。
+
+- 2026-07-19: **クローズ (status=done, accepted へ移動)**。目的の陰解法基盤は完成・検証済み:
+  block-DPLUR (Phase 7 合格: 壁面静圧 0.055% 一致)、軸対称ソース Jacobian、SST segregated
+  point-implicit (0.003% 一致)、scalar 対角版フォールバック、非定常 dual-time (BDF2, 壁面静圧
+  0.006% 一致)。運用ノウハウは memory ([[implicit-blockdplur-config]], [[forge-implicit-inner-cfl-tuning]])
+  と `procedures/solver-settings.md` 側に集約済み。**残 2 件 (dual-time の scalar 対角版、渦放出系の
+  厳密な非定常検証) は必要が生じた時点で別 plan として起票する** (現状の利用実績では不要のため
+  意図的に見送り)。後続の陰解法拡張 (KEEP の LHS 方針は `convection-keep-revive-node` §7、node
+  periodic の行 fold は `discretization-median-dual-3d` §4.5.7) は各 plan 側で管理する。

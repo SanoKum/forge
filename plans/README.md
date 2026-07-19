@@ -32,7 +32,6 @@
 | [discretization-median-dual.md](active/discretization-median-dual.md) | `architecture` | cell-centered / node-centered (median-dual) 両対応化 |
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
-| [gpu-implicit-plan.md](active/gpu-implicit-plan.md) | `time_integration` | GPU 陰解法化計画 |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sigma-model.md](active/turbulence-sigma-model.md) | `turbulence` | σ-model SGS (Nicoud 2011) を `LESmodel: 2` として追加 (WALE の遷移前倒し対策) |
 | [verification-passive-pseudoshock-control.md](active/verification-passive-pseudoshock-control.md) | `verification` | 多孔壁パッシブコントロールによる擬似衝撃波抑制の逆解析 (case/36) |
@@ -70,6 +69,7 @@
 | [thermophysics-species-implicit-coupling.md](accepted/thermophysics-species-implicit-coupling.md) | `time_integration` | 化学種の陰解法緩和整合 (matched-relaxation scalar-DPLUR) |
 | [time_integration-explicit-pointimplicit-sst.md](accepted/time_integration-explicit-pointimplicit-sst.md) | `time_integration` | 陽解法 RK のスカラー (k/ω) 源項 point-implicit 化 |
 | [time_integration-general-eos-jacobian.md](accepted/time_integration-general-eos-jacobian.md) | `time_integration` | block-DPLUR の一般EOSヤコビアン化 (TP gas の陰解法律速の根治) |
+| [gpu-implicit-plan.md](accepted/gpu-implicit-plan.md) | `time_integration` | GPU 陰解法基盤 (block-DPLUR / 軸対称 / SST point-implicit / scalar 版 / dual-time BDF2)。親計画 |
 | [time_integration-implicit-stable-cfl.md](accepted/time_integration-implicit-stable-cfl.md) | `time_integration` | 陰解法 (block DPLUR) の安定 cfl_pseudo 引き上げ |
 | [time_integration-lowmach-preconditioning.md](accepted/time_integration-lowmach-preconditioning.md) | `time_integration` | 低マッハ前処理 (Weiss–Smith) — 密度ベース経路の散逸スケール是正と陰解法固有値前処理 |
 | [time_integration-scalar-dplur-axisym-source.md](accepted/time_integration-scalar-dplur-axisym-source.md) | `time_integration` | scalar DPLUR の軸対称ソース Jacobian 整合 (TP 対応) |
