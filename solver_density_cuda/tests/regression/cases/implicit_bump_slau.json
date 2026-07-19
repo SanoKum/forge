@@ -1,0 +1,13 @@
+{
+  "name": "implicit_bump_slau",
+  "description": "Bump low-Mach SLAU implicit block-DPLUR residual regression",
+  "case_dir": "case/08.bump",
+  "template_run": "run_0006_slau_loM_imp_cfl5",
+  "mesh_file": "bump.h5",
+  "nstep_regression": 300,
+  "nstep_smoke": 80,
+  "compare_columns": ["rms_ro", "rms_roUx", "rms_roUy", "rms_roUz", "rms_roe"],
+  "rtol": 0.03,
+  "atol": 1e-8,
+  "sample_steps": [50, 150, 300]
+}

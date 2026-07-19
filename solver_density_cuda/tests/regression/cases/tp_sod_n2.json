@@ -1,0 +1,13 @@
+{
+  "name": "tp_sod_n2",
+  "description": "Sod shock tube SLAU thermally-perfect N2 residual regression",
+  "case_dir": "case/05.sod_shock_tube",
+  "template_run": "run_0001_slau_tp_n2",
+  "mesh_file": "1D_shock_tube.h5",
+  "nstep_regression": 300,
+  "nstep_smoke": 80,
+  "compare_columns": ["rms_ro", "rms_roUx", "rms_roUy", "rms_roUz", "rms_roe"],
+  "rtol": 0.02,
+  "atol": 1e-8,
+  "sample_steps": [50, 150, 300]
+}

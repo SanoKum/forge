@@ -1,0 +1,13 @@
+{
+  "name": "rans_flat_plate_sst",
+  "description": "Flat-plate SST implicit block-DPLUR short residual regression",
+  "case_dir": "case/26.flat_plate_sst",
+  "template_run": "run_0003_slau_rans_m02",
+  "mesh_file": "flat_plate.h5",
+  "nstep_regression": 200,
+  "nstep_smoke": 50,
+  "compare_columns": ["rms_ro", "rms_roUx", "rms_roUy", "rms_roUz", "rms_roe", "rms_roK", "rms_roOmega"],
+  "rtol": 0.05,
+  "atol": 1e-8,
+  "sample_steps": [25, 100, 200]
+}

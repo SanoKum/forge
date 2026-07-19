@@ -36,13 +36,17 @@ cd /home/sano/work/forge/solver_density_cuda
 # 1) スモーク (短ステップ、有限性のみ。baseline 不要・高速)
 python3 tests/regression/run_regression.py --smoke
 
-# 2) 回帰比較 (baseline と比較し PASS/FAIL)
+# 2) 回帰比較 (既定ケースを baseline と比較し PASS/FAIL)
 python3 tests/regression/run_regression.py
 
-# 3) baseline 更新 (数値を変える意図的変更の後に実行)
-python3 tests/regression/run_regression.py --update-baseline
+# 3) 全ケース回帰比較
+python3 tests/regression/run_regression.py --case all
 
-# 4) 実行せず既存 CSV を比較 (GPU 不要・比較ロジック確認用)
+# 4) baseline 更新 (数値を変える意図的変更の後に実行)
+python3 tests/regression/run_regression.py --update-baseline
+python3 tests/regression/run_regression.py --case all --update-baseline
+
+# 5) 実行せず既存 CSV を比較 (GPU 不要・比較ロジック確認用)
 python3 tests/regression/run_regression.py --compare-only path/to/residual_history.csv
 ```
 
@@ -57,6 +61,18 @@ runner は既定 `auto` (native バイナリがあれば native、無ければ D
 1. `cases/<name>.json` を作る (既存の `naca_slau.json` を参照)。
 2. `python3 tests/regression/run_regression.py --case <name> --update-baseline` で
    golden を生成し、`baselines/<name>/residual_history.csv` をコミットする。
+
+## 現在の回帰対象
+
+| case | 主な経路 | 目的 |
+| --- | --- | --- |
+| `naca_slau` | explicit SLAU | 既存の軽量標準回帰 |
+| `implicit_bump_slau` | `timeIntegration:11` + `blockDPLUR:1` | block-DPLUR / 平均流 Jacobian 経路の短時間回帰 |
+| `tp_sod_n2` | `thermalMethod:2`, N2 | thermally-perfect gas / TP 流束経路の短時間回帰 |
+| `rans_flat_plate_sst` | SST + block-DPLUR | `roK` / `roOmega` と segregated point-implicit 更新の短時間回帰 |
+
+node-centered は壁・near-axis の既知課題が残っており、失敗理由が回帰か既知問題か曖昧になるため、
+この基本回帰セットからは意図的に外している。
 
 ## 既知の制約・今後の課題
 

@@ -9,6 +9,7 @@ GPU 必須。実行は AGENTS.md の共通ルールに従い、既存 run を使
 
 モード:
   (既定)            baseline と比較して PASS/FAIL を返す
+  --case all        cases/*.json を名前順にすべて実行する
   --smoke           短ステップで実行し、残差の有限性のみ確認 (baseline 不要)
   --update-baseline 実行結果を baseline として保存し直す (意図的変更後に使用)
   --compare-only F  実行せず、既存の residual_history.csv (F) を baseline と比較
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -45,6 +47,7 @@ NATIVE_FORGE_CANDIDATES = [
 ]
 DOCKER_FORGE = "/workspace/solver_density_cuda/build/forge"
 DOCKER_IMAGE_DEFAULT = "forge-solver:cuda-dev"
+WSL_CUDA_LIB_DIR = "/usr/lib/wsl/lib"
 
 
 # --------------------------------------------------------------------------- #
@@ -58,6 +61,10 @@ def load_case(name: str) -> dict:
         cfg = json.load(f)
     cfg["_path"] = str(path)
     return cfg
+
+
+def list_case_names() -> list[str]:
+    return sorted(p.stem for p in CASES_DIR.glob("*.json"))
 
 
 # --------------------------------------------------------------------------- #
@@ -144,8 +151,26 @@ def prepare_run_dir(case_dir: Path, template_run: str, mesh_file: str,
             shutil.copy2(src, run_dir / name)
     shutil.copy2(mesh_path, run_dir / mesh_file)
 
+    # valueFileName が mesh_file と別名のケース (TP など) は元ファイルも複製する。
+    solver_config_src = template / "solverConfig.yaml"
+    if solver_config_src.exists():
+        value_file = _extract_value_file_name(solver_config_src)
+        if value_file and value_file != mesh_file:
+            value_src = template / value_file
+            if value_src.exists():
+                shutil.copy2(value_src, run_dir / value_file)
+
     prepare_solver_config(run_dir / "solverConfig.yaml", nstep)
     return run_dir
+
+
+def _extract_value_file_name(solver_config: Path) -> str | None:
+    """solverConfig.yaml から valueFileName を雑に抜き出す."""
+    text = solver_config.read_text(encoding="utf-8")
+    m = re.search(r'^\s*valueFileName\s*:\s*"?([^"\n#]+)"?\s*$', text, re.MULTILINE)
+    if not m:
+        return None
+    return m.group(1).strip()
 
 
 def prepare_solver_config(solver_config: Path, nstep: int) -> None:
@@ -181,7 +206,7 @@ def run_forge(run_dir: Path, runner: str, case_rel: str, image: str) -> None:
             die("native forge バイナリが見つからない。tools/build_native_wsl.sh でビルドすること")
         cmd = [str(binary)]
         print(f"[run] native: {binary} (cwd={run_dir})")
-        rc = subprocess.run(cmd, cwd=run_dir).returncode
+        rc = subprocess.run(cmd, cwd=run_dir, env=native_run_env()).returncode
     elif runner == "docker":
         workdir = f"/workspace/{case_rel}/{run_dir.name}"
         cmd = [
@@ -249,12 +274,24 @@ def decide_runner(requested: str) -> str:
     return "native" if resolve_native_forge() is not None else "docker"
 
 
+def native_run_env() -> dict[str, str]:
+    """WSL native 実行時の CUDA ライブラリ探索順を整える."""
+    env = os.environ.copy()
+    if os.path.exists(WSL_CUDA_LIB_DIR):
+        current = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = (
+            f"{WSL_CUDA_LIB_DIR}:{current}" if current else WSL_CUDA_LIB_DIR
+        )
+    return env
+
+
 # --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser(description="forge 回帰テストハーネス")
-    ap.add_argument("--case", default="naca_slau", help="ケース設定名 (cases/<name>.json)")
+    ap.add_argument("--case", default="naca_slau",
+                    help="ケース設定名 (cases/<name>.json)。all で全ケース")
     ap.add_argument("--runner", default="auto", choices=["auto", "native", "docker"])
     ap.add_argument("--image", default=DOCKER_IMAGE_DEFAULT, help="docker イメージ名")
     ap.add_argument("--smoke", action="store_true", help="短ステップで有限性のみ確認")
@@ -265,7 +302,30 @@ def main() -> int:
     ap.add_argument("--tag", default=None, help="一時 run ディレクトリ名のサフィックス")
     args = ap.parse_args()
 
-    cfg = load_case(args.case)
+    if args.case == "all":
+        if args.compare_only:
+            die("--compare-only は --case all と併用できない")
+        failures = []
+        for name in list_case_names():
+            print(f"\n===== case: {name} =====")
+            try:
+                rc = run_one_case(name, args)
+            except SystemExit as exc:
+                rc = int(exc.code) if isinstance(exc.code, int) else 2
+            if rc != 0:
+                failures.append(name)
+        if failures:
+            print(f"\n[FAIL] all: 失敗ケース {', '.join(failures)}")
+            return 1
+        print("\n[PASS] all: 全ケース問題なし")
+        return 0
+
+    return run_one_case(args.case, args)
+
+
+def run_one_case(case_name: str, args: argparse.Namespace) -> int:
+    """1 ケース分を実行する。--case all からも再利用する。"""
+    cfg = load_case(case_name)
     columns = cfg["compare_columns"]
     baseline_csv = BASELINES_DIR / cfg["name"] / "residual_history.csv"
 
@@ -282,7 +342,8 @@ def main() -> int:
     # --- 実行系 (GPU 必須) ---
     runner = decide_runner(args.runner)
     case_dir = REPO_ROOT / cfg["case_dir"]
-    tag = args.tag or ("smoke" if args.smoke else "regression")
+    tag_base = args.tag or ("smoke" if args.smoke else "regression")
+    tag = tag_base if case_name == args.case else f"{tag_base}_{case_name}"
     nstep = cfg["nstep_smoke"] if args.smoke else cfg["nstep_regression"]
 
     run_dir = prepare_run_dir(case_dir, cfg["template_run"], cfg["mesh_file"], tag, nstep)

@@ -171,6 +171,11 @@ def _has_correction_columns(rows: list[dict[str, str]], equations: list[str]) ->
     return any(_correction_column(rows, equation) is not None for equation in equations)
 
 
+def _equation_has_data(rows: list[dict[str, str]], equation: str) -> bool:
+    header = rows[0]
+    return f"rms_{equation}" in header or f"abs_{equation}" in header
+
+
 def _parse_equations(raw: str | None) -> list[str]:
     if not raw:
         return EQUATIONS[:]
@@ -227,6 +232,13 @@ def plot_history(
 
     rows = _sort_rows(_filter_rows(_load_rows(csv_path), phases))
     x_values = _total_step_values(rows)
+
+    missing = [eq for eq in equations if not _equation_has_data(rows, eq)]
+    if missing:
+        print(f"Skipping equations absent from CSV: {', '.join(missing)}")
+    equations = [eq for eq in equations if _equation_has_data(rows, eq)]
+    if not equations:
+        raise RuntimeError("No requested equations have residual columns in the CSV")
 
     show_corrections = _has_correction_columns(rows, equations)
     if show_corrections:
