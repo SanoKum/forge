@@ -8,6 +8,20 @@
 - **created**: `2026-06-28`
 - **owner**: `CFD Dev`
 
+## 0. 現在地 (2026-07-19 整合メモ — 着手前に必読)
+
+- KEEP 復活 (cell/node, modern API)・純化・pRef/advGauge 対応まで**完了**。陰解法化は §7 で
+  「新規実装不要 (Roe-Jacobian LHS 流用で可・TGV 検証済)」と決着済み。
+- **§1 の「散逸は WALE が担う」構成はその後の検証で更新された**: 64³ TGV では **WALE off の
+  KEEP + ES 散逸 (matrix, `keepDissJump: 2`, σ=0.02) が最良** ([`turbulence-wale-fix`](../accepted/turbulence-wale-fix.md),
+  [`convection-keep-diss-recon-jump`](../accepted/convection-keep-diss-recon-jump.md))。WALE は修正後も
+  遷移流で ν_t を早く立てすぎる。未解像高 Re 乱流向けの明示 SGS は σ-model
+  ([`turbulence-sigma-model`](turbulence-sigma-model.md)) が第一候補として検証中。
+- したがって**本 plan を根拠に「KEEP+WALE」構成を新規計算に採用しないこと**。現在の推奨 LES 構成は
+  memory [[keep-es-dissipation-status]] / [[wale-inactive-fix]] を参照。
+- 残作業は「実ケース (backstep 等) での node KEEP LES 定量検証」(§5) のみ。σ-model 検証と合流して
+  実施するのが自然で、それを別 plan で扱うなら本 plan はクローズ可。
+
 ## 1. 目的
 
 node-centered (median-dual) で **KEEP 対流スキーム + WALE SGS** による LES/ILES を回せるようにする。
@@ -48,7 +62,7 @@ KEEP は運動エネルギー・エントロピー保存の低散逸中心流束
 - **やる**: KEEP_d (cell/node, KEEP 中心流束 + Roe 散逸) の復活と dispatch、node WALE 有効化、
   backstep での node+KEEP+WALE LES 計算。
 - **やらない (おいおい対処)**: Roe 散逸の Ducros スケーリング/低マッハ補正による LES 用の散逸低減、
-  KEEP_SLAU / AUSM 系の復活、KEEP の陰解法 Jacobian (現状 explicit RK3 のみ)。
+  KEEP_SLAU / AUSM 系の復活。KEEP の陰解法化 (現状 explicit RK3 のみ) は方針を §7 に記録、実装は別タスク。
 
 ## 5. 検証
 
@@ -63,7 +77,77 @@ KEEP は運動エネルギー・エントロピー保存の低散逸中心流束
 - 変更: `convectiveFlux_d.cu` (include + dispatch + skip リスト)、`turbulent_viscosity_d.cu` (node WALE グリッド)。
 - 既存挙動: `solver != "KEEP"` かつ既存 LES/RANS は**不変** (KEEP は新規分岐、WALE は cell でも normalcell で同一網羅)。
 
-## 7. 変更ログ
+## 7. KEEP の陰解法化 (DP-LUR) — flux Jacobian の方針
+
+KEEP を block-DPLUR / dual-time で陰解法化するときの LHS flux Jacobian の設計判断。実装は別タスクだが、
+方針として確定し記録する (誤って「KEEP を線形化したヤコビアンを LHS に使う」方向へ進まないため)。
+
+### 7.1 結論
+
+**KEEP の流束をそのまま線形化したヤコビアンを LHS に使ってはいけない。LHS には既存の散逸付き
+Roe 分割ヤコビアン $A^\pm$ ([`block_dplur_jacobian_d.cuh`](../../solver_density_cuda/cuda_forge/block_dplur_jacobian_d.cuh) の
+`accumulate_split_jacobian_cf`) を Roe/SLAU と同じくそのまま流用する。** KEEP 専用の新規ヤコビアンは不要。
+
+### 7.2 理由
+
+- **KEEP 厳密ヤコビアンは DP-LUR を破綻させる**: KEEP は純中心・無散逸なので $\partial F/\partial Q$ の
+  固有値が純虚 (散逸ゼロ)。対角優位にならず、対角優位前提の DP-LUR / LU-SGS 内部 sweep が収束しない。
+  DP-LUR の対角ブロック $D_i=\tfrac{V}{\Delta\tau}I+\sum_f A^+_f S_f$ が安定するのは $|A|$ 散逸が対角を
+  支配するためで、純中心ヤコビアンにはそれが無い。厳密 Newton をやるなら DP-LUR でなく Krylov (GMRES) が要る。
+- **defect-correction 構成**: RHS = KEEP (中心), LHS = 一次近似の散逸ヤコビアン $A^\pm=R\Lambda^\pm L$ という
+  非対称構成にする。中心系/歪対称系の陰解法化の標準手法。
+  $$\Big[\tfrac{V}{\Delta\tau}I+\sum_f A^+_f S_f+\text{粘性}\Big]\Delta Q_i=-R_i^{\text{KEEP}}-\sum_f A^-_f S_f\,\Delta Q_{\text{nbr}}$$
+
+### 7.3 KEEP の保存性は壊れない (最重要)
+
+擬似時間 (定常) / dual-time 内部反復が収束すると $\Delta Q\to0$ → 方程式は $R_i^{\text{KEEP}}=0$ に帰着し、
+解は RHS の KEEP 中心流束だけで決まる。LHS の $|A|$ 散逸は $\Delta Q$ に掛かるので**収束点では寄与ゼロ**。
+→ 物理解に散逸を混入させず、KE/エントロピー保存を維持したまま陰解法の安定性だけを買える。
+
+### 7.4 LES/非定常での要件 (落とし穴)
+
+dual-time で時間精度を要する LES では:
+- 各物理ステップで内部反復を**十分収束させれば** $\Delta Q\to0$ となり LHS 散逸は漏れない。
+- 内部反復が**不十分** (nStepInner 過少 / cfl_pseudo 過大) だと $\Delta Q\neq0$ が残り、LHS の数値散逸が
+  物理場に漏れて LES のエネルギー保存を汚染する。
+- → 検証では **Taylor-Green の KE/エントロピー保存量を内部反復回数の関数として測り**、陽解法 KEEP と
+  同等の保存性が出る内部反復数を確認する。定常用途ならこの心配は不要。
+- **(2026-06-29 追記・要修正)** 実測の結果、この「内部反復不足→散逸漏れ」は副次的で、大 dt の KE 劣化は
+  **BDF2 時間離散誤差が支配**だった。詳細と訂正は §7.6 を参照。
+
+### 7.5 付随事項
+
+- **EOS 整合**: `accumulate_split_jacobian_cf` の `thermallyPerfect` 分岐をそのまま使い (CPG=閉形式 /
+  TP=$\chi_{\text{eos}}=c^2-\kappa h$ 補正)、RHS/LHS を同一セル・同一 thermo 評価で揃える。
+- **低マッハ**: KEEP は純中心ゆえ odd-even 市松が出やすい ([[backstep-lowmach-checkerboard-precond2]])。
+  `lowMachPrecond=2` ($\Gamma^{-1}A$ 前処理) は LHS 操作なので §7.3 の理由で保存性に影響せず、併用が有効。
+- **scalar 版** (`blockDPLUR=0`, スペクトル半径対角) も「散逸付き近似ヤコビアン」の一種なので KEEP の
+  LHS として原理上使える (安定 CFL は低い)。起動・フォールバック用。
+- **実装の実体**: dispatch で KEEP に対しても Roe と同じ block-DPLUR Jacobian 蓄積を呼ぶだけで、
+  新規ヤコビアンコードは不要。
+
+### 7.6 検証結果 (2026-06-29, Taylor-Green 物理CFL掃引)
+
+コードを読んだ結果、**実装は不要** (`solver=KEEP` + `dualTime=1` + `blockDPLUR=1`, `timeIntegration=11` の
+config だけで動く: block-DPLUR の Jacobian 蓄積も RHS 残差も陰解法経路も `cfg.solver` に依存しないことを確認)。
+TGV 32³ cell・非粘性で explicit(物理CFL≈0.05) vs implicit を物理CFLを上げて掃引した
+([`case/09.Taylor-Green/`](../../case/09.Taylor-Green/) の `run_0011`〜`run_0021`、解析 `analyze_implicit_sweep.py`)。
+
+- **安定性**: KEEP+block-DPLUR は **物理CFL≈16 (explicit の320倍) まで NaN なしで完走**。Roe-Jacobian LHS の
+  流用で陰解法が問題なく動く (§7.1–7.2 を実証)。
+- **§7.3 を実証**: 物理CFL を explicit と一致させた run は K/K0=1.0033 で **explicit と4桁一致**、エントロピー変化も
+  同オーダ。**LHS の Roe 散逸は収束解を汚染しない**。CFL≤2 まで explicit と KE/エントロピー保存が一致。
+- **§7.4 の機構は要修正 (重要)**: 大 dt で KE は単調減衰 (CFL16 で K/K0=0.954, エントロピー +1.8e-3) するが、
+  これは当初 §7.4 で書いた「内部反復不足による LHS 散逸漏れ」**ではなく、外側 BDF2 dual-time の時間離散誤差が支配**
+  であることが判明した。根拠: CFL2 で内部残差は 6.8e-5→3e-9 と完全収束し `nSubIterDualTime` 20→50 で結果が
+  **完全一致**、CFL16 (内部残差は ~2e-7 で頭打ち) でも 20→80 で KE が回復しない (劣化は irreducible)。サブ反復を
+  増やしても改善しない=LHS 散逸漏れではなく時間離散誤差。**したがって LHS の Jacobian 選択は解の質にほぼ無関係**で、
+  大 dt の精度限界は時間積分 (BDF2) が決める。LES では物理 dt を時間精度が許す範囲に保つことが要件 (理由は
+  「内部反復を十分回す」ことではなく「物理 dt を上げすぎない」こと)。
+- 結論: KEEP の陰解法化に新規実装は不要。Roe-Jacobian を LHS 流用する方針 (§7.1) は妥当で、収束解の保存性も
+  確認できた。残課題は LES 適用時の許容物理 dt (BDF2 時間精度) の見極めであり、Jacobian 設計の問題ではない。
+
+## 8. 変更ログ
 
 - 2026-06-28: KEEP_d 移植 + dispatch、node WALE 有効化、methods 更新。ビルド・backstep 計算で検証中。
 - 2026-06-28: **KEEP_d を純粋 KEEP に簡素化** (user 依頼)。Roe 行列散逸・MUSCL 再構成・リミタ・Ducros・
