@@ -225,11 +225,11 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
     (cell 990 に対し ~5800、局所)。場平均・x_R は cell/SU2 整合。
   - 関連 plan: [`turbulence-node-wall-function-coverage.md`](../../plans/active/turbulence-node-wall-function-coverage.md)。
 
-### 3.8 SST-DES (DDES) length scale 修正
+### 3.8 SST-DES (DDES / IDDES) length scale 修正
 
-理論は [`theory.md`](theory.md) §8、計画は
+理論は [`theory.md`](theory.md) §8 (IDDES は §8.6)、計画は
 [`turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md)。`DESmode`
-(`solverConfig` の `turbulence.DESmode`, 0:RANS[既定] / 1:DDES / 2:IDDES[Phase 2 未実装]) で
+(`solverConfig` の `turbulence.DESmode`, 0:RANS[既定] / 1:DDES / 2:IDDES) で
 opt-in する。**`DESmode==0` では DES カーネルを一切呼ばず、`ransSource` も従来 $D_k$ 分岐を
 通るため既存 SST とビット不変** (検証で確認済み)。
 
@@ -256,6 +256,17 @@ opt-in する。**`DESmode==0` では DES カーネルを一切呼ばず、`rans
 	`DESmode>0` で $D_k=\rho k^{3/2}/l_\mathrm{des}$, 陰解法対角 $\partial D_k/\partial(\rho k)=1.5\sqrt{k}/l_\mathrm{des}$
 	に分岐。`DESmode==0` は従来 $\beta^{*}\rho k\omega$ / $\beta^{*}\omega$ をそのまま (ビット不変)。
 	$\omega$ 方程式・wall-function P_k 置換・ω ピン留めは DES と独立に不変。
+
+- **IDDES (`DESmode==2`)**: 同カーネル `compute_des_length_d` 内の分岐で theory §8.6 の
+	完全関数群 ($f_B/f_{e1}/f_{e2}/f_t/f_l/f_e/f_{dt}/\tilde f_d$、
+	$\Delta_\mathrm{IDDES}=\min(C_w\max(d_w,h_\mathrm{max}),h_\mathrm{max})$) を計算し
+	$l_\mathrm{IDDES}$ を `l_des` に書く。**新規の幾何量・事前計算は不要**
+	($\Delta_\mathrm{IDDES}$ が `wall_dist` と `delta_les` だけで組める Gritskevich 簡略形のため)。
+	$r_{dt}$/$r_{dl}$ は `compute_rd_ddes` を流用 (clamp[0,10] は tanh 飽和域なので影響なし)。
+	定数 $C_t=1.87, C_l=5.0, C_{dt1}=20, C_w=0.15$ は compile-time。診断: `fd_shield`←$\tilde f_d$、
+	`rd_des`←$r_{dt}$ (モードで意味替え)、$f_e$ は専用フィールド `fe_iddes` (HDF5 出力)。
+	$f_B$/$\Delta_\mathrm{IDDES}$ は後処理で `wall_dist`/`delta_les` から厳密再計算する。
+	コード化前の関数検証は `tools/verify_iddes_functions.py` (VERDICT: PASS)。
 
 呼び出しフロー (main.cpp): `calcGradient` → `turbulent_viscosity` (vis_turb→l_des) →
 `ransTransport` → `ransSource` (l_des を読む)。

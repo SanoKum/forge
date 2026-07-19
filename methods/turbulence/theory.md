@@ -700,10 +700,56 @@ RANS が正しい極限)、$r_d$ を $[0,10]$ に clamp して $f_d$ の 0/1 張
 診断のため `r_d`・`f_d`・`l_des`・`delta_les` を HDF5 出力する (一様な $f_d$ 張り付きは NaN より
 発見しにくい DES 不全の兆候)。
 
-### 8.6 IDDES (Phase 2・未実装)
+### 8.6 IDDES (`DESmode: 2`, Shur et al. 2008 / SST 版 Gritskevich et al. 2012)
 
-$f_B$, $f_e$, $f_{dt}$ を加えた $l_\mathrm{IDDES}$ で WMLES モードへ自動切替する Shur et al. (2008) の
-拡張は Phase 2。WMLES モードの定量評価には流入乱流生成が前提のため別 plan とする。
+DDES に **WMLES 分岐** を加えた拡張。解像乱流が存在する近壁領域では、RANS 層を壁モデルとして
+薄く残し ($f_B$ で壁直近のみ RANS 強制)、log 層から LES に切り替える。解像乱流が無い場合は
+DDES 同等に縮退する。実装は Gritskevich et al. (2012) の SST-IDDES に従う
+(関数形状の数値検証: `solver_density_cuda/tools/verify_iddes_functions.py`)。
+
+**壁距離依存グリッドスケール** (Shur 原型の壁法線刻み $h_{wn}$ 項を落とした Gritskevich 簡略形。
+非構造格子で壁法線刻みの定義が不要で、$d_w$ = `wall_dist` と $h_\mathrm{max}$ = `delta_les` のみで組める):
+
+$$
+\Delta_\mathrm{IDDES} = \min\bigl(C_w \max(d_w, h_\mathrm{max}),\; h_\mathrm{max}\bigr),\qquad C_w=0.15
+$$
+
+壁で $0.15h_\mathrm{max}$ → 遠方で $h_\mathrm{max}$ ($[0.15h,h]$ に有界・単調)。近壁で $\Delta$ が
+縮むことで $l_\mathrm{LES}$ が下がり、WMLES 分岐が log 層まで LES を入れられる。
+
+**関数群** ($\alpha = 0.25 - d_w/h_\mathrm{max}$、$r_{dt}$: $\nu_t$ 版・$r_{dl}$: $\nu$ 版の $r_d$):
+
+$$
+f_B = \min(2e^{-9\alpha^2}, 1),\qquad
+f_{e1} = \begin{cases}2e^{-11.09\alpha^2} & \alpha\ge0\\ 2e^{-9\alpha^2} & \alpha<0\end{cases}
+$$
+$$
+f_t = \tanh[(C_t^2 r_{dt})^3],\quad f_l = \tanh[(C_l^2 r_{dl})^{10}],\quad
+f_{e2} = 1-\max(f_t,f_l),\quad f_e = f_{e2}\max(f_{e1}-1,0)
+$$
+$$
+f_{dt} = 1-\tanh[(C_{dt1}r_{dt})^3],\qquad \tilde f_d = \max(1-f_{dt},\,f_B)
+$$
+$$
+l_\mathrm{IDDES} = \tilde f_d(1+f_e)\,l_\mathrm{RANS} + (1-\tilde f_d)\,C_\mathrm{DES}\Delta_\mathrm{IDDES}
+$$
+
+定数 (SST 較正値): $C_t=1.87$, $C_l=5.0$, $C_{dt1}=20$, $C_w=0.15$。$f_e$ は log-layer mismatch
+(RANS→LES 遷移部の速度対数則ずれ) を $l_\mathrm{RANS}$ の増強で補正する項で、付着 log 層
+($r_{dt}\approx1$) では $f_t\to1\Rightarrow f_e=0$ と自動停止する。
+
+挙動 (verify スクリプトで数値確認済):
+
+| 状態 | $f_{dt}$ | $\tilde f_d$ | $l_\mathrm{IDDES}$ |
+|------|---------|--------------|--------------------|
+| 付着 BL (モデル乱流 $r_{dt}\approx1$) | $\to0$ | $\to1$ ($f_e=0$) | $= l_\mathrm{RANS}$ 厳密 (シールド) |
+| 解像乱流あり (瞬時 $\nu_t$ SGS 級 $r_{dt}\ll0.02$) | $\to1$ | $\to f_B$ | WMLES 分岐 ($f_B(1+f_e)l_\mathrm{RANS}+(1-f_B)l_\mathrm{LES}$) |
+| 乱流流入なし | $\to0$ 側 | DDES 同等 | DDES 縮退 |
+
+$D_k$ の切替 (§8.1)・$\omega$ 方程式不変・float32 ガード (§8.5) は DDES と共通。DDES の
+$f_d$ ($C_{d1}=8$, Spalart 2006 較正) は変更せず、IDDES の $f_{dt}$ は $C_{dt1}=20$ の別関数として持つ。
+WMLES モードの**定量**評価は解像乱流の存在が前提 (周期チャネルは体積力 config、非周期ケースは
+流入乱流生成にゲート。機能確認 = $\tilde f_d/f_e/l_\mathrm{des}$ 分布の妥当性までが現フェーズ)。
 
 ---
 

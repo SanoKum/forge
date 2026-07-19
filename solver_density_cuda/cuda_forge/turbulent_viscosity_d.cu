@@ -254,8 +254,64 @@ __device__ static flow_float compute_fd_ddes(flow_float rd)
     return static_cast<flow_float>(1.0) - tanh(arg * arg * arg);
 }
 
+// ===========================================================================
+// SST-IDDES (DESmode==2, methods/turbulence §8.6, plan §3.4/§4.6)
+// ---------------------------------------------------------------------------
+// Shur et al. (2008) の IDDES を SST 用に定数調整した Gritskevich et al. (2012)。
+// DDES に WMLES 分岐を追加: 解像乱流があれば (瞬時 νt が SGS 級 → r_dt≪1 → f_dt→1)
+// f̃_d→f_B となり壁直近のみ RANS・log 層から LES。解像乱流が無ければ DDES 同等に縮退。
+//   Δ_IDDES = min(C_w·max(d_w, h_max), h_max)   (h_wn 不要の Gritskevich 簡略形;
+//             wall_dist と delta_les だけで組める。壁で 0.15h_max → 遠方で h_max)
+//   l_IDDES = f̃_d(1+f_e)·l_RANS + (1−f̃_d)·C_DES·Δ_IDDES
+// 定数 (SST 較正): C_t=1.87, C_l=5.0, C_dt1=20 (DDES f_d の 8 と異なる), C_w=0.15。
+// 関数形状・RANS 縮退・WMLES 分岐・float32 ガードは tools/verify_iddes_functions.py で
+// 検証済 (VERDICT: PASS)。DDES (DESmode==1) 経路はビット不変で共存する。
+__device__ static flow_float compute_l_iddes(
+    flow_float l_rans, flow_float C_DES, flow_float hmax,
+    flow_float y, flow_float rdt, flow_float rdl,
+    flow_float* fdtil_out, flow_float* fe_out)
+{
+    constexpr flow_float kCt   = static_cast<flow_float>(1.87);
+    constexpr flow_float kCl   = static_cast<flow_float>(5.0);
+    constexpr flow_float kCdt1 = static_cast<flow_float>(20.0);
+    constexpr flow_float kCw   = static_cast<flow_float>(0.15);
+    constexpr flow_float one   = static_cast<flow_float>(1.0);
+
+    const flow_float h  = max(hmax, static_cast<flow_float>(1.0e-20));
+    const flow_float al = static_cast<flow_float>(0.25) - y / h;
+    const flow_float al2 = al * al;
+
+    // 近壁ブレンド f_B と log-layer mismatch 補正 f_e (付着 log 層 r_dt≈1 では f_t→1 で自動停止)
+    const flow_float fb  = min(static_cast<flow_float>(2.0)
+                               * exp(static_cast<flow_float>(-9.0) * al2), one);
+    const flow_float fe1 = (al >= static_cast<flow_float>(0.0))
+        ? static_cast<flow_float>(2.0) * exp(static_cast<flow_float>(-11.09) * al2)
+        : static_cast<flow_float>(2.0) * exp(static_cast<flow_float>(-9.0)  * al2);
+    const flow_float argt = kCt * kCt * rdt;
+    const flow_float ft   = tanh(argt * argt * argt);
+    const flow_float argl  = kCl * kCl * rdl;                 // (C_l² r_dl)^10 を乗算で構成
+    const flow_float argl2 = argl * argl;
+    const flow_float argl4 = argl2 * argl2;
+    const flow_float fl   = tanh(argl4 * argl4 * argl2);
+    const flow_float fe2  = one - max(ft, fl);
+    const flow_float fe   = fe2 * max(fe1 - one, static_cast<flow_float>(0.0));
+
+    // WMLES/DDES 自動切替 f̃_d
+    const flow_float argdt = kCdt1 * rdt;
+    const flow_float fdt   = one - tanh(argdt * argdt * argdt);
+    const flow_float fdtil = max(one - fdt, fb);
+
+    // 壁距離依存グリッドスケール Δ_IDDES と凸ブレンド
+    const flow_float delta_i = min(kCw * max(y, hmax), hmax);
+    const flow_float l_les   = C_DES * delta_i;
+    *fdtil_out = fdtil;
+    *fe_out    = fe;
+    return fdtil * (one + fe) * l_rans + (one - fdtil) * l_les;
+}
+
 __global__ void compute_des_length_d(
     geom_int nCells,
+    int DESmode,
     flow_float* ro,
     flow_float* k,
     flow_float* omega,
@@ -269,7 +325,8 @@ __global__ void compute_des_length_d(
     flow_float C_DES,
     flow_float* l_des,
     flow_float* fd_shield,
-    flow_float* rd_des)
+    flow_float* rd_des,
+    flow_float* fe_iddes)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -292,19 +349,36 @@ __global__ void compute_des_length_d(
                            + g21*g21 + g22*g22 + g23*g23
                            + g31*g31 + g32*g32 + g33*g33;
 
-    const flow_float rd = compute_rd_ddes(nu_t, nu, y, grad2);
-    const flow_float fd = compute_fd_ddes(rd);
-
     // l_RANS = √k/(β* ω)。これは SST k 消滅項 D_k = β*ρkω = ρk^{3/2}/l_RANS と厳密に整合する
     // 唯一の定義 (Strelets 2001 / Gritskevich 2012)。f_d=0 の完全シールド域で l_DDES=l_RANS となり
     // D_k が標準 SST に一致する (これを満たさないと mode1 はシールド域でも標準 SST に縮退せず MSD を起こす)。
     const flow_float l_rans = sqrt(k_c) / (kBetaStar * w_c);
+
+    if (DESmode == 2) {
+        // IDDES: r_dt (νt 版)・r_dl (ν 版) は compute_rd_ddes を第 2 引数 0 で流用
+        // (floor + clamp[0,10] 込み。f_t/f_l/f_dt の tanh は clamp 上限で完全飽和するので影響なし)。
+        const flow_float rdt = compute_rd_ddes(nu_t, static_cast<flow_float>(0.0), y, grad2);
+        const flow_float rdl = compute_rd_ddes(nu,   static_cast<flow_float>(0.0), y, grad2);
+        flow_float fdtil, fe;
+        const flow_float l_i = compute_l_iddes(l_rans, C_DES, delta_les[ic], y, rdt, rdl,
+                                               &fdtil, &fe);
+        l_des[ic]     = max(l_i, static_cast<flow_float>(1.0e-20));
+        fd_shield[ic] = fdtil;   // DESmode==2 では f̃_d (1=RANS...0=LES の向きは f_d と逆なので注意)
+        rd_des[ic]    = rdt;
+        fe_iddes[ic]  = fe;
+        return;
+    }
+
+    // DDES (DESmode==1・従来経路ビット不変)
+    const flow_float rd = compute_rd_ddes(nu_t, nu, y, grad2);
+    const flow_float fd = compute_fd_ddes(rd);
     const flow_float l_les  = C_DES * delta_les[ic];
     const flow_float l_ddes = l_rans - fd * max(static_cast<flow_float>(0.0), l_rans - l_les);
 
     l_des[ic]     = max(l_ddes, static_cast<flow_float>(1.0e-20));
     fd_shield[ic] = fd;
     rd_des[ic]    = rd;
+    fe_iddes[ic]  = static_cast<flow_float>(0.0);
 }
 
 
@@ -371,6 +445,7 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
         if (cfg.DESmode > 0) {
             compute_des_length_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 msh.nCells,
+                cfg.DESmode,
                 var.c_d["ro"],
                 var.c_d["k"],
                 var.c_d["omega"],
@@ -384,7 +459,8 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
                 cfg.C_DES_kw,
                 var.c_d["l_des"],
                 var.c_d["fd_shield"],
-                var.c_d["rd_des"]);
+                var.c_d["rd_des"],
+                var.c_d["fe_iddes"]);
         }
 
     } else {

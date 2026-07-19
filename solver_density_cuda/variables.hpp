@@ -120,9 +120,10 @@ public:
         // 静的量、他 3 つは毎 step の診断量。float32 で f_d が 0/1 へ張り付くのは NaN より危険なため
         // r_d / f_d は必ず出力する (plan §4.2)。
         "delta_les",   // per-cell グリッドスケール Δmax (隣接重心距離の最大)
-        "l_des",       // per-step l_DDES = l_RANS - f_d·max(0, l_RANS - C_DES·Δ)
-        "fd_shield",   // per-step シールド関数 f_d (0=RANS 保護, 1=LES limiter 有効)
-        "rd_des"       // per-step r_d (シールドの素。clamp[0,10] 上限張り付き=飽和診断)
+        "l_des",       // per-step l_DDES / l_IDDES (DESmode 1/2)
+        "fd_shield",   // per-step シールド関数 (DESmode 1: f_d [0=RANS,1=LES], 2: f̃_d [1=RANS,0=LES] ★向き逆)
+        "rd_des",      // per-step r_d (DESmode 1: (νt+ν) 版, 2: r_dt=νt 版)。clamp[0,10] 上限張り付き=飽和診断
+        "fe_iddes"     // per-step IDDES log-layer mismatch 補正 f_e (DESmode==2 のみ非零。theory §8.6)
     };
 
     const std::list<std::string> planeValNames = 
@@ -178,7 +179,7 @@ public:
         "res_roOmega" , "src_jac_omega" , "transport_diag_omega" , "res_roK" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
-        "delta_les" , "l_des" , "fd_shield" , "rd_des"
+        "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"
     };
 
     //not yet implemented

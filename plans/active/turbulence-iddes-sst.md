@@ -144,39 +144,80 @@ $$
 l_\mathrm{DDES} = l_\mathrm{RANS} - f_d \cdot \max(0,\; l_\mathrm{RANS} - C_\mathrm{DES}\Delta)
 $$
 
-### 3.4 IDDES length scale（Shur et al. 2008）
+### 3.4 IDDES length scale（Shur et al. 2008 / SST 版 Gritskevich et al. 2012）
 
-**近壁ブレンド関数**:
+> **確定版 (2026-07-19 Phase 2 着手時に訂正)**: 初稿の
+> $l_\mathrm{IDDES}=\max(\tilde f_d(1+f_e)l_\mathrm{RANS},\,l_\mathrm{WMLES})$ /
+> $f_e=\max(f_{e1}f_{e2}-1,0)$ は Shur 2008 の正準形と異なっていた（外部要約由来の誤記）。
+> 以下は Gritskevich, Garbaruk, Schütze & Menter (2012, Flow Turb. Combust. 88:431) の
+> SST-IDDES を正とする。全関数形状は `tools/verify_iddes_functions.py` で
+> 検証済（RANS 縮退・WMLES 分岐・float32 ガードを含め VERDICT: PASS）。
+
+**グリッドスケール（壁距離依存）**: Shur 原型の $h_{wn}$（壁法線刻み）項を落とした
+Gritskevich 簡略形を採用する。非構造格子で壁法線方向の格子刻みを定義する必要がなく、
+`wall_dist` と既存 `delta_les`（$=h_\mathrm{max}=\Delta_\mathrm{max}$）だけで組める:
 
 $$
-\alpha = 0.25 - d/\Delta
+\Delta_\mathrm{IDDES} = \min\bigl(C_w \max(d_w,\; h_\mathrm{max}),\; h_\mathrm{max}\bigr),
+\qquad C_w = 0.15
 $$
 
+壁で $0.15\,h_\mathrm{max}$、壁から離れると $h_\mathrm{max}$ に漸近（$[0.15h, h]$ に有界・単調）。
+近壁で $\Delta$ が縮むことで $l_\mathrm{LES}$ が下がり、WMLES 分岐が log 層まで LES を入れられる。
+
+**近壁ブレンド関数**（$h_\mathrm{max}=$ `delta_les`）:
+
 $$
+\alpha = 0.25 - d_w/h_\mathrm{max},\qquad
 f_B = \min\bigl(2\exp(-9\alpha^2),\; 1\bigr)
 $$
 
-**log 層ミスマッチ補正**:
+$f_B=1$（RANS 強制）は $d_w \le 0.53\,h_\mathrm{max}$、$d_w \gtrsim h_\mathrm{max}$ で $\approx 0$。
+
+**log 層ミスマッチ補正** ($r_{dt}$: 乱流版、$r_{dl}$: 層流版の $r_d$):
 
 $$
 f_{e1} = \begin{cases} 2\exp(-11.09\alpha^2) & \alpha \ge 0 \\ 2\exp(-9\alpha^2) & \alpha < 0 \end{cases}
+\qquad
+f_{e2} = 1 - \max(f_t, f_l)
 $$
 
 $$
-f_{e2} = 1 - \max(f_{t1}, f_{t2}), \qquad f_e = \max(f_{e1} f_{e2} - 1,\; 0)
-$$
-
-**WMLES/DDES 切替**:
-
-$$
-l_\mathrm{WMLES} = f_B (1+f_e) l_\mathrm{RANS} + (1-f_B) l_\mathrm{LES}
+f_t = \tanh\bigl[(C_t^2 r_{dt})^3\bigr],\quad
+f_l = \tanh\bigl[(C_l^2 r_{dl})^{10}\bigr],\qquad
+C_t = 1.87,\; C_l = 5.0\ (\text{SST 較正値})
 $$
 
 $$
-l_\mathrm{IDDES} = \max\!\bigl(\tilde{f}_d (1+f_e) l_\mathrm{RANS},\; l_\mathrm{WMLES}\bigr)
+f_e = f_{e2}\,\max(f_{e1} - 1,\; 0)
 $$
 
-乱流流入がない場合: $f_\mathrm{dt} \to 1$, $\tilde{f}_d \to f_B \to 0$ (壁近傍), IDDES は DDES に縮退する。
+（SA 版にある低 Re 補正 $\Psi$ は SST 版では 1。付着 log 層 $r_{dt}\approx1$ では
+$f_t\to1\Rightarrow f_e=0$ で補正は自動停止する。）
+
+**WMLES/DDES 自動切替**:
+
+$$
+f_{dt} = 1 - \tanh\bigl[(C_{dt1}\, r_{dt})^3\bigr],\qquad C_{dt1} = 20\ (\text{SST 較正; SA/DDES の 8 と異なる})
+$$
+
+$$
+\tilde f_d = \max\bigl(1 - f_{dt},\; f_B\bigr)
+$$
+
+$$
+l_\mathrm{IDDES} = \tilde f_d\,(1+f_e)\,l_\mathrm{RANS} + (1-\tilde f_d)\,l_\mathrm{LES},
+\qquad l_\mathrm{LES} = C_\mathrm{DES}\,\Delta_\mathrm{IDDES}
+$$
+
+挙動（verify スクリプトで数値確認済）:
+- **付着 BL（モデル乱流 $r_{dt}\approx1$）**: $f_{dt}\to0 \Rightarrow \tilde f_d\to1$、かつ $f_e=0$
+  → $l_\mathrm{IDDES}=l_\mathrm{RANS}$ 厳密（DDES 相当のシールド）。
+- **解像乱流あり（瞬時 $\nu_t$ が SGS 級 → $r_{dt}\ll0.02 \Rightarrow f_{dt}\to1$）**:
+  $\tilde f_d \to f_B$ →
+  $l_\mathrm{IDDES}=f_B(1+f_e)l_\mathrm{RANS}+(1-f_B)l_\mathrm{LES}$ = WMLES 分岐
+  （壁直近 $f_B=1$ は常に RANS、$d_w\gtrsim h_\mathrm{max}$ で LES）。
+- 乱流流入がない場合は $f_{dt}\to0$ 側に留まり IDDES は DDES 同等に縮退する。
 
 ---
 
@@ -320,32 +361,37 @@ if (DESmode > 0) {
 automatic wall treatment の wf_pk 置換（L135–137）と ω ピン留め（L169–172）は DES と独立に
 そのまま残す（wall-adjacent セルは RANS 扱いで問題ない）。
 
-### 4.6 IDDES 追加関数（Phase 2）
+### 4.6 IDDES 追加関数（Phase 2・確定設計 2026-07-19）
 
-`turbulent_viscosity_d.cu` に追加：
+**§3.4 確定版（Gritskevich 2012 完全関数群）をそのまま実装する。簡略版（初稿の
+`max(f̃_d(1+f_e)l_RANS, l_WMLES)` 形）は廃止**（式自体が誤記だった。§3.4 冒頭注）。
 
-```cpp
-__device__ flow_float compute_fb(float d, float delta) {
-    float alpha = 0.25f - d / max(delta, 1e-20f);
-    return min(2.0f * exp(-9.0f * alpha * alpha), 1.0f);
-}
+実装は既存 `compute_des_length_d`（`turbulent_viscosity_d.cu`）に `DESmode==2` 分岐を追加する:
 
-__device__ float compute_fe(float fb, float rd, ...) { ... }
+- 入力は既存 DDES と同一（`vis_turb`/`vis_lam`/`wall_dist`/`delta_les`/∇u/k/ω）。
+  **新規の幾何量・事前計算は不要**（$\Delta_\mathrm{IDDES}$ が Gritskevich 簡略形のため。§3.4）。
+- $r_{dt}=\nu_t/(\kappa^2 d^2|\nabla u|)$、$r_{dl}=\nu/(\kappa^2 d^2|\nabla u|)$ は既存
+  `compute_rd_ddes` を流用（floor + clamp[0,10] の float32 ガード込み。$f_t/f_l/f_{dt}$ の
+  tanh 引数は clamp 上限 10 で完全飽和するので clamp の影響なし）。
+- 定数: $C_{dt1}=20$, $C_t=1.87$, $C_l=5.0$, $C_w=0.15$（SST 較正値・compile-time 定数。
+  config 化しない）。$C_\mathrm{DES}$ は DDES と同じ `C_DES_kw` 固定（F1 ブレンドは将来課題）。
+- **DESmode:1 (DDES) 経路はビット不変**: `f_d` の $C_{d1}=8$（Spalart 2006 較正）を含め一切触らない。
+  IDDES の $f_{dt}$ は $C_{dt1}=20$ の別関数として実装する（Gritskevich も DDES=20/IDDES=20 だが
+  forge の DDES は 8 で検証済のため変更しない。挙動差は backstep 回帰で観察）。
+- **診断出力**: `fd_shield` には $\tilde f_d$、`rd_des` には $r_{dt}$ を書く（DDES と同じ配列を
+  モードで意味替え）。$f_e$ は新フィールド `fe_iddes` に出力（WMLES 分岐と log-layer mismatch
+  補正の活性を見る一次情報）。$f_B$・$\Delta_\mathrm{IDDES}$ は `wall_dist`/`delta_les` から
+  後処理で厳密再計算できるためフィールドは追加しない。
+- 事前検証: `tools/verify_iddes_functions.py`（関数形状・RANS 縮退・WMLES 分岐・float32 整合、
+  VERDICT: PASS 済 2026-07-19）。
 
-__device__ float compute_l_iddes(
-    float l_rans, float l_les, float fb, float fe, float fd) {
-    float l_wmles = fb * (1.0f + fe) * l_rans + (1.0f - fb) * l_les;
-    float f_tilde_d = max(1.0f - fd, fb);  // 簡略版（乱流流入なし仮定）
-    return max(f_tilde_d * (1.0f + fe) * l_rans, l_wmles);
-}
-```
-
-> **⚠ 簡略版の用途限定（レビュー指摘）**: 上の `f_tilde_d = max(1-fd, fb)` は機能確認
-> （l_des が DDES と違う分布になるかの可視化）用であって、**この簡略形で「IDDES」を名乗って
-> SBLI 定量評価してはいけない**。WMLES モードは流入乱流がないと入口近くで解像乱流が育たず、
-> 長い助走か人工擾乱が要る。Phase 2 で定量評価する場合は **(a) $f_{e1}/f_{e2}/f_{dt}$ を含む
-> 完全な関数群** と **(b) 流入乱流生成**（別 plan）の両方を検証条件に入れること。
-> それまで定量目的は Phase 1 DDES に留める。
+> **⚠ 定量評価の前提（レビュー指摘・維持）**: WMLES モードの定量評価
+> （チャネル log 層 / mismatch）には解像乱流の存在が前提。周期チャネルは流入不要で
+> 自己維持するが **streamwise 体積力 config が未実装**（[turbulence-wmles-wall-stress plan](turbulence-wmles-wall-stress.md)
+> §5-7 と共通の前提部品。同 plan は純 LES + 代数壁応力の別経路で IDDES と共存可）。
+> 非周期ケース（SBLI 等）の IDDES 定量評価は **流入乱流生成（別 plan）にゲート**。
+> それまで定量目的は DDES に留める（機能確認 = f̃_d/f_e/l_des 分布の妥当性までを Phase 2 の
+> 完了範囲とする）。
 
 ### 4.7 呼び出しフロー（main loop）— ★重要：依存順
 
@@ -997,3 +1043,31 @@ T4     case/01.cavity or 新規            IDDES   高        Rossiter 振動・
   $C_f$/$C_p$/$U$/$\overline{u'v'}$ @ $x/H$=1,4,6,10, $M$≈0.128(ほぼ非圧縮)。
   補助参照に Le-Moin-Kim 1997 DNS / Jovic-Driver / Bin+2023 benchmark（合否には混ぜない）。
   LES 的量（rms・スペクトル・スパン相関）は TMR にないため forge 側で自前取得する旨を明記。
+- `2026-07-19` — §3.4 を Gritskevich 2012 正準形に訂正 (初稿の $\max$ 形 $l_\mathrm{IDDES}$ /
+  $f_e$ 式は外部要約由来の誤記)、§4.6 を確定設計に更新。関数群の事前検証スクリプト
+  `tools/verify_iddes_functions.py` を追加 (形状・RANS 縮退・WMLES 分岐・float32、VERDICT: PASS)。
+  §4.8 は単一スキーム KEEP+ES を本命に更新し前提検証①② 合格 (同日、既存記載)。
+- `2026-07-20` — **Phase 2 (IDDES) 実装・機能検証完了**。
+  - **実装**: `compute_des_length_d` に `DESmode==2` 分岐 (`compute_l_iddes`: $f_B/f_{e}/f_{dt}/
+    \tilde f_d$, $\Delta_\mathrm{IDDES}$, 定数 $C_t{=}1.87/C_l{=}5.0/C_{dt1}{=}20/C_w{=}0.15$
+    compile-time)。$r_{dt}/r_{dl}$ は `compute_rd_ddes` 流用 (clamp[0,10] は tanh 飽和域で無影響)。
+    診断: `fd_shield`←$\tilde f_d$ (**mode2 は 1=RANS で DDES と向きが逆**)、`rd_des`←$r_{dt}$、
+    新フィールド `fe_iddes` (HDF5 出力)。新規幾何量・事前計算なし。
+  - **DDES 回帰 (mode1 ビット不変)**: `case/18.backstep` `run_0128` (新バイナリ) vs `run_0125`
+    (実装前) vs `run_0130` (HEAD 再実行=atomicAdd ノイズフロア実測)。同一 restart (md5 一致)
+    500 step implicit で、全 12 フィールド (保存量+P/T+fd/l_des/rd) の max|Δ|/relL2 が
+    **signal ≒ ノイズフロア** (例 roUx max|Δ| 4.5e-4 vs 4.5e-4) → **DESmode:1 経路は数値的に不変**。
+  - **機能確認① (RANS 的場, `run_0129`)**: run_0125 と同一入力で DESmode:2 のみ差分・500 step。
+    NaN 無し。付着 BL $\tilde f_d$=1.000・$l/l_\mathrm{RANS}$=1.000 厳密 (シールド)、せん断層
+    $\tilde f_d$ med 0.036 (LES)、泡内 1.000 (RANS)。$f_e$ は付着 BL 近壁のみ活性 (24%, max 0.98)。
+  - **機能確認② (発達乱流場, `run_0131`)**: run_0126 res_30000 (解像 3D 乱流飽和) から
+    DESmode:2 で 3000 step unsteady RK3。NaN 無し。**WMLES 分岐が設計どおり動作**:
+    遠壁 ($f_B{<}0.01$) で $f_{dt}$ med=0.992・frac>0.9=67% (解像乱流検知)、$f_B{>}0.999$ 帯で
+    min $\tilde f_d$=1.0000 (壁直近 RANS 強制厳密)、せん断層 $l/l_\mathrm{RANS}$ 0.537≒DDES 0.524、
+    解像乱流維持 (Uz rms 4.97→5.13 m/s)。$f_e$ は近壁帯のみ活性 (20-29%)。
+  - **Phase 2 の完了範囲 (機能確認まで) を達成**。WMLES モードの定量評価 (チャネル log 層 /
+    mismatch) は従来どおり streamwise 体積力 config +
+    [turbulence-wmles-wall-stress plan](turbulence-wmles-wall-stress.md) のチャネル検証系、
+    非周期ケースは流入乱流生成 plan にゲート。
+  - 環境メモ: clean configure は `-DCMAKE_CUDA_ARCHITECTURES=86` (cache 変数名はこれが正。
+    2026-06-21 記載の `FORGE_CUDA_ARCHITECTURES` は誤記) 必須。
