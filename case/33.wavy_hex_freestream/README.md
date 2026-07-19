@@ -37,5 +37,20 @@ IC はいずれも一様場 (ρ=1.177, P=101325; M0.1 は u_x=34.716 m/s)。
 | `run_0011_keep_advgauge_uxM01_xperiodic` | **KEEP + 移流基準差分 (roRef=1.177, uRef=[34.716,0,0])** U∞=M0.1 | step0 rms 1.7e-14/8.1e-12/5.6e-9 = **U=0 と同水準の機械精度**・300step 安定 (エネルギー 6.5 桁改善) | ref (advGauge 根治検証) |
 | `run_0012_keep_u0_regr_newbin` | 回帰: advGauge 実装後バイナリで run_0007 再実行 (roRef=0) | run_0007 と atomicAdd ノイズ床 (4e-12) 内で一致 = **roRef=0 経路に回帰なし** | ref (回帰エビデンス) |
 | `run_0013_keep_advgauge_dissmat_uxM01` | advGauge + matrix ES σ=0.05 (LES 想定構成) | step0 rms 1.4e-12/2.5e-9/3.3e-7・300step 安定 = ゲージと散逸レイヤは併用可 | ref (併用確認) |
+| `run_0014_gaugecurve_sweep/` | **非一様場でのゲージ効果カーブ** (M0.1+速度擾乱 a=1e-4..1e-1 × ゲージ有無の step0 残差; サブ run 群) + 発散真因の切り分け dbg 群 | ①擾乱下の step0 残差はゲージ有無で一致 (物理∝a が支配、OFF ノイズ床 1.3e-2 との交差は a≈5e-7)。図 `gauge_decay_curve.png`。②dbg 群で **run_0008-0010 の「発散」は unsteady:0 (定常局所dt) との交絡**と判明 (下注) | ref (ゲージ効果カーブ+真因切り分け) |
+| `run_0015_advgauge_urefm20_uxM01` | **uRef 20% ミスマッチ耐性**: uRef=27.77 (真値 34.72) の一様 M0.1 | step0 roUx 4.5e-7・300step 安定 (定常モードでも)。一様場なら偏差も空間定数 → telescoping が生き、ノイズは偏差比例 (~0.2×) に留まる | ref (ミスマッチ耐性) |
+| `run_0016_advgauge_urefm20_dissmat` | 同 + matrix ES σ=0.05 | 同様に安定 | ref (ミスマッチ+散逸) |
+
+**重要な訂正 (2026-07-19, run_0014 の dbg 群で判明)**: run_0008-0010 の「step6-14 発散」は
+**`unsteady: 0` (定常・局所 dt) モードとの交絡**。同じゲージ無し M0.1 一様流を `unsteady: 1`
+(物理 dt) で回すと発散せず、残差はノイズ床 (roe 1.3e-2) に恒久プラトーで 300step 安定
+(`run_0014_gaugecurve_sweep/dbg_uniform_nogauge_unsteady`)。さらに物理擾乱 a=1e-2 を与えると
+**ノイズと無関係に** 定常モードは全スキーム (SLAU CFL0.1 でも)・全 BC (全面 periodic でも)・
+**Cartesian (case/35 run_0038 steady_variant) でも** step5-11 で発散する = 「閉じた周期系の
+音響過渡×定常局所 dt」というソルバ一般の限界であり、wavy メッシュ・periodic 実装・ゲージとは
+無関係。**step0 残差 (ノイズ種) の測定と帰属・ゲージによる機械精度化はこの訂正の影響を受けない**。
+ゲージの実利は (a) ノイズ種を消して定常局所 dt モードでも U∞≠0 を回せるようにする
+(run_0011/0013 は定常モードで安定)、(b) 非定常 LES では物理の下に埋まる恒久ランダム強制
+(roe 残差 1.3e-2 相当) を機械精度まで除去する、の 2 点。
 
 (run_0001/0002 は SLAU 初期切り分け run。結果は [VERIFICATION.md](VERIFICATION.md) に集約済みでディレクトリは削除済み)

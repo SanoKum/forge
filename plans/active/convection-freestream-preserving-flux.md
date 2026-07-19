@@ -95,6 +95,14 @@ forge (float32) は非直交メッシュで一様場 (free-stream) を保持で�
 - エネルギー式が支配的 ($\rho u H \sim 1.2\times10^7$ ≫ p の 1e5)。
 - Cartesian 対照は case/35 (run_0014/0016: 同 M0.1 through-flow・全周期で 400step 安定・機械ゼロ)
   が既存 → wavy メトリック起因で確定。
+- **訂正 (同日 §8.4 の切り分けで判明)**: 上表の「発散」は **`unsteady: 0` (定常・局所 dt)
+  との交絡**。ゲージ無し M0.1 でも `unsteady: 1` なら発散せず、残差はノイズ床 (roe 1.3e-2)
+  への恒久プラトーで安定 (case/33 `run_0014_gaugecurve_sweep/dbg_uniform_nogauge_unsteady`)。
+  定常局所 dt モード自体が「閉じた周期系の音響過渡」に対しノイズと無関係に不安定
+  (物理擾乱 a=1e-2 で SLAU CFL0.1・全面 periodic・**Cartesian でも** step5-11 発散 =
+  case/35 `run_0038.../steady_variant`)。**ノイズ種の測定・帰属・ゲージの機械精度化は不変**。
+  ゲージの実利は (a) 定常局所 dt モードで U∞≠0 を回せるようにする (ノイズ種が過渡のトリガに
+  ならない)、(b) 非定常 LES の恒久ランダム強制 (roe 1.3e-2 級) を機械精度へ除去、の 2 点。
 
 ### 8.2 設計 — 参照一様流束の面ごと差分 (差分形因数分解)
 
@@ -144,6 +152,21 @@ $F_\infty(s) = (\rho_\infty U_{n\infty},\ \rho_\infty U_{n\infty}\mathbf u_\inft
     `case/35 run_0037` (node KEEP 市松 = run_0023 と同挙動) / tests/regression の
     implicit_bump_slau・tp_sod_n2 PASS (naca_slau・rans_flat_plate_sst の FAIL は
     変更前バイナリでも同値の**既存 baseline 陳腐化**で本件と無関係)。
+
+### 8.4 非一様場・参照ミスマッチの実測 (2026-07-19)
+
+- **効果カーブ** (case/33 `run_0014_gaugecurve_sweep/`, 図 `gauge_decay_curve.png`):
+  M0.1+速度擾乱 $a=\delta u/u_\infty$=1e-4..1e-1 の step0 残差はゲージ有無で一致 (物理
+  シグナル $\propto a$ が支配)。OFF のノイズ床 1.3e-2 と物理の交差は $a\approx5\times10^{-7}$ —
+  つまり**残差の大きさとしては実擾乱下でゲージは見えない**。実利は床の除去 (a→0 の静穏域と
+  §8.1 訂正の定常モード可用性)。
+- **uRef 20% ミスマッチ耐性** (`run_0015/0016`): 一様場では偏差 (u−u∞) も空間定数のため
+  ゲージ済流束が定数係数×s に留まり telescoping が生きる。step0 roUx 4.5e-7 (≈偏差比例) で
+  定常モードでも 300step 安定。**uRef は平均流の 2 割精度で足りる** (散逸併用でも同様)。
+- **副産物 (別課題)**: `unsteady: 0` (定常・局所 dt) は「閉じた周期系の音響過渡」に対し
+  スキーム・メッシュ・CFL によらず不安定 (Cartesian でも step11 発散、CFL 0.1 でも同 step で
+  発散 = 局所 dt 相対ミスマッチ起因を示唆)。過渡を含むケースは `unsteady: 1` で回すこと。
+  必要なら別 plan で深掘り。
 
 ## 7. 「流れありで発散」の決着 (2026-06-14) — pRef とは別問題だった
 
