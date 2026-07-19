@@ -61,7 +61,9 @@ keepDissCprime: 1      # マッハ混在流。単一低マッハ領域なら 0 +
 space: {pRef: <動作静圧>, roRef: <動作密度>, uRef: [<平均流速>, 0, 0]}
   # 非直交メッシュでは pRef 必須 (無いと発散)。U∞≠0 (平均流あり) なら roRef/uRef も必須
   # (M0.1 でも移流桁落ちで発散: plan §8)。CPG×cell のみ対応 (node/TP は fail-fast)
-turbulence: {LESorRANS: 1, LESmodel: 1}   # WALE
+turbulence: {LESorRANS: 0, LESmodel: 0}   # 解像/遷移流は WALE off (ILES+ES が最良; 2026-07-19 訂正)
+  # 旧「WALE 併用」は不活性バグで実は ILES だった。本物 WALE は 64³ TGV で悪化 (先回り散逸)。
+  # 未解像高 Re 乱流でのみ LESorRANS:1 を検討 (要検証; plans/accepted/turbulence-wale-fix.md)
 ```
 
 ## 関連 memory (自動ロードされる)

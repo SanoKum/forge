@@ -507,6 +507,20 @@ void variables::readValueHDF5(std::string fname , mesh& msh,
         v_roOmega[i] = has_roOmega ? roOmega[i] : ro[i] * omegaInit;
     }
 
+    // 壁なしメッシュのガード: 壁 bcond の無いメッシュは converter が wall_dist≡0 のまま出力する。
+    // 0 のままだと WALE の Ls=min(κd, CwΔ) が 0 に潰れ vis_turb≡0 (SGS 不活性) になるため、
+    // 「全 CV で ≤0 = 壁情報なし」のときは実質∞ (1e30) で充填する (plans/active/turbulence-wale-fix.md)。
+    // 壁ありメッシュは壁面上の CV (d=0) があっても max>0 なので不変。
+    {
+        flow_float wd_max = 0.0;
+        for (geom_int i=0; i<msh.nCells; i++) wd_max = std::max(wd_max, v_wall_dist[i]);
+        if (wd_max <= 0.0) {
+            for (geom_int i=0; i<msh.nCells; i++) v_wall_dist[i] = 1.0e30;
+            std::cout << "[variables] wall_dist is zero everywhere (no wall bcond): "
+                         "filled with 1e30 so WALE/DES length scales use Cw*Delta.\n";
+        }
+    }
+
     std::list<std::string> names = {"ro", "roUx", "roUy", "roUz", "roe", "wall_dist", "roK", "roOmega"};
     this->copyVariables_cell_H2D(names);
 

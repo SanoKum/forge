@@ -125,6 +125,8 @@ DNS 参照を実データ化: [`ref_dns/TGV_Re1600.dat`](ref_dns/README.md) (**D
 | `run_0039_node_keep_wale64_re1600_s0` | 0 (**node**) | +0.7% | −0.4% | 0.092 | 9.24 | ref (64³ node σ=0 基準) |
 | `run_0040_node_keep_wale64_re1600_diss002_jump` | 0.02 (**node, keepDissJump=1**) | **+0.7%** | **−0.8%** | **0.088** | **8.96** | ref (**recon-jump L3**) |
 | `run_0041_node_keep_wale64_re1600_diss002_jump2` | 0.02 (**node, keepDissJump=2**) | +0.7% | −1.4% | 0.089 | **8.96** | ref (**sign-property L3**) |
+| `run_0042_node_keep_wale64fix_s0` | 0 (**修正後の本物 WALE**) | −0.3% | −3.4% | 0.087 | **7.84 (早すぎ)** | ref (real-WALE 基準) |
+| `run_0043_node_keep_wale64fix_diss002_jump2` | 0.02 jump2 (**本物 WALE 併用**) | −0.4% | −3.6% | 0.085 | 7.84 | ref (real-WALE+ES) |
 
 **結論 (σ 確定)**: 64³ では層流期・終値とも全 σ≤0.03 で ±3% 内 = 32³ の「両立不可」は解像度律速と確定。σ=0 (+1.7%) と σ=0.02 (−1.5%) が DNS をほぼ対称に挟み、**解像 LES の推奨は σ=0.02** (市松頑健性 L1 を持ちつつ KE 追従 ≤1.6%)。σ=0.03 は 64³ では一律に劣る (旧「0.03=帯内」判定は撤回)。TGV 追従だけなら最適 σ≈0.01 だが、σ は物理較正ノブではなく市松ロバスト性の床 — 解像度を上げるほど最適値は下がる (32³: ~0.02 → 64³: ~0.01) ので、「L1 を満たす最小 σ」で選ぶ。ε* ピーク高さは 64³+WALE の解像限界で全 run 8 割どまり (LES として正常)。成果物 `dissipation_rate_L3_64.png`。
 
@@ -147,3 +149,15 @@ minmod し、各波で積 ≥0 を構造保証 = **エントロピー散逸性�
 jump=1 (−0.8%) と生 (−2.7%) の間の **−1.4%**、ピーク時刻 8.96・層流期 +0.7% は jump=1 と同一。
 市松減衰も無傷 (case/35 run_0042)。**証明と性能の両立点として jump=2 を推奨既定とする**
 (jump=1 は証明なしの最軽量オプションとして残置)。成果物 `dissipation_rate_L3_64_node_jump2.png`。
+
+**重大訂正 (2026-07-19, WALE 不活性バグ発覚)**: 本節までの全「WALE 併用」run (32³ run_0030-0034・
+64³ run_0035-0041, cell/node とも) は、**WALE が不活性 (vis_turb≡0) の ILES だった**。真因は
+① 壁なしメッシュで wall_dist≡0 → Ls=min(κd,CwΔ)=0、② WALE の Sd テンソルが成分 2 乗の誤式
+(行列 2 乗が正; 純せん断で Sd=0 になるべき性質を破っていた)。両方修正済
+([turbulence-wale-fix](../../plans/accepted/turbulence-wale-fix.md))。**数値結果は「ILES
+(KEEP+分子粘性+ES散逸)」として全て有効** — ラベルのみ訂正。修正後の本物 WALE で再検証した結果
+(run_0042/0043): **WALE は遷移期に先回りして散逸し (ピーク t*=7.84 ≪ DNS 8.98)、終値も −3.4% と
+ILES より悪化**。64³ TGV 級の解像/遷移流では **WALE off の ILES + matrix ES (σ=0.02, jump=2) が
+最良 (−1.4%, ピーク 8.96)** = **解像 LES の推奨は LESorRANS: 0 + ES 散逸**。WALE は「本当に
+未解像の高 Re 乱流」用オプションとし、その適用検証は今後の課題。成果物
+`dissipation_rate_L3_64_walefix.png`。

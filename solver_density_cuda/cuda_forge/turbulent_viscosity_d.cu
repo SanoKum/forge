@@ -45,15 +45,29 @@ __global__ void WALE_d
         flow_float g32 = dUzdy[ic];
         flow_float g33 = dUzdz[ic];
 
-        flow_float Sd11 = 0.5*(g11*g11+g11*g11) - 1.0/3.0*g11*g11;
-        flow_float Sd12 = 0.5*(g12*g12+g21*g21);
-        flow_float Sd13 = 0.5*(g13*g13+g31*g31);
-        flow_float Sd21 = 0.5*(g21*g21+g12*g12);
-        flow_float Sd22 = 0.5*(g22*g22+g22*g22) - 1.0/3.0*g22*g22;
-        flow_float Sd23 = 0.5*(g23*g23+g32*g32);
-        flow_float Sd31 = 0.5*(g31*g31+g13*g13);
-        flow_float Sd32 = 0.5*(g32*g32+g23*g23);
-        flow_float Sd33 = 0.5*(g33*g33+g33*g33) - 1.0/3.0*g33*g33;
+        // Sd_ij = ½(ḡ²_ij + ḡ²_ji) − ⅓δ_ij ḡ²_kk, ḡ²_ij = g_ik g_kj (**行列 2 乗**; Nicoud-Ducros 1999)。
+        // 旧実装は成分ごとの 2 乗 (½(g12²+g21²) 等) で本来の WALE 演算子ではなかった
+        // (純せん断で Sd=0 になるべきところ偽値を作る)。式は tools/ 相当の python 検証済
+        // (plans/active/turbulence-wale-fix.md)。
+        flow_float q11 = g11*g11 + g12*g21 + g13*g31;
+        flow_float q12 = g11*g12 + g12*g22 + g13*g32;
+        flow_float q13 = g11*g13 + g12*g23 + g13*g33;
+        flow_float q21 = g21*g11 + g22*g21 + g23*g31;
+        flow_float q22 = g21*g12 + g22*g22 + g23*g32;
+        flow_float q23 = g21*g13 + g22*g23 + g23*g33;
+        flow_float q31 = g31*g11 + g32*g21 + g33*g31;
+        flow_float q32 = g31*g12 + g32*g22 + g33*g32;
+        flow_float q33 = g31*g13 + g32*g23 + g33*g33;
+        flow_float qtr3 = (q11 + q22 + q33)/3.0;
+        flow_float Sd11 = q11 - qtr3;
+        flow_float Sd12 = 0.5*(q12+q21);
+        flow_float Sd13 = 0.5*(q13+q31);
+        flow_float Sd21 = Sd12;
+        flow_float Sd22 = q22 - qtr3;
+        flow_float Sd23 = 0.5*(q23+q32);
+        flow_float Sd31 = Sd13;
+        flow_float Sd32 = Sd23;
+        flow_float Sd33 = q33 - qtr3;
 
 
         flow_float S11 = 0.5*(g11+g11);

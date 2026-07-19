@@ -98,6 +98,15 @@ NS のみを想定しているため、初期実装では `scalarTransport_d.*` 
 配列を共有する。node + KEEP + WALE の LES 構成は
 [`plans/active/convection-keep-revive-node.md`](../../plans/active/convection-keep-revive-node.md)。
 
+**2026-07-19 の 2 バグ修正** ([turbulence-wale-fix](../../plans/accepted/turbulence-wale-fix.md)):
+① **壁なしメッシュで不活性**: converter が `wall_dist≡0` のまま → $L_s=\min(\kappa d, C_w\Delta)=0$
+→ `vis_turb≡0`。solver 読込後に「全 CV で ≤0」なら 1e30 充填で修正 (壁ありメッシュ不変)。
+② **Sd テンソル誤式**: $S^d_{ij}$ は速度勾配の**行列 2 乗** $\bar g^2_{ij}=g_{ik}g_{kj}$ から作る
+(Nicoud-Ducros 1999) が、成分ごとの 2 乗になっていた (純せん断で $S^d=0$ の設計特性を破る)。
+**適用指針**: 64³ TGV Re=1600 (h≈8η) では本物の WALE は遷移を先食いし ILES より悪化 —
+**解像/遷移流は `LESorRANS: 0` + KEEP matrix ES 散逸 (σ=0.02, keepDissJump=2) を推奨**。
+WALE は未解像の高 Re 乱流用オプション (適用検証は未実施)。
+
 ### 3.5 境界条件
 
 境界条件は既存の `wall`, `wall_isothermal`, `inlet_*`, `outlet_*`, `slip` などに

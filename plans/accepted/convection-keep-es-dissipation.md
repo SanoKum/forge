@@ -141,3 +141,7 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   cell の 8.68 より近い)。**node×σ=0.02 を解像 LES 推奨として cell 同等に確定**
   (`case/09...run_0038`)。KE 集計は周期 slave ミラー重複の除外が必要
   (`plot_dissipation_rate.py --node-mesh`)。
+- `2026-07-19` — **訂正**: 本 plan の L3「WALE 併用」記載はすべて **WALE 不活性 (vis_turb≡0) の ILES**
+  だった (壁なしメッシュの wall_dist≡0 バグ; [turbulence-wale-fix](turbulence-wale-fix.md))。
+  σ 較正・結論は「ILES + ES 散逸」として全て有効。修正後の本物 WALE は 64³ TGV で ILES より悪く、
+  解像 LES の推奨は WALE off + matrix σ=0.02 keepDissJump=2 に確定。
