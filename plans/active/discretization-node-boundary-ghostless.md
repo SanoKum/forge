@@ -286,3 +286,8 @@ flux 寄与は不要。
 - **species×node 境界修正 (2026-06-26 追補) は未検証のまま**。多成分 TP × node を実計算に使う前に
   検証ケース (例: case/28 の node 版) を整備して検証すること
   ([監査](../../notes/investigations/plans-active-audit-weak-model-readiness.md) 横断アクション 5)。
+- **(親 plan から移管) case/29 node viscous (軸対称) の再検証が未実施**。exit-lip corner 発散
+  (親 plan `discretization-median-dual` 変更ログ 2026-06-14) が本 plan の 5a/5b/5e + 弱形式化で
+  解消したかを、新規 `run_*` + `check_convergence.py` VERDICT で確認すること。cell 対照は
+  `case/29 run_dual_visc_conical_cell_m3`。未解消なら boundary∩boundary corner 処理 (merge /
+  dt フロア / ghost 整合) を本 plan の残課題として再開する。

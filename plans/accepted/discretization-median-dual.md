@@ -3,10 +3,10 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `in_progress`
+- **status**: `done`  <!-- 親計画としてクローズ (2026-07-19)。現役の入口は子 plan (末尾の変更ログ参照) -->
 - **related_docs**:
-  - `methods/discretization/theory.md`
-  - `methods/discretization/implementation.md`
+  - `methods/discretization.md`
+  - `methods/discretization.md`
   - `methods/architecture/overview.md`
 - **related_plans**:
   - `architecture-axisym-axis-singularity.md` (軸対称 near-axis、本対応で改善余地あり=副次)
@@ -34,14 +34,14 @@
 
 ## 3. 関連 docs と前提
 
-- 理論: `methods/discretization/theory.md` (median-dual の CV/面/閉性/境界半割面)。
-- 実装方針: `methods/discretization/implementation.md` (discretization mesh 抽象、カーネル対応表)。
+- 理論: `methods/discretization.md` (median-dual の CV/面/閉性/境界半割面)。
+- 実装方針: `methods/discretization.md` (discretization mesh 抽象、カーネル対応表)。
 - 前提: GPU カーネルは「CV + 面 + 接続」抽象だけで書かれており、内部スキームは双対上で無変更で成立
   (調査済み)。差異は前処理と境界・I/O に局在する。
 
 ## 4. 設計方針
 
-詳細は `methods/discretization/implementation.md`。要点のみ:
+詳細は `methods/discretization.md`。要点のみ:
 
 - **供給側 2 実装**: cell モード = 現行 gmshReader (`/CELLS` を CV)、node モード = 新 `dualMeshBuilder`
   (`/DUAL` を CV)。solver は汎用 `mesh` 抽象 (`nCells/nPlanes/map_plane_cells/CSR`) を消費。
@@ -109,8 +109,8 @@
 
 ## 8. 完了条件
 
-- [x] 関連 `methods/discretization/theory.md` 作成済み
-- [x] 関連 `methods/discretization/implementation.md` 作成済み
+- [x] 関連 `methods/discretization.md` 作成済み
+- [x] 関連 `methods/discretization.md` 作成済み
 - [ ] M1 実装・検証完了 (§6 の sod 判定を満たす)
 - [ ] M2–M4 実装・検証完了
 - [ ] `plans/README.md` の状態を更新
@@ -272,10 +272,20 @@
   (レビュー指摘)。`dualFaceCent` がエッジ中点でなく面積加重重心のため `fx` が歪み面で 0.5 からずれていた問題を、
   標準的な median-dual エッジ補間 $\phi_f=\tfrac12(\phi_A+\phi_B)$ に揃える。`calcStructualVariables_d` に `nodeMode`
   (`discretization=="node" && nodeMidpointFx==1`) を渡し内部面 (`ip<nNormalPlanes`) で `fx=0.5` 固定。
-  cell モード・境界半割面は不変。methods/discretization/implementation.md §7.4。
+  cell モード・境界半割面は不変。methods/discretization.md §7.4。
   **検証** (node 層流 40k, `run_divufix_node_after` 幾何fx vs `run_fx_node` fx0.5、build-lsq vs build-lsqfx、divu 込み):
   近壁 `dUxdy` checkerboard roughness 99pct **12.84→8.23 (−36%)** 低減。**SU2 (axisym laminar 同条件 `run_su2cmp_su2_lam`)
   壁圧比較で fx ON/OFF は区別不能 (<0.5%)、両者 SU2 に平均 3.2% 一致** → fx=0.5 は SU2 一致を悪化させず安全。
   局所 Ux は出口リップ近傍で 1376→430 と変わるが圧力場に伝播せず、SU2/forge とも未収束のため near-wall 速度細部の
   厳密な是非は未確定 → 既定 OFF で opt-in 残置。node SST は node-viscous 脆弱性 (§7.2)+SST 剛性で baseline build から
   発散し検証不可。
+- `2026-07-19` — **親計画としてクローズ (status=done, accepted へ移動, ユーザー承認)**。目的の
+  cell/node 両対応化は達成: 同一バイナリ・同一メッシュで cell/node が走り、Euler/粘性/軸対称/SST/
+  periodic まで検証済み (node は SU2/cell と bulk 一致、tet で DOF ~1/2)。**現役の入口は子 plan**:
+  3D/periodic = [`discretization-median-dual-3d`](discretization-median-dual-3d.md)、境界 ghostless =
+  [`discretization-node-boundary-ghostless`](discretization-node-boundary-ghostless.md)、centCoords 統一 =
+  [`architecture-node-centroid-value-position`](architecture-node-centroid-value-position.md)、LSQ 勾配 =
+  [`discretization-lsq-gradient`](discretization-lsq-gradient.md)。**未消化の検証 1 件 — case/29 node
+  viscous (軸対称) の exit-lip 発散が ghostless 5a/5b/5e で解消したかの再検証 run — は ghostless plan
+  側へ残課題として移管** (同 plan 変更ログ 2026-07-19 追補)。本文の M2 コスト比較・near-axis/corner
+  解決の経緯は歴史記録として保持。

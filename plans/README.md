@@ -27,7 +27,6 @@
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
 | [convection-keep-revive-node.md](active/convection-keep-revive-node.md) | `convection / turbulence` | KEEP スキーム復活 (modern API・cell/node) + node WALE で LES/ILES |
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
-| [discretization-median-dual.md](active/discretization-median-dual.md) | `architecture` | cell-centered / node-centered (median-dual) 両対応化 |
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
@@ -60,6 +59,7 @@
 | [diffusion-node-wall-viscous-distance.md](accepted/diffusion-node-wall-viscous-distance.md) | `diffusion` | node-centered 粘性壁 flux の法線距離修正 (mirror-ghost 退化対策) |
 | [diffusion-turbulent-thermal-conductivity.md](accepted/diffusion-turbulent-thermal-conductivity.md) | `diffusion` | 乱流熱伝導 (turbulent thermal conductivity) の追加 |
 | [diffusion-viscous-shear-flux.md](accepted/diffusion-viscous-shear-flux.md) | `diffusion` | 粘性せん断フラックスの修正 (内部面の法線項 + 壁面 no-slip 抗力) |
+| [discretization-median-dual.md](accepted/discretization-median-dual.md) | `architecture` | cell/node (median-dual) 両対応化の親計画 (M1–M3 完了)。現役の入口は子 plan (median-dual-3d / ghostless / centroid-value-position / lsq-gradient) |
 | [discretization-node-wall-implicit-dirichlet.md](accepted/discretization-node-wall-implicit-dirichlet.md) | `boundary / time_integration` | node-centered 壁 no-slip の implicit Jacobian Dirichlet 化 (SU2 DeleteValsRowi 相当) |
 | [output-node-wall-surface-viz.md](accepted/output-node-wall-surface-viz.md) | `architecture` | node 壁サーフェス出力の修正 (primal 面トポロジ退避 + h5 スキーマ + 壁関数 twall の ρu_τ² 化) |
 | [condensation-nonequilibrium.md](accepted/condensation-nonequilibrium.md) | `condensation` | 非平衡凝縮 (4 モーメント)。N2=Arthur Fig.2 1–2% / H2O=Wyslouzil Fig.3 ~5% 一致。TP<200K は棚上げ (CPG が正) |
