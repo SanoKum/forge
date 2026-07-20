@@ -305,3 +305,15 @@ SST 壁関数の Newton (固定 5 回) は**変更しない**。共通化する�
   `νt=max(νt_SGS, ρ(κd)²|S|)` の config 実装 / **(B・採用) 同一チャネルを SST-IDDES (DESmode:2)
   で回す** — f_B ブレンドの RANS mixing-length νt が原理解であり、iddes plan §4.6 の WMLES モード
   定量評価を兼ねる (`run_0009_ret550_iddes`)。
+
+- `2026-07-20` — **チャネル較正キャンペーンの中間総括** (詳細は case/38 README run 表と
+  `run_0014` の 3 パネル図 `channel_ret550_analysis.png`)。経緯: 純 LES+壁応力 +42% → σ0.02
+  +30% → SST-IDDES (k ピン explicit 修正 + ω 第一内層ピン opt-in + Bradshaw 迂回) **+12.8%**
+  → 2 倍細分の判別実験 (`run_0015`) で **+22.2% に悪化 = 律速は解像度でなく shield/界面**
+  (ユーザー仮説が的中)。確定した定量事実: ①解像応力の引継ぎ高さ y_to ≈ **2.4Δy** (粗細両方で
+  実証・格子比例)、②実効フィルタ ≈2Δ (スペクトル)、③一様格子では細分するほど f_B RANS 帯が
+  薄り IDDES の自動 shield が退化 (IDDES の WMLES 分岐は壁法線解像格子が設計想定)。
+  **次: 壁法則整合 νt 床 (d<C·h_max, 実測 C·h_max≈2.4Δy = 一様格子で内点 2 ノード) の判別実験 —
+  ユーザー指示により実験のみ・恒久実装は結果判断後**。合否指紋: 床適用後も y_to が 2.4Δy に
+  留まる (成功) か上へ逃げる (追いかけっこ)。引き継ぎ:
+  notes/sessions/channel-wmles-nutfloor-session-prompt.md
