@@ -53,6 +53,20 @@
 - 非定常 (`unsteady: 1`, `dualTime: 0`) の物理時間刻みは `cfl` (または `dt`) で決まる。
 - ログの `max cfl` 表示は `cfg.cfl` に追従する値であり、実効積分 CFL ではない点に注意する。
 
+## bodyForce — 一様体積力 (周期チャネル駆動)
+
+```yaml
+bodyForce: [7.24, 0.0, 0.0]   # [N/m³] top-level キー。既定 [0,0,0] = off (ビット不変)
+```
+
+全セルに運動量ソース $f_i V$ とエネルギーソース $(\mathbf{f}\cdot\mathbf{u})V$ を加算する。
+主用途は**周期チャネルの駆動** (入口出口が無いため平均圧力勾配の代わりに使う):
+平衡で $f_x \delta = \tau_w$、つまり $u_\tau = \sqrt{f_x \delta/\rho}$ を直接指定できる
+(δ: チャネル半幅)。発熱の逃げ場が要るため**壁は等温**にすること (断熱では bulk 温度が漸増)。
+
+- 検証: 体積力駆動 Poiseuille 厳密解 (case/24 `run_poiseuille_bf_*`, u_max=fH²/8μ・T 四次分布・q_w=f²H³/24μ)
+- 軸対称は未対応 (config 読込で拒否)。陰解法では明示ソース (Jacobian 無し)
+
 ## detectNaN — NaN/Inf 検知診断モード
 
 `time.deltaT.detectNaN` (任意, 既定 `0`)。発散の発生ステップと場を特定するための診断オプション。

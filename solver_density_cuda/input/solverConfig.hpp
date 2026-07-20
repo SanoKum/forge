@@ -176,6 +176,14 @@ public:
     int        wmlesNewtonMaxIt = 20;   // u_τ Newton の最大反復 (warm start 時は 1-3 回で収束想定)
     flow_float wmlesPrt = 0.9;          // Kader 温度壁法則の乱流プラントル数 (SGS 側 turbulentPrandtl とは独立)
 
+    // 一様体積力 [N/m³] (周期チャネル駆動等, wmles plan §5-7 / methods/time_integration)。
+    // 運動量に f_i·V、エネルギーに (f·u)·V を residual へ加算する。既定 0 = off (ビット不変)。
+    // 軸対称は未対応 (config 読込時に拒否)。陰解法では明示ソース扱い (Jacobian 無し。f·u の
+    // 対角寄与は微小のため省略、必要になれば追加)。
+    flow_float bodyForceX = 0.0;
+    flow_float bodyForceY = 0.0;
+    flow_float bodyForceZ = 0.0;
+
     // SST-DES (Detached-Eddy Simulation) length scale 修正。SST k 消滅項を
     //   D_k = β* ρ k ω = ρ k^{3/2}/l_RANS  →  ρ k^{3/2}/l_DDES
     // へ切り替え、剥離域のみ LES、付着 BL は RANS のままにする (methods/turbulence §8)。

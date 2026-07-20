@@ -58,6 +58,7 @@
 #include "cuda_forge/axisymmetricSource_d.cuh"
 #include "cuda_forge/wmlesWallModel_d.cuh"
 #include "cuda_forge/nodeWallDirichlet_d.cuh"
+#include "cuda_forge/bodyForce_d.cuh"
 #include "cuda_forge/turbulent_viscosity_d.cuh"
 #include "cuda_forge/residualMonitor_d.cuh"
 
@@ -996,6 +997,7 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
         axisymmetricSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        bodyForce_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // 一様体積力 (bodyForce, off なら no-op)
     });
     s.profiler.measureCuda(ProfileSection::ViscousFlux, [&]() {
         viscousFlux_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, s.mat_ns);

@@ -280,3 +280,11 @@ SST 壁関数の Newton (固定 5 回) は**変更しない**。共通化する�
   - **node slip 市松の追加診断**: 1 次風上でも不変 (0.45 vs 0.48 m/s) → 再構成でなく slip 閉包自体。
     修正は ghostless plan の slip 再実装に移管 ([調査ノート](../../notes/investigations/node-slip-tangential-density-spurious-flow.md)
     追試節)。回帰テストケースとして `run_isoT_condL_node` 構成 (厳密解シード+静止保持) を指定済み。
+- `2026-07-20` — **§5-7 体積力 config 実装・厳密解検証完了** (チャネル駆動の前提部品)。
+  top-level `bodyForce: [fx,fy,fz]` (既定 0=off ビット不変・軸対称拒否)、`bodyForce_d.cu` で
+  運動量 $f_iV$ + エネルギー $(f\cdot u)V$。**体積力駆動 Poiseuille 厳密解** (case/24
+  `run_poiseuille_bf_{cell,node}`, u 放物線 u_max=5・T 四次 6.3e-3 K・q_w=0.1207 W/m²) で検証:
+  cell は u 0.30%/T 1.5e-4 K/τ_w 評価バイアス込み一致、node は q_w −0.0%・**第 1 内点 u −20% は
+  既知の W-I 閉包 O(Δ) バイアス** (等温 T キンクと同根、体積力は無罪・内部プロファイル正常)。
+  回帰 4/4 PASS。設定リファレンスは procedures/solver-settings.md「bodyForce」。
+  **残る §5-8 チャネル検証 (Reτ550→2000) に着手可能**。

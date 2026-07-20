@@ -20,6 +20,8 @@ add_library(cuda_forge STATIC
     wmlesWallModel_d.cuh
     nodeWallDirichlet_d.cu
     nodeWallDirichlet_d.cuh
+    bodyForce_d.cu
+    bodyForce_d.cuh
     wallLaw_d.cuh
     calcGradient_d.cu
     calcGradient_d.cuh

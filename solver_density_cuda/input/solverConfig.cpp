@@ -212,6 +212,17 @@ void solverConfig::read(std::string fname)
         this->solver = getValidatedValue<std::string>(config, "solver");
 
         // KEEP 用 opt-in 散逸レイヤ (solver=="KEEP" のみ有効。plans/active/convection-keep-es-dissipation.md)
+        // 一様体積力 (top-level: bodyForce: [fx, fy, fz])。既定 [0,0,0] = off。
+        if (config["bodyForce"]) {
+            std::vector<double> f;
+            for (const auto& v : config["bodyForce"]) f.push_back(v.as<double>());
+            if (f.size() != 3) {
+                throw std::runtime_error("Key 'bodyForce' must be a list of 3 floats [fx, fy, fz].");
+            }
+            this->bodyForceX = f[0]; this->bodyForceY = f[1]; this->bodyForceZ = f[2];
+            std::cout << "'bodyForce': [" << f[0] << ", " << f[1] << ", " << f[2] << "]\n";
+        }
+
         this->keepDissType  = getOptionalValidatedValue<int>(config, "keepDissType", 0, "");
         this->keepDissCoeff = getOptionalValidatedValue<double>(config, "keepDissCoeff", 0.05, "");
         this->keepDissCprime = getOptionalValidatedValue<int>(config, "keepDissCprime", 1, "");
@@ -446,6 +457,11 @@ void solverConfig::read(std::string fname)
             this->speciesNames.clear();
             for (const auto& sn : physProp["species"]) this->speciesNames.push_back(sn.as<std::string>());
             this->nSpecies = static_cast<int>(this->speciesNames.size());
+        }
+
+        if (this->isAxisymmetric == 1 &&
+            (this->bodyForceX != 0.0 || this->bodyForceY != 0.0 || this->bodyForceZ != 0.0)) {
+            throw std::runtime_error("'bodyForce' is not supported with isAxisymmetric=1.");
         }
         if (physProp["speciesDBFile"])          this->speciesDBFile = physProp["speciesDBFile"].as<std::string>();
         if (physProp["speciesDiffusionMethod"]) this->speciesDiffusionMethod = physProp["speciesDiffusionMethod"].as<int>();
