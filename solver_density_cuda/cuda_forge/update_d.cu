@@ -281,7 +281,8 @@ __global__ void applySSTPointImplicit_d
  geom_int* wall_flag, int decouple_wall_omega,
  // node-centered k Dirichlet (SU2 SetTurbVars_WF 流): roK_wf[ic]>=0 の第一内層ノードで roK=roK_wf に固定
  // (dk=0)。near-wall k 蓄積 (再付着 μ_t ピーク) を断つ。nullptr/全-1 で無効 (cell 不変)。
- flow_float* roK_wf
+ flow_float* roK_wf,
+ flow_float* roOmega_wf
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -290,6 +291,7 @@ __global__ void applySSTPointImplicit_d
         const flow_float dt_l = max(dt_local[ic], static_cast<flow_float>(1.0e-30));
         const bool omegaWall = (decouple_wall_omega != 0 && wall_flag != nullptr && wall_flag[ic] == 1);
         const bool kPinned   = (roK_wf != nullptr && roK_wf[ic] >= static_cast<flow_float>(0.0));
+        const bool omgPinnedWf = (roOmega_wf != nullptr && roOmega_wf[ic] >= static_cast<flow_float>(0.0));
         // D_φ = V/Δτ + V·src_jac（消散）+ transport_diag（移流+拡散、既に [m³/s]）+ V·unsteady_diag。
         // transport_diag は壁近傍の陽的 k/ω 輸送 stiff 性を陰化し安定 cfl_pseudo を一桁以上引き上げる。
         const flow_float Dk = v / dt_l + v * src_jac_k[ic]     + transport_diag_k[ic]     + v * unsteady_diag;
@@ -304,7 +306,9 @@ __global__ void applySSTPointImplicit_d
         // realizability: ρk ≥ 0, ρω > 0。dual-time でも正しいよう現在反復値への in-place 加算
         // （定常では roKN==roK のため roKN+dk と等価）。dual-time の roKN/roKNN は BDF 残差項側で使用。
         roK[ic]     = kPinned ? roK_wf[ic] : max(roK[ic] + dk, static_cast<flow_float>(0.0));
-        roOmega[ic] = max(roOmega[ic] + dw, static_cast<flow_float>(1.0e-20));
+        // ω Dirichlet (node 第一内層ノード, roOmega_wf): dw で更新せず ρω_w に固定 (k と対)。
+        roOmega[ic] = omgPinnedWf ? roOmega_wf[ic]
+                                  : max(roOmega[ic] + dw, static_cast<flow_float>(1.0e-20));
     }
 }
 
@@ -330,7 +334,8 @@ void applySSTPointImplicit_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0,
         // k Dirichlet は wallTreatmentSST==1 && nodeKwfDirichlet==1 の node のみ。それ以外は nullptr で無効化
         // (roK_wf が init されない経路で誤発火しないよう堅牢化)。
-        (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? var.c_d["roK_wf"] : nullptr
+        (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? var.c_d["roK_wf"] : nullptr,
+        (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeOmegaWfDirichlet == 1) ? var.c_d["roOmega_wf"] : nullptr
     );
 
     gpuErrchk( cudaPeekAtLastError() );

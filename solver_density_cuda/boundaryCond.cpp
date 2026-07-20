@@ -336,6 +336,10 @@ void applyRansScalarBoundaries(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& 
         ransBoundary_d_wrapper(cfg , cuda_cfg , bc , msh , var);
     }
 
+    // node k Dirichlet の状態ピン (全 wall bc の roK_wf が揃った後)。explicit RK3 でも実効化する
+    // (従来は implicit 更新カーネルのみで、explicit では k が初期値凍結するバグ。ransWallFunction_d.cu)。
+    applyNodeKwfStatePin_d_wrapper(cfg , cuda_cfg , msh , var);
+
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
 }

@@ -15,3 +15,7 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
 
 // wall-function 生産 wf_pk を全セル -1 (inactive) に初期化する (bc ループ前に 1 回呼ぶ)。
 void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// node k Dirichlet の状態ピン (roK_wf>=0 ノードで roK/k を固定)。applyRansScalarBoundaries の
+// bc ループ後に呼ぶ (explicit RK3 でも Dirichlet を実効化する。implicit の update 時ピンと冪等)。
+void applyNodeKwfStatePin_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

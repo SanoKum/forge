@@ -162,6 +162,11 @@ public:
     // 副作用: 非平衡再付着で u_τ→0 → k_wf→0 と乱流を抑え x_R が伸びる (case/18.backstep: 7.63→8.67)。
     // wallTreatmentSST==1 かつ node のときだけ有効。cell では無視。
     int nodeKwfDirichlet = 1;
+    // node ω Dirichlet (第一内層ノード, SU2 SetTurbVars_WF 対応)。壁ノード ω アンカは維持したまま
+    // 第一内層にも ρω_w をピンする (νt(第一内層)=ν_t,wall を構造保証)。凹コーナーで複数壁が同一
+    // 第一内層ノードを共有すると値 race の懸念 (methods/turbulence §3.7) があるため既定 OFF。
+    // 周期チャネル等の角なし WMLES/EWT ケースで opt-in する (case/38)。
+    int nodeOmegaWfDirichlet = 0;
     // SST 初期乱流 (IC に roK/roOmega が無いときの初期値)。既定 0 = 従来動作 (k=ω=0, ビット不変)。
     // ただし ω=0 は mu_t=k/ω が ill-posed で cold start から発散しやすい (特に node wt=1)。
     // 非 SST IC (層流場/メッシュ変換直後) から SST を始める場合は freestream 値 (例 inlet と同じ

@@ -380,6 +380,7 @@ void solverConfig::read(std::string fname)
         }
 
         this->nodeKwfDirichlet = getOptionalValidatedValue<int>(turb, "nodeKwfDirichlet", 1, "turbulence"); // 既定 1 (node k Dirichlet)
+        this->nodeOmegaWfDirichlet = getOptionalValidatedValue<int>(turb, "nodeOmegaWfDirichlet", 0, "turbulence");
         if (this->nodeKwfDirichlet < 0 || this->nodeKwfDirichlet > 1) {
             throw std::runtime_error("Key 'nodeKwfDirichlet' in 'turbulence' must be 0 or 1.");
         }

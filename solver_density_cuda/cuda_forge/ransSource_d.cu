@@ -51,6 +51,7 @@ __global__ void rans_sst_source_d(
     // node k Dirichlet (SU2 SetTurbVars_WF 流): roK_wf>=0 の第一内層ノードで res_roK を 0 化 (k は固定なので
     // 残差不要・rms_roK 汚染回避)。nullptr/全-1 で無効 (cell 不変)。
     flow_float* roK_wf,
+    flow_float* roOmega_wf,
     // node 入口 (Dirichlet スカラー境界) ピン: ==1 のノードで res_roK/res_roOmega/src_jac_* を 0 化
     // (保存量は ransBoundary で ρ·Dirichlet 値にピン済)。nullptr/全0 で無効 (cell 不変)。
     flow_float* scalarDirichletPin)
@@ -204,6 +205,11 @@ __global__ void rans_sst_source_d(
         res_roK[ic]   = static_cast<flow_float>(0.0);
         src_jac_k[ic] = static_cast<flow_float>(0.0);
     }
+    // node ω Dirichlet (第一内層ノード, roOmega_wf>=0): ω は固定なので残差・対角不要 (k と対)。
+    if (roOmega_wf != nullptr && roOmega_wf[ic] >= static_cast<flow_float>(0.0)) {
+        res_roOmega[ic]   = static_cast<flow_float>(0.0);
+        src_jac_omega[ic] = static_cast<flow_float>(0.0);
+    }
     // node 入口 (Dirichlet スカラー境界) ノード: k/ω とも ρ·Dirichlet 値にピン済なので残差・対角を 0 化
     // (放置すると入口×壁コーナーで res_roOmega が突出し rms_roOmega プラトーを作る)。
     if (scalarDirichletPin != nullptr && scalarDirichletPin[ic] == static_cast<flow_float>(1.0)) {
@@ -252,6 +258,7 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
         (cfg.discretization == "node") ? 1 : 0,
         (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? var.c_d["roK_wf"] : nullptr,
+        (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeOmegaWfDirichlet == 1) ? var.c_d["roOmega_wf"] : nullptr,
         (cfg.discretization == "node") ? var.c_d["scalarDirichletPin"] : nullptr);
 
     gpuErrchk(cudaPeekAtLastError());

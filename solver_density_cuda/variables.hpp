@@ -110,6 +110,10 @@ public:
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。
         // cell モードでは常に -1 (cell は viscousFlux_wall_d の壁面 modeled τ_w を内部セルに課すため不要)。
         "Tau_Wall",
+        // node k/ω Dirichlet (SU2 SetTurbVars_WF 流): 第一内層ノードの ω 固定値 ρω_w (Menter ブレンド)。
+        // 非対象ノードは -1。roK_wf と対で explicit/implicit 両経路の状態ピンに使う (2026-07-20:
+        // ω を壁ノードのみピンすると第一内点がせん断駆動 P_ω で暴騰し νt が立たない — case/38)。
+        "roOmega_wf",
         // WMLES 等温壁 (node) 用: 壁ノードのモデル壁熱流束 q_w [W/m²] (壁→流体正, 非対象は -1)。
         // viscousFlux_d の AddQWall (W-I 熱流束置換) と zeroWallMomentumResidual の res_roe ピン
         // マーカを兼ねる (methods/turbulence §10.4)。断熱 WMLES / cell では常に -1。
