@@ -634,3 +634,63 @@ void                 thermo_init_db(solverConfig& cfg);
 const SpeciesThermo* thermo_species_device_ptr();   // device global memory
 int                  thermo_num_species();
 const SpeciesThermo* thermo_species_host();          // host array (length = thermo_num_species)
+
+// =============================================================================
+// 共通 helper: セル組成の取り出しと「所与温度 T での気体状態」評価
+//   BC ゴースト構成 (wall_isothermal 等)・node 壁ノード温度ピンなど、
+//   「セル ic の組成 (TP) / CPG 定数で、指定温度 T の R, e(T), cp(T), γ(T) が要る」
+//   頻出パターンの重複排除 (2026-07-20)。boundaryCond_d.cu の bc_cell_Y はこの
+//   thermo_cell_Y への転送で維持される。
+// =============================================================================
+
+// セル ic の質量分率 Y[] を roY から取り出して正規化する。多成分 (n>=2) で true。
+// 単成分/roY 無しは false (Y は未定義のままなので、呼び手は sp[0] 単成分式を使う)。
+#if defined(__CUDACC__)
+__device__ inline bool thermo_cell_Y(flow_float* const* roY, int n, geom_int ic, double* Y)
+{
+    if (roY == nullptr || n < 2) return false;
+    double s = 0.0;
+    for (int k = 0; k < n; ++k) { Y[k] = (double)roY[k][ic]; s += Y[k]; }
+    const double inv = 1.0 / (s > 1.0e-300 ? s : 1.0e-300);
+    for (int k = 0; k < n; ++k) Y[k] *= inv;
+    return true;
+}
+
+// 温度 T における気体状態係数 (R は温度非依存・組成依存)。
+struct GasStateAtT {
+    flow_float R;      // 気体定数 [J/(kg K)]
+    flow_float e;      // 内部エネルギー e(T) [J/kg] (運動エネルギー含まず)
+    flow_float cp;     // 定圧比熱 cp(T) [J/(kg K)]
+    flow_float gamma;  // 比熱比 γ(T)
+};
+
+// セル ic の組成 (thermalMethod==2, NASA) または CPG 定数 (それ以外) で、温度 T の
+// R / e / cp / γ を返す。TP 側は内部 double で評価 (既存 BC カーネルと同じ演算列)。
+__device__ inline GasStateAtT thermo_state_at_T(
+    int thermalMethod, flow_float ga, flow_float cp_const,
+    const SpeciesThermo* sp, flow_float* const* roY, int nSpecies,
+    geom_int ic, flow_float T)
+{
+    GasStateAtT g;
+    if (thermalMethod == 2) {
+        double Y[THERMO_MAX_SPECIES];
+        const bool mix = thermo_cell_Y(roY, nSpecies, ic, Y);
+        const int n = (nSpecies >= 1) ? nSpecies : 1;
+        const double Td  = (double)T;
+        const double Rd  = mix ? thermo_R_mix(sp, n, Y) : thermo_R_species(sp[0]);
+        const double ed  = mix ? thermo_e_mix(sp, n, Y, Td)
+                               : (thermo_h_mass(sp[0], Td) - Rd*Td);
+        const double cpd = mix ? thermo_cp_mix(sp, n, Y, Td) : thermo_cp_mass(sp[0], Td);
+        g.R     = (flow_float)Rd;
+        g.e     = (flow_float)ed;
+        g.cp    = (flow_float)cpd;
+        g.gamma = (flow_float)(cpd/((cpd - Rd) > 1.0e-6 ? (cpd - Rd) : 1.0e-6));
+    } else {
+        g.R     = cp_const - cp_const/ga;
+        g.e     = (cp_const/ga) * T;   // e = cv T, cv = cp/γ
+        g.cp    = cp_const;
+        g.gamma = ga;
+    }
+    return g;
+}
+#endif // __CUDACC__

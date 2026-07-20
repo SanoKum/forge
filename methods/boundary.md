@@ -141,12 +141,19 @@ node (median-dual) の `wall_isothermal` は、壁ノードの温度状態を BC
 (運動量の `nodeWallDirichlet` の熱版。`nodeWallDirichlet: 1` [既定] のとき有効)。3 点セット:
 
 1. **状態ピン** (`applyNodeIsothermalWallPin`): applyBconds 位相で壁ノードの T/roe/P/sonic を
-   Tw に整合させる (WMLES 等温壁の `wmles_pin_wall_temperature_d` を流用)。
+   Tw に整合させる (WMLES 等温壁と同一カーネル `pin_wall_node_temperature_d` を共用)。
 2. **残差ゼロ化** (`zeroNodeIsothermalEnergyResidual`): 壁ノードの `res_roe` を 0 に射影
    (Dirichlet ノードの残差は BC 強制であり物理不均衡でない)。
 3. **陰解法 Jacobian 整合** (`iso_wall_flag_d`): block-DPLUR の 5×5 対角ブロックで壁ノードの
    エネルギー行 (row 4) を単位行化 + rhs=0 (SU2 `DeleteValsRowi` 相当、壁運動量 3 行 decouple と
    同型)。**これ無しで状態ピンだけ行うと implicit は数 step で発散する** (2026-07-20 実測)。
+
+実装の所在: **node 壁強境界の状態層は [`cuda_forge/nodeWallDirichlet_d.cu`](../solver_density_cuda/cuda_forge/nodeWallDirichlet_d.cu) に集約**
+(u=0 状態ピン `enforceWallNoSlip` / 残差射影 `zeroWallDirichletResiduals` [運動量+SST ω+等温 roe] /
+温度ピン)。壁関数 (`ransWallFunction_d`)・壁モデル (`wmlesWallModel_d`) は「モデル層」として分離され、
+流束層 (`viscousFlux_d` の Tau_Wall/Qw_Wall マーカ) 経由でのみ結合する — 状態層は
+`wallTreatmentSST`/`wallModelLES` を参照しない。所与温度の熱力学状態は `thermo_d.cuh` の
+`thermo_state_at_T` / `thermo_cell_Y` (共通 helper) を使う。
 
 検証 (case/24 純伝導・厳密解シード): 壁ノード T = BC 値厳密 (350.0000/300.0000)、中央部熱流束
 厳密 (+0.00%)。既知の残課題: 第 1 スペーシングの勾配に −15% 程度の局所バイアス (W-I 弱形式閉包の

@@ -30,11 +30,3 @@ bool wmlesNodeIsothermalActive(const solverConfig& cfg, const mesh& msh);
 // node では Tau_Wall/Qw_Wall の -1 初期化と等温壁ノードの T ピンも行う。
 void applyWmlesWallModel(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
 
-// 素の node 等温壁 (非 WMLES) の壁ノード温度ピンが有効か (node && nodeWallDirichlet && wall_isothermal あり)
-bool nodeIsothermalPinActive(const solverConfig& cfg, const mesh& msh);
-
-// 素の node 等温壁の壁ノード温度状態ピン (nodeWallDirichlet の熱版。applyWmlesWallModel と同位相で呼ぶ)
-void applyNodeIsothermalWallPin(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
-
-// 素の node 等温壁の壁ノード res_roe ゼロ化 (zeroWallMomentumResidual と同位相で呼ぶ)
-void zeroNodeIsothermalEnergyResidual(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

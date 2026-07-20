@@ -1,19 +1,16 @@
 #include "cuda_forge/boundaryCond_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
+#include "cuda_forge/thermo_d.cuh"
 #include "cuda_forge/speciesTransport_d.cuh"  // species_roY_device_ptr()
 
 // 内部セル ic の正規化質量分率 Y を取り出す (多成分 ghost の熱再構成用)。
 // 壁/slip/outflow/outlet の ghost 組成は隣接内部セルと同一 (zero-gradient) なので、
 // TP の R/cp/h/e/γ をその混合組成で再構成する。roY==nullptr または n<2 (単成分) では
 // false を返し、呼び出し側は従来の sp[0] 経路をビット不変で維持する。
+// 共通 helper (thermo_d.cuh の thermo_cell_Y) への転送。旧名は BC カーネル多数の呼び出し互換用。
 __device__ inline bool bc_cell_Y(flow_float* const* roY, int n, geom_int ic, double* Y)
 {
-    if (roY == nullptr || n < 2) return false;
-    double s = 0.0;
-    for (int k = 0; k < n; ++k) { Y[k] = (double)roY[k][ic]; s += Y[k]; }
-    const double inv = 1.0 / (s > 1.0e-300 ? s : 1.0e-300);
-    for (int k = 0; k < n; ++k) Y[k] *= inv;
-    return true;
+    return thermo_cell_Y(roY, n, ic, Y);
 }
 
 __global__
@@ -400,13 +397,9 @@ __global__ void wall_isothermal_d
         if (thermalMethod == 2) {
             // 等温壁 ghost を T=Tg (鏡像) と整合: roe=ρ(e_NASA(Tg)+ek), sonic=√(γ_mix P/ρ)。
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
-            const double Tgd = (double)Tg;
-            const double e   = mix ? thermo_e_mix(sp, nSpecies, Yc, Tgd)
-                                   : (thermo_h_mass(sp[0], Tgd) - (double)R*Tgd);
-            const double cpv = mix ? thermo_cp_mix(sp, nSpecies, Yc, Tgd) : thermo_cp_mass(sp[0], Tgd);
-            const double gmx = cpv/((cpv-(double)R) > 1.0e-6 ? (cpv-(double)R) : 1.0e-6);
-            roe[ig]  = (flow_float)((double)ro[ig]*(e + (double)ekg));
-            sonic[ig]= (flow_float)sqrt(gmx*(double)P[ig]/(double)ro[ig]);
+            const GasStateAtT gw = thermo_state_at_T(thermalMethod, ga, cp, sp, roY, nSpecies, ic, Tg);
+            roe[ig]  = ro[ig]*(gw.e + ekg);
+            sonic[ig]= sqrt(gw.gamma*P[ig]/ro[ig]);
         } else {
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
             roe[ig]  = P[ig]/(ga - static_cast<flow_float>(1.0)) + ro[ig]*ekg;
@@ -446,10 +439,8 @@ __global__ void wall_isothermal_d
         Psb[ib]   = P[ic];
         rob[ib]   = Psb[ib]/(R*Tsb[ib]);
         if (thermalMethod == 2) {
-            const double Tw = (double)Tsb[ib];
-            const double e  = mix ? thermo_e_mix(sp, nSpecies, Yc, Tw)
-                                  : (thermo_h_mass(sp[0], Tw) - (double)R*Tw);
-            roeb[ib] = (flow_float)((double)rob[ib]*(e + (double)ek));
+            const GasStateAtT gw = thermo_state_at_T(thermalMethod, ga, cp, sp, roY, nSpecies, ic, Tsb[ib]);
+            roeb[ib] = rob[ib]*(gw.e + ek);
         } else {
             roeb[ib]  = Psb[ib]/(ga-1.0) + rob[ib]*ek;
         }

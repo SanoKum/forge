@@ -1,6 +1,5 @@
 #include "axisymmetricSource_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
-#include "cuda_forge/wmlesWallModel_d.cuh"   // wmlesNodeIsothermalActive (res_roe ピンのゲート)
 
 
 // 軸対称 (B 流儀) — 半径方向運動量の圧力・粘性ソース項を residual に加算する。
@@ -154,85 +153,6 @@ void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
-}
-
-// node-centered 壁 Dirichlet (state 初期化): 壁ノードで速度を厳密に 0 にする。除去する運動エネルギー
-// 0.5*(roUx²+roUy²+roUz²)/ro を roe からも引き、内部エネルギー=圧力が過大にならないようにする
-// (enforceAxisSymmetry_d の 3 成分版)。IC 確定後に一度だけ呼ぶ。
-__global__ void enforceWallNoSlip_d
-(
-    geom_int nCells, geom_int* wall_flag,
-    flow_float* ro, flow_float* roUx, flow_float* roUy, flow_float* roUz, flow_float* roe,
-    flow_float* Ux, flow_float* Uy, flow_float* Uz
-)
-{
-    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
-    if (ic < nCells && wall_flag[ic] == 1) {
-        const flow_float r = ro[ic];
-        if (r > (flow_float)0.0) {
-            roe[ic] -= (flow_float)0.5 * (roUx[ic]*roUx[ic] + roUy[ic]*roUy[ic] + roUz[ic]*roUz[ic]) / r;
-        }
-        roUx[ic] = (flow_float)0.0; roUy[ic] = (flow_float)0.0; roUz[ic] = (flow_float)0.0;
-        Ux[ic]   = (flow_float)0.0; Uy[ic]   = (flow_float)0.0; Uz[ic]   = (flow_float)0.0;
-    }
-}
-
-// node-centered 壁 Dirichlet (残差射影): 壁ノードで運動量「残差」を 0 にし、速度を 0 に保つ。
-// 状態やエネルギーをいじらず flux+source 積算後に残差を射影するだけなので block-DPLUR と整合する
-// (zeroAxisRadialResidual_d の 3 成分版)。assembleResidual 末尾 (軸射影の後) で毎反復呼ぶ。
-__global__ void zeroWallMomentumResidual_d
-(
-    geom_int nCells, geom_int* wall_flag,
-    flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roUz,
-    // SST: 壁ノードで ω は Dirichlet ピン (rans_wall_scalar_boundary_d) なので残差を 0 に射影する。
-    // Dirichlet ノードの残差は BC 強制であり物理的不均衡でない → rms_roOmega の汚染 (収束判定の誤検出) を防ぐ。
-    // nullptr で無効 (非 SST)。k はノイマンなので res_roK は触らない。
-    flow_float* res_roOmega,
-    // WMLES 等温壁 (node): 壁ノード温度は wmles_pin_wall_temperature_d で Dirichlet ピンされるため
-    // res_roe も 0 に射影する。対象ノードの識別は Qw_Wall マーカ (>-0.5 = 等温 WMLES 壁ノード)。
-    // nullptr で無効 (断熱 WMLES / 非 WMLES はエネルギー残差を触らない)。
-    flow_float* Qw_Wall, flow_float* res_roe
-)
-{
-    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
-    if (ic < nCells && wall_flag[ic] == 1) {
-        res_roUx[ic] = (flow_float)0.0;
-        res_roUy[ic] = (flow_float)0.0;
-        res_roUz[ic] = (flow_float)0.0;
-        if (res_roOmega != nullptr) res_roOmega[ic] = (flow_float)0.0;
-        if (Qw_Wall != nullptr && Qw_Wall[ic] > (flow_float)-0.5) res_roe[ic] = (flow_float)0.0;
-    }
-}
-
-void enforceWallNoSlip_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
-{
-    if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return;
-    enforceWallNoSlip_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
-        msh.nCells, msh.wall_flag_d,
-        var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"],
-        var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"]
-    );
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchkKernelSync();
-}
-
-void zeroWallMomentumResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
-{
-    if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return;
-    const bool sst = (cfg.LESorRANS == 2 && cfg.RANSmodel == 1);
-    const bool wmlesIso = wmlesNodeIsothermalActive(cfg, msh);
-    zeroWallMomentumResidual_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
-        msh.nCells, msh.wall_flag_d,
-        var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"],
-        sst ? var.c_d["res_roOmega"] : nullptr,
-        wmlesIso ? var.c_d["Qw_Wall"] : nullptr,
-        wmlesIso ? var.c_d["res_roe"] : nullptr
-    );
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchkKernelSync();
-
-    // 素の node 等温壁 (非 WMLES): 壁ノード T ピン (applyNodeIsothermalWallPin) と対で res_roe を 0 化
-    zeroNodeIsothermalEnergyResidual(cfg , cuda_cfg , msh , var);
 }
 
 void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)

@@ -57,6 +57,7 @@
 #include "cuda_forge/ducrosSensor_d.cuh"
 #include "cuda_forge/axisymmetricSource_d.cuh"
 #include "cuda_forge/wmlesWallModel_d.cuh"
+#include "cuda_forge/nodeWallDirichlet_d.cuh"
 #include "cuda_forge/turbulent_viscosity_d.cuh"
 #include "cuda_forge/residualMonitor_d.cuh"
 
@@ -1005,7 +1006,7 @@ void assembleResidual(StepContext& s, int stage_index)
     zeroAxisRadialResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // node-centered 壁 Dirichlet: 壁ノードの運動量残差を 0 に射影し u=0 を保つ (壁ゴースト撤廃の代替)。
     // 軸射影の後に置き、コーナー (壁∩軸はまれだが) でも壁 no-slip を最終確定する。cell/非 node では no-op。
-    zeroWallMomentumResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    zeroWallDirichletResiduals_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // node-centered 周期境界 DOF 同一視 (median-dual M4, §4.5): 全 flux/source 積算 + 壁/軸射影の後に、
     // 周期 group の保存量残差を全員で足し合わせ全員へ書き戻す。合併体積と合わせ両側部分 CV を 1 CV として
     // 同期更新する (継ぎ目に双対面を作らず、両側内部双対面が res を組む)。cell/非周期では no-op。

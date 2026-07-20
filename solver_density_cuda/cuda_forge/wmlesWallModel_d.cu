@@ -4,6 +4,7 @@
 #include "cuda_forge/wallLaw_d.cuh"
 #include "cuda_forge/thermo_d.cuh"
 #include "cuda_forge/speciesTransport_d.cuh"  // species_roY_device_ptr()
+#include "cuda_forge/nodeWallDirichlet_d.cuh"  // pinWallNodeTemperature_bcond (状態層・共有)
 
 #include <unordered_set>
 
@@ -160,18 +161,7 @@ __global__ void wmles_wall_model_d(
     // ---- 壁面物性 (T_w 評価; γ/cp 一定を焼き込まない) ----
     //   組成: node は壁ノード, cell は第一セル (ghost 組成=内部と同一)。
     double Y[THERMO_MAX_SPECIES];
-    if (nSpecies > 1 && roY != nullptr) {
-        const double ro_d = (double)max(ro[ic], (flow_float)1.0e-30);
-        double ysum = 0.0;
-        for (int s = 0; s < nSpecies; s++) {
-            double y = (double)roY[s][ic]/ro_d; if (y < 0.0) y = 0.0;
-            Y[s] = y; ysum += y;
-        }
-        const double inv = 1.0/(ysum > 1.0e-30 ? ysum : 1.0e-30);
-        for (int s = 0; s < nSpecies; s++) Y[s] *= inv;
-    } else {
-        Y[0] = 1.0;
-    }
+    if (!thermo_cell_Y(roY, nSpecies, ic, Y)) Y[0] = 1.0;   // 共通 helper (thermo_d.cuh)
     flow_float mu_w, lam_w, cp_w, R_w;
     wmles_wall_props(thermalMethod, viscMethod, ga, cp_const, visc_const, thermCond_const,
                      sp, nSpecies, Y, Tw, mu_w, lam_w, cp_w, R_w);
@@ -245,58 +235,6 @@ __global__ void wmles_wall_model_d(
     }
 }
 
-// node 等温 WMLES 壁: 壁ノードの温度状態を指定壁温にピンする (theory §10.4)。
-//   T, roe (=ρ(e(Tw)+ek)), P (=ρR Tw), sonic を整合させる。運動量は nodeWallDirichlet が担う。
-//   残差側は zeroWallMomentumResidual_d が Qw_Wall マーカで res_roe を 0 化する。
-__global__ void wmles_pin_wall_temperature_d(
-    geom_int nb,
-    geom_int* bplane_cell,
-    int thermalMethod, flow_float ga, flow_float cp_const,
-    const SpeciesThermo* sp, flow_float* const* roY, int nSpecies,
-    flow_float* Tsb,
-    flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz,
-    flow_float* T, flow_float* P, flow_float* roe, flow_float* sonic)
-{
-    const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
-    if (ib >= nb) return;
-    const geom_int ic = bplane_cell[ib];
-    const flow_float Tw = Tsb[ib];
-    const flow_float ek = static_cast<flow_float>(0.5)
-                        * (Ux[ic]*Ux[ic] + Uy[ic]*Uy[ic] + Uz[ic]*Uz[ic]);  // nodeWallDirichlet=1 なら 0
-    flow_float R_w, e_w, ga_w;
-    if (thermalMethod == 2) {
-        double Y[THERMO_MAX_SPECIES];
-        if (nSpecies > 1 && roY != nullptr) {
-            const double ro_d = (double)max(ro[ic], (flow_float)1.0e-30);
-            double ysum = 0.0;
-            for (int s = 0; s < nSpecies; s++) {
-                double y = (double)roY[s][ic]/ro_d; if (y < 0.0) y = 0.0;
-                Y[s] = y; ysum += y;
-            }
-            const double inv = 1.0/(ysum > 1.0e-30 ? ysum : 1.0e-30);
-            for (int s = 0; s < nSpecies; s++) Y[s] *= inv;
-        } else {
-            Y[0] = 1.0;
-        }
-        const int n = (nSpecies >= 1) ? nSpecies : 1;
-        const double Twd = (double)Tw;
-        const double Rd  = (n > 1) ? thermo_R_mix(sp, n, Y) : thermo_R_species(sp[0]);
-        const double ed  = (n > 1) ? thermo_e_mix(sp, n, Y, Twd)
-                                   : (thermo_h_mass(sp[0], Twd) - Rd*Twd);
-        const double cpd = (n > 1) ? thermo_cp_mix(sp, n, Y, Twd) : thermo_cp_mass(sp[0], Twd);
-        R_w  = (flow_float)Rd;
-        e_w  = (flow_float)ed;
-        ga_w = (flow_float)(cpd/((cpd - Rd) > 1.0e-6 ? (cpd - Rd) : 1.0e-6));
-    } else {
-        R_w  = cp_const - cp_const/ga;
-        e_w  = (cp_const/ga) * Tw;   // e = cv Tw, cv = cp/γ
-        ga_w = ga;
-    }
-    T[ic]     = Tw;
-    roe[ic]   = ro[ic] * (e_w + ek);
-    P[ic]     = ro[ic] * R_w * Tw;
-    sonic[ic] = sqrt(ga_w * R_w * Tw);
-}
 
 } // namespace
 
@@ -325,64 +263,6 @@ bool wmlesNodeIsothermalActive(const solverConfig& cfg, const mesh& msh)
     for (const auto& bc : msh.bconds)
         if (wmlesActiveForBcond(cfg, bc) && bc.bcondKind == "wall_isothermal") return true;
     return false;
-}
-
-bool nodeIsothermalPinActive(const solverConfig& cfg, const mesh& msh)
-{
-    if (cfg.discretization != "node" || cfg.nodeWallDirichlet == 0 || msh.wall_flag_d == nullptr) return false;
-    for (const auto& bc : msh.bconds)
-        if (bc.bcondKind == "wall_isothermal" && !wmlesActiveForBcond(cfg, bc)) return true;
-    return false;
-}
-
-// 素の node 等温壁 (非 WMLES): 壁ノード温度状態を BC 壁温にピンする (nodeWallDirichlet の熱版)。
-// 旧来はエネルギーだけ弱形式で、壁ノード T が壁 CV 平均に緩み (ny=64 で ~0.1 K オフセット)
-// 第 1 スペーシングの勾配が −24% 歪んだ (case/24 純伝導検証 2026-07-20)。運動量 Dirichlet と
-// 対称に温度も強制する。残差側は zeroNodeIsothermalEnergyResidual が res_roe を 0 化する。
-void applyNodeIsothermalWallPin(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
-{
-    if (!nodeIsothermalPinActive(cfg, msh)) return;
-    for (auto& bc : msh.bconds) {
-        if (bc.bcondKind != "wall_isothermal") continue;
-        if (wmlesActiveForBcond(cfg, bc)) continue;   // WMLES 側で同一ピン適用済み
-        if (bc.iPlanes.empty()) continue;
-        wmles_pin_wall_temperature_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
-            static_cast<geom_int>(bc.iPlanes.size()),
-            bc.map_bplane_cell_d,
-            cfg.thermalMethod, cfg.gamma, cfg.cp,
-            thermo_species_device_ptr(), species_roY_device_ptr(), cfg.nSpecies,
-            bc.bvar_d["Ts"],
-            var.c_d["ro"], var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
-            var.c_d["T"], var.c_d["P"], var.c_d["roe"], var.c_d["sonic"]);
-    }
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchkKernelSync();
-}
-
-namespace {
-// res_roe を bcond の壁ノードで 0 化 (Dirichlet ノードの残差は BC 強制であり物理不均衡でない)
-__global__ void zero_res_roe_bplane_d(geom_int nb, geom_int* bplane_cell, flow_float* res_roe)
-{
-    const geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
-    if (ib >= nb) return;
-    res_roe[bplane_cell[ib]] = static_cast<flow_float>(0.0);
-}
-} // namespace
-
-void zeroNodeIsothermalEnergyResidual(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
-{
-    if (!nodeIsothermalPinActive(cfg, msh)) return;
-    for (auto& bc : msh.bconds) {
-        if (bc.bcondKind != "wall_isothermal") continue;
-        if (wmlesActiveForBcond(cfg, bc)) continue;
-        if (bc.iPlanes.empty()) continue;
-        zero_res_roe_bplane_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
-            static_cast<geom_int>(bc.iPlanes.size()),
-            bc.map_bplane_cell_d,
-            var.c_d["res_roe"]);
-    }
-    gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchkKernelSync();
 }
 
 void applyWmlesWallModel(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
@@ -418,16 +298,9 @@ void applyWmlesWallModel(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , 
 
         const int isothermal = (bc.bcondKind == "wall_isothermal") ? 1 : 0;
 
-        // node 等温壁: 壁ノード温度状態を指定壁温にピン (流束評価の前)
+        // node 等温壁: 壁ノード温度状態を指定壁温にピン (流束評価の前・状態層の共有関数)
         if (isNode != 0 && isothermal != 0) {
-            wmles_pin_wall_temperature_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
-                static_cast<geom_int>(bc.iPlanes.size()),
-                bc.map_bplane_cell_d,
-                cfg.thermalMethod, cfg.gamma, cfg.cp,
-                thermo_species_device_ptr(), species_roY_device_ptr(), cfg.nSpecies,
-                bc.bvar_d["Ts"],
-                var.c_d["ro"], var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
-                var.c_d["T"], var.c_d["P"], var.c_d["roe"], var.c_d["sonic"]);
+            pinWallNodeTemperature_bcond(cfg, cuda_cfg, bc, var);
         }
 
         wmles_wall_model_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
