@@ -219,8 +219,17 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
     `res_roOmega`/`src_jac_omega` 0 化は **node では `wall_flag==1` 限定** (cell は `wf_pk>=0`)。`wf_pk` が第一内層
     にも付くので、ω ゼロ化を `wf_pk>=0` のままにすると第一内層ノードの solved ω まで凍結して崩壊するため、
     `wall_flag` で壁ノードに限定する。
-  - **重要 (やってはいけない)**: ω ピンを第一内層ノードへ移すと、凹コーナーで複数壁が同じ第一内層ノードを共有して
-    ピン値が race し、壁ノード ω アンカが外れて ω 崩壊 → k 暴走 (実測で悪化、不採用)。
+  - **重要 (やってはいけない)**: ω ピンを第一内層ノードへ**移す** (壁アンカを外す) と、凹コーナーで複数壁が同じ
+    第一内層ノードを共有してピン値が race し、壁ノード ω アンカが外れて ω 崩壊 → k 暴走 (実測で悪化、不採用)。
+  - **opt-in 拡張 `nodeOmegaWfDirichlet` (2026-07-20, 既定 0)**: 壁アンカを**維持したまま**第一内層ノードにも
+    ρω_w (Menter ブレンド) を**追加**ピンする (SU2 `SetTurbVars_WF` は第一点の k と ω の両方を設定する)。
+    有効時は同ノードで SST の Bradshaw/strain リミッタも迂回し νt=ρk/ω (=構成上 ρν_t,wall) を使う
+    (ジャンプせん断 S がリミッタ経由で νt を頭打ちにする正帰還ロックの遮断。case/38 周期チャネルで実測・
+    log 則張替でも再形成される構造不安定と確認)。凹コーナー race の懸念 (上記) は壁アンカ維持により失敗形が
+    異なるが未検証のため、**角の無いケース (周期チャネル等) でのみ opt-in** し、コーナー系で使う場合は
+    backstep 級の再検証を先に行うこと。explicit RK3 でも状態ピンが効くよう `applyNodeKwfStatePin`
+    (applyBconds 位相) が k/ω を固定する (従来の k ピンは implicit 更新カーネル内のみで explicit では
+    k が初期値凍結するバグがあった — 同日修正)。
   - **残課題**: node 壁ノードは cell 第一セルより壁から遠く ω ピンが ~1/4 低いため、再付着近傍で μ_t ピークが残る
     (cell 990 に対し ~5800、局所)。場平均・x_R は cell/SU2 整合。
   - 関連 plan: [`turbulence-node-wall-function-coverage.md`](../../plans/active/turbulence-node-wall-function-coverage.md)。

@@ -175,7 +175,12 @@ __global__ void sst_eddy_viscosity_d(
     flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
     int isAxisymmetric,
     flow_float* axisym_uy_over_r,
-    flow_float* vis_turb)
+    flow_float* vis_turb,
+    // node ω Dirichlet (nodeOmegaWfDirichlet, 第一内層ノード roOmega_wf>=0): Bradshaw/strain
+    // リミッタを迂回し νt=ρk/ω (=構成上 ρν_t,wall の mixing-length 値) を使う。ジャンプの巨大 S が
+    // リミッタ経由で νt を頭打ちにし「S 大→νt 小→混合無→ジャンプ維持」の正帰還ロックを作るため
+    // (case/38 run_0011/0012 で実測・log 則張替でも再形成 = 構造不安定)。nullptr で無効。
+    flow_float* roOmega_wf)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -214,7 +219,9 @@ __global__ void sst_eddy_viscosity_d(
     const flow_float arg2   = max(arg2_a, arg2_b);
     const flow_float F2     = tanh(arg2 * arg2);
 
-    vis_turb[ic] = rho * a1 * k_c / max(a1 * w_c, S_mag * F2);
+    const bool wfPin = (roOmega_wf != nullptr && roOmega_wf[ic] >= static_cast<flow_float>(0.0));
+    vis_turb[ic] = wfPin ? rho * k_c / w_c
+                         : rho * a1 * k_c / max(a1 * w_c, S_mag * F2);
 }
 
 
@@ -437,7 +444,9 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
             var.c_d["dUzdx"], var.c_d["dUzdy"], var.c_d["dUzdz"],
             cfg.isAxisymmetric,
             var.c_d["axisym_uy_over_r"],
-            var.c_d["vis_turb"]);
+            var.c_d["vis_turb"],
+            (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeOmegaWfDirichlet == 1)
+                ? var.c_d["roOmega_wf"] : nullptr);
 
         // SST-DES: vis_turb 計算直後に l_DDES とシールド診断を計算する (依存順・plan §4.7)。
         // DESmode==0 (既定) では呼ばない → 既存 SST と完全ビット不変。
