@@ -90,16 +90,13 @@ void slip_d
         rob[ib]   = ro[ic];
         Psb[ib]   = P[ic];
         if (thermalMethod == 2) {
-            // slip 反射は熱力学状態を保存。e は内部温度・内部組成の NASA 値を用いる。
-            double Yc[THERMO_MAX_SPECIES];
-            const bool mix = bc_cell_Y(roY, nSpecies, ic, Yc);
-            const double e_in = mix ? thermo_e_mix(sp, nSpecies, Yc, (double)T[ic])
-                                    : (thermo_h_mass(sp[0], (double)T[ic]) - thermo_R_species(sp[0])*(double)T[ic]);
-            roe[ig]   = (flow_float)((double)ro[ic]*(e_in + (double)ek_ig));
+            // slip 反射は熱力学状態を保存。e は内部温度・内部組成の NASA 値 (共通 helper)。
+            const GasStateAtT gs = thermo_state_at_T(thermalMethod, ga, cp, sp, roY, nSpecies, ic, T[ic]);
+            roe[ig]   = ro[ic]*(gs.e + ek_ig);
             Ht[ig]    = (roe[ig] + P[ig])/ro[ig];
             sonic[ig] = sonic[ic];
             T[ig]     = T[ic];
-            roeb[ib]  = (flow_float)((double)ro[ic]*(e_in + (double)ek_b));
+            roeb[ib]  = ro[ic]*(gs.e + ek_b);
             Tsb[ib]   = T[ic];
         } else {
             roe[ig]  = P[ic] / (ga - 1.0) + ro[ic] * ek_ig;
@@ -628,18 +625,15 @@ flow_float* Psb
         roUz[ig]  = ronew*Uznew*uscale;
 
         if (thermalMethod == 2) {
-            // TP: ghost を (ρ=ronew, P=Pnew) と整合させる。T=P/(ρ R_mix), roe=ρ(e_NASA(T)+ek),
-            //     sonic=√(γ_mix P/ρ)。定数 ga/cp は使わない。
+            // TP: ghost を (ρ=ronew, P=Pnew) と整合させる。T=P/(ρ R_mix)、以降の e/γ は共通 helper。
+            //     定数 ga/cp は使わない。
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
             const double R   = mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]);
-            const double Tg  = (double)Pnew/((double)ronew*R);
-            const double e   = mix ? thermo_e_mix(sp, nSpecies, Yc, Tg)
-                                   : (thermo_h_mass(sp[0], Tg) - R*Tg);
-            const double cpv = mix ? thermo_cp_mix(sp, nSpecies, Yc, Tg) : thermo_cp_mass(sp[0], Tg);
-            const double gmx = cpv/((cpv-R) > 1.0e-6 ? (cpv-R) : 1.0e-6);
-            roe[ig]   = (flow_float)((double)ronew*(e + (double)ekg));
-            sonic[ig] = (flow_float)sqrt(gmx*(double)Pnew/(double)ronew);
-            T[ig]     = (flow_float)Tg;
+            const flow_float Tg = (flow_float)((double)Pnew/((double)ronew*R));
+            const GasStateAtT gs = thermo_state_at_T(thermalMethod, ga, cp, sp, roY, nSpecies, ic, Tg);
+            roe[ig]   = ronew*(gs.e + ekg);
+            sonic[ig] = sqrt(gs.gamma*Pnew/ronew);
+            T[ig]     = Tg;
         } else {
             roe[ig]   = roec;
             sonic[ig] = sqrt(ga*Pnew/ronew);
