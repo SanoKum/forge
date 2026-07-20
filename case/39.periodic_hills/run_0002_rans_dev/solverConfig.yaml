@@ -1,0 +1,63 @@
+mesh:
+  meshFormat: "hdf5"
+  discretization: "node"
+  meshFileName: "hill_des_160x100x60.h5"
+  valueFileName: "hill_des_160x100x60.h5" # 静止 IC (u=0, P/T 一様) にパッチ済み
+
+gpu: 1
+detectNaN: 1
+detectNaNInterval: 100
+
+solver: "SLAU" # 定常 RANS 段階は風上で頑健に (DDES 段で KEEP スタックへ切替)
+lowMachPrecond: 2 # M~0.15 SLAU の市松対策 (backstep 実績)
+
+bodyForce: [400.0, 0.0, 0.0]  # 固定値 (定常段)。抗力との釣合いで U_b が決まる — DDES 段で動的制御に切替
+
+physProp:
+  isCompressible: 1
+  isAxisymmetric: 0
+  thermalMethod: 0    # CPG
+  viscMethod: 0       # 定数粘性
+  ro : 1.177
+  visc : 1.617e-4     # nu=1.374e-4 → Re=Ub*h/nu=10595 (Ub=52, h=0.028)
+  thermCond: 0.2256   # Pr=0.72
+  cp : 1004.5
+  gamma : 1.4
+
+time:
+  unsteady: 0         # 定常 (擬似時間局所 dt)。閉周期系の音響過渡指紋が出たら dual-time へ切替
+  dualTime: 0
+  last:
+    control: 0
+    nStepOuter: 20000  # RANS 発達 (成形速度 IC から)
+    time: 1.00
+  deltaT:
+    control: 1
+    dt: 0.00001
+    cfl: 1.0
+    cfl_pseudo: 2.0
+    blockDPLUR: 1
+    implicitRelax: 0.5
+    dt_min: 0.000000001
+    dt_max: 1.0
+  outStepStart: 0
+  outStepInterval: 500
+  timeIntegration: 11 # block DPLUR
+  nStepInner: 5
+
+space:
+  convMethod: 0 # 段階起動: 1次風上 (安定解が得られたら 1→2 へ)
+  limiter: 2    # Venkatakrishnan
+  pRef: 101325.0
+
+turbulence:
+  LESorRANS: 2  # RANS(SST)
+  LESmodel: 1
+  RANSmodel: 1  # SST
+  DESmode: 0    # 純 RANS (段階起動 + RANS 参照解)
+  wallTreatmentSST: 1
+  nodeOmegaWfDirichlet: 1
+  kInf: 1.0
+  omegaInf: 5000.0
+
+initial: "uniform_p101325_u10" # 未使用 (IC は valueFileName)

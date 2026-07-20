@@ -37,6 +37,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [timeint-bodyforce-massflow-control.md](accepted/timeint-bodyforce-massflow-control.md) | `time_integration` | 体積力の質量流量一定制御 (Benocci & Pinelli 圧縮性版, γ=0.02): 周期丘 DDES 駆動。case/39 で検証済 |
 | [boundary-cell-periodic-conservation.md](accepted/boundary-cell-periodic-conservation.md) | `boundary` | cell 全周期境界の非保存バグ修正: device `bint_d[partnerCellID]` 未転送で ghost が誤値→運動量注入。setPeriodicPartner 直後に H2D コピーで根治。TGV で cell/node 一致を確認 |
 | [thermophysics-eos-positivity-floor-config.md](accepted/thermophysics-eos-positivity-floor-config.md) | `thermophysics` | EOS 正値化フロア (pMin/roMin/tMin) の config 化。無次元・低圧ケース (Taylor-Green) で既定 1.0 Pa フロアが場を破壊する問題を解消、既定値据え置きでビット不変 |
 | [boundary-inlet-profile.md](accepted/boundary-inlet-profile.md) | `boundary` | 入口分布プロファイル: CSV テーブルで inlet bvar を非一様化 (x/y/z 1D 線形 or xyz 最近傍)、壁法則 helper |

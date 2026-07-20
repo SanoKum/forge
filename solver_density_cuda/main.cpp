@@ -1398,6 +1398,10 @@ void advanceOneStep(
     StepContext s{cfg, cuda_cfg, msh, mat_ns, var, fluct, pprobes,
                   profiler, residual_logger, implicit_diag_logger, iStep};
 
+    // 質量流量一定制御 (bodyForceCtrl=1 のみ)。物理ステップ境界で bodyForceX を更新し、
+    // ステップ内 (RK 段・dual-time サブ反復) は固定値として扱う。
+    bodyForceCtrlUpdate(cfg , msh , var , iStep);
+
     profiler.measureWall(ProfileSection::StepTotal, [&]() {
         if (cfg.isImplicit == 1) {
             if (cfg.unsteady == 1) {

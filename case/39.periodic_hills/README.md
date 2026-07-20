@@ -1,0 +1,41 @@
+# case/39.periodic_hills — 周期丘 (ERCOFTAC periodic hills, Re=10595)
+
+剥離・再付着を含む標準検証ケース。SST-DDES ([turbulence-iddes-sst plan](../../plans/active/turbulence-iddes-sst.md))
+の grey-area 挙動確認と、将来の SLA (Shear-Layer-Adapted Δ) 導入の判別ケース。
+駆動は文献同様「x/z 周期 + 質量流量一定の動的体積力」
+([timeint-bodyforce-massflow-control plan](../../plans/active/timeint-bodyforce-massflow-control.md))。
+
+## 幾何・条件
+
+- 丘形状: NASA TMR 配布 `hill-geometry.dat` の 6 区間多項式 (mm 単位, h=28mm)。正本は
+  https://tmbwg.github.io/turbmodels/Other_LES_Data/2Dhill_periodic/hill-geometry.dat
+- 領域: $9h \times 3.035h \times 4.5h$ (x/z 周期)、山頂が x=0/9h。上壁平坦
+- Re=10595 ($U_b h/\nu$, $U_b$=丘頂断面 y∈[h,3.035h] のバルク速度)
+- forge 設定: CPG 空気, T_w=300K 等温壁 (体積力仕事の排熱), M≈0.15 (U_b=52 m/s),
+  μ=1.617e-4 (定数) → ν=1.374e-4
+- 目標体積平均運動量密度 $\langle\rho u_x\rangle_V$ = 44.12 kg/m²/s (=ρ₀U_b·A_crest·L_x/V)
+- 初期体積力推定 400 Pa/m (動的制御が上書き)
+
+## 参照データ (裏取り済み・2026-07-20 調査)
+
+- **Fröhlich et al. 2005 JFM 526** — 参照 LES (~5M セル)。x/h=0.05,0.5,2,4,6,8 のプロファイル、再付着 x_r/h≈4.6-4.7
+- **Breuer et al. 2009 Comput. Fluids 38** — Re 掃引 DNS/LES 2 コード (13M 格子)
+- **ESAIM Proc. 16 (2007) 133-145** — 5 コード DES 比較。**標準 DES 格子 160×100×60 (~1M), Δx⁺,Δz⁺<35, Δy₁⁺≲1** ← 本ケースの格子仕様の根拠
+- **ATAAC D3.2-36** (ERCOFTAC KBwiki) — DDES/IDDES @160×160×60。素の DDES/IDDES で参照とよく一致
+- データ入手: ERCOFTAC KBwiki UFR 3-30 (https://www.kbwiki.ercoftac.org/w/index.php/UFR_3-30_Description)
+
+## メッシュ
+
+`mesh/make_hill_mesh.py` → `hill_des_160x100x60.msh` (gmsh4.1 直接書き出し, 構造 hex)。
+
+- 160×100×60 = 96 万セル (node 変換で 99.2 万 CV)。x/z 一様 (Δx=0.056h, Δz=0.075h)
+- y: 両側幾何ストレッチ (比 1.0961)。y₁=1.5e-3h (平坦部) / 1.0e-3h (丘頂) → y₁⁺≲1 (低 Re 壁解像)
+- 品質: **PASS** (AR max=74.6, skew max=0.451; cell 変換で判定)
+
+## 計算 run 一覧
+
+| run | 目的・主要設定差分 | 主要結果・成果物 | 状態 |
+| --- | --- | --- | --- |
+| `run_0001_rans_init` | 段階起動スモーク: 定常 SST-RANS (SLAU 1次, lowMachPrecond2, blockDPLUR cfl_pseudo2, 固定 bodyForce 400)。**静止 IC** (u=0, P/T 一様 = 音響過渡ゼロ) から体積力スピンアップ 2000 step | 完走・NaN 無し。スピンアップは健全だが遅い (Ux max 3.4 m/s どまり) → 成形 IC の run_0002 へ | ref (起動方式確認) |
+| `run_0002_rans_dev` | RANS 発達本番: run_0001 res_2000 の ω 場を保持しつつ**成形速度 IC** (列ごと質量保存パラボラ u max 78) に張替え、20k step。⚠ cfl_pseudo=10 は step 35 で NaN。**cfl_pseudo=2 で安定** | 完走 exit0・NaN なし・全残差 2-2.6 桁低下 (VERDICT: NOT CONVERGED=継続収束中、DDES の IC としては十分)。固定 β=400 の平衡は M/V=27.4 (目標 44.1 には β~1000 要) と判明。res_20000.h5 | ref (DDES の IC 供給元) |
+| `run_0003_ddes_smoke` | **素の DDES + bodyForceCtrl 統合スモーク** (dual-time, SLAU, DESmode1)。IC = run_0002 res_20000 をバルクリスケール (M/V→44.12) + 6% 3D 撹乱。切り分け経過: ① KEEP+dt4e-6 → step7 NaN、② SLAU+dt4e-6 → step5 NaN (rms_roOmega が毎 step ×10 で先行発散 = **サブ反復未収束**、制御器は無罪)、③ SLAU+dt1e-6+nSub20+cfl_pseudo1 → **安定**。※ KEEP スタックは dt1e-6 で未再テスト (dt 過大が真因のため復権の可能性大)。⚠ この過程で **detectNaN GPU 経路が ro 全 NaN でも停止しない実バグ**を確認 (EOS 床 fmax が P/T を有限値に洗浄、検査対象の ro は NaN のまま素通り) — 要修正 | (実行中: 制御器 γ=0.02 で fx リンギング減衰確認中) | active |

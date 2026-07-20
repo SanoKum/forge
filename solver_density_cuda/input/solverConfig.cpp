@@ -223,6 +223,13 @@ void solverConfig::read(std::string fname)
             std::cout << "'bodyForce': [" << f[0] << ", " << f[1] << ", " << f[2] << "]\n";
         }
 
+        // 質量流量一定制御 (plans/active/timeint-bodyforce-massflow-control.md)。
+        // bodyForceCtrl=1 で毎物理ステップ bodyForceX を deadbeat 更新し
+        // 体積平均 ρu_x を bodyForceCtrlTarget に保つ。既定 0 = 固定値駆動 (ビット不変)。
+        this->bodyForceCtrl = getOptionalValidatedValue<int>(config, "bodyForceCtrl", 0, "");
+        this->bodyForceCtrlTarget = getOptionalValidatedValue<double>(config, "bodyForceCtrlTarget", 0.0, "");
+        this->bodyForceCtrlRelax = getOptionalValidatedValue<double>(config, "bodyForceCtrlRelax", 1.0, "");
+
         this->keepDissType  = getOptionalValidatedValue<int>(config, "keepDissType", 0, "");
         this->keepDissCoeff = getOptionalValidatedValue<double>(config, "keepDissCoeff", 0.05, "");
         this->keepDissCprime = getOptionalValidatedValue<int>(config, "keepDissCprime", 1, "");
@@ -282,9 +289,14 @@ void solverConfig::read(std::string fname)
         // Ducros リミタ 1 次化: 既定 0 (off・使わない; MUSCL 2 次のまま)。1 で衝撃近傍の強制 1 次化 (従来挙動)。
         this->ducrosLimiter = getOptionalValidatedValue<int>(deltaT, "ducrosLimiter", 0, "time.deltaT");
         // NaN 検知診断モード: 既定 0 で従来挙動 (検査なし・ビット不変)。1 で検査 (fused device フラグ)。
+        // 歴史的に time.deltaT 配下だが、既存 run config の多く (case/38 等) がトップレベルに書いて
+        // 黙って off になる事故があったため (2026-07-21 case/39 で発覚)、トップレベルも受理する
+        // (トップレベル優先)。
         this->detectNaN = getOptionalValidatedValue<int>(deltaT, "detectNaN", 0, "time.deltaT");
+        if (config["detectNaN"]) this->detectNaN = config["detectNaN"].as<int>();
         // detectNaN フラグの host 読み出し間隔 [step]: 既定 1 (毎ステップ)。大で per-step 同期を間引く。
         this->detectNaNInterval = getOptionalValidatedValue<int>(deltaT, "detectNaNInterval", 1, "time.deltaT");
+        if (config["detectNaNInterval"]) this->detectNaNInterval = config["detectNaNInterval"].as<int>();
         if (this->detectNaNInterval < 1) this->detectNaNInterval = 1;
         // 残差 RMS の device バッファ flush 間隔 [step]: 既定 1 (毎ステップ書き出し=従来挙動)。
         // モニタリング出力 (残差 CSV flush + max cfl/dt console 出力) の共通間隔 [step]: 既定 1 (毎ステップ=従来)。
@@ -463,6 +475,14 @@ void solverConfig::read(std::string fname)
         if (this->isAxisymmetric == 1 &&
             (this->bodyForceX != 0.0 || this->bodyForceY != 0.0 || this->bodyForceZ != 0.0)) {
             throw std::runtime_error("'bodyForce' is not supported with isAxisymmetric=1.");
+        }
+        if (this->bodyForceCtrl == 1) {
+            if (this->unsteady != 1) {
+                throw std::runtime_error("'bodyForceCtrl: 1' requires 'time.unsteady: 1' (physical dt).");
+            }
+            if (this->bodyForceCtrlTarget <= 0.0) {
+                throw std::runtime_error("'bodyForceCtrl: 1' requires positive 'bodyForceCtrlTarget' (volume-averaged rho*Ux).");
+            }
         }
         if (physProp["speciesDBFile"])          this->speciesDBFile = physProp["speciesDBFile"].as<std::string>();
         if (physProp["speciesDiffusionMethod"]) this->speciesDiffusionMethod = physProp["speciesDiffusionMethod"].as<int>();

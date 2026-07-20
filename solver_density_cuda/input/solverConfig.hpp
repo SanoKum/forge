@@ -189,6 +189,13 @@ public:
     flow_float bodyForceY = 0.0;
     flow_float bodyForceZ = 0.0;
 
+    // 質量流量一定制御 (bodyForceCtrl=1): 体積平均 ρu_x を bodyForceCtrlTarget に保つよう
+    // 毎物理ステップ bodyForceX を deadbeat 更新する (Benocci & Pinelli 1990 の圧縮性版,
+    // methods/time_integration/implementation.md §一様体積力)。unsteady=1 必須。x 成分のみ。
+    int        bodyForceCtrl = 0;
+    flow_float bodyForceCtrlTarget = 0.0; // 目標 <ρu_x>_V [kg/m²/s]
+    flow_float bodyForceCtrlRelax = 1.0;  // 更新則の緩和係数 γ
+
     // SST-DES (Detached-Eddy Simulation) length scale 修正。SST k 消滅項を
     //   D_k = β* ρ k ω = ρ k^{3/2}/l_RANS  →  ρ k^{3/2}/l_DDES
     // へ切り替え、剥離域のみ LES、付着 BL は RANS のままにする (methods/turbulence §8)。

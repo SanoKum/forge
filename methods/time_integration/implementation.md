@@ -354,6 +354,50 @@ roe→0.5 に収束する一方、scalar は cfl_pseudo=1 で 12000 step でも�
 `applyBlockImplicitCorrectionInPlace_d`, `shiftDualTimeLevels_d`。block/scalar/SST 各カーネルに対角の物理時間係数
 `unsteady_diag` (`cfg.unsteadyDiagCoef`) を追加。第 2 時間レベル `roNN`/`roKNN` 系は [`variables.hpp`](../../solver_density_cuda/variables.hpp) に登録済。
 
+## 一様体積力と質量流量一定制御（bodyForce / bodyForceCtrl）
+
+周期境界系（チャネル・周期丘）を駆動する空間一様体積力。理論的には周期分解
+$p_\mathrm{total} = -\beta(t)\,x + p'$ の非周期線形成分 $\beta$ を運動量ソース項に移項したものであり、
+「平均圧力勾配駆動」と数学的に同一（局所の圧力勾配変動は解かれる $p'$ が担う）。
+実装は [`bodyForce_d.cu`](../../solver_density_cuda/cuda_forge/bodyForce_d.cu):
+運動量に $f_i V$、エネルギーに $(\mathbf f\cdot\mathbf u)V$ を residual へ加算（仕事項を落とすとエネルギー収支が破れる）。
+閉じた周期系では体積力の仕事で系が加熱し続けるため、等温壁で排熱して温度を定常化させる。
+
+### 固定値駆動（`bodyForce: [fx, fy, fz]`）
+
+チャネルのように目標 $u_\tau$ から $f_x=\rho u_\tau^2/\delta$ を先験的に決められる場合はこれで足りる。
+
+### 質量流量一定制御（`bodyForceCtrl: 1`）
+
+周期丘のように断面が $x$ で変わる系では目標がバルク速度（=質量流量）で与えられ、抗力（壁摩擦+圧力抗力）が
+先験的に分からないため、$\beta(t)$ を毎物理ステップ調整する（Benocci & Pinelli 1990 の圧縮性版）。
+制御量は**体積平均 streamwise 運動量密度** $\langle\rho u_x\rangle_V = \frac1V\int \rho u_x\,dV$
+（質量保存の下で統計定常では任意 $x$ 断面の質量流束と等価。目標値はケース側で
+$\langle\rho u_x\rangle_V^{\,t} = \rho_0 U_b A_\mathrm{crest} L_x / V$ と換算して与える）。
+
+更新則は 2 時刻の運動量収支から抗力を推定する deadbeat 型:
+
+$$
+f_x^{\,n} = f_x^{\,n-1} + \gamma\,\frac{M_t - 2M^n + M^{n-1}}{V\,\Delta t}
+$$
+
+（$M=\int\rho u_x\,dV$、$M_t$ は目標、$\gamma$=`bodyForceCtrlRelax` 既定 1.0。
+初回は $M^{n-1}:=M^n$ とし P 項のみで立ち上がる。）
+導出: $M^{n+1}=M^n+\Delta t(f_x V - D)$ で $M^{n+1}=M_t$ を課し、抗力 $D$ を前ステップの実収支
+$D^{n-1}=f_x^{n-1}V-(M^n-M^{n-1})/\Delta t$ で推定して代入したもの。
+
+実装 ([`bodyForce_d.cu`](../../solver_density_cuda/cuda_forge/bodyForce_d.cu) の `bodyForceCtrlUpdate`):
+
+- 呼び出しは `advanceOneStep` 冒頭（物理ステップ境界）で 1 回。dual-time ではサブ反復を通じて $f_x$ 固定。
+- $M^n$ は `thrust::inner_product(roUx, volume)`（once-per-step の D2H 同期 1 スカラー、コスト無視可）。
+- 制御は $x$ 成分のみ。`cfg.bodyForceX` を書き換える（`bodyForceY/Z` は固定値のまま）。
+- 全 CV 体積 $V$ は初回に `thrust::reduce` でキャッシュ。
+- 履歴を `bodyforce_history.csv`（step, time, fx, M, M_target）へ 10 step ごとに追記。
+- **`unsteady: 1` 必須**（物理 $\Delta t$ を使うため。定常局所 dt では throw）。定常 RANS の段階起動では
+  固定 `bodyForce` を使い、非定常へ引き継ぐ際に `bodyForceCtrl: 1` へ切り替える運用。
+- 陰解法での扱いは固定値版と同じ明示ソース（ステップ内定数のため Jacobian 不要。$\mathbf f\cdot\mathbf u$
+  仕事項の対角寄与は微小につき省略）。
+
 ## 既知の TODO / 注意点
 
 - 非定常 dual-time 陰解法（`tI==11 && unsteady==1 && dualTime==1`）は実装済（2026-06、`blockDPLUR==1` のみ、物理 $\Delta t$ 固定 `control=0`）。`implicitCorrection_d.cu` の `dualtime_explicit_d` は SLAU/Roe 用の別系統補助で本流とは独立（未使用）。
