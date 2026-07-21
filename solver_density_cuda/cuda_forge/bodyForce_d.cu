@@ -62,8 +62,10 @@ void bodyForceCtrlUpdate(solverConfig& cfg , mesh& msh , variables& var , int iS
 {
     if (cfg.bodyForceCtrl != 1) return;
 
-    // file-static 状態 (単一ソルバインスタンス前提)。V は周期 seam の合併体積二重計上を含むが、
-    // M も同一レンジで測るため目標 M_t = target·V で二重計上は自己整合的に相殺する。
+    // file-static 状態 (単一ソルバインスタンス前提)。周期 seam ノードは部分体積 (半割 CV) を
+    // 保持する (case/39 メッシュ実測で確認: seam volume = 内部のちょうど 1/2)。よって Σvol は
+    // 領域体積に厳密一致し、M=Σ roUx·vol も二重計上なしの厳密な運動量積分である
+    // (旧コメントの「合併体積の二重計上が相殺」は事実誤認だった)。
     static bool   initialized = false;
     static double Vtot = 0.0;
     static double Mprev = 0.0;
