@@ -303,6 +303,15 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     従来どおり $|U_n|$。`keepDissJump` と直交して合成可。なお backstep 型の「ギリギリ解像の
     2-4Δ 物理」による見かけの縞は散逸では消えない (メッシュ解像の仕事)。
     設計・検証: [convection-keep-diss-lowmach-precond](../../plans/active/convection-keep-diss-lowmach-precond.md)。
+  - **`keepDissFdBlend` (既定 0=ビット不変, DES 専用)**: `1` で σ を DDES シールド関数 f̃_d で
+    face ごとに駆動する: $\sigma_f = \max(\sigma_\mathrm{min},\,(1-\tilde f_{d,f})\,\sigma_\mathrm{max})$
+    ($\tilde f_{d,f}$=隣接セル平均、$\sigma_\mathrm{min}$=`keepDissCoeff`、$\sigma_\mathrm{max}$=`keepDissCoeffMax`
+    既定 1.0)。RANS 帯 (f̃_d≈0=付着 BL・薄セル) はフル ES 散逸 (他コードの風上相当)、LES 域はフロア
+    のみ、という DES 標準の散逸ゾーニング (Travin 型 / SU2 `FD`=max(0.05,1−f_d) / UZEN-Probst の
+    KE 保存 flux+f̃_d ブレンドと同型)。`DESmode>0` (model: sst-ddes/sst-iddes) 必須。`fd_shield` は
+    `turbulent_viscosity_d` が convectiveFlux より先に毎サブ反復更新するため鮮度整合。
+    設計: [turbulence-iddes-sst §4.8](../../plans/active/turbulence-iddes-sst.md)、
+    実務相場: [turbulence-des-flux-survey §7](../../notes/investigations/turbulence-des-flux-survey.md)。
 - **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む
   (SLAU と同処方)。非直交メッシュの float32 桁落ちによる偽運動量源を除去し、
   `case/33` 歪み hex で機械精度 (4e-12) の一様場保存。**非直交メッシュで KEEP を使うときは

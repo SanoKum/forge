@@ -464,6 +464,31 @@ main.cpp:954  ransSource_d_wrapper           … Dk 計算（ここで l_des を
 > 本節の設計原理 (§survey の Travin 型連続ブレンド・f_d 主導) をそのまま踏襲できる)。
 > 以降の本文は 2026-06-21 時点の設計記録として残す。
 
+> **✅ 再設計・実装 (2026-07-22, 上記メモの指示に従う現行設計)**: ES 散逸レイヤの σ を f̃_d で駆動する。
+>
+> $$\sigma_f = \max\!\big(\sigma_\mathrm{min},\ (1 - \tilde f_{d,f})\,\sigma_\mathrm{max}\big),\qquad \tilde f_{d,f} = \tfrac12\big(f_d[ic_0] + f_d[ic_1]\big)$$
+>
+> - **config**: `keepDissFdBlend` (0: off 既定=ビット不変 / 1: on)、`keepDissCoeffMax` (既定 1.0)。
+>   σ_min は既存 `keepDissCoeff` (case/39 A/B で 0.05 採用 — 一様 σ0.05 は解像乱流無傷で格子スケール
+>   滑らかさ 10-25% 改善、`run_0009_coarse_s005`)。SU2 `FD` (σ=max(0.05,1−f_d)) と同形。
+> - **実装箇所**: `convectiveFlux_keep_d.inc.cuh` の散逸 3 分岐で per-face σ を計算 (`fd_shield` は
+>   `turbulent_viscosity_d` が convectiveFlux より先に毎サブ反復更新するため鮮度整合)。
+>   ゲート: `DESmode>0 && keepDissFdBlend==1` のときのみ `fd_shield` を渡す (他は nullptr=従来)。
+> - **効果の狙い**: RANS 帯 (f̃_d≈0, 付着 BL・薄セル) で σ→1 のフル ES 散逸 = 他コードの風上相当、
+>   LES 域 (f̃_d≈1) はフロア σ_min のみ。UZEN/Probst (arXiv:2511.08257, KE 保存 LD2 + f̃_d Travin σ)
+>   の出版済みパターンと同型 ([survey §7](../../notes/investigations/turbulence-des-flux-survey.md))。
+> - 旧設計の `desLowDissipation` config 名は廃止 (KEEP_SLAU 前提だったため)。中期の改良 Ducros OR
+>   ブレンドは本形の σ_f に対する OR (σ_f ← σ_Ducros + σ_f − σ_Ducros·σ_f) として据え置き互換。
+> - **検証済 (2026-07-22, case/39 粗格子 3 腕比較・同一 IC/同一窓/5 snap 平均)**: fdblend は
+>   風下壁帯 (RANS/grey 帯) の市松度 r −0.50→−0.79・d2 −37% (vs σ0.02 一様)、コア Uz rms
+>   6.63±1.2 vs 6.89±1.1 = 解像乱流無傷。**採用** (`run_0010_coarse_fdblend`)。
+> - **制約 (実測で確定)**: `keepDissPrecond` と非互換 — Δp 散逸増強 (∝c²/Ur) は壁近傍で
+>   Ur=εc フロアに張り付き、σ→1 との積が即発散 (σmax0.3 でも step2 NaN / precond off は
+>   σmax1.0 安定, `run_diag_fdb_*`)。config 検証で禁止し `keepDissCprime` へ退避。
+>   LES 側 precond + RANS 側標準 Roe の**演算子ブレンド**は将来課題。
+> - **fd_shield の向きの罠**: DDES (f_d, 1=LES) と IDDES (f̃_d, 1=RANS) で逆
+>   (variables.hpp)。カーネルは `fdLesOne` フラグで両対応済み。
+
 **外部レビューが最大の失敗要因と指摘した箇所。** DDES length scale が正しくても、
 LES 領域（f_d≈1）で対流スキームの数値散逸が強いと解像乱流が育たず、SBLI で
 「剥離せん断層の KH 成長が遅れ、剥離泡が短く、非定常圧力変動が弱い」結果になる。

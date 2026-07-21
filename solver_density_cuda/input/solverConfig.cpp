@@ -235,6 +235,8 @@ void solverConfig::read(std::string fname)
         this->keepDissCprime = getOptionalValidatedValue<int>(config, "keepDissCprime", 1, "");
         this->keepDissJump = getOptionalValidatedValue<int>(config, "keepDissJump", 0, "");
         this->keepDissPrecond = getOptionalValidatedValue<int>(config, "keepDissPrecond", 0, "");
+        this->keepDissFdBlend = getOptionalValidatedValue<int>(config, "keepDissFdBlend", 0, "");
+        this->keepDissCoeffMax = getOptionalValidatedValue<double>(config, "keepDissCoeffMax", 1.0, "");
         if (this->keepDissPrecond < 0 || this->keepDissPrecond > 1) {
             throw std::runtime_error("Key 'keepDissPrecond' must be 0 (off) or 1 (Turkel-preconditioned acoustic dissipation, matrix CPG only).");
         }
@@ -493,6 +495,25 @@ void solverConfig::read(std::string fname)
         if (this->isAxisymmetric == 1 &&
             (this->bodyForceX != 0.0 || this->bodyForceY != 0.0 || this->bodyForceZ != 0.0)) {
             throw std::runtime_error("'bodyForce' is not supported with isAxisymmetric=1.");
+        }
+        if (this->keepDissFdBlend == 1) {
+            if (this->DESmode <= 0) {
+                throw std::runtime_error("'keepDissFdBlend: 1' requires a DES model ('model: sst-ddes' or 'sst-iddes').");
+            }
+            if (this->solver != "KEEP" || this->keepDissType <= 0) {
+                throw std::runtime_error("'keepDissFdBlend: 1' requires solver: KEEP with keepDissType > 0.");
+            }
+            if (this->keepDissCoeffMax < this->keepDissCoeff || this->keepDissCoeffMax > 1.0) {
+                throw std::runtime_error("'keepDissCoeffMax' must be in [keepDissCoeff, 1.0].");
+            }
+            // precond 散逸 (Δp 増強 ∝ c²/Ur) は σ→1 × 壁近傍 (Ur→εc) で発散する (case/39
+            // run_diag_fdb_*: precond on は σmax 0.3 でも step 2 NaN, off は σmax 1.0 で安定)。
+            // fdblend 時は c' スケーリング (keepDissCprime) に退避する。演算子ブレンド
+            // (LES 側 precond + RANS 側標準 Roe) は将来課題。
+            if (this->keepDissPrecond != 0) {
+                throw std::runtime_error("'keepDissFdBlend: 1' requires keepDissPrecond: 0 "
+                    "(precond dissipation diverges at sigma->1 near walls; use keepDissCprime instead).");
+            }
         }
         if (this->bodyForceCtrl == 1) {
             if (this->unsteady != 1) {

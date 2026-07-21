@@ -220,7 +220,13 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             cfg.nSpecies, species_roY_device_ptr(),
             cfg.keepDissType, cfg.keepDissCoeff,
             cfg.keepDissCprime, cfg.precondEps,
-            cfg.keepDissJump, cfg.keepDissPrecond, grd,
+            cfg.keepDissJump, cfg.keepDissPrecond,
+            // f_d 駆動 σ ブレンド (keepDissFdBlend=1 かつ DES のときのみ fd_shield を渡す。
+            // config 検証で DESmode>0 は保証済み → fd_shield は毎サブ反復 turbulent_viscosity が更新)
+            (cfg.keepDissFdBlend == 1) ? var.c_d["fd_shield"] : nullptr,
+            (cfg.DESmode == 1) ? 1 : 0,   // fd_shield の向き (DDES: 1=LES / IDDES: 1=RANS)
+            cfg.keepDissCoeffMax,
+            grd,
             geom, st, reso
         );
 

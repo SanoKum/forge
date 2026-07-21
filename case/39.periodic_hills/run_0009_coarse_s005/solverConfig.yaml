@@ -1,0 +1,70 @@
+mesh:
+  meshFormat: "hdf5"
+  discretization: "node"
+  meshFileName: "hill_xc_80x50x30.h5"
+  valueFileName: "hill_xc_80x50x30.h5" # run_diag_dt2e6_nsub10 res_500 (最発達場) を移植
+
+gpu: 1
+detectNaN: 1
+detectNaNInterval: 100
+
+solver: "KEEP" # 確定版 KEEP-LES スタック (baseline 本番)
+keepDissType: 2
+keepDissCoeff: 0.05
+keepDissJump: 2
+keepDissPrecond: 1
+
+bodyForce: [1058.0, 0.0, 0.0]  # 初期値 (bodyForceCtrl が毎ステップ更新)
+bodyForceCtrl: 1
+bodyForceCtrlTarget: 44.1248  # <ρu_x>_V = ρ0·Ub·A_crest·Lx/V (Ub=52)
+bodyForceCtrlRelax: 0.02
+
+physProp:
+  isCompressible: 1
+  isAxisymmetric: 0
+  thermalMethod: 0    # CPG
+  viscMethod: 0       # 定数粘性
+  ro : 1.177
+  visc : 1.617e-4     # nu=1.374e-4 → Re=Ub*h/nu=10595
+  thermCond: 0.2256   # Pr=0.72
+  cp : 1004.5
+  gamma : 1.4
+
+time:
+  unsteady: 1
+  dualTime: 1         # 音響 CFL (y1=2.8e-5m, dt_ac~7e-8) を回避し物理精度 dt で回す
+  nSubIterDualTime: 20
+  last:
+    control: 0
+    nStepOuter: 5000 # σ0.05 A/B (対照 = run_0008 res_24000→29000 の同一窓)
+    time: 1.00
+  deltaT:
+    control: 0        # dual-time は物理 dt 固定必須
+    dt: 0.000002      # dt* = dt·Ub/h = 0.0074 (ESAIM の 0.02-0.036 より細かい)
+    cfl: 1.0
+    cfl_pseudo: 1.0
+    blockDPLUR: 1
+    implicitRelax: 0.5
+    dt_min: 0.000000001
+    dt_max: 1.0
+  outStepStart: 0
+  outStepInterval: 1000
+  timeIntegration: 11 # block DPLUR dual-time
+  nStepInner: 5
+
+space:
+  convMethod: 2
+  limiter: -1   # KEEP スタックでは流束に不関与
+  pRef: 101325.0
+  roRef: 1.177
+  uRef: [37.5, 0.0, 0.0]  # advective gauge
+
+turbulence:
+  sstCrossDiffJac: 1
+  model: "sst-ddes"
+  wallTreatmentSST: 1
+  nodeOmegaWfDirichlet: 1
+  kInf: 1.0
+  omegaInf: 5000.0
+
+initial: "uniform_p101325_u10" # 未使用 (IC は valueFileName)

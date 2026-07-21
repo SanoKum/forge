@@ -102,6 +102,10 @@ public:
     int keepDissPrecond = 0;       // 1: matrix CPG 枝の音響対散逸を Turkel 前処理 2×2 に置換 (既定 0=従来・ビット不変)。
                                    //    Δp 散逸 ∝ c²/Ur 増強 (低マッハ市松キラー)・ΔUn 散逸 ∝ Ur 縮小 (渦保護)、
                                    //    M>=1 で標準 Roe |A| に復帰。plans/active/convection-keep-diss-lowmach-precond.md
+    // f_d 駆動 σ ブレンド (turbulence-iddes-sst §4.8, 既定 0=ビット不変)。1 で ES 散逸の σ を
+    // face ごと σ_f=max(keepDissCoeff, (1-f̃_d)·keepDissCoeffMax) に置換 (DESmode>0 必須)。
+    int keepDissFdBlend = 0;
+    flow_float keepDissCoeffMax = 1.0;
     int keepDissJump = 0;          // 散逸ジャンプ: 0=生 (既定・ビット不変) / 1=再構成後ジャンプ /
                                    // 2=再構成+sign-property クリップ (TeCNO 型・証明付き ES, 推奨)。
                                    // matrix CPG 枝のみ。市松 (2Δ) は中心勾配ゼロで再構成が効かずフル減衰のまま、

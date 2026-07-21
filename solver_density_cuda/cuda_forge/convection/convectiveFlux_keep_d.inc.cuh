@@ -23,6 +23,9 @@ __global__ void KEEP_d
  int keepDissCprime, flow_float precondEps,       // 散逸波速: 1 で音響 c'=lowMachCprime (lowMachPrecond から独立)
  int keepDissJump,                                // 散逸ジャンプ: 0=生 (既定) / 1=再構成後 (matrix CPG 枝のみ)
  int keepDissPrecond,                             // 1: 音響対散逸を Turkel 前処理 2×2 に置換 (matrix CPG 枝のみ)
+ const flow_float* fd_shield,                     // f_d 駆動 σ ブレンド (nullptr=off, turbulence-iddes-sst §4.8)
+ int fdLesOne,                                    //   fd_shield の向き: 1=DDES (f_d, 1=LES) / 0=IDDES (f̃_d, 1=RANS)
+ flow_float keepDissCoeffMax,                     //   σ_f=max(keepDissCoeff, ransFrac·keepDissCoeffMax)
  GradFields    grd,
  FaceGeom      geom,
  PrimState     st,
@@ -148,6 +151,18 @@ __global__ void KEEP_d
         //     |Λ'| は音響のみ |Un|+c'、せん断/エントロピーは |Un| → 渦を食わず市松 (音響) を減衰。
         //   λ'/c': lowMachPrecond>=1 なら c'=lowMachCprime (低マッハで c'→O(|u|)、M>=1 で c に復帰)。
         //   過大 σ は解像乱流を殺すため TGV (L2) で較正する。
+        //   f_d 駆動 σ ブレンド (fd_shield!=nullptr): σ_f=max(σ_min,(1-f̃_d)·σ_max)。RANS 帯 (f̃_d≈0)
+        //   でフル ES 散逸 (他コードの風上相当)、LES 域はフロアのみ (Travin/SU2 FD/UZEN 型ゾーニング)。
+        //   halo/ghost セル (ic1>=nCells) は fd_shield 未計算のため owner 値で代表する。
+        flow_float sigmaF = keepDissCoeff;
+        if (fd_shield != nullptr) {
+            const flow_float fd0 = fd_shield[ic0];
+            const flow_float fd1 = (ic1 < nCells) ? fd_shield[ic1] : fd0;
+            const flow_float fdF = 0.5*(fd0 + fd1);
+            // ★ fd_shield の向きは DESmode で逆 (variables.hpp): DDES=f_d (1=LES) / IDDES=f̃_d (1=RANS)
+            const flow_float ransFrac = (fdLesOne == 1) ? (1.0 - fdF) : fdF;
+            sigmaF = fmax(keepDissCoeff, ransFrac*keepDissCoeffMax);
+        }
         if (keepDissType == 1) {
             // 保存量ジャンプ (primitives から構成; CPG: roe = P/(γ-1) + ½ρ|u|²)
             const flow_float dro   = ro[ic1] - ro[ic0];
@@ -179,7 +194,7 @@ __global__ void KEEP_d
             const flow_float cd  = (keepDissCprime == 1)
                                  ? lowMachCprime(c, sqrt(uxF*uxF+uyF*uyF+uzF*uzF), Un, precondEps)
                                  : c;
-            const flow_float coef = 0.5*keepDissCoeff*(fabs(Un) + cd)*sss;
+            const flow_float coef = 0.5*sigmaF*(fabs(Un) + cd)*sss;
 
             res_ro_temp   -= coef*dro;
             res_roUx_temp -= coef*droUx;
@@ -338,7 +353,7 @@ __global__ void KEEP_d
             const flow_float z4 = sS*lamU*rd4;
 
             // D = Σ z_k r_k、flux -= 0.5σ D S
-            const flow_float coef = 0.5*keepDissCoeff*sss;
+            const flow_float coef = 0.5*sigmaF*sss;
             const flow_float Dro   = z1 + z2 + z5;
             const flow_float DroUx = z1*(uxF-c*nx) + z2*uxF + z3*t1x + z4*t2x + z5*(uxF+c*nx);
             const flow_float DroUy = z1*(uyF-c*ny) + z2*uyF + z3*t1y + z4*t2y + z5*(uyF+c*ny);
@@ -463,7 +478,7 @@ __global__ void KEEP_d
             const flow_float z4 = sS*lamU*rd4;
             const flow_float z5 = sA*lamA*rd5;
 
-            const flow_float coef = 0.5*keepDissCoeff*sss;
+            const flow_float coef = 0.5*sigmaF*sss;
             const flow_float Dro   = z1 + z2 + z5;
             const flow_float DroUx = z1*(uxF-c*nx) + z2*uxF + z3*t1x + z4*t2x + z5*(uxF+c*nx);
             const flow_float DroUy = z1*(uyF-c*ny) + z2*uyF + z3*t1y + z4*t2y + z5*(uyF+c*ny);
