@@ -38,6 +38,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [turbulence-sst-omega-crossdiff-jacobian.md](accepted/turbulence-sst-omega-crossdiff-jacobian.md) | `turbulence / time_integration` | SST ω 交差拡散の point-implicit Jacobian (sstCrossDiffJac): dual-time サブ反復の ω 収束改善 (1.5x→2.7x)、収束解は不変 |
 | [timeint-bodyforce-massflow-control.md](accepted/timeint-bodyforce-massflow-control.md) | `time_integration` | 体積力の質量流量一定制御 (Benocci & Pinelli 圧縮性版, γ=0.02): 周期丘 DDES 駆動。case/39 で検証済 |
 | [boundary-cell-periodic-conservation.md](accepted/boundary-cell-periodic-conservation.md) | `boundary` | cell 全周期境界の非保存バグ修正: device `bint_d[partnerCellID]` 未転送で ghost が誤値→運動量注入。setPeriodicPartner 直後に H2D コピーで根治。TGV で cell/node 一致を確認 |
 | [thermophysics-eos-positivity-floor-config.md](accepted/thermophysics-eos-positivity-floor-config.md) | `thermophysics` | EOS 正値化フロア (pMin/roMin/tMin) の config 化。無次元・低圧ケース (Taylor-Green) で既定 1.0 Pa フロアが場を破壊する問題を解消、既定値据え置きでビット不変 |

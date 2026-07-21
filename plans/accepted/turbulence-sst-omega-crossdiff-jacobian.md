@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `turbulence / time_integration`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - `methods/turbulence/implementation.md` (SST ソース項・point-implicit)
 - **related_plans**:
@@ -41,3 +41,8 @@ case/39 周期丘 DDES dual-time で、サブ反復内の残差低下が運動�
 ## 変更ログ
 
 - 2026-07-21: 起票・実装着手。
+- 2026-07-21: 実装・検証完了 (commit `41ff420`)。case/39 500 step 診断で in-step rms_roOmega drop
+  1.5x→2.7x に改善 (cfl_pseudo 1.0, sstCrossDiffJac on)。cfl_pseudo 2.0 との複合は NaN で棄却
+  (別要因、[[dualtime-subiter-divergence-fingerprint]] 参照)。40k step 収束比較で on/off の解が
+  <0.1% 相対差に一致することを確認し、Jacobian のみの変更であることを検証。production (case/39
+  DDES baseline) で採用。
