@@ -143,3 +143,59 @@
 ## 変更ログ
 
 - `2026-06-22`: deep-research（98 エージェント / 16 ソース / 25 claim 検証）で新規作成。結論を [`turbulence-iddes-sst.md`](../../plans/active/turbulence-iddes-sst.md) §4.8 に反映（短期=f_d 主導・limiter は positivity フロア / 中期=改良 Ducros を OR ブレンド追加）。
+
+## 7. 追補 (2026-07-22): 実コードの散逸フロア実数値・KEEP+ES 直系の先行例・メッシュ規律
+
+case/39 周期丘 粗格子 DDES の「全域大暴れ + 風下壁近傍の振動」を受けた追加 Web 調査
+(一次ソース fetch 検証済み)。§0-§4 の結論を補強・具体化する。
+
+### 7.1 実コードの散逸フロア (全て一次ソースから検証)
+
+| コード | 散逸フロア・ブレンド | 出典 (fetch 済) |
+| --- | --- | --- |
+| **SU2** `ROE_LOW_DISSIPATION` | Roe matrix 散逸 ×係数、**ハードフロア 0.05**。FD: `max(0.05, 1−f_d系)`; FD_DUCROS: Ducros>0.65 で 1.0 へスナップ、他は 0.05 | [CNumerics.cpp (master)](https://raw.githubusercontent.com/su2code/SU2/master/SU2_CFD/src/numerics/CNumerics.cpp) |
+| **NSAWET** (X-LES 系) | σ = max(tanh(4.0·max(0.6−l_hyb/l_RANS,0)³), **σ_min=0.1**)。LES 域 10% / RANS 域 ~100% の 5次 Roe/WENO | [arXiv:2204.07811](https://arxiv.org/pdf/2204.07811) |
+| **OpenFOAM `LUST`** | センサ無しの**固定 25% linearUpwind + 75% linear**。「様々なメッシュ品質の LES ケースで精度と安定性のバランスを最適化」 | [OpenFOAM-12 LUST.H](https://raw.githubusercontent.com/OpenFOAM/OpenFOAM-12/master/src/finiteVolume/interpolation/surfaceInterpolation/schemes/LUST/LUST.H) |
+| **Fluent BCD** | 純中心差分は「非物理振動、低 SGS 拡散で悪化」と明記 → **LES 全輸送方程式の既定を bounded CD** (NVD 合成: 中心/2次風上ブレンド/1次) | [Fluent 12 Theory Guide §18.3.1](https://www.afs.enea.it/project/neptunius/docs/fluent/html/th/node366.htm) |
+| **CIRA UZEN (X-LES, LD2)** | **KE 保存 LD2 (Kok 系) を「全域に適用してはならない — 散逸欠如は低品質セルで数値不安定」**と明記。Probst-Reuß は f̃_d を Travin σ として **LD2↔1次風上ブレンド**、または「純 LD2 + 少量の数値散逸」 | [arXiv:2511.08257](https://arxiv.org/pdf/2511.08257) |
+
+**→ 低散逸中心スキームを「散逸ゼロ」で回す production コードは存在しない**。フロアは 5-25%。
+
+### 7.2 KEEP+ES-σ 構成の直系先行例 = UZEN/Probst パターン
+
+CIRA UZEN の「KE 保存 flux (LD2) + f̃_d 駆動ブレンド (Travin σ に DDES シールド関数をそのまま使う)」は
+forge の KEEP+ES-σ 構成に対する**最も近い出版済み実例**。§0 結論 3 (f_d 主導 σ) の妥当性を独立に再確認。
+
+### 7.3 センサゲート散逸の先行例 (「振動していたら散逸 1」アイデアの位置づけ)
+
+- SU2 FD_DUCROS/NTS_DUCROS = **per-face センサで matrix 散逸を 0.05↔1.0 にゲートする実装そのもの** (コードで検証)。
+- **entropy-viscosity 法** (Guermond-Pasquetti, J. Sci. Comput. 2011): 散逸 ∝ h·|エントロピー残差|、滑らかな場で消滅 —
+  「エントロピー残差で散逸をゲートする」出版済み先行例。implicit LES 正則化として提示。
+- ES (entropy-stable matrix) 項そのものをセンサゲートした fetch 可能な実例は**見つからず** — 構造的には
+  十分に先行例があるが、その具体の組合せは新規 (defensible novel combination)。
+- **MUSCL limiter 値のセンサ流用は引き続き先行例ゼロ** (§0 結論 3 を再確認)。リミタは極値検出であり
+  解像乱流の正当な極値と区別できない。
+
+### 7.4 メッシュ側の規律 (低散逸スキームは格子とセットで設計する)
+
+- **Spalart DES 格子指針** (NASA/CR-2001-211032): LES focus region は**3方向ほぼ等方 (立方体セル)**。
+  「強い異方性格子は LES 域で非効率、かつ時間積分の安定性を害しうる」。壁法線ストレッチ比 ≤1.25-1.3。
+- **Georgiadis-Rizzetta-Fureby** (NASA/TM-2009-215616): wall-resolved LES 相場 50<Δx⁺<150, Δy⁺<1, 15<Δz⁺<40。
+- **CharLES**: 「近似エントロピー保存 flux で散逸を絞る」ことの安定性を **clipped-Voronoi 格子の規則性で買う**
+  (等方 Voronoi + 局所細分)。低散逸 flux とメッシュ滑らかさの共設計。
+- **KEEP 非構造版** (Kuya 系 JCP 2023, doi:10.1016/j.jcp.2023.112521): KEEP の保存性は
+  「**highly irregular でない**メッシュ」で成立 — メッシュ不規則性で KEEP の主張自体が劣化する。
+
+### 7.5 forge への含意 (§0 結論の更新)
+
+1. **粗 DDES 格子で格子スケール近くの振動が出るのは成熟コードでも既定の挙動** (だから Fluent は BCD が既定)。
+2. 打ち手の本命は変わらず **σ の f̃_d 駆動化** (UZEN/Probst の出版済みパターンと同型)。フロアは 0.02-0.05、
+   RANS/grey 側 0.05-1.0。
+3. 「振動検出→ES 散逸ゲート」はエントロピー残差センサ (Guermond 型) なら筋が良く新規性もある。
+   MUSCL limiter 流用は不可 (先行例ゼロ + 極値誤検出)。
+4. 本番格子は Spalart 指針 (LES focus 等方・成長比 ≤1.3) を xcluster 設計に織り込む。
+
+## 変更ログ (追補)
+
+- `2026-07-22`: §7 追補 (実コードフロア実数値 / UZEN 直系例 / センサゲート先行例 / メッシュ規律)。
+  Web 調査 (一次ソース 12 件 fetch 検証)。動機は case/39 粗 DDES の振動相談。
