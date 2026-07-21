@@ -145,3 +145,20 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   だった (壁なしメッシュの wall_dist≡0 バグ; [turbulence-wale-fix](turbulence-wale-fix.md))。
   σ 較正・結論は「ILES + ES 散逸」として全て有効。修正後の本物 WALE は 64³ TGV で ILES より悪く、
   解像 LES の推奨は WALE off + matrix σ=0.02 keepDissJump=2 に確定。
+- `2026-07-22` — **外部レビュー指摘の検証 2 件 (エントロピー保存主張の訂正 + TP 多成分 datum 修正)**。
+  - **KEEP 中心流束は厳密 entropy-conservative ではないことを数値確定**
+    (`tools/verify_keep_tadmor.py` 新設・全 PASS): Tadmor 条件 $E=\Delta w^{\mathsf T}F^*-\Delta\psi$ を
+    乱数 20 万状態対で評価し、O(1) ジャンプで max|E|≈10・両符号 ($E>0$ 49.8%)、微小ジャンプで
+    $|E|=O(\varepsilon^3)$ (log-log 勾配 3.012)。ハーネスは Chandrashekar KEPEC (log-mean) の
+    機械精度ゼロ (6e-15) で妥当性確認。→ **「KE 保存・エントロピー O(Δ³) 準保存」が正しい表現**で、
+    散逸レイヤ込みでも「流束全体が entropy stable」は主張できない (散逸項単体の ES 性のみ)。
+    コード先頭コメントと `methods/convection/implementation.md` の該当表現を訂正済。
+    厳密 EC が要る場合は中心流束の log-mean 化 (KEPEC) が将来課題。
+  - **TP 多成分 (Step 4) の面参照圧 datum バグ修正**: 旧実装の $s_i=s^0-R_i\ln(p_i/P_{sF})$ は
+    「pref は Δw で相殺」と註記していたが**相殺は単成分のみ** ($R_0\ne R_1$ の組成ジャンプ面では
+    $(R_1-R_0)\ln P_{sF}$ が Δw に残り、散逸量が面参照圧という任意選択に依存)。NASA-9 標準状態
+    `THERMO_P_STD`=1e5 Pa への datum 補正 $-R_i\ln(P_{sF}/p°)$ を多成分時のみ加算する形で修正
+    (桁落ち回避の $\ln(p_i/P_{sF})$ 分解は維持。単成分は解析相殺するため補正 0.0 加算=ビット不変)。
+    数値確認: 2 種 (R=296.8/461.5) 組成ジャンプで旧式は $P_{sF}$ 2 倍時に Δw₀ が
+    $(R_B-R_A)\ln2=114.16$ ずれ、新式は差 0.0 (scratch 検証)。Q は SPD のまま (安定性は不変) で、
+    直るのは組成界面の散逸量の非物理的な参照圧依存。

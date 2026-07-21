@@ -100,3 +100,13 @@ O(h)→O(h³)。**閾値パラメータ不要・線形 (指数減衰維持)・2�
   ([turbulence-wale-fix](turbulence-wale-fix.md))。本 plan の結論 (jump=1/2 の効果比較) は
   同一条件同士の比較なので不変。修正後の本物 WALE 併用は 64³ TGV で悪化 (−3.6%) し、
   推奨は WALE off の ILES + σ=0.02 jump=2。
+- 2026-07-22: **既知の制約を定量化 (外部レビュー指摘の検証)**: 再構成ジャンプの O(h³) 選択性は
+  **勾配が線形場を厳密再現するメッシュ (実質 Cartesian) 限定**。`tools/verify_linear_recon.py` 新設
+  (forge の GG `fx` 射影補間 + cellgather / LSQ 正規方程式を式レベルで写像、全 PASS):
+  一様直交では GG も機械精度ゼロだが、30% ジッタ quad で GG 相対勾配誤差 66%・再構成ジャンプ
+  0.156·|∇q|·h (= O(h) 残留)、三角形分割で 72%、高 AR100+ジッタで誤差 27 倍。
+  → 非一様/非構造メッシュでは勾配誤差が「格子品質依存の不均一散逸」として流束に戻る。
+  本 plan の較正 (TGV Cartesian) はこの制約の外では未較正。**残課題**: ①非一様メッシュで使う場合の
+  ジャンプブレンド (衝撃/格子品質センサで生ジャンプへ χ ブレンド。現状は正値性 fallback のみで
+  衝撃センサなし — Ducros 場 `ducrosSensor_d` の流用が候補)、②線形場厳密な勾配 (LSQ 系,
+  [discretization-lsq-gradient](../active/discretization-lsq-gradient.md) は近壁 float 退化で停止中) との組合せ。

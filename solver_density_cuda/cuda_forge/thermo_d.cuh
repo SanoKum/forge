@@ -29,6 +29,8 @@
 
 // 普遍気体定数 [J/(mol·K)]
 #define THERMO_RU 8.314462618
+// NASA-9 係数の標準状態圧力 p° [Pa] (CEA 規約 1 bar)。s = s0(T) − R ln(p/p°) の datum。
+#define THERMO_P_STD 1.0e5
 // コンパイル時の最大化学種数 (DB 容量の上限)
 #define THERMO_MAX_SPECIES 16
 

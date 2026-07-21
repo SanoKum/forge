@@ -259,7 +259,13 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
 無効・単純中心平均のみ稼働) を modern bundled API (`FaceGeom`/`PrimState`/...) へ移植して KEEP 中心流束を
 有効化し、その後 **Roe 行列散逸・MUSCL 再構成・リミタ・Ducros を撤去**して純粋 KEEP に簡素化した。
 
-- **中心流束**: 隣接対 `(ic0,ic1)` の生値で構成 (KE/エントロピー保存)。
+- **中心流束**: 隣接対 `(ic0,ic1)` の生値で構成。KE は二次分割で保存するが、エントロピーは**厳密保存ではない**:
+  算術/交差平均構成のため Tadmor 条件 $\Delta w^{\mathsf T}F^*=\Delta\psi$ を満たさず、エントロピー誤差はジャンプ 3 次
+  $O(\Delta^3)$ の**準保存** (滑らかな場では設計次数で整合、大ジャンプでは非保存。
+  [tools/verify_keep_tadmor.py](../../solver_density_cuda/tools/verify_keep_tadmor.py) で数値確認済 —
+  乱数 O(1) ジャンプで $E=\Delta w^{\mathsf T}F^*-\Delta\psi \ne 0$ (両符号)、微小ジャンプで $|E|=O(\varepsilon^3)$。
+  厳密 entropy-conservative には log-mean 平均 (KEPEC 型) が必要)。したがって散逸レイヤ (下記) を足しても
+  「流束全体が entropy stable」は主張しない (散逸項単体の ES 性のみ)。
   $\tilde C = \overline{\rho}\,\overline{U}_n S$, 運動量 $\tilde M_i = \tilde C\,\overline{u_i} + \overline{p}\,n_i S$,
   エネルギー $= (\tilde K + \tilde I + \tilde P)S$ ($\tilde K=\tilde C\,\tfrac12\sum u_{i,0}u_{i,1}$,
   $\tilde I=\tilde C\,\tfrac12(p_0/\rho_0+p_1/\rho_1)/(\gamma-1)$, $\tilde P$ は圧力仕事の split)。

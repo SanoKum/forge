@@ -71,6 +71,13 @@ $$
 - 高次再構成 (二次以上) は未実装。最小二乗 (LSQ) 勾配は **node-centered モード限定**で
   `gradLSQ=1` のとき利用可 (近壁 checkerboard 対策、既定は Green-Gauss)。詳細は
   [discretization.md §7.3](discretization.md#実装)。cell モードは GG のみ。
+  なお LSQ は現状 GPU 検証で近壁発散の負結果があり **gated 停止中**
+  ([plans/active/discretization-lsq-gradient.md](../plans/active/discretization-lsq-gradient.md) §0/§9)。
+- **GG は非一様メッシュで線形場非厳密**: `fx` 射影補間の GG 勾配は一様直交では線形場を機械精度で
+  再現するが、ノードジッタ/三角形/高 AR メッシュでは O(1) の相対勾配誤差が残る
+  (30% ジッタ quad で最大 66%、`tools/verify_linear_recon.py` で定量・全 PASS)。
+  勾配を使う面再構成 (MUSCL, `keepDissJump`) の高次性はこの範囲でしか成立しない。
+  LSQ (double) は任意メッシュで線形場厳密 (同ツールで確認)。
 - 境界面の寄与はゴーストセル値を `c_2` として扱うことで吸収する設計。
   GPU カーネル `calcGradient_b_d` は実装されているが現状コメントアウトされており、
   境界寄与は内部面ループ + ゴーストセル値で表現される。

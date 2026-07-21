@@ -1,7 +1,11 @@
 // =============================================================================
 // 対流フラックス KEEP_d の実装断片。
-//   - 純粋 KEEP (Kinetic Energy & Entropy Preserving) 中心流束。**中心部は散逸項なし**。
-//     隣接セル/ノード対 (ic0,ic1) の生値で中心流束を構成する (KE/エントロピー保存)。
+//   - 純粋 KEEP (Kinetic Energy and Entropy Preserving) 中心流束。**中心部は散逸項なし**。
+//     隣接セル/ノード対 (ic0,ic1) の生値で中心流束を構成する。KE は二次分割で保存、エントロピーは
+//     **厳密保存ではない** (算術/交差平均構成のため Tadmor 条件 Δwᵀ·F* = Δψ を満たさない。
+//     誤差はジャンプ 3 次 O(Δ³) の準保存 = 滑らかな場では設計次数で整合、大ジャンプでは非保存。
+//     tools/verify_keep_tadmor.py で数値確認済。厳密 EC には log-mean 平均 (KEPEC 型) が必要)。
+//     したがって散逸レイヤ込みでも「流束全体の entropy stability」は主張しない (散逸項単体が ES)。
 //     Roe 行列散逸・MUSCL 再構成・リミタ・Ducros は持たない (低散逸 LES/ILES 用; SGS は WALE が担う)。
 //   - opt-in 散逸レイヤ (keepDissType, plans/accepted/convection-keep-es-dissipation.md):
 //     keepDissType==0 で従来どおり散逸ゼロ (ビット不変)。==1 で scalar entropy-stable 散逸
@@ -58,7 +62,7 @@ __global__ void KEEP_d
         geom_float sxx = sx[ip], syy = sy[ip], szz = sz[ip], sss = ss[ip];
         geom_float nx = sxx/sss, ny = syy/sss, nz = szz/sss;
 
-        // ---- 純粋 KEEP 中心流束 (隣接対の生値; KE/エントロピー保存・散逸なし) ----
+        // ---- 純粋 KEEP 中心流束 (隣接対の生値; KE 保存・エントロピー O(Δ³) 準保存・散逸なし) ----
         // U∞≠0 の動く一様流保存 (advGauge, plan §8.2): roRef>0 (CPG のみ) では中心流束を
         // 「元の流束 − 参照一様流束 F∞(s)」の差分形因数分解 ((差分)×(平均)+(参照)×(差分)) で組む。
         // F∞ は s に線形な定数流束: 内部面で等価逆符号のまま=保存厳密、セル和は F∞(Σs)=0 の解析ゲージ。
@@ -416,9 +420,13 @@ __global__ void KEEP_d
                     if (Y1[k] > 0.0) mixent1 -= Y1[k]*Rk*log(fmax(Y1[k]/sp[k].MW/mol1, 1e-300));
                 }
             }
-            // s_i (基準圧 pref=PsF: log 引数 ~1 で桁落ち回避。pref は Δw で相殺)
-            const double s0d = thermo_s0_mix(sp, ns, Y0, T0d) + mixent0 - R0g*log((double)Ps[ic0]/PsFd);
-            const double s1d = thermo_s0_mix(sp, ns, Y1, T1d) + mixent1 - R1g*log((double)Ps[ic1]/PsFd);
+            // s_i: log 引数 ~1 で桁落ち回避のため p_i/PsF で評価し、多成分では NASA-9 標準状態
+            //   p°=THERMO_P_STD への datum 補正 −R_i·ln(PsF/p°) を加える。面ローカル pref=PsF のままだと
+            //   組成ジャンプ面 (R0≠R1) で (R1−R0)·ln(PsF) が Δw に残り、散逸量が面参照圧という任意の
+            //   選択に依存してしまう (単成分は R0=R1 で解析相殺するため補正 0.0 加算=ビット不変)。
+            const double lnPstd = (nSpecies > 1) ? log(PsFd/THERMO_P_STD) : 0.0;
+            const double s0d = thermo_s0_mix(sp, ns, Y0, T0d) + mixent0 - R0g*(log((double)Ps[ic0]/PsFd) + lnPstd);
+            const double s1d = thermo_s0_mix(sp, ns, Y1, T1d) + mixent1 - R1g*(log((double)Ps[ic1]/PsFd) + lnPstd);
             const double g0d = thermo_h_mix(sp, ns, Y0, T0d) - T0d*s0d;
             const double g1d = thermo_h_mix(sp, ns, Y1, T1d) - T1d*s1d;
             const flow_float dw0 = (flow_float)((g1d-0.5*q1d)/T1d - (g0d-0.5*q0d)/T0d);
