@@ -136,3 +136,22 @@ $w_{ij}=1/|\mathbf d_{ij}|^2$、$\mathbf d_{ij}=\mathbf x_j-\mathbf x_i$。
   一方 **float32 格納 (現行 `flow_float` 配列) では ~1e-6 に 6 桁劣化**。GG は非一様メッシュで
   線形場非厳密 (30% ジッタで相対誤差 66%)。→ §9 の近壁発散は LSQ の数学でなく格納精度+近特異幾何の
   問題で、修正候補① (double scratch 蓄積) の妥当性を支持。着手判断は §0 ゲートに従う (変更なし)。
+- `2026-07-22` — **実メッシュ診断 (`tools/check_lsq_gradient.py` 新設) — 上記エントリの重心を訂正**。
+  実 h5 メッシュから近傍セット (内部双対面 + 非 periodic 境界半割面 pc) を再構成し、
+  ①退化センサス λ_min/λ_max(M̂=Σd̂d̂ᵀ) と ②線形場勾配誤差を (a) 現行相当 float32 格納 /
+  (b) 全 double / (c) 係数事前計算 (setup double solve → float32 係数適用) / (d) GG で比較。
+  - **case/39 hill 3D production** (`case/39.periodic_hills/run_0013_prod_ddes/hill_xc_160x100x60.h5`,
+    99.2 万ノード): 退化ゼロ (worst 比 0.20)。LSQ は (a)=(b)=(c) 完全一致で max 5e-3
+    (float32 場の差分ノイズ床、壁ノード)。**GG は同じ線形場で near-wall max 59% / p99.9 46%**
+    (fx 補間の整合性誤差) → このクラスのメッシュでは **LSQ 化で近壁勾配 ~2 桁改善**の余地
+    (勾配は粘性応力・keepDissJump・SGS の共通入力)。現行 float 実装でも数値的には安全な条件。
+  - **case/29 nozzle 軸対称** (`case/29.bell_vs_conical/run_lsq_on/nozzle.h5`, §9 発散の本家):
+    **真の面内退化が実在**: 比<1e-2 が 2.58% (709 ノード)、worst 4.3e-5、全て近壁 (wd~1e-4)
+    = 法線エッジが接線から ~0.5° しか立っていない高AR+シア壁。**(a)=(b)=(c) が同一** (max 10%,
+    壁) — つまり **float32 格納は発散の主因ではなく** (前エントリの強調を訂正)、double でも
+    線形場で 10% 誤る「情報が無い」退化。§9 の発散は退化ノードの勾配誤差×粘性フィードバックが
+    有力で、**必須修正は候補③ (退化検出→フォールバック) ないし stencil 拡張/壁 virtual 点**。
+    候補① (double 化) 単独では不足。(d) GG は軸対称 planar 幾何が h5 に無く N/A。
+  - 示唆: 修正の本命は「**係数事前計算** (setup 時 double solve + 退化ノードの GG/縮退方向
+    フォールバック焼き込み) + ランタイム float32 gather」。実行時 double 不要・現行 LSQ より速く、
+    退化処理を静的に済ませられる。§0 ゲートの動機再確認には hill の GG 46-59% が新証拠。
