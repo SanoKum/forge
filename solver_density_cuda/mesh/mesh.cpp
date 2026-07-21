@@ -675,6 +675,17 @@ void mesh::buildPeriodicNodeGroups(bool nodeMode, geom_float* var_volume_d)
     for (geom_int c = 0; c < this->nCells; ++c) this->periodicRoot[c] = findRoot(c);
     for (geom_int c = 0; c < this->nCells; ++c) if (this->periodicRoot[c] != c) this->nPeriodicMembers++;
 
+    // ★ 合併前の部分体積を退避 (体積ソースの二重計上防止用)。gather が group 合算するため、
+    // ソース項は部分体積で加算しないと seam で 2 倍 (x∩z コーナー group は 4 倍) になる
+    // (case/39 z-seam の +75% 速度異常で発覚)。
+    {
+        std::vector<geom_float> partVol(this->nCells);
+        for (geom_int c = 0; c < this->nCells; ++c) partVol[c] = this->cells[c].volume;
+        gpuErrchk(cudaMalloc((void **)&(this->volumePartial_d), sizeof(geom_float)*this->nCells));
+        gpuErrchk(cudaMemcpy(this->volumePartial_d, partVol.data(),
+                             sizeof(geom_float)*this->nCells, cudaMemcpyHostToDevice));
+    }
+
     // 合併体積: group ごとに体積を合算し、group 全員の volume をその合算値にする
     // (両者が同 res・同 vol で更新され bit 一致同期するため。詳細は plans §4.5.3)。
     std::vector<geom_float> groupVol(this->nCells, 0.0);

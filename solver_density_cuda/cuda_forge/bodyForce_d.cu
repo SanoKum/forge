@@ -48,10 +48,12 @@ __global__ void bodyForce_d
 void bodyForce_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (cfg.bodyForceX == 0.0 && cfg.bodyForceY == 0.0 && cfg.bodyForceZ == 0.0) return;
+    // 周期 node の volume は合併体積 (両パートナーとも) のため、体積ソースにそのまま使うと
+    // periodicNodeGather の合算で seam 2 倍/コーナー 4 倍になる → 部分体積を使う (mesh.hpp 参照)。
     bodyForce_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(
         msh.nCells,
         cfg.bodyForceX, cfg.bodyForceY, cfg.bodyForceZ,
-        var.c_d["volume"],
+        (msh.volumePartial_d != nullptr) ? msh.volumePartial_d : var.c_d["volume"],
         var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"],
         var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"], var.c_d["res_roe"]);
     gpuErrchk( cudaPeekAtLastError() );
@@ -73,7 +75,9 @@ void bodyForceCtrlUpdate(solverConfig& cfg , mesh& msh , variables& var , int iS
 
     const geom_int n = msh.nCells;
     thrust::device_ptr<flow_float> roUx(var.c_d["roUx"]);
-    thrust::device_ptr<flow_float> vol(var.c_d["volume"]);
+    // 周期 seam の二重計上を避けるため部分体積で積分する (nullptr なら従来 volume = 周期なし)
+    thrust::device_ptr<flow_float> vol(
+        (msh.volumePartial_d != nullptr) ? msh.volumePartial_d : var.c_d["volume"]);
 
     const double M = thrust::transform_reduce(
         thrust::make_zip_iterator(thrust::make_tuple(roUx, vol)),

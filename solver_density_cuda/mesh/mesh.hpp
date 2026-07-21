@@ -183,6 +183,11 @@ public:
     // periodicNodeGather (res 和を group 全員に書く) と合併体積で「両側部分 CV を 1 CV」として扱う。
     std::vector<geom_int> periodicRoot;       // [nCells] host: 各 CV の group root
     geom_int* periodicRoot_d = nullptr;       // [nCells] device
+    // 合併前の部分 CV 体積 [nCells] (node periodic 時のみ確保、他は nullptr)。
+    // 体積ソース (bodyForce, ransSource の k/ω 源) は periodicNodeGather で group 合算されるため、
+    // merged volume (var volume) を使うと seam で 2 倍 (コーナー group は 4 倍) になる。
+    // ソース側はこの部分体積を使うこと (plans/active/turbulence-iddes-sst.md 変更ログ 2026-07-22)。
+    geom_float* volumePartial_d = nullptr;
     geom_int  nPeriodicMembers = 0;           // root != self の CV 数 (>0 なら周期同一視を実行)
 
     mesh();

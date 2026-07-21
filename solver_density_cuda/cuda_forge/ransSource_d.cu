@@ -235,9 +235,11 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         return;
     }
 
+    // v は res_roK/res_roOmega の体積ソース加算にのみ使われる → 周期 node では部分体積を渡す
+    // (merged volume だと periodicNodeGather の合算で seam 2 倍/コーナー 4 倍。mesh.hpp 参照)。
     rans_sst_source_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
         msh.nCells,
-        var.c_d["volume"],
+        (msh.volumePartial_d != nullptr) ? msh.volumePartial_d : var.c_d["volume"],
         var.c_d["ro"],
         var.c_d["k"],
         var.c_d["omega"],
