@@ -279,7 +279,11 @@ void limiter_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , va
     fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_Uz"], msh.nCells_all, 1.0);
     fill_limiter_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(var.c_d["limiter_P"], msh.nCells_all, 1.0);
 
-    if (cfg.limiter == 0) {
+    // limiter<=0: 0=明示 off、-1=「リミタ off」(solverConfig.cpp が受理する正式値。KEEP は lim を
+    // 一切参照しないため計算自体が無駄 — 修正前は == 0 のみ早期 return しており、-1 が Venkatakrishnan
+    // 分岐 (venkata_limiter, limiter_scheme==2 と同一コスト) に落ちて全 cell の全変数を計算していた
+    // = KEEP 系 run の実測 ~22% の GPU 時間が丸ごと無駄だった)。fill 済みの 1.0 がそのまま「無制限」を表す。
+    if (cfg.limiter <= 0) {
         gpuErrchk( cudaPeekAtLastError() );
         gpuErrchkKernelSync();
         return;
