@@ -142,3 +142,28 @@ DES/WMLES 研究は皆無**だった。以下がオープンクエスチョン�
 | 二次 | Chaouat (2017), Flow Turbulence Combust: hybrid RANS-LES review |
 | 原典 | Spalart et al. (2006), TCFD 20: DDES 論文 |
 | 原典 | Shur et al. (2008): IDDES 論文 |
+
+---
+
+## 追補 (2026-07-20): Log-Layer Mismatch (LLM) の文献実態と Δu⁺=1.9 の位置づけ
+
+case/38 チャネル Reτ550 の正統 IDDES (`run_0021`, y₁⁺=1, Δx⁺=72/Δz⁺=54) で残った
+Δu⁺≈1.9 (+8% U, Cf 換算 −15%) が「良いのか悪いのか」「LLM は不可避か」の文献調査。
+
+### 定量アンカー
+
+| ソース | 内容 |
+| --- | --- |
+| Nikitin et al. (2000), PoF 12:1629 (原典) | DES を壁モデルとして初使用。全ケースで「DES バッファ層 (super-buffer layer)」による正の LLM。ハイブリッド RANS/LES の付着 BL では **Cf −10〜−15% が定番** |
+| Larsson, Kawai, Bodart, Bermejo-Moreno (2016), Mech. Eng. Reviews 3:15-00418 (レビュー) | 「正の LLM はほぼ全てのハイブリッド LES/RANS で観測」「**典型誤差 10-20%**」(Wu & Meyers 2013 の近壁 Cs 補正で 5% まで)。**LLM はモデルでなく数値・格子・SGS の合作でコード依存** (「完璧な壁モデルでも別コードに移せば LLM は出る」)。界面 forcing で消せるが「LLM は forcing 振幅のほぼ線形関数で予測理論なし = ロバスト性問題」 |
+| Shur et al. (2008), IJHFF 29:1638 (IDDES 原典) | fe 昇圧関数 + Δ ブレンドで**較正格子上のチャネルでは LLM をほぼ解消**した、が主張の中身 |
+| Gritskevich, Garbaruk, Menter (2012/EUCASS 版), FTC 88:431 (SST-IDDES = forge 実装の較正論文) | チャネル Re_H=395/2400/18000: **格子 Δx=0.05H=0.1δ, Δz=0.025H=0.05δ, y_w⁺<1** で Reichardt 相関と一致 (LLM ≈ 0)。fe を省いた簡易版 (=商用実装標準) は「低中 Re で LLM がやや強まるが marginal」 |
+| Kawai & Larsson (2012), PoF 24:015105 | wall-stress WMLES 系では交換点を第 3 格子点以上に置き下層を解像すれば **LLM は機械的にゼロにできる** (収束解は mismatch ゼロ = LLM は物理的必然ではない) |
+| DeLeon & Senocak (2017), arXiv:1712.08035 | LLM の一因は界面近傍の解像応力欠損 [Piomelli 2003 系] + バルク渦粘性による自由度不足。ゾーン分割 forcing で大幅減 |
+
+### 結論
+
+1. **Δu⁺=1.9 は「無対策ハイブリッド RANS/LES の教科書値」のほぼ中央** (Cf −15% ≈ Nikitin 以来の典型帯)。コードが壊れている水準ではないが、IDDES 論文が宣伝する「LLM 解消」水準でもない。
+2. その差の説明は**格子**: IDDES の LLM 対策 (fe, Δ ブレンド) が実証されているのは **Δz=0.05δ 格子**。case/38 の Δz=0.098δ は較正封筒の **2 倍粗い** (Δx も 0.131δ vs 0.1δ)。グレーゾーン (y⁺40-150) のストリーク (λz⁺~100) を Δz⁺=54 で 2 点/本しか刻めない、という実測診断と整合。
+3. **LLM は不可避ではない**。消す道は 3 つ: (a) 較正封筒の格子に載せる (Δz 半減が本丸)、(b) wall-stress WMLES 化して Kawai-Larsson 処方 (交換点を上げ下層解像)、(c) 界面 forcing (効くが振幅チューニングがケース依存)。
+4. 次の一手として (a) を推奨: **Δx=0.1δ (nx 63), Δz=0.05δ (nz 63)** の Gritskevich 較正格子を再現する run で、forge の SST-IDDES が LLM≈0 を出せるかの白黒がつく (ノード ~2.4×、dt 不変で計算 ~2.4×)。

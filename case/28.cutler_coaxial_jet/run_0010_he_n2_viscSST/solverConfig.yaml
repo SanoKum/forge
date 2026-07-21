@@ -39,9 +39,7 @@ space:
   convMethod: 1                      # 2次風上 (非粘性場からリスタート)
   limiter: 2
 turbulence:
-  LESorRANS: 2                       # RANS
-  LESmodel: 1
-  RANSmodel: 1                       # Menter SST
+  model: "sst"
   scalarDiffusion: 1
   dilatationCorrection: 2
   kInf: 1.0

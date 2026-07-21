@@ -92,6 +92,14 @@ docker run --rm --gpus all \
 - NVIDIA の計測ツールを試す: Docker 内に固執せず、WSL native または Linux native に切り替える。
 - Docker で計測が失敗した場合: 例外扱いではなく、native へ切り替えるのが既定対応。
 
+## クラウド (AWS EC2) での実行
+
+AWS の GPU インスタンス (基準: `g5.xlarge`, us-east-1) で Docker ビルド・計算投入・速度計測を行う手順は
+[`cloud-aws-gpu.md`](cloud-aws-gpu.md) を参照。クラウドの Linux native ホストでは本文書の
+「速度評価は native」ルールをそのまま適用でき、WSL で不能だった `nsys` の解析までインスタンス内で完結する。
+クラウド用イメージは `solver_density_cuda/Dockerfile.cuda.cloud` (ParaView GUI 無し、gmsh はヘッドレス同梱)。
+メッシングは gmsh スクリプトで、可視化は pvserver + SSH トンネルでクラウド完結できる (手順は同文書)。
+
 ## 関連文書
 
 - 計算準備と `forge` 実行手順: `procedures/calculation-workflow.md`

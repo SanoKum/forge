@@ -67,7 +67,6 @@ space:
   convMethod: 2
   limiter: 2
 turbulence:
-  LESorRANS: 0
-  LESmodel: 0
+  model: "none"
 initial: "${INIT}"
 EOF

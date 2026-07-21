@@ -38,6 +38,5 @@ space:
   convMethod: 0          # 1st-order upwind for robust startup
   limiter: 0
 turbulence:
-  LESorRANS: 0
-  LESmodel: 0
+  model: "none"
 initial: "nozzle_wys"

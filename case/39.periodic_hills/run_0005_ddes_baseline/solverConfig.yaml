@@ -60,10 +60,7 @@ space:
   uRef: [37.5, 0.0, 0.0]  # advective gauge
 
 turbulence:
-  LESorRANS: 2  # RANS(SST) ベース
-  LESmodel: 1
-  RANSmodel: 1  # SST
-  DESmode: 1    # 素の DDES (grey-area baseline)
+  model: "sst-ddes"
   wallTreatmentSST: 1
   nodeOmegaWfDirichlet: 1
   kInf: 1.0

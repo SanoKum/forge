@@ -39,9 +39,7 @@ space:
   convMethod: 0
   limiter: 0
 turbulence:
-  LESorRANS: 2
-  LESmodel: 1
-  RANSmodel: 1
+  model: "sst"
   scalarDiffusion: 1
   dilatationCorrection: 2
   kInf: 1.0

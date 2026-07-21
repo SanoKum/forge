@@ -51,10 +51,7 @@ space:
   pRef: 101325.0
 
 turbulence:
-  LESorRANS: 2  # RANS(SST)
-  LESmodel: 1
-  RANSmodel: 1  # SST
-  DESmode: 0    # 純 RANS (段階起動 + RANS 参照解)
+  model: "sst"
   wallTreatmentSST: 1
   nodeOmegaWfDirichlet: 1
   kInf: 1.0

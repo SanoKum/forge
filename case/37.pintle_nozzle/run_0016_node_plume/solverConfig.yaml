@@ -54,9 +54,7 @@ space:
   pRef: 3.0e6        # 動作静圧 (チャンバー圧)。非直交 float32 の free-stream 桁落ち対策
 
 turbulence:
-  LESorRANS: 2
-  LESmodel: 1
-  RANSmodel: 1
+  model: "sst"
   wallTreatmentSST: 1
   kInf: 4.0
   omegaInf: 500.0

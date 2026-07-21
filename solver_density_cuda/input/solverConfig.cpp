@@ -368,15 +368,36 @@ void solverConfig::read(std::string fname)
 
         // turbulence model
         auto turb = config["turbulence"];
-        this->LESorRANS = getValidatedValue<int>(turb, "LESorRANS", "turbulence");
-        this->LESmodel = getValidatedValue<int>(turb, "LESmodel", "turbulence");
-        this->RANSmodel = getOptionalValidatedValue<int>(turb, "RANSmodel", 0, "turbulence");
+        // 乱流 closure は turbulence.model (文字列) 1 キーで指定する
+        // (plans/active/turbulence-config-model-key.md)。旧 4 キー (LESorRANS/LESmodel/RANSmodel/DESmode)
+        // は廃止・即エラー (nStepInner 改名と同じ方針)。内部 int 群へのマッピングのみ行い、カーネルは不変。
+        for (const char* old_key : {"LESorRANS", "LESmodel", "RANSmodel", "DESmode"}) {
+            if (turb[old_key]) {
+                throw std::runtime_error(std::string("Key '") + old_key +
+                    "' in 'turbulence' is no longer supported. Use 'model' instead: "
+                    "none | wale | sigma | sst | sst-ddes | sst-iddes.");
+            }
+        }
+        const std::string turbModel = getValidatedValue<std::string>(turb, "model", "turbulence");
+        if      (turbModel == "none")      { this->LESorRANS = 0; this->LESmodel = 0; this->RANSmodel = 0; this->DESmode = 0; }
+        else if (turbModel == "wale")      { this->LESorRANS = 1; this->LESmodel = 1; this->RANSmodel = 0; this->DESmode = 0; }
+        else if (turbModel == "sigma")     { this->LESorRANS = 1; this->LESmodel = 2; this->RANSmodel = 0; this->DESmode = 0; }
+        else if (turbModel == "sst")       { this->LESorRANS = 2; this->LESmodel = 0; this->RANSmodel = 1; this->DESmode = 0; }
+        else if (turbModel == "sst-ddes")  { this->LESorRANS = 2; this->LESmodel = 0; this->RANSmodel = 1; this->DESmode = 1; }
+        else if (turbModel == "sst-iddes") { this->LESorRANS = 2; this->LESmodel = 0; this->RANSmodel = 1; this->DESmode = 2; }
+        else {
+            throw std::runtime_error("Key 'model' in 'turbulence' must be one of: "
+                "none | wale | sigma | sst | sst-ddes | sst-iddes (got '" + turbModel + "').");
+        }
+        std::cout << "'model' in 'turbulence': " << turbModel << "\n";
         this->scalarDiffusion = getOptionalValidatedValue<int>(turb, "scalarDiffusion", 1, "turbulence");
         this->dilatationCorrection = getOptionalValidatedValue<int>(turb, "dilatationCorrection", 2, "turbulence");
 
         if (this->dilatationCorrection < 0 || this->dilatationCorrection > 2) {
             throw std::runtime_error("Key 'dilatationCorrection' in 'turbulence' must be one of 0, 1, or 2.");
         }
+        // ω 交差拡散 Jacobian (点陰対角強化)。既定 0 = ビット不変。
+        this->sstCrossDiffJac = getOptionalValidatedValue<int>(turb, "sstCrossDiffJac", 0, "turbulence");
 
         this->katoLaunder = getOptionalValidatedValue<int>(turb, "katoLaunder", 0, "turbulence");
 
@@ -404,11 +425,8 @@ void solverConfig::read(std::string fname)
             throw std::runtime_error("Keys 'kInit'/'omegaInit' in 'turbulence' must be >= 0.");
         }
 
-        // SST-DES length scale 修正 (methods/turbulence §8): 0=RANS(既定・ビット不変)/1=DDES/2=IDDES
-        this->DESmode = getOptionalValidatedValue<int>(turb, "DESmode", 0, "turbulence");
-        if (this->DESmode < 0 || this->DESmode > 2) {
-            throw std::runtime_error("Key 'DESmode' in 'turbulence' must be one of 0, 1, or 2.");
-        }
+        // SST-DES length scale 修正 (methods/turbulence §8): DESmode は turbulence.model
+        // (sst-ddes/sst-iddes) から設定済み。旧 'DESmode' キーは上のガードで拒否される。
         this->C_DES_kw = getOptionalValidatedValue<flow_float>(turb, "C_DES_kw", 0.78, "turbulence");
         this->C_DES_ke = getOptionalValidatedValue<flow_float>(turb, "C_DES_ke", 0.61, "turbulence");
         if (this->C_DES_kw <= 0.0 || this->C_DES_ke <= 0.0) {

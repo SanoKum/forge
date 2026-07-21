@@ -42,9 +42,7 @@ space:
   limiter: 2
 
 turbulence:
-  LESorRANS: 2
-  LESmodel: 1
-  RANSmodel: 1
+  model: "sst"
   scalarDiffusion: 0
   dilatationCorrection: 2
   kInf: 1.0

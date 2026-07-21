@@ -49,7 +49,6 @@ space:
   limiter: 2
 
 turbulence:
-  LESorRANS: 0 # 0:no 1:LES 2:RANS
-  LESmodel: 0 # 1:WALE
+  model: "none"
 
 initial: "bump_M1.65"

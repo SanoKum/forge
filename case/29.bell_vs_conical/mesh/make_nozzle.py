@@ -202,8 +202,15 @@ def write_csv(path, x, y, z):
 
 
 # 各 zone の x 分割数 (壁の曲率に応じて配分)
-# throat_dn (スロート下流円弧) と発散部 (parabola/cone) を増やし、スロート直後の急拡大を解像する。
-NX_ZONE = dict(chamber=18, conv_cone=45, throat_up=30, throat_dn=44,
+# 軸方向 dx をスロート前後で連続にする (段差は P 場に kink を作り dPdx にスプリアスピークを生む)。
+#  - throat_dn (下流円弧, 軸長~1mm): nx=8 → dx~0.12mm。
+#  - throat_up (上流円弧, 軸長~7.9mm): nx=60 → dx~0.13mm。throat_dn と dx を揃え、スロート T (zone 境界)
+#    での dx 段差 (旧 throat_up0.25/throat_dn0.10 = 2.5倍) を解消。
+#  - 発散部 (parabola/cone): 緩い Progression (prog_x=1.012) でスロート側=細→出口=粗を段差レスに繋ぐ。
+# 旧 throat_dn=44 (dx~0.022mm) は cone(0.42mm) と 19倍段差→スリバで node viscous 不安定だった。
+# 【検証】dx 段差を残すと音速点 (M=1, x~1.7mm) でなくゾーン境界 (x~0, M~0.87) に dPdx 偽ピーク(-2.8e8)が
+# 出る。dx を揃えると消える (run_0037, plan §10)。
+NX_ZONE = dict(chamber=18, conv_cone=45, throat_up=60, throat_dn=8,
                parabola=200, cone=200)
 
 # 発散部 (parabola/cone) は軸方向に「スロート側へクラスタリング」する (Progression, ブロック左端=スロート側)。
@@ -340,8 +347,9 @@ def main():
                     help="半径方向クラスタリング比 (1.0=一様; 粘性は壁密 <1, 例 0.95)")
     ap.add_argument("--bump-r", type=float, default=None,
                     help="両端クラスタ (壁+軸, Transfinite Bump 係数 <1)。指定時 prog-r より優先")
-    ap.add_argument("--prog-x", type=float, default=1.0,
-                    help="発散部 (parabola/cone) の軸方向クラスタリング比 (1.0=一様; >1 でスロート直後を密に)")
+    ap.add_argument("--prog-x", type=float, default=1.012,
+                    help="発散部 (parabola/cone) の軸方向クラスタリング比 (1.0=一様; >1 でスロート直後を密に)。"
+                         "既定 1.012: throat_dn(細)→cone(粗) を段差レスに繋ぎ、スロート下流の薄い CV を防ぐ")
     ap.add_argument("--outdir", type=str, default=".", help="出力先")
     args = ap.parse_args()
 

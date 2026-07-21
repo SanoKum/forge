@@ -38,6 +38,5 @@ space:
   convMethod: 1          # 2次風上 (restart from converged 1st-order)
   limiter: 2
 turbulence:
-  LESorRANS: 0
-  LESmodel: 0
+  model: "none"
 initial: "arthur_n2"

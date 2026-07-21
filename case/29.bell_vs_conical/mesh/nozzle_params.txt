@@ -10,11 +10,11 @@ axial length Ln         : 85.368 mm  (throat x=0 -> exit; both)
 cone half angle         : 15.00 deg (C1: arc tangent to cone)
   arc->cone join Nc     : (0.989, 10.130) mm
 -- Rao bell --
-theta_n (start angle)   : 30.00 deg
-theta_e (exit angle)    : 8.00 deg
+theta_n (start angle)   : 34.17 deg
+theta_e (exit angle)    : 11.58 deg
 bell length / 15deg-cone: 100.0%
-parabola start N        : (1.910, 10.512) mm
-Bezier control Q        : (25.944, 24.388) mm
+parabola start N        : (2.146, 10.659) mm
+Bezier control Q        : (12.760, 17.865) mm
 -- shared converging --
 converging half angle   : 30.0 deg
 chamber straight length : 20.0 mm

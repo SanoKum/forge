@@ -700,7 +700,7 @@ RANS が正しい極限)、$r_d$ を $[0,10]$ に clamp して $f_d$ の 0/1 張
 診断のため `r_d`・`f_d`・`l_des`・`delta_les` を HDF5 出力する (一様な $f_d$ 張り付きは NaN より
 発見しにくい DES 不全の兆候)。
 
-### 8.6 IDDES (`DESmode: 2`, Shur et al. 2008 / SST 版 Gritskevich et al. 2012)
+### 8.6 IDDES (`model: "sst-iddes"`, Shur et al. 2008 / SST 版 Gritskevich et al. 2012)
 
 DDES に **WMLES 分岐** を加えた拡張。解像乱流が存在する近壁領域では、RANS 層を壁モデルとして
 薄く残し ($f_B$ で壁直近のみ RANS 強制)、log 層から LES に切り替える。解像乱流が無い場合は
@@ -773,7 +773,7 @@ WMLES モードの**定量**評価は解像乱流の存在が前提 (周期チ�
 壁モデル LES (WMLES) では第一解点を対数層 ($y^+\approx 50\text{–}100$) に置き、壁面せん断応力
 $\tau_w$ と壁面熱流束 $q_w$ を代数壁法則で与えて壁の粘性流束を置き換える。SST automatic wall
 treatment (§6.5) と同じ Reichardt 則を速度に、Kader 則を温度に使う平衡壁モデルである。
-`LESorRANS==1` (LES) 系の機能であり、SST の $\omega$ ピン・$P_k$ 置換 (§6.5(b)(d)) は関与しない。
+LES (`model: wale/sigma`) 系の機能であり、SST の $\omega$ ピン・$P_k$ 置換 (§6.5(b)(d)) は関与しない。
 
 ### 10.1 マッチング点と壁面状態
 

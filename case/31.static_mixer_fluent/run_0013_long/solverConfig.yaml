@@ -12,5 +12,5 @@ time:
   timeIntegration: 11
   nStepInner: 10
 space: {convMethod: 0, limiter: 2, pRef: 101325.0}
-turbulence: {LESorRANS: 0, LESmodel: 1}
+turbulence: {model: "none"}
 initial: "uniform"

@@ -46,7 +46,6 @@ space:
   limiter:  2 # 1:berth, 2:venkata, 3:nishikawa r1, 4:nishikawa r2, -1:minmod
 
 turbulence:
-  LESorRANS: 0 # 0:no 1:LES 2:RANS
-  LESmodel: 1 # 1:WALE
+  model: "none"
 
 initial: "sod"

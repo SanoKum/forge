@@ -38,6 +38,5 @@ space:
   convMethod: 0
   limiter: 0
 turbulence:
-  LESorRANS: 0
-  LESmodel: 0
+  model: "none"
 initial: "nozzle_wys"

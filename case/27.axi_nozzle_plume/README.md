@@ -55,6 +55,11 @@ run_0001 (1 次・非粘性で確立) から warm-start し 2 次精度で比較
 - `run_0011_tpN2_rans_sst` — 上記 + RANS SST (dilatation 補正 2)。安定 (残差 1.08e-3、乱流粘性が
   プルームせん断層を平滑化)。`vis_turb` [0,0.57]、`k` [0,9.5e4] が物理的 (RANS×TP のエンドツーエンド検証)。
 
+WSL native で同条件の再実行も取り、CPG 側と TP 側を別 run に残した:
+
+- `run_0012_cpgN2_rans_sst` — CPG-N2 + RANS SST 再実行。`rms_roOmega` が初期 inner_iter で `Inf` になり、その後も崩れて `check_convergence.py` は DIVERGED 判定。
+- `run_0013_tpN2_rans_sst_re` — TP-N2 + RANS SST 再実行。4000 step まで完走したが、`check_convergence.py` は初期 inner_iter の `rms_roOmega=Inf` を拾って DIVERGED 判定。
+
 > M4 の乱流化学種拡散 ($\mu_t/\mathrm{Sc}_t$) は単成分 N2 では dormant のため未検証 (多成分 RANS が必要。plan §10)。
 
 ## 再現手順
@@ -74,4 +79,6 @@ python3 compare_cea.py run_0008_cpgN2_2nd/res_8000.h5 run_0009_tpN2_2nd/res_8000
 | --- | --- | --- | --- |
 | `run_0004_imp_2nd_cflp5` | 軸対称 SLAU 2nd block-DPLUR 陰解 (cfl0.5) | **float では step3000 付近で NaN** (近軸不安定) | active |
 | `run_regr_cf` | 回帰: 閉形式 FVS 既定 float。run_0004 同条件 | float は同様に NaN (≈step4000) = 閉形式由来でない | active |
-| `run_regr_cf_double` | `implicitSolvePrecision=1` (double solve)。run_0004 同条件 | **完走・NaN なし → 近軸 double solve が発散を安定化**。plan [precision-mixed-axisym.md](../../.github/plans/precision-mixed-axisym.md) | active |
+| `run_regr_cf_double` | `implicitSolvePrecision=1` (double solve)。run_0004 同条件 | **完走・NaN なし → 近軸 double solve が発散を安定化**。plan [precision-mixed-axisym.md](../../plans/archived/precision-mixed-axisym.md) | active |
+| `run_0012_cpgN2_rans_sst` | CPG-N2 + RANS SST 再実行 (WSL native) | `rms_roOmega` が step0 から `Inf` を含み、終盤は崩壊。`residual_history.png` は簡易プロットで保存 | active |
+| `run_0013_tpN2_rans_sst_re` | TP-N2 + RANS SST 再実行 (WSL native) | 4000 step まで完走。`check_convergence.py` は step0 inner_iter の `rms_roOmega=Inf` を検出し DIVERGED 判定。`residual_history.png` 保存 | active |

@@ -41,7 +41,6 @@ space:
   limiter: 1 # 0:off 1:venkata 
 
 turbulence: 
-  LESorRANS: 0 # 0:no 1:LES 2:RANS
-  LESmodel: 1 # 1:WALE
+  model: "none"
 
 initial: "laval"

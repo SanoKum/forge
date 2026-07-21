@@ -1,5 +1,8 @@
 #include "ransWallFunction_d.cuh"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "cuda_forge/cudaWrapper.cuh"
 #include "cuda_forge/wallLaw_d.cuh"
 
@@ -222,12 +225,64 @@ __global__ void apply_roKwf_pin_d(geom_int nCells, flow_float* roK_wf, flow_floa
         omega[ic]   = rww / roi;
     }
 }
+
+// ============================================================================
+// 【実験専用パッチ・恒久実装禁止】νt 床の判別実験
+// (notes/sessions/channel-wmles-nutfloor-session-prompt.md, case/38 run_0016)。
+// 解像できない帯 d < C·h_max (env FORGE_NUTFLOOR_DMAX [m] で指定, 未設定=完全不活性)
+// の未ピン内部ノードにも壁法則整合の k/ω を書き、既存 wf ピン経路 (状態ピン +
+// Bradshaw 迂回 νt=ρk/ω) に乗せる。k = ω_w·κ·d·u_τ により νt = ρκd·u_τ
+// (mixing-length) を厳密に満たす。u_τ は env FORGE_NUTFLOOR_UTAU (チャネルは
+// 体積力から既知 3.85)。第一内層 (wf 由来ピン) は上書きしない。
+__global__ void apply_nutfloor_ext_d(geom_int nCells, geom_int* wall_flag,
+                                     flow_float* wall_dist, flow_float* ro, flow_float* vis_lam,
+                                     flow_float dmax, flow_float utau,
+                                     flow_float* roK_wf, flow_float* roOmega_wf)
+{
+    const geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    if (wall_flag[ic] != 0) return;                                  // 壁ノード対象外
+    if (roK_wf[ic] >= static_cast<flow_float>(0.0)) return;          // wf ピン済みは保持
+    const flow_float d = wall_dist[ic];
+    if (d <= static_cast<flow_float>(0.0) || d >= dmax) return;
+    const flow_float rho = max(ro[ic], kSmall);
+    const flow_float nu  = vis_lam[ic] / rho;
+    const flow_float omega_vis = static_cast<flow_float>(6.0) * nu / (kSstBeta1 * d * d);
+    const flow_float omega_log = utau / (sqrt(kSstBetaSt) * kKappa * d);
+    const flow_float omega_w   = max(sqrt(omega_vis * omega_vis + omega_log * omega_log), kOmegaMin);
+    const flow_float k_fl      = omega_w * kKappa * d * utau;        // νt=k/ω=κ·d·u_τ
+    roK_wf[ic]     = rho * k_fl;
+    roOmega_wf[ic] = rho * omega_w;
+}
 } // namespace
 
 void applyNodeKwfStatePin_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) return;
     if (!(cfg.discretization == "node" && cfg.nodeKwfDirichlet == 1)) return;
+    // 【実験専用・恒久実装禁止】νt 床 (env ゲート)。未設定なら旧経路と完全同一。
+    static const flow_float nutfloorDmax = [] {
+        const char* s = std::getenv("FORGE_NUTFLOOR_DMAX");
+        return s ? static_cast<flow_float>(std::atof(s)) : static_cast<flow_float>(0.0);
+    }();
+    static const flow_float nutfloorUtau = [] {
+        const char* s = std::getenv("FORGE_NUTFLOOR_UTAU");
+        return s ? static_cast<flow_float>(std::atof(s)) : static_cast<flow_float>(3.85);
+    }();
+    static bool nutfloorLogged = false;
+    if (!nutfloorLogged) {
+        nutfloorLogged = true;
+        if (nutfloorDmax > static_cast<flow_float>(0.0)) {
+            printf("[EXPERIMENT] nut-floor active: dmax=%g m, utau=%g m/s (FORGE_NUTFLOOR_*)\n",
+                   static_cast<double>(nutfloorDmax), static_cast<double>(nutfloorUtau));
+        }
+    }
+    if (nutfloorDmax > static_cast<flow_float>(0.0) &&
+        cfg.nodeOmegaWfDirichlet == 1 && msh.wall_flag_d != nullptr) {
+        apply_nutfloor_ext_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(
+            msh.nCells, msh.wall_flag_d, var.c_d["wall_dist"], var.c_d["ro"], var.c_d["vis_lam"],
+            nutfloorDmax, nutfloorUtau, var.c_d["roK_wf"], var.c_d["roOmega_wf"]);
+    }
     apply_roKwf_pin_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(
         msh.nCells, var.c_d["roK_wf"], var.c_d["roOmega_wf"], var.c_d["ro"],
         var.c_d["roK"], var.c_d["k"], var.c_d["roOmega"], var.c_d["omega"]);

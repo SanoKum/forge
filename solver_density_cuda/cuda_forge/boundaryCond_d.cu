@@ -387,9 +387,16 @@ __global__ void wall_isothermal_d
         Ux[ig]   = static_cast<flow_float>(2.0)*Uxb[ib] - roUx[ic]/ro[ic];
         Uy[ig]   = static_cast<flow_float>(2.0)*Uyb[ib] - roUy[ic]/ro[ic];
         Uz[ig]   = static_cast<flow_float>(2.0)*Uzb[ib] - roUz[ic]/ro[ic];
-        roUx[ig] = -rob[ib]*Ux[ig];
-        roUy[ig] = -rob[ib]*Uy[ig];
-        roUz[ig] = -rob[ib]*Uz[ig];
+        // ghost 保存量は ghost の原始変数と整合させる: roU = ro[ig]·U[ig]。
+        // Ux[ig] には既に鏡像 (2U_w−U_c) の符号が入っているため負号を付けると二重反転し、
+        // ghost 運動量が内部セルと同じ向きになる。密度も ghost 値 ro[ig] でなく壁面値
+        // rob[ib] を使っていた。断熱壁 wall_d は roUx[ig]=-roUx[ic] (=ro[ig]·Ux[ig]) で
+        // 元から整合しており、等温壁だけが不整合だった。
+        // 注: cell モードの ghost 構成であり、node (median-dual) の壁ノードは別経路
+        // (case/38 run_0018 の y₁⁺=1 発散はこの修正では直らないことを実測済み)。
+        roUx[ig] = ro[ig]*Ux[ig];
+        roUy[ig] = ro[ig]*Uy[ig];
+        roUz[ig] = ro[ig]*Uz[ig];
         P[ig]    = P[ic];
         if (thermalMethod == 2) {
             // 等温壁 ghost を T=Tg (鏡像) と整合: roe=ρ(e_NASA(Tg)+ek), sonic=√(γ_mix P/ρ)。

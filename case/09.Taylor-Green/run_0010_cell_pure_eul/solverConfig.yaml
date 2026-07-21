@@ -46,7 +46,6 @@ space:
   limiter: 0      # KEEP は無リミタ
 
 turbulence:
-  LESorRANS: 0    # 乱流モデル無し
-  LESmodel: 0
+  model: "none"
 
 initial: "Taylor-Green"

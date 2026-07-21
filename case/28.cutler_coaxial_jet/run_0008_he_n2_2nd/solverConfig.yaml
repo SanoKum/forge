@@ -36,9 +36,7 @@ space:
   convMethod: 1             # 2次風上 (1次解からリスタート)
   limiter: 2
 turbulence:
-  LESorRANS: 0
-  LESmodel: 1
-  RANSmodel: 1
+  model: "none"
   scalarDiffusion: 1
   dilatationCorrection: 2
   kInf: 1.0

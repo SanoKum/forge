@@ -184,7 +184,7 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
 ## 軸中心 k 過大の調査 — **機構特定済み: 二層構造** (経緯の誤診は訂正済)
 
 詳細・経緯は plan
-[`architecture-axisym-axis-singularity.md`](../../.github/plans/architecture-axisym-axis-singularity.md)。
+[`architecture-axisym-axis-singularity.md`](../../plans/accepted/architecture-axisym-axis-singularity.md)。
 
 ### 層 (a): 実用格子 (軸セル ≥ 0.25mm) の軽度スパイク → **Kato–Launder で解決**
 
@@ -238,7 +238,74 @@ inviscid ベルで `timeIntegration: 11` (block DPLUR, `blockDPLUR: 1`, `nStepIn
 > `run_0016〜0018`・`run_3d_*`、**近軸 混合精度の根治 = 下表 = `run_0001_mixed_lam_slau`〜`run_0015_prod_double`**)。
 > 番号が衝突する別系列があるので、目的は slug と本表で判断すること。
 
-### 近軸 混合精度・閉形式 FVS の調査と根治 (2026-06-13〜14, plan [precision-mixed-axisym.md](../../.github/plans/precision-mixed-axisym.md))
+### node 粘性壁の近壁振動 / no-slip クロージャ調査 (2026-06-20, plan [diffusion-node-wall-viscous-distance.md](../../plans/accepted/diffusion-node-wall-viscous-distance.md))
+
+node-centered viscous の壁近傍振動の真因切り分け。全 run **explicit RK3・cfl=0.1・convMethod=0・bndFirstOrder=1・
+laminar・axisym・conical**、参照と同一 IC/BC。**結論: 真因は粘性壁 flux 距離ではなく壁∩出口コーナーの矛盾ゴースト
+(質量/エネルギー非流出→roe 先頭発散)。** dcc 退化は twall 出力ノイズの原因ではあるが発散の主因でない。
+バルク解 (中心線 Mach) は元スキームで Euler/cell と一致し健全。既定挙動は不変 (`nodeWallViscGradFlux=0`)。
+
+| run_* | 目的・設定差分 | 主要結果 | 状態 |
+| --- | --- | --- | --- |
+| `run_0020_visc_node_wallghost_ab` | 旧 mirror-ghost (基準, `nodeWallViscGradFlux=0`) | 安定。twall_x TV/range=14.8・符号反転 172・スパイク −1.77e4。中心線 Mach=Euler/cell。**基準** | active |
+| `run_0019_visc_node_wallgradflux` | 純勾配 ∇u·S 法線項 | 発散 (~13k, 断熱熱漏れ) | 破棄予定 |
+| `run_0021_visc_node_wallgradflux_adiabfix` | 純勾配 + 断熱熱流束=0 | 壁せん断 0.37Pa (cell の 1e4 倍過小=no-slip 喪失) | 破棄予定 |
+| `run_0022_visc_node_wallsmoothdist` | 滑らか距離 2·vol/sss | 発散 (~9.8k, ドラッグ弱) | 破棄予定 |
+| `run_0024_visc_node_normdrag_only` | 滑らか距離+転置項除去 | 発散 (~9.8k, 転置無関係) | 破棄予定 |
+| `run_0025_visc_node_floor005` | dcc floor `max(dcc,0.05·vol/sss)` | 安定だが twall ノイズ残存 (TV/range=15.8) | 破棄予定 |
+| `run_0023_visc_node_walldirichlet` | nodeWallDirichlet (残差射影) | 発散 (~22.6k, roe 先頭) | 破棄予定 |
+| `run_0026_visc_node_cleandirichlet` | クリーン Dirichlet (毎ステージ KE 除去射影) | 全域崩壊 | 破棄予定 |
+| `run_0027_visc_node_dirichlet_freeze` | クリーン Dirichlet+壁ノード全保存量凍結 | 発散 **3 倍遅延** (~68.5k)→**コーナー積算が主因と確認** | 破棄予定 (診断証拠) |
+
+> 診断: `FORGE_VISC_WALL_DIAG=1` で壁半割面の `dn`/`dcc`/接線オフセットを集計 (退化 `|dn|∈[1e-8,3e-4]` 4〜5 桁変動を実証)。
+> 正攻法は plan [discretization-node-boundary-ghostless.md](../../plans/active/discretization-node-boundary-ghostless.md) Phase 2 のコーナー面ごと BC。
+
+#### SU2 流ゴーストレス再設計の検証 (2026-06-20, plan §7-8)
+
+| run_* | 設定 | 結果 |
+| --- | --- | --- |
+| (旧 nozzle.h5 27472 + 現 HEAD) | single-owner, 元壁 | 安定 (cfl 0.50) — 現 HEAD は旧メッシュを正常に回す |
+| (fresh conical.msh 34138, ny=80) | single-owner / multi-marker 双方 | **step0 NaN→崩壊** = fresh-fine メッシュ独立の不安定 (私の変更と無関係) |
+| `run_0030_coarse_ghostless_su2` | 粗 conical (ny=40,13858) + multi-marker + nodeWallDirichlet=1 | **40k 安定**, P≈Pt, T 1827(残 overshoot)。ただし粗は single≡multi (コーナー未分割) で multi-marker 実質無効=「粗+Dirichlet」由来の安定 |
+
+> **重要**: 当初 plan の「multi-marker emit が発散原因」は**誤り**。single-owner baseline が同一に発散し、
+> 真因は fresh-fine conical.msh 自体の不安定 (別問題)。コーナー修正の純粋検証には「コーナーを持ち
+> かつ node viscous で安定なメッシュ」が必要で未確保。詳細は plan §8.1.2.x。
+
+#### メッシュ均一化 + B 確定 + 自走検証 (2026-06-20, plan §8.1.2.3.1, §9)
+
+**メッシュ修正**: `make_nozzle.py` の `NX_ZONE['throat_dn']` 44→10 + `--prog-x` 既定 1.0→1.012 で
+スロート下流の軸方向 dx 段差 (19倍) を解消 (vol min/mean 3.7e-4→4.8e-2)。`mesh/conical.msh`/`bell.msh`
+再生成 (各 24624 ノード, `.msh` は gitignore 生成物で make_nozzle.py がソース)。
+
+| run_* | 設定 | 結果 |
+| --- | --- | --- |
+| `run_0031_corner_single_dir` | single-owner + Dirichlet (均一メッシュ, 30k) | 解正常だが出口リップで **max cfl=2.92e25 (退化)** |
+| `run_0032_corner_multi_dir` | **multi-marker + Dirichlet (均一, 100k)** | **cfl 0.1・収束 PASS**。中心線 Mach=SU2-lam ~2-5%, 推力 1889N, no-slip BL 正常 |
+| `run_0033_wallclust_bump_node` | **Bump0.4 壁寄せ + node visc + Dirichlet (10k)** | 安定・**Tmax 1508 (Tt 1500 +0.6%)** = T overshoot ほぼ解消, 推力 1907N |
+| `run_0034_cfl{0p2..2p0}_wc` | 壁寄せ CFL 掃引 (explicit RK3) | 0.7 安定 / 0.8 marginal / **1.0 発散** → explicit 上限 ≈0.7 |
+
+> **結論**: B (multi-marker + nodeWallDirichlet) を node 壁の主軸に採用。SU2-lam と一致・no-slip BL 正常・
+> 回帰なし (case08/24)。**T overshoot は近壁解像不足アーチファクトで、壁寄せ (Bump0.4) でほぼ消える**
+> (均一 +13% → 壁寄せ +0.6%)。explicit CFL 上限 ~0.7。詳細は plan §9。
+
+#### node RANS (SST) を働く壁レシピで実走 + GG/LSQ/Kato 比較 (2026-06-21)
+
+これまで node は層流のみで **RANS (SST) は設定だけで未計算** (`run_fx_sst_node`/`run_divufix_sst_node_*` は residual 無し=未実走、しかも nodeWallDirichlet 未設定)。働く壁レシピ (run_0033: `nodeWallDirichlet=1`+壁寄せ+axisCentroidShift) に SST を載せ、converged cell SST (`run_0017`) から cross-mesh restart して実走した。
+
+| run_* | 設定 (共通: node, SLAU, RK3, cfl0.1, convMethod0, nodeWallDirichlet=1, conical 壁寄せ) | VERDICT (20000 step) | 近軸 roK max / T max |
+| --- | --- | --- | --- |
+| `run_0038_node_sst_wc` | GG (gradLSQ=0) + **katoLaunder=1** | **NOT CONVERGED (still converging)** 全列 falling・NaN無し (rms_ro 3.6dec, roOmega 6.8dec, roUy 2.9dec) | 1.12e5 / 1500 |
+| `run_0039_node_sst_nokato` | GG + **katoLaunder=0** (cell run_0017 と条件一致) | **同上** (rms_ro fin 2.19e-8、run_0038 とほぼ同一) | **1.64e5** / 1500 |
+| `run_0040_node_sst_lsq` | **LSQ (gradLSQ=1)** + katoLaunder=0 | **同上** (NaN無し、roUy 3.0dec) | 1.08e5 / 1500 |
+
+> **結論**: **node RANS SST は働く壁レシピで安定収束に向かう** (3本とも NaN無し・全残差 falling・T≤Tt overshoot無し)。
+> いずれも 20000 step では未収束 (要追加 step) だが健全。
+> - **katoLaunder**: 収束・バルク場は不変、近軸 k スパイクのみ ~30% 縮小 (kato0 1.64e5 → kato1 1.12e5)。安定性には不要。
+> - **LSQ (gradLSQ=1)**: **nodeWallDirichlet 併用なら発散しない** (旧 `run_lsq_on` の step24716 発散は壁レシピ無しが原因)。近軸 k 最小・roUy 収束わずかに良。
+> 比較図 `node_sst_gg_vs_lsq_kato.png`、各 `run_*/residual_history.png`、各 run の `CONVERGENCE_VERDICT.txt`。
+
+### 近軸 混合精度・閉形式 FVS の調査と根治 (2026-06-13〜14, plan [precision-mixed-axisym.md](../../plans/archived/precision-mixed-axisym.md))
 
 laminar conical 第一セル `Uy`(x=40mm) が物理値 −15 でなく float 陰解で −0.6 固着する問題の切り分け〜本番化。
 **結論: 真因は block-DPLUR 線形 solve の精度。閉形式 FVS を既定化 (float ~10%速)、`implicitSolvePrecision=1` で根治。**
@@ -305,7 +372,7 @@ r 重みを失い・ゼロ面積(対称)面にもスプリアス項を載せて�
 **float のまま** double solve (`run_0015_prod_double`) と一致 (+17.9 vs +18.1、cm1) し、1次では NOT CONV→PASS に回復
 (cm0)。`implicitSolvePrecision=1` は悪条件 LHS を倍精度で押し切る対症療法で、LHS を直せば**追加 FP64 不要・float 速度**で
 根治できる。plan [precision-mixed-axisym.md] / [architecture-axisym-axis-singularity.md] の「double solve が必要」は
-本是正で更新対象 (要 docs/plan 反映・他ケース回帰)。
+本是正で更新対象 (要 methods/plan 反映・他ケース回帰)。
 
 #### SST (軸対称 RANS) でも軸中心 k スパイクが float のまま消える (本丸の確認)
 
@@ -404,7 +471,7 @@ scalar/block 選択に依存しない。RANS でも mean-flow を 2次 scalar DP
 **実用指針**: 2次精度の陰解法は **block DPLUR** を使う。scalar DPLUR を使うなら **1次** (起動・ロバスト用)
 に限る。残差図は各 run の `residual_history.png`。
 
-### 軸対称 viscous 発散項の整合化 (divu fix) の before/after (2026-06-14, plan [diffusion-viscous-shear-flux.md](../../.github/plans/diffusion-viscous-shear-flux.md))
+### 軸対称 viscous 発散項の整合化 (divu fix) の before/after (2026-06-14, plan [diffusion-viscous-shear-flux.md](../../plans/accepted/diffusion-viscous-shear-flux.md))
 
 planar 面の体積粘性 `-2/3 μ divu` がデカルト発散のみで**フープ項 $u_r/r$ を欠落**し、完全発散 `axisym_divU` を使う
 $\tau_{\theta\theta}$ 源項と不整合だった件の修正 ([viscousFlux_d.cu])。**BEFORE=build-viscfix (修正前) / AFTER=build-lsq (修正後)**、
@@ -422,7 +489,7 @@ $\tau_{\theta\theta}$ 源項と不整合だった件の修正 ([viscousFlux_d.cu
 過大評価 (両 run とも NOT CONV)。**乱流 (μ_t ≫ μ_lam) や強圧縮の収束場でこそ効きうる**ため、実害確認は SST 収束ケースの
 before/after が本命 (未実施)。残差図は各 run の `residual_history.png`。
 
-> 関連: 同セッションで LSQ 勾配 (`gradLSQ`, plan [discretization-lsq-gradient.md](../../.github/plans/discretization-lsq-gradient.md)) を
+> 関連: 同セッションで LSQ 勾配 (`gradLSQ`, plan [discretization-lsq-gradient.md](../../plans/active/discretization-lsq-gradient.md)) を
 > node viscous で試行 (`run_lsq_on`/`run_lsq_diag`) → **近壁 M 退化で発散・棄却** (詳細は plan §9)。`run_lsq_gg` は
 > その GG ベースライン (gradLSQ=0) で、本 divu 比較の node BEFORE を兼ねる。
 
@@ -437,7 +504,7 @@ before/after が本命 (未実施)。残差図は各 run の `residual_history.p
 膨張ノズル核は加速流で乱流が弱く (核 μ_t 小)、フープ膨張粘性の効きは限定的。**node SST は node-viscous の既知脆弱性
 (§7.2)+SST の ω 剛性で baseline build (修正前) から発散**するため、divu/fx いずれの検証も不可。
 
-### node 面補間を中点 fx=0.5 に固定 (median-dual 標準化, 2026-06-14, plan [discretization-median-dual.md](../../.github/plans/discretization-median-dual.md) §9)
+### node 面補間を中点 fx=0.5 に固定 (median-dual 標準化, 2026-06-14, plan [discretization-median-dual.md](../../plans/active/discretization-median-dual.md) §9)
 
 node 内部双対面の面補間係数を `dualFaceCent` 射影比でなく **fx=0.5 (ノード間中点 $\phi_f=½(\phi_A+\phi_B)$)** に固定
 ([calcStructualVariables_d.cu], cell 不変)。安定な node 層流 (40k) で `run_divufix_node_after` (幾何 fx) vs `run_fx_node` (fx=0.5)、

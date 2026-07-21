@@ -165,7 +165,7 @@ node (median-dual) の `wall_isothermal` は、壁ノードの温度状態を BC
 
 `wall` / `wall_isothermal` の `ints:` に `wallModelLES: 1` を書くと、その壁の粘性流束が
 代数壁応力モデル (Reichardt + Kader, [`methods/turbulence/theory.md`](turbulence/theory.md) §10)
-で置き換わる (既定 0 = 従来の解像壁)。LES/ILES (`LESorRANS != 2`) でのみ有効で、
+で置き換わる (既定 0 = 従来の解像壁)。LES/ILES (`turbulence.model` が `sst*` 以外) でのみ有効で、
 SST automatic wall treatment (`wallTreatmentSST`) とはコードパスが分離されている。
 
 ```yaml

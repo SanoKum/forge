@@ -12,5 +12,5 @@ time:
   timeIntegration: 11
   nStepInner: 10
 space: {convMethod: 1, limiter: 2, pRef: 101325.0}
-turbulence: {LESorRANS: 2, LESmodel: 1, RANSmodel: 1, scalarDiffusion: 1, dilatationCorrection: 0}
+turbulence: {model: "sst", scalarDiffusion: 1, dilatationCorrection: 0}
 initial: "uniform"

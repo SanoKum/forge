@@ -116,7 +116,7 @@ rho_phi[ic] = coef_N * rho_phi_N[ic] + coef_M * rho_phi_M[ic]
   （[`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) が毎 `assembleResidual` で出力）。
 - `transport_diag`（移流+拡散の対角 $\Lambda^{T}_\phi$ [m³/s]）は `scalar_advection`/`scalar_diffusion` カーネルが
   面ループで集計（k=`transport_diag_k`、ω=`transport_diag_omega`）。$V$ で割って $[1/s]$ 化して `fac` に入る。
-- `LESorRANS!=2`（乱流なし／LES WALE）では両者 0 で `fac=1`、従来の純陽的更新と一致（LES は無影響）。
+- 非 RANS (`model` が `sst*` 以外: 乱流なし/LES) では両者 0 で `fac=1`、従来の純陽的更新と一致（LES は無影響）。
 - 減衰係数は `applySSTPointImplicit_d` の対角 $D_\phi=V/\Delta\tau+V\cdot\text{src\_jac}+\text{transport\_diag}$ に $\Delta\tau/V$ を掛けた形と整合。
 - `runge_kutta_exp_scalar_4th_d`（4 次）は本減衰未適用＝RANS 非対応のまま（平均流 4 次自体が RANS 未検証）。
 - 理論は [theory.md](theory.md) §"陽解法 RK での point-implicit 源項"。

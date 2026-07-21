@@ -41,7 +41,6 @@ space:
   limiter: 1 
 
 turbulence: 
-  LESorRANS: 1 # 0:no 1:LES 2:RANS
-  LESmodel: 1 # 1:WALE
+  model: "wale"
 
 initial: "supercritical"

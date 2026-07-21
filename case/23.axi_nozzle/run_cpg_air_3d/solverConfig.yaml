@@ -45,9 +45,7 @@ space:
   limiter: 2    # 1:barth 2:venkata
 
 turbulence:
-  LESorRANS: 0 # smoke: 非粘性オイラー
-  LESmodel: 1
-  RANSmodel: 1
+  model: "none"
   kInf: 1.0
   omegaInf: 1000.0
 

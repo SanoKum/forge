@@ -45,6 +45,9 @@ __global__ void rans_sst_source_d(
     // SST-DES (methods/turbulence §8): DESmode>0 で k 消滅項を ρk^{3/2}/l_des に切替える。
     int DESmode,
     flow_float* l_des,
+    // ω 交差拡散 Jacobian (turbulence-sst-omega-crossdiff-jacobian): 1 で CD_ω>0 のとき対角へ
+    // +CD_ω/(ρω) を加える (∂CD_ω/∂(ρω) = -CD_ω/(ρω) < 0 の陰化)。0 = 従来 (ビット不変)。
+    int crossDiffJac,
     // node: ω ピン位置 (=壁ノード) の識別用。wf_pk は第一内層にも付くため、ω 残差ゼロ化は壁ノード限定にする。
     // cell では nullptr (wf_pk>=0 で第一セルを識別)。
     geom_int* wall_flag, int isNode,
@@ -188,6 +191,10 @@ __global__ void rans_sst_source_d(
     // 不採用。輸送項の point-implicit 化は scalarTransport_d.cu（transport_diag）を参照。
     src_jac_k[ic]     = jac_k;  // DESmode==0: β* ω (従来式と一致), DESmode>0: 1.5 √k / l_des
     src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
+    // ω 交差拡散 Jacobian (opt-in): CD_ω>0 のときのみ対角を強める (負側は対角を弱めるため除外, SU2 同様)。
+    if (crossDiffJac != 0 && CDw > static_cast<flow_float>(0.0)) {
+        src_jac_omega[ic] += CDw / max(rho * w_c, static_cast<flow_float>(1.0e-30));
+    }
 
     // automatic wall treatment: ω ピン留め (Dirichlet, ransBoundary) セルの残差は 0 が正しい。
     // res_roOmega を 0 にし無駄な update と rms_roOmega 汚染を防ぐ。k は解くので残差は残す。
@@ -255,6 +262,7 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["src_jac_omega"],
         cfg.DESmode,
         var.c_d["l_des"],
+        cfg.sstCrossDiffJac,
         (cfg.discretization == "node") ? msh.wall_flag_d : nullptr,
         (cfg.discretization == "node") ? 1 : 0,
         (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeKwfDirichlet == 1) ? var.c_d["roK_wf"] : nullptr,

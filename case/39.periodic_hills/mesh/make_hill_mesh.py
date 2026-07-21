@@ -21,8 +21,10 @@ physID は case/38 チャネルと同一規約: xlo=1 xhi=2 ylo=3 yhi=4 zlo=5 zh
 周期対 (xlo↔xhi, zlo↔zhi) の節点座標は同一コードパスで生成するため厳密一致する。
 
 使い方:
-    python3 make_hill_mesh.py [出力.msh]
+    python3 make_hill_mesh.py [出力.msh] [--nx 160] [--ny 100] [--nz 60] [--y1 1.5e-3]
+    (--y1 は平坦部カラムの第一層厚 [h 単位]。粗メッシュ試行用に解像度を引数化)
 """
+import argparse
 import sys
 
 import numpy as np
@@ -35,7 +37,7 @@ LY_TOP = 3.035 * H         # 上壁高さ
 LZ = 4.5 * H               # スパン
 X_FOOT_MM = 54.0           # 丘すその x [mm]
 
-# ---------------- 格子パラメータ ----------------
+# ---------------- 格子パラメータ (既定; CLI で上書き可) ----------------
 NX, NY, NZ = 160, 100, 60
 NYH = NY // 2              # 片側の要素数
 Y1_FLAT = 1.5e-3 * H       # 平坦部カラム (高さ 3.035h) での第一層厚
@@ -51,13 +53,20 @@ _SEG = [
 ]
 
 
+NOCLIP = False  # main() が CLI から設定
+
 def hill_half_mm(x_mm):
-    """半丘 (山頂 x=0 → すそ x=54mm) の高さ [mm]。区間外は 0。"""
+    """半丘 (山頂 x=0 → すそ x=54mm) の高さ [mm]。区間外は 0。
+
+    NOCLIP=True では区間 1 の min(28,·) 頭打ちを外す (多項式そのまま)。山頂 ±3.19mm の
+    C1 折れ (壁勾配 1.2° 不連続) が除去され、逸脱は最大 +0.0047mm (=1.7e-4 h)。"""
     if x_mm >= X_FOOT_MM:
         return 0.0
-    for lo, hi, c in _SEG:
+    for seg_i, (lo, hi, c) in enumerate(_SEG):
         if lo <= x_mm <= hi:
             y = c[0] + c[1] * x_mm + c[2] * x_mm**2 + c[3] * x_mm**3
+            if NOCLIP and seg_i == 0:
+                return max(0.0, y)
             return min(H_MM, max(0.0, y))
     raise ValueError(x_mm)
 
@@ -85,7 +94,28 @@ def solve_progression(q1, n):
 
 
 def main():
-    dst = sys.argv[1] if len(sys.argv) > 1 else "hill_des_160x100x60.msh"
+    global NX, NY, NZ, NYH, Y1_FLAT
+    ap = argparse.ArgumentParser()
+    ap.add_argument("output", nargs="?", default=None)
+    ap.add_argument("--nx", type=int, default=160)
+    ap.add_argument("--ny", type=int, default=100)
+    ap.add_argument("--nz", type=int, default=60)
+    ap.add_argument("--y1", type=float, default=1.5e-3, help="平坦部第一層厚 [h 単位]")
+    ap.add_argument("--shift", action="store_true",
+                    help="丘を半周期ずらす (山頂を x=4.5h に、周期継ぎ目を平坦床に置く切り分け用)")
+    ap.add_argument("--noclip", action="store_true",
+                    help="山頂の min(28,poly) クリップを外す (C1 折れ除去; 公式形状から最大 +0.0047mm)")
+    ap.add_argument("--xcluster", type=float, default=0.0,
+                    help="山頂 (x=0/Lx) への x クラスタリング強度 a (0=一様)。x(ξ)=ξ−(a/2π)sin(2πξ) で"
+                         " 山頂 Δx が一様比 (1−a) 倍に細かく、中央が (1+a) 倍に粗くなる (例 0.6 → 2.5:1)")
+    args = ap.parse_args()
+    global NOCLIP
+    NOCLIP = args.noclip
+    NX, NY, NZ = args.nx, args.ny, args.nz
+    assert NY % 2 == 0, "ny は偶数 (両側ストレッチ)"
+    NYH = NY // 2
+    Y1_FLAT = args.y1 * H
+    dst = args.output or f"hill_des_{NX}x{NY}x{NZ}.msh"
 
     # --- 多項式の健全性チェック (区間接続の連続性・端点値) ---
     for (lo, hi, _), (lo2, _, _) in zip(_SEG[:-1], _SEG[1:]):
@@ -93,7 +123,7 @@ def main():
         a = hill_half_mm(hi - 1e-9)
         b = hill_half_mm(hi + 1e-9)
         assert abs(a - b) < 0.05, (hi, a, b)  # 接続段差 < 0.05mm (=1.8e-3 h)
-    assert abs(hill_half_mm(0.0) - H_MM) < 1e-9
+    assert abs(hill_half_mm(0.0) - H_MM) < (0.01 if NOCLIP else 1e-9)
     assert hill_half_mm(X_FOOT_MM - 1e-9) < 0.05
     # 周期対の厳密一致 (両端は同一コードパス)
     assert wall_y(0.0) == wall_y(LX)
@@ -108,9 +138,18 @@ def main():
     assert abs(frac[0]) < 1e-15 and abs(frac[-1] - 1.0) < 1e-14
     assert np.all(np.diff(frac) > 0.0)
 
-    x = np.linspace(0.0, LX, NX + 1)
+    xi = np.linspace(0.0, 1.0, NX + 1)
+    if args.xcluster > 0.0:
+        a = args.xcluster
+        assert a < 1.0
+        x = LX * (xi - (a / (2.0 * np.pi)) * np.sin(2.0 * np.pi * xi))
+    else:
+        x = LX * xi
     z = np.linspace(0.0, LZ, NZ + 1)
-    yw = np.array([wall_y(xi) for xi in x])
+    if args.shift:
+        yw = np.array([wall_y((xi + 0.5 * LX) % LX) for xi in x])
+    else:
+        yw = np.array([wall_y(xi) for xi in x])
 
     # --- 統計出力 (投入判断用) ---
     dx = LX / NX

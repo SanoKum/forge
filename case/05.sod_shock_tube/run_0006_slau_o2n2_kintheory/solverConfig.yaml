@@ -42,7 +42,6 @@ space:
   limiter: 2
 
 turbulence:
-  LESorRANS: 0
-  LESmodel: 1
+  model: "none"
 
 initial: "sod"

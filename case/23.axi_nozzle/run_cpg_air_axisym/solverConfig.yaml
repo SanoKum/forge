@@ -43,9 +43,7 @@ space:
   limiter: 2    # 1:barth 2:venkata
 
 turbulence:
-  LESorRANS: 0 # 0:no 1:LES 2:RANS
-  LESmodel: 1  # 1:WALE
-  RANSmodel: 1 # 1:SST
+  model: "none"
   kInf: 1.0
   omegaInf: 1000.0
 

@@ -39,8 +39,7 @@ space:
   convMethod: 0
   limiter: 0
 turbulence:
-  LESorRANS: 0           # laminar
-  LESmodel: 0
+  model: "none"
 initial: "nozzle_wys"
 condensation:
   condensation: 0           # dry laminar (corrected Fig.3 geometry)

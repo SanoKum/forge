@@ -42,7 +42,7 @@ pure KEEP が設計どおり KE/エントロピーを保存し (非粘性)、ス
 
 ### 必須の設定 (solverConfig.yaml)
 
-- `solver: "KEEP"` (純粋 KEEP・散逸なし)、`timeIntegration: 4` (RK4 陽解法)、`turbulence: {LESorRANS: 0}` (乱流なし)。
+- `solver: "KEEP"` (純粋 KEEP・散逸なし)、`timeIntegration: 4` (RK4 陽解法)、`turbulence: {model: "none"}` (乱流なし)。
 - `initial: "Taylor-Green"` ($M_0=0.4$)。`time.deltaT: {control: 0, dt: 0.007}`、`unsteady: 1` (uniform global dt)。
 - **`physProp: {pMin: 1.0e-6, roMin: 1.0e-6, tMin: 1.0e-6}` を必須**。既定の圧力フロア `pMin=1.0` Pa は本ケースの
   低圧場 ($P\in[0.65,0.78]$) を全域クランプして初期場を破壊する ([[eos-pressure-floor-config]])。

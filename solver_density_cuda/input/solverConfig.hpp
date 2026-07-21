@@ -153,6 +153,9 @@ public:
     int RANSmodel = 0; // 0:none 1:SST
     int scalarDiffusion = 1; // 0:advection-only 1:advection+diffusion
     int dilatationCorrection = 2; // SST生産項の圧縮性補正 0:off 1:deviatoric(A) 2:deviatoric+isotropic(A+B) 既定:2
+    // SST ω 交差拡散の point-implicit Jacobian (plans/active/turbulence-sst-omega-crossdiff-jacobian.md)。
+    // 1 で CD_ω>0 のとき対角へ +CD_ω/(ρω) を加える (収束解不変・サブ反復収束の改善)。既定 0 = ビット不変。
+    int sstCrossDiffJac = 0;
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (methods/turbulence §7.5)
     int wallTreatmentSST = 1; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:1 (methods/turbulence §6.5)
                               // 注: 既定を 0→1 に変更 (2026-06-28, user 指示)。cell 含む全ケースが automatic 壁関数に
