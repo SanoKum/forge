@@ -225,24 +225,54 @@ def main():
             rAi = solve_progression(q1A_arr[i], NY_LOW)
             fracA_cols[i] = (rAi ** np.arange(NY_LOW + 1) - 1.0) / (rAi**NY_LOW - 1.0)
 
-        # ブロック B: 非対称両側ストレッチ。中間断面側の第一層厚をブロック A の最終セル厚に
-        # 一致させ (継ぎ目のセルサイズ連続性)、上壁側の第一層厚は元設計と同じ y1_target を狙う。
-        # 単純に元の対称ストレッチ (q1 一定) を流用すると、中間断面直上がいきなり Y1_FLAT 相当の
-        # 薄い層に戻ってしまい (ブロック A 最終セルの ~300 倍のギャップ)、境界に歪なセルができる
-        # (実測で確認・要修正点)。
+        # ブロック B: 非対称両側ストレッチ。中間断面側の第一層厚をブロック A の最終セル厚に、
+        # 上壁側の最終層厚を y1_target に、それぞれ一致させる。
+        #
+        # ★ 単純に「固定の中間点 (半分半分)」で両側を独立に幾何級数化すると、双方の成長率が
+        # 全く異なるため中間点でセルサイズが不連続になり (実測: 隣接セル体積比が最大 242 倍!)、
+        # 継ぎ目に極端に細長い/扁平なセルができる (体積変化率の観点で致命的)。対称設計 (元の単一
+        # ブロック) では両側が同じ q1 だったため偶然一致していただけで、非対称化すると必ず起きる。
+        #
+        # ★ Vinokur (1983) 両端拘束ストレッチの closed-form も検討したが、記憶で再構成した式が
+        # 誤りで両端条件を満たさなかった (数値検証で発覚・不採用)。確実性を優先し、代わりに
+        # 「中間点の位置 t=thick_lo/thickB」を、両側の中間点側セルサイズが一致するよう二分探索で
+        # 解く」方式を採用 (各 t で幾何級数を解いて評価するだけなので検証が容易)。
+        def last_cell_frac(q1, n):
+            r = solve_progression(q1, n)
+            frac = (r ** np.arange(n + 1) - 1.0) / (r**n - 1.0)
+            return 1.0 - frac[-2]
+
+        def solve_seam_split(seed_lo, seed_hi, n_lo, n_hi, thickB_i):
+            def gap(t):
+                th_lo, th_hi = t * thickB_i, (1.0 - t) * thickB_i
+                return (last_cell_frac(seed_lo / th_lo, n_lo) * th_lo
+                        - last_cell_frac(seed_hi / th_hi, n_hi) * th_hi)
+            lo, hi = 0.001, 0.999
+            glo, ghi = gap(lo), gap(hi)
+            assert glo * ghi < 0, "wall-block: 継ぎ目分割点が見つからない (RELAX/Y_BASE/NY_UP を見直す)"
+            for _ in range(200):
+                mid = 0.5 * (lo + hi)
+                gm = gap(mid)
+                if gm * glo < 0:
+                    hi, ghi = mid, gm
+                else:
+                    lo, glo = mid, gm
+                if hi - lo < 1e-10:
+                    break
+            return 0.5 * (lo + hi)
+
         dyA_last = thickA * (1.0 - fracA_cols[:, -2])         # ブロック A 最終セル厚 (列ごと)
-        halfB = 0.5 * thickB
-        q1_lo = dyA_last / halfB
-        q1_hi = y1_target / halfB
-        assert q1_lo.max() < 1.0 and q1_hi.max() < 1.0, "wall-block: NY_UP または RELAX を見直す"
         fracB = np.empty((NX + 1, NY_UP + 1))
         for i in range(NX + 1):
-            r_lo = solve_progression(q1_lo[i], NY_UPH)
+            t = solve_seam_split(dyA_last[i], y1_target[i], NY_UPH, NY_UPH, thickB[i])
+            th_lo, th_hi = t * thickB[i], (1.0 - t) * thickB[i]
+            r_lo = solve_progression(dyA_last[i] / th_lo, NY_UPH)
+            r_hi = solve_progression(y1_target[i] / th_hi, NY_UPH)
             g_lo = (r_lo ** np.arange(NY_UPH + 1) - 1.0) / (r_lo**NY_UPH - 1.0)
-            r_hi = solve_progression(q1_hi[i], NY_UPH)
             g_hi = (r_hi ** np.arange(NY_UPH + 1) - 1.0) / (r_hi**NY_UPH - 1.0)
-            fracB[i, : NY_UPH + 1] = 0.5 * g_lo
-            fracB[i, NY_UPH:] = 1.0 - 0.5 * g_hi[::-1]
+            # フラクション空間 (0..1 が thickB 全体) に戻す: 下側 0..t、上側 t..1
+            fracB[i, : NY_UPH + 1] = t * g_lo
+            fracB[i, NY_UPH:] = t + (1.0 - t) * (1.0 - g_hi[::-1])
 
         slope_ratio = np.abs(np.gradient(y_mid, x)).max() / max(np.abs(np.gradient(yw, x)).max(), 1e-30)
         print(f"[wall-block] NY_LOW={NY_LOW} NY_UP={NY_UP}  RELAX={RELAX} Y_BASE={Y_BASE/H:.2f}h")
