@@ -30,6 +30,8 @@ __global__ void KEEP_d
  const flow_float* fd_shield,                     // f_d 駆動 σ ブレンド (nullptr=off, turbulence-iddes-sst §4.8)
  int fdLesOne,                                    //   fd_shield の向き: 1=DDES (f_d, 1=LES) / 0=IDDES (f̃_d, 1=RANS)
  flow_float keepDissCoeffMax,                     //   σ_f=max(keepDissCoeff, ransFrac·keepDissCoeffMax)
+ flow_float keepDissCbCoeff,                      // 高周波圧力欠陥駆動 mass-flux 補正 C_cb (0=off・ビット不変)
+ flow_float keepDissCbEps,                        //   その基準速度カットオフ ε_cb (Ur=min(c,max(|u|,ε·c)))
  GradFields    grd,
  FaceGeom      geom,
  PrimState     st,
@@ -227,6 +229,7 @@ __global__ void KEEP_d
             flow_float ux0j = Ux[ic0], uy0j = Uy[ic0], uz0j = Uz[ic0];
             flow_float ux1j = Ux[ic1], uy1j = Uy[ic1], uz1j = Uz[ic1];
             flow_float p0j  = Ps[ic0], p1j  = Ps[ic1];
+            bool cbRecon = false;   // cb 補正の有効面フラグ (内部面かつ両側再構成成功のみ)
             if (keepDissJump >= 1 && ip < geom.nNormalPlanes) {
                 const geom_float d0x = geom.pcx[ip]-geom.ccx[ic0], d0y = geom.pcy[ip]-geom.ccy[ic0], d0z = geom.pcz[ip]-geom.ccz[ic0];
                 const geom_float d1x = geom.pcx[ip]-geom.ccx[ic1], d1y = geom.pcy[ip]-geom.ccy[ic1], d1z = geom.pcz[ip]-geom.ccz[ic1];
@@ -235,6 +238,7 @@ __global__ void KEEP_d
                 const flow_float pL  = Ps[ic0] + grd.dPdx[ic0]*d0x + grd.dPdy[ic0]*d0y + grd.dPdz[ic0]*d0z;
                 const flow_float pR  = Ps[ic1] + grd.dPdx[ic1]*d1x + grd.dPdy[ic1]*d1y + grd.dPdz[ic1]*d1z;
                 if (roL > 0.0 && roR > 0.0 && pL > 0.0 && pR > 0.0) {
+                    cbRecon = true;
                     ro0j = roL; ro1j = roR; p0j = pL; p1j = pR;
                     ux0j = Ux[ic0] + grd.dUxdx[ic0]*d0x + grd.dUxdy[ic0]*d0y + grd.dUxdz[ic0]*d0z;
                     uy0j = Uy[ic0] + grd.dUydx[ic0]*d0x + grd.dUydy[ic0]*d0y + grd.dUydz[ic0]*d0z;
@@ -384,6 +388,42 @@ __global__ void KEEP_d
             res_roUy_temp -= coef*DroUy;
             res_roUz_temp -= coef*DroUz;
             res_roe_temp  -= coef*Droe;
+
+            // ---- 高周波圧力欠陥駆動 mass-flux 補正 (Rhie–Chow 型市松キラー, opt-in) ----
+            // plans/active/convection-keep-cb-pressure-correction.md。
+            // δp^HF = pR−pL (再構成不整合): 線形圧力場で厳密ゼロ・2Δ 市松で生 Δp → 市松狙い撃ち。
+            // 有効面 = 内部面かつ両側再構成成功のみ (生 Δp フォールバック禁止: 滑らかな物理勾配を
+            // 拡散させない)。σ_min×precond の Δp 項への加算で、σ/f̃_d/opBlend から独立。
+            // sign gate: rank-1 flux −k δp^HF g (g=[1,ū,H̄t]) の entropy 寄与は −k δp^HF (Δw·g)
+            // なので δp^HF·r_f>0 の面のみ通し、面ごとに散逸性を構造保証
+            // (tools/verify_cb_pressure_correction.py: 市松素通し 100%・乱流 10% ジャンプで gate 落ち 0.2%)。
+            // 全保存量へ ū,H̄t で整合配布 → massflux (散逸込み) 経由でスカラー/種/乱流も自動整合。
+            if (keepDissCbCoeff > 0.0 && cbRecon) {
+                // δp^HF は**差分形**で組む: (Ps1−Ps0) + (g1·d1 − g0·d0)。絶対圧力の再構成
+                // pR−pL (数学的に同値) は float32 で p~1e5 の量子化ノイズを拾う。
+                const geom_float e0x = geom.pcx[ip]-geom.ccx[ic0], e0y = geom.pcy[ip]-geom.ccy[ic0], e0z = geom.pcz[ip]-geom.ccz[ic0];
+                const geom_float e1x = geom.pcx[ip]-geom.ccx[ic1], e1y = geom.pcy[ip]-geom.ccy[ic1], e1z = geom.pcz[ip]-geom.ccz[ic1];
+                const flow_float dpRaw = Ps[ic1] - Ps[ic0];
+                const flow_float dpRec = dpRaw
+                                       + (grd.dPdx[ic1]*e1x + grd.dPdy[ic1]*e1y + grd.dPdz[ic1]*e1z)
+                                       - (grd.dPdx[ic0]*e0x + grd.dPdy[ic0]*e0y + grd.dPdz[ic0]*e0z);
+                // sign-property minmod (jump2 の rd クリップと同原理): 生 Δp と符号一致なら小さい方、
+                // 反転なら 0。一様場では dpRaw が**厳密 0** → GG 勾配のメトリック閉合ノイズ
+                // (g·d ~ 0.1 Pa 級、1/Ur 増幅で free-stream を 5 step で破壊: case/33 run_0021/0022)
+                // を構造的に完全消去。2Δ 市松は中心勾配 0 → dpRec=dpRaw でフル振幅のまま。
+                const flow_float dpHF = (dpRec*dpRaw <= 0.0) ? 0.0
+                                      : (fabs(dpRec) < fabs(dpRaw) ? dpRec : dpRaw);
+                const flow_float rf = dw0 + uxF*dw1 + uyF*dw2 + uzF*dw3 + Ht*dw4;  // Δw·g
+                if (dpHF*rf > 0.0) {
+                    const flow_float UrCb = lowMachUr(c, sqrt(qF), keepDissCbEps);
+                    const flow_float mcb  = 0.5*keepDissCbCoeff*sss*dpHF/UrCb;     // δṁ (符号は高圧→低圧)
+                    res_ro_temp   -= mcb;
+                    res_roUx_temp -= mcb*uxF;
+                    res_roUy_temp -= mcb*uyF;
+                    res_roUz_temp -= mcb*uzF;
+                    res_roe_temp  -= mcb*Ht;
+                }
+            }
         }
         else if (keepDissType == 2) {
             // ---- matrix ES 散逸 (TP, Step 3/4): D = R|Λ'|S Rᵀ Δw ----

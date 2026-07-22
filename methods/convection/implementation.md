@@ -325,6 +325,25 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     のためほぼ無散逸の閉箱共鳴) を許すことが case/39 本番で実証されており、fdblend 使用時も
     precond は外さないこと。汚染場減衰試験 (case/39 `run_diag_pdamp_*`): 現行(c'退避)=汚染維持 /
     フル c 一律=22.7 kPa / opBlend=**13.5 kPa 最速**。
+  - **`keepDissCbCoeff` / `keepDissCbEps` (既定 0.0 / 0.10, opt-in)**: 高周波圧力欠陥駆動の
+    mass-flux 補正 (Rhie–Chow 型市松キラー)。再構成不整合 $\delta p_f^{HF}=p_R^f-p_L^f$
+    (keepDissJump≥1 の面再構成を再利用; 線形圧力場で厳密ゼロ、2Δ 市松で生 Δp) を入力に
+
+    $$\delta\dot m_f=-\tfrac12 C_{cb} S_f\,\frac{\delta p_f^{HF}}{U_{r,cb}},\quad
+      U_{r,cb}=\min(c,\max(|\boldsymbol u|,\epsilon_{cb}c)),\qquad
+      \delta\boldsymbol F_f=\delta\dot m_f\,[1,\bar u,\bar v,\bar w,\bar H_t]^T$$
+
+    を全保存量に整合配布する (スカラー/種/乱流は散逸込み `massflux` 経由で自動整合)。
+    **sign gate**: rank-1 構造を利用し、entropy 変数ジャンプとの内積
+    $r_f=\Delta\boldsymbol w^T[1,\bar u,\bar v,\bar w,\bar H_t]^T$ に対し
+    $\delta p_f^{HF} r_f>0$ の面のみ有効化 → 面ごとに entropy 散逸性を構造的に保証
+    (純圧力市松は素通し)。有効面は「内部面かつ両側再構成成功」に限定し、無効面は補正ゼロ
+    (生 Δp フォールバック禁止)。`keepDissCbCoeff>0 && keepDissJump<1` は config エラー。
+    σ_min×precond の Δp 項 (実効 σ_min/precondEps≈0.333) への**加算**であり、総圧力結合は
+    0.333+C_cb/ε_cb。運動量の圧力力 p·n·S には作用しない。既存 σ/f̃_d/opBlend と直交。
+    動機と較正: 周期丘 (case/39) 本番格子の丘頂 Δz/y1≈70 異方性帯に残る spanwise 2–3Δz
+    定在圧力鋸歯 (KEEP 固有, SLAU 比 200 倍) の減衰。
+    設計・検証: [convection-keep-cb-pressure-correction](../../plans/active/convection-keep-cb-pressure-correction.md)。
     設計: [turbulence-iddes-sst §4.8](../../plans/active/turbulence-iddes-sst.md)、
     実務相場: [turbulence-des-flux-survey §7](../../notes/investigations/turbulence-des-flux-survey.md)。
 - **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む

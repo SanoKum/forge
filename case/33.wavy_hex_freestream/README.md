@@ -47,6 +47,8 @@ IC はいずれも一様場 (ρ=1.177, P=101325; M0.1 は u_x=34.716 m/s)。
 | `run_0017_node_advgauge_uxM01_xperiodic` | **node (median-dual)** + advGauge U∞=M0.1 (境界半割面ゲージ plan §8.5 の検証) | step0 rms 4.5e-14/7.8e-12/1.9e-9 = **cell run_0011 と同水準の機械精度**・300step 安定・最終場は厳密一様 (min=max) | ref (node advGauge 根治検証) |
 | `run_0018_node_nogauge_uxM01_xperiodic` | node ゲージ無し対照 (roRef 無し) | step0 roe rms **9.9e-3** (cell run_0008 と同水準のノイズ床)・定常局所 dt で step15 発散 = node でも移流桁落ちを実証 | ref (node ノイズ床対照) |
 | `run_0019_cell_advgauge_regr_newbin` | 回帰: node 対応後バイナリで run_0011 (cell) 再実行 | step0 rms 1.7e-14/8.2e-12/5.6e-9・末尾 1.37e-6 = run_0011 と一致 (cell 経路無影響) | ref (回帰エビデンス) |
+| `run_0021_cell_cb010_freestream` / `run_0022_node_...` | **cb 補正 (keepDissCbCoeff=0.1) の free-stream 検証**: 初版 (絶対 pL,pR / 差分形のみ) は **GG 勾配のメトリック閉合ノイズ×1/Ur 増幅で step0 roe 2e-2・5 step NaN**。**sign-property minmod (δp^HF を生 Δp とクリップ, 一様場は生 Δp 厳密 0 → 完全消去) で根治**: cell/node とも jump2 単独と同一水準 (step0 roe ~1e-6, 300step 安定) | ref (cb free-stream 検証) |
+| `run_0023_cell_jump2only_freestream` / `run_0024_cell_precond_jump2_freestream` | 切り分け基準: jump2 単独 (roe 9.5e-7) / precond+jump2=本番構成 (roe 2.5e-5, 300step 安定)。precond の Δp/Ur が無害な理由 = jump2 の rd クリップが生ジャンプ 0 の面でノイズを落とすため — cb 補正の minmod ゲートはこの原理の移植 | ref (切り分け基準) |
 | `run_0020_node_advgauge_dissmat_uxM01` | node advGauge + matrix ES σ=0.05 (LES 想定構成) | step0 roe 1.5e-7・300step 安定 = cell run_0013 と同水準 (散逸レイヤ併用可) | ref (node 併用確認) |
 
 **重要な訂正 (2026-07-19, run_0014 の dbg 群で判明)**: run_0008-0010 の「step6-14 発散」は

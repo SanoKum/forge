@@ -237,6 +237,25 @@ void solverConfig::read(std::string fname)
         this->keepDissPrecond = getOptionalValidatedValue<int>(config, "keepDissPrecond", 0, "");
         this->keepDissFdBlend = getOptionalValidatedValue<int>(config, "keepDissFdBlend", 0, "");
         this->keepDissCoeffMax = getOptionalValidatedValue<double>(config, "keepDissCoeffMax", 1.0, "");
+        this->keepDissCbCoeff = getOptionalValidatedValue<double>(config, "keepDissCbCoeff", 0.0, "");
+        this->keepDissCbEps   = getOptionalValidatedValue<double>(config, "keepDissCbEps", 0.10, "");
+        if (this->keepDissCbCoeff < 0.0) {
+            throw std::runtime_error("Key 'keepDissCbCoeff' must be >= 0 (0 = off).");
+        }
+        if (this->keepDissCbCoeff > 0.0) {
+            // 高周波圧力欠陥 δp^HF は面再構成 (keepDissJump>=1) の不整合として抽出するため、
+            // 再構成なしでは市松狙い撃ちにならず生 Δp 拡散になる → ハードエラー。
+            if (this->keepDissJump < 1) {
+                throw std::runtime_error("'keepDissCbCoeff > 0' requires keepDissJump >= 1 "
+                                         "(the HF pressure defect is the face-reconstruction mismatch).");
+            }
+            if (this->keepDissType != 2) {
+                throw std::runtime_error("'keepDissCbCoeff > 0' requires keepDissType: 2 (matrix ES dissipation, CPG).");
+            }
+            if (this->keepDissCbEps <= 0.0 || this->keepDissCbEps > 1.0) {
+                throw std::runtime_error("Key 'keepDissCbEps' must be in (0, 1].");
+            }
+        }
         if (this->keepDissPrecond < 0 || this->keepDissPrecond > 1) {
             throw std::runtime_error("Key 'keepDissPrecond' must be 0 (off) or 1 (Turkel-preconditioned acoustic dissipation, matrix CPG only).");
         }
