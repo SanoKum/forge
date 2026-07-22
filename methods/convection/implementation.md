@@ -341,9 +341,17 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     (生 Δp フォールバック禁止)。`keepDissCbCoeff>0 && keepDissJump<1` は config エラー。
     σ_min×precond の Δp 項 (実効 σ_min/precondEps≈0.333) への**加算**であり、総圧力結合は
     0.333+C_cb/ε_cb。運動量の圧力力 p·n·S には作用しない。既存 σ/f̃_d/opBlend と直交。
-    動機と較正: 周期丘 (case/39) 本番格子の丘頂 Δz/y1≈70 異方性帯に残る spanwise 2–3Δz
-    定在圧力鋸歯 (KEEP 固有, SLAU 比 200 倍) の減衰。
+    **適用範囲の実測**: 純 2Δ 市松には劇的 (case/35 L1: cell C_cb=0.02 で 5 step 700 倍減衰=基準の
+    10 倍速) だが、**2-3Δ の準解像モードには構造的に無効** (中心勾配が捉えるため δp^HF が生 Δp の
+    ~6% に落ちる。case/39 丘頂鋸歯で実測・不採用)。explicit RK3 CFL0.5 の安定限界は実効係数
+    C_cb/ε≲0.2、implicit dual-time (本番構成) でも C_cb/ε≥1 は発散。
     設計・検証: [convection-keep-cb-pressure-correction](../../plans/active/convection-keep-cb-pressure-correction.md)。
+  - **`keepDissOpBlendRaw` (既定 0, opBlend 併用時のみ)**: `1` で opBlend の標準 Roe 側 (RANS/grey
+    帯の増分) に **jump2 フィルタ非適用の生ジャンプ** (rr1/rr5) を使う。jump2 の再構成フィルタは
+    全散逸経路に掛かるため、fdblend で σ_f→1 にしても実効ジャンプが濾され散逸ゾーニングが無効化
+    される — 本キーで「RANS 帯=完全風上相当」(DES 定石) を忠実化する。生ジャンプは一様場で厳密 0
+    → free-stream 安全。`keepDissFdBlend:1 + keepDissPrecond:1 + keepDissJump:2` 必須 (config 検証)。
+    なお case/39 丘頂鋸歯 (LES 帯在住) には効かなかった (run_0019, plan 変更ログ参照)。
     設計: [turbulence-iddes-sst §4.8](../../plans/active/turbulence-iddes-sst.md)、
     実務相場: [turbulence-des-flux-survey §7](../../notes/investigations/turbulence-des-flux-survey.md)。
 - **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む

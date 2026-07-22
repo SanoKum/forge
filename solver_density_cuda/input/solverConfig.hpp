@@ -111,6 +111,11 @@ public:
     // keepDissJump>=1 必須。plans/active/convection-keep-cb-pressure-correction.md
     flow_float keepDissCbCoeff = 0.0;   // C_cb (0=off・ビット不変)。σ_min×precond の Δp 項への加算
     flow_float keepDissCbEps   = 0.10;  // ε_cb: Ur=min(c,max(|u|,ε·c)) のカットオフ Mach
+    // opBlend (fdblend×precond) の標準 Roe 側に生ジャンプを使う (RANS/grey 帯=完全風上相当)。
+    // jump2 の再構成フィルタは 2-4Δ を保護するため、σ→1 でも 2-3Δ 定在モードへの実効ジャンプが
+    // 中央値 6% に落ちて散逸ゾーニングが無効化される (case/39 丘頂鋸歯)。生ジャンプは一様場で
+    // 厳密 0 → free-stream 安全。keepDissJump==2 かつ opBlend 有効時のみ意味を持つ。
+    int keepDissOpBlendRaw = 0;
     int keepDissJump = 0;          // 散逸ジャンプ: 0=生 (既定・ビット不変) / 1=再構成後ジャンプ /
                                    // 2=再構成+sign-property クリップ (TeCNO 型・証明付き ES, 推奨)。
                                    // matrix CPG 枝のみ。市松 (2Δ) は中心勾配ゼロで再構成が効かずフル減衰のまま、

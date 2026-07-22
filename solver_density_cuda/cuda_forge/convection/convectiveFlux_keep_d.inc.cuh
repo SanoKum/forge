@@ -32,6 +32,7 @@ __global__ void KEEP_d
  flow_float keepDissCoeffMax,                     //   σ_f=max(keepDissCoeff, ransFrac·keepDissCoeffMax)
  flow_float keepDissCbCoeff,                      // 高周波圧力欠陥駆動 mass-flux 補正 C_cb (0=off・ビット不変)
  flow_float keepDissCbEps,                        //   その基準速度カットオフ ε_cb (Ur=min(c,max(|u|,ε·c)))
+ int keepDissOpBlendRaw,                          // 1: opBlend 標準 Roe 側に生ジャンプを使う (RANS/grey 帯=完全風上相当)
  GradFields    grd,
  FaceGeom      geom,
  PrimState     st,
@@ -299,6 +300,9 @@ __global__ void KEEP_d
             flow_float rd3 = t1x*dw1 + t1y*dw2 + t1z*dw3 + ut1*dw4;                                   // r(shear1)·Δw
             flow_float rd4 = t2x*dw1 + t2y*dw2 + t2z*dw3 + ut2*dw4;                                   // r(shear2)·Δw
             flow_float rd5 = dw0 + (uxF+c*nx)*dw1 + (uyF+c*ny)*dw2 + (uzF+c*nz)*dw3 + (Ht+c*Un)*dw4; // r(un+c)·Δw
+            // opBlend 標準 Roe 側用の「生ジャンプ」音響射影。既定は rd と同一 (=従来挙動)。
+            // jump==2 のとき下で rr1/rr5 (真の生ジャンプ) に置換される。
+            flow_float rdAraw1 = rd1, rdAraw5 = rd5;
             if (keepDissJump == 2) {
                 // sign-property クリップ: 生ジャンプ Δw_raw の特性射影と成分ごと minmod。
                 // 符号一致なら小さい方 (通常は再構成側=高次の利得維持)、反転なら 0 (ES 保証)。
@@ -323,6 +327,7 @@ __global__ void KEEP_d
                 rd3 = (rd3*rr3 <= 0.0) ? 0.0 : (fabs(rd3) < fabs(rr3) ? rd3 : rr3);
                 rd4 = (rd4*rr4 <= 0.0) ? 0.0 : (fabs(rd4) < fabs(rr4) ? rd4 : rr4);
                 rd5 = (rd5*rr5 <= 0.0) ? 0.0 : (fabs(rd5) < fabs(rr5) ? rd5 : rr5);
+                rdAraw1 = rr1; rdAraw5 = rr5;   // opBlend 標準 Roe 側の生ジャンプ (下記参照)
             }
             flow_float z1, z5;
             // fdblend×precond の演算子ブレンド (X4): 実効散逸 = σ_min·D_precond + (σ_f−σ_min)·D_std。
@@ -363,9 +368,17 @@ __global__ void KEEP_d
                     // 標準 Roe 側は **フル c** (c' でなく) を使う: 増分が入るのは RANS/grey 帯のみで、
                     // そこは渦保護不要、かつ大波長音響モードの減衰には音響スケール ~c が必須
                     // (P3/P4 減衰試験: c' のままだと減衰半分。run_diag_pdamp_* 2026-07-22)。
+                    // さらに keepDissOpBlendRaw=1 なら標準 Roe 側は**生ジャンプ** (rdAraw, jump2 の
+                    // 再構成フィルタ非適用) を使う: RANS/grey 帯で 2-4Δ を「解像スケール」として
+                    // 保護する理由はなく (DES 定石=RANS 帯は完全風上相当)、jump2 フィルタが
+                    // 掛かったままだと σ→1 にしても 2-3Δ 定在モードへの実効ジャンプが中央値 6% に
+                    // 落ちて散逸ゾーニングが機能しない (case/39 丘頂鋸歯, run_0015-0018 掃引)。
+                    // 生ジャンプは一様場で厳密 0 → free-stream 安全。
                     const flow_float lamAfull = fabs(Un) + c;
-                    z1 = rOp*z1 + (1.0-rOp)*sA*lamAfull*rd1;
-                    z5 = rOp*z5 + (1.0-rOp)*sA*lamAfull*rd5;
+                    const flow_float rdA1 = (keepDissOpBlendRaw == 1) ? rdAraw1 : rd1;
+                    const flow_float rdA5 = (keepDissOpBlendRaw == 1) ? rdAraw5 : rd5;
+                    z1 = rOp*z1 + (1.0-rOp)*sA*lamAfull*rdA1;
+                    z5 = rOp*z5 + (1.0-rOp)*sA*lamAfull*rdA5;
                 }
             } else {
                 z1 = sA*lamA*rd1;

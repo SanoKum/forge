@@ -227,6 +227,7 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             (cfg.DESmode == 1) ? 1 : 0,   // fd_shield の向き (DDES: 1=LES / IDDES: 1=RANS)
             cfg.keepDissCoeffMax,
             cfg.keepDissCbCoeff, cfg.keepDissCbEps,
+            cfg.keepDissOpBlendRaw,
             grd,
             geom, st, reso
         );

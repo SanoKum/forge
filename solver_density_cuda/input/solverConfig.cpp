@@ -239,6 +239,10 @@ void solverConfig::read(std::string fname)
         this->keepDissCoeffMax = getOptionalValidatedValue<double>(config, "keepDissCoeffMax", 1.0, "");
         this->keepDissCbCoeff = getOptionalValidatedValue<double>(config, "keepDissCbCoeff", 0.0, "");
         this->keepDissCbEps   = getOptionalValidatedValue<double>(config, "keepDissCbEps", 0.10, "");
+        this->keepDissOpBlendRaw = getOptionalValidatedValue<int>(config, "keepDissOpBlendRaw", 0, "");
+        if (this->keepDissOpBlendRaw == 1 && (this->keepDissFdBlend != 1 || this->keepDissPrecond != 1 || this->keepDissJump != 2)) {
+            throw std::runtime_error("'keepDissOpBlendRaw: 1' requires the operator blend (keepDissFdBlend: 1 + keepDissPrecond: 1) with keepDissJump: 2.");
+        }
         if (this->keepDissCbCoeff < 0.0) {
             throw std::runtime_error("Key 'keepDissCbCoeff' must be >= 0 (0 = off).");
         }
