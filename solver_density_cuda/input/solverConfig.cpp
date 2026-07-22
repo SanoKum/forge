@@ -506,14 +506,12 @@ void solverConfig::read(std::string fname)
             if (this->keepDissCoeffMax < this->keepDissCoeff || this->keepDissCoeffMax > 1.0) {
                 throw std::runtime_error("'keepDissCoeffMax' must be in [keepDissCoeff, 1.0].");
             }
-            // precond 散逸 (Δp 増強 ∝ c²/Ur) は σ→1 × 壁近傍 (Ur→εc) で発散する (case/39
-            // run_diag_fdb_*: precond on は σmax 0.3 でも step 2 NaN, off は σmax 1.0 で安定)。
-            // fdblend 時は c' スケーリング (keepDissCprime) に退避する。演算子ブレンド
-            // (LES 側 precond + RANS 側標準 Roe) は将来課題。
-            if (this->keepDissPrecond != 0) {
-                throw std::runtime_error("'keepDissFdBlend: 1' requires keepDissPrecond: 0 "
-                    "(precond dissipation diverges at sigma->1 near walls; use keepDissCprime instead).");
-            }
+            // fdblend×precond は演算子ブレンドで併用可 (2026-07-22): 実効散逸を
+            // σ_min·D_precond + (σ_f−σ_min)·D_std に内分する (kernel の opBlend)。
+            // 素朴な併用 (σ_f を precond にそのまま掛ける) は Δp 増強 (∝c²/Ur)×σ→1 が壁近傍で
+            // 発散するため不可 (case/39 run_diag_fdb_*: σmax0.3 でも step2 NaN)。precond を外した
+            // c' 退避構成は大波長圧力モードの成長不安定を許す (run_0013 の壁 ΔP~100kPa 汚染) ため、
+            // fdblend 時も precond (演算子ブレンド) が推奨。
         }
         if (this->bodyForceCtrl == 1) {
             if (this->unsteady != 1) {

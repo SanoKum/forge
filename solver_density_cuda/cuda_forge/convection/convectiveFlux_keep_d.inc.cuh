@@ -321,6 +321,12 @@ __global__ void KEEP_d
                 rd5 = (rd5*rr5 <= 0.0) ? 0.0 : (fabs(rd5) < fabs(rr5) ? rd5 : rr5);
             }
             flow_float z1, z5;
+            // fdblend×precond の演算子ブレンド (X4): 実効散逸 = σ_min·D_precond + (σ_f−σ_min)·D_std。
+            //   LES 域 (σ_f=σ_min) は純 precond (較正済み市松キラー)、壁帯 (σ_f→1) は precond 寄与を
+            //   σ_min に固定したまま標準 Roe を増やす → Δp 増強 (∝c²/Ur)×σ→1 の爆発を回避しつつ
+            //   Δp 減衰は常時確保。coef=0.5·σ_f·sss が外掛けなので比率 r=σ_min/σ_f で内分する。
+            const bool opBlend = (keepDissPrecond == 1) && (fd_shield != nullptr);
+            const flow_float rOp = opBlend ? (keepDissCoeff / sigmaF) : 1.0;
             if (keepDissPrecond == 1) {
                 // ---- Turkel 前処理音響散逸 (plans/active/convection-keep-diss-lowmach-precond.md §3) ----
                 // α∓ = S_A rd∓ (clip/再構成適用済) を特性成分 (Δp, ΔUn) に写像し、前処理 2×2
@@ -348,6 +354,15 @@ __global__ void KEEP_d
                 const flow_float fu = d21*dpc + d22*dun;
                 z1 = 0.5*(fp - roF*c*fu)/(c*c);
                 z5 = 0.5*(fp + roF*c*fu)/(c*c);
+                if (opBlend) {
+                    // 内分: r·precond + (1−r)·標準 Roe (r=σ_min/σ_f, LES 域で r=1=純 precond)。
+                    // 標準 Roe 側は **フル c** (c' でなく) を使う: 増分が入るのは RANS/grey 帯のみで、
+                    // そこは渦保護不要、かつ大波長音響モードの減衰には音響スケール ~c が必須
+                    // (P3/P4 減衰試験: c' のままだと減衰半分。run_diag_pdamp_* 2026-07-22)。
+                    const flow_float lamAfull = fabs(Un) + c;
+                    z1 = rOp*z1 + (1.0-rOp)*sA*lamAfull*rd1;
+                    z5 = rOp*z5 + (1.0-rOp)*sA*lamAfull*rd5;
+                }
             } else {
                 z1 = sA*lamA*rd1;
                 z5 = sA*lamA*rd5;

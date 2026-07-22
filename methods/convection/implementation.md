@@ -316,6 +316,15 @@ SGS の散逸は WALE (`turbulence`) が担う構成を想定する。legacy の
     のみ、という DES 標準の散逸ゾーニング (Travin 型 / SU2 `FD`=max(0.05,1−f_d) / UZEN-Probst の
     KE 保存 flux+f̃_d ブレンドと同型)。`DESmode>0` (model: sst-ddes/sst-iddes) 必須。`fd_shield` は
     `turbulent_viscosity_d` が convectiveFlux より先に毎サブ反復更新するため鮮度整合。
+    **`keepDissPrecond=1` との併用 = 演算子ブレンド (opBlend)**: 音響枝 z1/z5 を
+    $D_\mathrm{eff}=\sigma_\mathrm{min}D_\mathrm{precond}+(\sigma_f-\sigma_\mathrm{min})D_\mathrm{Roe}^{(c)}$
+    と内分する。precond の Δp∝c²/Ur 増幅は較正済み σ_min 固定 (σ_f→1 との積は壁 Ur フロアで
+    即発散するため)、RANS/grey 帯の増分は**フル c** の標準 Roe 型 (渦保護不要な帯で音響スケール
+    減衰を確保)。precond を外して c' 退避した構成は、乱流発達後に**大波長音響/圧力モードの成長
+    不安定** (壁 ΔP が動圧 70 倍まで指数成長; 滑らかモードは jump2 で O(h³)・音響減衰 c'~0.15c
+    のためほぼ無散逸の閉箱共鳴) を許すことが case/39 本番で実証されており、fdblend 使用時も
+    precond は外さないこと。汚染場減衰試験 (case/39 `run_diag_pdamp_*`): 現行(c'退避)=汚染維持 /
+    フル c 一律=22.7 kPa / opBlend=**13.5 kPa 最速**。
     設計: [turbulence-iddes-sst §4.8](../../plans/active/turbulence-iddes-sst.md)、
     実務相場: [turbulence-des-flux-survey §7](../../notes/investigations/turbulence-des-flux-survey.md)。
 - **free-stream 保存 (`space.pRef`)**: 運動量圧力項 Gtilde は `(Ps−pRef)` の面ごと差分で組む

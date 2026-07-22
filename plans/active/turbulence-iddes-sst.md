@@ -482,10 +482,17 @@ main.cpp:954  ransSource_d_wrapper           … Dk 計算（ここで l_des を
 > - **検証済 (2026-07-22, case/39 粗格子 3 腕比較・同一 IC/同一窓/5 snap 平均)**: fdblend は
 >   風下壁帯 (RANS/grey 帯) の市松度 r −0.50→−0.79・d2 −37% (vs σ0.02 一様)、コア Uz rms
 >   6.63±1.2 vs 6.89±1.1 = 解像乱流無傷。**採用** (`run_0010_coarse_fdblend`)。
-> - **制約 (実測で確定)**: `keepDissPrecond` と非互換 — Δp 散逸増強 (∝c²/Ur) は壁近傍で
->   Ur=εc フロアに張り付き、σ→1 との積が即発散 (σmax0.3 でも step2 NaN / precond off は
->   σmax1.0 安定, `run_diag_fdb_*`)。config 検証で禁止し `keepDissCprime` へ退避。
->   LES 側 precond + RANS 側標準 Roe の**演算子ブレンド**は将来課題。
+> - **⚠ c' 退避構成の重大な帰結 (2026-07-22 本番で発覚)**: precond を外し c' スケーリングに
+>   退避した構成は、**大波長音響/圧力モードの成長不安定**を許す。本番 run_0013 で乱流完全発達後
+>   (step~7k) から壁 ΔP が指数成長 (2→110 kPa, 動圧の ~70 倍, まだら状) し飽和。滑らかモードは
+>   jump2 で散逸 O(h³)・音響減衰は c'~0.15c で、実質無散逸の閉箱共鳴が乱流にポンプされる構図。
+>   粗格子では同モードの面ジャンプが相対的に大きく自然減衰するため検出されなかった (発見はユーザー)。
+> - **✅ 確定解 (2026-07-22): fdblend×precond の演算子ブレンド** (`keepDissPrecond: 1` と併用可に変更):
+>   $D_\mathrm{eff} = \sigma_\mathrm{min} D_\mathrm{precond} + (\sigma_f-\sigma_\mathrm{min}) D_\mathrm{Roe}^{(c)}$。
+>   precond 増幅分は較正済みの σ_min=0.05 に固定 (爆発回避)、RANS/grey 帯の増分は**フル c** の標準
+>   Roe 型 (渦保護不要な帯で音響スケール減衰を確保)。**汚染場減衰試験 (本番メッシュ, 汚染 ΔP106kPa IC,
+>   2000 step) で全構成中最速**: P0 現行=117 (維持=犯人確定) / P1 precond+σ0.05一様=72 / P3 フル c=22.7 /
+>   **P4b 演算子ブレンド=13.5 kPa**。`run_diag_pdamp_*` 参照。
 > - **fd_shield の向きの罠**: DDES (f_d, 1=LES) と IDDES (f̃_d, 1=RANS) で逆
 >   (variables.hpp)。カーネルは `fdLesOne` フラグで両対応済み。
 
