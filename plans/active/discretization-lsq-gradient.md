@@ -155,3 +155,11 @@ $w_{ij}=1/|\mathbf d_{ij}|^2$、$\mathbf d_{ij}=\mathbf x_j-\mathbf x_i$。
   - 示唆: 修正の本命は「**係数事前計算** (setup 時 double solve + 退化ノードの GG/縮退方向
     フォールバック焼き込み) + ランタイム float32 gather」。実行時 double 不要・現行 LSQ より速く、
     退化処理を静的に済ませられる。§0 ゲートの動機再確認には hill の GG 46-59% が新証拠。
+- `2026-07-22` — **hill 本番 DDES での gradLSQ=1 smoke A/B (現行 float 実装のまま)**:
+  `case/39.periodic_hills/run_0020_lsq_smoke_gg` / `run_0021_lsq_smoke_lsq`
+  (IC=run_0013 res_24000 同一メッシュ restart、300 step、差分は `mesh.gradLSQ` のみ)。
+  **LSQ は安定完走** (NaN なし・P/T 物理的・運動量/密度残差は GG と同水準。restart 直後に
+  roK/roOmega が SST ソースの勾配切替で過渡 → 整定)。→ **退化ノードが無いメッシュでは現行
+  float 実装でも実運用条件で破綻しない**ことを実地確認 (§9 の発散は nozzle 型退化メッシュ固有)。
+  近壁 dUxdy の接線方向粗さ比は LSQ 0.43 vs GG 0.37 (GG の低い値は fx 平均のフィルタ効果込み。
+  瞬時場 2.2 CTU の比較であり精度優劣は未断定 — 長時間統計 (Cf 分布等) が次の判断材料)。
