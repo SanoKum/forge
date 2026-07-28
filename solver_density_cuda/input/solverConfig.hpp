@@ -246,10 +246,15 @@ public:
     // 非 node (cell) / explicit では no-op。0 で旧挙動 (弱形式半割面のみ)。
     int nodeWallDirichlet = 1;
 
-    // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ)。node-centered の median-dual 近壁で
-    // Green-Gauss 面勾配が checkerboard を持ち粘性 BL を振動させるための対策 (over-relaxed 法線項は別途維持)。
-    // 境界は bvar 境界値を LSQ 点として含め勾配を閉じる。methods/discretization.md §7.3。
+    // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ 毎ステップ solve,
+    // 2:LSQ 係数事前計算 = setup 1回 double 固有分解→擬似逆→float32 係数 gather。推奨は 2)。
+    // node-centered の median-dual で GG 面勾配が非一様メッシュの線形場を再現できない (近壁で O(1) 誤差)
+    // ための対策。境界は bvar 境界値を LSQ 点として含め勾配を閉じる。methods/discretization.md §7.3/§7.3.1。
     int gradLSQ = 0;
+
+    // gradLSQ=2 の退化判定閾値: M=Σ d̂d̂ᵀ の固有値が λ_max×この値 未満のモードを落とし
+    // 擬似逆行列にする (退化方向の勾配 1 次化)。近傍方向が共線/共面なノードの LSQ 発散対策。
+    double gradLSQDegenThresh = 1.0e-2;
 
     // node-centered の内部双対面で面補間係数を中点 fx=0.5 (φ_f=½(φ_A+φ_B)) に固定する
     // (0:既定 幾何 fx=dualFaceCent 射影比, 1:中点)。標準的な median-dual エッジ補間で近壁 checkerboard を

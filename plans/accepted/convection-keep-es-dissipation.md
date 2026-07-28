@@ -145,7 +145,7 @@ $\Delta w^{\mathsf T}\Delta U = \Delta w^{\mathsf T}\bar H\Delta w \ge 0$ ($\bar
   だった (壁なしメッシュの wall_dist≡0 バグ; [turbulence-wale-fix](turbulence-wale-fix.md))。
   σ 較正・結論は「ILES + ES 散逸」として全て有効。修正後の本物 WALE は 64³ TGV で ILES より悪く、
   解像 LES の推奨は WALE off + matrix σ=0.02 keepDissJump=2 に確定。
-- `2026-07-22` — **外部レビュー指摘の検証 2 件 (エントロピー保存主張の訂正 + TP 多成分 datum 修正)**。
+- `2026-07-29` — **外部レビュー指摘の検証 2 件 (エントロピー保存主張の訂正 + TP 多成分 datum 修正)**。
   - **KEEP 中心流束は厳密 entropy-conservative ではないことを数値確定**
     (`tools/verify_keep_tadmor.py` 新設・全 PASS): Tadmor 条件 $E=\Delta w^{\mathsf T}F^*-\Delta\psi$ を
     乱数 20 万状態対で評価し、O(1) ジャンプで max|E|≈10・両符号 ($E>0$ 49.8%)、微小ジャンプで

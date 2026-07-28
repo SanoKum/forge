@@ -200,6 +200,12 @@ void solverConfig::read(std::string fname)
         }
         if (config["mesh"]["gradLSQ"]) {
             this->gradLSQ = config["mesh"]["gradLSQ"].as<int>();
+            if (this->gradLSQ < 0 || this->gradLSQ > 2) {
+                throw std::runtime_error("'gradLSQ' in 'mesh' must be 0 (GG), 1 (LSQ per-step) or 2 (LSQ precomputed).");
+            }
+        }
+        if (config["mesh"]["gradLSQDegenThresh"]) {
+            this->gradLSQDegenThresh = config["mesh"]["gradLSQDegenThresh"].as<double>();
         }
         if (config["mesh"]["nodeMidpointFx"]) {
             this->nodeMidpointFx = config["mesh"]["nodeMidpointFx"].as<int>();

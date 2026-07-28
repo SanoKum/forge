@@ -543,13 +543,36 @@ $$
 (`calcGradient_2_d`) と弱形式境界加算 (§7.2 の `calcGradient_b_d` ループ) をスキップする (LSQ は勾配を直接解くため正規化不要)。
 **cell モード、および `gradLSQ=0` (既定) の node モードは従来の GG 経路のまま**で、数値はビット不変。
 
-**設定**: `mesh.gradLSQ` (0:GG, 1:LSQ)。[solverConfig.hpp](../solver_density_cuda/input/solverConfig.hpp)。
+**設定**: `mesh.gradLSQ` (0:GG, 1:LSQ 毎ステップ solve, 2:LSQ 係数事前計算 — 推奨)。
+[solverConfig.hpp](../solver_density_cuda/input/solverConfig.hpp)。
 
-**検証状況 (未完)**: コードは実装済みだが **GPU 実 run による検証は未実施** (本セクション記載時点で `gradLSQ=1` を使った
-`run_*` は皆無)。検証ケース・判定基準は計画 §6 を参照。実装上の**未確認リスク**: ① ghost セル
-(`ic >= nCells`) の勾配は LSQ では更新されない (内部面 gather は実セルのみ) — node 弱形式では境界寄与を bvar で
-閉じるため不要のはずだが要確認、② 1 セル厚 2D での z 境界面 ($d_z\ne0$) が $m_{zz}$ に混入して誤って 3D 解に
-落ちないか (bvar の対称面値で $g_z\approx0$ になる想定だが要確認)。
+**検証状況**: `gradLSQ=1` は case/29 (軸対称ノズル) の GPU 検証で**近壁発散の負結果** (計画 §9)。実メッシュ診断
+([tools/check_lsq_gradient.py](../solver_density_cuda/tools/check_lsq_gradient.py)) により、真因は (a) 正規方程式を
+float32 格納で解く条件数 2 乗の増幅と、(b) 一部メッシュに実在する**真の退化ノード** (近傍方向が共線/共面で
+勾配を決める情報が無い; case/29 は近壁 2.6%) の複合と判明。これを解決するのが mode 2。
+
+##### 7.3.1 `gradLSQ=2`: 係数事前計算 + スペクトル打ち切りフォールバック
+
+メッシュが静的なら正規方程式の解は**幾何のみの線形演算子**に畳める:
+
+$$
+\mathbf g_i = M_i^{-1}\mathbf b_i = \sum_j \underbrace{\bigl(M_i^{+}\,w_{ij}\,\mathbf d_{ij}\bigr)}_{\mathbf c_{ij}\ (幾何のみ)}\,(\phi_j-\phi_i)
+$$
+
+- **setup (初回 1 回, device, 倍精度)**: ノードごとに $M$ を組み (内部双対面 + 非 periodic 境界半割面重心 $\mathbf p_c$;
+  periodic は DOF 合併機構に委ねスキップ = GG 経路と同方針)、対称 3×3 の**解析固有分解**から
+  $\lambda_k < \max(\texttt{gradLSQDegenThresh}\cdot\lambda_{\max},\ \varepsilon)$ のモードを落とした
+  **スペクトル打ち切り擬似逆行列** $M^{+}=\sum_{\text{kept}}\lambda_k^{-1}\mathbf v_k\mathbf v_k^{\mathsf T}$ を取り、
+  全 incidence の係数 $\mathbf c_{ij}$ を float32 テーブル (内部: `cell_planes` CSR 対応 / 境界: bcond 順 bplane 対応)
+  に焼き込む。旧 `lsq_solve_sym3` の 2D 分岐 ($m_{zz}\le\text{tol}$) はこの打ち切りが一般化して包含する
+  (1 セル厚 2D は $\lambda_z\approx0$ が自動で落ちる)。退化ノード数は起動ログに出す。
+- **runtime (毎ステップ, 全 float32)**: $\mathbf g_i=\sum_j\mathbf c_{ij}(\phi_j-\phi_i)$ の gather のみ
+  (内部 per-node + 境界 per-bcond atomicAdd + divU)。$M$ の組立・solve は消滅し、係数は 6 変数で共有 → mode 1 より速い。
+  悪条件 solve を setup 側 double に追い出したので float32 場の丸め以外の増幅は無い。
+- **フォールバックの設計判断**: 退化方向の勾配成分は**ゼロ化** (その方向 1 次精度化)。GG 係数への差し替えでなく
+  打ち切りを選んだのは、追加幾何 (面積ベクトル・体積・軸対称 planar 変種) への依存が無く全メッシュ形態で一様に成立し、
+  実績ある 2D $m_{zz}$ 分岐の自然な一般化だから。壁法線方向の粘性は面法線コンパクト差分が主担なので、
+  少数 (case/29 で 2.6%) の退化ノードの再構成勾配 1 次化は安全側。閾値は `mesh.gradLSQDegenThresh` (既定 1e-2)。
 
 #### 7.4 node モード: 内部双対面の面補間係数を中点 (fx=0.5) に固定
 

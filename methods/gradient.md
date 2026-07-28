@@ -71,7 +71,9 @@ $$
 - 高次再構成 (二次以上) は未実装。最小二乗 (LSQ) 勾配は **node-centered モード限定**で
   `gradLSQ=1` のとき利用可 (近壁 checkerboard 対策、既定は Green-Gauss)。詳細は
   [discretization.md §7.3](discretization.md#実装)。cell モードは GG のみ。
-  なお LSQ は現状 GPU 検証で近壁発散の負結果があり **gated 停止中**
+  `gradLSQ=1` (毎ステップ solve) は退化ノードを持つメッシュ (例 case/29 軸対称ノズル近壁) で発散する
+  既知の負結果があり回帰対照のみ。**推奨は `gradLSQ=2` (係数事前計算 + スペクトル打ち切りフォールバック**、
+  [discretization.md §7.3.1](discretization.md#実装))。
   ([plans/active/discretization-lsq-gradient.md](../plans/active/discretization-lsq-gradient.md) §0/§9)。
 - **GG は非一様メッシュで線形場非厳密**: `fx` 射影補間の GG 勾配は一様直交では線形場を機械精度で
   再現するが、ノードジッタ/三角形/高 AR メッシュでは O(1) の相対勾配誤差が残る

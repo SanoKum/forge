@@ -13,18 +13,23 @@
 - **created**: `2026-06-14`
 - **owner**: `CFD Dev`
 
-## 0. 次の一手 = 動機の再検証ゲート (2026-07-19 ユーザー承認・必読)
+## 0. ゲート解消 (2026-07-29) → 修正候補④「係数事前計算」を実装する
 
-**修正候補 (§9 の ①double 蓄積 / ②QR・列スケーリング / ③GG フォールバック) に着手しないこと。**
-LSQ は近壁で発散する負結果 (§9) で停止中であり、かつ導入動機だった「GG の近壁 checkerboard」は
-本ケース (case/29 node viscous) で **GG が問題なく収束** (rms_ro 5e-8)・`nodeMidpointFx` (fx=0.5) で
-checkerboard roughness −36% 低減済み、と動機自体が揺らいでいる。
+旧ゲート (2026-07-19: 動機再検証まで修正着手禁止) は **2026-07-29 に解消**:
+①実メッシュ診断 (§9 変更ログ) で hill production メッシュの **GG が近壁で線形場すら 46-59% 誤る**
+(=元の「checkerboard」より強い動機) こと、②発散の真因が退化ノード (メッシュ依存・case/29 は 2.6%) で
+あることが定量特定され、③ユーザーが係数事前計算+フォールバックの実装を指示した (本セッション)。
 
-- **ゲート (安価・これだけやる)**: 固定した GG 収束場の上で勾配 checkerboard 指標 (近壁 `dUxdy` の
-  隣接符号反転率・roughness) を測り、**せん断応力・壁面量に実害が出ているケースを特定する**。
-  対象は case/29 node viscous と、動機の出所とされる平板系 (case/26)。
-- **実害が確認できなければ本 plan を `archived/` へ移す** (動機消滅・LSQ 実装は gated のまま残置)。
-  実害があった場合のみ、そのケースを検証ケースに据えて修正候補①〜③を再評価する。
+**採用設計 = 修正候補④「係数事前計算 + スペクトル打ち切りフォールバック」** (`gradLSQ: 2`):
+仕様は [`methods/discretization.md`](../../methods/discretization.md) §7.3.1 を正とする。要点:
+- setup 1 回 (device, double): M 組立 (内部双対面 + 非 periodic 境界 pc 点) → 解析固有分解 →
+  $\lambda_k<\texttt{gradLSQDegenThresh}\cdot\lambda_{\max}$ を落とした擬似逆行列 $M^+$ →
+  全 incidence の係数 $\mathbf c_{ij}=M^+w_{ij}\mathbf d_{ij}$ を float32 テーブルに焼き込み。
+  退化ノード数を起動ログへ。
+- runtime: $\mathbf g_i=\sum_j\mathbf c_{ij}\Delta\phi_{ij}$ の float32 gather のみ (M 組立・solve 消滅)。
+- フォールバックは GG 差替でなく**打ち切り** (退化方向 1 次化): 追加幾何依存なし・axisym/2D/3D 一様・
+  既存 2D $m_{zz}$ 分岐の一般化。粘性の壁法線は面法線コンパクト差分が主担のため安全側。
+- 旧 `gradLSQ: 1` (毎ステップ solve) は回帰対照として残置。既定 0 (GG) はビット不変。
 
 ## 1. 目的
 
@@ -131,12 +136,12 @@ $w_{ij}=1/|\mathbf d_{ij}|^2$、$\mathbf d_{ij}=\mathbf x_j-\mathbf x_i$。
   - **前提の再検討事項**: 本ケースでは **GG が問題なく収束** (rms_ro 5e-8)。LSQ 導入の動機だった
     「近壁 checkerboard」が本ケースで実害として出ているか自体を、固定 GG 場上での勾配 checkerboard
     指標で再確認すべき (動機の出所ケースの特定)。
-- `2026-07-22` — **式レベルの補強証拠** (`tools/verify_linear_recon.py`, §0 ゲートとは独立の机上検証):
+- `2026-07-29` — **式レベルの補強証拠** (`tools/verify_linear_recon.py`, §0 ゲートとは独立の机上検証):
   LSQ 正規方程式は **double では線形場を機械精度で厳密再現** (AR=100+ジッタでも 1.5e-12)、
   一方 **float32 格納 (現行 `flow_float` 配列) では ~1e-6 に 6 桁劣化**。GG は非一様メッシュで
   線形場非厳密 (30% ジッタで相対誤差 66%)。→ §9 の近壁発散は LSQ の数学でなく格納精度+近特異幾何の
   問題で、修正候補① (double scratch 蓄積) の妥当性を支持。着手判断は §0 ゲートに従う (変更なし)。
-- `2026-07-22` — **実メッシュ診断 (`tools/check_lsq_gradient.py` 新設) — 上記エントリの重心を訂正**。
+- `2026-07-29` — **実メッシュ診断 (`tools/check_lsq_gradient.py` 新設) — 上記エントリの重心を訂正**。
   実 h5 メッシュから近傍セット (内部双対面 + 非 periodic 境界半割面 pc) を再構成し、
   ①退化センサス λ_min/λ_max(M̂=Σd̂d̂ᵀ) と ②線形場勾配誤差を (a) 現行相当 float32 格納 /
   (b) 全 double / (c) 係数事前計算 (setup double solve → float32 係数適用) / (d) GG で比較。
@@ -155,7 +160,22 @@ $w_{ij}=1/|\mathbf d_{ij}|^2$、$\mathbf d_{ij}=\mathbf x_j-\mathbf x_i$。
   - 示唆: 修正の本命は「**係数事前計算** (setup 時 double solve + 退化ノードの GG/縮退方向
     フォールバック焼き込み) + ランタイム float32 gather」。実行時 double 不要・現行 LSQ より速く、
     退化処理を静的に済ませられる。§0 ゲートの動機再確認には hill の GG 46-59% が新証拠。
-- `2026-07-22` — **hill 本番 DDES での gradLSQ=1 smoke A/B (現行 float 実装のまま)**:
+- `2026-07-29` — **候補④「係数事前計算 + スペクトル打ち切りフォールバック」実装 (`gradLSQ: 2`)**。
+  - 実装 (methods §7.3.1 が仕様の正): config `gradLSQ=2` + `gradLSQDegenThresh` (既定 1e-2)。
+    `calcGradient_d.cu` に setup 3 カーネル (M 組立 double → Smith 解析固有分解 →
+    λ<thresh·λmax 打ち切り擬似逆 M⁺ → 係数 c_ij=M⁺wd を float32 テーブル焼き込み;
+    内部 = `cell_planes` CSR 対応 / 境界 = 非 periodic bcond 連結配列) + runtime 3 カーネル
+    (per-node gather + 境界 bvar atomicAdd + divU)。旧 2D `mzz` 分岐は打ち切りが一般化して包含。
+    periodic 半割面は LSQ 点にしない (GG 経路と同方針)。gradLSQ=1 は回帰対照として残置・既定 0 不変。
+    退化ノード数を起動時ログ (`gradLSQ=2 precomp: N/M nodes spectral-truncated`)。full rebuild 済 (exit 0)。
+  - **検証 1/2 (hill 本番 DDES smoke, `case/39.periodic_hills/run_0022_lsq_pre_smoke`)**: run_0021 と
+    同一 IC/設定で `gradLSQ: 2`。**完走・NaN なし・場は物理的**。precomp ログ 0/991921 truncated =
+    診断ツール予測と一致。残差水準 gradLSQ=1 と同値 (rms_ro 2.93e-6 vs 2.92e-6)、場差 rel L2
+    Ux 5.5e-3 (2.2 CTU のカオス減相関内) = 非退化メッシュで =1 と同一演算子であることと整合。
+  - **検証 2/2 (case/29 nozzle = §9 発散ケース, `run_0041_node_lsqpre`) は GPU 待ちで未実施**:
+    旧 config の廃止キー (`LESorRANS`→`model`) 修正済み・投入待機。判定基準: precomp ログ ~709
+    truncated (診断予測)・旧発散点 step~150-1114 を超えて安定・40k で run_lsq_gg (GG 収束) と整合。
+- `2026-07-29` — **hill 本番 DDES での gradLSQ=1 smoke A/B (現行 float 実装のまま)**:
   `case/39.periodic_hills/run_0020_lsq_smoke_gg` / `run_0021_lsq_smoke_lsq`
   (IC=run_0013 res_24000 同一メッシュ restart、300 step、差分は `mesh.gradLSQ` のみ)。
   **LSQ は安定完走** (NaN なし・P/T 物理的・運動量/密度残差は GG と同水準。restart 直後に

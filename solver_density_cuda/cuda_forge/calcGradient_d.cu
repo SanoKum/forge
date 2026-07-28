@@ -1,5 +1,7 @@
 #include "calcGradient_d.cuh"
 #include "cuda_forge/cudaWrapper.cuh"
+#include <vector>
+#include <cstdio>
 
 __global__ void calcGradient_1_d
 ( 
@@ -602,6 +604,265 @@ __global__ void lsqGrad_solve_d(
     divU[ic] = dUxdx[ic] + dUydy[ic] + dUzdz[ic];
 }
 
+// ===================== gradLSQ=2: 係数事前計算 LSQ 勾配 (§7.3.1) =====================
+// メッシュ静的性を使い、正規方程式の解を幾何のみの線形演算子 g_i = Σ_j c_ij (φ_j−φ_i),
+// c_ij = M⁺ w_ij d_ij に畳む。setup 1 回 (double): M 組立 → 解析固有分解 → スペクトル打ち切り
+// 擬似逆 M⁺ (λ < gradLSQDegenThresh·λ_max のモードを落とす = 退化方向 1 次化) → float32 係数
+// テーブル焼き込み。runtime: float32 gather のみ (M 組立・solve 消滅、係数は 6 変数共有)。
+// gradLSQ=1 の「M を float32 格納して毎ステップ solve」の条件数 2 乗増幅と、退化ノード
+// (近傍方向が共線/共面) の発散 (case/29, plan §9) を同時に解決する。periodic 境界の半割面は
+// LSQ 点に含めない (GG 経路と同方針: DOF 合併機構に委ねる)。
+// plans/active/discretization-lsq-gradient.md 候補④ / methods/discretization.md §7.3.1。
+
+// 対称 3×3 の解析固有値 (Smith のトリゴ法)。l0 <= l1 <= l2 で返す。
+__device__ __forceinline__ static void lsqPre_sym3_eigvals(
+    double m00,double m01,double m02,double m11,double m12,double m22,
+    double& l0,double& l1,double& l2)
+{
+    const double p1 = m01*m01 + m02*m02 + m12*m12;
+    const double q  = (m00 + m11 + m22)/3.0;
+    const double p2 = (m00-q)*(m00-q) + (m11-q)*(m11-q) + (m22-q)*(m22-q) + 2.0*p1;
+    const double p  = sqrt(fmax(p2/6.0, 0.0));
+    if (p < 1.0e-300) { l0 = l1 = l2 = q; return; }
+    const double b00=(m00-q)/p, b01=m01/p, b02=m02/p, b11=(m11-q)/p, b12=m12/p, b22=(m22-q)/p;
+    double detB = b00*(b11*b22-b12*b12) - b01*(b01*b22-b12*b02) + b02*(b01*b12-b11*b02);
+    double r = detB/2.0;
+    r = fmin(fmax(r, -1.0), 1.0);
+    const double phi = acos(r)/3.0;
+    const double twoPiOver3 = 2.0943951023931953;
+    l2 = q + 2.0*p*cos(phi);
+    l0 = q + 2.0*p*cos(phi + twoPiOver3);
+    l1 = 3.0*q - l2 - l0;
+}
+
+// 固有値 mu に対応する固有ベクトル: (M−μI) の 2 行のクロス積のうち最大ノルムを採用。
+// mu が他の固有値からよく分離しているときのみ呼ぶ (呼び出し側で保証)。
+__device__ __forceinline__ static void lsqPre_sym3_eigvec(
+    double m00,double m01,double m02,double m11,double m12,double m22, double mu,
+    double& vx,double& vy,double& vz)
+{
+    const double r0x=m00-mu, r0y=m01,   r0z=m02;
+    const double r1x=m01,    r1y=m11-mu,r1z=m12;
+    const double r2x=m02,    r2y=m12,   r2z=m22-mu;
+    double c01x=r0y*r1z-r0z*r1y, c01y=r0z*r1x-r0x*r1z, c01z=r0x*r1y-r0y*r1x;
+    double c02x=r0y*r2z-r0z*r2y, c02y=r0z*r2x-r0x*r2z, c02z=r0x*r2y-r0y*r2x;
+    double c12x=r1y*r2z-r1z*r2y, c12y=r1z*r2x-r1x*r2z, c12z=r1x*r2y-r1y*r2x;
+    const double n01=c01x*c01x+c01y*c01y+c01z*c01z;
+    const double n02=c02x*c02x+c02y*c02y+c02z*c02z;
+    const double n12=c12x*c12x+c12y*c12y+c12z*c12z;
+    double nx,ny,nz,nn;
+    if (n01 >= n02 && n01 >= n12)      { nx=c01x; ny=c01y; nz=c01z; nn=n01; }
+    else if (n02 >= n12)               { nx=c02x; ny=c02y; nz=c02z; nn=n02; }
+    else                               { nx=c12x; ny=c12y; nz=c12z; nn=n12; }
+    const double inv = (nn > 1.0e-300) ? 1.0/sqrt(nn) : 0.0;
+    vx=nx*inv; vy=ny*inv; vz=nz*inv;
+}
+
+// 対称 3×3 の直接逆行列 (adjugate/det)。呼び出し側で det の健全性を保証。
+__device__ __forceinline__ static void lsqPre_sym3_inv(
+    double m00,double m01,double m02,double m11,double m12,double m22,
+    double& i00,double& i01,double& i02,double& i11,double& i12,double& i22)
+{
+    const double c00=m11*m22-m12*m12, c01=m02*m12-m01*m22, c02=m01*m12-m02*m11;
+    const double det=m00*c00+m01*c01+m02*c02;
+    const double idet=(fabs(det)>1.0e-300)?1.0/det:0.0;
+    i00=c00*idet; i01=c01*idet; i02=c02*idet;
+    i11=(m00*m22-m02*m02)*idet; i12=(m02*m01-m00*m12)*idet;
+    i22=(m00*m11-m01*m01)*idet;
+}
+
+// setup 1/3: ノードごとに M (double) を組み、スペクトル打ち切り擬似逆 M⁺ を Minv6 に格納。
+// 近傍 = 内部双対面の相手 CV 中心 + 非 periodic 境界半割面の重心 pc (planePeriodic[ip]==0)。
+__global__ void lsqPre_setup_d(
+    geom_int nCells, geom_int* plane_cells,
+    geom_int* cell_planes_index, geom_int* cell_planes, geom_int nNormalPlanes,
+    flow_float* ccx, flow_float* ccy, flow_float* ccz,
+    geom_float* pcx, geom_float* pcy, geom_float* pcz,
+    const char* planePeriodic, double thresh,
+    double* Minv6, int* degenCount)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    double m00=0,m01=0,m02=0,m11=0,m12=0,m22=0;
+    const double cx=ccx[ic], cy=ccy[ic], cz=ccz[ic];
+    const geom_int st=cell_planes_index[ic], en=cell_planes_index[ic+1];
+    for (geom_int ilp=st; ilp<en; ++ilp) {
+        const geom_int ip=cell_planes[ilp];
+        double dx,dy,dz;
+        if (ip < nNormalPlanes) {
+            const geom_int ic0=plane_cells[2*ip+0], ic1=plane_cells[2*ip+1];
+            const geom_int jc=(ic0==ic)?ic1:ic0;
+            dx=ccx[jc]-cx; dy=ccy[jc]-cy; dz=ccz[jc]-cz;
+        } else {
+            if (planePeriodic[ip]) continue;   // periodic 半割面は LSQ 点にしない
+            dx=pcx[ip]-cx; dy=pcy[ip]-cy; dz=pcz[ip]-cz;
+        }
+        const double w=1.0/fmax(dx*dx+dy*dy+dz*dz,1.0e-300);
+        m00+=w*dx*dx; m01+=w*dx*dy; m02+=w*dx*dz; m11+=w*dy*dy; m12+=w*dy*dz; m22+=w*dz*dz;
+    }
+    double l0,l1,l2;
+    lsqPre_sym3_eigvals(m00,m01,m02,m11,m12,m22, l0,l1,l2);
+    const double cut = fmax(thresh*l2, 1.0e-300);
+    double i00,i01,i02,i11,i12,i22;
+    if (l2 <= 1.0e-300) {
+        // 近傍ゼロ (来ないはず): 勾配 0
+        i00=i01=i02=i11=i12=i22=0.0;
+        atomicAdd(degenCount, 1);
+    } else if (l0 >= cut) {
+        // 全モード健全: 直接逆行列
+        lsqPre_sym3_inv(m00,m01,m02,m11,m12,m22, i00,i01,i02,i11,i12,i22);
+    } else if (l1 >= cut) {
+        // 1 モード退化 (l0 のみ落とす)。l0 は kept (>=cut) からよく分離 → 固有ベクトル健全。
+        // M⁺ = inv(M + l2·v0v0ᵀ)·(I − v0v0ᵀ) (シフトで退化方向を持ち上げてから射影で消す)
+        double vx,vy,vz;
+        lsqPre_sym3_eigvec(m00,m01,m02,m11,m12,m22, l0, vx,vy,vz);
+        const double K=l2;
+        double s00,s01,s02,s11,s12,s22;
+        lsqPre_sym3_inv(m00+K*vx*vx, m01+K*vx*vy, m02+K*vx*vz,
+                        m11+K*vy*vy, m12+K*vy*vz, m22+K*vz*vz,
+                        s00,s01,s02,s11,s12,s22);
+        // P = I − v vᵀ を右から掛ける (両者は同じ固有基底を持ち可換 → 結果は対称)
+        const double p00=1.0-vx*vx, p01=-vx*vy, p02=-vx*vz;
+        const double p11=1.0-vy*vy, p12=-vy*vz, p22=1.0-vz*vz;
+        i00=s00*p00+s01*p01+s02*p02; i01=s00*p01+s01*p11+s02*p12; i02=s00*p02+s01*p12+s02*p22;
+        i11=s01*p01+s11*p11+s12*p12; i12=s01*p02+s11*p12+s12*p22;
+        i22=s02*p02+s12*p12+s22*p22;
+        atomicAdd(degenCount, 1);
+    } else {
+        // 2 モード退化: 最大固有値方向のみ残す。l2 は dropped (<cut) からよく分離。
+        double vx,vy,vz;
+        lsqPre_sym3_eigvec(m00,m01,m02,m11,m12,m22, l2, vx,vy,vz);
+        const double il=1.0/l2;
+        i00=il*vx*vx; i01=il*vx*vy; i02=il*vx*vz;
+        i11=il*vy*vy; i12=il*vy*vz; i22=il*vz*vz;
+        atomicAdd(degenCount, 1);
+    }
+    Minv6[6*ic+0]=i00; Minv6[6*ic+1]=i01; Minv6[6*ic+2]=i02;
+    Minv6[6*ic+3]=i11; Minv6[6*ic+4]=i12; Minv6[6*ic+5]=i22;
+}
+
+// setup 2/3: 内部双対面 incidence の係数 c = M⁺·(w d) を cell_planes CSR 位置に float32 で格納。
+__global__ void lsqPre_coefInternal_d(
+    geom_int nCells, geom_int* plane_cells,
+    geom_int* cell_planes_index, geom_int* cell_planes, geom_int nNormalPlanes,
+    flow_float* ccx, flow_float* ccy, flow_float* ccz,
+    const double* Minv6, flow_float* cInt)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const double cx=ccx[ic], cy=ccy[ic], cz=ccz[ic];
+    const double i00=Minv6[6*ic+0], i01=Minv6[6*ic+1], i02=Minv6[6*ic+2];
+    const double i11=Minv6[6*ic+3], i12=Minv6[6*ic+4], i22=Minv6[6*ic+5];
+    const geom_int st=cell_planes_index[ic], en=cell_planes_index[ic+1];
+    for (geom_int ilp=st; ilp<en; ++ilp) {
+        const geom_int ip=cell_planes[ilp];
+        if (ip >= nNormalPlanes) { cInt[3*ilp+0]=0; cInt[3*ilp+1]=0; cInt[3*ilp+2]=0; continue; }
+        const geom_int ic0=plane_cells[2*ip+0], ic1=plane_cells[2*ip+1];
+        const geom_int jc=(ic0==ic)?ic1:ic0;
+        const double dx=ccx[jc]-cx, dy=ccy[jc]-cy, dz=ccz[jc]-cz;
+        const double w=1.0/fmax(dx*dx+dy*dy+dz*dz,1.0e-300);
+        const double bx=w*dx, by=w*dy, bz=w*dz;
+        cInt[3*ilp+0]=(flow_float)(i00*bx+i01*by+i02*bz);
+        cInt[3*ilp+1]=(flow_float)(i01*bx+i11*by+i12*bz);
+        cInt[3*ilp+2]=(flow_float)(i02*bx+i12*by+i22*bz);
+    }
+}
+
+// setup 3/3: 非 periodic 境界半割面 incidence の係数 (bcond 順の連結配列 cBnd[off+ib])。
+__global__ void lsqPre_coefBoundary_d(
+    geom_int nb, geom_int* bplane_plane, geom_int* bplane_cell,
+    geom_float* pcx, geom_float* pcy, geom_float* pcz,
+    flow_float* ccx, flow_float* ccy, flow_float* ccz,
+    const double* Minv6, flow_float* cBnd_off)
+{
+    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ib >= nb) return;
+    const geom_int ip=bplane_plane[ib], ic=bplane_cell[ib];
+    const double dx=pcx[ip]-(double)ccx[ic], dy=pcy[ip]-(double)ccy[ic], dz=pcz[ip]-(double)ccz[ic];
+    const double w=1.0/fmax(dx*dx+dy*dy+dz*dz,1.0e-300);
+    const double bx=w*dx, by=w*dy, bz=w*dz;
+    const double i00=Minv6[6*ic+0], i01=Minv6[6*ic+1], i02=Minv6[6*ic+2];
+    const double i11=Minv6[6*ic+3], i12=Minv6[6*ic+4], i22=Minv6[6*ic+5];
+    cBnd_off[3*ib+0]=(flow_float)(i00*bx+i01*by+i02*bz);
+    cBnd_off[3*ib+1]=(flow_float)(i01*bx+i11*by+i12*bz);
+    cBnd_off[3*ib+2]=(flow_float)(i02*bx+i12*by+i22*bz);
+}
+
+// runtime 1/3: 内部 incidence の gather (per-node, atomic なし)。6 変数 × 3 成分を直接書く。
+__global__ void lsqPreGrad_internal_d(
+    geom_int nCells, geom_int* plane_cells,
+    geom_int* cell_planes_index, geom_int* cell_planes, geom_int nNormalPlanes,
+    const flow_float* cInt,
+    flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* P, flow_float* T,
+    flow_float* drodx, flow_float* drody, flow_float* drodz,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+    flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+    flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+    flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
+    flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    flow_float gro[3]={0,0,0}, gux[3]={0,0,0}, guy[3]={0,0,0}, guz[3]={0,0,0}, gp[3]={0,0,0}, gt[3]={0,0,0};
+    const flow_float r0=ro[ic], ux0=Ux[ic], uy0=Uy[ic], uz0=Uz[ic], p0=P[ic], t0=T[ic];
+    const geom_int st=cell_planes_index[ic], en=cell_planes_index[ic+1];
+    for (geom_int ilp=st; ilp<en; ++ilp) {
+        const geom_int ip=cell_planes[ilp];
+        if (ip >= nNormalPlanes) continue;      // 境界は lsqPreGrad_boundary_d (bvar 値) が担う
+        const geom_int ic0=plane_cells[2*ip+0], ic1=plane_cells[2*ip+1];
+        const geom_int jc=(ic0==ic)?ic1:ic0;
+        const flow_float c0=cInt[3*ilp+0], c1=cInt[3*ilp+1], c2=cInt[3*ilp+2];
+        flow_float d;
+        d=ro[jc]-r0;  gro[0]+=c0*d; gro[1]+=c1*d; gro[2]+=c2*d;
+        d=Ux[jc]-ux0; gux[0]+=c0*d; gux[1]+=c1*d; gux[2]+=c2*d;
+        d=Uy[jc]-uy0; guy[0]+=c0*d; guy[1]+=c1*d; guy[2]+=c2*d;
+        d=Uz[jc]-uz0; guz[0]+=c0*d; guz[1]+=c1*d; guz[2]+=c2*d;
+        d=P[jc]-p0;   gp[0]+=c0*d;  gp[1]+=c1*d;  gp[2]+=c2*d;
+        d=T[jc]-t0;   gt[0]+=c0*d;  gt[1]+=c1*d;  gt[2]+=c2*d;
+    }
+    drodx[ic]=gro[0]; drody[ic]=gro[1]; drodz[ic]=gro[2];
+    dUxdx[ic]=gux[0]; dUxdy[ic]=gux[1]; dUxdz[ic]=gux[2];
+    dUydx[ic]=guy[0]; dUydy[ic]=guy[1]; dUydz[ic]=guy[2];
+    dUzdx[ic]=guz[0]; dUzdy[ic]=guz[1]; dUzdz[ic]=guz[2];
+    dPdx[ic]=gp[0];   dPdy[ic]=gp[1];   dPdz[ic]=gp[2];
+    dTdx[ic]=gt[0];   dTdy[ic]=gt[1];   dTdz[ic]=gt[2];
+}
+
+// runtime 2/3: 非 periodic 境界の bvar 点寄与 (atomicAdd; 1 セルが複数境界面を持ち得るため)。
+__global__ void lsqPreGrad_boundary_d(
+    geom_int nb, geom_int* bplane_cell, const flow_float* cBnd_off,
+    flow_float* rob, flow_float* Uxb, flow_float* Uyb, flow_float* Uzb, flow_float* Psb, flow_float* Tsb,
+    flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* P, flow_float* T,
+    flow_float* drodx, flow_float* drody, flow_float* drodz,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUxdz,
+    flow_float* dUydx, flow_float* dUydy, flow_float* dUydz,
+    flow_float* dUzdx, flow_float* dUzdy, flow_float* dUzdz,
+    flow_float* dPdx,  flow_float* dPdy,  flow_float* dPdz,
+    flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz)
+{
+    geom_int ib = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ib >= nb) return;
+    const geom_int ic=bplane_cell[ib];
+    const flow_float c0=cBnd_off[3*ib+0], c1=cBnd_off[3*ib+1], c2=cBnd_off[3*ib+2];
+    flow_float d;
+    d=rob[ib]-ro[ic]; atomicAdd(&drodx[ic],c0*d); atomicAdd(&drody[ic],c1*d); atomicAdd(&drodz[ic],c2*d);
+    d=Uxb[ib]-Ux[ic]; atomicAdd(&dUxdx[ic],c0*d); atomicAdd(&dUxdy[ic],c1*d); atomicAdd(&dUxdz[ic],c2*d);
+    d=Uyb[ib]-Uy[ic]; atomicAdd(&dUydx[ic],c0*d); atomicAdd(&dUydy[ic],c1*d); atomicAdd(&dUydz[ic],c2*d);
+    d=Uzb[ib]-Uz[ic]; atomicAdd(&dUzdx[ic],c0*d); atomicAdd(&dUzdy[ic],c1*d); atomicAdd(&dUzdz[ic],c2*d);
+    d=Psb[ib]-P[ic];  atomicAdd(&dPdx[ic],c0*d);  atomicAdd(&dPdy[ic],c1*d);  atomicAdd(&dPdz[ic],c2*d);
+    d=Tsb[ib]-T[ic];  atomicAdd(&dTdx[ic],c0*d);  atomicAdd(&dTdy[ic],c1*d);  atomicAdd(&dTdz[ic],c2*d);
+}
+
+// runtime 3/3: divU (境界寄与の atomicAdd 完了後に呼ぶ)。
+__global__ void lsqPreGrad_finish_d(
+    geom_int nCells,
+    flow_float* dUxdx, flow_float* dUydy, flow_float* dUzdz, flow_float* divU)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    divU[ic] = dUxdx[ic] + dUydy[ic] + dUzdz[ic];
+}
+
 void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     flow_float* grad_volume = (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"];
@@ -648,8 +909,102 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
     //CHECK_CUDA_ERROR(cudaMemset(var.c_d["droedz"], 0.0, msh.nCells*sizeof(flow_float)));
 
 
-    // ---- LSQ 勾配 (node-centered, gradLSQ=1): Green-Gauss の checkerboard を避ける ----
-    if (cfg.gradLSQ && cfg.discretization == "node") {
+    // ---- LSQ 勾配 係数事前計算版 (node-centered, gradLSQ=2, methods §7.3.1) ----
+    // setup 1 回 (double 固有分解 + スペクトル打ち切り擬似逆) で係数を焼き込み、
+    // runtime は float32 gather のみ。退化ノード数は起動時に 1 度だけログする。
+    if (cfg.gradLSQ == 2 && cfg.discretization == "node") {
+        static flow_float *cInt=nullptr, *cBnd=nullptr;
+        static geom_int pre_n=0;
+        static std::vector<long long> bndOff;   // msh.bconds と同順の cBnd オフセット (-1=periodic/空)
+        if (cInt==nullptr || pre_n!=msh.nCells) {
+            if (cInt){cudaFree(cInt); cInt=nullptr;}
+            if (cBnd){cudaFree(cBnd); cBnd=nullptr;}
+            geom_int nInc=0;
+            CHECK_CUDA_ERROR(cudaMemcpy(&nInc, msh.map_cell_planes_index_d + msh.nCells,
+                                        sizeof(geom_int), cudaMemcpyDeviceToHost));
+            gpuErrchk(cudaMalloc(&cInt, sizeof(flow_float)*3*nInc));
+            // periodic 半割面マスク + 境界係数オフセット
+            std::vector<char> perH(msh.nPlanes, 0);
+            bndOff.assign(msh.bconds.size(), -1);
+            long long offTot=0;
+            for (size_t ibc=0; ibc<msh.bconds.size(); ++ibc) {
+                auto& bc = msh.bconds[ibc];
+                if (bc.iPlanes.size()==0) continue;
+                if (bc.bcondKind == "periodic") {
+                    for (auto ipb : bc.iPlanes) perH[ipb] = 1;
+                } else {
+                    bndOff[ibc] = offTot;
+                    offTot += (long long)bc.iPlanes.size();
+                }
+            }
+            if (offTot>0) gpuErrchk(cudaMalloc(&cBnd, sizeof(flow_float)*3*offTot));
+            char* perD=nullptr; double* Minv6=nullptr; int* degD=nullptr;
+            gpuErrchk(cudaMalloc(&perD, msh.nPlanes));
+            CHECK_CUDA_ERROR(cudaMemcpy(perD, perH.data(), msh.nPlanes, cudaMemcpyHostToDevice));
+            gpuErrchk(cudaMalloc(&Minv6, sizeof(double)*6*msh.nCells));
+            gpuErrchk(cudaMalloc(&degD, sizeof(int)));
+            CHECK_CUDA_ERROR(cudaMemset(degD, 0, sizeof(int)));
+            lsqPre_setup_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+                msh.nCells, msh.map_plane_cells_d,
+                msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.nNormalPlanes,
+                var.c_d["ccx"],var.c_d["ccy"],var.c_d["ccz"],
+                var.p_d["pcx"],var.p_d["pcy"],var.p_d["pcz"],
+                perD, (double)cfg.gradLSQDegenThresh, Minv6, degD);
+            lsqPre_coefInternal_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+                msh.nCells, msh.map_plane_cells_d,
+                msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.nNormalPlanes,
+                var.c_d["ccx"],var.c_d["ccy"],var.c_d["ccz"], Minv6, cInt);
+            for (size_t ibc=0; ibc<msh.bconds.size(); ++ibc) {
+                auto& bc = msh.bconds[ibc];
+                if (bndOff[ibc] < 0) continue;
+                lsqPre_coefBoundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
+                    (geom_int)bc.iPlanes.size(), bc.map_bplane_plane_d, bc.map_bplane_cell_d,
+                    var.p_d["pcx"],var.p_d["pcy"],var.p_d["pcz"],
+                    var.c_d["ccx"],var.c_d["ccy"],var.c_d["ccz"],
+                    Minv6, cBnd + 3*bndOff[ibc]);
+            }
+            gpuErrchk( cudaPeekAtLastError() );
+            gpuErrchkKernelSync();
+            int degH=0;
+            CHECK_CUDA_ERROR(cudaMemcpy(&degH, degD, sizeof(int), cudaMemcpyDeviceToHost));
+            printf("gradLSQ=2 precomp: %d/%lld nodes spectral-truncated (thresh=%.2e)\n",
+                   degH, (long long)msh.nCells, (double)cfg.gradLSQDegenThresh);
+            cudaFree(perD); cudaFree(Minv6); cudaFree(degD);
+            pre_n = msh.nCells;
+        }
+        lsqPreGrad_internal_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+            msh.nCells, msh.map_plane_cells_d,
+            msh.map_cell_planes_index_d, msh.map_cell_planes_d, msh.nNormalPlanes, cInt,
+            var.c_d["ro"],var.c_d["Ux"],var.c_d["Uy"],var.c_d["Uz"],var.c_d["P"],var.c_d["T"],
+            var.c_d["drodx"],var.c_d["drody"],var.c_d["drodz"],
+            var.c_d["dUxdx"],var.c_d["dUxdy"],var.c_d["dUxdz"],
+            var.c_d["dUydx"],var.c_d["dUydy"],var.c_d["dUydz"],
+            var.c_d["dUzdx"],var.c_d["dUzdy"],var.c_d["dUzdz"],
+            var.c_d["dPdx"],var.c_d["dPdy"],var.c_d["dPdz"],
+            var.c_d["dTdx"],var.c_d["dTdy"],var.c_d["dTdz"]);
+        for (size_t ibc=0; ibc<msh.bconds.size(); ++ibc) {
+            auto& bc = msh.bconds[ibc];
+            if (bndOff[ibc] < 0) continue;
+            lsqPreGrad_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
+                (geom_int)bc.iPlanes.size(), bc.map_bplane_cell_d, cBnd + 3*bndOff[ibc],
+                bc.bvar_d["ro"],bc.bvar_d["Ux"],bc.bvar_d["Uy"],bc.bvar_d["Uz"],bc.bvar_d["Ps"],bc.bvar_d["Ts"],
+                var.c_d["ro"],var.c_d["Ux"],var.c_d["Uy"],var.c_d["Uz"],var.c_d["P"],var.c_d["T"],
+                var.c_d["drodx"],var.c_d["drody"],var.c_d["drodz"],
+                var.c_d["dUxdx"],var.c_d["dUxdy"],var.c_d["dUxdz"],
+                var.c_d["dUydx"],var.c_d["dUydy"],var.c_d["dUydz"],
+                var.c_d["dUzdx"],var.c_d["dUzdy"],var.c_d["dUzdz"],
+                var.c_d["dPdx"],var.c_d["dPdy"],var.c_d["dPdz"],
+                var.c_d["dTdx"],var.c_d["dTdy"],var.c_d["dTdz"]);
+        }
+        lsqPreGrad_finish_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+            msh.nCells, var.c_d["dUxdx"], var.c_d["dUydy"], var.c_d["dUzdz"], var.c_d["divU"]);
+        gpuErrchk( cudaPeekAtLastError() );
+        gpuErrchkKernelSync();
+        return;
+    }
+
+    // ---- LSQ 勾配 (node-centered, gradLSQ=1): 毎ステップ solve (回帰対照として残置) ----
+    if (cfg.gradLSQ == 1 && cfg.discretization == "node") {
         static flow_float *Mxx=nullptr,*Mxy=nullptr,*Mxz=nullptr,*Myy=nullptr,*Myz=nullptr,*Mzz=nullptr;
         static geom_int M_n=0;
         if (Mxx==nullptr || M_n!=msh.nCells) {
