@@ -15,31 +15,28 @@ from ..evaluate.ic import invert_area_ratio
 
 
 def thrust_metrics(mesh_h5, res_h5, gamma, Pt, p_ambient, r_throat,
-                   outlet_physid=2, wall_physid=3) -> dict:
-    """推力・C_F・η (= C_F / C_F,ideal 同面積比)。壁摩擦は twall があれば加算。"""
+                   outlet_physid=2) -> dict:
+    """推力・C_F・η (= C_F / C_F,ideal 同面積比)。
+
+    出口面の運動量法 F = ∫(ρu² + (P - Pa)) dA。壁摩擦・壁圧の影響は出口状態に
+    既に織り込まれているため**別加算しない** (加算すると二重計上 — サーベイ
+    B4.5 の「+壁摩擦」はこの抽出法では不採用。子 plan §9 参照)。
+    """
     g = gamma
     with h5py.File(mesh_h5, "r") as nz:
         ip = nz[f"/BCONDS/{outlet_physid}/iPlanes"][:]
         ic = nz[f"/BCONDS/{outlet_physid}/iCells"][:]
         pc = nz["/PLANES/centCoords"][:].reshape(-1, 3)
         rf = pc[ip, 1]
-        dr = nz["/PLANES/surfArea"][:][ip]
+        dr = nz["/PLANES/surfArea"][:][ip]  # 軸対称: 2D 辺長 (dr)
         dA = 2.0 * np.pi * rf * dr
-        # 壁摩擦 (軸方向) — BCONDS 出力があれば
-        fric = 0.0
-        wgrp = f"/BCONDS/{wall_physid}"
-        if wgrp + "/VALUE/twall_x" in nz:
-            twx = nz[wgrp + "/VALUE/twall_x"][:]
-            wip = nz[wgrp + "/iPlanes"][:]
-            wdA = 2.0 * np.pi * pc[wip, 1] * nz["/PLANES/surfArea"][:][wip]
-            fric = float(np.sum(twx * wdA))
     with h5py.File(res_h5, "r") as f:
         ro = f["/VALUE/ro"][:][ic]
         u = f["/VALUE/roUx"][:][ic] / ro
         v = f["/VALUE/roUy"][:][ic] / ro
         roe = f["/VALUE/roe"][:][ic]
         P = (g - 1.0) * (roe - 0.5 * ro * (u * u + v * v))
-    F = float(np.sum((ro * u * u + (P - p_ambient)) * dA)) + fric
+    F = float(np.sum((ro * u * u + (P - p_ambient)) * dA))
     At = np.pi * r_throat ** 2
     Ae = float(np.sum(dA))
     CF = F / (Pt * At)
