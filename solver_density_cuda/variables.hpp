@@ -82,7 +82,11 @@ public:
 
         // Mesh Structure
         "volume" , "ccx" , "ccy" , "ccz",
-        "A_planar",  // 軸対称: planar 面積 (= V を r で割った値)。非軸対称時は 0
+        "A_planar",  // 軸対称: planar 面積 (= V を r で割った値)。非軸対称時は 0。勾配計算の分母。
+        // axisRFloor>0 のみ: 床適用後の離散閉性 Σ_f S_f (outward)。hoop ソース/Jacobian の面積を
+        // これに差し替えると任意の床でも一様圧力が厳密に力ゼロ (全面床の CV は 0 = ソース自然消滅)。
+        // A_planar (勾配分母) とは役割が別なので分離する。
+        "A_closure_x", "A_closure_y",
         "axisym_uy_over_r",
         "axisym_divU",
         // axisymMethod==1 (SU2 流 planar+ソース) 用: AuxVar A0=μ_tot·v/y, A1=A0·v, A2=A0·u と

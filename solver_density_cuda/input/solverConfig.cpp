@@ -514,6 +514,9 @@ void solverConfig::read(std::string fname)
         if (config["mesh"] && config["mesh"]["axisymMethod"]) {
             this->axisymMethod = config["mesh"]["axisymMethod"].as<int>();
         }
+        if (config["mesh"] && config["mesh"]["axisRFloor"]) {
+            this->axisRFloor = config["mesh"]["axisRFloor"].as<double>();
+        }
         if (this->axisymMethod < 0 || this->axisymMethod > 1) {
             std::cerr << "axisymMethod must be 0 (r-weight) or 1 (SU2 source)" << std::endl;
             exit(EXIT_FAILURE);

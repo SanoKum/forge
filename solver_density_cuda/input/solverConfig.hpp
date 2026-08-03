@@ -233,6 +233,12 @@ public:
     // axisymmetric-su2-source-formulation)。1 は node 軸行真空化の根治で、nodeAxisDirichlet 不要。
     int axisymMethod = 0;
 
+    // 軸対称 r 床 (axisymMethod==0, SU2 の y<EPS ガードの r 重み版): r < axisRFloor の面・セルは
+    // r 重みを床値で打ち切り (幾何が消えない)、その帯のセルは hoop ソースも Jacobian も
+    // 課さない (uy_over_r も 0)。node 軸行の体積消失→真空化への対症。0 (既定) = 従来
+    // (床 1e-20 = 実質ゼロ面積)。値はメッシュ依存: 軸行重心 < axisRFloor < 第一内点行重心。
+    flow_float axisRFloor = 0.0;
+
     // 離散化レイアウト。"cell": cell-centered FVM (既定・従来)、"node": node-centered
     // (中点双対 median-dual) FVM。methods/discretization/ 参照。
     std::string discretization = "cell";

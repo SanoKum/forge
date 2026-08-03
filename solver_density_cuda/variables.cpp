@@ -361,7 +361,11 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         // 軸 (r=0) 上の face で S を厳密に 0 にすると、下流の flux/BC カーネルで
         // n = S/|S| = 0/0 = NaN になるため、極小の r フロアを入れて n の方向を
         // 保ちつつ寄与を実質ゼロにする。
-        const geom_float r_floor = (geom_float)1.0e-20;
+        // axisRFloor > 0 (SU2 y<EPS ガードの r 重み版): 床を物理値に引き上げ、軸帯の
+        // 面積・体積を消さない (軸半 CV の真空化対策)。hoop ソース/Jacobian/uy_over_r は
+        // 別途 ccy < axisRFloor で skip する (ソース・ヤコビアンも入れない)。
+        const geom_float r_floor = (cfg.axisRFloor > (flow_float)0.0)
+            ? (geom_float)cfg.axisRFloor : (geom_float)1.0e-20;
         for (geom_int ip=0; ip<msh.nPlanes; ip++) {
             const geom_float r_face = (pcy[ip] > r_floor) ? pcy[ip] : r_floor;
             sx[ip] *= r_face;
@@ -373,6 +377,28 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
             const geom_float r_cell = (ccy[ic] > r_floor) ? ccy[ic] : r_floor;
             A_planar_h[ic] = volume[ic];
             volume[ic]     = volume[ic] * r_cell;
+        }
+        // axisRFloor>0: 床適用後の面ベクトルで各セルの離散閉性 Σ_f S_f (outward) を計算し、
+        // A_planar を y 成分 (=一般化 hoop 面積)、A_closure_x を x 成分に置換する。
+        // 床なし領域では y 成分は解析 A_planar に一致し x 成分は 0 (厳密幾何)。
+        // 全面が床の CV では両成分とも 0 → ソース・Jacobian が自然に消える。
+        if (cfg.axisRFloor > (flow_float)0.0) {
+            // 面の向き規約: planes[ip].iCells[0] にとって外向き (+S)、iCells[1] にとって内向き (-S)。
+            // (solver 側 mesh は iPlanesDir を持たないため plane 走査で集計する。)
+            std::vector<geom_float> aclx(msh.nCells_all, 0.0), acly(msh.nCells_all, 0.0);
+            for (geom_int ip = 0; ip < msh.nPlanes; ++ip) {
+                const auto& pc = msh.planes[ip].iCells;
+                if (pc.empty()) continue;
+                const geom_int ic0 = pc[0];
+                if (ic0 >= 0 && ic0 < msh.nCells) { aclx[ic0] += sx[ip]; acly[ic0] += sy[ip]; }
+                if (pc.size() > 1) {
+                    const geom_int ic1 = pc[1];
+                    if (ic1 >= 0 && ic1 < msh.nCells) { aclx[ic1] -= sx[ip]; acly[ic1] -= sy[ip]; }
+                }
+            }
+            // A_planar (勾配分母) は不変のまま、閉性面積は専用配列へ (hoop ソース/Jacobian が参照)。
+            cudaMemcpy(this->c_d.at("A_closure_x"), aclx.data(), msh.nCells_all*sizeof(geom_float), cudaMemcpyHostToDevice);
+            cudaMemcpy(this->c_d.at("A_closure_y"), acly.data(), msh.nCells_all*sizeof(geom_float), cudaMemcpyHostToDevice);
         }
     } else if (cfg.isAxisymmetric == 1 && cfg.axisymMethod == 1) {
         // SU2 流: 幾何は planar のまま (r 重みなし)。1/y はソース項側 (axisymmetricSourceSU2) で扱う。

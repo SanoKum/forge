@@ -275,6 +275,23 @@ cfl[ic] += dt * axisBeta * (fabsf(Uy[ic]) + sonic[ic]) * A_planar[ic] / vol[ic];
 診断用に `FORGE_AXIS_DIAG_ALPHA` (env, 既定 0) があり、roUy 対角へ $\alpha\,A_{\text{planar}}c$ を
 直接足す per-equation 版。機構特定の診断専用で **production では使わない** (additive setDT 版を使う)。
 
+## 軸対称 r 床 (`axisRFloor`, 2026-08 — ユーザ提案)
+
+`mesh.axisRFloor` (>0 で有効, 既定 0 = 従来床 1e-20 = ビット不変)。SU2 の y<EPS ガードの
+r 重み版: **r < axisRFloor の面・セルは r 重みを床値で打ち切る** (幾何が消えない = 軸半 CV の
+真空化が起きない)。床帯のセルは hoop ソース・Jacobian・u_r/r も課さない (planar 扱い)。
+
+**閉性補正 (実装の要)**: 床を面にだけ当てると、床帯と非床帯にまたがる CV で
+∮r n dA が閉じず一様圧力でも偽の力が出て即発散する (実測 step 19)。このため hoop ソース/
+Jacobian の面積は解析 A_planar でなく**床適用後の離散閉性 Σ_f S_f (outward)** を使う
+(`A_closure_x/y`, セットアップ時に全 plane 走査で計算)。非床領域では解析値に一致、全面床の
+CV では厳密に 0 (=「ソースも入れない」が自然に導出)、混在 CV では任意の床で一様圧力が
+厳密に力ゼロになる。A_planar (勾配計算の分母) は不変のまま分離する。
+
+**検証 (case/40 node, run_0027 + soak 24000 step)**: 軸行健全 (床ピン 0)・η_CF=0.9906・
+rms_ro ~1e-7 プラトー。床帯の縁に有界の k 帯 (~230, +12000 step でビット不変の平衡) が残る。
+床値はメッシュ依存 (軸行重心 < axisRFloor < 第一内点行重心; case/40 では 3.0e-4)。
+
 ## SU2 流定式化 (`axisymMethod: 1`, 2026-08)
 
 `mesh.axisymMethod` で軸対称の定式を選ぶ (既定 0 = 本文書の r 重み方式・ビット不変)。

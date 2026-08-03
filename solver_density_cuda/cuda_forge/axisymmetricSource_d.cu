@@ -26,7 +26,9 @@ __global__ void axisymmetricSource_d
     flow_float* axisym_divU,
     flow_float* axisym_uy_over_r,
     flow_float* res_roUy,
-    geom_int* axis_flag   // node-centered で軸上 CV を示す (nullptr 可)。軸上は半径方向ソースを課さない。
+    geom_int* axis_flag,   // node-centered で軸上 CV を示す (nullptr 可)。軸上は半径方向ソースを課さない。
+    flow_float* ccy, flow_float axisRFloor,   // r 床 (axisRFloor>0): A_planar は離散閉性 y 面積に置換済
+    flow_float* res_roUx, flow_float* A_closure_x   // 床の x 閉性欠損補正 (床なしでは 0)
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -38,7 +40,12 @@ __global__ void axisymmetricSource_d
         const flow_float tau_theta_theta =
             (flow_float)2.0 * mu_total * axisym_uy_over_r[ic]
             - (flow_float)(2.0 / 3.0) * mu_total * axisym_divU[ic];
+        // axisRFloor>0: A_planar = 床適用後の Σ_f S_f,y (全面床の CV で 0)。τθθ は床帯で
+        // uy_over_r=0 のため発散項のみだが面積も ~0 で実質不活性。x は圧力の閉性欠損補正のみ。
         res_roUy[ic] += (P[ic] - tau_theta_theta) * A_planar[ic];
+        if (axisRFloor > (flow_float)0.0) {
+            res_roUx[ic] += P[ic] * A_closure_x[ic];
+        }
     }
 }
 
@@ -58,7 +65,7 @@ __global__ void axisymmetricGeomTerms_d
     flow_float* axisym_divU,
     // axisymMethod==1 (SU2 流): r_eff = V/A_planar は planar 幾何で成立しないため
     // セル重心 y を直接使う。軸ノード (axis_flag==1, node のみ) は SU2 同様 0 (y=0 の対称極限)。
-    int axisymMethod, geom_float* ccy, geom_int* axis_flag
+    int axisymMethod, geom_float* ccy, geom_int* axis_flag, flow_float axisRFloor
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -70,6 +77,8 @@ __global__ void axisymmetricGeomTerms_d
         } else {
             const flow_float area = A_planar[ic];
             r_eff = (area > (flow_float)0.0) ? volume[ic] / area : (flow_float)0.0;
+            // axisRFloor 帯 (r 床) は planar 扱い: hoop ひずみ u_r/r を課さない
+            if (axisRFloor > (flow_float)0.0 && ccy[ic] < axisRFloor) r_eff = (flow_float)0.0;
         }
 
         if (r_eff > (flow_float)0.0) {
@@ -93,13 +102,15 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     axisymmetricSource_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells,
         var.c_d["P"],
-        var.c_d["A_planar"],
+        (cfg.axisRFloor > (flow_float)0.0) ? var.c_d["A_closure_y"] : var.c_d["A_planar"],
         var.c_d["vis_lam"],
         var.c_d["vis_turb"],
         var.c_d["axisym_divU"],
         var.c_d["axisym_uy_over_r"],
         var.c_d["res_roUy"],
-        axis_flag
+        axis_flag,
+        var.c_d["ccy"], cfg.axisRFloor,
+        var.c_d["res_roUx"], var.c_d["A_closure_x"]
     );
 
     gpuErrchk( cudaPeekAtLastError() );
@@ -429,7 +440,8 @@ void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["axisym_divU"],
         cfg.axisymMethod,
         var.c_d["ccy"],
-        (cfg.discretization == "node") ? msh.axis_flag_d : nullptr
+        (cfg.discretization == "node") ? msh.axis_flag_d : nullptr,
+        cfg.axisRFloor
     );
 
     gpuErrchk( cudaPeekAtLastError() );

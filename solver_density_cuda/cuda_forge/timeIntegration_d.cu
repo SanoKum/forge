@@ -531,6 +531,7 @@ __global__ void implicit_defect_correction_d
  // 軸対称ソース項 Jacobian 用 (CPG/TP 共通)
  int isAxisymmetric,
  flow_float* A_planar,
+ flow_float axisRFloor,
  // dual-time 物理時間項の対角係数 a/Δt（定常は 0）
  flow_float unsteady_diag
 )
@@ -617,7 +618,8 @@ __global__ void implicit_defect_correction_d
         // γ は per-cell gamma_arr[ic] (TP=γ_mix(T) / CPG=cfg.gamma) を使い thermally perfect でも整合。
         // scalar 対角の正値性 (対角優位) を保つため非負側のみ加える (defect-correction の不動点は不変)。
         flow_float diag_roUy = diag;
-        if (isAxisymmetric == 1) {
+        if (isAxisymmetric == 1 &&
+            !(axisRFloor > (flow_float)0.0 && ccy[ic] < axisRFloor)) {
             const flow_float A_pl = max(A_planar[ic], static_cast<flow_float>(1.0e-30));
             const flow_float r_eff = max(static_cast<flow_float>(v) / A_pl, static_cast<flow_float>(1.0e-30));
             const flow_float g1 = gamma_arr[ic] - static_cast<flow_float>(1.0);
@@ -719,6 +721,9 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  // 軸対称ソースヤコビアン用（isAxisymmetric==1 のときのみ使用）
  int isAxisymmetric,
  flow_float* A_planar,
+
+ // 軸対称 r 床 (axisymMethod==0): ccy < axisRFloor の帯は hoop ソース不課につき Jacobian も課さない。
+ flow_float axisRFloor,
 
  // dual-time 物理時間項の対角係数 a/Δt（定常は 0）
  flow_float unsteady_diag,
@@ -846,7 +851,9 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         }
 
         // 軸対称ソース項のヤコビアンを対角ブロックに加える（roUy 行 = index 2）。詳細は実装ドキュメント参照。
-        if (isAxisymmetric == 1) {
+        // axisRFloor 帯 (r 床, ソース不課) は Jacobian も課さない。
+        if (isAxisymmetric == 1 &&
+            !(static_cast<ST>(axisRFloor) > static_cast<ST>(0.0) && static_cast<ST>(ccy[ic]) < static_cast<ST>(axisRFloor))) {
             const ST A_pl = static_cast<ST>(A_planar[ic]);
             const ST r_eff = max(v / max(A_pl, static_cast<ST>(1.0e-30)), static_cast<ST>(1.0e-30));
             const ST g1 = gamma - static_cast<ST>(1.0);
@@ -995,6 +1002,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
 
  int isAxisymmetric,
  flow_float* A_planar,
+ flow_float axisRFloor,
  flow_float unsteady_diag
 )
 {
@@ -1077,7 +1085,9 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         for (int i = 0; i < 5; ++i) b[i] += nbr[i];
 
         // 軸対称ソースヤコビアン (物理ブロック D0 へ float で加算、既存 block と同式)。
-        if (isAxisymmetric == 1) {
+        // axisRFloor 帯 (r 床, ソース不課) は Jacobian も課さない。
+        if (isAxisymmetric == 1 &&
+            !(axisRFloor > (flow_float)0.0 && ccy[ic] < axisRFloor)) {
             const flow_float A_pl = A_planar[ic];
             const flow_float r_eff = max(v / max(A_pl, static_cast<flow_float>(1.0e-30)), static_cast<flow_float>(1.0e-30));
             const flow_float g1 = gamma - static_cast<flow_float>(1.0);
@@ -1280,7 +1290,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["dq_block_old_0"], var.c_d["dq_block_old_1"], var.c_d["dq_block_old_2"], var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"],
                 var.c_d["dq_block_new_0"], var.c_d["dq_block_new_1"], var.c_d["dq_block_new_2"], var.c_d["dq_block_new_3"], var.c_d["dq_block_new_4"],
                 axisymEnc,
-                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
+                (cfg.isAxisymmetric == 1) ? ((cfg.axisRFloor > (flow_float)0.0) ? var.c_d["A_closure_y"] : var.c_d["A_planar"]) : var.c_d["volume"],
+                cfg.axisRFloor,
                 cfg.unsteadyDiagCoef
               );
             } else {
@@ -1305,7 +1316,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_20"], var.c_d["diag_block_21"], var.c_d["diag_block_22"], var.c_d["diag_block_23"], var.c_d["diag_block_24"], \
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"], \
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
-                axisymEnc, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
+                axisymEnc, (cfg.isAxisymmetric == 1) ? ((cfg.axisRFloor > (flow_float)0.0) ? var.c_d["A_closure_y"] : var.c_d["A_planar"]) : var.c_d["volume"], cfg.axisRFloor, cfg.unsteadyDiagCoef, \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1 && cfg.nodeAxisDirichlet == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag: nodeAxisDirichlet で全 5 行 decouple (状態は enforceAxisMirror がピン)。OFF は従来どおり nullptr */ \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag_src: SU2 流 (enc==2) の軸ソース Jacobian ガード (軸ノードはソース 0) */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag: 壁運動量3行 decouple */ \
@@ -1369,7 +1380,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["dq_roUz_new"],
                 var.c_d["dq_roe_new"],
                 axisymEnc,
-                (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
+                (cfg.isAxisymmetric == 1) ? ((cfg.axisRFloor > (flow_float)0.0) ? var.c_d["A_closure_y"] : var.c_d["A_planar"]) : var.c_d["volume"],
+                cfg.axisRFloor,
                 cfg.unsteadyDiagCoef
             );
         }

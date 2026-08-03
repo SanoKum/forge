@@ -82,5 +82,10 @@ forge の軸対称は r 重み幾何 (B 流儀: 面積・体積に r を乗じ�
   - **非退行**: method 0 (既定) は新旧バイナリ差が過渡ノイズ増幅の床内 (同一バイナリ再走
     17.5% vs 新旧 11%) で不変。
   - **当面の運用**: 生産既定 (runner) は method 0 + `nodeAxisDirichlet` を維持
-    (PASS 品質の収束)。method 1 は `physProp.axisymMethod: 1` のオプトイン。陰解法の
+    (PASS 品質の収束)。method 1 は `mesh.axisymMethod: 1` のオプトイン。陰解法の
     線形化改善後に既定切替を再評価。
+- `2026-08-04` — **対案 `axisRFloor` (ユーザ提案: 規定 r 以下は r 重み・ソース・Jacobian とも
+  課さない) を実装・検証** (methods/axisymmetric/implementation.md の節参照)。素朴な面床は
+  混在 CV の圧力閉性を壊し step 19 で発散 → **離散閉性面積 (A_closure_x/y) への置換**で解決。
+  case/40 run_0027 + soak: 軸健全・η=0.9906・rms_ro ~1e-7 プラトー・床帯縁の k 帯 (~230) は
+  24000 step でビット不変の有界平衡。3 方式の比較は case/40 README を参照。
