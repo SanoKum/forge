@@ -24,9 +24,14 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0003_bell_L6` | dv 応答確認: L/rt=7→6 (`problem_bell_L6.yaml`) | η=0.9708, F=1944.7 N (短縮 → 発散損失増で η 低下 ✓)。品質 PASS・NaN なし・プラトー同傾向 | active (dv 感度の記録) |
 | `run_0004_bell_L9` | dv 応答確認: L/rt=7→9 (`problem_bell_L9.yaml`) | η=0.9837, F=1970.5 N (延長 → η 単調増 ✓)。ṁ は 3 run で 0.03% 一定 (スロート同一の整合) | active (dv 感度の記録) |
 
+| `run_0005_bell_smoke_node` | node (median-dual) 既定化に伴う再計算 | **step 2 から全列 NaN で発散** (メッシュ品質は primal 検査で PASS)。詳細切り分けの結果、forge 側の node 2D 問題 2 層 (傾斜壁の運動量不安定 + 出口コーナー SST スカラー) と判明 → [調査 plan](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)。記録として保持 | 破棄予定 (発散の記録) |
+
 **dv 感度まとめ (η–L トレードオフの応答確認)**: L/rt = 6 / 7 / 9 → η_CF = 0.9708 / 0.9790 /
 0.9837。物理的に正しい単調応答で、パイプラインが最適化の評価器として機能することを確認
 (Phase 2 のパレート軸そのもの)。
+
+**node モードの状態**: node 既定の方針だが、上記 forge 側問題の修正まで**当面 cell で運用**
+(runner は `mesh.discretization` で両対応)。修正後に node で再検証する。
 
 注記: 残差プラトーの深掘り (真の定常収束品質) は Phase 2 (Rao 照合) で扱う。η の妥当性
 (0.98 前後はベルノズルとして自然なオーダー) も Phase 2 の照合が正式判定。

@@ -50,9 +50,10 @@
   範囲を Phase 0 とする (pymoo/SMT は Phase 2 で venv 導入)。
 - forge h5 スキーマは既存コンバータの出力仕様に厳密一致させる (調査結果を
   `design/meshing/` 実装コメントと本 plan 変更ログに記録)。
-- メッシュは当面 cell 中心を既定 (③ベルの Rao 照合資産 [case/29] が cell 前提のため)。
-  node (median-dual) は変換オプションとして温存 ([user-prefers-node-base] は認識しつつ、
-  Phase 0 の照合は既存資産との一致を優先)。
+- **離散化の既定は node (median-dual)** (2026-08-03 ユーザ指示。cell は
+  `mesh.discretization: cell` の明示指定時のみ — Rao 照合等で cell 資産と比較する場合)。
+  node 時は `axisCentroidShift: 1` / `nodeWallViscGradFlux: 1` / `nodeWallDirichlet: 1` を付与
+  (case/26 node 実績 + 軸対称 node の慣行)。
 - 決定性: 同一 YAML → bit 同一メッシュを単体テストで保証する。
 
 ## 5. 実装ステップ

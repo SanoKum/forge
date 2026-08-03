@@ -57,7 +57,11 @@ def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
     sst = p.evaluate.get("turbulence", "sst") == "sst"
     turb = ('turbulence: {model: "sst", scalarDiffusion: 1, dilatationCorrection: 2}'
             if sst else 'turbulence: {model: "none"}')
-    return f"""mesh: {{meshFormat: "hdf5", meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
+    # 既定は node (median-dual) — ユーザ方針 2026-08-03。cell は明示指定時のみ
+    disc = p.mesh.get("discretization", "node")
+    node_keys = (', axisCentroidShift: 1, nodeWallViscGradFlux: 1, nodeWallDirichlet: 1'
+                 if disc == "node" else "")
+    return f"""mesh: {{meshFormat: "hdf5", discretization: "{disc}"{node_keys}, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
 gpu: 1
 solver: "SLAU"
 physProp: {{isCompressible: 1, isAxisymmetric: 1, thermalMethod: 0, viscMethod: 1,
@@ -119,13 +123,35 @@ def prepare(problem_path, run_dir, nsteps=None) -> dict:
     (run_dir / "bcondConfig.yaml").write_text(_bcond_config(p))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
 
-    subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
-                   cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
-    q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "nozzle.h5"],
-                       cwd=run_dir, env=_ENV, capture_output=True, text=True)
-    (run_dir / "MESH_QUALITY.txt").write_text(q.stdout + q.stderr)
-    if q.returncode != 0:
-        raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
+    disc = p.mesh.get("discretization", "node")
+    if disc == "node":
+        # 品質ゲートは primal (cell 変換) で測る: 双対 h5 は品質ツールが読めないし、
+        # 品質の実体は primal quad の AR/skew。cell で一時変換 → 検査 → node で本変換。
+        (run_dir / "solverConfig.yaml").write_text(
+            (run_dir / "solverConfig.yaml").read_text().replace(
+                f'discretization: "{disc}"', 'discretization: "cell"').replace(
+                ", axisCentroidShift: 1, nodeWallViscGradFlux: 1, nodeWallDirichlet: 1", ""))
+        subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
+                       cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+        q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "nozzle_qc.h5"],
+                           cwd=run_dir, env=_ENV, capture_output=True, text=True)
+        (run_dir / "MESH_QUALITY.txt").write_text("(primal/cell 変換で検査)\n" + q.stdout + q.stderr)
+        (run_dir / "nozzle_qc.h5").unlink()
+        for f in run_dir.glob("nozzle_qc.xmf"):
+            f.unlink()
+        if q.returncode != 0:
+            raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
+        (run_dir / "solverConfig.yaml").write_text(_solver_config(p, n, int(p.evaluate.get("outStepInterval", max(n // 3, 1)))))
+        subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
+                       cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+    else:
+        subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
+                       cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+        q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "nozzle.h5"],
+                           cwd=run_dir, env=_ENV, capture_output=True, text=True)
+        (run_dir / "MESH_QUALITY.txt").write_text(q.stdout + q.stderr)
+        if q.returncode != 0:
+            raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
 
     exit1d = paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                                  float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
