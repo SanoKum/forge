@@ -198,6 +198,9 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["nodeWallDirichlet"]) {
             this->nodeWallDirichlet = config["mesh"]["nodeWallDirichlet"].as<int>();
         }
+        if (config["mesh"]["nodeAxisDirichlet"]) {
+            this->nodeAxisDirichlet = config["mesh"]["nodeAxisDirichlet"].as<int>();
+        }
         if (config["mesh"]["gradLSQ"]) {
             this->gradLSQ = config["mesh"]["gradLSQ"].as<int>();
             if (this->gradLSQ < 0 || this->gradLSQ > 2) {

@@ -275,6 +275,32 @@ cfl[ic] += dt * axisBeta * (fabsf(Uy[ic]) + sonic[ic]) * A_planar[ic] / vol[ic];
 診断用に `FORGE_AXIS_DIAG_ALPHA` (env, 既定 0) があり、roUy 対角へ $\alpha\,A_{\text{planar}}c$ を
 直接足す per-equation 版。機構特定の診断専用で **production では使わない** (additive setDT 版を使う)。
 
+## node-centered 軸ノードの対称 Dirichlet (`nodeAxisDirichlet`, 2026-08)
+
+node (median-dual) 軸対称では軸上ノードが半 CV の中心になる。この軸半 CV を通常どおり
+解くと、強い膨張を持つノズル (case/40: Pt 4 MPa, ε9) のベル部で**軸行だけが radial 圧力
+平衡からデカップルして真空まで過膨張する** (ro が隣接行の 1/10〜1/50、有効圧力負 →
+EOS 床 P=1 Pa ピン)。laminar でも治癒せず (基底スキームの欠陥)、SST では崩壊軸行と第一
+内点行の間の偽せん断が k 生産シート (k ~ 周囲の 10³ 倍) を作り、陰解法の大 pseudo-CFL で
+この平衡が弱不安定化して遅発性発散する (詳細:
+[plans/active/boundary-node-nozzle-wall-outlet-stability.md](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) §2.6)。
+
+対策は**軸ノードを解かず、対称条件 ∂q/∂r=0・u_r=0 の 1 次離散化として radial 隣接
+ノードからの Dirichlet に置換する** (`mesh.nodeAxisDirichlet: 1`、既定 0 = 従来)。
+SU2 の対称面扱い・forge の `nodeWallDirichlet`/入口スカラーピンと同じ確立パターン。
+
+- **代表点**: 軸ノード A ごとに内部双対面の相手 I のうち radial cos 最大の非軸ノードを
+  変換時でなく solver 起動時に選ぶ (`mesh.cpp` → `axis_rep_d`)。
+- **状態ピン** (`enforceAxisMirror_d`): 毎ステージ `assembleResidual` 冒頭で
+  ro/roUx/roUz/roK/roOmega[A]←[I]、roUy[A]=0、roe[A]←roe[I]−½roUy[I]²/ro[I]。
+- **残差除外** (`zeroAxisAllResiduals_d`): 軸ノードの res_ro〜res_roe (+RANS スカラー) を 0 化。
+- **block-DPLUR**: axis_flag 渡し時の decouple を全 5 行単位行化に拡張し
+  `nodeAxisDirichlet==1` のとき `axis_flag_d` を渡す (従来は nullptr でビット不変)。
+- 軸 CV 体積は O(r̄Δr) と極小のため保存への影響は無視できる (床ピンで既に非保存だった)。
+
+cell モード・平面 2D・`nodeAxisDirichlet=0` はビット不変。species/凝縮スカラーの軸ピンは
+未対応 (必要時に拡張)。
+
 ## Roe スキームの取扱い
 
 軸対称固有の固有分解 ([theory.md](theory.md) §"Roe フラックスヤコビアン") は

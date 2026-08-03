@@ -18,4 +18,13 @@ void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
 // roUy=0 (対称条件) を保つ。assembleResidual の最後 (全 flux+source 積算後) に呼ぶ。
 void zeroAxisRadialResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
 
+// nodeAxisDirichlet=1: 軸上ノード状態を radial 代表点 (axis_rep) からの対称 Dirichlet で置換する
+// (∂q/∂r=0 の 1 次、u_r=0)。assembleResidual 冒頭 (dependentVariables の前) に呼ぶ。
+// 軸半 CV の真空過膨張 (plan boundary-node-nozzle-wall-outlet-stability §2.6) の根治。
+void enforceAxisMirror_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// nodeAxisDirichlet=1: 軸上ノードの全保存量残差 (+RANS 時 roK/roOmega) を 0 化する。
+// assembleResidual 末尾で zeroAxisRadialResidual の直後に呼ぶ (rms 汚染防止 + explicit 状態固定)。
+void zeroAxisAllResiduals_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
 // node-centered 壁 Dirichlet: 壁ノード (wall_flag) の速度を厳密に 0 に固定する (壁ゴースト撤廃の代替)。

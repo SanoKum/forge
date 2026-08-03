@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `boundary / discretization`
-- **status**: `draft`  <!-- 調査完了・修正未着手 -->
+- **status**: `in-progress`  <!-- 課題1・2 解決済み (nodeAxisDirichlet 実装/検証済)。課題3 (細壁) と出口コーナー再評価が残 -->
 - **related_docs**:
   - `methods/discretization.md` / `methods/boundary.md`
 - **related_plans**:
@@ -89,18 +89,77 @@ turbulence API のため現行バイナリではそのまま再実行できな�
 3. **壁第一セル細分の頑健性**: y+~1 (low-Re) 相当の壁間隔が node で回らない。→ q_peak
    壁解像 (親計画 §4.6 ①) に将来必要。
 
+## 2.6 追補 (2026-08-03 深夜セッション): 残課題 2 点の真因確定 — §2.5 の課題定義を再構成
+
+case/40 で再現 run (run_0009〜0014) + 感度実験 (scratchpad E1〜E3) を実施し、両課題の実態を確定した。
+
+### 課題 2 (2 次精度) — 解決: `bndFirstOrder: 1` の欠落が原因だった
+
+- 発散を記録した run_0007 世代の設定は **`bndFirstOrder` なし** (当時の runner は無効キー
+  `nodeWallViscGradFlux` を出力しており、`bndFirstOrder` は実証レシピ commit af0801b0 で導入)。
+- 反実仮想で確定: 2 次+explicit+`bndFirstOrder` なし → step 8–10 で発散 (記録と一致)。
+  **`bndFirstOrder: 1` あり → 12000 step 完走・全列 2.5–2.8 桁低下** (`run_0014_node_2nd_expl_long`)。
+- すなわち「node × 2 次」は境界隣接 CV の再構成勾配だけが不安定源で、現 runner 既定
+  (`bndFirstOrder: 1` = 境界 1 次化) で解決済み。
+
+### 課題 1 (SST 陰解法) — 真因は node 軸対称の軸行崩壊 × SST 生産シート
+
+- 「step 4 で発散」は再現せず (旧設定の 2 次との交絡)。実態は **遅発性**: 1 次+陰解法
+  cfl_pseudo 2 で深く収束 (rms_ro 3e-9 @step 2000) した後、**roK が e-folding ~2000 step で
+  指数成長し step ~7900 で発散** (`run_0013_node_imp_long`)。2 次+陰解法も同様 step ~10600
+  (`run_0012_node_2nd_imp_full`)。cfl_pseudo 1 で成長率 ~1/4 に鈍るが残存 (E2)。
+  `implicitRelaxSST` 0.5 は発散時期を変えない (E1) = スカラー更新の大きさは無関係。
+- **モードの実体** (E2 スナップショット差分 + 場の検分):
+  1. **軸ノード行 (y=0) がベル部 x≈0.031–0.048 で真空まで過膨張**: ro が隣接行の 1/10〜1/50、
+     有効圧力が負 → EOS 床 P=1 Pa にピン。**これは「PASS」の explicit run (run_0006/0008/0014)
+     でも慢性的に存在** (~20 ノード)。cell は同域で完全に健全。laminar 陰解法でも治癒せず悪化
+     (E3) = **SST 以前の基底スキーム欠陥** (node 軸対称の軸半 CV が radial 圧力平衡から
+     デカップルし準 1D 的に過膨張)。case/29 でも SST run で同傾向 (minP 2e3、laminar は健全 3.4e4)
+     = 膨張の強い case/40 (Pt 4 MPa, ε9) で顕在化が激しい。
+  2. 崩壊した軸行と第一内点行の間に**偽せん断** (dUxdy ~ -6e3) が立ち、SST が第一行に
+     **k ~ 1.3e4 (周囲の ~1000 倍) の生産シート**を形成 (μt/μ ~320, Pk>Dk)。explicit では有界の
+     まま定在するが、陰解法の大 pseudo-CFL でこの平衡が弱不安定化し指数成長 → 発散。
+- **修正方針 (本セッションで実装)**: **node 軸対称の軸ノードを解かず、radial 隣接ノードからの
+  対称 Dirichlet に置換する** (`nodeAxisDirichlet`)。軸対称条件 ∂q/∂r=0, u_r=0 の 1 次離散化で
+  あり、SU2 の対称面扱い・forge 既存の `nodeWallDirichlet`/入口スカラーピンと同じ確立パターン。
+  軸 CV の体積は O(Δr²) で保存への影響は無視できる。実装は §3.1。
+
 ## 3. 修正方針 (次セッションの作業項目)
 
-1. 再現系は確立済み: `case/40` の問題 YAML + runner で 3–5 分/run。切り分け操作は
-   `wall_first_frac` (1e-3 ⟷ 5e-3)・`timeIntegration` (3 ⟷ 11)・`convMethod` (0 ⟷ 1) の
-   3 ノブで decisive に再現する。
-2. 課題 1 (SST 陰解法): blockDPLUR の k/ω 行 (壁 Dirichlet/壁関数ノード・出口ノード) の
-   Jacobian 整合を点検。scalar-DPLUR 側 ([time_integration-scalar-dplur] 系) と壁代表点修正
-   ([turbulence-node-sst-wallfunction]) の併用パスが濃厚。
-3. 課題 2 (2 次精度): 壁近傍ノードの勾配再構成 (Green-Gauss / [discretization-lsq-gradient])
-   と `bndFirstOrder` の適用範囲を点検。発散種は常に壁隣接第一内点。
-4. 課題 3 (細壁間隔): 課題 1–2 解決後に wall_first_frac を段階細分して再評価。
-5. 検証: 本ノズルメッシュで node SST **2 次 + 陰解法** 12000 step 完走 + cell と η_CF 一致 ~1%。
+(§2.6 で課題定義を再構成済み。旧 2./3. の仮説 — 壁 k/ω 行 Jacobian・壁隣接 MUSCL — は
+反実仮想で棄却: 発散種は壁でなく軸であり、2 次は bndFirstOrder で解決済み。)
+
+### 3.1 `nodeAxisDirichlet` 実装設計 (2026-08-03)
+
+- **config**: `mesh.nodeAxisDirichlet` (int, 既定 0 = 従来ビット不変)。有効条件は
+  `discretization==node && isAxisymmetric==1`。runner の node 既定で 1 を出す。
+- **代表点** (`mesh.cpp`): 軸ノード A ごとに内部双対面の相手ノード I のうち radial 方向
+  cos = (y_I−y_A)/|x_I−x_A| 最大の非軸ノードを選び `axis_rep_d` に格納 (SU2 Normal_Neighbor・
+  SST 壁関数代表点と同型)。
+- **状態ピン** (`axisymmetricSource_d.cu::enforceAxisMirror_d`): `assembleResidual` 冒頭
+  (enforceWallNoSlip の直後・dependentVariables の前) で毎ステージ
+  ro/roUx/roUz/roK/roOmega[A] ← [I]、roUy[A]=0、roe[A] ← roe[I] − 0.5·roUy[I]²/ro[I]
+  (radial KE 除去)。以後の派生量・境界・勾配・フラックスは全てピン後状態を見る。
+- **残差除外** (`zeroAxisAllResiduals_d`): assembleResidual 末尾で軸ノードの res_ro〜res_roe
+  (+RANS 時 res_roK/res_roOmega) を 0 化 (rms 汚染防止 + explicit 経路の状態固定)。
+- **陰解法整合** (`timeIntegration_d.cu` block-DPLUR): axis_flag が渡された場合の decouple を
+  従来の roUy 1 行から**全 5 行単位行化**へ拡張 (現状 axis_flag は常に nullptr 渡しなので
+  ビット不変)。起動側で `nodeAxisDirichlet==1` のとき `msh.axis_flag_d` を渡す。
+  scalar-DPLUR 経路は状態ピンで実質担保 (dq が入っても次ステージ冒頭で上書き)。
+- **保存性**: 軸 CV は解かなくなる。V ∝ r̄Δr Δx (r̄~1e-4 m) で全体質量への影響 <1e-6。
+  EOS 床で既に非保存だった現状より悪化しない。
+- **やらない**: species/凝縮スカラーの軸ピン (対象ケースに無し、必要時に拡張)、
+  cell モード・平面 2D への影響 (ガードで不変)。
+
+### 3.2 検証項目
+
+1. 軸行の健全化: 12000 step 後に軸 P ≈ 第一内点 P (床ピン 0 ノード)、第一行 k シート消滅。
+2. 課題 1 再現の解消: 1 次+陰解法 cfl_pseudo 2 が 12000 step で roK 成長なし。
+3. 最終: node SST **2 次+陰解法** 12000 step `check_convergence.py` PASS + η_CF が cell
+   (run_0002: 0.9790) と ~1%。
+4. 非退行: 実証レシピ (explicit 1 次) run が同等以上に収束、case/29 `run_0038` verbatim 健全、
+   cell / `nodeAxisDirichlet=0` はビット不変。
+5. 課題 3 (細壁間隔) は本 plan では扱わず後継へ。
 
 ## 4. 影響・当面の運用
 
@@ -119,3 +178,15 @@ turbulence API のため現行バイナリではそのまま再実行できな�
   リグレッションでも未踏領域でもなく、**壁第一セル過細 + レシピ不一致 (warm start /
   explicit / 1 次)**。実証レシピで node SST ノズル初の VERDICT PASS (run_0006)。残課題を
   「SST 陰解法 / 2 次精度 / 細壁間隔」の 3 点に再定義。
+- `2026-08-03 (深夜)` — **課題 1・2 解決**。§2.6 で真因確定 (課題2 = bndFirstOrder 欠落設定の
+  固有問題 / 課題1 = node 軸対称の軸行真空化 → 偽せん断 → SST k シート → 陰解法で遅発性発散)。
+  §3.1 の `nodeAxisDirichlet` を実装 (solverConfig / mesh axis_rep / enforceAxisMirror +
+  zeroAxisAllResiduals / block-DPLUR 軸 5 行 decouple / runner 既定)。**検証**: 軸床ピン
+  21→0 ノード・k シート 1.3e4→3.4 に消滅 (case/40 run_0015)。**最終目標達成 =
+  run_0016/0020 (2 次+陰解法 cfl_pseudo 2/4) 12000 step `check_convergence` ALL PASS +
+  quasisteady ALL STEADY、12000 step ≈ 20 秒 (explicit 比 ~20 倍)**。η_CF=0.9907 は cell
+  0.9790 と +1.2% (katoLaunder 起因でないことを run_0017 で確認、帰属は node 2 次化の離散差 —
+  Phase 2 の Rao 照合で判定)。L スイープ node 取直し (run_0018/0019: 0.9835/0.9957) で単調応答
+  維持。非退行: OFF 経路は atomicAdd ノイズ床内で不変、case/26 平板 node 500 step は表示桁一致。
+  **残課題 = 課題 3 (細壁間隔 y+~1) と、§2 の出口コーナー・傾斜壁症状の再評価** (軸修正後に
+  再現するかの確認) — 本 plan は active 継続。

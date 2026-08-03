@@ -142,6 +142,94 @@ void zeroAxisRadialResidual_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
     gpuErrchkKernelSync();
 }
 
+// nodeAxisDirichlet: 軸上ノード A の状態を radial 代表点 I (axis_rep) からの対称 Dirichlet で置換。
+// ∂q/∂r=0 の 1 次 (q_A = q_I)、u_r=0。roe は I の radial KE を除いて写す (u_r(0)=0 と整合)。
+// I は非軸ノードなので read/write は disjoint (race なし)。
+__global__ void enforceAxisMirror_d
+(
+    geom_int nCells, geom_int* axis_flag, geom_int* axis_rep,
+    flow_float* ro, flow_float* roUx, flow_float* roUy, flow_float* roUz, flow_float* roe,
+    // *N (擬似時間ステップ開始値) も同値にピンする。これが無いと implicit commit (ro=roN+dq, dq=0)
+    // が毎ステップ stale roN で軸状態を巻き戻す (assembly 中だけピンされ出力・restart が stale になる)。
+    flow_float* roN, flow_float* roUxN, flow_float* roUyN, flow_float* roUzN, flow_float* roeN,
+    flow_float* roK, flow_float* roOmega,   // 非 RANS 時は nullptr
+    flow_float* roKN, flow_float* roOmegaN
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells || axis_flag[ic] != 1) return;
+    const geom_int irep = axis_rep[ic];
+    if (irep < 0 || irep >= nCells) return;
+    const flow_float ro_I = ro[irep];
+    const flow_float ke_r = (ro_I > (flow_float)0.0)
+        ? (flow_float)0.5 * roUy[irep] * roUy[irep] / ro_I : (flow_float)0.0;
+    const flow_float roe_pin = roe[irep] - ke_r;
+    ro[ic]   = ro_I;
+    roUx[ic] = roUx[irep];
+    roUy[ic] = (flow_float)0.0;
+    roUz[ic] = roUz[irep];
+    roe[ic]  = roe_pin;
+    roN[ic]   = ro_I;
+    roUxN[ic] = roUx[irep];
+    roUyN[ic] = (flow_float)0.0;
+    roUzN[ic] = roUz[irep];
+    roeN[ic]  = roe_pin;
+    if (roK != nullptr)     { roK[ic]     = roK[irep];     roKN[ic]     = roK[irep]; }
+    if (roOmega != nullptr) { roOmega[ic] = roOmega[irep]; roOmegaN[ic] = roOmega[irep]; }
+}
+
+void enforceAxisMirror_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.nodeAxisDirichlet != 1 || cfg.isAxisymmetric != 1 || cfg.discretization != "node" ||
+        msh.axis_flag_d == nullptr || msh.axis_rep_d == nullptr) return;
+    const bool rans = (cfg.LESorRANS == 2 && cfg.RANSmodel == 1);
+    enforceAxisMirror_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.axis_flag_d, msh.axis_rep_d,
+        var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"],
+        var.c_d["roN"], var.c_d["roUxN"], var.c_d["roUyN"], var.c_d["roUzN"], var.c_d["roeN"],
+        rans ? var.c_d["roK"] : nullptr,
+        rans ? var.c_d["roOmega"] : nullptr,
+        rans ? var.c_d["roKN"] : nullptr,
+        rans ? var.c_d["roOmegaN"] : nullptr
+    );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
+// nodeAxisDirichlet: 軸上ノードの全保存量残差を 0 化 (状態は enforceAxisMirror がピン)。
+__global__ void zeroAxisAllResiduals_d
+(
+    geom_int nCells, geom_int* axis_flag,
+    flow_float* res_ro, flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roUz, flow_float* res_roe,
+    flow_float* res_roK, flow_float* res_roOmega   // 非 RANS 時は nullptr
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells || axis_flag[ic] != 1) return;
+    res_ro[ic]   = (flow_float)0.0;
+    res_roUx[ic] = (flow_float)0.0;
+    res_roUy[ic] = (flow_float)0.0;
+    res_roUz[ic] = (flow_float)0.0;
+    res_roe[ic]  = (flow_float)0.0;
+    if (res_roK != nullptr)     res_roK[ic]     = (flow_float)0.0;
+    if (res_roOmega != nullptr) res_roOmega[ic] = (flow_float)0.0;
+}
+
+void zeroAxisAllResiduals_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.nodeAxisDirichlet != 1 || cfg.isAxisymmetric != 1 || cfg.discretization != "node" ||
+        msh.axis_flag_d == nullptr) return;
+    const bool rans = (cfg.LESorRANS == 2 && cfg.RANSmodel == 1);
+    zeroAxisAllResiduals_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.axis_flag_d,
+        var.c_d["res_ro"], var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"], var.c_d["res_roe"],
+        rans ? var.c_d["res_roK"] : nullptr,
+        rans ? var.c_d["res_roOmega"] : nullptr
+    );
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
 void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
     // node-centered 軸対称でのみ作用 (軸上ノードが CV 中心になるのは node モード)。

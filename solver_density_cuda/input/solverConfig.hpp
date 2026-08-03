@@ -246,6 +246,12 @@ public:
     // 非 node (cell) / explicit では no-op。0 で旧挙動 (弱形式半割面のみ)。
     int nodeWallDirichlet = 1;
 
+    // node-centered 軸対称: 軸上ノード CV を解かず radial 隣接ノードからの対称 Dirichlet に置換
+    // (∂q/∂r=0, u_r=0 の 1 次離散化)。軸半 CV が強膨張ノズルで真空まで過膨張し SST k シート経由で
+    // 陰解法を遅発性発散させる欠陥への対策 (plan boundary-node-nozzle-wall-outlet-stability §2.6,
+    // methods/axisymmetric/implementation.md)。node && isAxisymmetric 以外では no-op。既定 0 = 従来。
+    int nodeAxisDirichlet = 0;
+
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ 毎ステップ solve,
     // 2:LSQ 係数事前計算 = setup 1回 double 固有分解→擬似逆→float32 係数 gather。推奨は 2)。
     // node-centered の median-dual で GG 面勾配が非一様メッシュの線形場を再現できない (近壁で O(1) 誤差)

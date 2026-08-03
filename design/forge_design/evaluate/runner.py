@@ -56,17 +56,19 @@ def build_wall(p: Problem) -> tuple:
 def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
     """離散化別の solverConfig を生成する。
 
-    node は case/29 実証レシピに従う (plans/active/boundary-node-nozzle-wall-outlet-stability.md):
-    explicit RK3 + cfl 0.1 + convMethod 0 (1次) + bndFirstOrder/nodeWallDirichlet/
-    axisCentroidShift + katoLaunder。**収束場からの warm start (--warm-from) が前提**
-    (冷間 IC は発散)。壁第一セルは細かすぎ禁物 (wall_first_frac ≳ 5e-3)。
-    node の 2 次化・陰解法化はソルバ側の未解決課題 (同 plan)。
+    node は実証レシピに従う (plans/active/boundary-node-nozzle-wall-outlet-stability.md):
+    **2 次 (convMethod 1) + 陰解法 (timeIntegration 11, blockDPLUR, cfl_pseudo 4)** +
+    bndFirstOrder/nodeWallDirichlet/nodeAxisDirichlet/axisCentroidShift + katoLaunder。
+    **収束場からの warm start (--warm-from) が前提** (冷間 IC は発散)。壁第一セルは
+    細かすぎ禁物 (wall_first_frac ≳ 5e-3)。かつての「2 次化・陰解法化は未解決」は
+    ①2 次発散 = bndFirstOrder: 1 欠落、②陰解法の遅発性発散 = 軸行真空化×SST k シート
+    (nodeAxisDirichlet で根治) と判明 (同 plan §2.6, case/40 run_0009–0016)。
     """
     sst = p.evaluate.get("turbulence", "sst") == "sst"
     disc = p.mesh.get("discretization", "node")  # 既定 node — ユーザ方針 2026-08-03
     if disc == "node":
-        node_keys = ', bndFirstOrder: 1, axisCentroidShift: 1, nodeWallDirichlet: 1'
-        tint, cfl, conv, dplur, kato = 3, 0.1, 0, 0, ", katoLaunder: 1"
+        node_keys = ', bndFirstOrder: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1'
+        tint, cfl, conv, dplur, kato = 11, 4.0, 1, 1, ", katoLaunder: 1"
     else:
         node_keys = ""
         tint, cfl, conv, dplur, kato = 11, 4.0, 1, 1, ""
@@ -146,7 +148,7 @@ def prepare(problem_path, run_dir, nsteps=None, warm_from=None) -> dict:
         (run_dir / "solverConfig.yaml").write_text(
             (run_dir / "solverConfig.yaml").read_text().replace(
                 f'discretization: "{disc}"', 'discretization: "cell"').replace(
-                ", bndFirstOrder: 1, axisCentroidShift: 1, nodeWallDirichlet: 1", ""))
+                ", bndFirstOrder: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1", ""))
         subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
                        cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
         q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "nozzle_qc.h5"],

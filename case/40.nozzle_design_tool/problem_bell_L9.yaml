@@ -28,7 +28,7 @@ geometry:
 mesh:
   ni: 221
   nj: 65
-  wall_first_frac: 1.0e-3   # 第一セル y+ ~70 想定 (wallTreatmentSST=1 の log 層)
+  wall_first_frac: 5.0e-3   # node レシピ準拠 (1e-3 は node 発散: 壁第一セル過細)
   throat_refine: 3.0
 
 evaluate:

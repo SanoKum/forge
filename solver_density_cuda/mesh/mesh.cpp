@@ -895,6 +895,38 @@ void mesh::setMeshMap_d()
         gpuErrchk(cudaMalloc((void **)&(this->axis_flag_d), sizeof(geom_int)*this->nCells));
         gpuErrchk(cudaMemcpy(this->axis_flag_d, axf.data(),
                              sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
+
+        // 軸ノードの radial 代表点 (nodeAxisDirichlet 用): 内部双対面の相手ノードのうち
+        // 軸外かつ radial 方向余弦 (dy/|dx|) 最大のものを選ぶ (SU2 Normal_Neighbor と同型)。
+        // node モードでは plane.iCells がノード id。cell モードでは使用側が node 限定なので無害。
+        {
+            std::vector<geom_int> rep(this->nCells, (geom_int)-1);
+            std::vector<geom_float> bestCos(this->nCells, (geom_float)-2.0);
+            for (geom_int ip = 0; ip < this->nNormalPlanes; ++ip) {
+                const auto& pc = this->planes[ip].iCells;
+                if (pc.size() < 2) continue;
+                for (int s = 0; s < 2; ++s) {
+                    const geom_int A = pc[s], B = pc[1-s];
+                    if (A < 0 || A >= this->nCells || B < 0 || B >= this->nCells) continue;
+                    if (axf[A] != 1 || axf[B] == 1) continue;
+                    if ((size_t)A >= this->nodes.size() || (size_t)B >= this->nodes.size()) continue;
+                    const geom_float dx = this->nodes[B].coords[0] - this->nodes[A].coords[0];
+                    const geom_float dy = this->nodes[B].coords[1] - this->nodes[A].coords[1];
+                    const geom_float len = std::sqrt(dx*dx + dy*dy);
+                    if (len <= (geom_float)0.0) continue;
+                    const geom_float cosr = dy / len;
+                    if (cosr > bestCos[A]) { bestCos[A] = cosr; rep[A] = B; }
+                }
+            }
+            geom_int nAxis = 0, nRep = 0;
+            for (geom_int ic = 0; ic < this->nCells; ++ic) {
+                if (axf[ic] == 1) { ++nAxis; if (rep[ic] >= 0) ++nRep; }
+            }
+            std::cout << "[mesh] axis nodes=" << nAxis << " with radial rep=" << nRep << std::endl;
+            gpuErrchk(cudaMalloc((void **)&(this->axis_rep_d), sizeof(geom_int)*this->nCells));
+            gpuErrchk(cudaMemcpy(this->axis_rep_d, rep.data(),
+                                 sizeof(geom_int)*this->nCells, cudaMemcpyHostToDevice));
+        }
     }
 
     // 壁 CV フラグ: wall 種別 bcond の境界 CV (iCells) を 1 にする (node-centered 壁 Dirichlet 用)。

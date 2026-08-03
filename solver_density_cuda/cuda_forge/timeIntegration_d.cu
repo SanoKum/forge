@@ -858,13 +858,16 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             diag_block[2][2] += static_cast<ST>(g_axisDiagAlpha) * A_pl * local_sonic;
         }
 
-        // SU2 流の軸対称対称面 (MARKER_SYM) を Jacobian 内で課す: 軸上 CV で roUy 行 (index 2) を単位行に
-        // 置換し rhs[2]=0 とする → solve が一貫して dq_roUy=0 を返す (他方程式は dq_roUy=0 固定で解かれる)。
-        // solve の外で状態を手術する方式は block-DPLUR と非整合で Mach~1000 に発散したが、本方式は整合的。
+        // 軸上 CV の in-Jacobian decouple。nodeAxisDirichlet=1 (現在 axis_flag が渡される唯一の経路) では
+        // 軸ノード状態を対称 Dirichlet (enforceAxisMirror) でピンするため**全 5 行**を単位行化し
+        // dq=0 を返す (壁 Dirichlet の DeleteValsRowi と同型。軸 dq が近傍 sweep を汚すのも防ぐ)。
+        // 旧 roUy 1 行版は launch 側が常に nullptr を渡しており dead path だった。
         if (axis_flag != nullptr && axis_flag[ic] == 1) {
-            for (int jj = 0; jj < 5; ++jj) diag_block[2][jj] = static_cast<ST>(0.0);
-            diag_block[2][2] = static_cast<ST>(1.0);
-            rhs[2] = static_cast<ST>(0.0);
+            for (int row = 0; row < 5; ++row) {
+                for (int jj = 0; jj < 5; ++jj) diag_block[row][jj] = static_cast<ST>(0.0);
+                diag_block[row][row] = static_cast<ST>(1.0);
+                rhs[row] = static_cast<ST>(0.0);
+            }
         }
 
         // SU2 `DeleteValsRowi` 相当の壁 no-slip Dirichlet: 壁ノードで運動量3行 (index 1,2,3) を単位行に
@@ -1268,7 +1271,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"], \
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
                 cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
-                nullptr,  /* axis_flag: in-Jacobian roUy decouple は corner を直さず (corner は多方程式不良) 既定無効 */ \
+                ((cfg.discretization == "node" && cfg.isAxisymmetric == 1 && cfg.nodeAxisDirichlet == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag: nodeAxisDirichlet で全 5 行 decouple (状態は enforceAxisMirror がピン)。OFF は従来どおり nullptr */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag: 壁運動量3行 decouple */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.iso_wall_flag_d : nullptr),  /* iso_wall_flag: 等温壁 roe 行 decouple (T ピンと対) */ \
                 ((cfg.discretization == "node") ? 1 : 0)  /* isNode: 5e 境界半割面の粘性対角スキップ */
