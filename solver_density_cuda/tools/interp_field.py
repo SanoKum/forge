@@ -21,8 +21,16 @@ from res_h5_to_vtu import parse_conne
 
 
 def centroids(f):
+    # 入力 h5 は /CELLS/centCoords を持つのでそれを優先 (node/median-dual の
+    # 双対 CONNE は parse_conne で解析できないため必須。res_*.h5 は従来経路)
+    if "CELLS/centCoords" in f:
+        return np.array(f["CELLS/centCoords"]).reshape(-1, 3)[:, :2]
     coord = np.array(f["MESH/COORD"]).reshape(-1, 3)[:, :2]
     nc = f["VALUE/ro"].shape[0]
+    if nc == coord.shape[0]:
+        # node-centered res (median-dual): 値の位置はノード座標そのもの
+        # (MESH/CONNE は可視化用 primal トポロジで parse できない)
+        return coord
     conn, offs, _ = parse_conne(np.array(f["MESH/CONNE"]), nc)
     c = np.zeros((nc, 2)); s = 0
     for i, o in enumerate(offs):

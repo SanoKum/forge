@@ -92,6 +92,13 @@
 
 ## 9. 変更ログ
 
+- `2026-08-03` (深夜追記) — **node 再計算成立**: ユーザ指摘で case/29 の node ノズル実績を発見し、
+  実証レシピ (壁第一セル 5e-3・warm start 必須・explicit RK3 cfl0.1・1 次・katoLaunder) を
+  runner の node 既定として実装 (`--warm-from` 追加)。run_0006 で node 初の VERDICT PASS
+  (η=0.9809、cell と 0.2% 差)。`interp_field.py` を node 対応に改良 (CELLS/centCoords 優先・
+  node res はノード座標直用)。node の 2 次化・陰解法化は未解決でソルバ plan
+  ([boundary-node-nozzle-wall-outlet-stability](boundary-node-nozzle-wall-outlet-stability.md)) に
+  切り出し (ユーザ優先指示)。
 - `2026-08-03` — 起票 (親計画 Phase 0 の子 plan)。実装開始。
 - `2026-08-03` — Phase 0 実装・検証 (初日, Claude 自走):
   - **メッシュ経路の実装判断**: forge h5 直書きでなく **msh4.1 テキストを Python から直書き →

@@ -23,15 +23,20 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0002_bell_smoke_sstic` | IC に roK/roOmega (k=1, ω=18000) を追加、壁第一セル y+~70 (壁関数) | **NaN なし**。残差 1.1–1.7 桁低下後プラトー (`CONVERGENCE_VERDICT.txt`: NOT CONVERGED/stalled — cell モード atomicAdd ノイズ床水準)。**推力は 4000→12000 step で 0.002% ドリフト** (F=1961 N, η=0.9790, ṁ=1.299 kg/s, `metrics.json`)。`residual_history.png` あり | active (Phase 0 E2E 基準) |
 | `run_0003_bell_L6` | dv 応答確認: L/rt=7→6 (`problem_bell_L6.yaml`) | η=0.9708, F=1944.7 N (短縮 → 発散損失増で η 低下 ✓)。品質 PASS・NaN なし・プラトー同傾向 | active (dv 感度の記録) |
 | `run_0004_bell_L9` | dv 応答確認: L/rt=7→9 (`problem_bell_L9.yaml`) | η=0.9837, F=1970.5 N (延長 → η 単調増 ✓)。ṁ は 3 run で 0.03% 一定 (スロート同一の整合) | active (dv 感度の記録) |
-
-| `run_0005_bell_smoke_node` | node (median-dual) 既定化に伴う再計算 | **step 2 から全列 NaN で発散** (メッシュ品質は primal 検査で PASS)。詳細切り分けの結果、forge 側の node 2D 問題 2 層 (傾斜壁の運動量不安定 + 出口コーナー SST スカラー) と判明 → [調査 plan](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)。記録として保持 | 破棄予定 (発散の記録) |
+| `run_0005_bell_smoke_node` | node 再計算の初回 (冷間 IC + implicit + 細壁 1e-3) | step 2 から全列 NaN。後の切り分けで真因 = 壁第一セル過細 + レシピ不一致と確定 → [調査 plan](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) §2.5 | 破棄予定 (発散の記録) |
+| `run_0006_bell_node_warm` | **node 初収束**: 実証レシピ (壁 5e-3・warm start from run_0002・explicit RK3 cfl0.1・1次・katoLaunder) | **VERDICT: PASS / ALL PASS** (全列 3.0–4.6 桁低下)。η=0.9809, F=1964.8 N (cell run_0002: η=0.9790 と 0.2% 差) | active (node 基準) |
+| `run_0007_bell_node_2nd_imp` → `_2nd_expl` | 2 次化・陰解法化の試行 (run_0006 収束場から) | **いずれも step 4–10 で発散** — node×SST の陰解法と 2 次精度は未解決のソルバ課題 (case/29 の実績も 1 次 explicit のみ)。plan §2.5 参照 | 破棄予定 (発散の記録) |
+| `run_0008_bell_node_runner` | runner 実装後の E2E 再現 (`--warm-from`, 24000 step) | node レシピが runner 既定で一気通貫することの確認 | active |
 
 **dv 感度まとめ (η–L トレードオフの応答確認)**: L/rt = 6 / 7 / 9 → η_CF = 0.9708 / 0.9790 /
 0.9837。物理的に正しい単調応答で、パイプラインが最適化の評価器として機能することを確認
 (Phase 2 のパレート軸そのもの)。
 
-**node モードの状態**: node 既定の方針だが、上記 forge 側問題の修正まで**当面 cell で運用**
-(runner は `mesh.discretization` で両対応)。修正後に node で再検証する。
+**node モードの状態 (2026-08-03 更新)**: 実証レシピ (1 次・explicit cfl0.1・warm start・壁
+5e-3) を runner の node 既定に実装し **node で収束可能** (run_0006 ALL PASS)。ただし
+2 次精度・陰解法は未解決 ([plan](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)
+の残課題) のため、速度・精度が要る評価では cell を併用する。run_0001–0004 は壁 1e-3/2e-3
+世代のメッシュ (現 problem yaml は 5e-3) である点に注意。
 
 注記: 残差プラトーの深掘り (真の定常収束品質) は Phase 2 (Rao 照合) で扱う。η の妥当性
 (0.98 前後はベルノズルとして自然なオーダー) も Phase 2 の照合が正式判定。

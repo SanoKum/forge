@@ -54,13 +54,24 @@ def build_wall(p: Problem) -> tuple:
 
 
 def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
+    """離散化別の solverConfig を生成する。
+
+    node は case/29 実証レシピに従う (plans/active/boundary-node-nozzle-wall-outlet-stability.md):
+    explicit RK3 + cfl 0.1 + convMethod 0 (1次) + bndFirstOrder/nodeWallDirichlet/
+    axisCentroidShift + katoLaunder。**収束場からの warm start (--warm-from) が前提**
+    (冷間 IC は発散)。壁第一セルは細かすぎ禁物 (wall_first_frac ≳ 5e-3)。
+    node の 2 次化・陰解法化はソルバ側の未解決課題 (同 plan)。
+    """
     sst = p.evaluate.get("turbulence", "sst") == "sst"
-    turb = ('turbulence: {model: "sst", scalarDiffusion: 1, dilatationCorrection: 2}'
+    disc = p.mesh.get("discretization", "node")  # 既定 node — ユーザ方針 2026-08-03
+    if disc == "node":
+        node_keys = ', bndFirstOrder: 1, axisCentroidShift: 1, nodeWallDirichlet: 1'
+        tint, cfl, conv, dplur, kato = 3, 0.1, 0, 0, ", katoLaunder: 1"
+    else:
+        node_keys = ""
+        tint, cfl, conv, dplur, kato = 11, 4.0, 1, 1, ""
+    turb = (f'turbulence: {{model: "sst", scalarDiffusion: 1, dilatationCorrection: 2{kato}}}'
             if sst else 'turbulence: {model: "none"}')
-    # 既定は node (median-dual) — ユーザ方針 2026-08-03。cell は明示指定時のみ
-    disc = p.mesh.get("discretization", "node")
-    node_keys = (', axisCentroidShift: 1, nodeWallViscGradFlux: 1, nodeWallDirichlet: 1'
-                 if disc == "node" else "")
     return f"""mesh: {{meshFormat: "hdf5", discretization: "{disc}"{node_keys}, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
 gpu: 1
 solver: "SLAU"
@@ -70,13 +81,13 @@ time:
   unsteady: 0
   dualTime: 0
   last: {{control: 0, nStepOuter: {nsteps}}}
-  deltaT: {{control: 1, dt: 1e-8, cfl: 4.0, cfl_pseudo: 4.0,
-           dt_min: 1e-9, dt_max: 0.001, blockDPLUR: 1, lowMachPrecond: 0}}
+  deltaT: {{control: 1, dt: 1e-8, cfl: {cfl}, cfl_pseudo: {cfl},
+           dt_min: 1e-9, dt_max: 0.001, blockDPLUR: {dplur}, lowMachPrecond: 0, detectNaN: 1}}
   outStepStart: 0
   outStepInterval: {out_interval}
-  timeIntegration: 11
-  nStepInner: 20
-space: {{convMethod: 1, limiter: 2}}
+  timeIntegration: {tint}
+  nStepInner: 5
+space: {{convMethod: {conv}, limiter: 2}}
 {turb}
 initial: "uniform_p101325_u10"
 """
@@ -96,8 +107,13 @@ axis:   {{physID: 4, kind: axis,             outputHDFflg: 0, ints: , floats: }}
 PROBE_STUB = "outStepInterval: 100\noutStepStart: 0\npoints:\nsurfaces:\n"
 
 
-def prepare(problem_path, run_dir, nsteps=None) -> dict:
-    """メッシュ・config・IC まで準備する (forge は起動しない)。"""
+def prepare(problem_path, run_dir, nsteps=None, warm_from=None) -> dict:
+    """メッシュ・config・IC まで準備する (forge は起動しない)。
+
+    warm_from: 過去の収束 res_*.h5 (cell/node 不問)。指定時は準 1D IC の上から
+    `interp_field.py` (最近傍 cross-mesh restart) で場を移植する。**node は必須**
+    (冷間 IC は発散 — 実証レシピ参照)。
+    """
     p = load_problem(problem_path)
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -130,7 +146,7 @@ def prepare(problem_path, run_dir, nsteps=None) -> dict:
         (run_dir / "solverConfig.yaml").write_text(
             (run_dir / "solverConfig.yaml").read_text().replace(
                 f'discretization: "{disc}"', 'discretization: "cell"').replace(
-                ", axisCentroidShift: 1, nodeWallViscGradFlux: 1, nodeWallDirichlet: 1", ""))
+                ", bndFirstOrder: 1, axisCentroidShift: 1, nodeWallDirichlet: 1", ""))
         subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
                        cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
         q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "nozzle_qc.h5"],
@@ -155,6 +171,13 @@ def prepare(problem_path, run_dir, nsteps=None) -> dict:
 
     exit1d = paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                                  float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
+    if warm_from is not None:
+        subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
+                        str(warm_from), str(run_dir / "nozzle.h5")],
+                       env=_ENV, check=True, capture_output=True, text=True)
+    elif disc == "node":
+        raise ValueError("node は warm start 必須 (--warm-from に収束 res_*.h5 を指定。"
+                         "冷間 IC は発散 — plans/active/boundary-node-nozzle-wall-outlet-stability.md)")
     info = {"problem": str(problem_path), "run_dir": str(run_dir), "nsteps": n,
             "scale_m": scale, "exit_1d": exit1d,
             "mesh": {"ni": mp.ni, "nj": mp.nj, "cells": int(quads.shape[0])}}
@@ -197,8 +220,10 @@ def main(argv=None):
     ap.add_argument("run_dir")
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--prepare-only", action="store_true")
+    ap.add_argument("--warm-from", default=None,
+                    help="収束 res_*.h5 から cross-mesh warm start (node は必須)")
     a = ap.parse_args(argv)
-    info = prepare(a.problem, a.run_dir, a.steps)
+    info = prepare(a.problem, a.run_dir, a.steps, warm_from=a.warm_from)
     print(json.dumps(info, indent=1))
     if a.prepare_only:
         return 0

@@ -60,23 +60,62 @@ turbulence API のため現行バイナリではそのまま再実行できな�
    入口側は [turbulence-node-inlet-dirichlet-conserved] で「Dirichlet 保存量整合+残差除外」
    が入っているが、**出口側に同等の処置が無い**。
 
+## 2.5 追補 (2026-08-03 後半): 実証レシピ発見と原因の確定 — §2 の初期仮説を大幅更新
+
+ユーザ指摘「以前ノズルでも node をやっていた」に基づき **case/29.bell_vs_conical の node
+キャンペーン (run_0019〜0041: 層流壁レシピ・CFL 掃引・implicit 掃引・SST 実走)** を発見。
+§2 の「ノズル系は node 初適用」は**誤り**だった。以後の対照実験で真因を確定:
+
+- **リグレッション対照 2**: case/29 `run_0038_node_sst_wc` (node SST ノズル) を現行バイナリで
+  verbatim 再実行 (turbulence ブロックのみ新 API 翻訳) → 3000 step 健全 (rms_ro 7.9e-5→1.45e-6)。
+  **リグレッションではない**。
+- **真因 = 壁第一セルの細かさ**: 同一レシピで `wall_first_frac` 1e-3 (第一セル 10–30μm,
+  y+~15–50) は全設定で発散、**5e-3 (50–150μm) で完全収束** —
+  `case/40/run_0006_bell_node_warm`: **VERDICT PASS / ALL PASS** (全列 3.0–4.6 桁低下,
+  η_CF=0.9809 vs cell 0.9790)。case/29 の壁寄せ (Bump0.4) メッシュが粗めだったことと整合。
+- **実証レシピ (node ノズル SST)**: explicit RK3 + cfl 0.1 + convMethod 0 (1 次) +
+  `bndFirstOrder/nodeWallDirichlet/axisCentroidShift` + katoLaunder + **収束場からの
+  warm start 必須** (冷間 IC は粗壁でも発散)。forge_design runner に既定として実装済み。
+- なお §2 の「出口コーナー/傾斜壁」は症状の**発現場所**であり、独立バグとしての扱いは
+  下記課題の解決後に再評価する。
+
+### 残る解決すべきソルバ課題 (本 plan の実体・優先順)
+
+1. **node × SST × 陰解法 (blockDPLUR)**: 収束済み node 場からの引き継ぎでも step 4 で発散
+   (`run_0007_bell_node_2nd_imp` 相当)。case/29 でも implicit 成功は層流のみ (run_0035 cfl2–5
+   で rms_ro 2e-9)。→ 最適化ループの評価速度に必須 (explicit cfl0.1 は ~10 倍遅い)。
+2. **node × 2 次精度 (convMethod 1)**: 収束場からでも step 7–10 で発散 (cfl 0.3/0.15 とも)。
+   case/29 の node SST も全て 1 次だった。→ 生産精度に必須。
+3. **壁第一セル細分の頑健性**: y+~1 (low-Re) 相当の壁間隔が node で回らない。→ q_peak
+   壁解像 (親計画 §4.6 ①) に将来必要。
+
 ## 3. 修正方針 (次セッションの作業項目)
 
-1. 最小再現の恒久化: forge_design で 30×15 程度の小メッシュ問題 YAML を作り、数十秒で
-   回る再現ケースを `case/40` に置く (再現 run は本 plan 起票時点では scratchpad のみ)。
-2. 問題 1: 壁半割面の運動量流束を傾斜壁で点検 (境界一次化の適用範囲、mirror-ghost 退化、
-   mesh.cpp/viscousFlux の境界パス)。step 1 の ΔroUx 分布 (壁 slip ノードに集中) を
-   指紋として単体切り分け。
-3. 問題 2: 出口 (outlet_statPress / outflow) の node スカラー処置を入口修正と同型に
-   (保存量整合 or 残差除外 or コーナーノードの優先順位規則)。
-4. 検証: 本ノズルメッシュ node SST 12000 step 完走 + cell (run_0002) と η_CF 一致 ~1%。
+1. 再現系は確立済み: `case/40` の問題 YAML + runner で 3–5 分/run。切り分け操作は
+   `wall_first_frac` (1e-3 ⟷ 5e-3)・`timeIntegration` (3 ⟷ 11)・`convMethod` (0 ⟷ 1) の
+   3 ノブで decisive に再現する。
+2. 課題 1 (SST 陰解法): blockDPLUR の k/ω 行 (壁 Dirichlet/壁関数ノード・出口ノード) の
+   Jacobian 整合を点検。scalar-DPLUR 側 ([time_integration-scalar-dplur] 系) と壁代表点修正
+   ([turbulence-node-sst-wallfunction]) の併用パスが濃厚。
+3. 課題 2 (2 次精度): 壁近傍ノードの勾配再構成 (Green-Gauss / [discretization-lsq-gradient])
+   と `bndFirstOrder` の適用範囲を点検。発散種は常に壁隣接第一内点。
+4. 課題 3 (細壁間隔): 課題 1–2 解決後に wall_first_frac を段階細分して再評価。
+5. 検証: 本ノズルメッシュで node SST **2 次 + 陰解法** 12000 step 完走 + cell と η_CF 一致 ~1%。
 
 ## 4. 影響・当面の運用
 
-- **設計ツール Phase 0/1 は当面 cell モードで進める** (node 既定の方針 [user-prefers-node-base]
-  は維持し、本修正後に node へ切替)。tool 側は `mesh.discretization` で両対応済み。
-- 発見元 run: `case/40.nozzle_design_tool/run_0005_bell_smoke_node` (全 step NaN、記録として保持)。
+- **node は実証レシピ (1 次・explicit cfl0.1・warm start・粗め壁) で運用可能** — forge_design
+  runner の node 既定に実装済み。2 次+陰解法が要る生産評価 (Phase 2 最適化) は課題 1–2 の
+  解決までは cell を併用。
+- 関連 run: `case/40.nozzle_design_tool/` README の run 一覧 (run_0005 発散記録 /
+  run_0006 node 収束 PASS / run_0007 2次・陰解法の発散記録)。
+- `interp_field.py` を node 対応に改良 (入力 h5 は CELLS/centCoords 優先、node res は
+  ノード座標直用)。
 
 ## 5. 変更ログ
 
-- `2026-08-03` — 起票。調査マトリクス完了 (上表)。修正は未着手。
+- `2026-08-03` — 起票。調査マトリクス完了 (§2)。
+- `2026-08-03` — ユーザ指摘で case/29 node ノズルキャンペーンを発見し §2.5 で原因確定:
+  リグレッションでも未踏領域でもなく、**壁第一セル過細 + レシピ不一致 (warm start /
+  explicit / 1 次)**。実証レシピで node SST ノズル初の VERDICT PASS (run_0006)。残課題を
+  「SST 陰解法 / 2 次精度 / 細壁間隔」の 3 点に再定義。
