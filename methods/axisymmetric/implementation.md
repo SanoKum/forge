@@ -287,7 +287,16 @@ EOS 床 P=1 Pa ピン)。laminar でも治癒せず (基底スキームの欠陥
 
 対策は**軸ノードを解かず、対称条件 ∂q/∂r=0・u_r=0 の 1 次離散化として radial 隣接
 ノードからの Dirichlet に置換する** (`mesh.nodeAxisDirichlet: 1`、既定 0 = 従来)。
-SU2 の対称面扱い・forge の `nodeWallDirichlet`/入口スカラーピンと同じ確立パターン。
+実装様式は forge の `nodeWallDirichlet`/入口スカラーピンと同じパターン。
+
+**SU2 との関係 (正確に)**: SU2 も同じ頂点中心 median-dual だが、**軸ノードは通常 DOF として
+解く** (`BC_Sym_Plane` = 鏡映 flux + 法線運動量残差射影のみで、Dirichlet 置換はしない)。
+SU2 の軸が壊れないのは軸対称の定式が **planar 幾何 + 1/y ソース項方式**
+(`CSourceAxisymmetric_Flow`: `Coord_i[1]>EPS` で有効・軸上はソース 0) であり、軸 CV の
+体積・面積が普通の planar 値を保つため。forge は r 重み幾何 (本文書「幾何量の r 重み付け」)
+のため軸半 CV の体積・面積が r̄ ∝ Δr に比例して消え、軸で離散平衡が悪条件化する。
+`nodeAxisDirichlet` はこの **forge の幾何方式に固有の脆弱性への対症であり SU2 より強い措置**。
+軸 CV を解けるようにする根治 (r 重み幾何の軸極限の精査) は将来課題。
 
 - **代表点**: 軸ノード A ごとに内部双対面の相手 I のうち radial cos 最大の非軸ノードを
   変換時でなく solver 起動時に選ぶ (`mesh.cpp` → `axis_rep_d`)。

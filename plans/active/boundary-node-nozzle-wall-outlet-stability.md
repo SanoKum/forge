@@ -120,9 +120,42 @@ case/40 で再現 run (run_0009〜0014) + 感度実験 (scratchpad E1〜E3) を�
      **k ~ 1.3e4 (周囲の ~1000 倍) の生産シート**を形成 (μt/μ ~320, Pk>Dk)。explicit では有界の
      まま定在するが、陰解法の大 pseudo-CFL でこの平衡が弱不安定化し指数成長 → 発散。
 - **修正方針 (本セッションで実装)**: **node 軸対称の軸ノードを解かず、radial 隣接ノードからの
-  対称 Dirichlet に置換する** (`nodeAxisDirichlet`)。軸対称条件 ∂q/∂r=0, u_r=0 の 1 次離散化で
-  あり、SU2 の対称面扱い・forge 既存の `nodeWallDirichlet`/入口スカラーピンと同じ確立パターン。
-  軸 CV の体積は O(Δr²) で保存への影響は無視できる。実装は §3.1。
+  対称 Dirichlet に置換する** (`nodeAxisDirichlet`)。軸対称条件 ∂q/∂r=0, u_r=0 の 1 次離散化。
+  代表点選択は forge SST 壁関数の代表点 (SU2 `FindNormal_Neighbor` 移植) と同じ機構、実装様式は
+  forge 既存の `nodeWallDirichlet`/入口スカラーピンと同パターン。軸 CV の体積は O(Δr²) で保存への
+  影響は無視できる。実装は §3.1。
+- **SU2 との関係 (2026-08-04 訂正 — 当初「SU2 と同型」と書いたのは不正確)**: SU2 も同じ
+  頂点中心 median-dual で**軸ノードを通常 DOF として解く** (`BC_Sym_Plane` = 鏡映 flux +
+  法線運動量残差の射影のみ。Dirichlet 置換はしない)。SU2 で軸が壊れないのは、SU2 の軸対称が
+  **planar 幾何 + 1/y ソース項方式** ([flow_sources.cpp `CSourceAxisymmetric_Flow`]:
+  `Coord_i[1]>EPS` で `yinv·Volume·(…)`、軸上はソース 0) であり、軸 CV の体積・面積が普通の
+  planar 値を保つため。forge は **r 重み幾何 (B 流儀)** で軸半 CV の体積・面積が r̄ に比例して
+  消えるため軸で離散平衡が悪条件化する — `nodeAxisDirichlet` はこの forge 固有の脆弱性への
+  **SU2 より強い対症**である。根治 (軸 CV を解けるようにする) は r 重み幾何の軸極限の精査
+  (将来課題) に持ち越す。
+
+## 2.7 追補 (2026-08-04): `bndFirstOrder` をレシピから撤去 — 課題 2 の種も軸だった
+
+ユーザ指摘「境界隣接 CV の一律 1 次化は精度上危険 (壁境界層第一 CV を 1 次にすると η_CF の
+壁摩擦積分を損なう)。やめてほしい」を受け再調査した結果:
+
+- **課題 2 の発散種の再特定**: §2.6 で「壁隣接第一内点」とされていた 2 次発散
+  (`bndFirstOrder` なし, iso_2nd_nobfo) の `res_nan` を精査すると、実際の NaN 種は
+  **軸帯 (x≈0.048–0.051, 軸ノード+第一内点行) の roOmega** であり壁ではなかった。
+  つまり**課題 2 も課題 1 と同根 = 軸行真空化**であり、`bndFirstOrder` は軸行の再構成を
+  1 次化することで病変をマスキングしていただけ。
+- **切り分け**: `gradLSQ: 2` (境界 bvar 閉包 LSQ) でも軸修正なしでは step 9 発散 (勾配法は
+  無関係)。`nodeAxisDirichlet: 1` があれば **`bndFirstOrder` なしの全域 2 次で安定**
+  (explicit 300 step / implicit cfl4 12000 step とも NaN なし)。
+- **全域 2 次の挙動**: L7 は入口〜収縮部の微小リミットサイクル (ro 相対 ~1e-5 の場の揺れ) で
+  rms_ro ~1e-7 プラトー (cell 全域 2 次 run_0002 のプラトーと同格)、計量は quasisteady
+  **ALL STEADY**。L6 は **PASS (converged)**、L9 は rms_ro 9.2e-9 (実質床)。
+- **処置**: runner の node 既定から `bndFirstOrder` を撤去 (全域 2 次)。ソルバ側フラグは
+  診断用に残置 (既定 0)。η_CF (全域 2 次): L6/L7/L9 = **0.9822 / 0.9896 / 0.9942** (単調、
+  cell 比 ~+1.1%)。検証 run: `run_0021_node_2nd_imp_nobfo` (主検証) /
+  `run_0022_node_runner_nobfo` (E2E 基準) / `run_0023_bell_L6_nobfo` / `run_0024_bell_L9_nobfo`。
+- 残課題 (追加): 入口/収縮部の 2 次リミットサイクルの解消 (limiter 挙動の精査) — 優先度低
+  (計量 STEADY で実用上支障なし)。
 
 ## 3. 修正方針 (次セッションの作業項目)
 
@@ -190,3 +223,10 @@ case/40 で再現 run (run_0009〜0014) + 感度実験 (scratchpad E1〜E3) を�
   維持。非退行: OFF 経路は atomicAdd ノイズ床内で不変、case/26 平板 node 500 step は表示桁一致。
   **残課題 = 課題 3 (細壁間隔 y+~1) と、§2 の出口コーナー・傾斜壁症状の再評価** (軸修正後に
   再現するかの確認) — 本 plan は active 継続。
+- `2026-08-04` — ユーザ指摘 2 点を反映 (§2.7)。① `bndFirstOrder` の一律境界 1 次化は精度上
+  不適切としてレシピから撤去: 課題 2 の発散種を再特定したところ**壁でなく軸帯**であり、
+  `nodeAxisDirichlet` があれば全域 2 次が安定 (run_0021/0022 = 12000 step NaN なし・ALL STEADY,
+  η=0.9896; L6 は PASS, L スイープ 0.9822/0.9896/0.9942 単調)。`gradLSQ: 2` 単独では防げない
+  ことも確認 (勾配法は無関係)。② §2.6 の「nodeAxisDirichlet は SU2 と同型」を訂正: SU2 は
+  同じ頂点中心だが planar+ソース方式で軸ノードを通常 DOF として解く。forge の r 重み幾何が
+  軸半 CV を悪条件化しており、本フラグは SU2 より強い forge 固有の対症 (根治は将来課題)。

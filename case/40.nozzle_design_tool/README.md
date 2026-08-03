@@ -38,25 +38,33 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0017_cell_kato` | cell 対照: run_0002 + katoLaunder (warm from run_0002) | η=0.9790 = run_0002 と同一 → **node−cell の η 差 +1.2% は katoLaunder では説明されない** (2次化の node/cell 離散差) | active (η 帰属の対照) |
 | `run_0018_bell_L6_node` | L スイープ node 取直し: L/rt=6 (壁 5e-3 修正版 yaml, warm from run_0016) | 完走 (4.0–6.1 桁低下, roOmega は床で振動 2.9e-3↔5.6e-3)。**η=0.9835** | active (dv 感度 node) |
 | `run_0019_bell_L9_node` | 同 L/rt=9。cross-geometry warm は cfl4 直投入で発散 → **段階起動** (soft explicit 3000 step → 陰解法 12000 step) | **VERDICT: PASS**。**η=0.9957** | active (dv 感度 node) |
-| `run_0020_node_runner_cfl4` | 新 runner 既定 (2次+陰解法 **cfl_pseudo 4**) の E2E 基準 | **VERDICT: PASS / ALL PASS** (3.2–4.6 桁)。η=0.9907 (cfl2 の run_0016 と一致) | active (**runner 既定基準**) |
+| `run_0020_node_runner_cfl4` | 2次+陰解法 **cfl_pseudo 4** + bndFirstOrder の E2E (旧既定) | **VERDICT: PASS / ALL PASS** (3.2–4.6 桁)。η=0.9907 (cfl2 の run_0016 と一致) | active (bndFirstOrder あり世代の記録) |
+| `run_0021_node_2nd_imp_nobfo` | **bndFirstOrder 撤去の主検証**: 全域 2次+陰解法 cfl4+軸 Dirichlet | 12000 step NaN なし。rms_ro ~1e-7 プラトー (入口/収縮部の微小リミットサイクル, ro 相対 ~1e-5)・SST 4.1–4.2 桁。quasisteady **ALL STEADY**。η=0.9896 | active (全域 2 次の主検証) |
+| `run_0022_node_runner_nobfo` | **現 runner 既定** (全域 2次+陰解法 cfl4, bndFirstOrder なし) の E2E 基準 | run_0021 と同等 (η=0.9896, ALL STEADY, プラトー同性状) | active (**runner 既定基準**) |
+| `run_0023_bell_L6_nobfo` | L/rt=6 を現既定で取り直し (warm from run_0021) | **VERDICT: PASS (converged)**。η=0.9822 | active (dv 感度 node 現行) |
+| `run_0024_bell_L9_nobfo` | L/rt=9 を現既定で取り直し (段階起動: soft explicit 3000→陰解法 12000) | rms_ro 9.2e-9 (実質床, flat 判定)・ALL STEADY。η=0.9942 | active (dv 感度 node 現行) |
 
 **dv 感度まとめ (η–L トレードオフの応答確認)**:
 L/rt = 6 / 7 / 9 → η_CF は cell (2026-08-03 前半, 壁 1e-3 メッシュ) 0.9708 / 0.9790 / 0.9837、
-**node 2次+陰解法 (run_0018 / 0016 / 0019, 壁 5e-3)** 0.9835 / 0.9907 / 0.9957。いずれも物理的に
-正しい単調応答で、node−cell はほぼ一定の +1.2〜1.3% オフセット (トレンド保存)。オフセットの
+**node 全域 2次+陰解法 (現既定, run_0023 / 0021 / 0024, 壁 5e-3)** 0.9822 / 0.9896 / 0.9942
+(bndFirstOrder あり世代 run_0018/0016/0019 は 0.9835 / 0.9907 / 0.9957)。いずれも物理的に
+正しい単調応答で、node−cell はほぼ一定の +1.1〜1.2% オフセット (トレンド保存)。オフセットの
 帰属: katoLaunder ではない (run_0017)・軸修正でもない (修正前 run_0012 も 0.991) → node 側
 2 次化の離散差。真値の判定は Phase 2 (Rao 照合・格子収束) で行う。
 
-**node モードの状態 (2026-08-03 深夜 更新)**: 残っていた 2 課題は解決した
-([plan §2.6](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md))。
-① 2 次発散 = `bndFirstOrder: 1` 欠落 (現 runner 既定に含む)。② 陰解法の遅発性発散 =
-**node 軸対称の軸行真空化** (ベル部で軸 CV が radial 圧力平衡からデカップルし EOS 床まで
-過膨張 → 偽せん断 → SST k シート → 大 pseudo-CFL で弱不安定化) — ソルバ新機能
+**node モードの状態 (2026-08-04 更新)**: 残っていた 2 課題は解決した
+([plan §2.6–2.7](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md))。
+2 次発散・陰解法の遅発性発散は**いずれも node 軸対称の軸行真空化が種** (ベル部で軸 CV が
+radial 圧力平衡からデカップルし EOS 床まで過膨張 → 偽せん断 → SST k シート) — ソルバ新機能
 **`nodeAxisDirichlet: 1`** (軸ノードを radial 隣接からの対称 Dirichlet に置換) で根治。
-**runner の node 既定は 2 次+陰解法 (blockDPLUR, cfl_pseudo 4) + 軸 Dirichlet** になり、
-1 評価 12000 step ≈ 20 秒 (旧 explicit レシピ比 ~20 倍)。warm start は引き続き必須で、
+当初レシピに入れていた `bndFirstOrder: 1` (境界隣接 1 次化) は軸病変のマスキングであり、
+壁境界層の精度を損なうため**撤去** (ユーザ指示 2026-08-04)。**現 runner 既定 =
+全域 2 次 (convMethod 1) + 陰解法 (blockDPLUR, cfl_pseudo 4) + nodeAxisDirichlet**。
+1 評価 12000 step ≈ 20 秒 (旧 explicit レシピ比 ~20 倍)。残差は形状により入口/収縮部の
+微小リミットサイクルで ~1e-7 プラトーになるため (cell 全域 2 次と同格)、**計量は
+`check_quasisteady.py` STEADY を確認して使う**。warm start は引き続き必須で、
 **同メッシュ node 場からが最良**。異形状/cell 場からの warm は cfl4 直投入で初手発散する
-ことがあり、その場合は段階起動 (soft explicit 3000 step → 陰解法、run_0019 の手順)。
+ことがあり、その場合は段階起動 (soft explicit 3000 step → 陰解法、run_0019/0024 の手順)。
 run_0001–0004 は壁 1e-3/2e-3 世代のメッシュ (現 problem yaml は全て 5e-3 に統一済み)。
 
 注記: 残差プラトーの深掘り (真の定常収束品質) は Phase 2 (Rao 照合) で扱う。η の妥当性
