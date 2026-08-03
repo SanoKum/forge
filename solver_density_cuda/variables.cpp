@@ -356,7 +356,7 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         A_planar_h[ic] = 0.0;
     }
 
-    if (cfg.isAxisymmetric == 1) {
+    if (cfg.isAxisymmetric == 1 && cfg.axisymMethod == 0) {
         // B 流儀: 幾何量に r 重み付け、半径方向の圧力ソース用に planar 面積を保存。
         // 軸 (r=0) 上の face で S を厳密に 0 にすると、下流の flux/BC カーネルで
         // n = S/|S| = 0/0 = NaN になるため、極小の r フロアを入れて n の方向を
@@ -373,6 +373,12 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
             const geom_float r_cell = (ccy[ic] > r_floor) ? ccy[ic] : r_floor;
             A_planar_h[ic] = volume[ic];
             volume[ic]     = volume[ic] * r_cell;
+        }
+    } else if (cfg.isAxisymmetric == 1 && cfg.axisymMethod == 1) {
+        // SU2 流: 幾何は planar のまま (r 重みなし)。1/y はソース項側 (axisymmetricSourceSU2) で扱う。
+        // A_planar は「planar 体積」の意味で保持 (勾配計算の grad_volume がこれを参照するため)。
+        for (geom_int ic=0; ic<msh.nCells_all; ic++) {
+            A_planar_h[ic] = volume[ic];
         }
     }
 

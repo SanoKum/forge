@@ -9,6 +9,9 @@ constexpr flow_float kAlpha1    = static_cast<flow_float>(5.0 / 9.0);
 constexpr flow_float kAlpha2    = static_cast<flow_float>(0.44);
 constexpr flow_float kBeta1     = static_cast<flow_float>(0.075);
 constexpr flow_float kBeta2     = static_cast<flow_float>(0.0828);
+constexpr flow_float kSigmaK1   = static_cast<flow_float>(0.85);
+constexpr flow_float kSigmaK2   = static_cast<flow_float>(1.0);
+constexpr flow_float kSigmaW1   = static_cast<flow_float>(0.5);
 constexpr flow_float kSigmaW2   = static_cast<flow_float>(0.856);
 constexpr flow_float kA1        = static_cast<flow_float>(0.31);
 constexpr flow_float kSmall     = static_cast<flow_float>(1.0e-12);
@@ -32,6 +35,9 @@ __global__ void rans_sst_source_d(
     flow_float* dOmegadx, flow_float* dOmegady, flow_float* dOmegadz,
     int isAxisymmetric,
     flow_float* axisym_uy_over_r,
+    // axisymMethod==1 (SU2 流): k/ω の 1/y 移流拡散ソース (ResidualAxisymmetricConvectionDiffusion)
+    // に使う。method 0 では未使用。axis_flag==1 (軸ノード, node のみ) はソース 0。
+    int axisymMethod, flow_float* Uy, flow_float* ccy, geom_int* axis_flag_axis,
     int dilatationCorrection,
     int katoLaunder,
     int wallTreatment,
@@ -183,14 +189,34 @@ __global__ void rans_sst_source_d(
     atomicAdd(&res_roK[ic],     (Pk - Dk) * v);
     atomicAdd(&res_roOmega[ic], (Pw - Dw + CDw) * v);
 
+    // axisymMethod==1 (SU2 流): k/ω の 1/y 移流拡散ソース (SU2 ResidualAxisymmetricConvectionDiffusion
+    // の符号反転移植)。S_φ = -(1/y)·(ρv·φ − (μ + σ_φ μ_t)·∂φ/∂y)。軸ノード (axis_flag==1) と y≤eps は 0。
+    flow_float axisym_jac_diag = static_cast<flow_float>(0.0);
+    if (isAxisymmetric == 1 && axisymMethod == 1) {
+        const bool onAxis = (axis_flag_axis != nullptr && axis_flag_axis[ic] == 1);
+        const flow_float yc = ccy[ic];
+        if (!onAxis && yc > static_cast<flow_float>(1.0e-12)) {
+            const flow_float yinv = static_cast<flow_float>(1.0) / yc;
+            const flow_float sigK = F1 * kSigmaK1 + (static_cast<flow_float>(1.0) - F1) * kSigmaK2;
+            const flow_float sigW = F1 * kSigmaW1 + (static_cast<flow_float>(1.0) - F1) * kSigmaW2;
+            const flow_float rhov = rho * Uy[ic];
+            const flow_float sk = -yinv * (rhov * k_c - (mu_lam + sigK * mu_t) * dKdy[ic]);
+            const flow_float sw = -yinv * (rhov * w_c - (mu_lam + sigW * mu_t) * dOmegady[ic]);
+            atomicAdd(&res_roK[ic],     sk * v);
+            atomicAdd(&res_roOmega[ic], sw * v);
+            // point-implicit 対角: -∂S/∂(ρφ) = +v_r/y (SU2 Jacobian と同じ)。対角正値性を守るため非負側のみ。
+            axisym_jac_diag = max(yinv * Uy[ic], static_cast<flow_float>(0.0));
+        }
+    }
+
     // SST 陰解法用の消散ヤコビアン対角（point-implicit で D に加える正の量）。
     //   Dk = β* ρ k ω = β* (ρk) ω  →  ∂Dk/∂(ρk) = β* ω
     //   Dω = β ρ ω²  = β (ρω)²/ρ   →  ∂Dω/∂(ρω) = 2 β ω
     // 生産項は limiter 付きで bounded のため lagged（陰化しない）。生産振幅を正の対角に足す
     // under-relaxation も試したが、安定 cfl_pseudo を一切上げず（律速は k/ω 輸送項の陽的扱い）
     // 不採用。輸送項の point-implicit 化は scalarTransport_d.cu（transport_diag）を参照。
-    src_jac_k[ic]     = jac_k;  // DESmode==0: β* ω (従来式と一致), DESmode>0: 1.5 √k / l_des
-    src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c;
+    src_jac_k[ic]     = jac_k + axisym_jac_diag;  // DESmode==0: β* ω (従来式と一致), DESmode>0: 1.5 √k / l_des
+    src_jac_omega[ic] = static_cast<flow_float>(2.0) * beta * w_c + axisym_jac_diag;
     // ω 交差拡散 Jacobian (opt-in): CD_ω>0 のときのみ対角を強める (負側は対角を弱めるため除外, SU2 同様)。
     if (crossDiffJac != 0 && CDw > static_cast<flow_float>(0.0)) {
         src_jac_omega[ic] += CDw / max(rho * w_c, static_cast<flow_float>(1.0e-30));
@@ -253,6 +279,10 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["dOmegadx"], var.c_d["dOmegady"], var.c_d["dOmegadz"],
         cfg.isAxisymmetric,
         var.c_d["axisym_uy_over_r"],
+        cfg.axisymMethod,
+        var.c_d["Uy"],
+        var.c_d["ccy"],
+        (cfg.discretization == "node") ? msh.axis_flag_d : nullptr,
         cfg.dilatationCorrection,
         cfg.katoLaunder,
         cfg.wallTreatmentSST,

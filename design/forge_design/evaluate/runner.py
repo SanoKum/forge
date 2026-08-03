@@ -179,6 +179,8 @@ def prepare(problem_path, run_dir, nsteps=None, warm_from=None) -> dict:
         subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
                         str(warm_from), str(run_dir / "nozzle.h5")],
                        env=_ENV, check=True, capture_output=True, text=True)
+        if disc == "node":
+            _smooth_wall_entropy(run_dir / "nozzle.h5", p.gamma, p.cp)
     elif disc == "node":
         raise ValueError("node は warm start 必須 (--warm-from に収束 res_*.h5 を指定。"
                          "冷間 IC は発散 — plans/active/boundary-node-nozzle-wall-outlet-stability.md)")
@@ -187,6 +189,46 @@ def prepare(problem_path, run_dir, nsteps=None, warm_from=None) -> dict:
             "mesh": {"ni": mp.ni, "nj": mp.nj, "cells": int(quads.shape[0])}}
     (run_dir / "prepare_info.json").write_text(json.dumps(info, indent=1))
     return info
+
+
+def _smooth_wall_entropy(h5path, gamma: float, cp: float, npass: int = 10) -> None:
+    """cell→node 最近傍 interp が壁ノード列に刻む等圧エントロピー市松 (T/ρ 逆相ジグザグ) を除去する。
+
+    壁ノードは u=0 で移流平滑化が働かず、P は音響で均されるが T/ρ の市松は接線熱伝導でしか
+    消えない (実測: 静的凍結、ベル部 |ΔΔT|~500K@interp直後 → 収束後も ~200K 残存)。
+    ここで壁列の T を x ソートで 1-2-1 フィルタし、P 不変で ro/roe を再構成する
+    (u は壁 Dirichlet が 0 にするため運動量も 0 化)。plan
+    boundary-node-nozzle-wall-outlet-stability §2.8 参照。
+    """
+    import h5py
+
+    R = cp * (gamma - 1.0) / gamma
+    with h5py.File(h5path, "r+") as f:
+        wall = None
+        for bid in f["BCONDS"]:
+            kind = f["BCONDS"][bid].attrs.get("bcondKind", b"")
+            kind = kind.decode() if isinstance(kind, bytes) else str(kind)
+            if kind in ("wall", "wall_isothermal"):
+                wall = np.array(sorted(set(int(i) for i in f["BCONDS"][bid]["iCells"][:])))
+        if wall is None or wall.size < 5:
+            return
+        cc = f["CELLS/centCoords"][:].reshape(-1, 3)
+        order = np.argsort(cc[wall, 0])
+        w = wall[order]
+        v = f["VALUE"]
+        ro = v["ro"][:]; roe = v["roe"][:]
+        rux = v["roUx"][:]; ruy = v["roUy"][:]; ruz = v["roUz"][:]
+        ke = 0.5 * (rux[w]**2 + ruy[w]**2 + ruz[w]**2) / np.maximum(ro[w], 1e-30)
+        P = (gamma - 1.0) * (roe[w] - ke)
+        T = P / np.maximum(ro[w] * R, 1e-30)
+        for _ in range(npass):
+            T[1:-1] = 0.25 * T[:-2] + 0.5 * T[1:-1] + 0.25 * T[2:]
+        ro_new = P / np.maximum(R * T, 1e-30)
+        roe_new = P / (gamma - 1.0)  # u=0 (壁 Dirichlet と整合、運動量も 0 化)
+        ro[w] = ro_new; roe[w] = roe_new
+        rux[w] = 0.0; ruy[w] = 0.0; ruz[w] = 0.0
+        v["ro"][:] = ro; v["roe"][:] = roe
+        v["roUx"][:] = rux; v["roUy"][:] = ruy; v["roUz"][:] = ruz
 
 
 def run_forge(run_dir) -> int:

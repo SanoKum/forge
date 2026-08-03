@@ -43,6 +43,8 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0022_node_runner_nobfo` | **現 runner 既定** (全域 2次+陰解法 cfl4, bndFirstOrder なし) の E2E 基準 | run_0021 と同等 (η=0.9896, ALL STEADY, プラトー同性状) | active (**runner 既定基準**) |
 | `run_0023_bell_L6_nobfo` | L/rt=6 を現既定で取り直し (warm from run_0021) | **VERDICT: PASS (converged)**。η=0.9822 | active (dv 感度 node 現行) |
 | `run_0024_bell_L9_nobfo` | L/rt=9 を現既定で取り直し (段階起動: soft explicit 3000→陰解法 12000) | rms_ro 9.2e-9 (実質床, flat 判定)・ALL STEADY。η=0.9942 | active (dv 感度 node 現行) |
+| `run_0025_node_wallsmooth` | 壁列エントロピー市松の種切り分け (warm start 壁 T 平滑化) | res_0 は市松 5K に清浄化されるが **12000 step 後に run_0022 とビット同一の 206K 市松が再生成** = 市松は定常解固有 ([plan §2.8](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | active (壁市松の証拠) |
+| `run_0026_node_su2axis` | **SU2 流軸対称 (`axisymMethod: 1`)** の一次検証 (全域2次+陰解法 cfl4, nodeAxisDirichlet **なし**, warm from run_0021 収束場) | **軸行が真に健全** (床0・kシート消滅・軸線滑らか)。12000 step 完走・η=0.9904・ALL STEADY。ただし implicit は喉部近軸 limit cycle で rms_ro ~9e-5 プラトー (explicit は 3e-7 到達 = 空間健全) → [SU2化 plan](../../plans/active/axisymmetric-su2-source-formulation.md) | active (axisymMethod 1 基準) |
 
 **dv 感度まとめ (η–L トレードオフの応答確認)**:
 L/rt = 6 / 7 / 9 → η_CF は cell (2026-08-03 前半, 壁 1e-3 メッシュ) 0.9708 / 0.9790 / 0.9837、

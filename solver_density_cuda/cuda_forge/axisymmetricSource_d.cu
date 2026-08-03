@@ -55,13 +55,22 @@ __global__ void axisymmetricGeomTerms_d
     flow_float* dUxdx,
     flow_float* dUydy,
     flow_float* axisym_uy_over_r,
-    flow_float* axisym_divU
+    flow_float* axisym_divU,
+    // axisymMethod==1 (SU2 流): r_eff = V/A_planar は planar 幾何で成立しないため
+    // セル重心 y を直接使う。軸ノード (axis_flag==1, node のみ) は SU2 同様 0 (y=0 の対称極限)。
+    int axisymMethod, geom_float* ccy, geom_int* axis_flag
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic < nCells) {
-        const flow_float area = A_planar[ic];
-        const flow_float r_eff = (area > (flow_float)0.0) ? volume[ic] / area : (flow_float)0.0;
+        flow_float r_eff;
+        if (axisymMethod == 1) {
+            const bool onAxis = (axis_flag != nullptr && axis_flag[ic] == 1);
+            r_eff = onAxis ? (flow_float)0.0 : max((flow_float)ccy[ic], (flow_float)0.0);
+        } else {
+            const flow_float area = A_planar[ic];
+            r_eff = (area > (flow_float)0.0) ? volume[ic] / area : (flow_float)0.0;
+        }
 
         if (r_eff > (flow_float)0.0) {
             axisym_uy_over_r[ic] = Uy[ic] / r_eff;
@@ -76,7 +85,7 @@ __global__ void axisymmetricGeomTerms_d
 
 void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
-    if (cfg.isAxisymmetric != 1) return;
+    if (cfg.isAxisymmetric != 1 || cfg.axisymMethod != 0) return;   // hoop 源は r 重み方式専用
 
     // 軸 (R≤eps) でソース OFF。ソースは r 重みされない唯一の項で source/volume=P/r→∞ (r→0) が発散源。
     // node-centered 軸対称でのみ作用 (axis_flag = ノード R≈0)。SU2 の y<EPS ソース OFF に相当。
@@ -93,6 +102,168 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         axis_flag
     );
 
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
+// ===================== axisymMethod==1: SU2 流 planar + 1/y ソース =====================
+// SU2 `CSourceAxisymmetric_Flow` / `ResidualDiffusion` の移植 (plan axisymmetric-su2-source-formulation)。
+// 幾何は planar のまま、軸対称の効果を全てセルソースで表す。軸ノード (axis_flag==1 / y≤eps) はソース 0。
+// forge 符号: res += 物理ソース (SU2 は LinSysRes += flux-out 側なので符号反転して移植)。
+
+// AuxVar 計算: A0 = μ_tot·v/y, A1 = A0·v, A2 = A0·u (SU2 ComputeAxisymmetricAuxGradients)。
+__global__ void axisymAuxFields_d
+(
+    geom_int nCells,
+    flow_float* Ux, flow_float* Uy,
+    flow_float* vis_lam, flow_float* vis_turb,
+    flow_float* ccy, geom_int* axis_flag,
+    flow_float* aux0, flow_float* aux1, flow_float* aux2
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const bool onAxis = (axis_flag != nullptr && axis_flag[ic] == 1);
+    const flow_float y = ccy[ic];
+    if (onAxis || y <= (flow_float)1.0e-12) {
+        aux0[ic] = (flow_float)0.0; aux1[ic] = (flow_float)0.0; aux2[ic] = (flow_float)0.0;
+        return;
+    }
+    const flow_float mu_tot = vis_lam[ic] + max(vis_turb[ic], (flow_float)0.0);
+    const flow_float a0 = mu_tot * Uy[ic] / y;
+    aux0[ic] = a0;
+    aux1[ic] = a0 * Uy[ic];
+    aux2[ic] = a0 * Ux[ic];
+}
+
+// AuxVar の Green-Gauss 勾配 (planar, per-cell gather)。境界半割面/ghost は owner 値で閉じる。
+// 必要成分のみ: ∂A0/∂x, ∂A0/∂y, ∂A1/∂y, ∂A2/∂x。
+__global__ void axisymAuxGradGG_d
+(
+    geom_int nCells,
+    geom_int* plane_cells, geom_int* cell_planes_index, geom_int* cell_planes,
+    flow_float* sx, flow_float* sy, flow_float* volume,
+    flow_float* aux0, flow_float* aux1, flow_float* aux2,
+    flow_float* dA0dx, flow_float* dA0dy, flow_float* dA1dy, flow_float* dA2dx
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    flow_float g0x = 0.0, g0y = 0.0, g1y = 0.0, g2x = 0.0;
+    const geom_int pb = cell_planes_index[ic];
+    const geom_int pe = cell_planes_index[ic + 1];
+    for (geom_int po = pb; po < pe; ++po) {
+        const geom_int ip = cell_planes[po];
+        const geom_int ic0 = plane_cells[2*ip + 0];
+        const geom_int ic1 = plane_cells[2*ip + 1];
+        const geom_int other = (ic0 == ic) ? ic1 : ic0;
+        const flow_float sgn = (ic0 == ic) ? (flow_float)1.0 : (flow_float)-1.0;
+        // ghost (境界) は owner 値で閉じる (SU2 GG の境界 vertex 値と同旨の 0 次閉包)
+        const flow_float a0f = (other < nCells) ? (flow_float)0.5*(aux0[ic] + aux0[other]) : aux0[ic];
+        const flow_float a1f = (other < nCells) ? (flow_float)0.5*(aux1[ic] + aux1[other]) : aux1[ic];
+        const flow_float a2f = (other < nCells) ? (flow_float)0.5*(aux2[ic] + aux2[other]) : aux2[ic];
+        g0x += a0f * sgn * sx[ip];
+        g0y += a0f * sgn * sy[ip];
+        g1y += a1f * sgn * sy[ip];
+        g2x += a2f * sgn * sx[ip];
+    }
+    const flow_float iv = (flow_float)1.0 / max(volume[ic], (flow_float)1.0e-30);
+    dA0dx[ic] = g0x * iv;
+    dA0dy[ic] = g0y * iv;
+    dA1dy[ic] = g1y * iv;
+    dA2dx[ic] = g2x * iv;
+}
+
+// SU2 流 軸対称ソース本体 (非粘性 + 粘性)。res += S·V (forge 符号)。
+__global__ void axisymmetricSourceSU2_d
+(
+    geom_int nCells,
+    flow_float* vol,          // planar 体積
+    flow_float* ccy, geom_int* axis_flag,
+    flow_float* ro, flow_float* Ux, flow_float* Uy,
+    flow_float* roe, flow_float* P,
+    flow_float* vis_lam, flow_float* vis_turb, flow_float* thermCond, flow_float* cp_arr,
+    flow_float Prt,
+    flow_float* dUxdx, flow_float* dUxdy, flow_float* dUydx, flow_float* dUydy,
+    flow_float* dTdy,
+    flow_float* dA0dx, flow_float* dA0dy, flow_float* dA1dy, flow_float* dA2dx,
+    int viscous,
+    flow_float* res_ro, flow_float* res_roUx, flow_float* res_roUy, flow_float* res_roe
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const bool onAxis = (axis_flag != nullptr && axis_flag[ic] == 1);
+    const flow_float y = ccy[ic];
+    if (onAxis || y <= (flow_float)1.0e-12) return;   // SU2: 軸上はソース 0
+
+    const flow_float yinv = (flow_float)1.0 / y;
+    const flow_float v = vol[ic];
+    const flow_float rho = ro[ic];
+    const flow_float u = Ux[ic];
+    const flow_float w = Uy[ic];   // 半径方向速度
+    const flow_float H = (roe[ic] + P[ic]) / max(rho, (flow_float)1.0e-30);
+
+    // 非粘性 (SU2 residual を符号反転): S = -(1/y)·[ρv, ρuv, ρv², ρvH]
+    flow_float s0 = -yinv * rho * w;
+    flow_float s1 = -yinv * rho * u * w;
+    flow_float s2 = -yinv * rho * w * w;
+    flow_float s3 = -yinv * rho * w * H;
+
+    if (viscous) {
+        const flow_float mu_tot = vis_lam[ic] + max(vis_turb[ic], (flow_float)0.0);
+        const flow_float k_tot  = thermCond[ic] + cp_arr[ic] * max(vis_turb[ic], (flow_float)0.0) / Prt;
+        const flow_float TWO3 = (flow_float)(2.0/3.0);
+        // SU2 ResidualDiffusion (residual -= 粘性項 → forge S += 粘性項)。
+        // ※ SU2 の +ρk (turb_ke) 項は次元不整合の疑いがあり移植しない (plan §2)。
+        s1 += yinv * mu_tot * (dUxdy[ic] + dUydx[ic]) - TWO3 * dA0dx[ic];
+        s2 += yinv * mu_tot * (flow_float)2.0 * (dUydy[ic] - w * yinv) - TWO3 * dA0dy[ic];
+        s3 += yinv * (mu_tot * (u * (dUydx[ic] + dUxdy[ic])
+                                + w * TWO3 * ((flow_float)2.0 * dUydy[ic] - dUxdx[ic] - w * yinv))
+                      + k_tot * dTdy[ic])
+              - TWO3 * (dA1dy[ic] + dA2dx[ic]);
+    }
+
+    res_ro[ic]   += s0 * v;
+    res_roUx[ic] += s1 * v;
+    res_roUy[ic] += s2 * v;
+    res_roe[ic]  += s3 * v;
+}
+
+void axisymmetricSourceSU2_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (cfg.isAxisymmetric != 1 || cfg.axisymMethod != 1) return;
+    geom_int* axis_flag = (cfg.discretization == "node") ? msh.axis_flag_d : nullptr;
+    const int viscous = (cfg.viscMethod != 0) ? 1 : 0;
+    if (viscous) {
+        axisymAuxFields_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+            msh.nCells,
+            var.c_d["Ux"], var.c_d["Uy"],
+            var.c_d["vis_lam"], var.c_d["vis_turb"],
+            var.c_d["ccy"], axis_flag,
+            var.c_d["axisym_aux0"], var.c_d["axisym_aux1"], var.c_d["axisym_aux2"]);
+        gpuErrchk( cudaPeekAtLastError() );
+        axisymAuxGradGG_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+            msh.nCells,
+            msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
+            var.p_d["sx"], var.p_d["sy"], var.c_d["volume"],
+            var.c_d["axisym_aux0"], var.c_d["axisym_aux1"], var.c_d["axisym_aux2"],
+            var.c_d["dAux0dx"], var.c_d["dAux0dy"], var.c_d["dAux1dy"], var.c_d["dAux2dx"]);
+        gpuErrchk( cudaPeekAtLastError() );
+    }
+    axisymmetricSourceSU2_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+        msh.nCells,
+        (msh.volumePartial_d != nullptr) ? msh.volumePartial_d : var.c_d["volume"],
+        var.c_d["ccy"], axis_flag,
+        var.c_d["ro"], var.c_d["Ux"], var.c_d["Uy"],
+        var.c_d["roe"], var.c_d["P"],
+        var.c_d["vis_lam"], var.c_d["vis_turb"], var.c_d["thermCond"], var.c_d["cp"],
+        cfg.turbulentPrandtl,
+        var.c_d["dUxdx"], var.c_d["dUxdy"], var.c_d["dUydx"], var.c_d["dUydy"],
+        var.c_d["dTdy"],
+        var.c_d["dAux0dx"], var.c_d["dAux0dy"], var.c_d["dAux1dy"], var.c_d["dAux2dx"],
+        viscous,
+        var.c_d["res_ro"], var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roe"]);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
 }
@@ -255,7 +426,10 @@ void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
         var.c_d["dUxdx"],
         var.c_d["dUydy"],
         var.c_d["axisym_uy_over_r"],
-        var.c_d["axisym_divU"]
+        var.c_d["axisym_divU"],
+        cfg.axisymMethod,
+        var.c_d["ccy"],
+        (cfg.discretization == "node") ? msh.axis_flag_d : nullptr
     );
 
     gpuErrchk( cudaPeekAtLastError() );

@@ -10,6 +10,10 @@
 void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
 void axisymmetricGeomTerms_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
 
+// axisymMethod==1 (SU2 流 planar+ソース): 非粘性+粘性の 1/y 軸対称ソースを res_ro..res_roe に加算。
+// AuxVar (μv/y 系) の GG 勾配も内部で計算。method!=1 では no-op。SST の 1/y 項は ransSource 側。
+void axisymmetricSourceSU2_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
 // node-centered 軸対称: 軸上ノード (R=0) で半径方向運動量 roUy=0 (対称条件) を課す。
 // 軸上 CV が特異点になり半径方向圧力ソースで偽の Uy が駆動されるのを防ぐ。cell モードや非軸対称では no-op。
 void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

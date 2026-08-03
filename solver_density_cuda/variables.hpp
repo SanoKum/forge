@@ -85,6 +85,11 @@ public:
         "A_planar",  // 軸対称: planar 面積 (= V を r で割った値)。非軸対称時は 0
         "axisym_uy_over_r",
         "axisym_divU",
+        // axisymMethod==1 (SU2 流 planar+ソース) 用: AuxVar A0=μ_tot·v/y, A1=A0·v, A2=A0·u と
+        // その GG 勾配のうちソースが使う 4 成分 (∂A0/∂x, ∂A0/∂y, ∂A1/∂y, ∂A2/∂x)。
+        // method 0 では未使用 (0 のまま)。
+        "axisym_aux0", "axisym_aux1", "axisym_aux2",
+        "dAux0dx", "dAux0dy", "dAux1dy", "dAux2dx",
         // SST 陰解法 (segregated point-implicit) 用: 消散項のヤコビアン対角
         //   src_jac_k     = ∂Dk/∂(ρk)   = β* ω
         //   src_jac_omega = ∂Dω/∂(ρω)   = 2 β ω

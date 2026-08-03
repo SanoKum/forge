@@ -275,6 +275,30 @@ cfl[ic] += dt * axisBeta * (fabsf(Uy[ic]) + sonic[ic]) * A_planar[ic] / vol[ic];
 診断用に `FORGE_AXIS_DIAG_ALPHA` (env, 既定 0) があり、roUy 対角へ $\alpha\,A_{\text{planar}}c$ を
 直接足す per-equation 版。機構特定の診断専用で **production では使わない** (additive setDT 版を使う)。
 
+## SU2 流定式化 (`axisymMethod: 1`, 2026-08)
+
+`physProp.axisymMethod` で軸対称の定式を選ぶ (既定 0 = 本文書の r 重み方式・ビット不変)。
+`1` は **SU2 と同じ「planar 幾何 + 1/y ソース項」方式** (plan
+[axisymmetric-su2-source-formulation](../../plans/active/axisymmetric-su2-source-formulation.md)):
+
+- 幾何は planar のまま (`variables.cpp` の r 重みをスキップ、`A_planar`=planar 体積)。
+- 非粘性ソース $S = -(1/y)[\rho v,\ \rho u v,\ \rho v^2,\ \rho v H]$ と解析 Jacobian
+  (block-DPLUR の対角へ)、粘性ソース (SU2 `ResidualDiffusion`: AuxVar $\mu v/y$ 系の GG 勾配
+  込み)、SST の 1/y 移流拡散ソース (`rans_sst_source_d` 内、対角に $\max(v/y,0)$)。
+  実装は `axisymmetricSourceSU2_d` (`axisymmetricSource_d.cu`)。
+- 軸ノード (`axis_flag`) と $y\le\varepsilon$ は SU2 同様ソース 0。軸 BC は従来どおり
+  slip 鏡映 + `zeroAxisRadialResidual` (= SU2 `BC_Sym_Plane` 相当)。
+- **軸ノードは通常 DOF として解ける** (軸 CV は有限 planar 体積)。`nodeAxisDirichlet` は不要。
+- SU2 コードの 2 点は意図的に移植しない: エネルギー粘性ソースの `+ρk` 項 (次元不整合の疑い)、
+  エネルギー Jacobian の `1/2` 整数除算 (数学的に正しい形で実装)。
+
+**検証状況 (case/40 node, 2026-08-04)**: 軸行は真に健全 (床ピン 0・k シート消滅・軸線 T 滑らか)、
+12000 step 完走で η_CF=0.9904 (method 0 の 0.9896 と 0.08% 差)・quasisteady ALL STEADY。
+ただし**喉部近軸の小さなリミットサイクルで rms_ro ~6e-5 プラトー** (method 0+`nodeAxisDirichlet`
+は 1e-7〜1e-9 に達する)。疑いは既知の node slip 市松バグ ([[node-slip-spurious-flow]]) が
+planar 面積の軸 slip で顕在化したもの。**このため生産既定は当面 method 0 + `nodeAxisDirichlet`**
+とし、slip 市松の修正後に method 1 への既定切替を再評価する。
+
 ## node-centered 軸ノードの対称 Dirichlet (`nodeAxisDirichlet`, 2026-08)
 
 node (median-dual) 軸対称では軸上ノードが半 CV の中心になる。この軸半 CV を通常どおり

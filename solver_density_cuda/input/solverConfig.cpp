@@ -502,6 +502,13 @@ void solverConfig::read(std::string fname)
         } else {
             this->isAxisymmetric = 0;
         }
+        if (physProp["axisymMethod"]) {
+            this->axisymMethod = physProp["axisymMethod"].as<int>();
+            if (this->axisymMethod < 0 || this->axisymMethod > 1) {
+                std::cerr << "physProp.axisymMethod must be 0 (r-weight) or 1 (SU2 source)" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
         this->thermalMethod = getValidatedValue<int>(physProp, "thermalMethod", "physProp");
         this->viscMethod = getValidatedValue<int>(physProp, "viscMethod", "physProp");
         this->ro = getValidatedValue<double>(physProp, "ro", "physProp");

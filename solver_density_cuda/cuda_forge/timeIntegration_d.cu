@@ -727,6 +727,10 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  // SU2 流の対称面を Jacobian 内で課す = solve の外で状態を手術せず一貫して dq_roUy=0 を得る。
  geom_int* axis_flag,
 
+ // axisymMethod==1 (isAxisymmetric enc==2) の軸ソース Jacobian ガード: 軸上ノード (==1) はソース 0 なので
+ // Jacobian も加えない。decouple 用 axis_flag (nodeAxisDirichlet ゲート) とは独立に渡す (nullptr 可)。
+ geom_int* axis_flag_src,
+
  // node-centered 壁 no-slip: 壁ノードで運動量3行 (index1=roUx,2=roUy,3=roUz) を decouple する (nullptr 可)。
  // SU2 `DeleteValsRowi` 相当。残差射影だけでは block-DPLUR が壁運動量を連成したまま dq≠0 を返し速度 drift
  // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。methods/discretization.md §7.2.1。
@@ -856,6 +860,34 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             diag_block[2][4] += -A_pl * g1;
             // 診断: 近軸半径音響スペクトル半径 α·A_pl·c を roUy 対角に補う (FORGE_AXIS_DIAG_ALPHA>0 のみ)。
             diag_block[2][2] += static_cast<ST>(g_axisDiagAlpha) * A_pl * local_sonic;
+        } else if (isAxisymmetric == 2) {
+            // SU2 流 (axisymMethod==1) 非粘性軸対称ソースの解析 Jacobian (CSourceAxisymmetric_Flow 移植,
+            // 行/列 = [ro, roUx, roUy, roe] → forge [0,1,2,4])。forge 対角は -∂S/∂U = +SU2 jacobian。
+            // 軸ノード (axis_flag_src==1) と y≤eps はソース 0 のためスキップ。γ は frozen (gamma_arr)。
+            const ST y = static_cast<ST>(ccy[ic]);
+            const bool onAxisSrc = (axis_flag_src != nullptr && axis_flag_src[ic] == 1);
+            if (!onAxisSrc && y > static_cast<ST>(1.0e-12)) {
+                const ST yv = v / y;
+                const ST g1 = gamma - static_cast<ST>(1.0);
+                const ST uu = velocity_x, ww = velocity_y;
+                const ST q2d = uu*uu + ww*ww;
+                const ST et = static_cast<ST>(roe[ic]) / density;   // 比全エネルギー
+                diag_block[0][2] += yv;
+                diag_block[1][0] += yv * (-uu * ww);
+                diag_block[1][1] += yv * ww;
+                diag_block[1][2] += yv * uu;
+                diag_block[2][0] += yv * (-ww * ww);
+                diag_block[2][2] += yv * static_cast<ST>(2.0) * ww;
+                diag_block[4][0] += yv * (-gamma * ww * et + g1 * ww * q2d);
+                diag_block[4][1] += yv * (-g1 * uu * ww);
+                diag_block[4][2] += yv * (gamma * et - static_cast<ST>(0.5) * g1 * (q2d + static_cast<ST>(2.0) * ww * ww));
+                diag_block[4][4] += yv * (gamma * ww);
+                // 粘性軸対称ソースの stiff 主対角: S_roUy ∋ -V·2μ_tot·v/y² → -∂S/∂(ρv) = +V·2μ/(ρy²)。
+                // 近軸第一列 (y~1e-4) で極めて stiff で、これを lag すると implicit が喉部近軸で
+                // limit cycle 化し rms_ro ~1e-5 で頭打ちになる (explicit は 3e-7 到達 = 空間は健全)。
+                const ST mu_tot_ax = static_cast<ST>(laminar_visc) + max(static_cast<ST>(vis_turb[ic]), static_cast<ST>(0.0));
+                diag_block[2][2] += yv * static_cast<ST>(2.0) * mu_tot_ax / (density * y);
+            }
         }
 
         // 軸上 CV の in-Jacobian decouple。nodeAxisDirichlet=1 (現在 axis_flag が渡される唯一の経路) では
@@ -1175,6 +1207,9 @@ void swapScalarImplicitCorrectionBuffers(variables& var)
 
 void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
+    // 軸対称エンコード: 0=非軸対称 / 1=r 重み方式 (hoop Jacobian) / 2=SU2 流 planar+ソース (SU2 4x4 Jacobian)。
+    // ==1 判定しかしない旧カーネル (scalar/lowmach) は 2 のとき軸対称 Jacobian を持たない (source lag, 定常解不変)。
+    const int axisymEnc = (cfg.isAxisymmetric == 1) ? ((cfg.axisymMethod == 1) ? 2 : 1) : 0;
     // 診断 near-axis 安定化係数を env から 1 度だけ device へ設定 (既定 0 = 不変)。
     static bool s_axisAlphaInit = false;
     if (!s_axisAlphaInit) {
@@ -1244,7 +1279,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["res_ro"], var.c_d["res_roUx"], var.c_d["res_roUy"], var.c_d["res_roUz"], var.c_d["res_roe"],
                 var.c_d["dq_block_old_0"], var.c_d["dq_block_old_1"], var.c_d["dq_block_old_2"], var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"],
                 var.c_d["dq_block_new_0"], var.c_d["dq_block_new_1"], var.c_d["dq_block_new_2"], var.c_d["dq_block_new_3"], var.c_d["dq_block_new_4"],
-                cfg.isAxisymmetric,
+                axisymEnc,
                 (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
                 cfg.unsteadyDiagCoef
               );
@@ -1270,8 +1305,9 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_20"], var.c_d["diag_block_21"], var.c_d["diag_block_22"], var.c_d["diag_block_23"], var.c_d["diag_block_24"], \
                 var.c_d["diag_block_30"], var.c_d["diag_block_31"], var.c_d["diag_block_32"], var.c_d["diag_block_33"], var.c_d["diag_block_34"], \
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
-                cfg.isAxisymmetric, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
+                axisymEnc, (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"], cfg.unsteadyDiagCoef, \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1 && cfg.nodeAxisDirichlet == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag: nodeAxisDirichlet で全 5 行 decouple (状態は enforceAxisMirror がピン)。OFF は従来どおり nullptr */ \
+                ((cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag_src: SU2 流 (enc==2) の軸ソース Jacobian ガード (軸ノードはソース 0) */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag: 壁運動量3行 decouple */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.iso_wall_flag_d : nullptr),  /* iso_wall_flag: 等温壁 roe 行 decouple (T ピンと対) */ \
                 ((cfg.discretization == "node") ? 1 : 0)  /* isNode: 5e 境界半割面の粘性対角スキップ */
@@ -1332,7 +1368,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["dq_roUy_new"],
                 var.c_d["dq_roUz_new"],
                 var.c_d["dq_roe_new"],
-                cfg.isAxisymmetric,
+                axisymEnc,
                 (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
                 cfg.unsteadyDiagCoef
             );

@@ -1000,7 +1000,8 @@ void assembleResidual(StepContext& s, int stage_index)
         ransSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
-        axisymmetricSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        axisymmetricSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);      // method 0 (r 重み): hoop 源
+        axisymmetricSourceSU2_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // method 1 (SU2 流): 1/y 全ソース
         bodyForce_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // 一様体積力 (bodyForce, off なら no-op)
     });
     s.profiler.measureCuda(ProfileSection::ViscousFlux, [&]() {

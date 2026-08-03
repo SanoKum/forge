@@ -228,6 +228,11 @@ public:
     int isCompressible;
     int isAxisymmetric = 0;
 
+    // 軸対称の定式化: 0 = r 重み幾何 (B 流儀, 従来・既定・ビット不変) / 1 = SU2 流
+    // (planar 幾何 + 1/y ソース項。軸ノードは通常 DOF として解く。plan
+    // axisymmetric-su2-source-formulation)。1 は node 軸行真空化の根治で、nodeAxisDirichlet 不要。
+    int axisymMethod = 0;
+
     // 離散化レイアウト。"cell": cell-centered FVM (既定・従来)、"node": node-centered
     // (中点双対 median-dual) FVM。methods/discretization/ 参照。
     std::string discretization = "cell";
