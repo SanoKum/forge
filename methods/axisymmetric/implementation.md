@@ -277,7 +277,9 @@ cfl[ic] += dt * axisBeta * (fabsf(Uy[ic]) + sonic[ic]) * A_planar[ic] / vol[ic];
 
 ## SU2 流定式化 (`axisymMethod: 1`, 2026-08)
 
-`physProp.axisymMethod` で軸対称の定式を選ぶ (既定 0 = 本文書の r 重み方式・ビット不変)。
+`mesh.axisymMethod` で軸対称の定式を選ぶ (既定 0 = 本文書の r 重み方式・ビット不変)。
+**`isAxisymmetric`/`axisymMethod` の正本は `mesh` ブロック** (幾何/離散化の設定であり物性では
+ないため。2026-08-04 に physProp から移設、physProp 配下は後方互換の deprecated 読み+警告)。
 `1` は **SU2 と同じ「planar 幾何 + 1/y ソース項」方式** (plan
 [axisymmetric-su2-source-formulation](../../plans/active/axisymmetric-su2-source-formulation.md)):
 

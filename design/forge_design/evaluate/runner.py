@@ -69,17 +69,17 @@ def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
     sst = p.evaluate.get("turbulence", "sst") == "sst"
     disc = p.mesh.get("discretization", "node")  # 既定 node — ユーザ方針 2026-08-03
     if disc == "node":
-        node_keys = ', axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1'
+        node_keys = ', isAxisymmetric: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1'
         tint, cfl, conv, dplur, kato = 11, 4.0, 1, 1, ", katoLaunder: 1"
     else:
-        node_keys = ""
+        node_keys = ", isAxisymmetric: 1"
         tint, cfl, conv, dplur, kato = 11, 4.0, 1, 1, ""
     turb = (f'turbulence: {{model: "sst", scalarDiffusion: 1, dilatationCorrection: 2{kato}}}'
             if sst else 'turbulence: {model: "none"}')
     return f"""mesh: {{meshFormat: "hdf5", discretization: "{disc}"{node_keys}, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
 gpu: 1
 solver: "SLAU"
-physProp: {{isCompressible: 1, isAxisymmetric: 1, thermalMethod: 0, viscMethod: 1,
+physProp: {{isCompressible: 1, thermalMethod: 0, viscMethod: 1,
            ro: 1.2, visc: 1.8e-5, thermCond: 0.0257, cp: {p.cp}, gamma: {p.gamma}}}
 time:
   unsteady: 0

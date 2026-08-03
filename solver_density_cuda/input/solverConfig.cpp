@@ -497,17 +497,26 @@ void solverConfig::read(std::string fname)
         // 物理プロパティ
         auto physProp = config["physProp"];
         this->isCompressible = getValidatedValue<int>(physProp, "isCompressible", "physProp");
+        // 軸対称スイッチの正本は mesh ブロック (幾何/離散化の設定であり物性ではない)。
+        // physProp 配下は後方互換の deprecated 読み (既存 case config 用, 警告のみ)。
+        this->isAxisymmetric = 0;
         if (physProp["isAxisymmetric"]) {
             this->isAxisymmetric = physProp["isAxisymmetric"].as<int>();
-        } else {
-            this->isAxisymmetric = 0;
+            std::cout << "[config] deprecated: physProp.isAxisymmetric -> use mesh.isAxisymmetric" << std::endl;
         }
         if (physProp["axisymMethod"]) {
             this->axisymMethod = physProp["axisymMethod"].as<int>();
-            if (this->axisymMethod < 0 || this->axisymMethod > 1) {
-                std::cerr << "physProp.axisymMethod must be 0 (r-weight) or 1 (SU2 source)" << std::endl;
-                exit(EXIT_FAILURE);
-            }
+            std::cout << "[config] deprecated: physProp.axisymMethod -> use mesh.axisymMethod" << std::endl;
+        }
+        if (config["mesh"] && config["mesh"]["isAxisymmetric"]) {
+            this->isAxisymmetric = config["mesh"]["isAxisymmetric"].as<int>();
+        }
+        if (config["mesh"] && config["mesh"]["axisymMethod"]) {
+            this->axisymMethod = config["mesh"]["axisymMethod"].as<int>();
+        }
+        if (this->axisymMethod < 0 || this->axisymMethod > 1) {
+            std::cerr << "axisymMethod must be 0 (r-weight) or 1 (SU2 source)" << std::endl;
+            exit(EXIT_FAILURE);
         }
         this->thermalMethod = getValidatedValue<int>(physProp, "thermalMethod", "physProp");
         this->viscMethod = getValidatedValue<int>(physProp, "viscMethod", "physProp");
