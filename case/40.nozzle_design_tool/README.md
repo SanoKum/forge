@@ -26,7 +26,7 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0005_bell_smoke_node` | node 再計算の初回 (冷間 IC + implicit + 細壁 1e-3) | step 2 から全列 NaN。後の切り分けで真因 = 壁第一セル過細 + レシピ不一致と確定 → [調査 plan](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) §2.5 | 破棄予定 (発散の記録) |
 | `run_0006_bell_node_warm` | **node 初収束**: 実証レシピ (壁 5e-3・warm start from run_0002・explicit RK3 cfl0.1・1次・katoLaunder) | **VERDICT: PASS / ALL PASS** (全列 3.0–4.6 桁低下)。η=0.9809, F=1964.8 N (cell run_0002: η=0.9790 と 0.2% 差) | active (node 基準) |
 | `run_0007_bell_node_2nd_imp` → `_2nd_expl` | 2 次化・陰解法化の試行 (run_0006 収束場から) | **いずれも step 4–10 で発散** — node×SST の陰解法と 2 次精度は未解決のソルバ課題 (case/29 の実績も 1 次 explicit のみ)。plan §2.5 参照 | 破棄予定 (発散の記録) |
-| `run_0008_bell_node_runner` | runner 実装後の E2E 再現 (`--warm-from`, 24000 step) | node レシピが runner 既定で一気通貫することの確認 | active |
+| `run_0008_bell_node_runner` | runner 実装後の E2E 一気通貫確認 (`--warm-from`, 24000 step) | **VERDICT: PASS / ALL PASS** (3.4–5.1 桁・全列 falling)。η=0.9817, F=1966.4 N — node レシピが runner 既定で完結 | active (node runner 基準) |
 
 **dv 感度まとめ (η–L トレードオフの応答確認)**: L/rt = 6 / 7 / 9 → η_CF = 0.9708 / 0.9790 /
 0.9837。物理的に正しい単調応答で、パイプラインが最適化の評価器として機能することを確認
