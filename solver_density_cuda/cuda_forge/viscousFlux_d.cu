@@ -285,7 +285,12 @@ __global__ void viscousFlux_wall_d
  int wallTreatment, flow_float* utau_b, flow_float* qwall_b,
  // node-centered (1): 壁法線 Laplacian/熱流束を ghost+dcc でなくセル勾配 ∇φ·S (bvar 壁閉包) で評価。
  // 壁ノードが壁面に乗り dcc≈0 に退化するのを回避する。cell (0) は従来の (φ[ig]-φ[ic])/dcc。
- int isNode
+ int isNode,
+ // 断熱壁 (kind: wall) = 1: 壁面伝導熱流束を厳密に 0 にする。cell はミラーゴーストで従来も
+ // ビット厳密 0 だが、node は壁ノードのセル勾配 ∇T·S が法線成分を持ち断熱が破れていた
+ // (壁エントロピー市松の直接容疑, plan boundary-node-nozzle-wall-outlet-stability §2.8)。
+ // 等温壁 (wall_isothermal) = 0 で従来どおり解像熱流束を入れる。WMLES (==2) は qwall が担う。
+ int adiabaticWall
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -395,13 +400,16 @@ __global__ void viscousFlux_wall_d
             tau_z = twall_z_b[ib]*sss;
         }
 
-        // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。断熱壁ではミラーゴーストで
-        // Ts[ig]=Ts[ic] のため寄与 0、isothermal 壁では有効。
+        // 乱流熱伝導 (内部面と同じ k_eff = k_lam + cp*mu_turb/Pr_t)。
         flow_float tc_w = thermCond[ic] + cp[ic]*v_turb/Prt;
-        // 熱流束法線項: node は ∇T·S (セル勾配) で退化 dcc を回避。cell は従来の (Ts[ig]-Ts[ic])/dcc。
-        // WMLES (wallTreatment==2) は壁モデルの q_w·S で置換 (断熱は q_w=0 厳密。解像 ∇T は使わない)。
-        flow_float heatflux = (wallTreatment == 2) ? qwall_b[ib]*sss
-                            : (isNode != 0) ? tc_w*(dTdx[ic]*sxx +dTdy[ic]*syy +dTdz[ic]*szz)
+        // 熱流束: WMLES (==2) は壁モデル q_w·S。断熱壁 (adiabaticWall) は**厳密 0** — cell は
+        // ミラーゴーストで従来もビット 0、node は従来 ∇T[W]·S の法線成分が漏れていたのを修正。
+        // 等温壁のみ解像熱流束 (node: ∇T·S / cell: ghost 差分)。
+        flow_float heatflux;
+        if (wallTreatment == 2)         heatflux = qwall_b[ib]*sss;
+        else if (adiabaticWall != 0)    heatflux = (flow_float)0.0;
+        else                            heatflux = (isNode != 0)
+                                            ? tc_w*(dTdx[ic]*sxx +dTdy[ic]*syy +dTdz[ic]*szz)
                                             : tc_w*((Ts[ig]- Ts[ic])/dcc)*sss;
 
         flow_float res_ro_temp   = 0.0;
@@ -797,7 +805,8 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 (cfg.LESorRANS == 2 && cfg.RANSmodel == 1) ? cfg.wallTreatmentSST
                     : (wmlesActiveForBcond(cfg, bc) ? 2 : 0),
                 bc.bvar_d["utau"], bc.bvar_d["qwall"],
-                (cfg.discretization == "node") ? 1 : 0   // node: 壁法線/熱流束を ∇φ·S で評価 (ghostless)
+                (cfg.discretization == "node") ? 1 : 0,   // node: 壁法線/熱流束を ∇φ·S で評価 (ghostless)
+                (bc.bcondKind == "wall") ? 1 : 0          // 断熱壁: 伝導熱流束を厳密 0 (等温壁は 0=従来)
             ) ;
         }
     }

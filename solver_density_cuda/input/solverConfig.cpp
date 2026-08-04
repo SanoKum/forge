@@ -618,6 +618,17 @@ void solverConfig::read(std::string fname)
         // 初期条件
         this->initial = getValidatedValue<std::string>(config, "initial");
 
+        // nodeAxisDirichlet の軸ミラーは平均流 5 変数 + SST (roK/roOmega) のみ対応で、
+        // 多成分 (roY*)・凝縮スカラー・TP は未対応 (ρ だけピンされ ΣρY_s≠ρ になり得る)。
+        // 対応するまで単成分 CPG に限定する (Codex レビュー 2026-08-05 Critical)。
+        if (this->nodeAxisDirichlet == 1 && this->isAxisymmetric == 1 &&
+            (this->thermalMethod != 0 || this->nSpecies > 1)) {
+            std::cerr << "nodeAxisDirichlet=1 は単成分 CPG (thermalMethod:0) のみ対応です "
+                      << "(軸ミラーが species/TP スカラーを未カバー)。axisymMethod:1 か "
+                      << "axisRFloor を使うか、nodeAxisDirichlet:0 にしてください。" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+
         // デバッグ用出力
         std::cout << "Mesh Format: " << meshFormat << '\n';
         std::cout << "Mesh File Name: " << meshFileName << '\n';
