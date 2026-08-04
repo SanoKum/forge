@@ -102,3 +102,13 @@ forge の軸対称は r 重み幾何 (B 流儀: 面積・体積に r を乗じ�
   混在 CV の圧力閉性を壊し step 19 で発散 → **離散閉性面積 (A_closure_x/y) への置換**で解決。
   case/40 run_0027 + soak: 軸健全・η=0.9906・rms_ro ~1e-7 プラトー・床帯縁の k 帯 (~230) は
   24000 step でビット不変の有界平衡。3 方式の比較は case/40 README を参照。
+- `2026-08-05` — **SU2 本体での同一ケース実行** (`case/40 run_0028_su2_sst`, 同一メッシュ・同一 BC):
+  ① **SU2 (planar+ソース, Euler implicit+FGMRES/ILU, CFL adapt→1e6) も rms[Rho] 10^-5.1〜-5.6 で
+  プラトー** (min -5.62@5654 → 有界振動; 固定 CFL10 継続でも -5.1 の静かなプラトー = CFL_ADAPT
+  共振でない)。**「planar+ソース定式の implicit がこのノズルで床まで落ちない」のは forge 固有で
+  なく SU2 本体でも同様** — forge method 1 の 1e-4 プラトー評価の重要な文脈 (残差正規化が違うため
+  絶対値の直接比較は不可、'落ち続けるか停滞するか' の質的比較)。② 軸は完全健全・**壁 T 市松なし**
+  (mean ~4K vs forge node 206K) = 壁市松は forge node 離散化固有の確証。③ η_CF=0.9573 は forge
+  (node 0.990 / cell 0.979) より 2-3% 低いが、乱流入口 BC (TI1%/ratio10 vs k=1/ω=18000)・壁
+  y+~19-27 の low-Re 積分が未整合の粗比較。序列 node>cell>SU2 は BL 厚の差と整合的で、真値判定
+  には BL 分解能と乱流 BC を揃えた Phase 2 (Rao 照合) が必要。
