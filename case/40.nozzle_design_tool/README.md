@@ -53,9 +53,14 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 
 | 方式 | 軸ノード | row1 k 帯 | 収束 (rms_ro) | η_CF |
 | --- | --- | --- | --- | --- |
-| `nodeAxisDirichlet: 1` (現 runner 既定) | 解かずミラー | 3.4 | 1e-9 床 (PASS 可) | 0.9896 |
+| `nodeAxisDirichlet: 1` (現 runner 既定) | 解かずミラー | 3.4 | ~1e-7 プラトー (run_0022; 1 次 or bndFirstOrder 世代なら 1e-9 PASS = run_0015/0016) | 0.9896 |
 | `axisymMethod: 1` (SU2 流) | 真に解く | **1.35** | implicit ~1e-4 プラトー (explicit 3e-7) | 0.9904 |
-| `axisRFloor: 3e-4` (r 床+閉性補正) | 解く (環状近似) | 230 (有界) | ~1e-7 プラトー | 0.9906 |
+| `axisRFloor: 3e-4` (r 床+閉性補正) | 解く (環状近似) | 230 (有界, 帯定義: y∈[0.5,1.5]mm × x∈[30,60]mm の max k) | ~1e-7 プラトー | 0.9906 |
+
+※ 収束値は check_convergence の実測 (全域 2 次では 3 方式とも NOT CONVERGED/プラトー判定であり、
+計量は quasisteady STEADY で担保)。η は同一 warm 系統・同一メッシュだが cell (run_0002) は壁 1e-3
+世代メッシュのため、node−cell 差 +1.1% の帰属は未確定 (Phase 2 の格子収束・Rao 照合が必要)。
+2026-08-05 の断熱壁修正 (run_0029) 以後は node の η が ~0.12% 下がる (漏れ加熱の除去)。
 
 
 **dv 感度まとめ (η–L トレードオフの応答確認)**:
