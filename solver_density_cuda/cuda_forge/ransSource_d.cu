@@ -279,7 +279,8 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d["dOmegadx"], var.c_d["dOmegady"], var.c_d["dOmegadz"],
         cfg.isAxisymmetric,
         var.c_d["axisym_uy_over_r"],
-        cfg.axisymMethod,
+        // 診断 (env): FORGE_DIAG_SU2SST_OFF=1 で k/ω の 1/y 軸対称ソースを落とす。
+        (getenv("FORGE_DIAG_SU2SST_OFF") != nullptr) ? 0 : cfg.axisymMethod,
         var.c_d["Uy"],
         var.c_d["ccy"],
         (cfg.discretization == "node") ? msh.axis_flag_d : nullptr,

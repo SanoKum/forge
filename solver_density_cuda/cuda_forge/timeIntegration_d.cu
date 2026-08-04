@@ -1219,7 +1219,10 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
 {
     // 軸対称エンコード: 0=非軸対称 / 1=r 重み方式 (hoop Jacobian) / 2=SU2 流 planar+ソース (SU2 4x4 Jacobian)。
     // ==1 判定しかしない旧カーネル (scalar/lowmach) は 2 のとき軸対称 Jacobian を持たない (source lag, 定常解不変)。
-    const int axisymEnc = (cfg.isAxisymmetric == 1) ? ((cfg.axisymMethod == 1) ? 2 : 1) : 0;
+    // 診断 (env): FORGE_DIAG_SU2JAC_OFF=1 で SU2 ソース Jacobian を落とす (ソースは残す = 完全 lag)。
+    static const bool diagSu2JacOff = (getenv("FORGE_DIAG_SU2JAC_OFF") != nullptr);
+    int axisymEnc = (cfg.isAxisymmetric == 1) ? ((cfg.axisymMethod == 1) ? 2 : 1) : 0;
+    if (diagSu2JacOff && axisymEnc == 2) axisymEnc = 0;
     // 診断 near-axis 安定化係数を env から 1 度だけ device へ設定 (既定 0 = 不変)。
     static bool s_axisAlphaInit = false;
     if (!s_axisAlphaInit) {

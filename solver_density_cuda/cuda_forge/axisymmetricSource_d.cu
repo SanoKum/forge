@@ -245,7 +245,9 @@ void axisymmetricSourceSU2_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
 {
     if (cfg.isAxisymmetric != 1 || cfg.axisymMethod != 1) return;
     geom_int* axis_flag = (cfg.discretization == "node") ? msh.axis_flag_d : nullptr;
-    const int viscous = (cfg.viscMethod != 0) ? 1 : 0;
+    // 診断 (env): FORGE_DIAG_SU2VISC_OFF=1 で粘性軸対称ソースを落とす (非粘性のみ)。
+    static const bool diagViscOff = (getenv("FORGE_DIAG_SU2VISC_OFF") != nullptr);
+    const int viscous = (cfg.viscMethod != 0 && !diagViscOff) ? 1 : 0;
     if (viscous) {
         axisymAuxFields_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
             msh.nCells,

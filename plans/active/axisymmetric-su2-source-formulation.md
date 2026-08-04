@@ -84,6 +84,19 @@ forge の軸対称は r 重み幾何 (B 流儀: 面積・体積に r を乗じ�
   - **当面の運用**: 生産既定 (runner) は method 0 + `nodeAxisDirichlet` を維持
     (PASS 品質の収束)。method 1 は `mesh.axisymMethod: 1` のオプトイン。陰解法の
     線形化改善後に既定切替を再評価。
+- `2026-08-04` — **陰解法プラトーの Jacobian 作戦を切り分け** (env ゲート診断
+  `FORGE_DIAG_SU2JAC_OFF` / `SU2VISC_OFF` / `SU2SST_OFF` を追加, 同一 warm 場から各 12000 step):
+  - T1 `implicitSolvePrecision: 1` (5×5 solve double 化): **不変** (8.3e-5) → 条件数/精度説は棄却。
+  - T2 非粘性ソース Jacobian OFF (完全 lag): rms_ro **改善** (5.9e-5) だが rms_roK/roOmega が
+    rising に転落 → **解析 Jacobian は SST 安定に寄与する一方、平均流サイクルを僅かに悪化**させる。
+  - T3 粘性軸対称ソース OFF: 不変 (8.4e-5) → 粘性ソース lag は無罪。
+  - T4 SST 軸対称ソース OFF: 不変 (8.3e-5) → SST ソースも無罪。
+  - ソース CFL の見積り: dt·|v|/y ~ 0.1 @cfl4 で形式的に stiff でない。以上より**対角 Jacobian の
+    工夫 (完全化・精度・選択的無効化) だけではプラトーは解けない**と結論。残る打ち手は
+    ①ソース込み完全線形化のオフ対角 (DPLUR sweep の近傍演算子にソース結合を追加)、
+    ②ステージ内セミ陰的ソース更新 (Rosenbrock 風)、いずれも DPLUR の構造拡張を要する中規模作業。
+    explicit が 3e-7 に達する事実から定常解は健全で、必要なら「implicit で場を作り explicit で
+    磨く」二段運用も実用解。
 - `2026-08-04` — **対案 `axisRFloor` (ユーザ提案: 規定 r 以下は r 重み・ソース・Jacobian とも
   課さない) を実装・検証** (methods/axisymmetric/implementation.md の節参照)。素朴な面床は
   混在 CV の圧力閉性を壊し step 19 で発散 → **離散閉性面積 (A_closure_x/y) への置換**で解決。
