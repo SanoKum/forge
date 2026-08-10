@@ -526,6 +526,8 @@ void solverConfig::read(std::string fname)
         this->ro = getValidatedValue<double>(physProp, "ro", "physProp");
         this->visc = getValidatedValue<double>(physProp, "visc", "physProp");
         this->thermCond = getValidatedValue<double>(physProp, "thermCond", "physProp");
+        this->thermCondMethod = getOptionalValidatedValue<int>(physProp, "thermCondMethod", 0, "physProp");
+        this->prandtlLam = getOptionalValidatedValue<double>(physProp, "prandtlLam", 0.72, "physProp");
         this->cp = getValidatedValue<double>(physProp, "cp", "physProp");
         //double gamma = getValidatedValue<double>(physProp, "gamma", "physProp");
         this->gamma = getValidatedValue<double>(physProp, "gamma", "physProp");

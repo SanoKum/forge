@@ -114,6 +114,10 @@ public:
         // 診断 (k 収支調査用, node/cell 近壁 SST 比較): ransSource が確定した最終 k 生産項 P_k
         // (wall-function 置換後)。res_roK へ加える値そのもの。non-RANS では未使用。
         "Pk_diag",
+        // 診断 (2026-08-11): Crocco 型 断熱回復温度モデル T_aw = T_rep + r·U_t²/(2cp), r=Pr_lam^{1/3}
+        // (SU2 壁関数の熱的閉包と同式)。壁関数対象セル (cell=第一セル / node=壁ノード) に格納、
+        // 非対象は -1。現状は**出力のみ** (壁状態へは未適用 — 適用は保存整合の plan 化後)。
+        "Taw_diag",
         // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
         // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。
@@ -189,7 +193,7 @@ public:
 
         // k 収支調査 (node/cell 近壁 SST 比較, 一時診断): 壁関数生産 wf_pk(>=0=壁関数処理/-1=未処理),
         // k Dirichlet 値 roK_wf, 最終 k 生産 Pk_diag, 消散ヤコビ src_jac_k, k 輸送対角 transport_diag_k
-        "wf_pk" , "roK_wf" , "Pk_diag" , "src_jac_k" , "transport_diag_k" ,
+        "wf_pk" , "roK_wf" , "Pk_diag" , "Taw_diag" , "src_jac_k" , "transport_diag_k" ,
 
         // omega 残差収支調査 (入口×壁コーナー残差プラトーの局在, 一時診断): 残差 res_roOmega,
         // 源項ヤコビ src_jac_omega, 輸送対角 transport_diag_omega

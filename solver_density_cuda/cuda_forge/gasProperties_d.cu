@@ -6,6 +6,8 @@ __global__ void gasProperties_d
 (
  // gas properties
  int thermalMethod , int viscMethod ,
+ // 層流熱伝導モデル: 0=一定 / 1=constant-Pr (k=μ(T)·cp/Pr_lam)。viscMethod 0/1 で有効 (2 は kinetic theory が λ を持つ)。
+ int thermCondMethod , flow_float prandtlLam ,
 
  // gas properties
  flow_float gamma , flow_float cp , flow_float visc_lam, flow_float thermCond_const,
@@ -49,14 +51,19 @@ __global__ void gasProperties_d
 
         if (viscMethod == 0) {
             vis_lam_array[ic]   = visc_lam;
-            thermCond_array[ic] = thermCond_const;     // 既存どおり一定 (face 平均で同値)
+            thermCond_array[ic] = (thermCondMethod == 1)
+                ? vis_lam_array[ic]*cp_array[ic]/prandtlLam    // constant-Pr
+                : thermCond_const;                             // 既存どおり一定 (face 平均で同値)
 
-        } else if (viscMethod == 1) { // sutherland (粘性のみ。熱伝導は一定 cfg.thermCond)
+        } else if (viscMethod == 1) { // sutherland (熱伝導は thermCondMethod で選択)
             flow_float T0  = 273.0;
             flow_float mu0 = 1.716e-5;
             flow_float Smu = 111.0;
             vis_lam_array[ic]   = mu0*pow(T[ic]/T0,3.0/2.0)*(T0+Smu)/(T[ic]+Smu);
-            thermCond_array[ic] = thermCond_const;
+            // constant-Pr: k=μ(T)·cp/Pr で分子 Pr を一定に保つ (一定 k は高温で Pr~1.5-1.9 に漂う)。
+            thermCond_array[ic] = (thermCondMethod == 1)
+                ? vis_lam_array[ic]*cp_array[ic]/prandtlLam
+                : thermCond_const;
 
         } else if (viscMethod == 2) { // kinetic theory (Chapman-Enskog + Wilke/Mason-Saxena)
             // 組成 Y (単成分 or roY=nullptr のときは Y={1}) を構築し double で評価。
@@ -86,6 +93,7 @@ void gasProperties_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& ms
     gasProperties_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
         cfg.thermalMethod,
         cfg.viscMethod ,
+        cfg.thermCondMethod , cfg.prandtlLam ,
 
         // gas properties
         cfg.gamma , cfg.cp , cfg.visc, cfg.thermCond,

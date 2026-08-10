@@ -191,6 +191,10 @@ public:
     flow_float kInit = 0.0;     // 初期 k [m²/s²] (roK 欠落時 roK=ro*kInit)
     flow_float omegaInit = 0.0; // 初期 ω [1/s]   (roOmega 欠落時 roOmega=ro*omegaInit)
     flow_float turbulentPrandtl = 0.85; // 乱流プラントル数 Pr_t。乱流熱伝導 k_t=cp*mu_t/Pr_t に使用 (既定 0.85)
+    // 層流熱伝導のモデル: 0=一定 (cfg.thermCond, 従来・既定) / 1=constant-Pr (k=μ(T)·cp/prandtlLam)。
+    // Sutherland 粘性 + 一定 k は高温で分子 Pr が 1.5-1.9 に漂い非物理 (2026-08-11 レビュー指摘)。
+    int thermCondMethod = 0;
+    flow_float prandtlLam = 0.72;   // 層流プラントル数 (thermCondMethod=1 と壁関数 T_aw 回復係数 r=Pr^{1/3} に使用)
 
     // WMLES 代数壁応力モデル (Reichardt+Kader, methods/turbulence §10)。有効化は bcondConfig の
     // 壁単位 ints: wallModelLES=1 (LESorRANS!=2 のみ)。以下はモデルパラメータ (turbulence セクション)。

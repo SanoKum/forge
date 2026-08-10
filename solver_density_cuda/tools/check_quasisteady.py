@@ -46,12 +46,18 @@ def find_mesh(run_dir, explicit):
 
 
 def res_files(run_dir):
-    fs = glob.glob(os.path.join(run_dir, 'res_*.h5'))
-    fs = [f for f in fs if 'wall' not in os.path.basename(f)]
-    def step(f):
-        d = ''.join(ch for ch in os.path.basename(f) if ch.isdigit())
-        return int(d) if d else -1
-    return sorted(fs, key=step), [step(f) for f in sorted(fs, key=step)]
+    # 主スナップショット res_<step>.h5 のみ対象 (res_wall_*/res_outlet_*/res_nan_* 等の境界・
+    # 診断ファイルは除外)。旧実装は全数字連結で step を作っており、拡張子の「5」や bcond id まで
+    # step に混入していた (res_0.h5→5, res_outlet_2_12000.h5→2120005; 2026-08-11 レビュー指摘)。
+    import re
+    pat = re.compile(r'^res_(\d+)\.h5$')
+    pairs = []
+    for f in glob.glob(os.path.join(run_dir, 'res_*.h5')):
+        m = pat.match(os.path.basename(f))
+        if m:
+            pairs.append((int(m.group(1)), f))
+    pairs.sort()
+    return [f for _, f in pairs], [s for s, _ in pairs]
 
 
 def centroids(mesh):

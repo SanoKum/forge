@@ -102,3 +102,12 @@ cell/node とも約−240K (1186/1196K)。判別実験 D2 で forge `wallTreatme
 一方 η 0.955〜0.988 の真値と壁応力側の妥当性は、`y+≈1` low-Re と `y+>30` wall-function の
 格子系列で未決。元のD1–D3記録と限界は
 [調査メモ](../../notes/sessions/wall-temperature-three-way-analysis.md)を参照。
+
+**レビュー対応の実装 (2026-08-11)**: ① `check_quasisteady.py` の step パースバグ修正
+(res_outlet_*/拡張子数字の混入 — 既報 ALL STEADY は修正後ツールで再確認済み・結論不変)。
+② **`Taw_diag` 診断出力**を SST 壁関数に追加 (Crocco 型 T_aw = T_rep + Pr^{1/3}·U_t²/(2cp)):
+現既定 node 構成で **ベル部 mean 1420.2K = SU2 壁関数の壁温 1422K と 2K 差** — 熱的閉包を
+適用すれば SU2 と一致することをフォワード確認。壁状態への適用は保存整合の plan 化後。
+③ **`thermCondMethod: 1`** (constant-Pr: k=μ(T)cp/prandtlLam, 既定 0=従来) を追加 —
+スモーク (scratchpad D4) で壁温 −25K シフト (SU2 の逆向き +14.7K と符号整合、主因でないことも一致)。
+

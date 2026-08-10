@@ -114,3 +114,22 @@ forge wf=1 は「η 高め・壁温 −240 K」、forge wf=0 / SU2 は「壁温�
   `ransBoundary_d.cu` (ω ピン)。
 - 既知メモ: wf=1 は第一セルが対数層 (y+~30–80) にある前提 / low-Re は y+~1 前提
   (`sst-wall-treatment-yplus`)。
+
+## 7. 訂正 (2026-08-11, Codex 対照実験による)
+
+Codex の追加対照 (SU2 に `STANDARD_WALL_FUNCTION` を付けた `run_0030_su2_sst_wallfunc`) により、
+§3 の機構推察を次のとおり**訂正**する:
+
+- **「wf_pk が BL 全体の乱流を絞め殺したことが主犯」は棄却**。壁関数同士の比較では第一内点の
+  状態は近い (SU2 μt/μ=6.9・T=1015K vs forge 3.8・997K、ṁ も一致) のに、壁温だけが 1422K vs
+  1193K と違う。§1.2 の「μt 1/10」は forge-壁関数と SU2-low-Re という**異なる壁処理の解族を
+  混ぜた比較**であり、機構の証拠にならない。
+- **真因は forge SST 壁関数に断熱回復温度の熱的閉包 (Crocco–Busemann) がないこと**。SU2 壁関数は
+  T_aw = T_1 + Pr^{1/3}U_t²/(2cp) で壁温を更新しており、forge の第一セル値をこの式に入れると
+  SU2 と ~4K で一致する (Codex)。forge 側に `Taw_diag` 診断を実装して確認: ベル部 mean 1420.2K
+  = SU2 壁関数 1422K と 2K 差。
+- wf=0 (D2) の SU2-low-Re との一致は「同じ (未解像の) low-Re 解族に乗った」ことを示すだけで、
+  どちらが真かは y+≈1 系列がないと言えない。η 0.955〜0.988 の真値も同様に未決。
+- 分子 Pr の不整合 (Sutherland μ + 固定 k → Pr 1.5–1.87) は実在するが −230K の主因ではない
+  (SU2 対照 +14.7K / forge constant-Pr 実装 −25K)。`thermCondMethod: 1` として修正オプションを実装済み。
+
