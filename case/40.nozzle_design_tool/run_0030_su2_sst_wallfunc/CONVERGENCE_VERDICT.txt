@@ -1,0 +1,12 @@
+VERDICT: NOT CONVERGED
+
+SU2 v8.5, 5000 iterations from run_0028 fixed-CFL restart.
+Final log10 residuals:
+  rms[Rho]  = -4.709552
+  rms[RhoV] = -2.253505
+  rms[RhoE] =  1.438847
+  rms[k]    = -1.893723
+  rms[w]    =  0.676179
+
+history.csv and all floating-point arrays in flow.vtu contain no NaN/Inf.
+This run is a wall-treatment counterfactual, not a converged reference solution.

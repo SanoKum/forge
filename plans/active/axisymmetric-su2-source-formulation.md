@@ -109,6 +109,12 @@ forge の軸対称は r 重み幾何 (B 流儀: 面積・体積に r を乗じ�
   なく SU2 本体でも同様** — forge method 1 の 1e-4 プラトー評価の重要な文脈 (残差正規化が違うため
   絶対値の直接比較は不可、'落ち続けるか停滞するか' の質的比較)。② 軸は完全健全・**壁 T 市松なし**
   (mean ~4K vs forge node 206K) = 壁市松は forge node 離散化固有の確証。③ η_CF=0.9573 は forge
-  (node 0.990 / cell 0.979) より 2-3% 低いが、乱流入口 BC (TI1%/ratio10 vs k=1/ω=18000)・壁
-  y+~19-27 の low-Re 積分が未整合の粗比較。序列 node>cell>SU2 は BL 厚の差と整合的で、真値判定
-  には BL 分解能と乱流 BC を揃えた Phase 2 (Rao 照合) が必要。
+  (node 0.990 / cell 0.979) より 2-3% 低いが、壁 y+~19-27 の low-Re 積分が
+  forge automatic 壁処理と未整合の粗比較。入口コア乱流量は実測で
+  SU2 `k=0.975/ω=17160`、forge `1/18000` とほぼ一致するため、入口 BC を主交絡とする説明は撤回。
+  残る差には壁処理、Roe/SLAU、forge Kato–Launder/圧縮性補正、軸離散が含まれる。序列
+  node>cell>SU2 は BL 厚の差と整合的だが、真値判定には壁処理を揃えた Phase 2 (Rao 照合) が必要。
+  追加反実仮想 run_0030 (SU2 standard wall function) では第一内点とṁ (1.2934 vs forge 1.2928) が
+  forgeへ接近し、診断 η は0.9573→0.9725へ改善したが forge 0.9884には未達。
+  SU2 は Crocco–Busemann 断熱回復温度を明示するのに対し forge SST 壁関数は熱閉包を持たず、
+  壁温差 ~225 K が残った。詳細は boundary plan §2.8。

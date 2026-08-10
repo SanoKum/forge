@@ -48,7 +48,7 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0029_node_adiabfix` | **断熱壁熱流束リーク修正の反実仮想** (現既定構成, 修正のみ, warm from run_0022) | **壁 T 市松 mean 206→43.7K (−79%)・壁温 1631→1195K**。η=0.9884 (−0.12%)。残差は `NOT CONVERGED` プラトーだが、4000/8000/12000 の η・ṁ・壁温は手計算で不変。以後の node 断熱壁 run はこの物理が既定 | active (**断熱修正基準**) |
 | `run_0030_cell_5e3` | **cell を現行 5e-3 メッシュで取得** (壁温三者比較用, cold start, `problem_bell_smoke_cell.yaml`) | η=0.9813, ṁ=1.3035。壁温 mean 1185.8K = node (1195.9K) と同水準 → **壁温 −240K は node 固有でなく forge 共通** | active (cell 同一メッシュ基準) |
 | `run_0028_su2_sst` | **SU2 v8.5 クロスチェック** (同一メッシュを gmsh で .su2 化, 同一 BC, RANS-SST/ROE/MUSCL/Euler implicit+FGMRES, 手順書テンプレ) | 15000 iter + 固定 CFL10 継続 5000 iter。全残差は未収束プラトー (`rms[RhoE]≈10^1.06`, `rms[ω]≈10^0.30`)。軸健全・壁 T 市松なし、η_CF=0.9573。入口コア乱流量は SU2 `k=0.975/ω=17160` vs forge `1/18000` でほぼ一致する一方、SU2 low-Re と forge automatic 壁処理、Roe/SLAU、SST 生産補正、軸離散が未整合の粗比較 | active (SU2 対照) |
-| `run_0030_su2_sst_wallfunc` | run_0028 固定 CFL 最終場から継続し、SU2 `STANDARD_WALL_FUNCTION` だけを追加 | 第一内点が forge に接近 (`U=925 vs 843m/s`, `k=9.93e3 vs 8.54e3`, `μt/μ=8.3 vs 5.6`)。ṁ=1.2934もforge 1.2928に一致、診断 η=0.9725 (forge 0.9884)。それでも壁 T は面積重み **1422K**、forge は1193K。SU2 は Crocco–Busemann 断熱回復温度を明示設定するが forge SST 壁関数には熱閉包がないことを確証。`wall_temperature_compare.png`; 残差は `NOT CONVERGED` | active (熱壁関数の対照) |
+| `run_0030_su2_sst_wallfunc` | run_0028 固定 CFL 最終場から継続し、SU2 `STANDARD_WALL_FUNCTION` だけを追加 | 第一内点が forge に接近 (`U=925 vs 843m/s`, `k=9.93e3 vs 8.54e3`, `μt/μ=8.3 vs 5.6`)。ṁ=1.2934もforge 1.2928に一致、診断 η=0.9725 (forge 0.9884)。それでも壁 T は面積重み **1422K**、forge は1193K。SU2 は Crocco–Busemann 断熱回復温度を明示設定するが forge SST 壁関数には熱閉包がないことを確証。`wall_temperature_compare.png`; 残差は `NOT CONVERGED` の診断run | active (熱壁関数の対照) |
 | `run_0031_su2_sst_constk` | run_0028 固定 CFL 最終場から継続し、分子熱伝導率を forge と同じ 0.0257 固定へ変更 | SU2 壁 T は1426→**1441K** (+15K) で、forge の低温差を説明しない。forge の Sutherland μ + 固定 λ はベル第一内点で分子 Pr≈1.50–1.87となり air (`Pr≈0.72`) と非整合。残差は `NOT CONVERGED`; `residual_history.png` | active (熱物性の対照) |
 | `run_0027_node_rfloor` | **r 床 (`axisRFloor: 3.0e-4`, ユーザ提案)** の検証 (method 0, nodeAxisDirichlet **なし**, 全域2次+陰解法 cfl4) | 軸健全 (床0)・η=0.9906・rms_ro ~1e-7 プラトー。床帯縁に有界の k 帯 (~230; scratchpad soak +12000 step でビット不変の平衡)。素朴な面床は閉性破れで発散 → 離散閉性面積 (A_closure) で解決 | active (axisRFloor 基準) |
 
@@ -92,12 +92,13 @@ run_0001–0004 は壁 1e-3/2e-3 世代のメッシュ (現 problem yaml は全�
 注記: 残差プラトーの深掘り (真の定常収束品質) は Phase 2 (Rao 照合) で扱う。η の妥当性
 (0.98 前後はベルノズルとして自然なオーダー) も Phase 2 の照合が正式判定。
 
-**壁温の三者比較と原因 (2026-08-11 確定)**: SU2 は解析回復温度に一致 (1431K)、forge は cell/node
-とも −240K (1186/1196K)。判別実験 (scratchpad D1–D3) で **犯人は `wallTreatmentSST=1` (既定)** と
-確定 — OFF (low-Re) にすると cell は SU2 と 1K 差 (1429.8K)・η も 0.9549 vs SU2 0.9573 で整列し、
-BL の μt/μ が 20→102 に回復する。y+≈19–40 のバッファ層で壁関数の k 生産置換が BL 乱流を
-絞め殺し、熱側壁法則を持たないため断熱回復が成立しないのが機構。dilatation 補正は無罪 (D1)。
-全記録: [notes/sessions/wall-temperature-three-way-analysis.md](../../notes/sessions/wall-temperature-three-way-analysis.md)。
-**含意: 現メッシュは low-Re にも壁関数にも不適な y+ 帯であり、η 0.955〜0.988 のどこが真値かは
-メッシュ帯を変えて挟み込むまで未決。**
-
+**壁温の三者比較と原因 (2026-08-11 更新)**: SU2 low-Re は解析回復温度に近く (1431K)、forge は
+cell/node とも約−240K (1186/1196K)。判別実験 D2 で forge `wallTreatmentSST=0` は同じ SU2 low-Re と
+壁温1K差・η 0.25%差へ整列する。ただし両者とも `y+≈19–40` でlow-Reとして未解像なので、これだけで
+`wf_pk` を欠陥と断定してはならない。追加対照 `run_0030_su2_sst_wallfunc` では、x=30mm第一内点の
+`μt/μ=6.88` (forge wf=1 cellは3.80)・T=1015K (forge 997K) と近いまま、SU2はCrocco–Busemann
+熱閉包により壁温1427Kを得た。したがって**壁面出力の約240K差の直接原因はforge SST壁関数に
+断熱回復温度の熱閉包がないこと**であり、「BL全体のμt不足だけが原因」という帰属は棄却する。
+一方 η 0.955〜0.988 の真値と壁応力側の妥当性は、`y+≈1` low-Re と `y+>30` wall-function の
+格子系列で未決。元のD1–D3記録と限界は
+[調査メモ](../../notes/sessions/wall-temperature-three-way-analysis.md)を参照。
