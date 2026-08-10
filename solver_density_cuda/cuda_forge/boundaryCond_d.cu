@@ -507,6 +507,12 @@ void outlet_statPress_d
  // gas properties
  flow_float ga,
  flow_float cp,
+ // 規定背圧 (bcondConfig floats.Ps)。従来は bvar Psb を規定値の持ち場としていたが、
+ // Psb は他の全 BC カーネル同様「境界面の動的圧力」(毎ステップ書く) に正常化した。
+ // 旧実装は超音速分岐で Psb を更新しなかったため、node 弱形式の境界流束 p_tilde と
+ // 勾配境界閉包 (GG/LSQ の dP/dT) が超音速流出でも背圧を読み、出口列の P/T が
+ // 系統的に沈む欠陥 (plan boundary-node-nozzle-wall-outlet-stability §2.10) の真因だった。
+ flow_float P_exit_cfg,
  int thermalMethod, const SpeciesThermo* sp,
  flow_float* const* roY, int nSpecies,   // 多成分: ghost/backflow 組成 = 内部セル組成
 
@@ -572,7 +578,7 @@ flow_float* Psb
         //    printf("outlet_statPress_d: sxx = %f, syy = %f, szz = %f, sss = %f\n", sxx, syy, szz, sss);
         //}
 
-        flow_float Pnew = Psb[ib];
+        flow_float Pnew = P_exit_cfg;
         flow_float ronew = ro[ic];
         flow_float Uxnew = Ux[ic];
         flow_float Uynew = Uy[ic];
@@ -602,7 +608,7 @@ flow_float* Psb
             Pnew = P[ic]; ronew = ro[ic];   // Uxnew/Uynew/Uznew は既に内部値
         } else {
             // 亜音速流出 / 局所逆流: 静圧 P_exit + 内部エントロピー + 外向き Riemann で統一構築。
-            const flow_float P_exit = Psb[ib];
+            const flow_float P_exit = P_exit_cfg;
             const flow_float s_int  = P[ic]/pow(ro[ic], ga);         // 内部エントロピー P/ρ^γ
             const flow_float Rplus  = Un + (flow_float)2.0*c_int/(ga-(flow_float)1.0); // 外向き Riemann 不変量
             ronew = pow(P_exit/s_int, (flow_float)1.0/ga);            // ρ on interior isentrope
@@ -649,7 +655,9 @@ flow_float* Psb
         Ht[ig]    = roe[ig]/ronew + Pnew/ronew;
 
         rob[ib]    = ronew;
-        //Psb[ib]    = Pnew;
+        // 境界面の動的圧力: 超音速流出では内部外挿 P[ic]、亜音速では P_exit。
+        // node 弱形式流束 (convectiveFlux_boundary_d の p_tilde) と勾配境界閉包が読む。
+        Psb[ib]    = Pnew;
         Uxb[ib]    = Uxnew*uscale;
         Uyb[ib]    = Uynew*uscale;
         Uzb[ib]    = Uznew*uscale;
@@ -657,11 +665,13 @@ flow_float* Psb
         roUyb[ib]  = ronew*Uynew*uscale;
         roUzb[ib]  = ronew*Uznew*uscale;
         roeb[ib]   = roe[ig];
+        // Tsb は境界面の動的圧力 Pnew と整合させる (旧: 常に規定背圧から計算しており、
+        // 超音速流出で ro=内部・P=背圧 の不整合な温度が勾配境界閉包 dT を汚染していた)。
         if (thermalMethod == 2) {
             const double R = mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]);
-            Tsb[ib] = (flow_float)((double)Psb[ib]/((double)rob[ib]*R));
+            Tsb[ib] = (flow_float)((double)Pnew/((double)rob[ib]*R));
         } else {
-            Tsb[ib] = Psb[ib]*ga/(rob[ib]*(ga-1.0)*cp);
+            Tsb[ib] = Pnew*ga/(rob[ib]*(ga-1.0)*cp);
         }
     }
 };
@@ -671,6 +681,7 @@ void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond
     outlet_statPress_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
         cfg.gamma,
         cfg.cp,
+        bc.inputFloats["Ps"],   // 規定背圧 (yaml floats.Ps)。bvar Psb は動的値に正常化したため規定値はここから渡す
         cfg.thermalMethod, thermo_species_device_ptr(),
         species_roY_device_ptr(), cfg.nSpecies,
 

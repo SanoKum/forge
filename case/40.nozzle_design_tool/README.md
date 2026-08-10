@@ -62,6 +62,9 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0040_node_yp30_tawwf` | **Step3 壁関数系列 node** (`problem_bell_yp30.yaml` frac 1e-2, bell y+ mean 98, AR 3.8 PASS) wf=1+熱的閉包+constPr/Prt0.9, warm from run_0038 | 壁温 1405.2K (SU2 1418.9K と 13.7K 差)・ALL STEADY・全列 2.8–5.5 桁低下。η 出口積分 0.9835 (内部列 0.971)・ṁ 1.2864 | active (**Step3 node**) |
 | `run_0041_cell_yp30_tawwf` | 同 cell (`problem_bell_yp30_cell.yaml`, bell y+ mean 71), warm from run_0039 | 壁温 1387.2K (±20K 市松)・η 0.9802・ṁ 1.3029・ALL STEADY。**cell 代表点バイアスは y+~70 では消滅** (5e-3 のバッファ層代表点固有) | active (Step3 cell) |
 | `run_0042_su2_yp30_wallfunc` | **SU2 STANDARD_WALL_FUNCTION を同一 y+30 メッシュで** (low-Re 15000 → wf 継続 5000+10000 iter) | 壁温 **1418.9K**・η 0.9673・ṁ 1.2868。+10000 iter で全量不変 (準定常; rms[Rho] −4.5 プラトー, `residual_history.png`)。`wall_temperature_compare_yp30.png` | active (**Step3 SU2 対照**) |
+| `run_0043_node_yp1_outletfix` | **node 出口列欠陥の根治検証** (run_0037 と同一入力の A/B): `outlet_statPress` の bvar `Psb` 動的化修正 ([plan §2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | 出口列 sag **19.4%→0.39%** (超音速行 0.40%)。**η 出口積分 0.9754 = 内部列 0.9747–0.9755** (アーティファクト解消)。ṁ 1.2959 列間ばらつき消滅・ALL STEADY。壁温は run_0037 と ≤0.85K 差 (出口隣接除く) | active (**node y+1 正 (η 込み)**) |
+| `run_0044_node_yp30_outletfix` | 同修正の y+30 wf 系 A/B (run_0040 と同一入力) | sag 13.6%→0.17%。**η 出口積分 0.9835 (偽) → 0.9687 = 内部列 0.9679–0.9687**、SU2 wf (run_0042: 0.9673) と +0.14%。全列 2.8–5.1 桁低下・ALL STEADY。ṁ 1.2864 不変 | active (**Step3 node 正**) |
+| `run_0045_node_yp1_outletfix_cont` | run_0043 の res_12000 から +12000 step 継続 (準定常確認) | 場は run_0043 と不変 (出口 P 最大 6e-4)。残差は低レベルリミットサイクル (rms_ro 1.1e-8, rms_roUx 3.5e-5) で ALL STEADY | active (継続確認) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 
@@ -116,12 +119,14 @@ y+≈1 low-Re 三者基準 (run_0033–0037)・熱的壁関数 `sstThermalWallFu
 | 量 (③ベル Pt4MPa/Tt1500K/ε9) | 生産値 | 根拠 |
 | --- | --- | --- |
 | **ベル部壁温 T_w (断熱)** | **1400 ± 15 K** (理論 T_aw ≈1400) | y+1 low-Re: forge 1387–1389 / SU2 1414。wf+閉包: node 1405–1418 / SU2 1419–1422。旧 wf 値 1193K は熱閉包欠落、旧 cell 1767K は熱物性誤り |
-| **η_CF** | **0.978 ± 0.003** | 最良解像 (y+1) で cell 0.9779 / SU2 0.9796 / node 内部列 0.975。壁関数系列は 0.967 (SU2)〜0.981 (cell) に散り、メッシュ/壁処理依存が残る |
+| **η_CF** | **0.978 ± 0.003** | 最良解像 (y+1) で cell 0.9779 / SU2 0.9796 / node 0.9754 (出口欠陥修正後 run_0043, 出口積分=内部列)。壁関数系列は 0.967 (SU2)〜0.981 (cell) に散り、メッシュ/壁処理依存が残る |
 | ṁ | 1.29–1.30 kg/s (±0.5%) | 全系列。y+30 wf 系 (SU2/node) は −1% 側 |
 
-**注意**: ① node の η 出口積分値 (0.9835–0.9905 系) は出口列欠陥で +1.3% 過大
-([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) — 修正まで
-内部列積分か cell/SU2 を正とする。② 壁温は `wallTreatmentSST: 1` +
+**注意**: ① node 出口列欠陥は **2026-08-11 に根治済み**
+([plan §2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md), run_0043–0045) —
+node の η_CF は出口積分値をそのまま使ってよい (修正後の正値: y+1 low-Re 0.975 / y+30 wf 0.969)。
+修正前 run (run_0042 以前) の node η 出口積分値 (0.9835–0.9905 系) は +1.3% 過大のため使わない。
+② 壁温は `wallTreatmentSST: 1` +
 `sstThermalWallFunction: 1` + `thermCondMethod: 1, prandtlLam: 0.72` +
 `turbulentPrandtl: 0.9` を生産構成とする (node 一次)。③ 格子系列は壁処理レジームが
 異なるため Richardson/GCI は非適用 (単調収束系列でない)。
@@ -145,8 +150,9 @@ y+≈1 low-Re 三者基準 (run_0033–0037)・熱的壁関数 `sstThermalWallFu
 −210K が本質、Step 2 で対処)。③ η_CF の低 Re y+1 値は **cell 0.978 / SU2 0.980 / node 内部列
 0.975** に収束 — 従来の壁処理依存幅 0.955〜0.988 の下限 0.955 は「未解像 low-Re」、上限 0.988 は
 「node 出口アーティファクト」でありいずれも真値でない。④ 発見・修正したソルバ/ツールバグ 3 件
-(双対 CV 幾何 float32 桁落ち・interp_field node 照会点・node 出口列不整合 [未修正/運用回避]) は
-[plan §2.9–2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) 参照。
+(双対 CV 幾何 float32 桁落ち・interp_field node 照会点・node 出口列不整合 [根治済み 2026-08-11,
+run_0043–0045]) は
+[plan §2.9–2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) 参照。
 比較図: `run_0035_su2_yp1_lowre/wall_temperature_compare_yp1.png`。
 
 **壁温の三者比較と原因 (2026-08-11 更新)**: SU2 low-Re は解析回復温度に近く (1431K)、forge は
