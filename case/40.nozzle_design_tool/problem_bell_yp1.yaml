@@ -1,0 +1,39 @@
+# forge_design 問題定義 — 壁温真値確定用 y+≈1 low-Re メッシュ (③ベル, node)
+# problem_bell_smoke.yaml との差分: wall_first_frac 5e-3 → 1e-4 (y+≈1 目標; 2e-4 は bell y+ mean 1.84 だった),
+# nj 65 → 81 (壁法線成長率 ~1.08 に抑制), outStepInterval 1000 (quasisteady 判定用)
+name: bell_yp1
+type: thruster_bell
+mode: K
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 4.0e6          # 入口全圧 [Pa]
+  Tt: 1500.0         # 入口全温 [K]
+  p_ambient: 20000.0 # 背圧 [Pa] (高空条件・過膨張剥離を避ける)
+  r_throat: 0.010    # スロート半径 [m]
+  eps: 9.0           # 面積比 Ae/At
+
+dv:
+  theta_a_deg: {value: 20.0, min: 10.0, max: 28.0}
+  L_over_rt:   {value: 7.0,  min: 5.0,  max: 12.0}
+
+geometry:
+  r_inlet: 2.5
+  L_pipe: 0.5
+  L_contract: 3.0
+  Ru: 1.5
+  Rd: 0.4
+  phi_u_deg: 25.0
+  theta_e_deg: 8.0
+
+mesh:
+  ni: 221
+  nj: 81
+  wall_first_frac: 1.0e-4
+  throat_refine: 3.0
+
+evaluate:
+  turbulence: sst
+  nStepOuter: 12000
+  outStepInterval: 1000
+  objectives: [eta_cf, length]

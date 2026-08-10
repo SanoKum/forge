@@ -1404,24 +1404,31 @@ public:
                 }
 
                 // 四角形 A -> M1 -> G -> M2 の面積と面積加重重心 (shoelace)。
-                const geom_float px[4] = { nodes[A].coords[0], mid[0][0], Gx, mid[1][0] };
-                const geom_float py[4] = { nodes[A].coords[1], mid[0][1], Gy, mid[1][1] };
-                geom_float area2 = 0.0, cx2 = 0.0, cy2 = 0.0;
+                // 高 AR スリバー CV (壁 y+~1 メッシュ: ~176 μm × ~0.7 μm) では、絶対座標の
+                // float32 shoelace は交差積 ~1e-4 に対し面積 ~1e-10 の 6 桁相殺で桁落ちし、
+                // 体積を %級・重心を ~100 μm 級 (CV 外に出る) に誤る。これが wall_dist
+                // (centCoords 最近傍)・軸対称 r̄ 体積・cross-mesh interp を毒するため、
+                // A 相対座標 + double で計算する (厳密演算では従来と同値)。
+                const double ax = static_cast<double>(nodes[A].coords[0]);
+                const double ay = static_cast<double>(nodes[A].coords[1]);
+                const double px[4] = { 0.0, mid[0][0] - ax, Gx - ax, mid[1][0] - ax };
+                const double py[4] = { 0.0, mid[0][1] - ay, Gy - ay, mid[1][1] - ay };
+                double area2 = 0.0, cx2 = 0.0, cy2 = 0.0;
                 for (int k = 0; k < 4; ++k) {
                     const int kn = (k + 1) % 4;
-                    const geom_float cross = px[k]*py[kn] - px[kn]*py[k];
+                    const double cross = px[k]*py[kn] - px[kn]*py[k];
                     area2 += cross;
                     cx2 += (px[k] + px[kn]) * cross;
                     cy2 += (py[k] + py[kn]) * cross;
                 }
-                const geom_float subArea = 0.5 * std::fabs(area2);
-                dualVolume[A] += subArea;
-                // ポリゴン重心 = (1/6A)Σ(p_k+p_{k+1})cross。area2 の符号と整合させ subArea 加重。
+                const double subArea = 0.5 * std::fabs(area2);
+                dualVolume[A] += static_cast<geom_float>(subArea);
+                // ポリゴン重心 = (1/6A)Σ(p_k+p_{k+1})cross (A 相対) + A。subArea 加重。
                 if (std::fabs(area2) > 0.0) {
-                    dualCentroid[3*A + 0] += subArea * (cx2 / (3.0 * area2));
-                    dualCentroid[3*A + 1] += subArea * (cy2 / (3.0 * area2));
+                    dualCentroid[3*A + 0] += static_cast<geom_float>(subArea * (ax + cx2 / (3.0 * area2)));
+                    dualCentroid[3*A + 1] += static_cast<geom_float>(subArea * (ay + cy2 / (3.0 * area2)));
                     // z は 2D で node 値 (押し出し厚みの中央)。
-                    dualCentroid[3*A + 2] += subArea * nodes[A].coords[2];
+                    dualCentroid[3*A + 2] += static_cast<geom_float>(subArea * nodes[A].coords[2]);
                 }
             }
         }

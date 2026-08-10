@@ -51,6 +51,12 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0030_su2_sst_wallfunc` | run_0028 固定 CFL 最終場から継続し、SU2 `STANDARD_WALL_FUNCTION` だけを追加 | 第一内点が forge に接近 (`U=925 vs 843m/s`, `k=9.93e3 vs 8.54e3`, `μt/μ=8.3 vs 5.6`)。ṁ=1.2934もforge 1.2928に一致、診断 η=0.9725 (forge 0.9884)。それでも壁 T は面積重み **1422K**、forge は1193K。SU2 は Crocco–Busemann 断熱回復温度を明示設定するが forge SST 壁関数には熱閉包がないことを確証。`wall_temperature_compare.png`; 残差は `NOT CONVERGED` の診断run | active (熱壁関数の対照) |
 | `run_0031_su2_sst_constk` | run_0028 固定 CFL 最終場から継続し、分子熱伝導率を forge と同じ 0.0257 固定へ変更 | SU2 壁 T は1426→**1441K** (+15K) で、forge の低温差を説明しない。forge の Sutherland μ + 固定 λ はベル第一内点で分子 Pr≈1.50–1.87となり air (`Pr≈0.72`) と非整合。残差は `NOT CONVERGED`; `residual_history.png` | active (熱物性の対照) |
 | `run_0027_node_rfloor` | **r 床 (`axisRFloor: 3.0e-4`, ユーザ提案)** の検証 (method 0, nodeAxisDirichlet **なし**, 全域2次+陰解法 cfl4) | 軸健全 (床0)・η=0.9906・rms_ro ~1e-7 プラトー。床帯縁に有界の k 帯 (~230; scratchpad soak +12000 step でビット不変の平衡)。素朴な面床は閉性破れで発散 → 離散閉性面積 (A_closure) で解決 | active (axisRFloor 基準) |
+| `run_0032_cell_yp1_lowre` | y+≈1 メッシュ調整 1 発目 (`wall_first_frac 2e-4`, 221×81, AR 191 PASS)。cell wf=0+constPr, warm from run_0030 | bell y+ mean 1.84 (狙い未達)・T_w 1378K・η 0.9780・ALL STEADY | ref (frac 感度点) |
+| `run_0033_cell_yp1_lowre` | **y+≈1 確定メッシュ** (`frac 1e-4`, AR 381 PASS)。cell `wallTreatmentSST:0`+`thermCondMethod:1, prandtlLam:0.72` (Prt は既定 0.85), warm from run_0032 | bell y+ mean 0.94・T_w 1368.2K・η 0.9779・ṁ 1.2993・ALL STEADY (残差はプラトー) | active (Prt 感度対照) |
+| `run_0034_node_yp1_lowre` | node 同条件 (wf=0, Prt 0.85)。**発散切り分けで 2 バグ修正** (双対 CV 重心/体積の float32 桁落ち→wall_dist ガベージ / interp_field の node 照会点) — [plan §2.9](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)。段階起動 (陰 cfl0.5 1次 3000→陰 cfl4 2次, stageA/ 同梱)。warm は node 場 (run_0029) 必須 | 全列 2.8–3.5 桁低下 (rms_ro 3.4e-9)・ALL STEADY。T_w 1365.9K = cell と 2.3K 差・τ_w ~1% 差・ṁ 1.2959 (5e-3 世代の wf=0 ṁ −4.5% 異常は消滅) | active (Prt 感度対照) |
+| `run_0035_su2_yp1_lowre` | **SU2 v8.5 low-Re を同一 y+1 メッシュで** (run_0028 cfg 流用: adaptive 15000 + 固定 CFL10 5000 iter, PRANDTL_LAM 0.72 / PRANDTL_TURB 0.9 既定) | rms[Rho] 10^-5.95 (固定 CFL 相でも全列低下継続)。bell y+ mean 0.93・**T_w 1414.2K**・τ_w forge±1–3%・ṁ 1.3017・η 0.9796。**チェンバで T_w 1576K = Tt+76K の非物理超過あり** (断熱壁は Tt 超え不可; `wall_temperature_compare_yp1.png`) | active (**SU2 y+1 対照**) |
+| `run_0036_cell_yp1_prt09` | **cell y+1 正式基準**: run_0033 + `turbulentPrandtl: 0.9` (SU2 既定に整合; Prt 0.85→0.9 で T_w +20.5K, scratchpad D5) | **T_w 1388.9K・η 0.9779・ṁ 1.2993**・ALL STEADY | active (**Step1 cell 基準**) |
+| `run_0037_node_yp1_prt09` | **node y+1 正式基準**: run_0034 + `turbulentPrandtl: 0.9` | **T_w 1387.2K (cell と 1.7K 差)**・ṁ 1.2959・ALL STEADY。η は出口積分 0.9905 だが**出口列アーティファクトで過大** — 内部列積分 0.970–0.977 ([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | active (**Step1 node 基準**) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 
@@ -62,7 +68,8 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 
 ※ 収束値は check_convergence の実測 (全域 2 次では 3 方式とも NOT CONVERGED/プラトー判定であり、
 計量は quasisteady STEADY で担保)。η は同一 warm 系統・同一メッシュだが cell (run_0002) は壁 1e-3
-世代メッシュのため、node−cell 差 +1.1% の帰属は未確定 (Phase 2 の格子収束・Rao 照合が必要)。
+世代メッシュのため単純比較不可。**node−cell 差 +1.1% は出口列アーティファクトと判明 (2026-08-11,
+[plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md))**。
 2026-08-05 の断熱壁修正 (run_0029) 以後は node の η が ~0.12% 下がる (漏れ加熱の除去)。
 
 
@@ -71,8 +78,10 @@ L/rt = 6 / 7 / 9 → η_CF は cell (2026-08-03 前半, 壁 1e-3 メッシュ) 0
 **node 全域 2次+陰解法 (現既定, run_0023 / 0021 / 0024, 壁 5e-3)** 0.9822 / 0.9896 / 0.9942
 (bndFirstOrder あり世代 run_0018/0016/0019 は 0.9835 / 0.9907 / 0.9957)。いずれも物理的に
 正しい単調応答で、node−cell はほぼ一定の +1.1〜1.2% オフセット (トレンド保存)。オフセットの
-帰属: katoLaunder ではない (run_0017)・軸修正でもない (修正前 run_0012 も 0.991) → node 側
-2 次化の離散差。真値の判定は Phase 2 (Rao 照合・格子収束) で行う。
+帰属: katoLaunder ではない (run_0017)・軸修正でもない (修正前 run_0012 も 0.991)。
+**2026-08-11 訂正: この +1.1〜1.3% は node 出口列の系統的不整合による出口積分アーティファクト**
+([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) — 内部列で再積分すると
+node η は cell と整合する。node の η 出口積分値は修正まで生産値に使わない。
 
 **node モードの状態 (2026-08-04 更新)**: 残っていた 2 課題は解決した
 ([plan §2.6–2.7](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md))。
@@ -91,6 +100,30 @@ run_0001–0004 は壁 1e-3/2e-3 世代のメッシュ (現 problem yaml は全�
 
 注記: 残差プラトーの深掘り (真の定常収束品質) は Phase 2 (Rao 照合) で扱う。η の妥当性
 (0.98 前後はベルノズルとして自然なオーダー) も Phase 2 の照合が正式判定。
+
+
+**y+≈1 low-Re 三者基準解 (2026-08-11, Step 1 完了)**: 専用メッシュ 221×81 `wall_first_frac 1e-4`
+(AR 381 / skew 0.42 PASS, bell y+ mean ≈0.93) で forge cell / forge node / SU2 の低 Re 三者比較を実施
+(`problem_bell_yp1*.yaml`, run_0033–0037)。熱物性は SU2 と整合 (`thermCondMethod: 1, prandtlLam: 0.72`,
+`turbulentPrandtl: 0.9` — **Prt 0.85→0.9 で壁温 +20.5K の強感度**を発見し 0.9 を正式条件とする)。
+
+| 量 (bell 部) | forge cell (run_0036) | forge node (run_0037) | SU2 (run_0035) | 理論 T_aw |
+| --- | --- | --- | --- | --- |
+| T_w 面積平均 [K] | 1388.9 | 1387.2 | 1414.2 | ~1400 |
+| T_w @x=30mm [K] | 1388.5 | 1391.1 | 1416.6 | 1406 |
+| τ_w @x=30mm [Pa] | 1707 | 1754 | 1756 | — |
+| ṁ [kg/s] | 1.2993 | 1.2959 | 1.3017 | — |
+| η_CF | 0.9779 | 0.9905→**内部列 0.970–0.977** | 0.9796 | — |
+
+結論: ① cell/node は壁温 1.7K 差・τ_w ~1–3% 差で相互整合し、理論 T_aw 1400K の −1% 以内。
+② SU2 は bell で +1% 高めだが**チェンバで Tt+76K の非物理超過**があり厳密な正解ではない —
+壁温の真値帯は **~1390–1415K (理論 1400K ± 1%)** とみなす (wf=1 の 1193K に対し熱的閉包欠落
+−210K が本質、Step 2 で対処)。③ η_CF の低 Re y+1 値は **cell 0.978 / SU2 0.980 / node 内部列
+0.975** に収束 — 従来の壁処理依存幅 0.955〜0.988 の下限 0.955 は「未解像 low-Re」、上限 0.988 は
+「node 出口アーティファクト」でありいずれも真値でない。④ 発見・修正したソルバ/ツールバグ 3 件
+(双対 CV 幾何 float32 桁落ち・interp_field node 照会点・node 出口列不整合 [未修正/運用回避]) は
+[plan §2.9–2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) 参照。
+比較図: `run_0035_su2_yp1_lowre/wall_temperature_compare_yp1.png`。
 
 **壁温の三者比較と原因 (2026-08-11 更新)**: SU2 low-Re は解析回復温度に近く (1431K)、forge は
 cell/node とも約−240K (1186/1196K)。判別実験 D2 で forge `wallTreatmentSST=0` は同じ SU2 low-Re と

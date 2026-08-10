@@ -21,11 +21,16 @@ from res_h5_to_vtu import parse_conne
 
 
 def centroids(f):
-    # 入力 h5 は /CELLS/centCoords を持つのでそれを優先 (node/median-dual の
-    # 双対 CONNE は parse_conne で解析できないため必須。res_*.h5 は従来経路)
+    # DOF の代表座標。node (median-dual) では値数=節点数なので MESH/COORD (節点座標)
+    # を最優先する — CELLS/centCoords (双対 CV 重心) は高 AR の μm 級壁 CV で節点から
+    # ±100 μm 級に外れ (壁 CV の重心が域外に出る例あり)、最近傍照会に使うと近壁 IC が
+    # src の壁値/内部値を交互に拾う市松になる (case/40 y+1 node で発散種になった実害)。
+    coord = np.array(f["MESH/COORD"]).reshape(-1, 3)[:, :2]
+    if "VALUE/ro" in f and f["VALUE/ro"].shape[0] == coord.shape[0]:
+        return coord
+    # cell: 入力 h5 は /CELLS/centCoords を持つのでそれを優先 (res_*.h5 は CONNE 経路)
     if "CELLS/centCoords" in f:
         return np.array(f["CELLS/centCoords"]).reshape(-1, 3)[:, :2]
-    coord = np.array(f["MESH/COORD"]).reshape(-1, 3)[:, :2]
     nc = f["VALUE/ro"].shape[0]
     if nc == coord.shape[0]:
         # node-centered res (median-dual): 値の位置はノード座標そのもの
