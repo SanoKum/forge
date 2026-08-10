@@ -175,3 +175,54 @@ void zeroNodeIsothermalEnergyResidual(solverConfig& cfg , cudaConfig& cuda_cfg ,
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
 }
+
+// =============================================================================
+// SST 壁関数の熱的閉包 (methods/turbulence §6.5(f), plan turbulence-sst-thermal-wall-function)
+// **出力層閉包**: 断熱壁 (kind: wall) × wallTreatmentSST==1 のとき、壁面出力温度 (bvar Ts)
+// を Crocco 型回復温度 T_aw = T_rep + Pr^{1/3}·U_t²/(2cp) (Taw_diag) にする。
+//
+// 設計判断 (2026-08-11 検証で確定): T_aw を「状態」(node 温度ピン / cell ghost) として課すと、
+// 壁関数メッシュでは解像流束経路 (node: W–I 双対面伝導 / cell: ghost 勾配閉包) が
+// ピン点と BL の恒常的 ΔT=r·U_t²/2cp を熱流束と誤認して BL を加熱し続け、
+// T_aw=T_rep+Δ の正帰還で暴走する (node 1832 K 発散性ドリフト / cell は Tt=1500 K 飽和,
+// case/40 run_0038/0039)。断熱壁の整合的な閉包は「壁面熱流束 q_w=0 (既に厳密) + 壁温は
+// T_aw をサブグリッド量として出力」であり、SU2 壁関数の壁温出力 (1422 K) と 2 K 一致する。
+// 保存量・場の解には一切触れないため、エネルギー保存は自明に成立し OFF とビット同一。
+// =============================================================================
+
+namespace {
+
+// 断熱壁の壁面出力温度を T_aw に置換 (状態・保存量は不変)
+__global__ void set_wall_taw_output_d(
+    geom_int nb, geom_int* bplane_cell,
+    flow_float* Taw_diag, flow_float* Tsb)
+{
+    const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ib >= nb) return;
+    const flow_float Tw = Taw_diag[bplane_cell[ib]];
+    if (!(Tw > (flow_float)0.0)) return;   // 未計算 (-1 初期値) は従来出力のまま
+    Tsb[ib] = Tw;
+}
+
+} // namespace
+
+bool sstThermalWallFunctionActive(const solverConfig& cfg)
+{
+    return cfg.LESorRANS == 2 && cfg.RANSmodel == 1 &&
+           cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 1;
+}
+
+void applySstThermalWallFunction(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
+{
+    if (!sstThermalWallFunctionActive(cfg)) return;
+    for (auto& bc : msh.bconds) {
+        if (bc.bcondKind != "wall") continue;   // 断熱壁のみ (等温壁は物理壁温がある)
+        if (bc.iPlanes.empty()) continue;
+        set_wall_taw_output_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
+            static_cast<geom_int>(bc.iPlanes.size()),
+            bc.map_bplane_cell_d,
+            var.c_d["Taw_diag"], bc.bvar_d["Ts"]);
+    }
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}

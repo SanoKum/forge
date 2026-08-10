@@ -42,3 +42,9 @@ void applyNodeIsothermalWallPin(solverConfig& cfg , cudaConfig& cuda_cfg , mesh&
 
 // 素の node 等温壁の壁ノード res_roe ゼロ化 (zeroWallDirichletResiduals から呼ばれる)
 void zeroNodeIsothermalEnergyResidual(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+
+// SST 壁関数の熱的閉包 (methods/turbulence §6.5(f), 出力層): 断熱壁の壁面出力温度 (bvar Ts) を
+// Crocco 型 T_aw に置換する。状態・保存量は不変 (applyRansScalarBoundaries の後に呼ぶ —
+// Taw_diag が当該 step 値である必要)。
+bool sstThermalWallFunctionActive(const solverConfig& cfg);
+void applySstThermalWallFunction(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

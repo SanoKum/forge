@@ -31,12 +31,13 @@
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [axisymmetric-su2-source-formulation.md](active/axisymmetric-su2-source-formulation.md) | `axisymmetric / discretization` | 軸対称を SU2 流 (planar 幾何+1/y ソース) に切替える `axisymMethod: 1`。node 軸行真空化の根治 (nodeAxisDirichlet 撤去) |
-| [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2 解決済 (§2.6-2.7)。残: 細壁頑健性・壁 T エントロピー市松 (§2.8)・出口コーナー再評価 |
+| [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2/3 解決済 (§2.6-2.9, 細壁=双対幾何 float32 桁落ち修正)。残: **node 出口列不整合 (§2.10, η +1.3% 過大)**・壁 T エントロピー市松 (§2.8) |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [tooling-cloud-gpu-env.md](active/tooling-cloud-gpu-env.md) | `tooling / infra` | クラウド GPU 環境 (AWS EC2 spot): Docker 構築・計算投入・速度計測基盤。MPI 化の実行基盤を先行整備 |
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
+| [turbulence-sst-thermal-wall-function.md](active/turbulence-sst-thermal-wall-function.md) | `turbulence / boundary` | SST 壁関数の熱的閉包 (Crocco 型 T_aw)。壁関数メッシュの断熱壁温 −230K を解消 (Taw_diag=SU2±2K 確認済) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
 
 ## accepted (現役の設計判断)

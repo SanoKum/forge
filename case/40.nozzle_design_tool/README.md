@@ -57,6 +57,8 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0035_su2_yp1_lowre` | **SU2 v8.5 low-Re を同一 y+1 メッシュで** (run_0028 cfg 流用: adaptive 15000 + 固定 CFL10 5000 iter, PRANDTL_LAM 0.72 / PRANDTL_TURB 0.9 既定) | rms[Rho] 10^-5.95 (固定 CFL 相でも全列低下継続)。bell y+ mean 0.93・**T_w 1414.2K**・τ_w forge±1–3%・ṁ 1.3017・η 0.9796。**チェンバで T_w 1576K = Tt+76K の非物理超過あり** (断熱壁は Tt 超え不可; `wall_temperature_compare_yp1.png`) | active (**SU2 y+1 対照**) |
 | `run_0036_cell_yp1_prt09` | **cell y+1 正式基準**: run_0033 + `turbulentPrandtl: 0.9` (SU2 既定に整合; Prt 0.85→0.9 で T_w +20.5K, scratchpad D5) | **T_w 1388.9K・η 0.9779・ṁ 1.2993**・ALL STEADY | active (**Step1 cell 基準**) |
 | `run_0037_node_yp1_prt09` | **node y+1 正式基準**: run_0034 + `turbulentPrandtl: 0.9` | **T_w 1387.2K (cell と 1.7K 差)**・ṁ 1.2959・ALL STEADY。η は出口積分 0.9905 だが**出口列アーティファクトで過大** — 内部列積分 0.970–0.977 ([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | active (**Step1 node 基準**) |
+| `run_0038_node_5e3_tawwf` | **Step2 熱的閉包の主検証**: node 5e-3 wf=1 + `sstThermalWallFunction: 1` (+constPr/Prt0.9), warm from run_0029 | **bell 壁温 1417.9K = SU2 壁関数 1422K と 4.1K 一致** (OFF 1196K→+222K)。η 0.9884・ṁ 1.2928 = OFF 基準と一致・ALL STEADY。※初版の「状態ピン」設計は暴走 (壁温 1832K) し弱閉包に改訂 — [plan](../../plans/active/turbulence-sst-thermal-wall-function.md) §4 | active (**熱的閉包 node 検証**) |
+| `run_0039_cell_5e3_tawwf` | 同 cell 5e-3 (ghost 閉包→弱閉包に改訂後) | 壁温 1489.5K = **+70–90K 過大** (cell 代表点=第一セルの T が node/SU2 同高さ比 ~100–160K 高い — cell wf=1 BL 熱監査 follow-up)。初版 ghost Dirichlet は Tt 飽和で却下 | active (熱的閉包 cell の限界記録) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 

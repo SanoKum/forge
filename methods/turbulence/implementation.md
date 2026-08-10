@@ -234,6 +234,19 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
     (cell 990 に対し ~5800、局所)。場平均・x_R は cell/SU2 整合。
   - 関連 plan: [`turbulence-node-wall-function-coverage.md`](../../plans/active/turbulence-node-wall-function-coverage.md)。
 
+**熱的閉包 `sstThermalWallFunction` (theory §6.5(f), 既定 0=OFF)**: automatic wall
+treatment は熱側の壁法則を持たず、粗壁メッシュの断熱壁温出力が回復温度より ~200 K 冷える
+(case/40)。opt-in で Crocco 型 $T_{aw}$ (既存 `Taw_diag`, `ransWallFunction_d.cu` で毎ステップ
+計算) を断熱壁の**壁面値 (bvar `Ts`) にのみ**適用する — 実装は `nodeWallDirichlet_d.cu` の
+`applySstThermalWallFunction` (applyBconds 位相, `applyRansScalarBoundaries` の後) が
+`set_wall_taw_output_d` で `Tsb[ib]=Taw_diag[ic]` を書くだけ (node/cell 共通)。壁面値は
+壁面出力と境界 LSQ 勾配閉包に入るが、保存量・DPLUR・res_roe には一切触れない。
+**状態適用 (node 温度ピン / cell ghost Dirichlet) は正帰還暴走のため不可** (theory §6.5(f)
+「やってはいけない」、実測 run_0038/0039 旧版)。検証: node 5e-3 で壁温 1417.9 K =
+SU2 壁関数 1422 K と 4 K 一致・η/ṁ 不変・OFF 比 max|ΔT|~13 K 有界。cell は代表点バイアスで
++70–90 K 過大 (theory 参照, follow-up)。計画:
+[`turbulence-sst-thermal-wall-function.md`](../../plans/active/turbulence-sst-thermal-wall-function.md)。
+
 ### 3.8 SST-DES (DDES / IDDES) length scale 修正
 
 理論は [`theory.md`](theory.md) §8 (IDDES は §8.6)、計画は

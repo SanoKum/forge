@@ -20,6 +20,12 @@ node-centered で未知量の位置は**ノード**だが、現状 `CELLS/centCo
 
 本 plan は **`centCoords` を「値の位置」= node モードではノード座標に統一**し、cell/node で同一処理にする。双対 CV 重心は別量に分離し、軸対称の r 重み/source だけが使う。これにより前出の見かけ非直交が消え (検証済: 内部面 dcc を node 座標にすると case/36 SST が step3→1657 へ改善)、`ncx` のような node 専用分岐も不要になる。
 
+**追記 (2026-08-11)**: 双対 CV 重心/体積の**シューレース float32 桁落ち**を修正した
+(`gmshReader.hpp`, A 相対座標+double 化 — y+≈1 スリバー CV で重心が ~100 μm 級に狂い CV 外へ
+出て `wall_dist`/interp を破壊していた。[boundary plan §2.9](boundary-node-nozzle-wall-outlet-stability.md) 参照)。
+これで「双対重心の値が正確」にはなったが、本 plan の主題 (**値の位置=ノード座標への統一**と
+双対重心の分離) は未着手のまま残る。
+
 ## 2. スコープ
 
 - **やる**:

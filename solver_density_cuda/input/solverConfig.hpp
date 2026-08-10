@@ -172,6 +172,7 @@ public:
     int sstCrossDiffJac = 0;
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (methods/turbulence §7.5)
     int wallTreatmentSST = 1; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:1 (methods/turbulence §6.5)
+    int sstThermalWallFunction = 0; // SST壁関数の熱的閉包: 断熱壁温=Crocco型T_aw (§6.5(f))。wallTreatmentSST==1時のみ有効。既定0=OFF
                               // 注: 既定を 0→1 に変更 (2026-06-28, user 指示)。cell 含む全ケースが automatic 壁関数に
                               //     なるため、低Re 前提の検証 (case/26 Cf, flat-plate 回帰 等) は要再検証。
     // node-centered の第一内層ノードで k をハード Dirichlet (k=ω_w·μ_t,wall/ρ, SU2 SetTurbVars_WF 流) にする。

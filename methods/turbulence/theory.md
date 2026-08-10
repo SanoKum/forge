@@ -408,6 +408,42 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     `nodeKwfDirichlet=0` で $k$ を解く prod-fix に戻すと $x_R$ が cell/SU2 寄り)。$\omega$ ピンは Dirichlet 化しても
     壁ノードのまま (第一内層へ移すと凹コーナーで $\omega$ ピン値が race し崩壊するため不可)。
 
+#### (f) 断熱壁の熱的閉包 — Crocco 型回復温度 $T_{aw}$ (`sstThermalWallFunction`)
+
+(a)–(e) は**運動量・乱流スカラー側のみ**の壁関数であり、エネルギー側の壁法則を持たない。
+第一 DOF が対数層にある粗い壁メッシュでは、粘性散逸熱が乱流伝導で壁へ運ばれて成立する
+**断熱回復温度が解像されず、壁温出力が $-200\,\mathrm{K}$ 級に冷える** (case/40 ベルノズル:
+wf=1 壁温 1193 K vs SU2 壁関数 1422 K / y+≈1 low-Re 基準 1387–1414 K。
+`notes/sessions/wall-temperature-three-way-analysis.md` §7)。SU2 は
+`CNSSolver::SetTau_Wall_WF` で断熱壁温を Crocco–Busemann 回復温度へ更新する。
+
+opt-in `turbulence.sstThermalWallFunction` (既定 0) で、代表点 (§6.5(a) の Normal_Neighbor
+$\mathrm{rep}$) の状態から
+
+$$T_{aw} = T_{\mathrm{rep}} + r\,\frac{U_{t,\mathrm{rep}}^2}{2 c_p}, \qquad r = \mathrm{Pr}^{1/3}$$
+
+を毎ステップ評価し (実装は既存診断 `Taw_diag`)、**断熱壁 (`kind: wall`) かつ
+`wallTreatmentSST==1`** のとき**壁面値 (bvar `Ts`) にのみ**適用する。壁面値は
+① 壁面出力 (`res_wall_*` の壁温) と ② 境界 LSQ 勾配閉包 (calcGradient の bvar 閉包) に
+入るが、**保存量・壁面熱流束には触れない** (断熱壁の伝導熱流束は厳密 0 のまま)。
+サブグリッド量である粘性低層の温度上昇 $\Delta T = r U_t^2/2c_p$ を壁面値として表現する
+「弱閉包」であり、node 5e-3 (y+≈29–139) でベル壁温 1417.9 K = SU2 壁関数 1422 K と
+4 K 一致・η/ṁ は OFF と一致 (case/40 `run_0038`)。OFF 比の場の変化は勾配閉包経由のみで
+有界 (max |ΔT| ~13 K, 12000 step 安定)。
+
+**やってはいけない (2026-08-11 実測)**: $T_{aw}$ を**状態**として課すこと — node の
+壁ノード温度ピン (等温壁機構の流用) は W–I 双対面の解像伝導が、cell の ghost 温度
+Dirichlet は勾配閉包経由の実効伝導が、それぞれ「壁と BL の恒常オフセット
+$\Delta T = r U_t^2/2c_p$」を熱流束と誤認して BL を加熱し続け、$T_{aw}=T_{rep}+\Delta$ の
+正帰還で暴走する (node 1832 K 発散性ドリフト / cell は $T_t$=1500 K 飽和,
+case/40 `run_0038`/`run_0039` の旧版)。壁関数メッシュで $T_{aw}$ を状態として保持するには
+壁隣接の伝導流束自体のモデル置換 (SU2 流) が必要で、これは将来課題
+(等温壁の Kader $q_w$ モデルと同じ工事)。
+
+**cell の既知バイアス**: cell の代表点 = 第一セル (y+~30) の $T_1$ が node/SU2 の同高さより
+~100–160 K 高く (cell wf=1 の BL 熱監査は follow-up)、$T_{aw}$ が +70–90 K 過大になる
+(`run_0039`: 1490 K)。node を一次対象とする (ユーザ方針)。
+
 ## 7. 2D / 3D / 軸対称
 
 2D と 3D は、既存ソルバと同様に同一の離散化カーネルを共有する。

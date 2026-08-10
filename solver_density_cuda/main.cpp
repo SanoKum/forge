@@ -866,6 +866,7 @@ cudaConfig initializeSimulation(
     applyRansScalarBoundaries(cfg , cuda_cfg , msh , var);
     applyWmlesWallModel(cfg , cuda_cfg , msh , var);   // WMLES 壁応力モデル (wallModelLES 壁のみ, §10)
     applyNodeIsothermalWallPin(cfg , cuda_cfg , msh , var);   // 素の node 等温壁の壁ノード T ピン
+    applySstThermalWallFunction(cfg , cuda_cfg , msh , var);  // SST 熱的壁関数: 断熱壁 T_aw (§6.5(f))
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
@@ -953,6 +954,7 @@ void assembleResidual(StepContext& s, int stage_index)
         applyRansScalarBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyWmlesWallModel(s.cfg , s.cuda_cfg , s.msh , s.var);   // WMLES 壁応力モデル (§10)
         applyNodeIsothermalWallPin(s.cfg , s.cuda_cfg , s.msh , s.var);   // 素の node 等温壁 T ピン
+        applySstThermalWallFunction(s.cfg , s.cuda_cfg , s.msh , s.var);  // SST 熱的壁関数: 断熱壁 T_aw (§6.5(f))
         applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyCondensationBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
