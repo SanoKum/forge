@@ -29,6 +29,7 @@
 | [convection-keep-diss-lowmach-precond.md](active/convection-keep-diss-lowmach-precond.md) | `convection` | KEEP ES 散逸レイヤの低マッハ前処理化 (圧力ジャンプ増強で市松と解像物理を分離) |
 | [convection-keep-revive-node.md](active/convection-keep-revive-node.md) | `convection / turbulence` | KEEP スキーム復活 (modern API・cell/node) + node WALE で LES/ILES |
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
+| [architecture-median-dual-3d-double-geometry.md](active/architecture-median-dual-3d-double-geometry.md) | `architecture / discretization` | 3D median-dual 幾何の桁落ち除去 (Newell のローカル原点化+double 蓄積)。2D §2.9 修正の 3D 版 (draft) |
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [axisymmetric-su2-source-formulation.md](active/axisymmetric-su2-source-formulation.md) | `axisymmetric / discretization` | 軸対称を SU2 流 (planar 幾何+1/y ソース) に切替える `axisymMethod: 1`。node 軸行真空化の根治 (nodeAxisDirichlet 撤去) |
 | [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2/3 解決済 (§2.6-2.9, 細壁=双対幾何 float32 桁落ち修正)。残: **node 出口列不整合 (§2.10, η +1.3% 過大)**・壁 T エントロピー市松 (§2.8) |
@@ -37,6 +38,7 @@
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
+| [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (draft) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
 
 ## accepted (現役の設計判断)
