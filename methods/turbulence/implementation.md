@@ -245,7 +245,7 @@ treatment は熱側の壁法則を持たず、粗壁メッシュの断熱壁温�
 「やってはいけない」、実測 run_0038/0039 旧版)。検証: node 5e-3 で壁温 1417.9 K =
 SU2 壁関数 1422 K と 4 K 一致・η/ṁ 不変・OFF 比 max|ΔT|~13 K 有界。cell は代表点バイアスで
 +70–90 K 過大 (theory 参照, follow-up)。計画:
-[`turbulence-sst-thermal-wall-function.md`](../../plans/active/turbulence-sst-thermal-wall-function.md)。
+[`turbulence-sst-thermal-wall-function.md`](../../plans/accepted/turbulence-sst-thermal-wall-function.md)。
 
 ### 3.8 SST-DES (DDES / IDDES) length scale 修正
 

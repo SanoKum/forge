@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `turbulence / boundary`
-- **status**: `in_progress`
+- **status**: `done`  <!-- 2026-08-11 検証完了 (node 4.1K 一致, y+30 系列で SU2 13.7K 差)。cell 5e-3 代表点バイアスのみ follow-up -->
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
@@ -94,6 +94,11 @@ T_aw = T_rep + Pr^{1/3}·U_t²/(2cp) を壁面温度状態に適用し、壁関�
 
 - `2026-08-11` — 起票 (Codex レビュー合意済み設計)。theory §6.5(f) / implementation §3.7
   を同時更新。
+- `2026-08-11 (同日・Step3)` — y+≈65–300 壁関数系列 (case/40 run_0040–0042) で閉包を追検証:
+  node+閉包 1405.2 K vs SU2 STANDARD_WALL_FUNCTION 1418.9 K (13.7 K 差)、cell+閉包 1387.2 K
+  (**cell 代表点バイアスは y+~70 では消滅** — 5e-3 のバッファ層代表点 (y+~15–30) 固有と判明)。
+  三系列 (y+1 low-Re / 5e-3 wf / y+30 wf) の壁温が 1387–1422 K に収束し、生産値
+  T_w = 1400±15 K を確定 (case/40 README)。
 - `2026-08-11 (同日)` — 実装+検証。**当初の状態適用設計 (node ピン / cell ghost) は正帰還
   暴走で却下** (run_0038/0039 旧版で実測: node 1832 K ドリフト / cell Tt 飽和)、**弱閉包
   (bvar Ts のみ) に改訂して node 5e-3 で SU2 壁関数と 4.1 K 一致を達成**。methods は

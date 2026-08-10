@@ -57,8 +57,11 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0035_su2_yp1_lowre` | **SU2 v8.5 low-Re を同一 y+1 メッシュで** (run_0028 cfg 流用: adaptive 15000 + 固定 CFL10 5000 iter, PRANDTL_LAM 0.72 / PRANDTL_TURB 0.9 既定) | rms[Rho] 10^-5.95 (固定 CFL 相でも全列低下継続)。bell y+ mean 0.93・**T_w 1414.2K**・τ_w forge±1–3%・ṁ 1.3017・η 0.9796。**チェンバで T_w 1576K = Tt+76K の非物理超過あり** (断熱壁は Tt 超え不可; `wall_temperature_compare_yp1.png`) | active (**SU2 y+1 対照**) |
 | `run_0036_cell_yp1_prt09` | **cell y+1 正式基準**: run_0033 + `turbulentPrandtl: 0.9` (SU2 既定に整合; Prt 0.85→0.9 で T_w +20.5K, scratchpad D5) | **T_w 1388.9K・η 0.9779・ṁ 1.2993**・ALL STEADY | active (**Step1 cell 基準**) |
 | `run_0037_node_yp1_prt09` | **node y+1 正式基準**: run_0034 + `turbulentPrandtl: 0.9` | **T_w 1387.2K (cell と 1.7K 差)**・ṁ 1.2959・ALL STEADY。η は出口積分 0.9905 だが**出口列アーティファクトで過大** — 内部列積分 0.970–0.977 ([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | active (**Step1 node 基準**) |
-| `run_0038_node_5e3_tawwf` | **Step2 熱的閉包の主検証**: node 5e-3 wf=1 + `sstThermalWallFunction: 1` (+constPr/Prt0.9), warm from run_0029 | **bell 壁温 1417.9K = SU2 壁関数 1422K と 4.1K 一致** (OFF 1196K→+222K)。η 0.9884・ṁ 1.2928 = OFF 基準と一致・ALL STEADY。※初版の「状態ピン」設計は暴走 (壁温 1832K) し弱閉包に改訂 — [plan](../../plans/active/turbulence-sst-thermal-wall-function.md) §4 | active (**熱的閉包 node 検証**) |
+| `run_0038_node_5e3_tawwf` | **Step2 熱的閉包の主検証**: node 5e-3 wf=1 + `sstThermalWallFunction: 1` (+constPr/Prt0.9), warm from run_0029 | **bell 壁温 1417.9K = SU2 壁関数 1422K と 4.1K 一致** (OFF 1196K→+222K)。η 0.9884・ṁ 1.2928 = OFF 基準と一致・ALL STEADY。※初版の「状態ピン」設計は暴走 (壁温 1832K) し弱閉包に改訂 — [plan](../../plans/accepted/turbulence-sst-thermal-wall-function.md) §4 | active (**熱的閉包 node 検証**) |
 | `run_0039_cell_5e3_tawwf` | 同 cell 5e-3 (ghost 閉包→弱閉包に改訂後) | 壁温 1489.5K = **+70–90K 過大** (cell 代表点=第一セルの T が node/SU2 同高さ比 ~100–160K 高い — cell wf=1 BL 熱監査 follow-up)。初版 ghost Dirichlet は Tt 飽和で却下 | active (熱的閉包 cell の限界記録) |
+| `run_0040_node_yp30_tawwf` | **Step3 壁関数系列 node** (`problem_bell_yp30.yaml` frac 1e-2, bell y+ mean 98, AR 3.8 PASS) wf=1+熱的閉包+constPr/Prt0.9, warm from run_0038 | 壁温 1405.2K (SU2 1418.9K と 13.7K 差)・ALL STEADY・全列 2.8–5.5 桁低下。η 出口積分 0.9835 (内部列 0.971)・ṁ 1.2864 | active (**Step3 node**) |
+| `run_0041_cell_yp30_tawwf` | 同 cell (`problem_bell_yp30_cell.yaml`, bell y+ mean 71), warm from run_0039 | 壁温 1387.2K (±20K 市松)・η 0.9802・ṁ 1.3029・ALL STEADY。**cell 代表点バイアスは y+~70 では消滅** (5e-3 のバッファ層代表点固有) | active (Step3 cell) |
+| `run_0042_su2_yp30_wallfunc` | **SU2 STANDARD_WALL_FUNCTION を同一 y+30 メッシュで** (low-Re 15000 → wf 継続 5000+10000 iter) | 壁温 **1418.9K**・η 0.9673・ṁ 1.2868。+10000 iter で全量不変 (準定常; rms[Rho] −4.5 プラトー, `residual_history.png`)。`wall_temperature_compare_yp30.png` | active (**Step3 SU2 対照**) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 
@@ -103,6 +106,25 @@ run_0001–0004 は壁 1e-3/2e-3 世代のメッシュ (現 problem yaml は全�
 注記: 残差プラトーの深掘り (真の定常収束品質) は Phase 2 (Rao 照合) で扱う。η の妥当性
 (0.98 前後はベルノズルとして自然なオーダー) も Phase 2 の照合が正式判定。
 
+
+
+**壁温・η_CF の生産値確定 (2026-08-11, 壁温真値 3 段階キャンペーン完了)**:
+y+≈1 low-Re 三者基準 (run_0033–0037)・熱的壁関数 `sstThermalWallFunction` (run_0038–0039,
+[plan](../../plans/accepted/turbulence-sst-thermal-wall-function.md))・y+≈65–300 壁関数系列
+(run_0040–0042) による挟み込みの結論:
+
+| 量 (③ベル Pt4MPa/Tt1500K/ε9) | 生産値 | 根拠 |
+| --- | --- | --- |
+| **ベル部壁温 T_w (断熱)** | **1400 ± 15 K** (理論 T_aw ≈1400) | y+1 low-Re: forge 1387–1389 / SU2 1414。wf+閉包: node 1405–1418 / SU2 1419–1422。旧 wf 値 1193K は熱閉包欠落、旧 cell 1767K は熱物性誤り |
+| **η_CF** | **0.978 ± 0.003** | 最良解像 (y+1) で cell 0.9779 / SU2 0.9796 / node 内部列 0.975。壁関数系列は 0.967 (SU2)〜0.981 (cell) に散り、メッシュ/壁処理依存が残る |
+| ṁ | 1.29–1.30 kg/s (±0.5%) | 全系列。y+30 wf 系 (SU2/node) は −1% 側 |
+
+**注意**: ① node の η 出口積分値 (0.9835–0.9905 系) は出口列欠陥で +1.3% 過大
+([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) — 修正まで
+内部列積分か cell/SU2 を正とする。② 壁温は `wallTreatmentSST: 1` +
+`sstThermalWallFunction: 1` + `thermCondMethod: 1, prandtlLam: 0.72` +
+`turbulentPrandtl: 0.9` を生産構成とする (node 一次)。③ 格子系列は壁処理レジームが
+異なるため Richardson/GCI は非適用 (単調収束系列でない)。
 
 **y+≈1 low-Re 三者基準解 (2026-08-11, Step 1 完了)**: 専用メッシュ 221×81 `wall_first_frac 1e-4`
 (AR 381 / skew 0.42 PASS, bell y+ mean ≈0.93) で forge cell / forge node / SU2 の低 Re 三者比較を実施
