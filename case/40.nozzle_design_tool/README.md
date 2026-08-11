@@ -69,6 +69,8 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0047_node_yp30_repro` | 同一バイナリ再走で run-to-run 床を測定 | rel 2e-6〜3e-5 (roK 最大) — run_0046 の差と同桁 | 破棄予定 (床測定のみ) |
 | `run_0048_node_yp1_isoT_ref` | **等温壁 Ts=1000K の y+1 low-Re 真値** (run_0043 入力 + wall_isothermal, warm from run_0043) | q_w: スロート −1.7 MW/m²・ベル −0.15〜−0.6 MW/m²。残差 2 桁低下プラトー・q_w 静定 | active (**等温壁真値**) |
 | `run_0049_node_yp30_isoT_qwwf` | **`sstEnergyWallFunction:1` (Kader 原式) node y+30 wf** (run_0044 入力 + wall_isothermal Ts=1000K, warm from run_0044) | vs run_0048: **チャンバ/スロート −9%** (実用域)、**ベル部 (M≈4 冷却壁) +37〜+265% (積分 +87%) 過大 = 非圧縮 Kader T⁺ の圧縮性限界を実測** ([plan §8](../../plans/active/turbulence-sst-thermal-flux-model.md) フォローアップ) | active (**圧縮性限界の記録**) |
+| `run_0050_node_yp1_outletic` | **出口修正の最終形 (ic 参照) A/B** (run_0037 と同一入力): Psb 入力専用化 + node outlet の p_tilde/勾配閉包を内部値参照に改訂 ([plan §2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md) 改訂) | sag 0.40% / η 出口 0.9754 = 内部列 0.9747–0.9756・ṁ 1.2959 — **前実装 (run_0043) と同一の根治**。Psb 分布指定 (inletProfile CSV) が保持される | active (**node y+1 正 (最終形)**) |
+| `run_0051_node_yp30_outletic` | 同最終形の y+30 wf A/B (run_0040 と同一入力) | sag 0.18% / η 出口 0.9687 = 内部列・SU2 wf +0.14%・ṁ 1.2864 — run_0044 と同一 | active (**Step3 node 正 (最終形)**) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 

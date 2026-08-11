@@ -507,12 +507,6 @@ void outlet_statPress_d
  // gas properties
  flow_float ga,
  flow_float cp,
- // 規定背圧 (bcondConfig floats.Ps)。従来は bvar Psb を規定値の持ち場としていたが、
- // Psb は他の全 BC カーネル同様「境界面の動的圧力」(毎ステップ書く) に正常化した。
- // 旧実装は超音速分岐で Psb を更新しなかったため、node 弱形式の境界流束 p_tilde と
- // 勾配境界閉包 (GG/LSQ の dP/dT) が超音速流出でも背圧を読み、出口列の P/T が
- // 系統的に沈む欠陥 (plan boundary-node-nozzle-wall-outlet-stability §2.10) の真因だった。
- flow_float P_exit_cfg,
  int thermalMethod, const SpeciesThermo* sp,
  flow_float* const* roY, int nSpecies,   // 多成分: ghost/backflow 組成 = 内部セル組成
 
@@ -578,7 +572,13 @@ flow_float* Psb
         //    printf("outlet_statPress_d: sxx = %f, syy = %f, szz = %f, sss = %f\n", sxx, syy, szz, sss);
         //}
 
-        flow_float Pnew = P_exit_cfg;
+        // 規定背圧 P_exit は bvar Psb を**入力専用**として読む (面ごとの分布指定
+        // [inletProfile CSV の Ps 列など] を保持するため、本カーネルは Psb を書き換えない)。
+        // node 弱形式の境界圧力流束 p_tilde と勾配境界閉包は、outlet では内部値 P[ic]/T[ic] を
+        // 参照する (流束/勾配カーネル側の outlet フラグ。超音速流出で背圧を読む旧欠陥の根治 —
+        // plan boundary-node-nozzle-wall-outlet-stability §2.11。亜音速の背圧アンカーは
+        // 本カーネルの特性構成 bvar [ronew/Vn_exit] の質量流束が担う)。
+        flow_float Pnew = Psb[ib];
         flow_float ronew = ro[ic];
         flow_float Uxnew = Ux[ic];
         flow_float Uynew = Uy[ic];
@@ -608,7 +608,7 @@ flow_float* Psb
             Pnew = P[ic]; ronew = ro[ic];   // Uxnew/Uynew/Uznew は既に内部値
         } else {
             // 亜音速流出 / 局所逆流: 静圧 P_exit + 内部エントロピー + 外向き Riemann で統一構築。
-            const flow_float P_exit = P_exit_cfg;
+            const flow_float P_exit = Psb[ib];
             const flow_float s_int  = P[ic]/pow(ro[ic], ga);         // 内部エントロピー P/ρ^γ
             const flow_float Rplus  = Un + (flow_float)2.0*c_int/(ga-(flow_float)1.0); // 外向き Riemann 不変量
             ronew = pow(P_exit/s_int, (flow_float)1.0/ga);            // ρ on interior isentrope
@@ -655,9 +655,7 @@ flow_float* Psb
         Ht[ig]    = roe[ig]/ronew + Pnew/ronew;
 
         rob[ib]    = ronew;
-        // 境界面の動的圧力: 超音速流出では内部外挿 P[ic]、亜音速では P_exit。
-        // node 弱形式流束 (convectiveFlux_boundary_d の p_tilde) と勾配境界閉包が読む。
-        Psb[ib]    = Pnew;
+        // Psb は入力専用 (規定背圧の面分布を保持) — ここでは書き換えない。
         Uxb[ib]    = Uxnew*uscale;
         Uyb[ib]    = Uynew*uscale;
         Uzb[ib]    = Uznew*uscale;
@@ -681,7 +679,6 @@ void outlet_statPress_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , bcond
     outlet_statPress_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
         cfg.gamma,
         cfg.cp,
-        bc.inputFloats["Ps"],   // 規定背圧 (yaml floats.Ps)。bvar Psb は動的値に正常化したため規定値はここから渡す
         cfg.thermalMethod, thermo_species_device_ptr(),
         species_roY_device_ptr(), cfg.nSpecies,
 

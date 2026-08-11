@@ -12,6 +12,12 @@ __global__ void convectiveFlux_boundary_d // slau
  int advGauge,   // 移流基準差分 (plan §8.5): 主ループ KEEP_d の advGauge と厳密に同条件で on/off
                  // (host 判定 solver==KEEP && CPG && roRef>0)。ゲージは CV の全面に載らないと
                  // telescoping が破れるため、片側だけの有効化は禁止。
+ // node × outlet_statPress のみ 1: 境界圧力流束 p_tilde を bvar Psb (規定背圧, 入力専用)
+ // でなく内部値 Ps[ic] で評価する。超音速流出で背圧を読み出口列が沈む欠陥の根治
+ // (plan boundary-node-nozzle-wall-outlet-stability §2.11)。亜音速の背圧アンカーは
+ // 特性構成された bvar (rob/Uxb 等) の質量流束が担う。入口/壁/slip は 0 (従来どおり
+ // bvar 圧力 = BC の効き筋 or P[ic] と同値)。
+ int pTildeInterior,
 
   // mesh structure
  geom_int nb,
@@ -171,7 +177,7 @@ __global__ void convectiveFlux_boundary_d // slau
         //flow_float M_hat = min(one, sqrt(half*(u_m*u_m+v_m*v_m+w_m*w_m +u_p*u_p+v_p*v_p+w_p*w_p))/c_hat);
         //flow_float chi = (1.0-M_hat)*(1.0-M_hat);
 
-        flow_float p_tilde = P_R;
+        flow_float p_tilde = (pTildeInterior != 0) ? Ps[ic] : P_R;
 
         flow_float mdot = sss*(ro_R*Vn_m);
 

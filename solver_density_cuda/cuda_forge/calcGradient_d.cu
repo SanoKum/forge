@@ -215,7 +215,11 @@ __global__ void calcGradient_b_d
  //flow_float* droedx  , flow_float* droedy , flow_float* droedz,
  //flow_float* dHtdx  , flow_float* dHtdy , flow_float* dHtdz,
 
- flow_float* divU
+ flow_float* divU,
+ // node × outlet_statPress のみ 1: 境界面の P/T を bvar (Psb は規定背圧の入力専用)
+ // でなく内部値 P_c[ic]/T_c[ic] で閉じる (§2.11 — 超音速流出で背圧が dP/dT を汚染する
+ // 欠陥の根治。zero-normal-gradient 閉包に相当)。他 bcond は 0 (壁 Tw 閉包などは bvar 必須)。
+ int interiorPT, flow_float* P_c, flow_float* T_c
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -224,7 +228,7 @@ __global__ void calcGradient_b_d
         geom_int  ip = bplane_plane[ib];
         geom_int  ic = bplane_cell[ib];
         geom_int  ig = bplane_cell_ghst[ib];
-       
+
         geom_float sxx = sx[ip];
         geom_float syy = sy[ip];
         geom_float szz = sz[ip];
@@ -239,8 +243,8 @@ __global__ void calcGradient_b_d
         flow_float Uyf = roUyf/rof;
         flow_float Uzf = roUzf/rof;
         flow_float ek = 0.5*(Uxf*Uxf + Uyf*Uyf + Uzf*Uzf);
-        flow_float Pf = Ps[ib];
-        flow_float Tf = Ts[ib];
+        flow_float Pf = (interiorPT != 0) ? P_c[ic] : Ps[ib];
+        flow_float Tf = (interiorPT != 0) ? T_c[ic] : Ts[ib];
         flow_float Htf= roef/rof + Pf/rof;
 
         flow_float US  = Uxf*sxx +Uyf*syy +Uzf*szz;
@@ -548,8 +552,10 @@ __global__ void lsqGrad_accumInternal_d(
 }
 
 // 境界半割面の bvar 境界値を LSQ 点 (半割面重心 pc) として M,b へ atomicAdd で加える。
+// interiorPT (node × outlet_statPress のみ 1): P/T のジャンプを 0 にする (bvar Psb は規定背圧の
+// 入力専用で境界面圧力でないため。zero-normal-gradient 閉包, §2.11)。
 __global__ void lsqGrad_accumBoundary_d(
-    geom_int nb, geom_int* bplane_plane, geom_int* bplane_cell,
+    geom_int nb, geom_int* bplane_plane, geom_int* bplane_cell, int interiorPT,
     geom_float* pcx, geom_float* pcy, geom_float* pcz,
     geom_float* ccx, geom_float* ccy, geom_float* ccz,
     flow_float* rob, flow_float* Uxb, flow_float* Uyb, flow_float* Uzb, flow_float* Psb, flow_float* Tsb,
@@ -571,7 +577,9 @@ __global__ void lsqGrad_accumBoundary_d(
     atomicAdd(&Mxz[ic],(flow_float)(w*dx*dz)); atomicAdd(&Myy[ic],(flow_float)(w*dy*dy));
     atomicAdd(&Myz[ic],(flow_float)(w*dy*dz)); atomicAdd(&Mzz[ic],(flow_float)(w*dz*dz));
     const double dr=rob[ib]-ro[ic], dux=Uxb[ib]-Ux[ic], duy=Uyb[ib]-Uy[ic],
-                 duz=Uzb[ib]-Uz[ic], dp=Psb[ib]-P[ic], dt=Tsb[ib]-T[ic];
+                 duz=Uzb[ib]-Uz[ic],
+                 dp=(interiorPT!=0)?0.0:(double)(Psb[ib]-P[ic]),
+                 dt=(interiorPT!=0)?0.0:(double)(Tsb[ib]-T[ic]);
     atomicAdd(&drodx[ic],(flow_float)(w*dx*dr)); atomicAdd(&drody[ic],(flow_float)(w*dy*dr)); atomicAdd(&drodz[ic],(flow_float)(w*dz*dr));
     atomicAdd(&dUxdx[ic],(flow_float)(w*dx*dux)); atomicAdd(&dUxdy[ic],(flow_float)(w*dy*dux)); atomicAdd(&dUxdz[ic],(flow_float)(w*dz*dux));
     atomicAdd(&dUydx[ic],(flow_float)(w*dx*duy)); atomicAdd(&dUydy[ic],(flow_float)(w*dy*duy)); atomicAdd(&dUydz[ic],(flow_float)(w*dz*duy));
@@ -829,8 +837,9 @@ __global__ void lsqPreGrad_internal_d(
 }
 
 // runtime 2/3: 非 periodic 境界の bvar 点寄与 (atomicAdd; 1 セルが複数境界面を持ち得るため)。
+// interiorPT: lsqGrad_accumBoundary_d と同じ (outlet の P/T ジャンプを 0 に, §2.11)。
 __global__ void lsqPreGrad_boundary_d(
-    geom_int nb, geom_int* bplane_cell, const flow_float* cBnd_off,
+    geom_int nb, geom_int* bplane_cell, int interiorPT, const flow_float* cBnd_off,
     flow_float* rob, flow_float* Uxb, flow_float* Uyb, flow_float* Uzb, flow_float* Psb, flow_float* Tsb,
     flow_float* ro, flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* P, flow_float* T,
     flow_float* drodx, flow_float* drody, flow_float* drodz,
@@ -849,8 +858,10 @@ __global__ void lsqPreGrad_boundary_d(
     d=Uxb[ib]-Ux[ic]; atomicAdd(&dUxdx[ic],c0*d); atomicAdd(&dUxdy[ic],c1*d); atomicAdd(&dUxdz[ic],c2*d);
     d=Uyb[ib]-Uy[ic]; atomicAdd(&dUydx[ic],c0*d); atomicAdd(&dUydy[ic],c1*d); atomicAdd(&dUydz[ic],c2*d);
     d=Uzb[ib]-Uz[ic]; atomicAdd(&dUzdx[ic],c0*d); atomicAdd(&dUzdy[ic],c1*d); atomicAdd(&dUzdz[ic],c2*d);
-    d=Psb[ib]-P[ic];  atomicAdd(&dPdx[ic],c0*d);  atomicAdd(&dPdy[ic],c1*d);  atomicAdd(&dPdz[ic],c2*d);
-    d=Tsb[ib]-T[ic];  atomicAdd(&dTdx[ic],c0*d);  atomicAdd(&dTdy[ic],c1*d);  atomicAdd(&dTdz[ic],c2*d);
+    if (interiorPT == 0) {
+        d=Psb[ib]-P[ic];  atomicAdd(&dPdx[ic],c0*d);  atomicAdd(&dPdy[ic],c1*d);  atomicAdd(&dPdz[ic],c2*d);
+        d=Tsb[ib]-T[ic];  atomicAdd(&dTdx[ic],c0*d);  atomicAdd(&dTdy[ic],c1*d);  atomicAdd(&dTdz[ic],c2*d);
+    }
 }
 
 // runtime 3/3: divU (境界寄与の atomicAdd 完了後に呼ぶ)。
@@ -986,7 +997,9 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
             auto& bc = msh.bconds[ibc];
             if (bndOff[ibc] < 0) continue;
             lsqPreGrad_boundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
-                (geom_int)bc.iPlanes.size(), bc.map_bplane_cell_d, cBnd + 3*bndOff[ibc],
+                (geom_int)bc.iPlanes.size(), bc.map_bplane_cell_d,
+                ((bc.bcondKind == "outlet_statPress") ? 1 : 0),   // P/T 閉包を内部値で (§2.11)
+                cBnd + 3*bndOff[ibc],
                 bc.bvar_d["ro"],bc.bvar_d["Ux"],bc.bvar_d["Uy"],bc.bvar_d["Uz"],bc.bvar_d["Ps"],bc.bvar_d["Ts"],
                 var.c_d["ro"],var.c_d["Ux"],var.c_d["Uy"],var.c_d["Uz"],var.c_d["P"],var.c_d["T"],
                 var.c_d["drodx"],var.c_d["drody"],var.c_d["drodz"],
@@ -1029,6 +1042,7 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
             if (bc.iPlanes.size()==0) continue;
             lsqGrad_accumBoundary_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>> (
                 (geom_int)bc.iPlanes.size(), bc.map_bplane_plane_d, bc.map_bplane_cell_d,
+                ((bc.bcondKind == "outlet_statPress") ? 1 : 0),   // P/T 閉包を内部値で (§2.11)
                 var.p_d["pcx"],var.p_d["pcy"],var.p_d["pcz"],
                 var.c_d["ccx"],var.c_d["ccy"],var.c_d["ccz"],
                 bc.bvar_d["ro"],bc.bvar_d["Ux"],bc.bvar_d["Uy"],bc.bvar_d["Uz"],bc.bvar_d["Ps"],bc.bvar_d["Ts"],
@@ -1100,7 +1114,9 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
                 var.c_d["drodx"] , var.c_d["drody"] , var.c_d["drodz"],
                 var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
                 var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
-                var.c_d["divU"]
+                var.c_d["divU"],
+                // node × outlet_statPress: P/T の境界閉包を内部値で (§2.11)
+                ((bc.bcondKind == "outlet_statPress") ? 1 : 0), var.c_d["P"], var.c_d["T"]
             ) ;
         }
         gpuErrchk( cudaPeekAtLastError() );

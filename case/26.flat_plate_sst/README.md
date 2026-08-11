@@ -109,6 +109,7 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0026_isoT_yp30_qwwf_kader` | 同上 + **Kader 原式修正** (`wallLaw_kader_tplus` = 2.12·ln(1+y⁺)+β 形へ)。warm from run_0025 | **q_w = 真値 +0.1%** (range −0.7〜+1.4%, x=0.3-0.9)。qwall drift 0.17%/10k で静定 | active (**等温壁 y+30 正**) |
 | `run_0027_isoT_fine_qwwf` | Kader 原式を細メッシュ y+0.35 で (low-Re 極限回帰)。warm from run_0023 | **q_w = 真値 −0.1%** — 置換が解像伝導へ正しく縮退 | active (low-Re 極限) |
 | `run_0028_isoT_yp10_qwwf` | Kader 原式をバッファ帯 y+10 で。warm from run_0018 (断熱 wf 場) | **q_w = 真値 +6.2%** (range +5.7〜+7.3%) — ブレンド帯の残差で許容 | active (バッファ帯) |
+| `run_0029_node_outletic_subsonic` | **亜音速出口の背圧アンカー検証** (node outlet の p_tilde/勾配閉包を内部値参照に改訂した最終形, [plan §2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)): run_node_sst_final 収束場から 12000 step | **出口 P 平均 97250.6 Pa (規定 97250, ±3 Pa) を保持** = p_tilde=P[ic] でも特性構成 bvar の質量流束が背圧を係留。残差悪化なし・NaN なし | active (亜音速アンカー検証) |
 | `run_0012_keep_es_ewt_fine` / `run_0013_keep_es_ewt_cont` | **単一スキーム KEEP+ES の RANS 検証 (正)**: 確立済み Cf 基準 run_0009 (EWT 細メッシュ y+0.35) と同一設定で flux のみ KEEP+ES 化、40k+20k ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)) | **合格**: implicit cfl20 安定・quasisteady `ALL STEADY`・**Cf ドリフト +0.006〜0.041%/20k で完全収束**。Cf/Schl = **0.88/0.91/0.94** (SLAU 0.91/0.95/0.97 比 **−3.6〜−3.9%** = 本 case の確立済みスキーム間ばらつき node vs cell MUSCL −3.4〜−3.9% と同帯)。**「KEEP+ES で SST-RANS」は成立** | active (KEEP+ES RANS 検証) |
 
 > **node 弱形式境界 (Phase 2)**: node モードで inlet/outlet/slip も ghostless 弱形式化。(5a) 主対流ループを内部+periodic
