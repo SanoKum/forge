@@ -111,6 +111,14 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0028_isoT_yp10_qwwf` | Kader 原式をバッファ帯 y+10 で。warm from run_0018 (断熱 wf 場) | **q_w = 真値 +6.2%** (range +5.7〜+7.3%) — ブレンド帯の残差で許容 | active (バッファ帯) |
 | `run_0029_node_outletic_subsonic` | **亜音速出口の背圧アンカー検証** (node outlet の p_tilde/勾配閉包を内部値参照に改訂した最終形, [plan §2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)): run_node_sst_final 収束場から 12000 step | **出口 P 平均 97250.6 Pa (規定 97250, ±3 Pa) を保持** = p_tilde=P[ic] でも特性構成 bvar の質量流束が背圧を係留。残差悪化なし・NaN なし | active (亜音速アンカー検証) |
 | `run_0030_node_yp30_wf_omgoff` | **node × y+30 壁関数の平板** (ω irep ピン A/B 用に新規 node 変換 `flat_plate_yp30_node.h5`)。段階起動: 1次 cfl2 (清浄収束) → MUSCL cfl3 | 1 次段は健全 (3.9 桁)。**MUSCL 段は残差 2-4 桁上昇のプラトーで Cf が 10%/10k step ドリフト = 準定常に達せず**。convMethod 1 は清浄場からも発散。**node × 亜音速平板 y+30 の数値レシピは未確立** (別課題)。ω ピン判定は case/40 の y+1 真値比較で代替済 ([plan §10c](../../plans/accepted/turbulence-sst-su2-taw-coupling.md)) | 破棄予定 (レシピ未確立の記録) |
+| `run_0031_node_yp30_stageA` | **node × y+30 壁関数の段階起動 stage A** (1次 `convMethod:0` + cfl_pseudo 2 + nStepInner 20, cell `run_0011` からcross-mesh interp) | 健全 (roK/roOmega 3.6-3.9 桁低下、falling)。**node 亜音速平板の唯一の安定な起点** | active (node 平板 seed) |
+| `run_0032_node_yp30_2nd_base` | 2次 (MUSCL, limiter venkata) を stage A 場から 3000 step | **残差上昇 (発散性)**。原因は**前縁 x≈19mm の局所暴走** (Ux 199 m/s = 自由流 67.8 の 3 倍・P 90.5 kPa) | 破棄予定 (2次失敗の記録) |
+| `run_0033_node_yp30_2nd_lowmach` | 同 + `lowMachPrecond: 2` (低マッハ市松対策の転用) | **流れ場が完全凍結** (`ro`/`roe` がビット不変、`roUx` の変化 4.7e-34 = 非正規数)。乱流のみ進行 → 本構成では使用不可 | 破棄予定 (要調査の記録) |
+| `run_0034_node_yp30_2nd_lsq` | 同 + `gradLSQ: 2` (LSQ 勾配の検証も兼ねる) | **NaN 発散** (GG より悪化)。LSQ は本不安定の対策にならない — [LSQ plan](../../plans/active/discretization-lsq-gradient.md) 検証4 | 破棄予定 (LSQ A/B 記録) |
+| `run_0035_node_yp30_2nd_barth` | 同 + `limiter: 1` (barth) | **NaN 発散** | 破棄予定 |
+| `run_0036_node_yp30_2nd_cfl05` | 同 + `cfl_pseudo: 0.5` | 残差上昇 (cfl 2 と同率) → **時間積分でなく空間離散の問題**と確定 | 破棄予定 |
+| `run_0037_node_yp30_2nd_bfo` | 同 + `bndFirstOrder: 1` | 残差上昇 (改善せず) | 破棄予定 |
+| `run_0038_node_yp30_1st_long` | **node y+30 の生産検証** (1次, stage A から通算 50000 step) | 残差床到達 (rms_ro 1.1e-9)。**Cf は完全定常** (20k/30k/40k で 0.00242 不変)。**Cf/真値 (run_0007 壁解像) = 0.835-0.840 で x 依存なく一様**。1次風上の散逸が支配的とみられ、node 壁関数自体の評価には 2 次が必要 | active (**node 平板の現状ベスト**) |
 | `run_0012_keep_es_ewt_fine` / `run_0013_keep_es_ewt_cont` | **単一スキーム KEEP+ES の RANS 検証 (正)**: 確立済み Cf 基準 run_0009 (EWT 細メッシュ y+0.35) と同一設定で flux のみ KEEP+ES 化、40k+20k ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)) | **合格**: implicit cfl20 安定・quasisteady `ALL STEADY`・**Cf ドリフト +0.006〜0.041%/20k で完全収束**。Cf/Schl = **0.88/0.91/0.94** (SLAU 0.91/0.95/0.97 比 **−3.6〜−3.9%** = 本 case の確立済みスキーム間ばらつき node vs cell MUSCL −3.4〜−3.9% と同帯)。**「KEEP+ES で SST-RANS」は成立** | active (KEEP+ES RANS 検証) |
 
 > **node 弱形式境界 (Phase 2)**: node モードで inlet/outlet/slip も ghostless 弱形式化。(5a) 主対流ループを内部+periodic

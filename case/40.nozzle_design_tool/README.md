@@ -88,6 +88,7 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0067_node_yp30_taw_defectflux_kwfwall` | mode 3 + 壁ノード roK_wf Dirichlet 拡張の A/B (リップ ω 振動の壁 k 浮上仮説の検証) | 壁温・場は run_0066 と同一。rms_roOmega 0.141→0.165 で**改善せず → 仮説棄却**、mode 3 は最小構成 (壁 k ピンなし) に確定 | 破棄予定 (A/B 記録) |
 | `run_0068_node_yp30_taw_defectflux_omgwf` | mode 3 + `nodeOmegaWfDirichlet: 1` (irep ω ピン, SU2 SetTurbVars 両変数化) | リップ ω サイクル完全消滅 (rms_roOmega 9.4e-4) だが **τ_w=ρ_rep·u_τ² が y+1 真値の 1.237 倍に過大** (ピンなし 0.945 / SU2 0.985)。第一内点 μt が SU2 の 3.3 倍 (リミッタ不発) → BL 過混合 → 摩擦過大 = 推力 −0.18% の正体。**正式化見送り** — [plan §10c](../../plans/accepted/turbulence-sst-su2-taw-coupling.md) | active (ω ピン棄却の根拠) |
 | `run_0069_node_yp30_mode0_omgwf` | mode 0 + ω ピン (推力シフトの帰属分離) | 推力 309.623 N ≈ run_0068 → **−0.18% は ω ピン閉包そのものの効果、mode 3 と独立**。ただし冷壁との組合せは残差悪化 (rms_roOmega 0.23) | 破棄予定 (帰属記録) |
+| `run_0070_node_yp30_mode3_lsq` | **LSQ 勾配の本番検証** (`mesh.gradLSQ: 2`, 生産 mode 3 構成の A/B, 対照 run_0066) | 完走・NaN なし。**解は実質同一** (τ_w/真値 0.945 = GG と同値・壁温 1450.9K・ṁ/推力とも rel ~1e-5)。ただし**残差床は GG の 1.5-2 倍高い** → 構造化・低歪みメッシュでは LSQ の利得なし、既定 `gradLSQ: 0` 据置が妥当 — [LSQ plan](../../plans/active/discretization-lsq-gradient.md) 検証3 | active (LSQ A/B 記録) |
 
 **壁半 CV 凍結場収支診断スクリプト** (plan [turbulence-sst-su2-taw-coupling §10](../../plans/accepted/turbulence-sst-su2-taw-coupling.md) の §11 診断の実体):
 `wall_budget_frozen.py` (forge 収束場の壁ノード収支を A/B/C/D+E 方式で再構成)、
