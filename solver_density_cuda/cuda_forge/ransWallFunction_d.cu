@@ -22,10 +22,8 @@ constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 // wf_pk・Tau_Wall・roK_wf を全セル -1 (inactive) に初期化する。
 // Qw_Wall も -1 化する (sstEnergyWallFunction の AddQWall マーカ。§6.5(g)。WMLES と SST は
 // 共存しない (wmlesActiveForBcond は RANS で false) ため二重初期化にならない)。
-// Taw_Wall_Flux も -1 化する (§6.5(f) 断熱壁の流束モデル置換マーカ)。
 __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf,
-                             flow_float* roOmega_wf, flow_float* Taw_diag, flow_float* Qw_Wall,
-                             flow_float* Taw_Wall_Flux, flow_float* Taw_Rep_Id)
+                             flow_float* roOmega_wf, flow_float* Taw_diag, flow_float* Qw_Wall)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic < nCells) {
@@ -35,8 +33,6 @@ __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau
         roOmega_wf[ic] = static_cast<flow_float>(-1.0);
         Taw_diag[ic] = static_cast<flow_float>(-1.0);
         Qw_Wall[ic] = static_cast<flow_float>(-1.0);
-        Taw_Wall_Flux[ic] = static_cast<flow_float>(-1.0);
-        Taw_Rep_Id[ic] = static_cast<flow_float>(-1.0);
     }
 }
 
@@ -66,12 +62,6 @@ __global__ void compute_wall_friction_sst_d(
     // 診断: Crocco 型 断熱回復温度 T_aw = T_rep + r·U_t²/(2cp) (r=Pr_lam^{1/3}, SU2 壁関数の熱的閉包と同式)。
     // 出力のみで壁状態には未適用。ic (cell=第一セル / node=壁ノード) に格納。
     flow_float* T_arr, flow_float* cp_arr, flow_float recovery, flow_float* Taw_diag,
-    // §6.5(f) 流束置換の対象エッジ制限用: 壁ノード ic の代表点 (Normal_Neighbor) の CV id を
-    // flow_float に exact 格納 (nCells < 2^24 で厳密, 既存 Tau_Wall 等と同じ流儀。非対象/未解決は
-    // -1 のまま)。viscousFlux_d は Taw_Wall_Flux[W] による端点置換を、この代表点との内部辺
-    // **のみ**に限定する (全内部辺に適用すると、T_aw が物理的意味を持たない接線方向隣接ノードとの
-    // 温度差まで流束化し発散した実測に基づく制限, 2026-08-11)。nullptr 可。
-    flow_float* Taw_Rep_Id,
     // エネルギー壁関数 (§6.5(g), sstEnergyWallFunction==1 × wall_isothermal のみ energyWf=1):
     //   Kader T⁺ で q_w = ρ cp u_τ (T_w − T_aw,rep)/T⁺ を計算し bvar qwall と (node) Qw_Wall へ書く。
     //   Tw_b は等温壁の指定壁温 (bvar Ts, 固定入力)。thermCond_arr は Pr 評価用。
@@ -149,7 +139,6 @@ __global__ void compute_wall_friction_sst_d(
         ypls_b[ib] = static_cast<flow_float>(0.0);
         wf_pk[ic]  = static_cast<flow_float>(0.0);
         Taw_diag[ic] = T_arr[irep];   // 淀み: 運動加熱なし
-        if (isNode != 0 && Taw_Rep_Id != nullptr) Taw_Rep_Id[ic] = static_cast<flow_float>(irep);
         // エネルギー壁関数: 淀みは純伝導へ退避 (§6.5(g)。T⁺ 評価が u_τ=0 で退化するため)。
         if (energyWf != 0) {
             const flow_float qw = thermCond_arr[irep] * (Tw_b[ib] - T_arr[irep]) / y;
@@ -221,7 +210,6 @@ __global__ void compute_wall_friction_sst_d(
     // 断熱回復温度モデル (診断): T_aw = T_rep + r·U_t²/(2cp)。SU2 壁関数はこれを壁温として
     // 更新するが forge は未適用 (壁温 −230K の主因, notes/sessions/wall-temperature-three-way-analysis.md)。
     Taw_diag[ic] = T_arr[irep] + recovery * Ut * Ut / (static_cast<flow_float>(2.0) * max(cp_arr[irep], kSmall));
-    if (isNode != 0 && Taw_Rep_Id != nullptr) Taw_Rep_Id[ic] = static_cast<flow_float>(irep);
 
     // node: 壁ノードに τ_w=ρu_τ² を格納 → viscousFlux_d が W-I エッジの接線応力を τ_w に再スケール
     // (SU2 AddTauWall)。代表点 ρ を使う (u_τ と整合)。cell では Tau_Wall を書かず -1 維持 (再スケール無効)。
@@ -257,7 +245,7 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Wall_Flux"], var.c_d["Taw_Rep_Id"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"]);
 }
 
 namespace {
@@ -388,7 +376,6 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         (cfg.wallTreatmentSST == 1 && cfg.nodeOmegaWfDirichlet == 1) ? 1 : 0, var.c_d["roOmega_wf"],
         var.c_d["T"], var.c_d["cp"],
         (flow_float)pow((double)cfg.prandtlLam, 1.0/3.0), var.c_d["Taw_diag"],
-        var.c_d["Taw_Rep_Id"],
         // エネルギー壁関数 (§6.5(g)): 等温壁のみ。Tw は bvar Ts (固定入力)。
         (cfg.sstEnergyWallFunction == 1 && bc.bcondKind == "wall_isothermal") ? 1 : 0,
         bc.bvar_d["Ts"], var.c_d["thermCond"], cfg.turbulentPrandtl,

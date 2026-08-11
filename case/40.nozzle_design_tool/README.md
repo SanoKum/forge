@@ -57,7 +57,7 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0035_su2_yp1_lowre` | **SU2 v8.5 low-Re を同一 y+1 メッシュで** (run_0028 cfg 流用: adaptive 15000 + 固定 CFL10 5000 iter, PRANDTL_LAM 0.72 / PRANDTL_TURB 0.9 既定) | rms[Rho] 10^-5.95 (固定 CFL 相でも全列低下継続)。bell y+ mean 0.93・**T_w 1414.2K**・τ_w forge±1–3%・ṁ 1.3017・η 0.9796。**チェンバで T_w 1576K = Tt+76K の非物理超過あり** (断熱壁は Tt 超え不可; `wall_temperature_compare_yp1.png`) | active (**SU2 y+1 対照**) |
 | `run_0036_cell_yp1_prt09` | **cell y+1 正式基準**: run_0033 + `turbulentPrandtl: 0.9` (SU2 既定に整合; Prt 0.85→0.9 で T_w +20.5K, scratchpad D5) | **T_w 1388.9K・η 0.9779・ṁ 1.2993**・ALL STEADY | active (**Step1 cell 基準**) |
 | `run_0037_node_yp1_prt09` | **node y+1 正式基準**: run_0034 + `turbulentPrandtl: 0.9` | **T_w 1387.2K (cell と 1.7K 差)**・ṁ 1.2959・ALL STEADY。η は出口積分 0.9905 だが**出口列アーティファクトで過大** — 内部列積分 0.970–0.977 ([plan §2.10](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | active (**Step1 node 基準**) |
-| `run_0038_node_5e3_tawwf` | **Step2 熱的閉包の主検証 (旧「弱閉包」設計, superseded)**: node 5e-3 wf=1 + `sstThermalWallFunction: 1` (+constPr/Prt0.9), warm from run_0029 | **訂正 (2026-08-11)**: 報告していた「bell 壁温 1417.9K = SU2 と 4.1K 一致」は**壁ノードの実状態ではなく出力配列 (bvar `Ts`) に上書きした $T_{aw}$ 診断値**だった — 実状態 $T[W]$ (bell 平均) は **1195.3 K で OFF 基準 1196K とほぼ不変** (旧弱閉包は場にほぼ効いていなかった)。η/ṁ の一致は有効 (保存量不介入のため)。旧設計は superseded、後継は [`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md) (SU2 式流束モデル置換, 再検証待ち) | ref (**旧設計の記録・要再検証**) |
+| `run_0038_node_5e3_tawwf` | **Step2 熱的閉包の主検証 (旧「弱閉包」設計, superseded)**: node 5e-3 wf=1 + `sstThermalWallFunction: 1` (+constPr/Prt0.9), warm from run_0029 | **訂正 (2026-08-11)**: 報告していた「bell 壁温 1417.9K = SU2 と 4.1K 一致」は**壁ノードの実状態ではなく出力配列 (bvar `Ts`) に上書きした $T_{aw}$ 診断値**だった — 実状態 $T[W]$ (bell 平均) は **1195.3 K で OFF 基準 1196K とほぼ不変** (旧弱閉包は場にほぼ効いていなかった)。η/ṁ の一致は有効 (保存量不介入のため)。旧設計は superseded、後継は [`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md) (SU2 式流束モデル置換, 再検証待ち) | ref (**旧設計の記録・要再検証**) |
 | `run_0039_cell_5e3_tawwf` | 同 cell 5e-3 (ghost 閉包→弱閉包に改訂後) | 壁温 1489.5K = **+70–90K 過大** (cell 代表点=第一セルの T が node/SU2 同高さ比 ~100–160K 高い — cell wf=1 BL 熱監査 follow-up)。初版 ghost Dirichlet は Tt 飽和で却下 | active (熱的閉包 cell の限界記録) |
 | `run_0040_node_yp30_tawwf` | **Step3 壁関数系列 node (旧「弱閉包」設計, superseded)**: (`problem_bell_yp30.yaml` frac 1e-2, bell y+ mean 98, AR 3.8 PASS) wf=1+熱的閉包+constPr/Prt0.9, warm from run_0038 | **訂正 (2026-08-11)**: 報告値 1405.2K も run_0038 と同じ理由で出力 $T_{aw}$ 診断値であり実状態ではない (実状態は bell 平均 1134.2K、run_0044 の OFF 相当と近い)。η 出口積分 0.9835 も §2.11 の出口列欠陥修正前の値で二重に無効 (η 出口=内部列は run_0051 参照)。ṁ 1.2864 は有効。後継: `turbulence-sst-adiabatic-taw-fluxmodel.md` | ref (**旧設計の記録・要再検証**) |
 | `run_0041_cell_yp30_tawwf` | 同 cell (`problem_bell_yp30_cell.yaml`, bell y+ mean 71), warm from run_0039 | 壁温 1387.2K (±20K 市松)・η 0.9802・ṁ 1.3029・ALL STEADY。**cell 代表点バイアスは y+~70 では消滅** (5e-3 のバッファ層代表点固有) | active (Step3 cell) |
@@ -76,7 +76,8 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0054_cell_bitinv_regr` | **cell 不変性検証**: run_0036 と同一入力を新 binary で再実行 | run_0036 比相対差 0.6–2.3% だが同一 binary 再実行 (run_0056) でも 0.7–3.7% (=[[cell-atomicadd-nondeterminism]] のカオス的ばらつき範囲) — cell 経路は本セッションの変更で一切呼ばれないことをコード上も確認済み | active (cell 不変性の根拠) |
 | `run_0055_node_yp30_dofonly_tawoff` | 診断: run_0053 と同一入力で `sstThermalWallFunction:0` に戻し一般化 GG/LSQ 単独の健全性を切り分け | **ALL PASS** (全列 3.5–5.1 桁低下) — 発散は Taw 流束置換機構に起因すると確定 | active (切り分け証拠) |
 | `run_0056_cell_bitinv_repro` | run_0054 の同一 binary 再実行 (run-to-run 床測定) | 相対差 0.7–3.7% — run_0036 対比とほぼ同水準、cell 不変性の根拠 | 破棄予定 (床測定のみ) |
-| `run_0057_node_yp30_taw_repedge` | 診断: Taw 流束置換を代表点 (Normal_Neighbor) エッジのみに制限する修正版で再試行 | **step 1480 で同型発散 (改善せず)** — 「全内部辺 vs 代表点のみ」は root cause でなかったと判明。root cause 未特定のまま中断 ([plan §9](../../plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md)) | 破棄予定 (発散記録) |
+| `run_0057_node_yp30_taw_repedge` | 診断: Taw 流束置換を代表点 (Normal_Neighbor) エッジのみに制限する修正版で再試行 | **step 1480 で同型発散** — 後にユーザレビューで root cause 確定: 置換流束が T[W] 非依存になり壁半 CV の復元項を喪失、補償なき外部吸熱として壁ノードが EOS 床まで異常冷却 (step1000 で T[W] min 1100.7→27.1 K [全辺 run_0053] / 15.5 K [本 run])。roOmega NaN は下流症状 ([plan §4.3 訂正・§9](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)) | 破棄予定 (発散記録) |
+| `run_0058_node_yp30_taw_outputonly` | **最終形の検証**: Taw 注入を全面撤回し出力専用化 (`sstThermalWallFunction: 1`, run_0055 と同一入力) | **ALL PASS** (3.5–5.1 桁)。場は OFF (run_0055) と atomicAdd 床内で一致 (rel ≤5e-5) = W–I 熱流束は Taw 不変。T[W] min 1100.6 K (健全)。差分は壁面出力 Tsb のみ: 1412.7 K (Taw モデル値, SU2 wf 1418.9 K と 6 K 差) | active (**Taw 出力専用の最終形 正**) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 
@@ -127,7 +128,7 @@ run_0001–0004 は壁 1e-3/2e-3 世代のメッシュ (現 problem yaml は全�
 2026-08-11 (2) の訂正で要再検証、下記注意④参照)**:
 y+≈1 low-Re 三者基準 (run_0033–0037)・熱的壁関数 `sstThermalWallFunction` (run_0038–0039,
 旧「弱閉包」設計 [archived plan](../../plans/archived/turbulence-sst-thermal-wall-function.md),
-後継 [`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md))・
+後継 [`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md))・
 y+≈65–300 壁関数系列 (run_0040–0042) による挟み込みの結論:
 
 | 量 (③ベル Pt4MPa/Tt1500K/ε9) | 生産値 | 根拠 |
@@ -143,12 +144,15 @@ node の η_CF は出口積分値をそのまま使ってよい (修正後の正
 ② 壁温は `wallTreatmentSST: 1` +
 `sstThermalWallFunction: 1` + `thermCondMethod: 1, prandtlLam: 0.72` +
 `turbulentPrandtl: 0.9` を生産構成とする (node 一次)。
-④ **`sstThermalWallFunction` の旧「弱閉包」設計 (run_0038/0040) は 2026-08-11 に訂正**:
-報告していた壁温は壁ノードの実状態ではなく出力配列に上書きした $T_{aw}$ 診断値であり、
-実状態は OFF (未閉包) 基準とほぼ不変だった (`run_0038` bell 平均 1195.3K vs OFF 1196K、
-`run_0040` bell 平均 1134.2K)。η/ṁ は保存量不介入のため無汚染。後継の SU2 式流束モデル置換
-([`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md))
-で再検証するまで、node wf+閉包系列の壁温は生産値の根拠に使わない。
+④ **`sstThermalWallFunction` の位置付け確定 (2026-08-11 (2)〜(3) の経緯)**: 旧「弱閉包」設計
+(run_0038/0040) で報告していた壁温は壁ノードの実状態ではなく出力配列の $T_{aw}$ 診断値であり、
+実状態は OFF 基準とほぼ不変だった (`run_0038` bell 平均 1195.3K vs OFF 1196K)。その後試した
+W–I 流束注入は発散で棄却され (run_0053/0057)、**最終形 = $T_{aw}$ は「壁関数が再構成した物理壁面
+温度のモデル値」として境界出力 (Tsb) 専用** (run_0058 で検証済,
+[plan §0](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md))。**壁温の報告は
+「モデル壁面温度 Tsb」(forge 1412.7K vs SU2 wf 1418.9K = モデル値同士で 6K 差) と「壁ノード実状態
+T[W]」(~1270K, 壁半 CV 平均温度) を明確に区別して行うこと** — SU2 の壁関数壁温も同種のモデル値で
+あり、モデル値同士の比較は正当。η/ṁ は全経緯を通じ無汚染。
 ③ 格子系列は壁処理レジームが
 異なるため Richardson/GCI は非適用 (単調収束系列でない)。
 

@@ -312,7 +312,7 @@ __global__ void calcGradient_cellgather_d
  flow_float* dTdx,  flow_float* dTdy,  flow_float* dTdz,
  flow_float* divU,
  geom_int gradPlaneSkipFrom   // node 弱形式: ip>=この値 (=nNormalPlanes) の境界面はスキップし
-                              // calcGradient_b_d (bvar) に委ねる。cell では nPlanes 以上を渡し従来どおり全面処理。
+                              // calcGradient_b_d (owner-state) に委ねる。cell では nPlanes 以上を渡し従来どおり全面処理。
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -473,7 +473,8 @@ __global__ void zeroBndNodeGradient_d
 // median-dual の近壁で Green-Gauss 面勾配が checkerboard を持ち粘性 BL を振動させるため、
 // LSQ 勾配 (近傍 CV 中心の重み付き最小二乗) で checkerboard-free に求める。
 // b 配列は既存の勾配配列を流用 (accum で b を貯め、solve で in-place に勾配へ上書き)。
-// M (対称 3x3) は scratch。境界は bvar 境界値 (壁=速度0) を半割面重心 pc の LSQ 点として含め勾配を閉じる。
+// M (対称 3x3) は scratch。境界は LSQ 点にしない (実在する内部隣接 node のみ。bvar 疑似点は
+// M/RHS とも不使用 — methods/discretization.md §7.3, 2026-08-11 改訂)。
 
 // 対称 3x3 を解く。2D (mzz≈0) は xy の 2x2 を解き gz=0。
 __device__ __forceinline__ void lsq_solve_sym3(
@@ -522,7 +523,7 @@ __global__ void lsqGrad_accumInternal_d(
     const geom_int st=cell_planes_index[ic], en=cell_planes_index[ic+1];
     for (geom_int ilp=st; ilp<en; ++ilp) {
         const geom_int ip=cell_planes[ilp];
-        if (ip>=nNormalPlanes) continue;          // 境界面は別途 bvar で
+        if (ip>=nNormalPlanes) continue;          // 境界・periodic は LSQ 点にしない (§7.3)
         const geom_int ic0=plane_cells[2*ip+0], ic1=plane_cells[2*ip+1];
         const geom_int jc=(ic0==ic)?ic1:ic0;
         const double dx=ccx[jc]-cx, dy=ccy[jc]-cy, dz=ccz[jc]-cz;
@@ -939,13 +940,14 @@ void calcGradient_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh
         var.c_d["dPdx"]  , var.c_d["dPdy"]  , var.c_d["dPdz"],
         var.c_d["dTdx"]  , var.c_d["dTdy"]  , var.c_d["dTdz"],
         var.c_d["divU"],
-        // node 弱形式: 境界半割面 (ip>=nNormalPlanes) を cellgather でスキップし calcGradient_b_d (bvar+真の
-        // 半割面) に委ねる。壁ノードは壁上に乗りミラーゴーストが退化するため、ミラー経由の cellgather 勾配が
-        // 不正確 → 粘性 BL 振動の原因。弱形式の境界寄与で正しく閉じる。cell は nPlanes (全面処理, 従来)。
+        // node 弱形式: 境界半割面 (ip>=nNormalPlanes) を cellgather でスキップし calcGradient_b_d
+        // (owner-state 境界面値, §6.2/§7.2.2) に委ねる。壁ノードは壁上に乗りミラーゴーストが退化するため、
+        // ミラー経由の cellgather 勾配が不正確 → 粘性 BL 振動の原因。cell は nPlanes (全面処理, 従来)。
         (cfg.discretization == "node") ? msh.nNormalPlanes : msh.nPlanes
     ) ;
 
-    // node 弱形式 境界勾配: 各境界半割面の φ_b·S_b を bvar から加える (cellgather は内部のみ計算済み)。
+    // node 弱形式 境界勾配: 各境界半割面の φ_b·S_b を owner ノードの状態値 φ[W] で加える
+    // (cellgather は内部のみ計算済み。bvar は参照しない — §6.2/§7.2.2, 2026-08-11 改訂)。
     // 軸対称は cellgather と同じ planar 面積 (grad_sx=sx_planar) を使い r 重みを一致させる。
     if (cfg.discretization == "node") {
         for (auto& bc : msh.bconds)

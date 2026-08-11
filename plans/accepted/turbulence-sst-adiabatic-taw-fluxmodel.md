@@ -1,10 +1,42 @@
-# SST 断熱壁 T_aw の流束モデル置換再設計 (SU2 式, node)
+# SST 断熱壁 T_aw の流束モデル置換再設計 (SU2 式, node) — 検証の結果**注入は棄却**、最終形は出力専用
 
 ## メタ
 
 - **area**: `turbulence / boundary`
-- **status**: `in_progress`  <!-- 2026-08-11: 実装済みだが y+30 wall-function ケースで root cause 未特定の
-  発散あり。既定 OFF のため安全に commit 可能だが本番投入不可。§9 の診断記録を参照 -->
+- **status**: `done`  <!-- 2026-08-11: 流束注入案は実測発散 (§9) で棄却。最終形 = Taw は境界出力
+  (Tsb/Taw_diag) 専用、W-I 内部粘性拡散は常に DOF 状態のみ、壁熱は境界半割面 q_w (断熱=厳密0)。
+  この「棄却の記録+最終方針」が現役の設計判断として本 plan の成果物 -->
+
+## 0. 最終方針 (2026-08-11 確定 — ユーザレビューによる)
+
+**GG/LSQ の owner-state-only 方針
+([architecture-node-boundary-gradient-dof-only](../accepted/architecture-node-boundary-gradient-dof-only.md))
+は正しく維持。撤回したのは $T_{aw}$ を W–I 内部辺の粘性拡散へ注入する処理だけ**。
+
+正しい熱経路:
+
+```
+物理壁面
+  ├─ モデル壁面温度 Tsb (境界出力)
+  └─ 壁熱流束 q_w
+        ↓ 境界半割面流束 (res_roe[W] へ直接、外部境界流束なので ±F ペアにしない)
+壁ノード W
+        ↓ 通常の内部粘性拡散 (compact 温度差 = T[I]−T[W]、DOF 状態勾配)
+内部ノード I
+```
+
+1. **W–I 内部辺**: 粘性熱拡散は常に DOF 状態 (`T[I]−T[W]`, DOF 勾配) で評価。
+   `Tsb`/`Taw_diag` は一切参照しない。±F 保存的加算は不変。
+2. **GG/LSQ 勾配**: owner-state-only を維持 (bvar 不参照、LSQ は内部隣接 node のみ)。
+3. **壁面→壁ノード W の熱流束**: 境界半割面流束 `q_w` として実装する。
+   断熱壁: q_w=0 (厳密, `viscousFlux_wall_d` の `adiabaticWall` 分岐で実装済み) /
+   指定熱流束壁: 指定 q_w (将来) / 熱壁関数: 壁関数の q_w (将来) /
+   等温 Dirichlet 壁: T[W]=Tw 強制、q_w は結果診断 (Dirichlet と Neumann を同時強制しない)。
+4. **T_aw の役割**: `Taw_diag[W]` と `Tsb` (壁関数が再構成した物理壁面温度のモデル値、境界出力)
+   に限定。状態ピン・GG/LSQ 勾配・W–I 内部流束・res_roe ゼロ化には使わない。
+   出力上 `T[W]` (壁半 CV の計算状態温度) と `Tsb`/`Taw_diag` (モデル壁面温度) を明確に区別する。
+5. **壁エネルギー残差**: SST 断熱壁の `res_roe[W]` はゼロ化しない。壁半 CV の熱収支は
+   W–I 通常内部粘性流束 + 内部辺の粘性仕事 + 物理壁面熱流束 (q_w=0) の和として通常どおり解く。
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f) (2026-08-11 全面改訂)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) 同節
@@ -70,21 +102,24 @@ bvar `Ts` に書くだけ) には 2 つの問題が判明した:
 `Tau_Wall`/`Qw_Wall` と同型の per-CV `flow_float* Taw_Wall_Flux` (`variables.hpp` に登録、既定 $-1$)。
 初期化は `ransWallFunction_d.cu init_wf_pk_d` (Tau_Wall 等と同じタイミングで $-1$ 化) に追加する。
 
-### 4.3 なぜ暴走しないか (却下版との違い)
+### 4.3 ~~なぜ暴走しないか~~ → 【撤回・訂正 (2026-08-11)】この安定性主張は誤りだった
 
-流束層の置換後、compact 項は**壁ノード自身の状態 $T[W]$ を含まない**ため、数学的には
-「$W$–$I$ 間に $k_{\mathrm{eff}}(T[I]-T_{aw})/d\cdot\delta$ という**モデル流束**を課す」ことと同値になる
-($\tau_w$ の AddTauWall と同じ「流束のモデル置換」)。$T_{aw}=T_{rep}+\Delta$ の $T_{rep}$ が通常
-その面の相手ノード ($I$) の状態なら、この項は $\propto T[I]-T_{aw}=-\Delta$ で**絶対温度レベルに依らない
-有界な量**になる。$T[W]$ 自身はこの有界な寄与と、実状態から計算される GG 補正項・他の内部面流束の合計を
-自身の `res_roe=0` から solve する — 他の任意の内部ノードと同じ安定な拡散平衡構造であり、正帰還ループを
-持たない。
+本節に書いていた 3 つの主張 —「モデル流束が有界なので安定」「res_roe を生かせば壁状態が平衡を解く」
+「正帰還を持たない」— は**すべて撤回する**。実測 (§9) で、Taw 端点置換は正帰還ではなく**逆方向の
+不安定 (壁エネルギー DOF の異常冷却)** で発散した。
 
-対照的に、却下済みの「$T_{aw}$ を状態ピン + 壁ノード `res_roe` をゼロ化」構成は、壁 CV 自身のエネルギー
-方程式を捨てながら W–I 面の流束だけは高い $T_{aw}$ を使って計算される非保存構成になり、内部ノードを
-加熱し続けて $T_{rep}$→$T_{aw}$→(強制コピー)→さらに高い $T_{aw}$ という抵抗のない正帰還で暴走する
-(node 1832 K, 実測 run_0038/0039 旧版)。**本設計は状態ピンをせず壁ノード自身の `res_roe` も生かした
-ままなので、この機構は生じない**。
+**実際に起きた機構**: compact 項の端点温度を $T[W]\to T_{aw}$ ($>T[W]$) に置換すると、この面の流束は
+「高温の仮想壁面 → 内部」向きに増大し、±F の保存的加算により **$W$ の半 CV から実在しないエネルギーが
+流出し続ける** (物理壁は断熱で境界からの流入ゼロ、$W$ には補償source がない)。しかも置換後の
+compact 項は $T[W]$ に依存しないため、**$W$ 自身の温度が下がってもこの流出は減らない (復元項の喪失)**。
+結果、$T[W]$ は EOS 床まで単調に冷却し (step1000 で min 27.1 K / 15.5 K, §9)、近壁の物性・SST が
+崩壊して roOmega NaN に至る。「有界な流束」であっても**壁半 CV 単体の収支を閉じない外部吸熱**として
+働けば発散する — 旧・状態ピン版が「壁 CV の収支を捨てて加熱し続けた」のと鏡像の失敗であり、
+教訓は同じ: **W–I 内部辺に手を入れる方式は、壁半 CV 単体のエネルギー収支を必ず監査せよ**
+(内部辺全体の ±F 保存だけでは不十分)。
+
+最終方針 (§0) はこの教訓に基づき、モデル値の場への注入を諦め、熱の出入りは物理壁面の境界半割面
+流束 q_w (断熱=0) だけに限定する。
 
 ### 4.4 エネルギー保存 (必須維持事項)
 
@@ -159,13 +194,40 @@ bvar `Ts` に書くだけ) には 2 つの問題が判明した:
     (max 4.1e8 K)・`T` 状態が破綻 (min 1e-4 K) — 何が最初に崩れたか (Taw_diag の計算自体が
     先に不安定化したのか、流束置換が場を壊してから Taw_diag が異常値を拾ったのか) は
     中間ステップのダンプが無く未特定。
-  - **中断判断**: 効果のあった修正 (境界勾配 DOF-only 化, `architecture-node-boundary-gradient-dof-only.md`)
-    は確定させ、本機能は **既定 OFF (`sstThermalWallFunction: 0`) のため他への影響なくコミット可能**
-    と判断し、本 plan は `in_progress` のまま次セッションへ引き継ぐ。
-  - **次セッションへの申し送り**: (1) 中間ステップ (例 step 1400–1480 を 10 step 間隔) をダンプし
-    Taw_diag と T の時間発展を追って崩壊の起点を特定する。(2) `compute_wall_friction_sst_d` の
-    Newton 反復や `Ut`/`utau` 自体が先に発散していないか確認 (Taw_diag は `T_rep + r·Ut²/(2cp)` で
-    Ut に 2 乗依存するため、Ut の発散が Taw_diag を非線形に増幅する経路を疑う)。(3) 疑わしいなら
-    Taw_Wall_Flux の値に上限 (例 Tt の数倍) を設けるクランプで応急止血できるか確認 (根治ではないが
-    安全弁として)。(4) 深追いする場合は effort の高いモデル (Fable 5) での再着手を推奨
-    (2026-08-11 セッションは Sonnet で実施し、この機構の収束まで到達できなかった)。
+  - **中断判断 (当時)**: 効果のあった修正 (境界勾配 DOF-only 化,
+    `architecture-node-boundary-gradient-dof-only.md`) は確定させ、本機能は既定 OFF のため
+    他への影響なくコミット可能と判断し、いったん `in_progress` で commit した (946a98f6)。
+- `2026-08-11 (3)` — **root cause 判明 (ユーザレビュー)・流束注入を全面撤回・最終方針確定 (§0)**。
+  - **崩壊起点の特定**: step 1000 の壁ノード**実状態温度** T[W] を 3 run で比較:
+
+    | run | 構成 | T[W] min | T[W] mean | 結果 |
+    | --- | --- | --- | --- | --- |
+    | `run_0055_node_yp30_dofonly_tawoff` | Taw OFF | 1100.7 K | 1270.3 K | **ALL PASS** |
+    | `run_0053_node_yp30_dofonly_regr` | Taw 全辺置換 | **27.1 K** | 640.0 K | DIVERGED (step1686) |
+    | `run_0057_node_yp30_taw_repedge` | 代表辺限定 | **15.5 K** | 627.5 K | DIVERGED (step1480) |
+
+    最初の異常は roOmega ではなく **Taw 端点置換による壁エネルギー DOF の異常冷却** (§4.3 の
+    訂正参照: 置換流束が T[W] 非依存になり壁半 CV の復元項を失い、補償のない外部吸熱として
+    EOS 床まで排熱し続ける)。roOmega NaN はその下流の症状。
+  - **撤回実装**: `viscousFlux_d` の `Taw_Wall_Flux`/`Taw_Rep_Id`/compact 端点置換/代表辺限定/
+    ゲート関数、`set_wall_taw_flux_marker_d`、`variables.hpp` の 2 配列、`ransWallFunction_d` の
+    `Taw_Rep_Id` 書き込みをすべて削除。W–I 内部熱拡散は常に DOF 状態 (`Ts[ic1]−Ts[ic0]` +
+    DOF 勾配) に復帰。`set_wall_taw_output_d` (Tsb=Taw の境界出力) のみ残置。
+    viscousFlux_d に禁止事項コメントを恒久記載。
+  - **§4.3 の誤った安定性主張 (「有界なので安定」「res_roe を生かせば平衡」「正帰還なし」) を
+    撤回・訂正** (同節参照)。
+  - **最終方針**: §0 のとおり。Taw は境界出力 (Tsb/Taw_diag) 専用の「壁関数が再構成した物理壁面
+    温度のモデル値」。壁熱は境界半割面 q_w (断熱=厳密 0, 既存 `adiabaticWall` 分岐)。SST 断熱壁の
+    res_roe[W] はゼロ化しない (該当ゼロ化経路が無いことをコードで確認済み)。
+  - **検証 (撤回後, `run_0058_node_yp30_taw_outputonly` = run_0055 と同一入力で
+    `sstThermalWallFunction: 1`)**:
+    1. `check_convergence.py` **ALL PASS** (全列 3.5–5.1 桁低下, OFF の run_0055 と同一性状)。
+    2. 場の解は OFF と max rel 2.1e-6 (ro) 〜 5.0e-5 (T) で一致 = node run-to-run atomicAdd
+       再現幅内 → **W–I 内部熱流束は Taw ON/OFF で不変**を実証。
+    3. 壁ノード実状態 T[W]: min 1100.6 K / mean 1270.3 K = OFF と同一水準 (**低温床崩壊なし**)。
+    4. 差分は壁面出力 Tsb のみ: OFF 1134.9 K (状態値) → ON 1412.7 K (Taw モデル値, bell 平均)
+       — SU2 壁関数出力 1418.9 K (run_0042) とモデル値同士で 6 K 差。
+    5. 断熱壁境界エネルギー流束は厳密 0 (`viscousFlux_wall_d` `adiabaticWall` 分岐)・
+       res_roe[W] 有効 (ゼロ化経路なし)・内部辺 ±F 保存 — いずれもコード検証。
+    6. 非ゼロ q_w の大域収支検証 (Σ q_w A = 流体エネルギー流入) は、指定熱流束壁/熱壁関数 q_w を
+       実装する将来 plan の必須検証項目として繰り越す (現スコープは断熱 q_w=0 のため対象なし)。

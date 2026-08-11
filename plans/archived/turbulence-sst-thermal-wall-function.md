@@ -6,7 +6,7 @@
 - **status**: `superseded`  <!-- 2026-08-11 訂正: 本 plan の「弱閉包」設計は境界勾配一般化前提が崩れており
   (node の境界勾配が当時 bvar を読んでいたため場に触れる経路が実在)、かつ実データ (run_0038) では
   壁ノードの実状態がほぼ動いていなかった (「4.1K 一致」は出力配列の Taw 診断値同士の一致)。
-  後継: `plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md` (SU2 式流束モデル置換) -->
+  後継: `plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md` (SU2 式流束モデル置換) -->
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7

@@ -204,21 +204,6 @@ __global__ void set_wall_taw_output_d(
     Tsb[ib] = Tw;
 }
 
-// node のみ: 対象壁ノードの per-CV マーカ Taw_Wall_Flux[W] ← Taw_diag[W] (流束モデル置換用,
-// §6.5(f) 改訂版)。viscousFlux_d 主ループが W に接続する全内部辺の熱流束 compact 項の端点温度を
-// この値へ差し替える。状態・res_roe には触れない (モデル層のみ)。
-__global__ void set_wall_taw_flux_marker_d(
-    geom_int nb, geom_int* bplane_cell,
-    flow_float* Taw_diag, flow_float* Taw_Wall_Flux)
-{
-    const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
-    if (ib >= nb) return;
-    const geom_int ic = bplane_cell[ib];
-    const flow_float Tw = Taw_diag[ic];
-    if (!(Tw > (flow_float)0.0)) return;   // 未計算 (-1 初期値) は非対象のまま
-    Taw_Wall_Flux[ic] = Tw;
-}
-
 } // namespace
 
 bool sstThermalWallFunctionActive(const solverConfig& cfg)
@@ -233,19 +218,16 @@ void applySstThermalWallFunction(solverConfig& cfg , cudaConfig& cuda_cfg , mesh
     for (auto& bc : msh.bconds) {
         if (bc.bcondKind != "wall") continue;   // 断熱壁のみ (等温壁は物理壁温がある)
         if (bc.iPlanes.empty()) continue;
-        // 壁面出力 (bvar Ts): node/cell 共通。cell はこの後 field へ再接続する経路が無いため
-        // 出力専用のまま (ghost T[ig] は既に applyBconds の wall_d が確定済み)。
+        // 壁面出力 (bvar Ts) のみ: Tsb=Taw_diag は「壁関数が再構成した物理壁面温度のモデル値」
+        // として境界出力・比較にのみ使う。境界勾配は owner-state-only (calcGradient §7.2.2) の
+        // ため bvar Ts はもう場に効かず、真に出力専用。
+        // 【禁止】T_aw を状態ピン・GG/LSQ 勾配・W-I 内部粘性流束・res_roe ゼロ化に使わないこと —
+        // W-I compact 端点置換は壁ノードの復元項を失わせ EOS 床まで異常冷却して発散する実測あり
+        // (plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md §9, 2026-08-11)。
         set_wall_taw_output_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
             static_cast<geom_int>(bc.iPlanes.size()),
             bc.map_bplane_cell_d,
             var.c_d["Taw_diag"], bc.bvar_d["Ts"]);
-        // 流束モデル置換マーカ (node のみ): viscousFlux_d 主ループが消費する。
-        if (cfg.discretization == "node" && msh.wall_flag_d != nullptr) {
-            set_wall_taw_flux_marker_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
-                static_cast<geom_int>(bc.iPlanes.size()),
-                bc.map_bplane_cell_d,
-                var.c_d["Taw_diag"], var.c_d["Taw_Wall_Flux"]);
-        }
     }
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
