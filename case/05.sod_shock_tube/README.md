@@ -8,6 +8,7 @@
 | --- | --- | --- | --- |
 | `run_node3d_periodic_sod` | **node + y,z periodic**, run_0002 同一 config (cpg 物理単位 PL1e6/TL2000・PR1e5/TR400, cfl0.2, SLAU, RK3) | **完走 (200 step NaN なし)・物理 sod 構造 (ro 0.84..1.92, P 1e5..1e6, 衝撃右伝播)・spanwise std=0〜1e-6 完全均一** = node periodic が transient 衝撃で機能。node は cell より前面がクリーン (決定的) | **検証完結** |
 | `run_sod3d_cell_ref` | cell + y,z periodic (同 config, 参照) | 完走・物理 sod。滑らか域 spanwise std=2e-7 均一、衝撃前面のみ std=0.5 波打ち (cell atomicAdd ノイズ、periodic とは別) | ref |
+| `run_node3d_periodic_regr3dgeo` | 3D median-dual 幾何堅牢化 (plan architecture-median-dual-3d-double-geometry) の新 converter で sod3d.msh を再変換し再実行 | 変換診断は健全 (体積 relErr 1.2e-7・閉性 3.6e-6)・1000 step NaN なし。ただし copy した config が非次元 sod IC (下記 IC バグ) で場は非物理 — **幾何検証の本体は thinwall 旧新比較 (plan 参照) であり本 run は補助** | 破棄予定 |
 | `run_node3d_slip_lowcfl` | **IC バグ調査の記録**: 当初 `initial:"sod"` (非次元 P=1) は forge CPG thermo (cp1038.8,R296.8) と非互換で T≈0.003K→roe 破壊→**P 均一の異常状態**。これに node checkerboard が乗り発散していた | 破棄予定 (IC バグ記録) |
 
 **結論**: node sod 3D periodic が **安定・物理的・spanwise 完全均一**で動作 (検証完結)。当初「node-explicit-shock 限界」とした発散は**誤診**で、真因は壊れた IC (非次元→P均一) + 過大 CFL だった (user 指摘で判明)。periodic 実装は transient 衝撃でも健全。

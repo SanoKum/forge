@@ -272,6 +272,19 @@ $\sum_A V_A == \sum_{\text{cell}} V_{\text{cell}}$ を検証する。
 外向き面ベクトルを分配する。マルチマーカ corner (壁∩出口∩periodic 等) は 2D と同型に各 incident bcond へ
 1 枚ずつ (`halfByOwner`)、閉性集計 `bnodeAccum` は所有非依存で全半割面を集計する。
 
+#### 2.5.6 双対幾何の数値精度 (ローカル原点 + double)
+
+節点座標は `geom_float` (float32) 格納であり丸め ~1e-9 m 級を持つ。Newell 法は
+$(a-b)(a+b)$ 形で**差分 (パッチ寸法) に絶対座標の和 (領域寸法) が掛かる**ため、絶対座標のまま
+評価すると float32 丸めが領域寸法で増幅され、薄壁スリバーパッチ (例: 100 μm × 1 μm 級) では
+面ベクトルの数十 % 誤差・向き判定の誤反転になり得る (2D shoelace 桁落ちで実害が出たのと同根 —
+壁 CV 重心が CV 外へ出て `wall_dist` を破壊、plan boundary-node-nozzle-wall-outlet-stability §2.9)。
+このため **内部双対面パッチはエッジ中点 $M$ 相対、境界半割面サブ四角はノード $N$ 相対の
+ローカル原点で Newell を評価**し (平行移動不変なので厳密演算では同値)、境界半割面の蓄積
+(`bnodeAccum`/`halfByOwner`/`hcentByOwner`) も double で行って最後に `geom_float` へ cast する。
+`tetVol`・双対重心 (正重み加重和) は元から局所差分 double で桁落ちしない。
+計画: [`architecture-median-dual-3d-double-geometry.md`](../plans/active/architecture-median-dual-3d-double-geometry.md)。
+
 #### 2.5.5 periodic 双対面対応
 周期境界面上のエッジは partner 面側に同形のエッジが存在する。`setPeriodicPartner` のノード対応 (Cartesian
 $dx,dy,dz$ 平行移動) で $A\leftrightarrow A'$, $B\leftrightarrow B'$ を対応付け、**周期エッジの双対面を境界半割面に

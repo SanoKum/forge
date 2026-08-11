@@ -1681,8 +1681,15 @@ public:
                 const auto& F2 = Fc[kv.second[1]];
 
                 // 双対面パッチ (M, F1, G, F2) を Newell 法で。A->B 向きに統一。
+                // 桁落ち対策 (plan architecture-median-dual-3d-double-geometry): Newell は
+                // (a−b)(a+b) 形で絶対座標の和が差分に掛かるため、float32 座標の丸め (~1e-9 m) が
+                // 領域寸法で増幅されスリバーパッチでは面ベクトル数十% 級の誤差になり得る
+                // (2D shoelace 修正と同根)。平行移動不変性を使いローカル原点 M 相対で評価する。
                 const std::vector<std::array<double,3>> patch = {
-                    {M[0],M[1],M[2]}, {F1[0],F1[1],F1[2]}, {G[0],G[1],G[2]}, {F2[0],F2[1],F2[2]} };
+                    {0.0, 0.0, 0.0},
+                    {F1[0]-M[0], F1[1]-M[1], F1[2]-M[2]},
+                    {G[0]-M[0],  G[1]-M[1],  G[2]-M[2]},
+                    {F2[0]-M[0], F2[1]-M[1], F2[2]-M[2]} };
                 double pv[3]; newell(patch, pv);
                 const double eAB[3] = { Bc[0]-Ac[0], Bc[1]-Ac[1], Bc[2]-Ac[2] };
                 if (pv[0]*eAB[0] + pv[1]*eAB[1] + pv[2]*eAB[2] < 0.0) { pv[0]=-pv[0]; pv[1]=-pv[1]; pv[2]=-pv[2]; }
@@ -1757,10 +1764,14 @@ public:
         dualBcondOffset.assign(nBc + 1, 0);
         dualBcondPhysID.assign(nBc, 0);
         dualBcondNodes.assign(nBc, {});
-        std::vector<geom_float> bnodeAccum(nN * 3, 0.0);
+        // 桁落ち対策 (plan architecture-median-dual-3d-double-geometry): 境界半割面は
+        // サブ四角 Newell をローカル原点 N 相対で評価し、蓄積 (bnodeAccum/halfByOwner/
+        // hcentByOwner) も double で行う (スリバー面の小さい寄与同士の float32 加算で
+        // 相対誤差が積むのを防ぐ)。平坦化時に geom_float へ cast。
+        std::vector<double> bnodeAccum(nN * 3, 0.0);
 
-        std::vector<std::map<geom_int, std::array<geom_float,3>>> halfByOwner(nBc);
-        std::vector<std::map<geom_int, std::array<geom_float,4>>> hcentByOwner(nBc);
+        std::vector<std::map<geom_int, std::array<double,3>>> halfByOwner(nBc);
+        std::vector<std::map<geom_int, std::array<double,4>>> hcentByOwner(nBc);
         for (geom_int ib = 0; ib < nBc; ++ib)
         {
             for (const geom_int ip : this->bconds[ib].iPlanes)
@@ -1782,11 +1793,15 @@ public:
                     const double Mn[3]  = { 0.5*(Nc[0]+nodes[Nx].coords[0]), 0.5*(Nc[1]+nodes[Nx].coords[1]), 0.5*(Nc[2]+nodes[Nx].coords[2]) };
                     const double Mp[3]  = { 0.5*(Nc[0]+nodes[Pp].coords[0]), 0.5*(Nc[1]+nodes[Pp].coords[1]), 0.5*(Nc[2]+nodes[Pp].coords[2]) };
                     // median サブ四角 (N, Mn, Fcen, Mp)。外向き (S と同符号) に整える。
+                    // Newell は N 相対 (平行移動不変; float32 絶対座標の丸め増幅を防ぐ)。
                     const std::vector<std::array<double,3>> sub = {
-                        {Nc[0],Nc[1],Nc[2]}, {Mn[0],Mn[1],Mn[2]}, {Fcen[0],Fcen[1],Fcen[2]}, {Mp[0],Mp[1],Mp[2]} };
+                        {0.0, 0.0, 0.0},
+                        {Mn[0]-Nc[0],   Mn[1]-Nc[1],   Mn[2]-Nc[2]},
+                        {Fcen[0]-Nc[0], Fcen[1]-Nc[1], Fcen[2]-Nc[2]},
+                        {Mp[0]-Nc[0],   Mp[1]-Nc[1],   Mp[2]-Nc[2]} };
                     double hv[3]; newell(sub, hv);
                     if (hv[0]*S[0] + hv[1]*S[1] + hv[2]*S[2] < 0.0) { hv[0]=-hv[0]; hv[1]=-hv[1]; hv[2]=-hv[2]; }
-                    const geom_float w = (geom_float)std::sqrt(hv[0]*hv[0] + hv[1]*hv[1] + hv[2]*hv[2]);
+                    const double w = std::sqrt(hv[0]*hv[0] + hv[1]*hv[1] + hv[2]*hv[2]);
                     const double sc[3] = { 0.25*(Nc[0]+Mn[0]+Fcen[0]+Mp[0]),
                                            0.25*(Nc[1]+Mn[1]+Fcen[1]+Mp[1]),
                                            0.25*(Nc[2]+Mn[2]+Fcen[2]+Mp[2]) };
@@ -1805,14 +1820,14 @@ public:
                 const geom_int nd = kv.first;
                 dualBcondNodes[ib].push_back(nd);
                 dualBnodeId.push_back(nd);
-                dualBnodeVect.push_back(kv.second[0]);
-                dualBnodeVect.push_back(kv.second[1]);
-                dualBnodeVect.push_back(kv.second[2]);
+                dualBnodeVect.push_back((geom_float)kv.second[0]);
+                dualBnodeVect.push_back((geom_float)kv.second[1]);
+                dualBnodeVect.push_back((geom_float)kv.second[2]);
                 const auto& c = hcentByOwner[ib].at(nd);
-                const geom_float invw = (c[3] > 0.0) ? 1.0/c[3] : 0.0;
-                dualBnodeCent.push_back(c[0]*invw);
-                dualBnodeCent.push_back(c[1]*invw);
-                dualBnodeCent.push_back(c[2]*invw);
+                const double invw = (c[3] > 0.0) ? 1.0/c[3] : 0.0;
+                dualBnodeCent.push_back((geom_float)(c[0]*invw));
+                dualBnodeCent.push_back((geom_float)(c[1]*invw));
+                dualBnodeCent.push_back((geom_float)(c[2]*invw));
             }
             dualBcondOffset[ib + 1] = (geom_int)dualBnodeId.size();
         }

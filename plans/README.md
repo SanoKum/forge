@@ -29,10 +29,9 @@
 | [convection-keep-diss-lowmach-precond.md](active/convection-keep-diss-lowmach-precond.md) | `convection` | KEEP ES 散逸レイヤの低マッハ前処理化 (圧力ジャンプ増強で市松と解像物理を分離) |
 | [convection-keep-revive-node.md](active/convection-keep-revive-node.md) | `convection / turbulence` | KEEP スキーム復活 (modern API・cell/node) + node WALE で LES/ILES |
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
-| [architecture-median-dual-3d-double-geometry.md](active/architecture-median-dual-3d-double-geometry.md) | `architecture / discretization` | 3D median-dual 幾何の桁落ち除去 (Newell のローカル原点化+double 蓄積)。2D §2.9 修正の 3D 版 (draft) |
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [axisymmetric-su2-source-formulation.md](active/axisymmetric-su2-source-formulation.md) | `axisymmetric / discretization` | 軸対称を SU2 流 (planar 幾何+1/y ソース) に切替える `axisymMethod: 1`。node 軸行真空化の根治 (nodeAxisDirichlet 撤去) |
-| [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2/3 解決済 (§2.6-2.9, 細壁=双対幾何 float32 桁落ち修正)。残: **node 出口列不整合 (§2.10, η +1.3% 過大)**・壁 T エントロピー市松 (§2.8) |
+| [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2/3 解決済 (§2.6-2.9)、**node 出口列不整合も根治 (§2.11, outlet Psb 動的化 — η 出口積分が正値に)**。残: 壁 T エントロピー市松 (§2.8) |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [tooling-cloud-gpu-env.md](active/tooling-cloud-gpu-env.md) | `tooling / infra` | クラウド GPU 環境 (AWS EC2 spot): Docker 構築・計算投入・速度計測基盤。MPI 化の実行基盤を先行整備 |
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
@@ -45,6 +44,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [architecture-median-dual-3d-double-geometry.md](accepted/architecture-median-dual-3d-double-geometry.md) | `architecture / discretization` | 3D median-dual 幾何の Newell ローカル原点化+境界蓄積 double 化 (堅牢化)。**監査結論: 3D は元から double 演算で 2D のような実害なし** (露出見積もりを訂正)。wall_dist 定義は 2D と一貫 (双対重心間距離) |
 | [architecture-limiter-negative-skip-fix.md](accepted/architecture-limiter-negative-skip-fix.md) | `architecture` | `limiter: -1` (off) が早期 return を素通りし Venkatakrishnan フル計算 (KEEP では未使用) に落ちるバグ修正。KEEP 系 run 全体で ~20% 高速化・挙動不変 |
 | [turbulence-sst-omega-crossdiff-jacobian.md](accepted/turbulence-sst-omega-crossdiff-jacobian.md) | `turbulence / time_integration` | SST ω 交差拡散の point-implicit Jacobian (sstCrossDiffJac): dual-time サブ反復の ω 収束改善 (1.5x→2.7x)、収束解は不変 |
 | [timeint-bodyforce-massflow-control.md](accepted/timeint-bodyforce-massflow-control.md) | `time_integration` | 体積力の質量流量一定制御 (Benocci & Pinelli 圧縮性版, γ=0.02): 周期丘 DDES 駆動。case/39 で検証済 |
