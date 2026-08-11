@@ -86,6 +86,8 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0065_node_yp30_taw_defectflux_lowcfl` | **mode 3 (defect-flux 閉包) 短尺**: warm (run_0055) + cfl_pseudo 0.5, 200 step | T[W] が単調**上昇** 1125→1246 K (幾何減衰, 外挿≈1400 K)、内点 986 K 不動、NaN なし = 負帰還設計どおり | 破棄予定 |
 | `run_0066_node_yp30_taw_defectflux_prod` | **mode 3 生産条件** (cfl_pseudo 4.0, 12000 step, warm) | T[W] が step1000 で **1418.2 K にプラトー** (Taw_diag 1416.5+ε, 12000 まで不変)。SU2 primitive 壁温 1428 K と **10 K 一致 (実状態同士)**。非壁場は run_0055 と rel mean ~1e-4。`check_quasisteady` **ALL STEADY**、出口 massflux/推力積分は baseline 比 ~1e-5 で不変。残差床 6–12 倍は出口リップ 16 ノードの既存 ω サイクル増幅 (完全局在, 非ブロッカー) — [plan §10c](../../plans/active/turbulence-sst-su2-taw-coupling.md) | active (**mode 3 検証 正**) |
 | `run_0067_node_yp30_taw_defectflux_kwfwall` | mode 3 + 壁ノード roK_wf Dirichlet 拡張の A/B (リップ ω 振動の壁 k 浮上仮説の検証) | 壁温・場は run_0066 と同一。rms_roOmega 0.141→0.165 で**改善せず → 仮説棄却**、mode 3 は最小構成 (壁 k ピンなし) に確定 | 破棄予定 (A/B 記録) |
+| `run_0068_node_yp30_taw_defectflux_omgwf` | mode 3 + `nodeOmegaWfDirichlet: 1` (irep ω ピン, SU2 SetTurbVars 両変数化) | **リップ ω サイクル完全消滅**: rms_roOmega 0.141→**9.4e-4** (baseline の 12 倍良)、全成分 baseline 以下。壁温 1421 K 維持。代償: BL 乱流閉包変更 (k near-wall 24%/外縁 ~2 倍)、推力 −0.18% (ω ピン由来) — [plan §10c](../../plans/active/turbulence-sst-su2-taw-coupling.md) | active (ω ピン併用候補) |
+| `run_0069_node_yp30_mode0_omgwf` | mode 0 + ω ピン (推力シフトの帰属分離) | 推力 309.623 N ≈ run_0068 → **−0.18% は ω ピン閉包そのものの効果、mode 3 と独立**。ただし冷壁との組合せは残差悪化 (rms_roOmega 0.23) | 破棄予定 (帰属記録) |
 
 **壁半 CV 凍結場収支診断スクリプト** (plan [turbulence-sst-su2-taw-coupling §10](../../plans/active/turbulence-sst-su2-taw-coupling.md) の §11 診断の実体):
 `wall_budget_frozen.py` (forge 収束場の壁ノード収支を A/B/C/D+E 方式で再構成)、
