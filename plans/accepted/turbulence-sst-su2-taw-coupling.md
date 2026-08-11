@@ -385,28 +385,42 @@ $|\varepsilon|<5$ K が 212/221、$\geq20$ K は 4 ノード (コーナー由来
 
 ### 恒久 follow-up (mode 3 で解決しないもの)
 
-- **壁 μt の SU2 5 倍差 — 究明結果 (2026-08-11 完了)**: root cause を数値で特定した。
+- **壁 μt の SU2 5 倍差 — 究明結果 (2026-08-11、一度誤り訂正済み)**: root cause を数値で特定した。
   - forge の `sst_eddy_viscosity_d` は SU2 `SetEddyViscosity` と**式は完全一致**
     ($\mu_t=\rho a_1 k/\max(a_1\omega, S F_2)$)。node 6564 で格納値 9.05e-4 はこの式と厳密一致
     (limiter は正しく作動) — 実装バグではない。
-  - limiter 前の生の $\rho k/\omega$ は forge 3.56e-3 / SU2 4.08e-3 で ±13% と近い —
-    k・ω 個々の値は大きく違わない。
-  - **真因は壁ノード W の速度勾配 (limiter の分母 S) が物理的に無意味な値になっていること**。
-    W–I 間 (y+≈30 相当の距離) には粘性低層・バッファ層・対数層が全て入っており、両端の状態値
-    (U[W]=0, U[I]=対数層値) だけを結ぶ Green-Gauss/セカント勾配は、対数則が予言する**局所**せん断
-    $u_\tau/(\kappa y)$ より **5.4〜7.6 倍過大**(node 6564/6759/11829 で実測: 再構成 S=6.45e6
-    vs 対数則予言 1.19e6 /s 等)。この歪んだ S が limiter 分母に直接入り μt を汚染する。
-  - **SU2 がこの問題を起こさない理由**: SU2 は壁/第一内点で通常の勾配ベース式を一切使わず、
-    White–Christoph 壁法則の解析微分 `EddyViscWall` を直接計算し、`SetTurbVars_WF` で k・ω
-    両方をこの値に自己整合するよう強制上書きする ($k_{new}=\omega_{new}\cdot
-    \text{EddyViscWall}/\rho$)。SU2 の壁 μt は「k-ω を解いた結果」ではなく「壁法則から
-    組み立てた値」に k-ω を事後追従させたもの。forge は k を wf_pk 生産付きで自由に解き、ω のみ
-    Menter 公式でピンする設計 (§6.5(d)/(e), 標準) — k と μt を紐付ける仕組みがない。
-  - **対応方針は未着手**: 選択肢は (a) SU2 同様 EddyViscWall 相当の解析式を導入し k/ω/μt を
-    自己整合させる (SetTurbVars_WF の完全移植)、(b) 壁ノードの S を勾配再構成ではなく壁法則の
-    解析微分 (Reichardt 版) で置換する (limiter だけ修正、k は現行のまま)、(c) 現状維持
-    (mode 3 の熱閉包には無関係、運動量側の影響のみ)。将来の壁 μt 依存モデル (LES 遷移、粗さ、
-    等) に影響しうるため、着手する場合は独立 plan として起票すること。
+  - **5 倍差は壁ノード W に固有で、第一内点 (irep) にはほぼ存在しない** (2026-08-11 訂正の核心)。
+    node 6564/6759/11829 で W と irep を分けて比較:
+
+    | | wall W (forge/SU2 比) | irep I (forge/SU2 比) |
+    | --- | --- | --- |
+    | 6564/6563 | 4.87 | 0.79 |
+    | 6759/6758 | 4.78 | 0.79 |
+    | 11829/11828 | 4.51 | 0.68 |
+
+    irep は forge がむしろ 20〜32% 低いだけで大差なし。**ギャップは壁ノード W だけに集中**。
+  - **構造的説明**: SU2 の `SetTurbVars_WF` は Normal_Neighbor (=forge irep) と**壁ノードの両方**
+    に k・ω を White–Christoph 解析式 `EddyViscWall` と自己整合するよう上書きする
+    ($k_{new}=\omega_{new}\cdot\text{EddyViscWall}/\rho$)。forge は同種の機構
+    (`nodeKwfDirichlet`, Reichardt 版, 既定 ON) を**irep にしか持たない** — だから irep は
+    SU2 に近く、**壁ノード W には k をピンする仕組みが一切なく** (ω のみ標準 Menter ピン)、
+    k は wf_pk 生産/dissipation 平衡だけで自由に解かれ、SU2 の壁モデル値と紐付く根拠がない。
+  - **【誤りの記録・訂正】初回究明では「壁ノード W の速度勾配 (limiter 分母 S) が
+    Green-Gauss セカントで局所せん断より 5.4〜7.6 倍過大」(実測・解析式
+    $\text{secant}/\text{local}=\kappa u^+(y_I)$ で確認済み, real finding) をギャップの
+    root cause と誤って報告した。**これは実在する別問題だが、5倍差の説明にはならない**:
+    S は limiter の分母なので、過大な S はむしろ μt を押し下げる方向に効く。実際「正しい」
+    局所 S (対数則予言値) に置き換えると limiter 自体が効かなくなり μt は 9.05e-4→3.56e-3 と
+    **さらに SU2 から遠ざかる**。gradient reconstruction の近壁 O(1) 誤差自体は
+    `solverConfig.hpp` の gradLSQ コメントにも既知課題として明記されており記録の価値はあるが、
+    この乖離の主因ではない。
+  - **対応方針は未着手**: 有力候補は (a) 壁ノード W にも `nodeKwfDirichlet` 相当の機構を拡張する
+    (irep で効いている仕組みを W へ延長。ω 側は今回 irep で棄却済みなので k のみが対象)、
+    (b) SU2 同様 EddyViscWall 相当を forge の壁関数 (Reichardt/Kader 系) で独自導出し W/irep 両方
+    で k を自己整合させる、(c) 現状維持 (mode 3 の熱閉包には無関係、運動量・将来の壁 μt 依存
+    モデルへの影響のみ)。(a) は ω irep ピンの反省 (SU2 は F2 リミッタで μt を抑えるが forge は
+    効かない可能性) を踏まえ、導入時は本検証と同じ y+1 真値アンカーの τ_w 比較で確認すること。
+    将来の壁 μt 依存モデルに影響しうるため、着手する場合は独立 plan として起票すること。
 - 等温壁 `sstEnergyWallFunction` は伝導のみ q_w 置換で仕事項を残す (厳密には
   $q_{face}=q_w-\tau u_f$)。圧縮性ベル +87% 過大の一部要因の可能性 — mode 3 と同じ総流束置換で
   直せるか要検討 (スコープ外 follow-up)。
