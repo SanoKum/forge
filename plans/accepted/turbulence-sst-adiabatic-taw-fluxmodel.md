@@ -6,12 +6,12 @@
 - **status**: `done`  <!-- 2026-08-11: 流束注入案は実測発散 (§9) で棄却。最終形 = Taw は境界出力
   (Tsb/Taw_diag) 専用、W-I 内部粘性拡散は常に DOF 状態のみ、壁熱は境界半割面 q_w (断熱=厳密0)。
   この「棄却の記録+最終方針」= output-only fallback が本 plan の成果物。SU2 熱結合の再実装は
-  後継 plans/active/turbulence-sst-su2-taw-coupling.md (experimental mode 2) -->
+  後継 platurbulence-sst-su2-taw-coupling.md (experimental mode 2) -->
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) 同節
 - **related_plans**:
-  - [`../active/turbulence-sst-su2-taw-coupling.md`](../active/turbulence-sst-su2-taw-coupling.md)
+  - [`turbulence-sst-su2-taw-coupling.md`](turbulence-sst-su2-taw-coupling.md)
     (後継: SU2 熱結合の再実装, experimental `sstThermalWallFunction: 2`)
   - [`architecture-node-boundary-gradient-dof-only.md`](architecture-node-boundary-gradient-dof-only.md)
     (前提: 境界勾配の owner-state 化)
@@ -59,7 +59,7 @@
 **注意 (2026-08-11 整理)**: §1〜§8 は「W–I 流束注入」旧案の起票時仕様であり、**現行仕様ではない**。
 現行仕様は §0 (output-only baseline)。旧案は §9 の実測発散により棄却された。
 SU2 と同じ熱的結合の再実装は後継 plan
-[`turbulence-sst-su2-taw-coupling.md`](../active/turbulence-sst-su2-taw-coupling.md)
+[`turbulence-sst-su2-taw-coupling.md`](turbulence-sst-su2-taw-coupling.md)
 (experimental mode `sstThermalWallFunction: 2`) が別途進める — 本 plan は
 **output-only fallback と失敗履歴の記録**として保持する。
 

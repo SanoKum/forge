@@ -3,15 +3,17 @@
 ## メタ
 
 - **area**: `turbulence / boundary`
-- **status**: `in_progress`  <!-- experimental。§14 の受入条件を満たすまで mode 1 (output-only,
-  commit 23f03169) が生産 baseline。受入後に accepted へ移す -->
+- **status**: `done`  <!-- 2026-08-11 ユーザ決定: mode 3 (defect-flux 閉包) を正式採用。
+  断熱壁 SST 壁関数 (node) の生産閉包 = sstThermalWallFunction: 3。mode 1 (output-only) は
+  比較 fallback として維持。ω irep ピン (nodeOmegaWfDirichlet) の正式化と壁 μt 監査は
+  別途 follow-up (§10c) -->
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) 同節
 - **related_plans**:
-  - [`../accepted/turbulence-sst-adiabatic-taw-fluxmodel.md`](../accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)
+  - [`turbulence-sst-adiabatic-taw-fluxmodel.md`](turbulence-sst-adiabatic-taw-fluxmodel.md)
     (前身: output-only fallback (§0) と W–I 注入初回試行の失敗記録 (§9)。本計画はその後継)
-  - [`../accepted/architecture-node-boundary-gradient-dof-only.md`](../accepted/architecture-node-boundary-gradient-dof-only.md)
+  - [`architecture-node-boundary-gradient-dof-only.md`](architecture-node-boundary-gradient-dof-only.md)
     (前提: GG/LSQ owner-state-only — 本計画でも**変更しない**)
 - **created**: `2026-08-11`
 - **owner**: `sano`

@@ -426,9 +426,11 @@ $$T_{aw} = T_{\mathrm{rep}} + r\,\frac{U_{t,\mathrm{rep}}^2}{2 c_p}, \qquad r = 
 **断熱壁 (`kind: wall`) かつ `wallTreatmentSST==1`** が対象、`wall_isothermal` には適用しない
 (物理壁温が既にある)。
 
-**設計 (2026-08-11 最終確定)**: $T_{aw}$ の役割は**境界出力専用** — 「壁関数が再構成した
-物理壁面温度のモデル値」として `Taw_diag[W]` と bvar `Tsb` (壁面出力 `res_wall_*` の `Ts`) に
-書くだけで、**場の解には一切作用させない**:
+**モード体系 (2026-08-11 確定)**: `sstThermalWallFunction` = 0 (OFF) / 1 (output-only) /
+2 (SU2 overlay, 実験・未採用) / **3 (defect-flux 閉包 — 正式採用, 断熱壁 node 生産閉包)**。
+以下はまず mode 1 (output-only) の設計を述べる — mode 3 採用後は**比較用 fallback** の位置づけで、
+$T_{aw}$ を**境界出力専用** — 「壁関数が再構成した物理壁面温度のモデル値」として `Taw_diag[W]` と
+bvar `Tsb` (壁面出力 `res_wall_*` の `Ts`) に書くだけで、**場の解には一切作用させない**:
 
 - $T_{aw}$ を使わないもの: $T[W]$ の状態ピン / GG・LSQ 勾配 (境界勾配は §6.2/§7.2.2 の
   owner-state-only により bvar を読まないので、`Tsb=T_{aw}` は構造的に勾配へ混入しない) /
@@ -473,7 +475,8 @@ OFF 基準 [1196 K] とほぼ不変 — 「1417.9 K = SU2 と 4 K 一致」の�
 [`plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)
 (流束注入の試行と棄却、最終方針 §0) を参照。
 
-**experimental mode 3 — 保存的壁層エネルギー流束閉包 (defect-flux, `sstThermalWallFunction: 3`, 2026-08-11 追加)**:
+**mode 3 — 保存的壁層エネルギー流束閉包 (defect-flux, `sstThermalWallFunction: 3`, 2026-08-11 追加・
+同日**正式採用** = 断熱壁 × node × `wallTreatmentSST==1` の生産閉包)**:
 断熱壁の定応力 Couette 層ではエネルギー式 $\frac{d}{dy}(q+\tau u)=0$ を壁 ($q_w=0,\,u=0$) から
 積分すると **任意の高さで $q(y)+\tau u(y)=0$** — 層が Crocco 平衡 ($T_W=T_{aw}$) に乗るとき
 W–I 双対面を通る全 (伝導+粘性仕事) エネルギー流束は厳密ゼロになる。そこで W 入射 W–I 辺の
@@ -494,7 +497,7 @@ $H_T\to\lambda/y$ (解像 Fourier へ退化)。淀み ($u_\tau\to0$) は $H_T=\l
 (AddTauWall)・物理壁面 $q_w=0$・GG/LSQ owner-state-only は不変。離散平衡は
 $T_W^* = T_{aw} + R_{rest}/(H_T A)$ ($R_{rest}$=W–W' 辺+対流の残り) で、凍結場診断では
 221 壁ノード中 212 で $|T_W^*-T_{aw}|<5\,$K。詳細・検証は
-[`plans/active/turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)。
+[`plans/accepted/turbulence-sst-su2-taw-coupling.md`](../../plans/accepted/turbulence-sst-su2-taw-coupling.md)。
 
 **experimental mode 2 — SU2 式熱結合 (`sstThermalWallFunction: 2`, 2026-08-11 追加, 未採用)**:
 モード体系は 0=無効 / 1=**output-only (生産 baseline, 上記の設計)** / 2=experimental SU2 coupled。
@@ -508,7 +511,7 @@ $\vec g_{corr} = \bar{\vec g} + (\Delta T_{flux} - \bar{\vec g}\cdot\vec d)\vec 
 (壁 μt を SU2 実効値へ寄せても壁ノードの単調冷却が止まらない。SU2 の安定は「primitive 上書きで
 zombie 化した壁保存量の無害化」によるもので、forge は $T[W]$ が実効なため同機構が働かない)。
 詳細と設計論点は
-[`plans/active/turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)
+[`plans/accepted/turbulence-sst-su2-taw-coupling.md`](../../plans/accepted/turbulence-sst-su2-taw-coupling.md)
 §10/§10b。
 
 **cell の既知バイアス**: cell の代表点 = 第一セル (y+~30) の $T_1$ が node/SU2 の同高さより

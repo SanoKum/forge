@@ -234,7 +234,9 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
     (cell 990 に対し ~5800、局所)。場平均・x_R は cell/SU2 整合。
   - 関連 plan: [`turbulence-node-wall-function-coverage.md`](../../plans/active/turbulence-node-wall-function-coverage.md)。
 
-**熱的閉包 `sstThermalWallFunction` (theory §6.5(f), 既定 0=OFF, 2026-08-11 最終確定)**:
+**熱的閉包 `sstThermalWallFunction` (theory §6.5(f), 既定 0=OFF; 2026-08-11: mode 3 defect-flux を
+正式採用 — 断熱壁 node 生産 run は `sstThermalWallFunction: 3` を指定する。以下の mode 1
+[output-only] は比較用 fallback)**:
 automatic wall treatment は熱側の壁法則を持たず、粗壁メッシュの断熱壁温出力が回復温度より
 ~200 K 冷える (case/40)。Crocco 型 $T_{aw}$ (`Taw_diag`, `ransWallFunction_d.cu` で毎ステップ計算)
 を**境界出力専用のモデル壁面温度**として使う:
@@ -258,10 +260,10 @@ run_0053/0057)。**W–I 内部辺にモデル温度を混ぜてはならない*
 (初代・弱閉包, superseded) →
 [`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)
 (流束注入の試行と棄却の記録 + output-only fallback §0, done) →
-[`turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)
+[`turbulence-sst-su2-taw-coupling.md`](../../plans/accepted/turbulence-sst-su2-taw-coupling.md)
 (SU2 式熱結合の experimental mode 2, in_progress)。
 
-**experimental mode 3 (`sstThermalWallFunction: 3`, defect-flux 閉包, 2026-08-11)**: 断熱壁 × node ×
+**mode 3 (`sstThermalWallFunction: 3`, defect-flux 閉包, 2026-08-11 正式採用)**: 断熱壁 × node ×
 `wallTreatmentSST==1`。`compute_wall_friction_sst_d` が壁ノードに $\vec H = H_T\,\hat m$
 ($H_T=\rho_{rep}c_p u_\tau/T^+$, $\hat m$=内向き壁法線, 淀みは $\lambda_{rep}/y$) を
 `Taw_HTnx/y/z` へ格納 (非壁 0=inactive)。`viscousFlux_d` は片端のみ $|\vec H|>0$ の W–I 辺で、
