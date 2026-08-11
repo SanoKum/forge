@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `architecture / discretization`
-- **status**: `draft`
+- **status**: `done`
 - **related_docs**:
   - `methods/discretization.md` (M4 3D median-dual の節に精度注意を追記予定)
 - **related_plans**:
@@ -88,3 +88,29 @@ node メッシュを使う前に除去する。3D の RANS/DES 壁解像は WMLE
 
 - `2026-08-11` — 起票 (2D 版修正 commit 3cdddb9e のフォローアップ。現状分析まで実施、
   実装は未着手)。
+- `2026-08-11 (2)` — **実装・検証完了。ただし §2 の露出分析を訂正**:
+  - **訂正 (重要)**: 3D `newell()` は 2D shoelace と違い**入力から演算まで double**
+    (`std::array<double,3>` パッチ) であり、float32 なのは節点座標の格納のみ。
+    (a−b)(a+b) の相殺は double で行われるため桁落ちは実質発生せず、誤差は入力丸め
+    (float32 座標 ~1e-7 相対) 律速 — **§2.1 の「面ベクトル数十% 誤差」の見積もりは
+    2D の float32 演算前提を誤って持ち込んだ過大評価だった**。実測 (下記) でも旧コードの
+    面ベクトルは修正後と最大 rel 1.2e-7 しか違わず、**3D には 2D のような実害バグは
+    なかった**。
+  - **実装は堅牢化として保持**: 内部双対面パッチの Newell を M 相対化・境界半割面
+    サブ四角を N 相対化・境界蓄積 (`bnodeAccum`/`halfByOwner`/`hcentByOwner`) を double 化
+    (厳密演算同値、将来の精度リファクタへの防御 + 蓄積は厳密に改善方向)。
+    methods/discretization.md §2.5.6 に精度方針を記載。
+  - **検証** (§6, 3D 薄壁押出し hex 10mm×3mm×0.5mm, 壁第一 0.99 μm, progression 1.10,
+    scratchpad thinwall3d):
+    (a) closure normalized 1.1e-6 (float 格納床)・旧新同値 (旧コードが既に健全のため
+    「桁改善」は生じない — 上記訂正の根拠)。(b) 双対体積和 relErr 1.4e-9 ≤1e-6 合格。
+    (c) 第一内点 `wall_dist`/節点間距離 = 0.775 — **検証済み 2D y+1 (case/40) の同比 0.773 と
+    一致** (wall_dist は双対重心間距離の定義で、両次元一貫)。(d) 壁行 CV 重心は全数 CV 内。
+    旧新の全幾何配列比較: 体積/重心/wall_dist ビット同一、面ベクトル最大 rel 1.2e-7。
+    (e) 新 converter メッシュ + 現行ソルバで 3D node sod (periodic) 1000 step NaN なし
+    (case/05 `run_node3d_periodic_regr3dgeo`, 物理照合は pMin 既定トラップ
+    [eos-pressure-floor-config] があり対象外・破棄予定)。
+  - **残課題 (別 plan 扱い)**: float32 座標格納そのものの精度 (入力丸め律速) は
+    [fp32-metric-freestream-fix] 系の全体 FP64 化議論へ。3D 薄壁 node の**流体側**スモークは
+    inlet 列 step0 NaN (幾何無罪: 旧新メッシュ同一挙動) という別問題を発見 —
+    3D node の inlet_uniformVelocity 弱形式の検証は将来の 3D 薄壁ケース立ち上げ時に扱う。

@@ -37,6 +37,7 @@
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
+| [turbulence-sst-adiabatic-taw-fluxmodel.md](active/turbulence-sst-adiabatic-taw-fluxmodel.md) | `turbulence / boundary` | SST 断熱壁 T_aw の SU2 式流束モデル置換 (node)。`sstThermalWallFunction` 旧「弱閉包」の後継。**実装済みだが y+30 wall-function ケースで root cause 未特定の発散あり (既定 OFF, §9 参照)** — 次セッションへ引き継ぎ |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
 
@@ -44,6 +45,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [architecture-node-boundary-gradient-dof-only.md](accepted/architecture-node-boundary-gradient-dof-only.md) | `architecture / discretization` | node 境界勾配 (GG/LSQ) から bvar を排除し owner-state のみに統一 (node outlet P/T interior 化の一般化)。outlet 非退行・cell 不変を検証済。turbulence-sst-adiabatic-taw-fluxmodel (未完了) の前提 |
 | [architecture-median-dual-3d-double-geometry.md](accepted/architecture-median-dual-3d-double-geometry.md) | `architecture / discretization` | 3D median-dual 幾何の Newell ローカル原点化+境界蓄積 double 化 (堅牢化)。**監査結論: 3D は元から double 演算で 2D のような実害なし** (露出見積もりを訂正)。wall_dist 定義は 2D と一貫 (双対重心間距離) |
 | [architecture-limiter-negative-skip-fix.md](accepted/architecture-limiter-negative-skip-fix.md) | `architecture` | `limiter: -1` (off) が早期 return を素通りし Venkatakrishnan フル計算 (KEEP では未使用) に落ちるバグ修正。KEEP 系 run 全体で ~20% 高速化・挙動不変 |
 | [turbulence-sst-omega-crossdiff-jacobian.md](accepted/turbulence-sst-omega-crossdiff-jacobian.md) | `turbulence / time_integration` | SST ω 交差拡散の point-implicit Jacobian (sstCrossDiffJac): dual-time サブ反復の ω 収束改善 (1.5x→2.7x)、収束解は不変 |
@@ -51,7 +53,6 @@
 | [boundary-cell-periodic-conservation.md](accepted/boundary-cell-periodic-conservation.md) | `boundary` | cell 全周期境界の非保存バグ修正: device `bint_d[partnerCellID]` 未転送で ghost が誤値→運動量注入。setPeriodicPartner 直後に H2D コピーで根治。TGV で cell/node 一致を確認 |
 | [thermophysics-eos-positivity-floor-config.md](accepted/thermophysics-eos-positivity-floor-config.md) | `thermophysics` | EOS 正値化フロア (pMin/roMin/tMin) の config 化。無次元・低圧ケース (Taylor-Green) で既定 1.0 Pa フロアが場を破壊する問題を解消、既定値据え置きでビット不変 |
 | [boundary-inlet-profile.md](accepted/boundary-inlet-profile.md) | `boundary` | 入口分布プロファイル: CSV テーブルで inlet bvar を非一様化 (x/y/z 1D 線形 or xyz 最近傍)、壁法則 helper |
-| [turbulence-sst-thermal-wall-function.md](accepted/turbulence-sst-thermal-wall-function.md) | `turbulence / boundary` | SST 壁関数の熱的閉包 (Crocco 型 T_aw 弱閉包)。壁関数メッシュの断熱壁温 −230K を解消 (node=SU2 4–14K 差)。状態適用は暴走のため不可と記録 |
 | [turbulence-node-wall-function-coverage.md](accepted/turbulence-node-wall-function-coverage.md) | `boundary` | node SST 壁関数の生産置換を第一内層ノードにも適用 (近壁 k 暴走修正、cell 不変・x_R が SU2 整合) |
 | [architecture-axisym-axis-singularity.md](accepted/architecture-axisym-axis-singularity.md) | `architecture` | 軸対称 近軸の数値問題 (軸中心 k スパイク) の根本原因特定 |
 | [architecture-axisym-nozzle-geometry.md](accepted/architecture-axisym-nozzle-geometry.md) | `architecture` | architecture-axisym-nozzle-geometry |
@@ -98,3 +99,4 @@
 | --- | --- | --- |
 | [diffusion-node-scalar-nonortho-limit.md](archived/diffusion-node-scalar-nonortho-limit.md) | `diffusion` | node-centered flux の dcc に node 座標を使う (双対 CV 重心由来の見かけ非直交を排し SST omega 爆発を根治) |
 | [precision-mixed-axisym.md](archived/precision-mixed-axisym.md) | `precision` | 混合精度 (iterative refinement) で軸対称 近軸の陰解法を root-fix する |
+| [turbulence-sst-thermal-wall-function.md](archived/turbulence-sst-thermal-wall-function.md) | `turbulence / boundary` | SST 壁関数の熱的閉包 (Crocco 型 T_aw「弱閉包」旧版)。**superseded**: 境界勾配が当時 bvar を読んでいたため場に触れる経路が実在し、かつ実データでは壁ノード実状態がほぼ動いていなかった (「4K 一致」は出力 Taw 診断値同士)。後継: `active/turbulence-sst-adiabatic-taw-fluxmodel.md` |

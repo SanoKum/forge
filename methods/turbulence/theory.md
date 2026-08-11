@@ -422,23 +422,75 @@ $\mathrm{rep}$) の状態から
 
 $$T_{aw} = T_{\mathrm{rep}} + r\,\frac{U_{t,\mathrm{rep}}^2}{2 c_p}, \qquad r = \mathrm{Pr}^{1/3}$$
 
-を毎ステップ評価し (実装は既存診断 `Taw_diag`)、**断熱壁 (`kind: wall`) かつ
-`wallTreatmentSST==1`** のとき**壁面値 (bvar `Ts`) にのみ**適用する。壁面値は
-① 壁面出力 (`res_wall_*` の壁温) と ② 境界 LSQ 勾配閉包 (calcGradient の bvar 閉包) に
-入るが、**保存量・壁面熱流束には触れない** (断熱壁の伝導熱流束は厳密 0 のまま)。
-サブグリッド量である粘性低層の温度上昇 $\Delta T = r U_t^2/2c_p$ を壁面値として表現する
-「弱閉包」であり、node 5e-3 (y+≈29–139) でベル壁温 1417.9 K = SU2 壁関数 1422 K と
-4 K 一致・η/ṁ は OFF と一致 (case/40 `run_0038`)。OFF 比の場の変化は勾配閉包経由のみで
-有界 (max |ΔT| ~13 K, 12000 step 安定)。
+を毎ステップ評価する (`ransWallFunction_d.cu compute_wall_friction_sst_d`、出力配列 `Taw_diag`)。
+**断熱壁 (`kind: wall`) かつ `wallTreatmentSST==1`** が対象、`wall_isothermal` には適用しない
+(物理壁温が既にある)。
 
-**やってはいけない (2026-08-11 実測)**: $T_{aw}$ を**状態**として課すこと — node の
-壁ノード温度ピン (等温壁機構の流用) は W–I 双対面の解像伝導が、cell の ghost 温度
-Dirichlet は勾配閉包経由の実効伝導が、それぞれ「壁と BL の恒常オフセット
-$\Delta T = r U_t^2/2c_p$」を熱流束と誤認して BL を加熱し続け、$T_{aw}=T_{rep}+\Delta$ の
-正帰還で暴走する (node 1832 K 発散性ドリフト / cell は $T_t$=1500 K 飽和,
-case/40 `run_0038`/`run_0039` の旧版)。壁関数メッシュで $T_{aw}$ を状態として保持するには
-壁隣接の伝導流束自体のモデル置換 (SU2 流) が必要で、これは将来課題
-(等温壁の Kader $q_w$ モデルと同じ工事)。
+**設計 (2026-08-11 全面改訂 — 旧「弱閉包」版からの訂正)**: $T_{aw}$ は**壁面出力の表示値**ではなく
+**内部粘性流束評価用の壁 primitive temperature** として使う。SU2 の壁関数実装と同じ位置付けで、
+$\tau_w$ を AddTauWall で内部双対面の運動量流束に注入するのと対称に、$T_{aw}$ を**熱流束の compact
+差分項の壁側温度**として注入する。
+
+- **per-CV マーカ** `Taw_Wall_Flux[W]` (既定 $-1$=非対象、対象は $T_{aw}\,(>0)$) を、node
+  × `kind: wall` × SST × `wallTreatmentSST==1` × `sstThermalWallFunction==1` の壁ノードにのみ
+  `Taw_diag` から書く (`applySstThermalWallFunction` が担当、`Tau_Wall`/`Qw_Wall` と同型の仕組み)。
+- **流束層** ([viscousFlux_d.cu](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu) 主ループ,
+  node 内部双対面): 端点が対象壁ノードの内部辺 (**Normal_Neighbor の 1 面だけでなく、対象壁ノードに
+  接続する全内部辺**。両端が対象壁ノードなら両端とも各々の $T_{aw}$ を使う) で、熱流束の
+  compact/法線差分項だけ端点温度を置換する:
+  $$
+  q_{\mathrm{compact}} = k_{\mathrm{eff}}\,\frac{T[I]-T_{aw}[W]}{d_{WI}}\,\delta
+  \qquad (\text{旧: }T[I]-T[W])
+  $$
+  **面平均 Green–Gauss 勾配項 (接線補正) は変更しない** — $\nabla T[W]$ は §6.2/§7.2.2 の owner-state
+  境界閉包 (実状態のみ) から計算済みの値をそのまま使う。熱伝導率 $k_{\mathrm{eff}}$・$\mu_{\mathrm{lam}}$・
+  $\mu_{\mathrm{turb}}$ も当該ステップの状態物性のまま (Taw で再評価しない)。$T_{aw}$ は非線形反復中の
+  lagged wall-model 値として扱う (前ステップ収束値ベースの $u_\tau$/$U_t$ を使う点は既存 SST 壁関数と同じ)。
+- **状態層は不変**: 壁ノードの $T[W]$ は依然として**通常の DOF** で、自身の `res_roe` から解かれる
+  (等温壁のような Dirichlet ピンは課さない)。壁面出力 (`res_wall_*` の `Ts`) は bvar `Tsb=T_{aw}` を
+  引き続き使ってよい (この値は流束へも実際に効くモデル値であり、旧版のような「出力専用の飾り」ではない) —
+  一方 **volume field の `VALUE/T` は常に実際の壁ノード状態 $T[W]$** で、$T_{aw}$ で上書きしない。
+  両者は HDF5 上も別配列 (`VALUE/T` vs `BCONDS/<wall>/VALUE/Ts`) で区別できる。
+
+**エネルギー保存の確認**: 断熱壁半割面の熱流束は変更なく厳密 $0$。W–I 内部面の流束は両端へ
+$+F/-F$ で保存的に加算される点も変更なし (置換したのは compact 項の**値**であって加算則ではない)。
+壁ノードの `res_roe` はゼロ化しない・implicit のエネルギー行 decouple もしない・$T[W]$/`roe` を
+$T_{aw}$ にピンしない (次段落の却下版と違う点)。
+
+**なぜ暴走しないか (旧却下版との違い)**: compact 項の置換後、その項は**壁ノード自身の状態 $T[W]$ を
+含まない** (置換により消えている) — 数学的には「$W$–$I$ 間に $k_{\mathrm{eff}}(T[I]-T_{aw})/d\cdot\delta$
+という**モデルによる流束**を課す」ことと同値で、$\tau_w$ を AddTauWall で課すのと同じ「流束のモデル置換」
+である。$T_{aw}=T_{rep}+\Delta$ の $T_{rep}$ が代表点 (通常 $I$) の状態なら、この項は
+$\propto T[I]-T_{aw}=-\Delta$ と**絶対温度レベルに依らない有界な量**になり、$T[W]$ 自身は
+(a) この有界な外部流束的寄与と (b) 通常どおり実状態から計算される GG 補正項・他の内部面流束、
+の合計として**自身の `res_roe=0` から solve される**——他の任意の内部ノードと同じ安定な拡散平衡構造であり、
+正帰還ループを持たない。
+
+**却下版 (2026-08-11 実測, 復活させない)**: $T_{aw}$ を**状態**として課す (node の壁ノード温度ピン /
+cell の ghost 温度 Dirichlet) かつ**壁ノードの `res_roe` を同時にゼロ化**する構成は、壁 CV 自身の
+エネルギー方程式を捨てながら W–I 面の流束だけは (高い $T_{aw}$ を使って) 計算される非保存構成になる
+(W から流出した分を W の収支が受け止めない = 外部熱源)。これが内部ノード $I$ を加熱し続け、
+$T_{rep}=T[I]$ が上がる → $T_{aw}=T_{rep}+\Delta$ も上がる → 次ステップさらに高い $T_{aw}$ を
+$T[W]$ に強制コピー、という**状態が駆動源に抵抗なく追随する正帰還**で暴走する
+(node 1832 K 発散性ドリフト / cell は $T_t$=1500 K 飽和, case/40 `run_0038`/`run_0039` 旧版)。
+本改訂版は「状態ピン」をせず「壁ノード自身の `res_roe` も生かした」ままなので、この機構は生じない。
+
+> **⚠ 実装状況 (2026-08-11)**: 上記の流束モデル置換設計は**実装済みだが未検証**。node y+30
+> wall-function ケースで有効化すると root cause 未特定の発散が起きることを確認済みで、
+> 代表点エッジのみへ適用範囲を絞る修正を試みても解消しなかった (診断記録:
+> `plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md` §9)。既定 OFF のため他ケースへの
+> 影響はないが、**`sstThermalWallFunction: 1` を現状の生産計算で使わないこと**。
+
+**旧「弱閉包」版の訂正 (2026-08-11)**: 旧版は $T_{aw}$ を bvar `Ts` (勾配閉包 + 出力の両方が読む) にのみ
+書き「出力専用・場に触れない」としていたが、勾配閉包経由で場に触れる経路が実在した
+(§6.2/§7.2.2 の一般化以前は境界 GG/LSQ 勾配が bvar を読んでいたため)。しかも当時の実データ
+(case/40 `run_0038`) では **壁ノードの実状態 $T[W]$ (bell 平均 1195.3 K) は OFF 基準 (1196 K) と
+ほぼ不変**で、「1417.9 K = SU2 と 4 K 一致」という報告は**出力配列に上書きした $T_{aw}$ 診断値同士の
+一致**を見ていたに過ぎなかった (場は実質動いていなかった)。本改訂版は勾配を実状態のみに戻し
+(旧弱閉包の経路自体を消去)、$T_{aw}$ を流束モデルとして明示的に導入することで、場が実際に
+$T_{aw}$ 近傍へ応答する構造にした。検証は `plans/archived/turbulence-sst-thermal-wall-function.md`
+(旧版, superseded) および新設計の
+[`plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md) を参照。
 
 **cell の既知バイアス**: cell の代表点 = 第一セル (y+~30) の $T_1$ が node/SU2 の同高さより
 ~100–160 K 高く (cell wf=1 の BL 熱監査は follow-up)、$T_{aw}$ が +70–90 K 過大になる

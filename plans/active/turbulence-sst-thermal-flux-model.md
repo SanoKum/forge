@@ -8,7 +8,8 @@
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f) (弱閉包と「状態適用は暴走」の記録) / §10 (WMLES Kader)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
 - **related_plans**:
-  - [`../accepted/turbulence-sst-thermal-wall-function.md`](../accepted/turbulence-sst-thermal-wall-function.md) (前段: 断熱壁の弱閉包。本 plan はその「やらない」に切り出した将来課題)
+  - [`../archived/turbulence-sst-thermal-wall-function.md`](../archived/turbulence-sst-thermal-wall-function.md) (前段: 断熱壁の旧弱閉包, superseded)。断熱壁側の後継は
+    [`turbulence-sst-adiabatic-taw-fluxmodel.md`](turbulence-sst-adiabatic-taw-fluxmodel.md) (本 plan と同じ「流束モデル置換」思想)
   - [`turbulence-wmles-wall-stress.md`](turbulence-wmles-wall-stress.md) (Kader 温度壁法則の既存実装元)
 - **created**: `2026-08-11`
 - **owner**: `sano`

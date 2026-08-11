@@ -118,6 +118,9 @@ public:
         // (SU2 壁関数の熱的閉包と同式)。壁関数対象セル (cell=第一セル / node=壁ノード) に格納、
         // 非対象は -1。現状は**出力のみ** (壁状態へは未適用 — 適用は保存整合の plan 化後)。
         "Taw_diag",
+        // §6.5(f) 流束置換の対象エッジ制限用: 壁ノードの代表点 (Normal_Neighbor) CV id を
+        // flow_float に exact 格納 (nCells < 2^24 で厳密)。非対象は -1。node のみ。
+        "Taw_Rep_Id",
         // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
         // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。
@@ -131,6 +134,12 @@ public:
         // viscousFlux_d の AddQWall (W-I 熱流束置換) と zeroWallMomentumResidual の res_roe ピン
         // マーカを兼ねる (methods/turbulence §10.4)。断熱 WMLES / cell では常に -1。
         "Qw_Wall",
+        // SST 断熱壁の熱的閉包 (node, methods/turbulence §6.5(f), sstThermalWallFunction==1) 用:
+        // 対象壁ノードの Crocco 型回復温度 T_aw [K] (非対象は -1)。viscousFlux_d が対象壁ノードに
+        // 接続する内部双対面の熱流束 compact 項の端点温度をこの値に差し替える (§6.5(f) の
+        // 流束モデル置換, plan turbulence-sst-adiabatic-taw-fluxmodel)。壁ノードの状態 T[W]・
+        // res_roe には触れない (Tau_Wall/Qw_Wall と同型のモデル層マーカ)。cell では常に -1。
+        "Taw_Wall_Flux",
         // SST 陰解法用: k/ω 輸送項（移流+拡散）のヤコビアン対角（point-implicit）[m³/s]。
         // 1次風上移流の Σ_f max(±ṁ,0)/ρ と拡散 Σ_f (μ_face/ρ)(|δ|/dcc) を面ループで集計し、
         // D_φ = V/Δτ + V·src_jac + transport_diag に加える。壁近傍の細セルで陽的輸送 stiff 性を

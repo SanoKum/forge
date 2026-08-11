@@ -54,7 +54,16 @@ __global__ void viscousFlux_d
 
  // WMLES 等温壁 (node): 壁ノードに格納した q_w [W/m²] (壁→流体正, 非対象は -1)。片端だけ壁ノードの
  // W-I 面で解像伝導熱流束を q_w·S に置換する (AddQWall, methods/turbulence §10.4)。nullptr で無効。
- flow_float* Qw_Wall
+ flow_float* Qw_Wall,
+
+ // SST 断熱壁の熱的閉包 (node, methods/turbulence §6.5(f), sstThermalWallFunction==1): 対象壁
+ // ノードの Crocco 型回復温度 T_aw [K] (非対象は -1)。対象壁ノードとその**代表点 (Normal_Neighbor,
+ // Taw_Rep_Id) との内部辺のみ**で、熱流束 compact/法線差分項のその端点の温度だけを
+ // T[W]→Taw_Wall_Flux[W] に差し替える (面平均 GG 勾配項・熱物性は不変)。両端が対象なら両端とも
+ // 各々の値を使う。状態・res_roe には触れない。**代表点以外の隣接ノードとの辺には適用しない**
+ // (2026-08-11: 全内部辺に適用すると T_aw が物理的意味を持たない接線方向隣接ノードとの温度差まで
+ // 流束化し発散した実測に基づく制限)。どちらも nullptr で無効。
+ flow_float* Taw_Wall_Flux, flow_float* Taw_Rep_Id
 )
 {
     geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
@@ -177,7 +186,23 @@ __global__ void viscousFlux_d
         flow_float cp_face = f*cp[ic0] + (1.0-f)*cp[ic1];
         flow_float tc_face = f*thermCond[ic0] + (1.0-f)*thermCond[ic1];
         tc_face += cp_face*v_turb/Prt;
-        flow_float heatflux = tc_face*((Ts[ic1] -Ts[ic0])/dcc)*delta;
+
+        // SST 断熱壁の熱的閉包 (node, AddTawFlux, methods/turbulence §6.5(f)): 対象壁ノード
+        // (Taw_Wall_Flux>0) が端点で、かつ**この辺の相手ノードがその代表点 (Taw_Rep_Id) と一致する
+        // ときだけ**、熱流束 compact/法線差分項のその端点の温度を T[W]→Taw_Wall_Flux[W] に差し替える
+        // (両端が対象で互いに代表点なら両端とも)。代表点以外との辺は変更しない (発散対策, 2026-08-11)。
+        // 面平均 GG 勾配の接線補正項 (dTdxf 由来) は実状態のまま不変 — 状態・res_roe には触れない。
+        flow_float T0_compact = Ts[ic0];
+        flow_float T1_compact = Ts[ic1];
+        if (Taw_Wall_Flux != nullptr && Taw_Rep_Id != nullptr) {
+            const flow_float taw0 = Taw_Wall_Flux[ic0];
+            const flow_float taw1 = Taw_Wall_Flux[ic1];
+            // Taw_Wall_Flux/Taw_Rep_Id は同一箇所で同時に書かれるため taw>0 なら Rep_Id は
+            // 常に有効な非負整数 (float32 exact 表現, nCells<2^24) — +0.5 丸めは不要。
+            if (taw0 > (flow_float)0.0 && (geom_int)Taw_Rep_Id[ic0] == ic1) T0_compact = taw0;
+            if (taw1 > (flow_float)0.0 && (geom_int)Taw_Rep_Id[ic1] == ic0) T1_compact = taw1;
+        }
+        flow_float heatflux = tc_face*((T1_compact - T0_compact)/dcc)*delta;
         heatflux += tc_face*(dTdxf*k_x +dTdyf*k_y +dTdzf*k_z);
 
         // WMLES 等温壁 (node, AddQWall): 片端のみ壁ノードの W-I 面で、解像伝導熱流束を壁モデルの
@@ -655,6 +680,18 @@ static bool sstEnergyWfNodeActive(const solverConfig& cfg, const mesh& msh)
     return false;
 }
 
+// SST 断熱壁の熱的閉包 (§6.5(f)) の node AddTawFlux ゲート: node × SST × wallTreatmentSST==1 ×
+// sstThermalWallFunction==1 で wall (断熱) bcond が存在するとき true。この条件下でのみ
+// Taw_Wall_Flux が初期化 (init_wf_pk_d) + 書き込み (set_wall_taw_flux_marker_d) されている。
+static bool sstThermalWfFluxNodeActive(const solverConfig& cfg, const mesh& msh)
+{
+    if (!(cfg.discretization == "node" && msh.wall_flag_d != nullptr
+          && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+          && cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 1)) return false;
+    for (const auto& bc : msh.bconds) if (bc.bcondKind == "wall") return true;
+    return false;
+}
+
 void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_ns)
 {
     // 距離診断 (1 回限り)。FORGE_VISC_WALL_DIAG=1 のとき壁半割面の dn/dcc/tangential を集計表示。
@@ -753,7 +790,10 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         // node WMLES 等温壁 / node SST エネルギー壁関数 (§6.5(g)) のとき Qw_Wall を渡し
         // AddQWall (W-I 熱流束置換)。それ以外は nullptr (Qw_Wall 未初期化のため)。
         (wmlesNodeIsothermalActive(cfg, msh) || sstEnergyWfNodeActive(cfg, msh))
-            ? var.c_d["Qw_Wall"] : nullptr
+            ? var.c_d["Qw_Wall"] : nullptr,
+        // node SST 断熱壁の熱的閉包 (§6.5(f)) のとき Taw_Wall_Flux/Taw_Rep_Id を渡す。それ以外は nullptr。
+        sstThermalWfFluxNodeActive(cfg, msh) ? var.c_d["Taw_Wall_Flux"] : nullptr,
+        sstThermalWfFluxNodeActive(cfg, msh) ? var.c_d["Taw_Rep_Id"] : nullptr
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );

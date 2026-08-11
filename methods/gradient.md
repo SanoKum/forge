@@ -80,9 +80,11 @@ $$
   (30% ジッタ quad で最大 66%、`tools/verify_linear_recon.py` で定量・全 PASS)。
   勾配を使う面再構成 (MUSCL, `keepDissJump`) の高次性はこの範囲でしか成立しない。
   LSQ (double) は任意メッシュで線形場厳密 (同ツールで確認)。
-- 境界面の寄与はゴーストセル値を `c_2` として扱うことで吸収する設計。
-  GPU カーネル `calcGradient_b_d` は実装されているが現状コメントアウトされており、
-  境界寄与は内部面ループ + ゴーストセル値で表現される。
+- **境界面の寄与**: cell-centered ではゴーストセル値を `c_2` として扱うことで内部面ループへ吸収する
+  (境界条件モジュールが事前にゴースト値を書く)。node-centered (median-dual) は別の閉じ方をする —
+  境界半割面は内部面ループから除外し、専用カーネル `calcGradient_b_d` が **owner ノードの状態値を境界面値**
+  として加算する (ゴースト・bvar のどちらも参照しない)。詳細・理由は
+  [discretization.md §6.2](discretization.md#62-弱形式境界-weak-form-boundary) / §7.2.2 を参照。
 
 ### 参考
 
@@ -143,12 +145,14 @@ $\rho U_*, \rho e, H_t$ の勾配計算用コードは保留 (コメントアウ
 
 #### 境界寄与
 
-`calcGradient_b_d` 境界カーネルは [`calcGradient_d.cu`](../solver_density_cuda/cuda_forge/calcGradient_d.cu) に
-定義されているが、現在ラッパ内ではコメントアウトされている。
-境界面の寄与はゴーストセルを内部面ループの `ic1` として処理する設計
+**cell-centered**: 境界面の寄与はゴーストセルを内部面ループの `ic1` として処理する設計
 (ゴーストセル値は境界条件モジュールが事前に書き込む)。
-将来的に境界に固有の値 (壁面圧力など) を直接使う場合に
-このカーネルを有効化する。
+
+**node-centered**: `calcGradient_cellgather_d` が境界半割面 (`ip>=nNormalPlanes`) を skip し、
+[`calcGradient_d.cu`](../solver_density_cuda/cuda_forge/calcGradient_d.cu) の `calcGradient_b_d` が
+非 periodic の全 bcond について **owner ノードの状態値**を境界面値として加算する (bvar は参照しない)。
+periodic は DOF 同一視・gradient gather (§discretization.md §4.5) に委ね寄与を加えない。
+理論・設計判断は [discretization.md §6.2/§7.2.2](discretization.md#62-弱形式境界-weak-form-boundary) を参照。
 
 ### 並列化メモ
 

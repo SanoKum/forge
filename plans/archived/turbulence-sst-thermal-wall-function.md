@@ -3,7 +3,10 @@
 ## メタ
 
 - **area**: `turbulence / boundary`
-- **status**: `done`  <!-- 2026-08-11 検証完了 (node 4.1K 一致, y+30 系列で SU2 13.7K 差)。cell 5e-3 代表点バイアスのみ follow-up -->
+- **status**: `superseded`  <!-- 2026-08-11 訂正: 本 plan の「弱閉包」設計は境界勾配一般化前提が崩れており
+  (node の境界勾配が当時 bvar を読んでいたため場に触れる経路が実在)、かつ実データ (run_0038) では
+  壁ノードの実状態がほぼ動いていなかった (「4.1K 一致」は出力配列の Taw 診断値同士の一致)。
+  後継: `plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md` (SU2 式流束モデル置換) -->
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
@@ -94,6 +97,16 @@ T_aw = T_rep + Pr^{1/3}·U_t²/(2cp) を壁面温度状態に適用し、壁関�
 
 - `2026-08-11` — 起票 (Codex レビュー合意済み設計)。theory §6.5(f) / implementation §3.7
   を同時更新。
+- `2026-08-11 (訂正・superseded)` — ユーザレビューで 2 点の欠陥を指摘・確認: ①「壁面出力
+  bvar `Ts` にのみ書き場に触れない」という §4 の記述は不正確 — node の境界 Green-Gauss/LSQ
+  勾配が当時 bvar を読んでいたため接線補正項経由で場に触れる経路が実在した (弱すぎて実効は
+  小さかったが)。②実データ検証 (`run_0038` bell 平均) で**壁ノードの実状態 $T[W]$=1195.3 K は
+  OFF 基準 1196 K とほぼ不変**、「1417.9 K = SU2 と 4 K 一致」は**出力配列に上書きした $T_{aw}$
+  診断値同士の一致**であり、生産値報告 (壁温 1400±15 K) の wf+閉包系列 (node run_0038/0040)
+  はこの点で汚染されている。後継の `turbulence-sst-adiabatic-taw-fluxmodel.md`
+  (`architecture-node-boundary-gradient-dof-only.md` で境界勾配を owner-state 化した上で、
+  $T_{aw}$ を内部粘性流束のモデル置換として明示的に注入する SU2 式設計) へ移行し、本 plan は
+  superseded として archived へ移す。
 - `2026-08-11 (同日・Step3)` — y+≈65–300 壁関数系列 (case/40 run_0040–0042) で閉包を追検証:
   node+閉包 1405.2 K vs SU2 STANDARD_WALL_FUNCTION 1418.9 K (13.7 K 差)、cell+閉包 1387.2 K
   (**cell 代表点バイアスは y+~70 では消滅** — 5e-3 のバッファ層代表点 (y+~15–30) 固有と判明)。

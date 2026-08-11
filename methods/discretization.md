@@ -129,15 +129,28 @@ cell-centered では境界面の外側に鏡像ゴースト CV を置き、対�
 
 - **対流**: 境界半割面 $f_b$ を通る数値フラックスを境界状態 $Q_b$ と内部状態から評価し残差へ直接加える
   $$ \mathbf{R}_p \mathrel{+}= \hat{\mathbf{F}}(\mathbf{Q}_i, \mathbf{Q}_b, \mathbf{n}_b)\, S_b. $$
-- **勾配 (Green–Gauss の閉曲面積分の境界寄与)**: 境界 CV の勾配は内部双対面に加え**境界半割面の寄与
-  $\phi_b \mathbf{S}_b$ を必ず含めねば閉じない** (発散定理):
-  $$ \nabla\phi_p = \frac{1}{V_p}\Big( \sum_{\text{内部面}} \phi_f \mathbf{S}_f + \sum_{\text{境界半割面}} \phi_b \mathbf{S}_b \Big). $$
-  ここで $\phi_b$ は境界面での値 (BC 種別で決まる: slip 壁なら接線速度・内部 $\rho,P$、超音速流入なら
-  自由流、超音速流出なら内部外挿)。**ゴーストの平均ではなく境界値そのもの**を使う点が肝。
+  $Q_b$ (bvar) は BC 種別で定まる境界フラックス状態 (slip 鏡像・inlet 規定・outlet 特性構成) で、
+  対流フラックスと壁モデル・境界面出力にのみ使う。
 
-$Q_b$ / $\phi_b$ は各 BC 種別で定まる量で、既存のゴースト状態計算 (slip 鏡像・inlet 規定・outlet 外挿) と
-同じ物理を「面の値」として与えるもの。実装では既存ロジックを流用しつつ、勾配・フラックスへの
-寄与だけを弱形式に置き換える (→ 本ドキュメントの「実装」節 §7)。
+- **勾配 (Green–Gauss の閉曲面積分の境界寄与)**: **owner ノードの状態値をそのまま境界面値とする**
+  $$ \nabla\phi_p = \frac{1}{V_p}\Big( \sum_{\text{内部面}} \phi_f \mathbf{S}_f + \sum_{\text{境界半割面}} \phi_p\, \mathbf{S}_b \Big), \qquad \phi_b := \phi_p. $$
+  対流と異なり、**勾配の境界寄与に bvar を使わない** — density/velocity/pressure/temperature の全 primitive、
+  wall/wall_isothermal/inlet/outlet/slip の全 non-periodic bcond で共通の原則。理由は 2 つ:
+  1. **node の境界点は境界面上にある** (§3.4) — cell-centered の「セル中心は境界の内側にあり、境界値は
+     セル値と異なる」という前提が node には成り立たず、owner の状態値そのものが「その空間位置での場の値」
+     である。境界固有の情報 (壁温・入口全圧等) を勾配に混ぜる根拠がない。
+  2. **bvar は状態と独立に動く量を含む** (例: 規定背圧・回復温度モデル $T_{aw}$) — これらを勾配へ入れると、
+     状態にピンしていない量が勾配経由で内部場を駆動する意図しない結合が生まれる
+     (実例: node 出口列の背圧汚染 [§7.7.1]、SST 断熱壁 $T_{aw}$ の弱閉包 [`methods/turbulence/theory.md` §6.5(f)])。
+  $\phi_b=\phi_p$ は「勾配をゼロにする」のではなく、**owner の実状態を境界面代表値として発散定理の面積分を閉じる**
+  という意味 (SU2 v8.5.0 の Green–Gauss も境界寄与に `field(iPoint)` を使う — 同じ設計)。
+  no-slip ($u_p=0$)・等温壁 ($T_p=T_w$)・axis (半径ミラー) のように**状態が既に BC 値へ Dirichlet ピンされている**
+  境界では、これは「bvar と同じ値を状態から使う」ことと数学的に同値になる (§6.3, §7.2.1)。境界条件を追加で
+  課したい場合は**状態層で明示的に行う**のが原則で、勾配のジャンプで代用しない
+  (symmetry/slip の接線射影のような固有の勾配補正が要る場合は別途専用の射影ロジックを設計する)。
+
+境界に固有の情報は、勾配ではなく **状態ピン (§6.3) / 境界フラックス (bvar) / 壁モデル出力**のいずれかで表現する
+のが本設計の基本原則である。実装は 本ドキュメントの「実装」節 §7 (Green-Gauss) と §7.3 (LSQ) を参照。
 
 #### 6.3 壁の強形式 (Dirichlet) と壁ゴースト撤廃
 
@@ -475,9 +488,10 @@ Ux=+51.7(流入, 旧 -798 逆流)、Uy≈0 — **SU2 (P=3.99,Ux=+54.8,Uy=0) と�
   これで壁ノード (壁上に乗りミラーゴースト幾何が退化=fx≠0.5 で質量貫通) の発散源を断つ。
 - **inlet/outlet/axis は従来どおり主ループ+ゴースト**で処理 → 既存の near-axis corner 修正 (§7.0) を保つ。
   最初に試した「全境界 弱形式 (convectiveFlux_boundary_d)」は inflow flux が SLAU と非等価で inlet-axis corner を
-  6.1MPa に悪化させたため、**壁のみ**に限定した。
-- 勾配・粘性は壁ミラーゴースト経由のまま (cellgather は全 plane 処理)。壁ミラーは面値 φ_b=0 (no-slip) を与えるため
-  勾配の境界閉性は保たれ、壁せん断は内部双対面が担う (theory §6.3)。
+  6.1MPa に悪化させたため、**壁のみ**に限定した (対流のみの話。勾配境界は §6.2/§7.5 の owner-state 方式が全境界共通)。
+- 勾配は cellgather が境界半割面 (`ip>=nNormalPlanes`) を skip し、`calcGradient_b_d` (§7.5) が owner ノードの
+  状態値 $\phi_p$ を境界面値として加算して閉じる (§6.2)。壁は $u_p=0$ が Dirichlet ピン済みのため、これは事実上
+  「壁面値 0 の GG 境界寄与」と同値になり、壁せん断は内部双対面が担う (theory §6.3)。
 
 **(C) viscous は explicit (cfl≤0.1)**: 近壁の極小双対 CV (vol~1.8e-9) に対する粘性が **block-DPLUR の近似対角では
 十分 implicit 化されず** (cfl 2→0.1 で発散 step13→610=構造的)、陰解法は viscous node で発散する。一方 **explicit
@@ -524,6 +538,26 @@ if (wall_flag != nullptr && wall_flag[ic] == 1) {
 **Phase 2 (後続) — 残り (inlet/outlet/slip/axis) のゴースト撤廃**: `convectiveFlux_boundary_d` を SLAU 等価にした上で
 半割面弱形式へ、スカラ輸送 (rans/species) も境界カーネル化、その後 node モードで ghost 生成停止。
 
+##### 7.2.2 node モード: Green-Gauss 境界寄与 (`calcGradient_b_d`) — owner-state 方式 (2026-08-11 全面改訂)
+
+理論は §6.2 (弱形式境界 — 勾配の境界寄与は owner ノードの状態値を使う)。実装は
+[calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu) の `calcGradient_b_d`。
+
+- **対象**: 全 non-periodic bcond (`wall`/`wall_isothermal`/`inlet_*`/`outlet_statPress`/`slip`/`axis` 等)、
+  全 primitive (`ro, Ux, Uy, Uz, P, T`)。periodic は §4.5 の DOF 同一視・gradient gather に委ね、境界寄与を加えない
+  (`calcGradient_d_wrapper` のループが `bc.bcondKind=="periodic"` を skip)。
+- **境界面値**: $\phi_b := \phi[\text{owner node}]$。bvar (`bc.bvar_d[...]`) は**一切参照しない**
+  — 旧実装は `ro/Ux/Uy/Uz` を常に bvar から、`P/T` は bcond ごとの特例 (`interiorPT` フラグ, §7.7.1 の
+  node outlet 修正で導入) から取っていたが、これを全変数・全 bcond で owner state 参照に統一した
+  (`interiorPT` フラグと `P_c`/`T_c` 引数付き特例は撤去)。
+- **理由**: bvar には状態と独立に動く量が混ざる (規定背圧、SST 断熱壁の回復温度モデル $T_{aw}$ 等) ため、
+  勾配へ入れると内部場が意図せず駆動される (§6.2 参照)。no-slip/等温壁/axis のように状態が既に
+  BC 値へピンされている境界では owner state = bvar 相当なので**数値は変わらない** — 実際に効果が出るのは
+  状態と bvar が乖離し得る境界 (outlet, SST 断熱壁の $T_{aw}$) のみ。
+- **旧実装からの移行**: node outlet_statPress の P/T だけを owner state にする特例 (commit ddbe9ce5,
+  §7.7.1 [`boundary-node-nozzle-wall-outlet-stability.md`](../plans/active/boundary-node-nozzle-wall-outlet-stability.md) §2.11)
+  は、この一般化によって「outlet だけの特例」ではなく「全境界の既定」に格上げされ、コード上の特例分岐は不要になった。
+
 #### 7.3 node モード: 最小二乗 (LSQ) 勾配 (`gradLSQ`, 既定 OFF)
 
 専用計画: [`discretization-lsq-gradient.md`](../plans/active/discretization-lsq-gradient.md)。
@@ -542,14 +576,18 @@ $$
 = \underbrace{\textstyle\sum_j w_{ij}\,\mathbf{d}_{ij}\,(\phi_j-\phi_i)}_{\mathbf b}
 $$
 
-で解く。境界は **bvar 境界値** (壁=速度 0 等) を半割面重心 $\mathbf{p}_c$ の LSQ 点として加え、勾配を閉じる
-(GG の「ゴースト値を $c_2$ とする」閉じ方の LSQ 版)。
+で解く。**境界に疑似点を追加しない** (2026-08-11 改訂。§7.2.2 の GG owner-state 方式と同じ原則 — 理由は §6.2)。
+境界ノードの近傍は実在する内部隣接ノードのみで構成し、φ_b=φ_i (ジャンプ 0) の疑似点であっても正規行列 $M$ に
+入れると「その方向の勾配をゼロへ暗黙に正則化する」効果を持つため、**疑似点を作らずそもそも $M$ に加えない**
+(ゼロジャンプの $\mathbf b$ だけ足しても $M$ が入っていれば正則化は残るので、$M$ からの除外が必須)。
+境界隣接ノードで近傍配置が退化する場合は §7.3.1 のスペクトル打ち切り擬似逆で扱う。
 
-**実装** ([calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu)): 3 カーネルで構成。
+**実装** ([calcGradient_d.cu](../solver_density_cuda/cuda_forge/calcGradient_d.cu)): 2 カーネルで構成
+(旧 `lsqGrad_accumBoundary_d` は境界疑似点ごと撤去)。
 1. `lsqGrad_accumInternal_d` — per-cell gather で**内部面のみ** (`ip < nNormalPlanes`) を走査し $M$ と $\mathbf b$ を蓄積。
    $\mathbf b$ は既存の勾配配列を流用して書く (専用バッファ不要)。$M$ は static な scratch (`Mxx..Mzz`、`nCells` 変化時のみ再確保)。
-2. `lsqGrad_accumBoundary_d` — 各境界半割面の bvar 点を `atomicAdd` で $M,\mathbf b$ に加える (1 セルが複数境界面を持つため atomic)。
-3. `lsqGrad_solve_d` — 対称 $3\times3$ を変数ごとに解いて勾配を**その場で上書き** (`lsq_solve_sym3`; $m_{zz}\le\text{tol}$ を
+   境界半割面は最初から走査対象外 (`if (ip>=nNormalPlanes) continue`) なので追加の除外処理は不要。
+2. `lsqGrad_solve_d` — 対称 $3\times3$ を変数ごとに解いて勾配を**その場で上書き** (`lsq_solve_sym3`; $m_{zz}\le\text{tol}$ を
    2D と判定し $xy$ の $2\times2$ を解き $g_z=0$)。最後に `divU` を更新。$M$ の組み立て・solve は倍精度。
 
 `gradLSQ=1` かつ `discretization=="node"` のときのみ有効で、LSQ 経路は wrapper 内で**早期 `return`** し GG の正規化
@@ -572,15 +610,18 @@ $$
 \mathbf g_i = M_i^{-1}\mathbf b_i = \sum_j \underbrace{\bigl(M_i^{+}\,w_{ij}\,\mathbf d_{ij}\bigr)}_{\mathbf c_{ij}\ (幾何のみ)}\,(\phi_j-\phi_i)
 $$
 
-- **setup (初回 1 回, device, 倍精度)**: ノードごとに $M$ を組み (内部双対面 + 非 periodic 境界半割面重心 $\mathbf p_c$;
-  periodic は DOF 合併機構に委ねスキップ = GG 経路と同方針)、対称 3×3 の**解析固有分解**から
+- **setup (初回 1 回, device, 倍精度)**: ノードごとに $M$ を**内部双対面の隣接ノードのみ**で組む
+  (2026-08-11 改訂: 非 periodic 境界半割面重心を LSQ 点として $M$ に加える旧処理は撤去した — §7.3 の理由により、
+  ジャンプが常に 0 の疑似点でも $M$ に入れば暗黙の正則化になるため。periodic は従来どおり DOF 合併機構に委ねスキップ)。
+  対称 3×3 の**解析固有分解**から
   $\lambda_k < \max(\texttt{gradLSQDegenThresh}\cdot\lambda_{\max},\ \varepsilon)$ のモードを落とした
   **スペクトル打ち切り擬似逆行列** $M^{+}=\sum_{\text{kept}}\lambda_k^{-1}\mathbf v_k\mathbf v_k^{\mathsf T}$ を取り、
-  全 incidence の係数 $\mathbf c_{ij}$ を float32 テーブル (内部: `cell_planes` CSR 対応 / 境界: bcond 順 bplane 対応)
-  に焼き込む。旧 `lsq_solve_sym3` の 2D 分岐 ($m_{zz}\le\text{tol}$) はこの打ち切りが一般化して包含する
+  内部 incidence の係数 $\mathbf c_{ij}$ を float32 テーブル (`cell_planes` CSR 対応) に焼き込む
+  (2026-08-11 改訂: 境界疑似点の係数テーブル `cBnd` は撤去 — 境界は $M$ に寄与しないため焼き込む係数が無い)。
+  旧 `lsq_solve_sym3` の 2D 分岐 ($m_{zz}\le\text{tol}$) はこの打ち切りが一般化して包含する
   (1 セル厚 2D は $\lambda_z\approx0$ が自動で落ちる)。退化ノード数は起動ログに出す。
-- **runtime (毎ステップ, 全 float32)**: $\mathbf g_i=\sum_j\mathbf c_{ij}(\phi_j-\phi_i)$ の gather のみ
-  (内部 per-node + 境界 per-bcond atomicAdd + divU)。$M$ の組立・solve は消滅し、係数は 6 変数で共有 → mode 1 より速い。
+- **runtime (毎ステップ, 全 float32)**: $\mathbf g_i=\sum_j\mathbf c_{ij}(\phi_j-\phi_i)$ の内部隣接 gather のみ
+  (per-node、境界寄与なし)。$M$ の組立・solve は消滅し、係数は 6 変数で共有 → mode 1 より速い。
   悪条件 solve を setup 側 double に追い出したので float32 場の丸め以外の増幅は無い。
 - **フォールバックの設計判断**: 退化方向の勾配成分は**ゼロ化** (その方向 1 次精度化)。GG 係数への差し替えでなく
   打ち切りを選んだのは、追加幾何 (面積ベクトル・体積・軸対称 planar 変種) への依存が無く全メッシュ形態で一様に成立し、

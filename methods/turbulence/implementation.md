@@ -234,18 +234,43 @@ illegal memory access)。`wf_pk` は `variables.hpp` の `cellValNames` に登�
     (cell 990 に対し ~5800、局所)。場平均・x_R は cell/SU2 整合。
   - 関連 plan: [`turbulence-node-wall-function-coverage.md`](../../plans/active/turbulence-node-wall-function-coverage.md)。
 
-**熱的閉包 `sstThermalWallFunction` (theory §6.5(f), 既定 0=OFF)**: automatic wall
-treatment は熱側の壁法則を持たず、粗壁メッシュの断熱壁温出力が回復温度より ~200 K 冷える
-(case/40)。opt-in で Crocco 型 $T_{aw}$ (既存 `Taw_diag`, `ransWallFunction_d.cu` で毎ステップ
-計算) を断熱壁の**壁面値 (bvar `Ts`) にのみ**適用する — 実装は `nodeWallDirichlet_d.cu` の
-`applySstThermalWallFunction` (applyBconds 位相, `applyRansScalarBoundaries` の後) が
-`set_wall_taw_output_d` で `Tsb[ib]=Taw_diag[ic]` を書くだけ (node/cell 共通)。壁面値は
-壁面出力と境界 LSQ 勾配閉包に入るが、保存量・DPLUR・res_roe には一切触れない。
-**状態適用 (node 温度ピン / cell ghost Dirichlet) は正帰還暴走のため不可** (theory §6.5(f)
-「やってはいけない」、実測 run_0038/0039 旧版)。検証: node 5e-3 で壁温 1417.9 K =
-SU2 壁関数 1422 K と 4 K 一致・η/ṁ 不変・OFF 比 max|ΔT|~13 K 有界。cell は代表点バイアスで
-+70–90 K 過大 (theory 参照, follow-up)。計画:
-[`turbulence-sst-thermal-wall-function.md`](../../plans/accepted/turbulence-sst-thermal-wall-function.md)。
+**熱的閉包 `sstThermalWallFunction` (theory §6.5(f), 既定 0=OFF, 2026-08-11 全面改訂)**:
+automatic wall treatment は熱側の壁法則を持たず、粗壁メッシュの断熱壁温出力が回復温度より
+~200 K 冷える (case/40)。Crocco 型 $T_{aw}$ (`Taw_diag`, `ransWallFunction_d.cu` で毎ステップ計算)
+を使うが、旧版 (2026-08-11 以前) の「壁面出力 bvar `Ts` にのみ書く弱閉包」は**訂正**された
+(node の境界 GG/LSQ 勾配が当時 bvar を読んでいたため、意図せず場に触れていた上に効果が弱すぎて
+実際にはほぼ何も変えていなかった — theory §6.5(f) 参照)。
+
+- **node** (対象アーキテクチャ): $T_{aw}$ を**内部粘性流束の壁側 primitive temperature** として使う。
+  per-CV マーカ `Taw_Wall_Flux[W]` (node × `kind:wall` × SST × `wallTreatmentSST==1` ×
+  `sstThermalWallFunction==1` のみ, 非対象 $-1$) を `applySstThermalWallFunction`
+  (`nodeWallDirichlet_d.cu`) が `Taw_diag` から書く。`viscousFlux_d` 主ループが、対象壁ノードに
+  接続する**全内部辺**で熱流束 compact 項の端点温度を `T[W]`→`Taw_Wall_Flux[W]` に差し替える
+  (面平均 GG 勾配項・熱物性は不変)。壁ノードの `res_roe`・状態 `T[W]` は不変 (Dirichlet ピンしない)
+  — §6.2/§7.2.2 の境界勾配一般化 (owner-state のみ) と対で、bvar `Ts` はもう GG/LSQ を汚染しない。
+  壁面出力 (`res_wall_*` の `Ts`) は引き続き `Tsb=Taw_diag` (`set_wall_taw_output_d`) だが、これは
+  流束へ実際に効くモデル値の表示であって「出力専用の飾り」ではない。volume field `VALUE/T` は常に
+  実状態 `T[W]`。
+- **cell**: この改訂の対象外 (`node の内部 W–I 辺」という機構自体が cell に存在しない)。
+  `set_wall_taw_output_d` は cell でも動くが、cell の壁面 ghost 温度は境界カーネル (`wall_d`) が
+  先に `T[ig]=T[ic]` (断熱ミラー) を確定させた後に呼ばれるため、bvar `Ts` の上書きは
+  **場に一切触れない (出力専用のまま)** — cell はこの点で旧版から変化なし。cell の壁面出力値を
+  「解いた場の壁温」として報告しないこと (node の教訓と同じ注意が要る、follow-up)。
+
+**却下版 (復活させない)**: $T_{aw}$ を**状態**として課す (node 温度ピン / cell ghost Dirichlet)
+かつ壁ノードの `res_roe` を同時にゼロ化する構成は非保存な外部熱源になり正帰還で暴走する
+(node 1832 K 発散性ドリフト / cell $T_t$=1500 K 飽和, 実測 run_0038/0039 旧版, theory §6.5(f) 参照)。
+
+**⚠ 未検証 (2026-08-11)**: 上記の流束モデル置換は実装済みだが node y+30 wall-function ケースで
+発散する既知問題があり、root cause 未特定のまま次セッションへ引き継ぎ中 (診断記録は plan §9)。
+既定 OFF のため他ケースへの影響はないが、`sstThermalWallFunction: 1` を生産計算で使わないこと。
+
+計画: [`turbulence-sst-thermal-wall-function.md`](../../plans/archived/turbulence-sst-thermal-wall-function.md)
+(旧設計, superseded) の後継
+[`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/active/turbulence-sst-adiabatic-taw-fluxmodel.md)
+(新設計, active, 未完了)。境界勾配の owner-state 化
+([`architecture-node-boundary-gradient-dof-only.md`](../../plans/accepted/architecture-node-boundary-gradient-dof-only.md))
+が前提。
 
 **エネルギー壁関数 `sstEnergyWallFunction` (theory §6.5(g), 既定 0=OFF)**: 等温壁
 (`wall_isothermal`) × `wallTreatmentSST==1` で、壁隣接の伝導熱流束を Kader 型 $q_w$ に
