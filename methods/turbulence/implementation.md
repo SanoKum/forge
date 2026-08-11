@@ -257,7 +257,19 @@ run_0053/0057)。**W–I 内部辺にモデル温度を混ぜてはならない*
 計画: [`turbulence-sst-thermal-wall-function.md`](../../plans/archived/turbulence-sst-thermal-wall-function.md)
 (初代・弱閉包, superseded) →
 [`turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)
-(流束注入の試行と棄却の記録 + 最終方針 §0, done)。
+(流束注入の試行と棄却の記録 + output-only fallback §0, done) →
+[`turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)
+(SU2 式熱結合の experimental mode 2, in_progress)。
+
+**experimental mode 2 (`sstThermalWallFunction: 2`, 2026-08-11, 未採用)**: SU2 式結合。
+`Taw_Prim_Overlay` (per-node overlay, `variables.hpp`) を `compute_wall_friction_sst_d`
+(tawCoupled ゲート: node × 断熱壁 × mode 2) が `Taw_diag` と同値で書き、`viscousFlux_d` が
+overlay 端点辺のみ SU2 corrected-gradient + 算術平均 $k_{eff}$/面速度で熱流束・粘性仕事を評価。
+同ゲートで壁ノードにも `roK_wf` Dirichlet を拡張 (SU2 `SetTurbVars_WF` 両点書込相当)。
+mode 0/1 は全ゲート nullptr でビット不変 (run_0061 で回帰確認)。**動的試験 (case/40
+run_0059/0062/0063) で壁ノード単調冷却が止まらず現形は未採用** — 詳細は plan §10/§10b。
+実験 env `FORGE_TAW_WALL_MUT_SCALE` (overlay 辺の壁側 μt スケール, 既定 1=無効) は診断専用で
+恒久実装禁止。
 
 **エネルギー壁関数 `sstEnergyWallFunction` (theory §6.5(g), 既定 0=OFF)**: 等温壁
 (`wall_isothermal`) × `wallTreatmentSST==1` で、壁隣接の伝導熱流束を Kader 型 $q_w$ に

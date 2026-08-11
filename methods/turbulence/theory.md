@@ -473,6 +473,21 @@ OFF 基準 [1196 K] とほぼ不変 — 「1417.9 K = SU2 と 4 K 一致」の�
 [`plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)
 (流束注入の試行と棄却、最終方針 §0) を参照。
 
+**experimental mode 2 — SU2 式熱結合 (`sstThermalWallFunction: 2`, 2026-08-11 追加, 未採用)**:
+モード体系は 0=無効 / 1=**output-only (生産 baseline, 上記の設計)** / 2=experimental SU2 coupled。
+mode 2 は SU2 v8.5.0 の処理順 (勾配計算 → 壁 primitive 温度の $T_{aw}$ 上書き → 内部粘性流束が
+corrected-gradient で $T_{aw}$ を端点参照) を、状態配列を汚さない per-node overlay 配列
+`Taw_Prim_Overlay` で再現する: overlay 端点を持つ W 入射内部辺のみ、熱流束を SU2 式
+$\vec g_{corr} = \bar{\vec g} + (\Delta T_{flux} - \bar{\vec g}\cdot\vec d)\vec d/|\vec d|^2$
+(算術平均 $k_{eff}$)、粘性仕事の面速度を算術平均に切替え、壁ノードにも `roK_wf` Dirichlet を
+拡張する (SU2 `SetTurbVars_WF` の両点書込)。GG/LSQ owner-state-only・$q_w=0$・
+`res_roe[W]` 生存は不変。**検証状況: 凍結場収支診断・短尺動的試験の結果、現形は未採用**
+(壁 μt を SU2 実効値へ寄せても壁ノードの単調冷却が止まらない。SU2 の安定は「primitive 上書きで
+zombie 化した壁保存量の無害化」によるもので、forge は $T[W]$ が実効なため同機構が働かない)。
+詳細と設計論点は
+[`plans/active/turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)
+§10/§10b。
+
 **cell の既知バイアス**: cell の代表点 = 第一セル (y+~30) の $T_1$ が node/SU2 の同高さより
 ~100–160 K 高く (cell wf=1 の BL 熱監査は follow-up)、$T_{aw}$ が +70–90 K 過大になる
 (`run_0039`: 1490 K)。node を一次対象とする (ユーザ方針)。

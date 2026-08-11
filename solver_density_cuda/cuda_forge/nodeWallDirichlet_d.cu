@@ -208,8 +208,11 @@ __global__ void set_wall_taw_output_d(
 
 bool sstThermalWallFunctionActive(const solverConfig& cfg)
 {
+    // mode 1 (output-only) / mode 2 (experimental SU2 coupled) とも壁面出力 Tsb=Taw_diag は共通。
+    // mode 2 の場への介入 (primitive overlay + 壁 k_wf) は ransWallFunction/viscousFlux 側で別ゲート。
     return cfg.LESorRANS == 2 && cfg.RANSmodel == 1 &&
-           cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 1;
+           cfg.wallTreatmentSST == 1 &&
+           (cfg.sstThermalWallFunction == 1 || cfg.sstThermalWallFunction == 2);
 }
 
 void applySstThermalWallFunction(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
@@ -218,12 +221,14 @@ void applySstThermalWallFunction(solverConfig& cfg , cudaConfig& cuda_cfg , mesh
     for (auto& bc : msh.bconds) {
         if (bc.bcondKind != "wall") continue;   // 断熱壁のみ (等温壁は物理壁温がある)
         if (bc.iPlanes.empty()) continue;
-        // 壁面出力 (bvar Ts) のみ: Tsb=Taw_diag は「壁関数が再構成した物理壁面温度のモデル値」
-        // として境界出力・比較にのみ使う。境界勾配は owner-state-only (calcGradient §7.2.2) の
-        // ため bvar Ts はもう場に効かず、真に出力専用。
-        // 【禁止】T_aw を状態ピン・GG/LSQ 勾配・W-I 内部粘性流束・res_roe ゼロ化に使わないこと —
-        // W-I compact 端点置換は壁ノードの復元項を失わせ EOS 床まで異常冷却して発散する実測あり
-        // (plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md §9, 2026-08-11)。
+        // 壁面出力 (bvar Ts): Tsb=Taw_diag は「壁関数が再構成した物理壁面温度のモデル値」
+        // として境界出力・比較に使う。境界勾配は owner-state-only (calcGradient §7.2.2) の
+        // ため bvar Ts は場に効かない。mode 1 では真に出力専用。mode 2 (experimental) では
+        // 別途 Taw_Prim_Overlay (viscousFlux_d) が場に介入するが、Tsb 経由ではない。
+        // 【禁止】T_aw の状態ピン・GG/LSQ 勾配参照・res_roe ゼロ化・旧 compact 端点置換 —
+        // 旧置換は壁半 CV に無補償ドレインを作り EOS 床まで異常冷却して発散する実測あり
+        // (run_0053/0057)。mode 2 の許容経路は SU2 corrected-gradient + 壁 k_wf のみ
+        // (plans/active/turbulence-sst-su2-taw-coupling.md)。
         set_wall_taw_output_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
             static_cast<geom_int>(bc.iPlanes.size()),
             bc.map_bplane_cell_d,

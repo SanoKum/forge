@@ -449,8 +449,8 @@ void solverConfig::read(std::string fname)
         // SST 壁関数の熱的閉包 (methods/turbulence §6.5(f)): 断熱壁の壁面温度を Crocco 型回復温度
         // T_aw = T_rep + Pr^{1/3}U_t²/(2cp) (Taw_diag) にする。wallTreatmentSST==1 のときのみ有効。
         this->sstThermalWallFunction = getOptionalValidatedValue<int>(turb, "sstThermalWallFunction", 0, "turbulence");
-        if (this->sstThermalWallFunction < 0 || this->sstThermalWallFunction > 1) {
-            throw std::runtime_error("Key 'sstThermalWallFunction' in 'turbulence' must be 0 or 1.");
+        if (this->sstThermalWallFunction < 0 || this->sstThermalWallFunction > 2) {
+            throw std::runtime_error("Key 'sstThermalWallFunction' in 'turbulence' must be 0 (off), 1 (output-only), or 2 (experimental SU2 coupled).");
         }
         this->sstEnergyWallFunction = getOptionalValidatedValue<int>(turb, "sstEnergyWallFunction", 0, "turbulence");
         if (this->sstEnergyWallFunction < 0 || this->sstEnergyWallFunction > 1) {

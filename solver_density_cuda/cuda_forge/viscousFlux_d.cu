@@ -54,13 +54,22 @@ __global__ void viscousFlux_d
 
  // WMLES 等温壁 (node): 壁ノードに格納した q_w [W/m²] (壁→流体正, 非対象は -1)。片端だけ壁ノードの
  // W-I 面で解像伝導熱流束を q_w·S に置換する (AddQWall, methods/turbulence §10.4)。nullptr で無効。
+ flow_float* Qw_Wall,
+ // SST 断熱壁 SU2 式熱結合 (experimental, sstThermalWallFunction==2, plan
+ // turbulence-sst-su2-taw-coupling): 勾配計算後の primitive 温度 overlay (壁ノード=Taw, 非対象 -1)。
+ // overlay 端点を持つ内部辺のみ、熱流束を SU2 corrected-gradient (算術平均 k_eff)、粘性仕事の
+ // 面速度を算術平均へ切替える。nullptr (mode 0/1) では従来経路ビット不変。
  //
- // 【禁止事項 (2026-08-11 実測)】断熱壁の T_aw を W-I 内部辺の compact 温度差へ注入する方式
- // (端点温度 T[W]→T_aw 置換) は、置換後の流束が T[W] に依存しなくなり壁半 CV の復元項を失う
- // ため、壁ノードが EOS 床まで異常冷却して発散する (step1000 で T[W] min 1100.7→27.1 K,
- // 全辺/代表辺限定とも DIVERGED)。T_aw は境界出力 (Tsb/Taw_diag) 専用とし、内部粘性拡散には
- // 一切注入しない。plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md §9 参照。
- flow_float* Qw_Wall
+ // 【注意 (2026-08-11 凍結場収支診断)】旧 compact 端点置換 (over-relaxed 式へ Taw を単純代入,
+ // 壁 μt 未修正) は壁半 CV に −12 W 級の無補償ドレインを作り EOS 床まで異常冷却して発散した
+ // (run_0053/0057)。mode 2 は SU2 と同じく (i) corrected-gradient + 算術平均, (ii) 壁ノード k_wf
+ // Dirichlet による壁法則整合 μt (ransWallFunction) を併せて初めてドレインが SU2 同等 (−2 W 級,
+ // 過渡分) に閉じる。片方だけの適用は禁止。plans/active/turbulence-sst-su2-taw-coupling.md 参照。
+ flow_float* Taw_Ov,
+ // 【実験専用・恒久実装禁止】mode 2 overlay 辺の k_eff で「overlay 端点 (壁) 側 μt」に掛ける
+ // スケール (env FORGE_TAW_WALL_MUT_SCALE, 既定 1.0=無効)。壁 μt 過大 (SU2 比 ~5x) が
+ // ドレインの主因という §11 診断の動的確証用。恒久対策は壁 μt モデルの plan 決着後に実装。
+ flow_float tawWallMutScale
 )
 {
     geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
@@ -183,10 +192,40 @@ __global__ void viscousFlux_d
         flow_float cp_face = f*cp[ic0] + (1.0-f)*cp[ic1];
         flow_float tc_face = f*thermCond[ic0] + (1.0-f)*thermCond[ic1];
         tc_face += cp_face*v_turb/Prt;
-        // W-I 内部熱拡散は常に DOF 状態 (Ts) と DOF 勾配で評価する。T_aw 等のモデル温度を
-        // ここへ注入してはならない (上の Qw_Wall コメントの禁止事項参照)。
+        // W-I 内部熱拡散は既定で DOF 状態 (Ts) と DOF 勾配で評価する。モデル温度の単純 compact
+        // 代入は禁止 (上の Taw_Ov コメント参照)。例外は mode 2 の SU2 corrected-gradient (下)。
         flow_float heatflux = tc_face*((Ts[ic1] -Ts[ic0])/dcc)*delta;
         heatflux += tc_face*(dTdxf*k_x +dTdyf*k_y +dTdzf*k_z);
+
+        // SST 断熱壁 SU2 式熱結合 (mode 2): overlay 端点 (Taw) を持つ内部辺は SU2 corrected-gradient
+        //   g_corr = ḡ + (ΔT_flux − ḡ·d)·d/|d|²,  q = k_eff·(g_corr·S)
+        // で熱流束を置換する (ḡ=端点 DOF 勾配の算術平均, ΔT_flux=overlay 済み端点温度差,
+        // k_eff は SU2 と同じ算術平均)。粘性仕事の面速度も算術平均へ (f 補間は壁側重み ~2/3 で
+        // 内点速度を過小評価し、壁半 CV の仕事項が SU2 比 ~0.6 倍になる — 凍結場収支診断で確認)。
+        if (Taw_Ov != nullptr) {
+            const flow_float ov0 = Taw_Ov[ic0];
+            const flow_float ov1 = Taw_Ov[ic1];
+            if (ov0 > (flow_float)0.0 || ov1 > (flow_float)0.0) {
+                const flow_float T0 = (ov0 > (flow_float)0.0) ? ov0 : Ts[ic0];
+                const flow_float T1 = (ov1 > (flow_float)0.0) ? ov1 : Ts[ic1];
+                const flow_float mut0 = (ov0 > (flow_float)0.0) ? tawWallMutScale*vis_turb[ic0] : vis_turb[ic0];
+                const flow_float mut1 = (ov1 > (flow_float)0.0) ? tawWallMutScale*vis_turb[ic1] : vis_turb[ic1];
+                const flow_float tc_arith = (flow_float)0.5*(thermCond[ic0]+thermCond[ic1])
+                    + (flow_float)0.5*(cp[ic0]+cp[ic1])
+                      * (flow_float)0.5*(mut0+mut1) / Prt;
+                const flow_float gmx = (flow_float)0.5*(dTdx[ic0]+dTdx[ic1]);
+                const flow_float gmy = (flow_float)0.5*(dTdy[ic0]+dTdy[ic1]);
+                const flow_float gmz = (flow_float)0.5*(dTdz[ic0]+dTdz[ic1]);
+                const flow_float dd = max(dcc_x*dcc_x + dcc_y*dcc_y + dcc_z*dcc_z, (flow_float)1.0e-30);
+                const flow_float corr = ((T1 - T0) - (gmx*dcc_x + gmy*dcc_y + gmz*dcc_z)) / dd;
+                heatflux = tc_arith*((gmx + corr*dcc_x)*sxx
+                                    +(gmy + corr*dcc_y)*syy
+                                    +(gmz + corr*dcc_z)*szz);
+                Uxf = (flow_float)0.5*(Ux[ic0] + Ux[ic1]);
+                Uyf = (flow_float)0.5*(Uy[ic0] + Uy[ic1]);
+                Uzf = (flow_float)0.5*(Uz[ic0] + Uz[ic1]);
+            }
+        }
 
         // WMLES 等温壁 (node, AddQWall): 片端のみ壁ノードの W-I 面で、解像伝導熱流束を壁モデルの
         // q_w·S に置換する (AddTauWall の熱版)。粗い y+ メッシュでは解像 ∇T が q_w を過小評価する
@@ -761,7 +800,22 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         // node WMLES 等温壁 / node SST エネルギー壁関数 (§6.5(g)) のとき Qw_Wall を渡し
         // AddQWall (W-I 熱流束置換)。それ以外は nullptr (Qw_Wall 未初期化のため)。
         (wmlesNodeIsothermalActive(cfg, msh) || sstEnergyWfNodeActive(cfg, msh))
-            ? var.c_d["Qw_Wall"] : nullptr
+            ? var.c_d["Qw_Wall"] : nullptr,
+        // SST 断熱壁 SU2 式熱結合 (experimental mode 2) のときのみ overlay を渡す。
+        // mode 0/1 は nullptr (従来経路ビット不変)。
+        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+         && cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 2)
+            ? var.c_d["Taw_Prim_Overlay"] : nullptr,
+        // 【実験専用】overlay 辺の壁側 μt スケール (FORGE_TAW_WALL_MUT_SCALE, 既定 1.0)
+        [] {
+            static const flow_float v = [] {
+                const char* s = std::getenv("FORGE_TAW_WALL_MUT_SCALE");
+                const flow_float x = s ? static_cast<flow_float>(std::atof(s)) : static_cast<flow_float>(1.0);
+                if (s) printf("[EXPERIMENT] taw wall mut scale = %g (FORGE_TAW_WALL_MUT_SCALE)\n", (double)x);
+                return x;
+            }();
+            return v;
+        }()
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );

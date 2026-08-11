@@ -118,6 +118,12 @@ public:
         // (SU2 壁関数の熱的閉包と同式)。壁関数対象セル (cell=第一セル / node=壁ノード) に格納、
         // 非対象は -1。現状は**出力のみ** (壁状態へは未適用 — 適用は保存整合の plan 化後)。
         "Taw_diag",
+        // SST 断熱壁 SU2 式熱結合 (experimental, sstThermalWallFunction==2, plan
+        // turbulence-sst-su2-taw-coupling): 勾配計算後の working primitive overlay。壁関数対象の
+        // 断熱壁ノードに Taw_diag と同値を格納 (非対象は -1)。viscousFlux_d が W 入射内部辺の
+        // 端点温度としてのみ参照 (SU2 SetTemperature 相当)。状態 T/roe・GG/LSQ 勾配・境界 bvar
+        // には一切影響しない。mode 0/1 では常に -1 (ビット不変)。
+        "Taw_Prim_Overlay",
         // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
         // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。

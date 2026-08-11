@@ -77,7 +77,15 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0055_node_yp30_dofonly_tawoff` | 診断: run_0053 と同一入力で `sstThermalWallFunction:0` に戻し一般化 GG/LSQ 単独の健全性を切り分け | **ALL PASS** (全列 3.5–5.1 桁低下) — 発散は Taw 流束置換機構に起因すると確定 | active (切り分け証拠) |
 | `run_0056_cell_bitinv_repro` | run_0054 の同一 binary 再実行 (run-to-run 床測定) | 相対差 0.7–3.7% — run_0036 対比とほぼ同水準、cell 不変性の根拠 | 破棄予定 (床測定のみ) |
 | `run_0057_node_yp30_taw_repedge` | 診断: Taw 流束置換を代表点 (Normal_Neighbor) エッジのみに制限する修正版で再試行 | **step 1480 で同型発散** — 後にユーザレビューで root cause 確定: 置換流束が T[W] 非依存になり壁半 CV の復元項を喪失、補償なき外部吸熱として壁ノードが EOS 床まで異常冷却 (step1000 で T[W] min 1100.7→27.1 K [全辺 run_0053] / 15.5 K [本 run])。roOmega NaN は下流症状 ([plan §4.3 訂正・§9](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)) | 破棄予定 (発散記録) |
-| `run_0058_node_yp30_taw_outputonly` | **最終形の検証**: Taw 注入を全面撤回し出力専用化 (`sstThermalWallFunction: 1`, run_0055 と同一入力) | **ALL PASS** (3.5–5.1 桁)。場は OFF (run_0055) と atomicAdd 床内で一致 (rel ≤5e-5) = W–I 熱流束は Taw 不変。T[W] min 1100.6 K (健全)。差分は壁面出力 Tsb のみ: 1412.7 K (Taw モデル値, SU2 wf 1418.9 K と 6 K 差) | active (**Taw 出力専用の最終形 正**) |
+| `run_0058_node_yp30_taw_outputonly` | **最終形の検証**: Taw 注入を全面撤回し出力専用化 (`sstThermalWallFunction: 1`, run_0055 と同一入力) | **ALL PASS** (3.5–5.1 桁)。場は OFF (run_0055) と atomicAdd 床内で一致 (rel ≤5e-5) = W–I 熱流束は Taw 不変。T[W] min 1100.6 K (健全)。差分は壁面出力 Tsb のみ: 1412.7 K (Taw モデル値, SU2 wf 1418.9 K と 6 K 差) | active (**Taw 出力専用の生産 baseline 正**) |
+| `run_0059_node_yp30_taw_su2coupled_lowcfl` | **mode 2 (SU2 coupled, experimental) 短尺試験**: warm restart (run_0055 res_12000) + cfl_pseudo 0.5, 200 step | NaN なし完走だが T[W] −0.7 K/step 単調冷却。壁 k_wf ピンは機能 (k[6564]=9142) も μt[W] 不変 9.5e-4 | 破棄予定 ([plan §10b](../../plans/active/turbulence-sst-su2-taw-coupling.md)) |
+| `run_0061_node_yp30_mode0_regr` | mode 0/1 経路の回帰 (新バイナリ, run_0055 と同一 IC 1000 step) | run_0055 res_1000 と node 再現性帯 (~2e-6 rel) で一致 = 既定経路不変 | 破棄予定 |
+| `run_0062_node_yp30_taw_su2c_lowcfl_long` | mode 2 の平衡確認 (run_0059 と同構成 5000 step) | T[W] min 1125→113.6 K 単調降下 (旧 run_0053 と同軌道)。T_I は加熱されず BL 加熱で釣り合う経路なし → mode 2 現形は不採用 | 破棄予定 |
+| `run_0063_node_yp30_taw_su2c_mutw02` | + 実験 env `FORGE_TAW_WALL_MUT_SCALE=0.2` (壁側 μt を SU2 実効値相当へ) | 冷却速度半減も単調降下継続 (漸近 ~500 K 見込み=非物理)。壁 μt 縮小だけでは不十分と動的確証 | 破棄予定 |
+
+**壁半 CV 凍結場収支診断スクリプト** (plan [turbulence-sst-su2-taw-coupling §10](../../plans/active/turbulence-sst-su2-taw-coupling.md) の §11 診断の実体):
+`wall_budget_frozen.py` (forge 収束場の壁ノード収支を A/B/C/D+E 方式で再構成)、
+`su2_wall_budget.py` (SU2 run_0042 場での同再構成)。パスはファイル内定数 (run_0055/run_0042 前提)。
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 

@@ -5,7 +5,21 @@
 - **area**: `turbulence / boundary`
 - **status**: `done`  <!-- 2026-08-11: 流束注入案は実測発散 (§9) で棄却。最終形 = Taw は境界出力
   (Tsb/Taw_diag) 専用、W-I 内部粘性拡散は常に DOF 状態のみ、壁熱は境界半割面 q_w (断熱=厳密0)。
-  この「棄却の記録+最終方針」が現役の設計判断として本 plan の成果物 -->
+  この「棄却の記録+最終方針」= output-only fallback が本 plan の成果物。SU2 熱結合の再実装は
+  後継 plans/active/turbulence-sst-su2-taw-coupling.md (experimental mode 2) -->
+- **related_docs**:
+  - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f)
+  - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) 同節
+- **related_plans**:
+  - [`../active/turbulence-sst-su2-taw-coupling.md`](../active/turbulence-sst-su2-taw-coupling.md)
+    (後継: SU2 熱結合の再実装, experimental `sstThermalWallFunction: 2`)
+  - [`architecture-node-boundary-gradient-dof-only.md`](architecture-node-boundary-gradient-dof-only.md)
+    (前提: 境界勾配の owner-state 化)
+  - [`../archived/turbulence-sst-thermal-wall-function.md`](../archived/turbulence-sst-thermal-wall-function.md)
+    (superseded — 初代「弱閉包」設計)
+  - [`turbulence-sst-thermal-flux-model.md`](../active/turbulence-sst-thermal-flux-model.md) (等温壁 Kader $q_w$)
+- **created**: `2026-08-11`
+- **owner**: `sano`
 
 ## 0. 最終方針 (2026-08-11 確定 — ユーザレビューによる)
 
@@ -37,28 +51,26 @@
    出力上 `T[W]` (壁半 CV の計算状態温度) と `Tsb`/`Taw_diag` (モデル壁面温度) を明確に区別する。
 5. **壁エネルギー残差**: SST 断熱壁の `res_roe[W]` はゼロ化しない。壁半 CV の熱収支は
    W–I 通常内部粘性流束 + 内部辺の粘性仕事 + 物理壁面熱流束 (q_w=0) の和として通常どおり解く。
-- **related_docs**:
-  - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f) (2026-08-11 全面改訂)
-  - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) 同節
-- **related_plans**:
-  - [`architecture-node-boundary-gradient-dof-only.md`](architecture-node-boundary-gradient-dof-only.md)
-    (前提: 境界勾配の owner-state 化。本計画の設計はこれが完了して初めて「bvar `Ts` は勾配に効かない」
-    という前提が成立する)
-  - [`../archived/turbulence-sst-thermal-wall-function.md`](../archived/turbulence-sst-thermal-wall-function.md)
-    (superseded — 旧「弱閉包」設計。本計画がその後継)
-  - [`turbulence-sst-thermal-flux-model.md`](turbulence-sst-thermal-flux-model.md) (等温壁 Kader $q_w$ 流束置換。
-    同じ「モデル置換の流束層」思想を断熱壁に適用したのが本計画)
-- **created**: `2026-08-11`
-- **owner**: `sano`
 
-## 1. 目的
+---
+
+# 【以下 §1–§8 は棄却済み旧案の記録】
+
+**注意 (2026-08-11 整理)**: §1〜§8 は「W–I 流束注入」旧案の起票時仕様であり、**現行仕様ではない**。
+現行仕様は §0 (output-only baseline)。旧案は §9 の実測発散により棄却された。
+SU2 と同じ熱的結合の再実装は後継 plan
+[`turbulence-sst-su2-taw-coupling.md`](../active/turbulence-sst-su2-taw-coupling.md)
+(experimental mode `sstThermalWallFunction: 2`) が別途進める — 本 plan は
+**output-only fallback と失敗履歴の記録**として保持する。
+
+## 1. 目的 【棄却済み旧案】
 
 SST automatic wall treatment の断熱壁温出力欠陥 (~200 K 過小評価) に対する `sstThermalWallFunction` を、
 旧「壁面出力 bvar にのみ書く弱閉包」から **SU2 式の内部粘性流束モデル置換**へ再設計する。
 $T_{aw}$ (Crocco 型回復温度) を「壁面出力の飾り」ではなく「熱流束評価用の壁 primitive temperature」として
 明示的に流束層へ注入し、場が実際に $T_{aw}$ 近傍へ応答する構造にする。
 
-## 2. 背景 (旧設計の何が問題だったか)
+## 2. 背景 (旧設計の何が問題だったか) 【棄却済み旧案】
 
 `architecture-node-boundary-gradient-dof-only.md` の前提となったレビューで、旧弱閉包 (`Tsb=Taw_diag` を
 bvar `Ts` に書くだけ) には 2 つの問題が判明した:
@@ -71,7 +83,7 @@ bvar `Ts` に書くだけ) には 2 つの問題が判明した:
    見ていたに過ぎなかった。生産値 (壁温 1400±15 K) のうち wf+閉包系列 (node run_0038/0040) はこの点で
    汚染されている (詳細: `case/40.nozzle_design_tool/README.md` の訂正注記)。
 
-## 3. スコープ
+## 3. スコープ 【棄却済み旧案】
 
 - **やる**: node × `kind:wall` (断熱) × SST × `wallTreatmentSST==1` × `sstThermalWallFunction==1` の
   壁ノードについて、内部粘性流束 (`viscousFlux_d` 主ループ) の熱流束 compact 項の端点温度を
@@ -82,7 +94,7 @@ bvar `Ts` に書くだけ) には 2 つの問題が判明した:
   (§4 の理由により流束モデル置換の対象外、bvar 出力の意味は変わらず現状維持)。
   $T_{aw}$ を状態としてピンすること (却下済み、§4)。
 
-## 4. 設計方針
+## 4. 設計方針 【棄却済み旧案】
 
 ### 4.1 3 層責務
 
@@ -130,7 +142,7 @@ compact 項は $T[W]$ に依存しないため、**$W$ 自身の温度が下が�
 - implicit のエネルギー行 decouple はしない (等温壁の `iso_wall_flag` 機構とは無関係)。
 - `roe` や状態 $T[W]$ を $T_{aw}$ にピンしない。
 
-## 5. 実装ステップ
+## 5. 実装ステップ 【棄却済み旧案】
 
 1. `variables.hpp` に `Taw_Wall_Flux` を登録。
 2. `ransWallFunction_d.cu init_wf_pk_d` で $-1$ 初期化に追加。
@@ -145,7 +157,7 @@ compact 項は $T[W]$ に依存しないため、**$W$ 自身の温度が下が�
    場へ効いてしまう)。
 6. full rebuild。
 
-## 6. 検証
+## 6. 検証 【棄却済み旧案】
 
 - **case/40 A/B**: 断熱壁ケースで旧弱閉包 (OFF 相当を含む) と新流束置換を比較。壁ノードの**実状態**
   $T[W]$ が $T_{aw}$ 近傍へ実際に応答すること (旧版のような「OFF とほぼ不変」にならないこと) を確認。
@@ -158,14 +170,14 @@ compact 項は $T[W]$ に依存しないため、**$W$ 自身の温度が下が�
   報告しない。
 - 新規 `run_NNNN_<slug>` で実行し、case README の run 一覧を同期する (既存 run を使い回さない)。
 
-## 7. 影響範囲
+## 7. 影響範囲 【棄却済み旧案】
 
 - `solver_density_cuda/variables.hpp`, `cuda_forge/ransWallFunction_d.cu`, `cuda_forge/nodeWallDirichlet_d.cu`,
   `cuda_forge/nodeWallDirichlet_d.cuh`, `cuda_forge/viscousFlux_d.cu`
 - `methods/turbulence/theory.md` §6.5(f) (更新済み), `implementation.md` 同節 (更新済み)
 - `sstThermalWallFunction=1` を使う全 node 断熱壁ケース (case/40 等)。既定 OFF のためそれ以外は無影響。
 
-## 8. 完了条件
+## 8. 完了条件 【棄却済み旧案】
 
 - [x] 関連 `methods/turbulence/theory.md`・`implementation.md` を更新済み
 - [ ] 実装・検証完了 (本計画の §6 を満たす)
