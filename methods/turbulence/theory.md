@@ -444,6 +444,51 @@ case/40 `run_0038`/`run_0039` の旧版)。壁関数メッシュで $T_{aw}$ を
 ~100–160 K 高く (cell wf=1 の BL 熱監査は follow-up)、$T_{aw}$ が +70–90 K 過大になる
 (`run_0039`: 1490 K)。node を一次対象とする (ユーザ方針)。
 
+#### (g) 等温壁のエネルギー壁関数 — Kader $q_w$ 流束置換 (`sstEnergyWallFunction`)
+
+(f) の弱閉包は**断熱壁の壁温出力**を直すだけで、壁熱流束はモデル化しない。等温壁
+(`kind: wall_isothermal`) × 壁関数メッシュ (第一 DOF が対数層) では、壁熱流束を解像伝導
+$\lambda\,\partial T/\partial n$ で評価すると sublayer の温度勾配が解像されず $q_w$ を大きく
+誤る ($\tau_w$ の解像勾配過小と同型の欠陥のエネルギー版)。冷却壁の熱負荷 $q_w$ が生産量の
+ケース (冷却ノズル壁) では、壁隣接の伝導流束自体を Kader 型温度壁法則で**モデル置換**する。
+
+opt-in `turbulence.sstEnergyWallFunction` (既定 0)。適用条件は `wallTreatmentSST==1` かつ
+`wall_isothermal`。WMLES の熱壁モデル (§10.3–10.4) と同じ式・同じ流束置換機構を SST 側から
+使う:
+
+$$
+q_w = \frac{\rho_{\mathrm{rep}}\,c_p\,u_\tau\,\big(T_w - T_{aw,\mathrm{rep}}\big)}{T^+(y^+;\ \mathrm{Pr})},
+\qquad
+T_{aw,\mathrm{rep}} = T_{\mathrm{rep}} + r\,\frac{U_{t,\mathrm{rep}}^2}{2 c_p},\quad r=\mathrm{Pr}^{1/3}
+$$
+
+- $T^+$ は Kader ブレンド (§10.3 の原式, `wallLaw_kader_tplus`)。$u_\tau,\ y^+$ は
+  SST automatic wall treatment (§6.5(a)) の Reichardt Newton の収束値を再利用する
+  (運動量経路はビット不変)。$\mathrm{Pr}=\mu\,c_p/\lambda$ は代表点で評価。
+- 駆動温度差は回復温度 $T_{aw,\mathrm{rep}}$ ((f) の `Taw_diag` と同一式)。$T_m$ 直接では
+  高速流の摩擦加熱分を誤る。$q_w>0$ = 壁→流体。
+- **淀み/低 $y^+$ 退避**: $U_t\to0$ または $y^+<0.1$ では $T^+$ 評価が退化するため、純伝導式
+  $q_w=\lambda\,(T_w-T_{aw,\mathrm{rep}})/y$ へ連続に退避する (WMLES §10.3 のガードと同処方。
+  low-Re 極限では Kader の層流極限 $T^+\to\mathrm{Pr}\,y^+$ と一致し連続)。
+- **流束の適用先**は WMLES §10.4 と同一機構: node は壁ノードに `Qw_Wall` を格納し
+  W↔I 内部双対面の解像伝導を $q_w S$ に xor 置換 (AddQWall)。cell は壁境界面の熱流束を
+  $q_w S$ に置換 (運動量側は §6.5 の従来処理のまま)。置換は**加算でなく置換**であること —
+  1 面でも解像伝導が残ると (f) の正帰還の再発点になる。
+- **状態層**は既存のまま: node 等温壁の壁ノード $T$ ピン + `res_roe` 0 化 + DPLUR roe 行
+  decouple (`iso_wall_flag`) は乱流モデルによらず共有 (`nodeWallDirichlet` 系)。
+- 断熱壁の $T_{aw}$ **強閉包** ($q_w=0$ 置換 + 壁状態 $T=T_{aw}$ 保持) は本機構の拡張として
+  可能だが optional (弱閉包 (f) で壁温出力は足りている)。等温壁の検証が通ってから扱う。
+
+**検証状況 (2026-08-11)**: 平板等温壁 (case/26, 真値 = y+0.35 low-Re 解像 [Colburn ±1.5%])
+で現行 EWT の $q_w$ **+42% 過大** (y+30) が、本機構で **y+0.35: −0.1% / y+10: +6.2% /
+y+30: +0.1%** に解消 (y+ 依存が実用上消滅)。**適用限界**: 非圧縮較正の Kader $T^+$ は強い
+密度変化を持つ極超音速冷却壁 BL で破綻する — case/40 ベル部 (M≈4, $T_w/T_{aw}\approx0.4$)
+で +37〜+265% (積分 +87%) の系統過大を実測 (チャンバ/スロートは −9% で実用域)。
+$T^+$ の圧縮性補正 (semi-local / Crocco–Busemann / 壁物性評価) が済むまで、超音速ベルの
+$q_w$ は y+≈1 low-Re を正とする。
+
+計画: [`turbulence-sst-thermal-flux-model.md`](../../plans/active/turbulence-sst-thermal-flux-model.md)。
+
 ## 7. 2D / 3D / 軸対称
 
 2D と 3D は、既存ソルバと同様に同一の離散化カーネルを共有する。
@@ -845,15 +890,19 @@ $$
 等温壁のみ計算する (断熱壁は $q_w=0$ で閉じ、壁温は解に含まれる摩擦加熱込みの値)。
 
 $$
-T^+ = \mathrm{Pr}\,y^+ e^{-\Gamma} + \left[\mathrm{Pr}_t\,(u^+ + P(\mathrm{Pr}))\right] e^{-1/\Gamma},
+T^+ = \mathrm{Pr}\,y^+ e^{-\Gamma} + \left[2.12\,\ln(1+y^+) + \beta(\mathrm{Pr})\right] e^{-1/\Gamma},
 \qquad
 \Gamma = \frac{0.01\,(\mathrm{Pr}\,y^+)^4}{1 + 5\,\mathrm{Pr}^3 y^+}
 $$
 
 $$
-P(\mathrm{Pr}) = \left(3.85\,\mathrm{Pr}^{1/3} - 1.3\right)^2 + 2.12\ln \mathrm{Pr},
-\qquad \mathrm{Pr}_t = 0.9
+\beta(\mathrm{Pr}) = \left(3.85\,\mathrm{Pr}^{1/3} - 1.3\right)^2 + 2.12\ln \mathrm{Pr}
 $$
+
+(Kader 1981 の原式。**旧版 (〜2026-08-11) は対数部を $\mathrm{Pr}_t(u^+ + \beta)$ としていた** —
+Jayatilleke 型の運動量アナロジー形と Kader の $\beta$ ($2.12\ln(1+y^+)$ と対で較正された定数)
+の混用で、log 層の $T^+$ を +30% 級過大評価し等温壁 $q_w$ が系統的に過小になっていた
+(case/26 平板 y+30 で −13%)。原式に修正。$u^+$・$\mathrm{Pr}_t$ は $T^+$ に不要になった。)
 
 駆動温度差は回復温度 $T_r = T_m + r\,u_\parallel^2/(2c_{p,w})$ ($r=\mathrm{Pr}^{1/3}$、
 $c_p$ ベースで $\gamma$/Mach を使わない) を用い

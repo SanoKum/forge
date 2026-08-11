@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `turbulence / boundary`
-- **status**: `draft`
+- **status**: `in_progress`
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(f) (弱閉包と「状態適用は暴走」の記録) / §10 (WMLES Kader)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
@@ -97,3 +97,40 @@ case/40 run_0038/0039 旧版)。SU2 が状態設定で安定なのは、壁関�
 
 - `2026-08-11` — 起票 (accepted turbulence-sst-thermal-wall-function の切り出し。
   設計のみ、実装未着手)。
+- `2026-08-11 (2)` — **等温壁 Kader q_w 実装・平板検証合格・圧縮性ベルで限界を実測**。
+  - **実装** (§5 の 1–3): `turbulence.sstEnergyWallFunction` (既定 0)。
+    `compute_wall_friction_sst_d` が SST の収束済み u_τ/y⁺ と代表点物性から
+    q_w = ρ cp u_τ (T_w−T_aw,rep)/T⁺ を計算し bvar `qwall` + (node) `Qw_Wall` に書く。
+    流束層は既存機構: node = AddQWall (W–I xor 置換, `viscousFlux_d`)、cell =
+    `viscousFlux_wall_d` の heatflux を q_w·S に置換 (運動量は wallTreatment==1 のまま)。
+    淀み/y⁺<0.1 は純伝導へ退避。theory §6.5(g) / implementation §3.7 に仕様記載。
+  - **Kader T⁺ の式バグを発見・修正** (`wallLaw_d.cuh wallLaw_kader_tplus`): 旧実装は対数部を
+    Pr_t·(u⁺+β_Kader) としていた — Jayatilleke 型運動量アナロジー形と Kader β
+    (2.12·ln(1+y⁺) と対で較正) の**混用**で、log 層 T⁺ を +30% 級過大評価し q_w が系統的に
+    過小 (平板 y+30 で −13%)。Kader 1981 原式 T⁺ = Pr·y⁺·e^{−Γ} + [2.12·ln(1+y⁺)+β]·e^{−1/Γ}
+    に修正 (**WMLES 等温壁も同関数を共有するため同時に恩恵**。WMLES の既往検証は層流極限
+    [Poiseuille 厳密解] のみで対数層定数は未検証だった)。
+  - **平板等温壁 y+ 掃引 (case/26, Tw=320K, 真値 = run_0023 y+0.35 low-Re 解像
+    [Colburn 相関と 1.5% 一致]):** 現行 EWT (解像伝導のまま) は y+30 で **+42%** 過大
+    (`run_0024` 既測)。本実装 (Kader 原式) で **y+0.35: −0.1% / y+10: +6.2% / y+30: +0.1%**
+    (`run_0027`/`run_0028`/`run_0026`, x=0.3–0.9 平均) — y+ 依存が実用上消滅。
+    混用式のままだと −13% (`run_0025`, 記録用)。q_w 時系列 drift 0.17%/10k step で静定。
+  - **OFF 回帰**: 既定 0 で場の差は run-to-run atomicAdd 床と同水準
+    (case/40 `run_0046` vs `run_0044`, 同一バイナリ再走 `run_0047` と同桁 rel ~1e-5)。
+  - **case/40 等温壁 Ts=1000K node 検証** (`run_0048` y+1 low-Re 真値 / `run_0049` y+30
+    wf+Kader): **チャンバ/スロート (M 低〜遷音速, 熱負荷ピーク −1.7〜−2.1 MW/m²) は −9%**
+    (mean, range −28〜+19%) で実用域。**ベル部 (M≈4, 冷却壁 T_w/T_aw≈0.4) は +37〜+265%
+    (積分熱負荷 +87%) の系統過大** — 非圧縮較正の Kader T⁺ が強い密度変化 (van Driest 級) を
+    持つ極超音速冷却壁 BL で破綻する既知の限界。**フォローアップ (§8): T⁺ の圧縮性補正**
+    (semi-local y* スケーリング / Crocco–Busemann 変換 / 壁物性評価 ρ_w·μ_w の選択を含めて
+    平板超音速の相関 (van Driest II 系) で較正してから case/40 ベルに戻す)。
+    それまで生産の q_w は「チャンバ/スロートは y+30 wf 可 (−9%)、ベルは y+1 low-Re を正とする」。
+
+## 8. フォローアップ (未実装)
+
+- **T⁺ の圧縮性補正** (§7 変更ログ 2026-08-11(2) で必要性を実測): 候補は
+  ① semi-local スケーリング y* = ρ(y)u_τ*y/μ(y)、② Crocco–Busemann で T⁺ を非圧縮形に写像、
+  ③ 壁物性 (ρ_w, μ_w, λ_w) 評価への切替 (WMLES 実装が既に持つ `wmles_wall_props` の共通化)。
+  検証は超音速平板等温壁 (van Driest II / Huang 相関) → case/40 ベル部。
+- 断熱壁 T_aw 強閉包 (q_w=0 置換 + 状態保持) — 等温壁の圧縮性補正が済んでから。
+- SU2 STANDARD_WALL_FUNCTION 等温壁との同一メッシュ比較 (平板/ノズル)。

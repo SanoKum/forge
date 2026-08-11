@@ -290,7 +290,11 @@ __global__ void viscousFlux_wall_d
  // ビット厳密 0 だが、node は壁ノードのセル勾配 ∇T·S が法線成分を持ち断熱が破れていた
  // (壁エントロピー市松の直接容疑, plan boundary-node-nozzle-wall-outlet-stability §2.8)。
  // 等温壁 (wall_isothermal) = 0 で従来どおり解像熱流束を入れる。WMLES (==2) は qwall が担う。
- int adiabaticWall
+ int adiabaticWall,
+ // SST エネルギー壁関数 (§6.5(g), sstEnergyWallFunction==1 × wall_isothermal): 壁面熱流束を
+ // ransWallFunction が書いた qwall_b (Kader q_w) に置換する (運動量は wallTreatment==1 のまま)。
+ // node では壁ノード res_roe が Dirichlet で 0 化されるため実効は cell のみ (書いても無害)。
+ int sstEnergyWf
 )
 {
     geom_int ib  = blockDim.x*blockIdx.x + threadIdx.x;
@@ -406,7 +410,7 @@ __global__ void viscousFlux_wall_d
         // ミラーゴーストで従来もビット 0、node は従来 ∇T[W]·S の法線成分が漏れていたのを修正。
         // 等温壁のみ解像熱流束 (node: ∇T·S / cell: ghost 差分)。
         flow_float heatflux;
-        if (wallTreatment == 2)         heatflux = qwall_b[ib]*sss;
+        if (wallTreatment == 2 || sstEnergyWf != 0)  heatflux = qwall_b[ib]*sss;
         else if (adiabaticWall != 0)    heatflux = (flow_float)0.0;
         else                            heatflux = (isNode != 0)
                                             ? tc_w*(dTdx[ic]*sxx +dTdy[ic]*syy +dTdz[ic]*szz)
@@ -639,6 +643,18 @@ __global__ void viscousWallDiag_d
     }
 }
 
+// SST エネルギー壁関数 (§6.5(g)) の node AddQWall ゲート: node × SST × wallTreatmentSST==1 ×
+// sstEnergyWallFunction==1 で wall_isothermal bcond が存在するとき true。この条件下でのみ
+// Qw_Wall が初期化 (init_wf_pk_d) + 書き込み (compute_wall_friction_sst_d) されている。
+static bool sstEnergyWfNodeActive(const solverConfig& cfg, const mesh& msh)
+{
+    if (!(cfg.discretization == "node" && msh.wall_flag_d != nullptr
+          && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+          && cfg.wallTreatmentSST == 1 && cfg.sstEnergyWallFunction == 1)) return false;
+    for (const auto& bc : msh.bconds) if (bc.bcondKind == "wall_isothermal") return true;
+    return false;
+}
+
 void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_ns)
 {
     // 距離診断 (1 回限り)。FORGE_VISC_WALL_DIAG=1 のとき壁半割面の dn/dcc/tangential を集計表示。
@@ -734,8 +750,10 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         ((cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
          || wmlesNodeActive(cfg, msh))
             ? var.c_d["Tau_Wall"] : nullptr,
-        // node WMLES 等温壁のとき Qw_Wall を渡し AddQWall (W-I 熱流束置換)。それ以外は nullptr。
-        wmlesNodeIsothermalActive(cfg, msh) ? var.c_d["Qw_Wall"] : nullptr
+        // node WMLES 等温壁 / node SST エネルギー壁関数 (§6.5(g)) のとき Qw_Wall を渡し
+        // AddQWall (W-I 熱流束置換)。それ以外は nullptr (Qw_Wall 未初期化のため)。
+        (wmlesNodeIsothermalActive(cfg, msh) || sstEnergyWfNodeActive(cfg, msh))
+            ? var.c_d["Qw_Wall"] : nullptr
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
@@ -806,7 +824,10 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                     : (wmlesActiveForBcond(cfg, bc) ? 2 : 0),
                 bc.bvar_d["utau"], bc.bvar_d["qwall"],
                 (cfg.discretization == "node") ? 1 : 0,   // node: 壁法線/熱流束を ∇φ·S で評価 (ghostless)
-                (bc.bcondKind == "wall") ? 1 : 0          // 断熱壁: 伝導熱流束を厳密 0 (等温壁は 0=従来)
+                (bc.bcondKind == "wall") ? 1 : 0,         // 断熱壁: 伝導熱流束を厳密 0 (等温壁は 0=従来)
+                // SST エネルギー壁関数 (§6.5(g)): 等温壁の壁面熱流束を Kader q_w に置換
+                (cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1
+                 && cfg.sstEnergyWallFunction == 1 && bc.bcondKind == "wall_isothermal") ? 1 : 0
             ) ;
         }
     }

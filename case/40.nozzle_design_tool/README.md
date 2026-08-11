@@ -65,6 +65,10 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0043_node_yp1_outletfix` | **node 出口列欠陥の根治検証** (run_0037 と同一入力の A/B): `outlet_statPress` の bvar `Psb` 動的化修正 ([plan §2.11](../../plans/active/boundary-node-nozzle-wall-outlet-stability.md)) | 出口列 sag **19.4%→0.39%** (超音速行 0.40%)。**η 出口積分 0.9754 = 内部列 0.9747–0.9755** (アーティファクト解消)。ṁ 1.2959 列間ばらつき消滅・ALL STEADY。壁温は run_0037 と ≤0.85K 差 (出口隣接除く) | active (**node y+1 正 (η 込み)**) |
 | `run_0044_node_yp30_outletfix` | 同修正の y+30 wf 系 A/B (run_0040 と同一入力) | sag 13.6%→0.17%。**η 出口積分 0.9835 (偽) → 0.9687 = 内部列 0.9679–0.9687**、SU2 wf (run_0042: 0.9673) と +0.14%。全列 2.8–5.1 桁低下・ALL STEADY。ṁ 1.2864 不変 | active (**Step3 node 正**) |
 | `run_0045_node_yp1_outletfix_cont` | run_0043 の res_12000 から +12000 step 継続 (準定常確認) | 場は run_0043 と不変 (出口 P 最大 6e-4)。残差は低レベルリミットサイクル (rms_ro 1.1e-8, rms_roUx 3.5e-5) で ALL STEADY | active (継続確認) |
+| `run_0046_node_yp30_offregr` | `sstEnergyWallFunction` 実装後の OFF 回帰 (run_0044 と同一入力・新バイナリ) | 場の差 rel ~1e-5 = run-to-run atomicAdd 床と同水準 (run_0047 で確認) → **OFF ビット等価** | 破棄予定 (回帰確認のみ) |
+| `run_0047_node_yp30_repro` | 同一バイナリ再走で run-to-run 床を測定 | rel 2e-6〜3e-5 (roK 最大) — run_0046 の差と同桁 | 破棄予定 (床測定のみ) |
+| `run_0048_node_yp1_isoT_ref` | **等温壁 Ts=1000K の y+1 low-Re 真値** (run_0043 入力 + wall_isothermal, warm from run_0043) | q_w: スロート −1.7 MW/m²・ベル −0.15〜−0.6 MW/m²。残差 2 桁低下プラトー・q_w 静定 | active (**等温壁真値**) |
+| `run_0049_node_yp30_isoT_qwwf` | **`sstEnergyWallFunction:1` (Kader 原式) node y+30 wf** (run_0044 入力 + wall_isothermal Ts=1000K, warm from run_0044) | vs run_0048: **チャンバ/スロート −9%** (実用域)、**ベル部 (M≈4 冷却壁) +37〜+265% (積分 +87%) 過大 = 非圧縮 Kader T⁺ の圧縮性限界を実測** ([plan §8](../../plans/active/turbulence-sst-thermal-flux-model.md) フォローアップ) | active (**圧縮性限界の記録**) |
 
 **軸処理 3 方式の比較 (全域 2 次+陰解法 cfl4, bndFirstOrder なし)**:
 

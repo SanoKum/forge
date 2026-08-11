@@ -1,0 +1,71 @@
+inlet:
+  physID: 1
+  kind: inlet_Pressure
+  outputHDFflg: 0
+  ints:
+  floats:
+    Pt: 100000.0
+    Tt: 288.15
+    k: 0.3       # RANS(SST) 流入乱流運動エネルギー [m2/s2]
+    omega: 300.0 # RANS(SST) 流入比散逸率 [1/s] (mu_t/mu ~ 60, naca_ml 相当)
+
+outlet:
+  physID: 2
+  kind: outlet_statPress
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ps: 97250.0
+    Pt: 97250.0 # backflow
+    Tt: 288.15  # backflow
+
+top:
+  physID: 3
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0
+
+wall:
+  physID: 4
+  kind: wall_isothermal
+  outputHDFflg: 1
+  ints:
+  floats:
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0
+    Ts: 320.0
+
+sym:
+  physID: 5
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0
+
+side1:
+  physID: 6
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0
+
+side2:
+  physID: 7
+  kind: slip
+  outputHDFflg: 0
+  ints:
+  floats:
+    Ux: 0.0
+    Uy: 0.0
+    Uz: 0.0

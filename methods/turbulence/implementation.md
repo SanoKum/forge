@@ -247,6 +247,17 @@ SU2 壁関数 1422 K と 4 K 一致・η/ṁ 不変・OFF 比 max|ΔT|~13 K 有�
 +70–90 K 過大 (theory 参照, follow-up)。計画:
 [`turbulence-sst-thermal-wall-function.md`](../../plans/accepted/turbulence-sst-thermal-wall-function.md)。
 
+**エネルギー壁関数 `sstEnergyWallFunction` (theory §6.5(g), 既定 0=OFF)**: 等温壁
+(`wall_isothermal`) × `wallTreatmentSST==1` で、壁隣接の伝導熱流束を Kader 型 $q_w$ に
+モデル置換する (冷却壁の熱負荷予測)。実装は `compute_wall_friction_sst_d`
+(`ransWallFunction_d.cu`) が SST の収束済み $u_\tau, y^+, u^+$ と代表点物性から
+$q_w = \rho\,c_p\,u_\tau (T_w - T_{aw,\mathrm{rep}})/T^+$ (`wallLaw_kader_tplus`, WMLES と
+共有) を計算し、node は壁ノードの `Qw_Wall` に格納 → `viscousFlux_d` の AddQWall (W–I 面
+xor 置換, WMLES 等温壁と同一機構) が消費、cell は bvar `qwall` → `viscousFlux_wall_d` が
+壁面熱流束を $q_w S$ に置換。淀み/低 $y^+$ ($U_t\!\to\!0$ or $y^+<0.1$) は純伝導式へ退避。
+状態層 (node 壁 $T$ ピン・`res_roe` 0 化・DPLUR roe decouple) は既存共有 (変更なし)。計画:
+[`turbulence-sst-thermal-flux-model.md`](../../plans/active/turbulence-sst-thermal-flux-model.md)。
+
 ### 3.8 SST-DES (DDES / IDDES) length scale 修正
 
 理論は [`theory.md`](theory.md) §8 (IDDES は §8.6)、計画は

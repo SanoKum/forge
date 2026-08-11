@@ -220,7 +220,7 @@ __global__ void wmles_wall_model_d(
         if (yp < static_cast<flow_float>(1.0e-1)) {
             qw = lam_w * (Tw - Tr) / d;
         } else {
-            const flow_float Tp = wallLaw_kader_tplus(Pr, Prt, yp, up);
+            const flow_float Tp = wallLaw_kader_tplus(Pr, yp);
             qw = rho_w * cp_w * utau * (Tw - Tr) / max(Tp, kSmall);
         }
     }

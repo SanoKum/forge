@@ -452,6 +452,10 @@ void solverConfig::read(std::string fname)
         if (this->sstThermalWallFunction < 0 || this->sstThermalWallFunction > 1) {
             throw std::runtime_error("Key 'sstThermalWallFunction' in 'turbulence' must be 0 or 1.");
         }
+        this->sstEnergyWallFunction = getOptionalValidatedValue<int>(turb, "sstEnergyWallFunction", 0, "turbulence");
+        if (this->sstEnergyWallFunction < 0 || this->sstEnergyWallFunction > 1) {
+            throw std::runtime_error("Key 'sstEnergyWallFunction' in 'turbulence' must be 0 or 1.");
+        }
 
         this->nodeKwfDirichlet = getOptionalValidatedValue<int>(turb, "nodeKwfDirichlet", 1, "turbulence"); // 既定 1 (node k Dirichlet)
         this->nodeOmegaWfDirichlet = getOptionalValidatedValue<int>(turb, "nodeOmegaWfDirichlet", 0, "turbulence");

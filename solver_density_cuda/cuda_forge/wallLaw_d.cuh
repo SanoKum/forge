@@ -61,18 +61,25 @@ __device__ __forceinline__ bool wallLaw_solve_utau(
     return false;
 }
 
-// Kader 温度壁法則 T⁺(y⁺; Pr, Pr_t) (theory §10.3)。u⁺ は収束済み u_τ の Reichardt 値を渡す。
-//   Γ→0 (y⁺→0) では exp(-1/Γ)→0 で T⁺→Pr·y⁺ (伝導低層)、大 y⁺ では対数層漸近。
+// Kader 温度壁法則 T⁺(y⁺; Pr) (Kader 1981 の原式, theory §10.3):
+//   T⁺ = Pr·y⁺·e^{−Γ} + [2.12·ln(1+y⁺) + β(Pr)]·e^{−1/Γ}
+//   β(Pr) = (3.85·Pr^{1/3} − 1.3)² + 2.12·ln(Pr),  Γ = 0.01(Pr·y⁺)⁴/(1+5Pr³y⁺)
+//   Γ→0 (y⁺→0) では exp(-1/Γ)→0 で T⁺→Pr·y⁺ (伝導低層)、大 y⁺ では 2.12·ln y⁺+β に漸近。
+//   【修正 2026-08-11】旧実装は対数部を Pr_t·(u⁺+β) としていた — Jayatilleke 型の運動量
+//   アナロジー形 (Pr_t(u⁺+P_jat)) と Kader の β (2.12·ln(1+y⁺) と対で較正) の混用で、
+//   log 層 T⁺ を +30% 級過大評価し等温壁 q_w が系統的に過小になっていた
+//   (case/26 平板 y+30: Colburn/low-Re 基準比 −13%)。原式に戻す。u⁺/Pr_t は不要になった。
 __device__ __forceinline__ flow_float wallLaw_kader_tplus(
-    flow_float Pr, flow_float Prt, flow_float yp, flow_float uplus)
+    flow_float Pr, flow_float yp)
 {
     const flow_float pry   = Pr * yp;
     const flow_float gam   = static_cast<flow_float>(0.01) * pry * pry * pry * pry
                            / (static_cast<flow_float>(1.0)
                               + static_cast<flow_float>(5.0) * Pr * Pr * Pr * yp);
     const flow_float pfn0  = static_cast<flow_float>(3.85) * cbrt(Pr) - static_cast<flow_float>(1.3);
-    const flow_float pfn   = pfn0 * pfn0 + static_cast<flow_float>(2.12) * log(Pr);
+    const flow_float beta  = pfn0 * pfn0 + static_cast<flow_float>(2.12) * log(Pr);
     // Γ=0 のとき -1/Γ = -inf → exp = 0 (IEEE)。NaN 防止に下限だけガード。
     const flow_float einv  = exp(-static_cast<flow_float>(1.0) / max(gam, static_cast<flow_float>(1.0e-30)));
-    return pry * exp(-gam) + Prt * (uplus + pfn) * einv;
+    return pry * exp(-gam)
+         + (static_cast<flow_float>(2.12) * log(static_cast<flow_float>(1.0) + yp) + beta) * einv;
 }
