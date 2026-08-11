@@ -176,7 +176,7 @@ __global__ void compute_wall_friction_sst_d(
             // 淀み域 u_τ=0 → k_wf=0。node k Dirichlet (SU2 SetTurbVars_WF 流, wallTreatment==1 のみ)。
             if (enableKwf == 1) {
                 roK_wf[irep] = static_cast<flow_float>(0.0);
-                if (tawCoupled != 0) roK_wf[ic] = static_cast<flow_float>(0.0);  // 壁ノードも k=0 (SU2 両点書込)
+                if (tawCoupled != 0) roK_wf[ic] = static_cast<flow_float>(0.0);  // 壁ノードも k=0 (SU2 両点書込, mode 2 のみ)
                 // 淀み: ω は粘性則値 (u_τ=0 → ω_log=0)。y は代表内点距離。
                 if (enableOmgWf == 1) {
                     const flow_float ov = static_cast<flow_float>(6.0) * nu / (kSstBeta1 * y * y);
@@ -221,8 +221,11 @@ __global__ void compute_wall_friction_sst_d(
             const flow_float mut_wall   = nu * max(static_cast<flow_float>(1.0) / max(g, kSmall) - static_cast<flow_float>(1.0), static_cast<flow_float>(0.0));
             const flow_float k_wf       = omega_w * mut_wall;  // = ω_w·μ_t,wall/ρ (mut_wall は運動学渦粘性 ν_t,wall)
             roK_wf[irep] = rho * max(k_wf, static_cast<flow_float>(0.0));
-            // SU2 式熱結合 (tawCoupled): 壁ノードにも同じ k_wf を Dirichlet (SU2 SetTurbVars_WF 両点書込)。
-            // 壁 μt = SST リミッタ(ρa₁k_wf/max(a₁ω, SF₂)) が壁法則整合値に落ち、W-I 辺 k_eff 過大を断つ。
+            // SU2 式熱結合 (tawCoupled, mode 2 のみ): 壁ノードにも同じ k_wf を Dirichlet
+            // (SU2 SetTurbVars_WF 両点書込)。壁 μt = SST リミッタ経由で壁法則整合値へ。
+            // mode 3 (defect-flux) へは適用しない: 熱い壁状態で壁 k が +18% 浮くが、リップ第一内層の
+            // ω 残差振動の駆動源ではないことを A/B で確認済み (run_0066 vs run_0067: ピンで
+            // rms_roOmega 0.141→0.165 と改善せず)。mode 3 は最小構成を維持する (2026-08-11)。
             if (tawCoupled != 0) roK_wf[ic] = rho * max(k_wf, static_cast<flow_float>(0.0));
             // ω も第一内層ノードへピン (SU2 SetTurbVars_WF は第一点の k と ω の両方を設定する)。
             // 壁ノードのみのピンでは第一内点の ω がせん断駆動 P_ω=γρS² で暴騰し νt=ρk/ω が
