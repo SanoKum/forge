@@ -82,6 +82,9 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 | `run_0061_node_yp30_mode0_regr` | mode 0/1 経路の回帰 (新バイナリ, run_0055 と同一 IC 1000 step) | run_0055 res_1000 と node 再現性帯 (~2e-6 rel) で一致 = 既定経路不変 | 破棄予定 |
 | `run_0062_node_yp30_taw_su2c_lowcfl_long` | mode 2 の平衡確認 (run_0059 と同構成 5000 step) | T[W] min 1125→113.6 K 単調降下 (旧 run_0053 と同軌道)。T_I は加熱されず BL 加熱で釣り合う経路なし → mode 2 現形は不採用 | 破棄予定 |
 | `run_0063_node_yp30_taw_su2c_mutw02` | + 実験 env `FORGE_TAW_WALL_MUT_SCALE=0.2` (壁側 μt を SU2 実効値相当へ) | 冷却速度半減も単調降下継続 (漸近 ~500 K 見込み=非物理)。壁 μt 縮小だけでは不十分と動的確証 | 破棄予定 |
+| `run_0064_node_yp30_mode0_regr3` | mode 3 実装後の mode 0 回帰 (run_0055 同一 IC 1000 step) | run_0055 res_1000 と再現性帯 (~2e-6 rel) で一致 = 既定経路不変 | 破棄予定 |
+| `run_0065_node_yp30_taw_defectflux_lowcfl` | **mode 3 (defect-flux 閉包) 短尺**: warm (run_0055) + cfl_pseudo 0.5, 200 step | T[W] が単調**上昇** 1125→1246 K (幾何減衰, 外挿≈1400 K)、内点 986 K 不動、NaN なし = 負帰還設計どおり | 破棄予定 |
+| `run_0066_node_yp30_taw_defectflux_prod` | **mode 3 生産条件** (cfl_pseudo 4.0, 12000 step, warm) | T[W] が step1000 で **1418.2 K にプラトー** (Taw_diag 1416.5+ε, 12000 まで不変)。SU2 primitive 壁温 1428 K と **10 K 一致 (実状態同士)**。非壁場は run_0055 と rel mean ~1e-4。残差床は baseline 比 6–12 倍 (出口リップ局所, 場は静止) — [plan §10c](../../plans/active/turbulence-sst-su2-taw-coupling.md) | active (**mode 3 検証 正**) |
 
 **壁半 CV 凍結場収支診断スクリプト** (plan [turbulence-sst-su2-taw-coupling §10](../../plans/active/turbulence-sst-su2-taw-coupling.md) の §11 診断の実体):
 `wall_budget_frozen.py` (forge 収束場の壁ノード収支を A/B/C/D+E 方式で再構成)、

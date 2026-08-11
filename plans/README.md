@@ -37,7 +37,7 @@
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
-| [turbulence-sst-su2-taw-coupling.md](active/turbulence-sst-su2-taw-coupling.md) | `turbulence / boundary` | SST 断熱壁の SU2 式熱的結合 (Taw primitive overlay + corrected-gradient) を experimental `sstThermalWallFunction: 2` として再実装。凍結場収支診断→壁 μt 監査 (EddyViscWall 差) →動的 A/B。受入まで output-only (mode 1, 23f03169) が生産 baseline |
+| [turbulence-sst-su2-taw-coupling.md](active/turbulence-sst-su2-taw-coupling.md) | `turbulence / boundary` | SST 断熱壁の熱的結合。mode 2 (SU2 式 overlay) は動的試験で未採用 (SU2 の安定=zombie 保存量の無害化と特定)。本命 = mode 3 **defect-flux 閉包** (Couette 恒等式 q+τu=0 に基づく保存的 W–I 全エネルギー流束 $H_T(T_{aw}-T_W)$、±保存・負帰還・凍結場で ε 中央値 0.06 K)。受入まで mode 1 (output-only) が生産 baseline |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
 

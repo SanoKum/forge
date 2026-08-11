@@ -172,7 +172,7 @@ public:
     int sstCrossDiffJac = 0;
     int katoLaunder = 0; // SST生産項 Kato-Launder 補正 0:標準 mu_t S^2 1:mu_t S Omega 既定:0 (methods/turbulence §7.5)
     int wallTreatmentSST = 1; // SST壁処理 0:low-Re壁解像(60ν/β₁y²) 1:automatic(y⁺非依存) 既定:1 (methods/turbulence §6.5)
-    int sstThermalWallFunction = 0; // SST壁関数の熱的閉包 (§6.5(f))。0=OFF / 1=output-only (Tsb=Taw_diag, 場非介入, 生産baseline) / 2=experimental SU2 coupled (Taw primitive overlay を内部粘性流束へ)。wallTreatmentSST==1時のみ有効
+    int sstThermalWallFunction = 0; // SST壁関数の熱的閉包 (§6.5(f))。0=OFF / 1=output-only (Tsb=Taw_diag, 場非介入, 生産baseline) / 2=experimental SU2 coupled (Taw primitive overlay, 未採用) / 3=experimental defect-flux (保存的壁層エネルギー流束 H_T(Taw−T_W), T[W]→Taw を残差の解として実現)。wallTreatmentSST==1時のみ有効
     int sstEnergyWallFunction = 0;  // SST壁関数のエネルギー流束置換: 等温壁のKader q_w (§6.5(g))。wallTreatmentSST==1×wall_isothermalのみ有効。既定0=OFF
                               // 注: 既定を 0→1 に変更 (2026-06-28, user 指示)。cell 含む全ケースが automatic 壁関数に
                               //     なるため、低Re 前提の検証 (case/26 Cf, flat-plate 回帰 等) は要再検証。

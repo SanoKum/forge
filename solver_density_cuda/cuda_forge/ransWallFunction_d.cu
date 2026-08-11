@@ -24,7 +24,8 @@ constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 // 共存しない (wmlesActiveForBcond は RANS で false) ため二重初期化にならない)。
 __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf,
                              flow_float* roOmega_wf, flow_float* Taw_diag, flow_float* Qw_Wall,
-                             flow_float* Taw_Prim_Overlay)
+                             flow_float* Taw_Prim_Overlay,
+                             flow_float* Taw_HTnx, flow_float* Taw_HTny, flow_float* Taw_HTnz)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic < nCells) {
@@ -35,6 +36,9 @@ __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau
         Taw_diag[ic] = static_cast<flow_float>(-1.0);
         Qw_Wall[ic] = static_cast<flow_float>(-1.0);
         Taw_Prim_Overlay[ic] = static_cast<flow_float>(-1.0);
+        Taw_HTnx[ic] = static_cast<flow_float>(0.0);   // defect-flux (mode 3): 0 = inactive
+        Taw_HTny[ic] = static_cast<flow_float>(0.0);
+        Taw_HTnz[ic] = static_cast<flow_float>(0.0);
     }
 }
 
@@ -71,6 +75,11 @@ __global__ void compute_wall_friction_sst_d(
     //      W-I 辺の k_eff 過大 (凍結場収支診断で 主因 と確定) を断つ)。
     //   tawCoupled=0 では両配列に触れない (ビット不変)。
     int tawCoupled, flow_float* Taw_Prim_Overlay,
+    // defect-flux 閉包 (experimental, sstThermalWallFunction==3 × 断熱壁 × node のみ tawDefect=1,
+    // theory §6.5(f) mode 3): 壁ノードへ H⃗ = H_T·m̂ を格納 (m̂=内向き壁単位法線,
+    // H_T=ρ_rep·cp·u_τ/T⁺(y⁺;Pr) [W/m²K], 淀み/低y⁺は λ_rep/y へ退避)。viscousFlux_d が
+    // W-I 辺のエネルギー行を F=(S·H⃗)(Taw−T_W) の ± ペアに置換する。tawDefect=0 では触れない。
+    int tawDefect, flow_float* Taw_HTnx, flow_float* Taw_HTny, flow_float* Taw_HTnz,
     // エネルギー壁関数 (§6.5(g), sstEnergyWallFunction==1 × wall_isothermal のみ energyWf=1):
     //   Kader T⁺ で q_w = ρ cp u_τ (T_w − T_aw,rep)/T⁺ を計算し bvar qwall と (node) Qw_Wall へ書く。
     //   Tw_b は等温壁の指定壁温 (bvar Ts, 固定入力)。thermCond_arr は Pr 評価用。
@@ -149,6 +158,11 @@ __global__ void compute_wall_friction_sst_d(
         wf_pk[ic]  = static_cast<flow_float>(0.0);
         Taw_diag[ic] = T_arr[irep];   // 淀み: 運動加熱なし
         if (tawCoupled != 0 && isNode != 0) Taw_Prim_Overlay[ic] = Taw_diag[ic];
+        // defect-flux (mode 3): 淀みは純伝導コンダクタンス H_T=λ_rep/y へ退避
+        if (tawDefect != 0 && isNode != 0) {
+            const flow_float HT = max(thermCond_arr[irep], kSmall) / y;
+            Taw_HTnx[ic] = -nx * HT; Taw_HTny[ic] = -ny * HT; Taw_HTnz[ic] = -nz * HT;
+        }
         // エネルギー壁関数: 淀みは純伝導へ退避 (§6.5(g)。T⁺ 評価が u_τ=0 で退化するため)。
         if (energyWf != 0) {
             const flow_float qw = thermCond_arr[irep] * (Tw_b[ib] - T_arr[irep]) / y;
@@ -228,6 +242,23 @@ __global__ void compute_wall_friction_sst_d(
     // viscousFlux_d が W 入射内部辺の端点温度としてのみ参照 (状態 T/roe・勾配は不変)。
     if (tawCoupled != 0 && isNode != 0) Taw_Prim_Overlay[ic] = Taw_diag[ic];
 
+    // defect-flux 閉包 (mode 3, theory §6.5(f)): H_T = ρ_rep·cp·u_τ/T⁺(y⁺;Pr) を内向き法線に
+    // 載せて格納。低 y⁺ は Kader 層流極限と連続な純伝導 λ_rep/y へ退避 (energyWf と同ガード)。
+    // 平衡点 T_W=Taw は T⁺ の値に依存しない (T⁺ は緩和速度のみ)。
+    if (tawDefect != 0 && isNode != 0) {
+        const flow_float cp_rep  = max(cp_arr[irep], kSmall);
+        const flow_float lam_rep = max(thermCond_arr[irep], kSmall);
+        const flow_float ypd     = utau * y / nu;
+        flow_float HT;
+        if (ypd < static_cast<flow_float>(1.0e-1)) {
+            HT = lam_rep / y;
+        } else {
+            const flow_float Pr = vis_lam[irep] * cp_rep / lam_rep;
+            HT = rho * cp_rep * utau / max(wallLaw_kader_tplus(Pr, ypd), kSmall);
+        }
+        Taw_HTnx[ic] = -nx * HT; Taw_HTny[ic] = -ny * HT; Taw_HTnz[ic] = -nz * HT;
+    }
+
     // node: 壁ノードに τ_w=ρu_τ² を格納 → viscousFlux_d が W-I エッジの接線応力を τ_w に再スケール
     // (SU2 AddTauWall)。代表点 ρ を使う (u_τ と整合)。cell では Tau_Wall を書かず -1 維持 (再スケール無効)。
     if (isNode != 0) Tau_Wall[ic] = rho * utau * utau;
@@ -262,7 +293,7 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
 }
 
 namespace {
@@ -396,6 +427,9 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         // SU2 式熱結合 (experimental mode 2): node × 断熱壁 (kind "wall") のみ。
         (isNode != 0 && cfg.sstThermalWallFunction == 2 && bc.bcondKind == "wall") ? 1 : 0,
         var.c_d["Taw_Prim_Overlay"],
+        // defect-flux 閉包 (experimental mode 3): node × 断熱壁 (kind "wall") のみ。
+        (isNode != 0 && cfg.sstThermalWallFunction == 3 && bc.bcondKind == "wall") ? 1 : 0,
+        var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"],
         // エネルギー壁関数 (§6.5(g)): 等温壁のみ。Tw は bvar Ts (固定入力)。
         (cfg.sstEnergyWallFunction == 1 && bc.bcondKind == "wall_isothermal") ? 1 : 0,
         bc.bvar_d["Ts"], var.c_d["thermCond"], cfg.turbulentPrandtl,

@@ -261,6 +261,14 @@ run_0053/0057)。**W–I 内部辺にモデル温度を混ぜてはならない*
 [`turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)
 (SU2 式熱結合の experimental mode 2, in_progress)。
 
+**experimental mode 3 (`sstThermalWallFunction: 3`, defect-flux 閉包, 2026-08-11)**: 断熱壁 × node ×
+`wallTreatmentSST==1`。`compute_wall_friction_sst_d` が壁ノードに $\vec H = H_T\,\hat m$
+($H_T=\rho_{rep}c_p u_\tau/T^+$, $\hat m$=内向き壁法線, 淀みは $\lambda_{rep}/y$) を
+`Taw_HTnx/y/z` へ格納 (非壁 0=inactive)。`viscousFlux_d` は片端のみ $|\vec H|>0$ の W–I 辺で、
+エネルギー行の (伝導+仕事) を $F=\pm(\vec S\!\cdot\!\vec H)(T_{aw}-T_W)$ に置換 (± 保存、運動量
+不変)。$T_W$ は状態 `Ts[W]` を直接参照 (overlay 不要)。係数 ($u_\tau$, $T^+$, Taw) はステージ頭の
+壁関数評価値で lag。mode 0/1/2 は nullptr でビット不変。theory §6.5(f) の mode 3 節参照。
+
 **experimental mode 2 (`sstThermalWallFunction: 2`, 2026-08-11, 未採用)**: SU2 式結合。
 `Taw_Prim_Overlay` (per-node overlay, `variables.hpp`) を `compute_wall_friction_sst_d`
 (tawCoupled ゲート: node × 断熱壁 × mode 2) が `Taw_diag` と同値で書き、`viscousFlux_d` が

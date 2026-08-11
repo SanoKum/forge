@@ -124,6 +124,11 @@ public:
         // 端点温度としてのみ参照 (SU2 SetTemperature 相当)。状態 T/roe・GG/LSQ 勾配・境界 bvar
         // には一切影響しない。mode 0/1 では常に -1 (ビット不変)。
         "Taw_Prim_Overlay",
+        // SST 断熱壁 defect-flux 閉包 (experimental, sstThermalWallFunction==3, theory §6.5(f) mode 3):
+        // 壁ノードに H_T·m̂ (H_T=ρ_rep·cp·u_τ/T⁺ [W/m²K], m̂=内向き壁単位法線) を格納。
+        // viscousFlux_d が片端のみ非零の W-I 辺で、エネルギー行の (伝導+仕事) を
+        // F=(S·H⃗)(Taw−T_W) の ± ペアに置換する。非壁/他モードは 0 (inactive)。
+        "Taw_HTnx", "Taw_HTny", "Taw_HTnz",
         // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
         // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。

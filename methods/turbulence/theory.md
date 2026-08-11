@@ -473,6 +473,29 @@ OFF 基準 [1196 K] とほぼ不変 — 「1417.9 K = SU2 と 4 K 一致」の�
 [`plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md`](../../plans/accepted/turbulence-sst-adiabatic-taw-fluxmodel.md)
 (流束注入の試行と棄却、最終方針 §0) を参照。
 
+**experimental mode 3 — 保存的壁層エネルギー流束閉包 (defect-flux, `sstThermalWallFunction: 3`, 2026-08-11 追加)**:
+断熱壁の定応力 Couette 層ではエネルギー式 $\frac{d}{dy}(q+\tau u)=0$ を壁 ($q_w=0,\,u=0$) から
+積分すると **任意の高さで $q(y)+\tau u(y)=0$** — 層が Crocco 平衡 ($T_W=T_{aw}$) に乗るとき
+W–I 双対面を通る全 (伝導+粘性仕事) エネルギー流束は厳密ゼロになる。そこで W 入射 W–I 辺の
+「線形伝導 + $\tau\!\cdot\!u$ 仕事」の合計を、平衡からのずれに比例する **defect 流束**
+
+$$F^{wl}_e = H_T\,\bigl(T_{aw,rep}-T_W\bigr)\,(\vec S_e\!\cdot\!\hat m),\qquad
+H_T=\frac{\rho_{rep}\,c_p\,u_\tau}{T^+(y^+_{rep};\mathrm{Pr})}$$
+
+($\hat m$=内向き壁法線, $T^+$=Kader 原式 §10.3, $T_{aw,rep}$=Taw_diag と同式) に置換し、W/I へ
+$\pm$ で加える。性質: (i) $T_W=T_{aw}$ で $F=0$、$\partial F/\partial T_W=-H_T A<0$ の**負帰還**で
+$T_W\to T_{aw}$ が残差を解いた結果として実現 (ピン・ゼロ化・overlay 一切なし)、(ii) $\pm$ ペアで
+厳密保存 (mode 2 の吸熱・ピン方式の湧き出しの両方を構造的に排除)、(iii) 双対 CV の面閉性から
+$\sum_e \vec S_e\!\cdot\!\hat m = A_{wall}$ が厳密に成立し多重辺・非構造へ自然に一般化
+(case/40 実測 $A_{eff}/A_{wall}=0.994$)、(iv) 平衡点は $T^+$ の値に依存しない ($T^+$ は緩和速度のみ)
+— Kader 非圧縮較正の誤差が答えを汚さない、(v) $y^+\!\to\!0$ で $T^+\!\to\!\mathrm{Pr}\,y^+$ →
+$H_T\to\lambda/y$ (解像 Fourier へ退化)。淀み ($u_\tau\to0$) は $H_T=\lambda_{rep}/y$ へ退避。
+壁側 $\mu_t$ は熱経路から完全に外れる (mode 2 を殺した壁 $\mu_t$ 過大問題を回避)。運動量行
+(AddTauWall)・物理壁面 $q_w=0$・GG/LSQ owner-state-only は不変。離散平衡は
+$T_W^* = T_{aw} + R_{rest}/(H_T A)$ ($R_{rest}$=W–W' 辺+対流の残り) で、凍結場診断では
+221 壁ノード中 212 で $|T_W^*-T_{aw}|<5\,$K。詳細・検証は
+[`plans/active/turbulence-sst-su2-taw-coupling.md`](../../plans/active/turbulence-sst-su2-taw-coupling.md)。
+
 **experimental mode 2 — SU2 式熱結合 (`sstThermalWallFunction: 2`, 2026-08-11 追加, 未採用)**:
 モード体系は 0=無効 / 1=**output-only (生産 baseline, 上記の設計)** / 2=experimental SU2 coupled。
 mode 2 は SU2 v8.5.0 の処理順 (勾配計算 → 壁 primitive 温度の $T_{aw}$ 上書き → 内部粘性流束が

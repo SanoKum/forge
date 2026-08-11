@@ -69,7 +69,13 @@ __global__ void viscousFlux_d
  // 【実験専用・恒久実装禁止】mode 2 overlay 辺の k_eff で「overlay 端点 (壁) 側 μt」に掛ける
  // スケール (env FORGE_TAW_WALL_MUT_SCALE, 既定 1.0=無効)。壁 μt 過大 (SU2 比 ~5x) が
  // ドレインの主因という §11 診断の動的確証用。恒久対策は壁 μt モデルの plan 決着後に実装。
- flow_float tawWallMutScale
+ flow_float tawWallMutScale,
+ // SST 断熱壁 defect-flux 閉包 (experimental, sstThermalWallFunction==3, theory §6.5(f) mode 3):
+ // 壁ノードに格納した H⃗=H_T·m̂ (ransWallFunction, 非壁 0)。片端のみ非零の W-I 辺で、
+ // エネルギー行の (伝導 + τ·u 仕事) を defect 流束 F=(S_out·H⃗)(Taw−T_W) の ± ペアに置換する
+ // (Couette 恒等式 q+τu=0: T_W=Taw で全流束ゼロ、∂F/∂T_W<0 の負帰還で T_W→Taw)。
+ // 運動量行は不変。nullptr (mode≠3) で従来経路ビット不変。Taw_diag は defect の目標温度。
+ flow_float* Taw_HTnx, flow_float* Taw_HTny, flow_float* Taw_HTnz, flow_float* Taw_diag
 )
 {
     geom_int ip = blockDim.x*blockIdx.x + threadIdx.x;
@@ -247,8 +253,28 @@ __global__ void viscousFlux_d
         flow_float res_roUx_temp = tau_x;
         flow_float res_roUy_temp = tau_y;
         flow_float res_roUz_temp = tau_z;
-        flow_float res_roe_temp  = tau_x*Uxf +tau_y*Uyf +tau_z*Uzf; 
+        flow_float res_roe_temp  = tau_x*Uxf +tau_y*Uyf +tau_z*Uzf;
         res_roe_temp += heatflux;
+
+        // SST 断熱壁 defect-flux 閉包 (mode 3): 片端のみ壁 (|H⃗|>0) の W-I 辺で、エネルギー行の
+        // (伝導+仕事) を F=(S_out·H⃗)(Taw−T_W) に置換 (±保存)。運動量 (AddTauWall 済) は不変。
+        // S_out·m̂ の和は双対 CV 面閉性から壁面積に一致し、多重 W-I 辺へ自動分配される。
+        if (Taw_HTnx != nullptr) {
+            const flow_float h0 = Taw_HTnx[ic0]*Taw_HTnx[ic0] + Taw_HTny[ic0]*Taw_HTny[ic0]
+                                + Taw_HTnz[ic0]*Taw_HTnz[ic0];
+            const flow_float h1 = Taw_HTnx[ic1]*Taw_HTnx[ic1] + Taw_HTny[ic1]*Taw_HTny[ic1]
+                                + Taw_HTnz[ic1]*Taw_HTnz[ic1];
+            const bool w0 = (h0 > (flow_float)0.0);
+            const bool w1 = (h1 > (flow_float)0.0);
+            if (w0 != w1) {                                    // 片端のみ壁ノード (xor)
+                const geom_int  icW  = w0 ? ic0 : ic1;
+                const flow_float sgnW = w0 ? (flow_float)1.0 : (flow_float)-1.0; // S を W から離れる向きへ
+                const flow_float a = sgnW * (sxx*Taw_HTnx[icW] + syy*Taw_HTny[icW] + szz*Taw_HTnz[icW]);
+                const flow_float Fin = a * (Taw_diag[icW] - Ts[icW]);  // 壁ノードへ入る向き正 [W]
+                // res_roe[ic0] += temp / res_roe[ic1] -= temp の符号系で W が +Fin を受ける形に置換
+                res_roe_temp = sgnW * Fin;
+            }
+        }
 
         atomicAdd(&res_ro[ic0]  , res_ro_temp);
         atomicAdd(&res_roUx[ic0], res_roUx_temp);
@@ -815,7 +841,21 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
                 return x;
             }();
             return v;
-        }()
+        }(),
+        // SST 断熱壁 defect-flux 閉包 (experimental mode 3) のときのみ H⃗/Taw を渡す。
+        // mode 0/1/2 は nullptr (従来経路ビット不変)。
+        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+         && cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 3)
+            ? var.c_d["Taw_HTnx"] : nullptr,
+        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+         && cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 3)
+            ? var.c_d["Taw_HTny"] : nullptr,
+        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+         && cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 3)
+            ? var.c_d["Taw_HTnz"] : nullptr,
+        (cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+         && cfg.wallTreatmentSST == 1 && cfg.sstThermalWallFunction == 3)
+            ? var.c_d["Taw_diag"] : nullptr
     ) ;
 
     gpuErrchk( cudaPeekAtLastError() );
