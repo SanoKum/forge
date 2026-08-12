@@ -262,7 +262,7 @@ $d\le6$ なら LHS DOE $\approx10d=60$ 点 + infill 30–50 点。1 評価 = Eul
 - **Phase 0**: 生成器の決定性 (同一 YAML → bit 同一メッシュ)、品質ゲート、既存 case ([case/23.axi_nozzle], [case/13.nozzle_H]) の手作りメッシュと同等品質の再現。
 - **Phase 1 (→ Phase 3 に統合, 2026-08-13)**: 帰還収束性 — 既知目標分布 (Sivells/CONTUR 系コンタの中心線分布) を与えて元コンタを回復できるか。R1 restart の過渡長の実測。
 - **Phase 2 (最重要マイルストーン)**: **Rao TOC/TOP ベルとの照合** — TOP 幾何 dv のパレート前線が Rao 点と整合し、かつ Rao を不当に支配しない (支配するなら評価系のバグをまず疑う)。[case/29] の Rao vs 円錐資産を照合解に使う。検証対象は評価器 + MOO ループ (帰還エンジンは含まない)。
-  **→ 判定 (2026-08-13): 合格。** 50 評価 28 分のキャンペーン (`case/40.nozzle_design_tool/run_0074_moo_top_r1`) で前線 19 点 (η 0.953@L5 → 0.980@L10, 全点 η 頭打ちポリッシュ済み)。チャート忠実点 rao80 (case/29 digitize の θn33.8°/θe12.1°, L=80%長) は前線と **+0.053% 差で前線上**、θn を意図的に外した対照点は前線が +0.28% 支配 (`run_0075_rao_check`)。詳細は子 plan [tooling-nozzle-moo-loop](../accepted/tooling-nozzle-moo-loop.md) §9。
+  **→ 判定 (2026-08-13): 合格。** 77 評価 (DOE24+infill46+照合7) で確定前線 23 点 (η 0.953@L5 → 0.980@L10, 全点 η 頭打ちポリッシュ済み)。**固定 L=5.9713 の (θn,θe) 直接最適化**で max η(L) を確定させた上で、チャート忠実点 rao80 は **その +0.133% 下 = 判定帯 ±0.15% 内で前線上** (最適は θn24.5–28.5×θe8–11 の平坦台地 — チャート θn33.8° はやや過大という粘性小シフト)。θn を意図的に外した対照点は前線が +0.28% 支配。前線の θe(L) 減少傾向は Rao チャート自身の傾向と整合。詳細は子 plan [tooling-nozzle-moo-loop](../accepted/tooling-nozzle-moo-loop.md) §9。
 - **Phase 3**: 出口一様性の CONTUR 設計との比較、Matsunaga 2022 の傾向 (一様性 vs 長さのトレード) との定性照合。凝縮確認メニューは検証済み凝縮モデルの範囲で運用。
 - **全フェーズ共通**: AGENTS ルールのツール化 — 各評価 run で `check_mesh_quality` / `check_convergence` / `check_quasisteady` の VERDICT を自動記録し、PASS 以外の点はサロゲートに入れない (失敗扱い)。run は `case/` 配下の専用 case ディレクトリに置き README の run 一覧表を維持する。
 
