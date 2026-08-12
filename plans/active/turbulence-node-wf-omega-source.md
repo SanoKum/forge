@@ -14,6 +14,35 @@
 - **created**: `2026-08-12`
 - **owner**: `sano`
 
+## 0. ★ 前提の見直し (2026-08-12(4)): node 離散化は無罪、SU2 も同じ値を出す
+
+**本 plan の出発点だった「node 壁関数に forge 固有の欠陥がある」という前提は弱まった。**
+外部相関比 $C_f/C_{f,\mathrm{KS}}$ (有効帯):
+
+| 構成 | 壁処理 | 離散化 | $C_f/C_{f,\mathrm{KS}}$ | 収支 |
+| --- | --- | --- | --- | --- |
+| `run_0007` forge cell | 壁解像 | cell | 0.954 | 1.069 |
+| **`run_0050` forge node** | **壁解像** | **node** | **0.943** | **1.036** |
+| `run_0044` forge cell | 壁関数 | cell | 0.960 | 1.035 |
+| `run_0042` forge node | 壁関数 | node | 0.762 | 0.993 |
+| **`run_0048` SU2 (同一メッシュ)** | **壁関数** | **node** | **0.754** | 0.775 |
+
+1. **壁関数を外すと node は 0.943** = cell 壁解像 (0.954) と 1.1% 差、収支はむしろ node が良い
+   → **median-dual 離散化そのものは健全**。欠損は**壁関数経路に限定**される。
+2. **SU2 (vertex-centered = node と同じ DOF 配置) が同一メッシュ・同一条件で 0.754** を出し、
+   **forge node の 0.762 と 1% 以内で一致** → **forge node 壁関数が「異常」とは言えない**。
+   外れているのはむしろ forge cell 壁関数 (0.960) の方かもしれない。
+
+**したがって本 plan の位置づけを変更する**: 「forge のバグを直す」ではなく
+**「vertex-centered 壁関数が壁解像解を再現しない (両ソルバ共通) 現象の機構を特定し、
+改善できるかを見る」**。§3 の 2×2 分離と §5 の E3 は引き続き有効な調査手段だが、
+**「SU2 と一致している = 直すべきバグ」ではない**ことを念頭に置くこと。
+
+**未解明**: ①本ケースの freestream $\mu_t/\mu=65.9$ は NASA 標準 (~0.009) の 4 桁大。
+両ソルバ共通なので相対比較は成立するが、この条件下で壁関数がどう振る舞うべきかの外部基準が無い。
+②SU2 壁関数版は**運動量収支が閉じない** (0.775, forge node は 0.993) ので、
+両者が同じ理由で 0.75 なのかは未確認。
+
 ## 1. 現象と機構 (実測で確定している範囲)
 
 node × SST 壁関数の $\tau_w$ が系統的に低い。**外部相関 (Kármán–Schoenherr) 比**で
@@ -263,3 +292,11 @@ NASA SST-Vm 標準ケースが約 0.009 と **4 桁違う**ため apples-to-appl
   ⑦`check_quasisteady.py` に `theta`/`cf_retheta` を追加し、全 run の VERDICT を取得。
   ⑧NASA SST 数値解との verification は freestream $\mu_t/\mu$ が 65.9 vs 0.009 で
   apples-to-apples でないため別ケース化 (§7.5)。
+- `2026-08-12 (4)` — **SU2 クロスチェックと node 壁解像で前提を見直し** (§0 追加)。
+  ①`run_0050` (node planar 細メッシュ + `wallTreatmentSST:0` + MUSCL, 現行 binary, quasisteady
+  ALL STEADY) が $C_f/C_{f,\mathrm{KS}}=0.943$ = cell 壁解像 0.954 と 1.1% 差 →
+  **node 離散化は無罪**。②`run_0048` (SU2 v8.5.0 + `STANDARD_WALL_FUNCTION`, forge `run_0042` と
+  同一メッシュ・BC・物性・流入乱流) が **0.754** で forge node 0.762 と 1% 以内一致 →
+  **forge node 壁関数に固有の欠陥があるという前提は成立しにくい**。
+  ③`run_0047` (SU2 low-Re を y+27 に適用) は収支 0.181 で破綻 = low-Re の誤用は SU2 でも壊れる。
+  → plan の目的を「forge のバグ修正」から「vertex-centered 壁関数の機構特定」へ再定義。

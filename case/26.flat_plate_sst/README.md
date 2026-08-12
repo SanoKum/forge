@@ -126,6 +126,10 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0044_cell_yp30_wf_regr` | cell y+30 壁関数を**現行バイナリで再走** (run_0017 は旧バイナリで `wf_pk`/`Pk_diag` 未出力のため対照にならない)。run_0017 res_10000 から restart、5000 step | $u_\tau$=2.586 (run_0017 と一致)。生産収支比較の cell 基準 | active (cell 対照) |
 | `run_0045_node_yp30_kwfdir0` | **`nodeKwfDirichlet: 0` A/B** (既定 1 = 第一内層 k を Dirichlet 固定)。run_0042 と同一 IC/設定 | 実効生産が 3.1 倍になるが $u_\tau$ は +0.55% のみ → **「生産規約が真因」を反証** | active (反証の証拠) |
 | `run_0046_node_yp30_omgwfdir1` | **`nodeOmegaWfDirichlet: 1` A/B** (第一内層の $\omega$ も固定)。run_0042 と同一 IC/設定 | $\omega$@第一内層 2.645e5→1.213e5、**$C_f$/真値 0.843→0.957 = 欠損の 73% 回復** → **主因は $\omega$** | active (**主因特定の証拠**) |
+| `run_0050_node_lowre_fine_regr` | **node の壁解像 (壁関数なし) 検証**: planar 細メッシュ (`flat_plate_planar.h5`, y+0.7) + `wallTreatmentSST: 0` + MUSCL、現行 binary、`run_node_sst_muscl_cont` res_90000 から restart 20000 step | **$C_f/C_{f,\mathrm{KS}}$ = 0.943** (cell 壁解像 0.954 と 1.1% 差)、収支 1.036、quasisteady **ALL STEADY** → **node 離散化そのものは健全**と確定 | active (**node 無罪の証拠**) |
+| `run_0047_su2_sst_ny52` | SU2 v8.5.0 low-Re (壁関数なし)、`run_0042` と同一メッシュ | $C_f/C_{f,\mathrm{KS}}$=0.365、収支 0.181、$\mu_t/\mu$ 340–452 で**破綻** → low-Re を y+27 に当てる誤りは SU2 でも同じ | 破棄予定 (設定誤りの記録) |
+| `run_0048_su2_sst_wf_ny52` | **SU2 + `STANDARD_WALL_FUNCTION`**、`run_0042` と**完全同一メッシュ・BC・物性・流入乱流** | **$C_f/C_{f,\mathrm{KS}}$=0.754–0.755** (SU2 自身の Cf 出力では 0.791–0.799) = **forge node の 0.762–0.766 と 1% 以内で一致** → forge node 壁関数は異常ではない | active (**SU2 一致の証拠**) |
+| `run_0049_su2_sst_lowre_fine` | SU2 壁解像 (細メッシュ y+0.35, low-Re) — cell/node 壁解像の独立検証 | 実行中 (rms −12.3) | active |
 | `run_0041_node_yp30_z4_2nd` | **機構対照**: 押し出しを 1 層 → **4 層** (z ノード 2 枚 → 5 枚) にした同一 2 次設定 (`mesh/flat_plate_yp30_z4.geo`, 53775 ノード, 3000 step) | スパン方向モードの成長が **350 分の 1** (step3000 で spread 0.598 m/s vs run_0032 の 211.9)。= 発散は「node の slip BC 欠陥」でも「前縁」でもなく **spanwise が 2 ノードしかないこと**が原因と確定 | 破棄予定 (機構確定の記録) |
 | `run_0012_keep_es_ewt_fine` / `run_0013_keep_es_ewt_cont` | **単一スキーム KEEP+ES の RANS 検証 (正)**: 確立済み Cf 基準 run_0009 (EWT 細メッシュ y+0.35) と同一設定で flux のみ KEEP+ES 化、40k+20k ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)) | **合格**: implicit cfl20 安定・quasisteady `ALL STEADY`・**Cf ドリフト +0.006〜0.041%/20k で完全収束**。Cf/Schl = **0.88/0.91/0.94** (SLAU 0.91/0.95/0.97 比 **−3.6〜−3.9%** = 本 case の確立済みスキーム間ばらつき node vs cell MUSCL −3.4〜−3.9% と同帯)。**「KEEP+ES で SST-RANS」は成立** | active (KEEP+ES RANS 検証) |
 
@@ -721,3 +725,82 @@ python3 solver_density_cuda/tools/check_quasisteady.py <run_dir> \
 **freestream $\mu_t/\mu$ が 4 桁違う**ため、**NASA の SST 数値解との直接比較は apples-to-apples ではない**。
 K–S 相関との物理比較 (本節) と、NASA SST 数値解による実装 verification は分けて扱う。
 後者には流入乱流量を合わせた別ケースが要る (未実施)。
+
+## 【重要】壁処理 × 離散化 × ソルバの分解 — node 離散化は無罪、SU2 も同じ 0.75 (2026-08-12)
+
+「node 壁関数に欠陥がある」という作業仮説を、**壁関数を外した node** と **同一メッシュの SU2**
+で切り分けた。結論は 2 つとも仮説に不利である。
+
+### 決定表 (外部相関比 $C_f/C_{f,\mathrm{KS}}$、有効帯)
+
+| 構成 | 壁処理 | 離散化 | $C_f/C_{f,\mathrm{KS}}$ (x=0.60 / 0.75) | 収支 $C_f/(2d\theta/dx)$ |
+| --- | --- | --- | --- | --- |
+| `run_0007` forge cell y+0.34 | **壁解像** | cell | 0.954 / 0.956 | 1.069 |
+| **`run_0050` forge node y+0.7 (現行 binary)** | **壁解像** | **node** | **0.943 / 0.944** | **1.036** |
+| `run_node_sst_muscl_cont` forge node y+0.7 (旧 binary) | 壁解像 | node | 0.943 / 0.947 | 1.033 |
+| `run_0044` forge cell y+29 | 壁関数 | cell | 0.960 / 0.962 | 1.035 |
+| `run_0042` forge node y+27 | 壁関数 | node | **0.762 / 0.766** | 0.993 |
+| **`run_0048` SU2 y+27 (forge と同一メッシュ)** | **壁関数** | **node** | **0.754 / 0.755** | 0.775 |
+| `run_0047` SU2 y+27 | low-Re (不適) | node | 0.365 / 0.365 | 0.181 |
+
+### 結論 1: node 離散化そのものは健全
+
+**壁関数を外して壁解像で解くと node は 0.943–0.944** で、cell 壁解像 (0.954–0.956) と **1.1% しか違わない**。
+しかも**運動量収支は node の方が良い** (1.036 vs 1.069)。旧 binary の既存 run とも 0.943 で一致するので、
+本セッションの一連の修正とも独立している。
+→ **median-dual 離散化が $C_f$ を落としているのではない。** 欠損は**壁関数経路に限定**される。
+
+### 結論 2: SU2 も同じ 0.75 を出す — forge node 壁関数は「異常」ではない
+
+SU2 v8.5.0 は **vertex-centered median-dual = forge node と同じ DOF 配置**である。
+`STANDARD_WALL_FUNCTION` を有効にして **forge `run_0042` と完全同一のメッシュ・同一 BC・
+同一物性・同一流入乱流**で回すと **0.754–0.755** で、**forge node の 0.762–0.766 と 1% 以内で一致**する
+(SU2 自身の `Skin_Friction_Coefficient` 出力で測ると 0.791–0.799)。
+
+→ **「forge の node 壁関数に固有の欠陥がある」という仮説は成立しにくい。**
+独立した検証済みソルバが同じ離散化・同じ条件で同じ答えを出す。
+むしろ**外れているのは forge の cell 壁関数 (0.960)** の方で、これが壁解像値に近いのは
+偶然の可能性がある (cell の第一 DOF はセル重心なので、vertex-centered とは壁関数の当て方が構造的に違う)。
+
+**未解明として残るもの** (どちらも 0.75 を「正しい」とする根拠にはならない):
+
+- 本ケースの **freestream $\mu_t/\mu=65.9$** は NASA 標準ケース (~0.009) より 4 桁大きい。
+  両ソルバで共通の条件なので相対比較は成立するが、**壁関数がこの高い自由流乱流下で
+  どう振る舞うべきか**の外部基準は無い。
+- SU2 壁関数版の**運動量収支が閉じない** (0.775)。forge node は 0.993 で閉じている。
+  同じ $C_f$ に至りながら収支の質が違うので、両者が同じ理由で 0.75 なのかは未確認。
+
+### 結論 3: SU2 low-Re も y+27 で崩壊する (forge 固有ではない)
+
+`run_0047` (壁関数なし、y+27) は $C_f/C_{f,\mathrm{KS}}=0.365$、運動量収支 **0.181**、
+$\mu_t/\mu$ ピーク 340–452、$\theta$ が forge の 2.6 倍。**解として使えない**。
+forge cell の y+30 low-Re が崩壊した記録 (`run_0010`, Cf/Schl 0.13) と同種で、
+**「low-Re 壁処理を y+≫1 メッシュに当てると壊れる」は forge 固有ではない**ことの確認になる。
+
+### SU2 クロスチェックの設定 (再現用)
+
+`run_0047`–`run_0049`。手順は [`procedures/su2-cross-check.md`](../../procedures/su2-cross-check.md)。
+メッシュは **forge と同一の `.geo`** から `gmsh -2 ... -format su2` で生成 (交絡を避ける)。
+
+| forge 設定 | SU2 設定 |
+| --- | --- |
+| `Pt=100000, Tt=288.15` | `MARKER_INLET= ( inlet, 288.15, 100000.0, 1,0,0 )` + `INLET_TYPE= TOTAL_CONDITIONS` |
+| 背圧 `Ps=97250` | `MARKER_OUTLET= ( outlet, 97249.67 )` |
+| `M=0.2` | `MACH_NUMBER= 0.2`, `FREESTREAM_PRESSURE= 97249.67`, `FREESTREAM_TEMPERATURE= 285.8631` |
+| `visc=1.8e-5` (定数) | `VISCOSITY_MODEL= CONSTANT_VISCOSITY`, `MU_CONSTANT= 1.8E-5` |
+| `thermCond=0.0251` (定数) | `CONDUCTIVITY_MODEL= CONSTANT_CONDUCTIVITY`, `THERMAL_CONDUCTIVITY_CONSTANT= 0.0251` |
+| 流入 `k=0.3, omega=300` | `FREESTREAM_TURBULENCEINTENSITY= 0.006598`, `FREESTREAM_TURB2LAMVISCRATIO= 65.853` (等価換算) |
+| `wall` (断熱 no-slip) | `MARKER_HEATFLUX= ( wall, 0.0 )` |
+| `sym`/`top` (slip) | `MARKER_SYM= ( sym, top )` |
+| `wallTreatmentSST: 1` | `MARKER_WALL_FUNCTIONS= ( wall, STANDARD_WALL_FUNCTION )` |
+
+評価は forge と**同一の後処理**(同じ $\theta$ 積分規約・同じ Reichardt 逆解き $C_f$・同じ K–S 比)で行う。
+
+### 速度 (参考、公平比較ではない)
+
+| | 反復 / 時間 | 1 反復 |
+| --- | --- | --- |
+| forge `run_0042` (GPU RTX 3060) | 20000 step / **38.8 s** | **1.94 ms** (内部反復 20 回込み) |
+| SU2 `run_0047` (CPU 8 スレッド) | 40000 iter / 314 s | 7.86 ms |
+
+同一メッシュ (12428 ノード) で forge が約 4 倍速いが、**GPU vs CPU なので効率の比較にはならない**。
