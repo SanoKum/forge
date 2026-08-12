@@ -343,9 +343,9 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         var.c_d.count("rep_cos") ? var.c_d["rep_cos"] : nullptr,
         var.c_d.count("rep_toff") ? var.c_d["rep_toff"] : nullptr,
         var.c_d.count("rep_wdratio") ? var.c_d["rep_wdratio"] : nullptr,
-        var.c_d.count("rep_nz") ? var.c_d["rep_nz"] : nullptr,
-        var.c_d.count("rep_ny") ? var.c_d["rep_ny"] : nullptr,
         var.c_d.count("rep_nx") ? var.c_d["rep_nx"] : nullptr,
+        var.c_d.count("rep_ny") ? var.c_d["rep_ny"] : nullptr,
+        var.c_d.count("rep_nz") ? var.c_d["rep_nz"] : nullptr,
         var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
 }
 
