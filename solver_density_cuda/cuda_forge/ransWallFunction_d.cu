@@ -23,7 +23,7 @@ constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 // Qw_Wall も -1 化する (sstEnergyWallFunction の AddQWall マーカ。§6.5(g)。WMLES と SST は
 // 共存しない (wmlesActiveForBcond は RANS で false) ため二重初期化にならない)。
 __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf,
-                            flow_float* wf_irep_flag,
+                            flow_float* wf_irep_flag, flow_float* wf_sprod,
                              flow_float* roOmega_wf, flow_float* Taw_diag, flow_float* Qw_Wall,
                              flow_float* Taw_Prim_Overlay,
                              flow_float* Taw_HTnx, flow_float* Taw_HTny, flow_float* Taw_HTnz)
@@ -32,6 +32,7 @@ __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau
     if (ic < nCells) {
         wf_pk[ic] = static_cast<flow_float>(-1.0);
         if (wf_irep_flag != nullptr) wf_irep_flag[ic] = static_cast<flow_float>(0.0);
+        if (wf_sprod != nullptr) wf_sprod[ic] = static_cast<flow_float>(-1.0);
         Tau_Wall[ic] = static_cast<flow_float>(-1.0);
         roK_wf[ic] = static_cast<flow_float>(-1.0);
         roOmega_wf[ic] = static_cast<flow_float>(-1.0);
@@ -57,6 +58,7 @@ __global__ void compute_wall_friction_sst_d(
     flow_float* ypls_b,
     flow_float* wf_pk,
     flow_float* wf_irep_flag,   // node: 第一内層ノード (irep) を 1 でマーク (2×2 分離用マスク)
+    flow_float* wf_sprod,       // E3: 第一内層に壁法則整合ひずみ二乗 S_wf^2 (非対象 -1)
     // node-centered (isNode=1): bplane_cell は壁ノード W (u=0,Dirichlet)。代表内部点を選ぶための
     // CV 座標と CSR 隣接。SU2 Normal_Neighbor 流。cell モード (isNode=0) では未使用 (nullptr 可)。
     int isNode,
@@ -177,6 +179,7 @@ __global__ void compute_wall_friction_sst_d(
         if (isNode != 0) {
             wf_pk[irep] = static_cast<flow_float>(0.0); Tau_Wall[ic] = static_cast<flow_float>(0.0);
             if (wf_irep_flag != nullptr) wf_irep_flag[irep] = static_cast<flow_float>(1.0);
+            if (wf_sprod != nullptr) wf_sprod[irep] = static_cast<flow_float>(0.0);  // 淀み: せん断なし
             // 淀み域 u_τ=0 → k_wf=0。node k Dirichlet (SU2 SetTurbVars_WF 流, wallTreatment==1 のみ)。
             if (enableKwf == 1) {
                 roK_wf[irep] = static_cast<flow_float>(0.0);
@@ -216,6 +219,14 @@ __global__ void compute_wall_friction_sst_d(
     if (isNode != 0) {
         wf_pk[irep] = pk_wf;
         if (wf_irep_flag != nullptr) wf_irep_flag[irep] = static_cast<flow_float>(1.0);
+        // E3 (§5): omega 生産の入力ひずみを壁法則整合にするための S_wf^2。
+        //   S_wf = u_tau^2/nu * g   (g = du+/dy+ = wallLaw_reichardt_duplus_dyp(y+))
+        // 現行の P_omega = alpha*rho*S^2 の S^2 をこれで置換する (k 生産は既に wf_pk で置換済み)。
+        // alpha*Pk_wf/nu_t,wf の形は低 y+ で 0/0 に近づくため S_wf^2 を直接使う。
+        if (wf_sprod != nullptr) {
+            const flow_float Swf = utau * utau / nu * g;
+            wf_sprod[irep] = Swf * Swf;
+        }
         // node k Dirichlet (SU2 SetTurbVars_WF 流, enableKwf==1 のみ): 第一内層ノードの k を
         // k_wf = ω_w·μ_t,wall/ρ = ω_w·ν·(1/g - 1) に固定し、近壁 k 蓄積 (再付着 μ_t ピーク) を断つ。
         // ω_w は Menter ブレンド (壁ノードのピンと同式)、μ_t,wall は壁モデル渦粘性 (Reichardt g 由来)。
@@ -301,7 +312,7 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["wf_irep_flag"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["wf_irep_flag"], var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr, var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
 }
 
 namespace {
@@ -421,6 +432,7 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         bc.bvar_d["ypls"],
         var.c_d["wf_pk"],
         var.c_d["wf_irep_flag"],
+        var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr,
         // node: SU2 Normal_Neighbor 代表内部点選択用 (cell では未使用)
         isNode,
         msh.nNormalPlanes,

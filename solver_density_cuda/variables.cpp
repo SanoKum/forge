@@ -160,7 +160,7 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
     {
         const char* e = std::getenv("FORGE_OMEGA_BUDGET");
         if (!(e && std::atoi(e) != 0)) {
-            for (const char* n : {"omg_prod", "omg_dest", "omg_cross", "omg_trans"}) {
+            for (const char* n : {"omg_prod", "omg_dest", "omg_cross", "omg_trans", "omg_axisym"}) {
                 cellValNames.remove(n);
                 output_cellValNames.remove(n);
                 c.erase(n);
@@ -180,7 +180,7 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             // 診断配列は毎ステップ書かれるとは限らないので確保直後に 0 初期化する
             // (未初期化 device メモリを出力しないため)。
             if (cellValName.rfind("wi_", 0) == 0 || cellValName.rfind("omg_", 0) == 0
-                || cellValName == "wf_irep_flag") {
+                || cellValName == "wf_irep_flag" || cellValName == "wf_sprod") {
                 gpuErrchk( cudaMemset(this->c_d.at(cellValName), 0, (msh.nCells_all)*sizeof(flow_float)) );
             }
         }

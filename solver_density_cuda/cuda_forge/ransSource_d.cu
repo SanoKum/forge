@@ -45,6 +45,10 @@ __global__ void rans_sst_source_d(
     flow_float* Pk_diag,   // 診断: 確定した最終 k 生産 (wall-function 置換後)
     // 診断 (§4.1): omega 方程式の項別収支。nullptr 可 (診断オフ)。単位は res_roOmega と同じ (体積込み)。
     flow_float* omg_prod, flow_float* omg_dest, flow_float* omg_cross, flow_float* omg_trans,
+    flow_float* omg_axisym,   // 診断: 軸対称 1/y ソース·V (omg_trans はこれが加わる前の残差)
+    // E3 (§5): 壁関数第一内層の壁法則整合ひずみ二乗 S_wf^2 (非対象 -1)。omegaWfSource!=0 のときだけ
+    // omega 生産の入力に使う (k 生産は既に wf_pk で置換済み)。nullptr / 0 で従来ビット不変。
+    flow_float* wf_sprod, int omegaWfSource,
     flow_float* res_roK,
     flow_float* res_roOmega,
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
@@ -177,8 +181,15 @@ __global__ void rans_sst_source_d(
         jac_k = kBetaStar * w_c;
     }
 
-    // omega 生産項
-    const flow_float Pw = alpha * rho * S_prod;
+    // omega 生産項。
+    // E3 (§5): 壁関数の第一内層ノードでは入力ひずみを壁法則整合 S_wf^2 に差し替える
+    // (k 側は既に wf_pk で壁関数値。omega だけ解像ひずみのままという非対称の解消)。
+    flow_float S_prod_omega = S_prod;
+    if (omegaWfSource != 0 && wf_sprod != nullptr
+        && wf_sprod[ic] >= static_cast<flow_float>(0.0)) {
+        S_prod_omega = wf_sprod[ic];
+    }
+    const flow_float Pw = alpha * rho * S_prod_omega;
 
     // omega 消滅項
     const flow_float Dw = beta * rho * w_c * w_c;
@@ -215,6 +226,7 @@ __global__ void rans_sst_source_d(
             const flow_float sw = -yinv * (rhov * w_c - (mu_lam + sigW * mu_t) * dOmegady[ic]);
             atomicAdd(&res_roK[ic],     sk * v);
             atomicAdd(&res_roOmega[ic], sw * v);
+            if (omg_axisym != nullptr) omg_axisym[ic] = sw * v;
             // point-implicit 対角: -∂S/∂(ρφ) = +v_r/y (SU2 Jacobian と同じ)。対角正値性を守るため非負側のみ。
             axisym_jac_diag = max(yinv * Uy[ic], static_cast<flow_float>(0.0));
         }
@@ -304,6 +316,19 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d.count("omg_dest")  ? var.c_d["omg_dest"]  : nullptr,
         var.c_d.count("omg_cross") ? var.c_d["omg_cross"] : nullptr,
         var.c_d.count("omg_trans") ? var.c_d["omg_trans"] : nullptr,
+        var.c_d.count("omg_axisym") ? var.c_d["omg_axisym"] : nullptr,
+        var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr,
+        // E3 ゲート: FORGE_WF_OMEGA_SOURCE=1 で有効 (既定 0 = 従来ビット不変)
+        [] {
+            static const int v = [] {
+                const char* s = std::getenv("FORGE_WF_OMEGA_SOURCE");
+                const int x = s ? std::atoi(s) : 0;
+                if (x) printf("[EXPERIMENT] E3: omega production uses wall-law S_wf^2 "
+                              "at the first interior node (FORGE_WF_OMEGA_SOURCE=%d)\n", x);
+                return x;
+            }();
+            return v;
+        }(),
         var.c_d["res_roK"],
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],

@@ -147,6 +147,14 @@ public:
         //   omg_trans : 輸送 (対流+拡散) = ソース加算 **前** の res_roOmega
         // FORGE_OMEGA_BUDGET=1 のときだけ確保・出力される (OFF ならメモリも出力も増えない)。
         "omg_prod", "omg_dest", "omg_cross", "omg_trans",
+        //   omg_axisym: 軸対称 (axisymMethod==1) の 1/y ソース·V。omg_trans はこれが加わる **前** の
+        //   残差なので、軸対称ケース (case/40 等) で収支を取るには本項が要る。
+        "omg_axisym",
+        // E3 (plan turbulence-node-wf-omega-source §5): 壁関数の第一内層ノードに、壁法則整合の
+        // ひずみ二乗 S_wf^2 = (u_tau^2·g/nu)^2 を格納 (非対象は -1 = inactive)。
+        // ransSource が omega 生産にのみ使う (k 生産は既に wf_pk で置換済み)。
+        // FORGE_WF_OMEGA_SOURCE=1 のときだけ ransSource が参照する (既定はビット不変)。
+        "wf_sprod",
         // 診断/分離実験 (2026-08-12, plan §3 の 2×2 factorial): node 壁関数の **第一内層ノード
         // (irep)** を 1 でマークする (壁ノード・非対象は 0)。`wf_pk>=0` は壁ノードにも立つため
         // 「第一内層だけ」を選ぶマスクとしては使えない。cell では常に 0 (= cell ビット不変が構造的に保証)。
@@ -234,7 +242,7 @@ public:
 
         // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
         "wi_ftan" , "wi_fnrm" , "wi_fnrm_abs" , "wi_ftan_res" , "wf_irep_flag" ,
-        "omg_prod" , "omg_dest" , "omg_cross" , "omg_trans" ,
+        "omg_prod" , "omg_dest" , "omg_cross" , "omg_trans" , "omg_axisym" , "wf_sprod" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"
