@@ -17,6 +17,10 @@ PYTHONPATH=design python3 -m forge_design.evaluate.runner \
 
 ## 計算 run 一覧
 
+> **連番衝突の注記 (2026-08-13)**: 並行セッションが同日に番号を採ったため **0071/0072 が二重発番**。
+> 壁関数系列 = `run_0071_E3` / `run_0072_repdiag`、設計ツール系列 = `run_0071_node_e2e_regr` /
+> `run_0072_bell_top_smoke`。スラッグで区別する (以後の新規 run は 0073 から採番)。
+
 | run | 目的・設定差分 | 主要結果・成果物 | 状態 |
 | --- | --- | --- | --- |
 | `run_0001_bell_smoke` | E2E 初回スモーク。SST の roK/roOmega を IC 未設定 (既定 0) | step 2–6 で rms_roK/roOmega に NaN → EOS 床洗浄後プラトー (既知指紋の再現)。パイプライン自体は完走し η=0.981 | 破棄予定 (NaN 指紋の記録) |
