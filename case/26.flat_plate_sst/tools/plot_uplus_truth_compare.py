@@ -129,10 +129,10 @@ def main():
     axes = axs.ravel()
     ypl = np.logspace(-1, 4, 300)
     for ax, key, ttl in [
-            (axes[0], "own",   "A) 各 run 自身の $u_\\tau$ で正規化 — 形状の collapse\n"
-                               "(ここだけ見ると揃って見えるので絶対量の判定に使わない)"),
-            (axes[1], "truth", "B) 内部基準 run_0007 の $u_\\tau$ で正規化 — 絶対量\n"
-                               "(★ = 各 run の壁から最初の DOF)")]:
+            (axes[0], "own",   "A) 各 run 自身の $u_\\tau$ で正規化 — collapse **しない**\n"
+                               "(node が上へずれる量 $U_\\infty/u_\\tau$ = $u_\\tau$ 欠損 9% そのもの)"),
+            (axes[1], "truth", "B) 内部基準 run_0007 の $u_\\tau$ で正規化 — こちらが概ね一致\n"
+                               "(= 速度場自体は近い。★ = 各 run の壁から最初の DOF)")]:
         ax.semilogx(ypl, ypl, "0.6", lw=1, label="$u^+=y^+$")
         ax.semilogx(ypl, np.log(ypl) / KAPPA + BLOG, "0.6", ls="--", lw=1,
                     label=f"$u^+=\\ln y^+/{KAPPA}+{BLOG}$")
