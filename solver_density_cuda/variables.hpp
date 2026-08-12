@@ -129,6 +129,14 @@ public:
         // viscousFlux_d が片端のみ非零の W-I 辺で、エネルギー行の (伝導+仕事) を
         // F=(S·H⃗)(Taw−T_W) の ± ペアに置換する。非壁/他モードは 0 (inactive)。
         "Taw_HTnx", "Taw_HTny", "Taw_HTnz",
+        // 診断 (2026-08-12, plan turbulence-node-wf-omega-source §4.2): W-I 双対面で **実際に
+        // 運動量残差へ加えられた** 粘性 traction を壁ノードに集計する。狙った τ_w が本当に
+        // 作用しているかの確認用 (twall 出力はモデル目標値へ再スケール済みで独立検証にならない)。
+        //   wi_ftan     : AddTauWall 再スケール **後** の接線力の大きさ [N] (面積込み)
+        //   wi_fnrm     : 同じく法線成分 [N] (再スケールが法線も増幅する件の実測)
+        //   wi_ftan_res : 再スケール **前** の解像接線力 [N]
+        // 毎ステップ 0 クリアして atomicAdd で積む。壁ノード以外は 0。
+        "wi_ftan", "wi_fnrm", "wi_ftan_res",
         // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
         // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。
@@ -209,6 +217,9 @@ public:
         // omega 残差収支調査 (入口×壁コーナー残差プラトーの局在, 一時診断): 残差 res_roOmega,
         // 源項ヤコビ src_jac_omega, 輸送対角 transport_diag_omega
         "res_roOmega" , "src_jac_omega" , "transport_diag_omega" , "res_roK" ,
+
+        // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
+        "wi_ftan" , "wi_fnrm" , "wi_ftan_res" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"

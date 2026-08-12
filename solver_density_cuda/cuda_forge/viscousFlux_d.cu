@@ -51,6 +51,9 @@ __global__ void viscousFlux_d
  // τ_w=ρu_τ² (>0)。片端だけ壁ノードの内部双対面 (W-I) で接線粘性応力を τ_w に再スケールする
  // (SU2 AddTauWall)。cell/非壁関数では Tau_Wall≡-1 で再スケール無効 (ビット不変)。nullptr 可 (常に無効)。
  flow_float* Tau_Wall,
+ // 診断 (§4.2): W-I 面で実際に残差へ加えた接線力/法線力と、再スケール前の解像接線力を壁ノードへ集計。
+ // nullptr 可 (診断オフ)。
+ flow_float* wi_ftan, flow_float* wi_fnrm, flow_float* wi_ftan_res,
 
  // WMLES 等温壁 (node): 壁ノードに格納した q_w [W/m²] (壁→流体正, 非対象は -1)。片端だけ壁ノードの
  // W-I 面で解像伝導熱流束を q_w·S に置換する (AddQWall, methods/turbulence §10.4)。nullptr で無効。
@@ -187,6 +190,17 @@ __global__ void viscousFlux_d
                 const flow_float tmag = sqrt(ttx*ttx + tty*tty + ttz*ttz); // 接線 traction の大きさ [N]
                 const flow_float scale = (tauw*sss) / max(tmag, (flow_float)1.0e-30); // |接線|→τ_w·面積
                 tau_x *= scale; tau_y *= scale; tau_z *= scale;
+                // 診断 (§4.2): 実際に残差へ入る力を壁ノードへ集計する。
+                if (wi_ftan != nullptr) {
+                    const geom_int icW = w0 ? ic0 : ic1;
+                    const flow_float Tn2 = tau_x*nhx + tau_y*nhy + tau_z*nhz;   // 再スケール後の法線
+                    const flow_float tx2 = tau_x - Tn2*nhx;
+                    const flow_float ty2 = tau_y - Tn2*nhy;
+                    const flow_float tz2 = tau_z - Tn2*nhz;
+                    atomicAdd(&wi_ftan[icW],     sqrt(tx2*tx2 + ty2*ty2 + tz2*tz2));
+                    atomicAdd(&wi_fnrm[icW],     Tn2);
+                    atomicAdd(&wi_ftan_res[icW], tmag);
+                }
             }
         }
 
@@ -730,6 +744,11 @@ static bool sstEnergyWfNodeActive(const solverConfig& cfg, const mesh& msh)
 
 void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , matrix& mat_ns)
 {
+    // W-I 実力診断 (§4.2): 毎ステップ 0 クリアしてから積む (出力時点の値 = その step の合計)。
+    gpuErrchk(cudaMemset(var.c_d["wi_ftan"],     0, sizeof(flow_float)*msh.nCells_all));
+    gpuErrchk(cudaMemset(var.c_d["wi_fnrm"],     0, sizeof(flow_float)*msh.nCells_all));
+    gpuErrchk(cudaMemset(var.c_d["wi_ftan_res"], 0, sizeof(flow_float)*msh.nCells_all));
+
     // 距離診断 (1 回限り)。FORGE_VISC_WALL_DIAG=1 のとき壁半割面の dn/dcc/tangential を集計表示。
     static bool diag_done = false;
     if (!diag_done && getenv("FORGE_VISC_WALL_DIAG") && atoi(getenv("FORGE_VISC_WALL_DIAG")) != 0) {
@@ -823,6 +842,8 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         ((cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)
          || wmlesNodeActive(cfg, msh))
             ? var.c_d["Tau_Wall"] : nullptr,
+        // 診断 (§4.2): W-I 実力集計。毎ステップ 0 クリアしてから渡す。
+        var.c_d["wi_ftan"], var.c_d["wi_fnrm"], var.c_d["wi_ftan_res"],
         // node WMLES 等温壁 / node SST エネルギー壁関数 (§6.5(g)) のとき Qw_Wall を渡し
         // AddQWall (W-I 熱流束置換)。それ以外は nullptr (Qw_Wall 未初期化のため)。
         (wmlesNodeIsothermalActive(cfg, msh) || sstEnergyWfNodeActive(cfg, msh))
