@@ -38,7 +38,8 @@
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
-| [turbulence-node-wf-omega-source.md](active/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node SST 壁関数経路の低摩擦解 ($C_f/C_{f,\mathrm{KS}}$=0.762 vs 壁解像基準 0.94±0.02)。**node 離散化は SU2 壁解像との一致で無罪確定**、欠損は壁関数経路に局在。次は実 W–I 接線力の診断 → 2×2 分離 → E3 |
+| [turbulence-node-wf-representative-point.md](active/turbulence-node-wf-representative-point.md) | `turbulence / boundary` | node 壁関数の代表点 (Normal_Neighbor) 診断。$\omega$ 側を出し切っても両ケースの符号が逆 (case/26 不足 / case/40 過剰) なので $u_\tau$ の入口側へ。**幾何 / 代表点速度 / 壁解像基準の同一位置サンプリング**の 3 分離が先、アルゴリズム変更は後 |
+| [turbulence-node-wf-omega-source.md](active/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node 壁関数経路の低摩擦解。**$\omega$ 側は出し切った**: pin / limiter bypass / E3 ($P_\omega$ 源項整合) いずれも case/26 で 0.84–0.86 止まり、E3 は case/40 で ≈1.061 に過大化し**不採用**。後継 = 代表点診断 plan |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
 

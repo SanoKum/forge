@@ -476,11 +476,30 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     再スケールが traction ベクトル全体に掛かる件も、**発達域では法線成分が接線の
     $2.7\times10^{-5}$** で実害なし (ただし前縁の壁∩対称面コーナーでは局所 0.34 に達するので
     「全域で無害」と一般化しない)。
+  - **★ E3: $\omega$ 生産の壁法則整合化 (2026-08-13, 実験実施・不採用)**: 上記の非対称
+    ($k$ は壁関数値・$\omega$ は解像ひずみ) を解消する試み。第一内層ノード**のみ**、
+    $P_\omega$ の入力ひずみを $S_{\rm wf}=u_\tau^2 g/\nu$ に差し替える
+    ($P_{\omega,\rm wf}=\alpha\rho S_{\rm wf}^2$)。$\omega$ の状態は free、limiter も通常式のまま
+    (Dirichlet を使わない)。実装は `ransWallFunction_d.cu` が $S_{\rm wf}^2$ を `wf_sprod` へ格納し
+    `ransSource_d.cu` が $\omega$ 生産の入力にのみ使う。$\alpha P_{k,\rm wf}/\nu_{t,\rm wf}$ の形は
+    低 $y^+$ で 0/0 になるため $S_{\rm wf}^2$ を直接使う。
+    **結果**: case/26 平板で $C_f/C_{f,\mathrm{KS}}$ 0.7615→**0.8445** ($\omega$ 2.62e5→1.35e5)。
+    **case/40 ベルノズルでは $\tau_w$ が 1.1226 倍 = y+1 基準比 ≈1.061 に過大化**し、
+    事前に定めた採否ゲート (「case/26 の改善が case/40 の過大化を伴わない」) を満たさないため
+    **既定化しない**。実験経路として `FORGE_WF_OMEGA_SOURCE=1` で残す
+    (**node SST 壁関数のときだけ有効**。そうでないと `wf_sprod` が未初期化のまま参照され
+    $\omega$ 生産を全域で消すため、ゲートは必須)。
+    両ケースが同方向に約 11–12% 動くので、**ケース固有係数の調整ではなく構造的介入**である。
+    ただし case/26 は不足側 (−15.6%→−6.1%)、case/40 は過剰側 (−5.5%→+6.1%) と**符号が違う**ので、
+    **残る不一致は単一ノブでは閉じない**。
   - **診断の使い方**: `FORGE_WI_FORCE_DIAG=1` で `wi_ftan`/`wi_fnrm`/`wi_fnrm_abs`/`wi_ftan_res`
     を出力する (OFF なら確保も出力もされない)。`FORGE_WF_LIMITER_BYPASS` (−1/0/1) で
     limiter 迂回を $\omega$ ピンから独立に切れる (node SST 壁関数時のみ有効)。
     第一内層ノードのマスクは `wf_irep_flag` (`wf_pk>=0` は壁ノードにも立つので代用不可、
-    cell では常に 0)。
+    cell では常に 0)。`FORGE_OMEGA_BUDGET=1` で $\omega$ 項別収支
+    (`omg_prod`/`omg_dest`/`omg_cross`/`omg_trans`/`omg_axisym`)。
+    `omg_trans` は**軸対称 $1/y$ ソース加算前**の残差なので、軸対称ケースでは `omg_axisym` と
+    併せて見ること。**これらの env はすべて OFF で確保も出力もされない** (既定経路不変)。
 
 #### (f) 断熱壁の熱的閉包 — Crocco 型回復温度 $T_{aw}$ (`sstThermalWallFunction`)
 

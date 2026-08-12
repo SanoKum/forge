@@ -318,8 +318,14 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         var.c_d.count("omg_trans") ? var.c_d["omg_trans"] : nullptr,
         var.c_d.count("omg_axisym") ? var.c_d["omg_axisym"] : nullptr,
         var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr,
-        // E3 ゲート: FORGE_WF_OMEGA_SOURCE=1 で有効 (既定 0 = 従来ビット不変)
-        [] {
+        // E3 ゲート: FORGE_WF_OMEGA_SOURCE=1 で有効 (既定 0 = 従来ビット不変)。
+        // ★ node SST 壁関数が有効なときだけ許可する。そうでないと initWallFunctionPk_d_wrapper が
+        //   早期 return して wf_sprod が確保時の 0 のまま残り、`wf_sprod>=0` が全 DOF で真になって
+        //   **omega 生産を全域で消してしまう** (limiter env と同じ落とし穴)。
+        (!(cfg.discretization == "node" && cfg.LESorRANS == 2 && cfg.RANSmodel == 1
+           && cfg.wallTreatmentSST == 1))
+        ? 0
+        : [] {
             static const int v = [] {
                 const char* s = std::getenv("FORGE_WF_OMEGA_SOURCE");
                 const int x = s ? std::atoi(s) : 0;

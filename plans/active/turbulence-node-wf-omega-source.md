@@ -10,6 +10,7 @@
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5 (automatic wall treatment)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
 - **related_plans**:
+  - [`turbulence-node-wf-representative-point.md`](turbulence-node-wf-representative-point.md) (**後継**: $\omega$ 側を出し切ったので代表点側へ)
   - [`../accepted/turbulence-node-wall-function-coverage.md`](../accepted/turbulence-node-wall-function-coverage.md) (第一内層への `wf_pk` 適用を入れた計画 = 本件の前段)
   - [`../accepted/turbulence-sst-su2-taw-coupling.md`](../accepted/turbulence-sst-su2-taw-coupling.md) §10c (`nodeOmegaWfDirichlet` を case/40 で棄却した記録)
   - **未起票**: 一般内部場の $P_\omega$ を SST-2003 正式形へ直す件 (§6。影響範囲が大きいので別 plan)
@@ -482,3 +483,17 @@ NASA SST-Vm 標準ケースが約 0.009 と **4 桁違う**ため apples-to-appl
   **両ケースが同方向に同程度動く** = E3 は一貫した物理変更であり、
   case/26 不足 / case/40 過剰という**符号の違い**が残る → **単一ノブでは閉じない**。
   次は $u_\tau$ を決める代表点速度側。
+- `2026-08-13 (4)` — **レビュー指摘 3 点を修正し、後継 plan を起票**。
+  ①**E3 env ゲートの重大バグを修正**: `FORGE_WF_OMEGA_SOURCE` が構成を確認せず有効化していたため、
+  `wallTreatmentSST!=1` (壁関数初期化が走らない) の構成で誤って付けると `wf_sprod` が確保時の 0 のまま
+  `>=0` 判定に通り、**$\omega$ 生産を全域で消す**危険があった。node+SST+`wallTreatmentSST==1` の
+  ときだけ有効にし、それ以外は強制 0 に。壁解像 run で実地検証済み (EXPERIMENT 非表示・$\omega$ 健全)。
+  `wf_sprod` も E3 OFF 時は確保・出力から除外。
+  ②**`check_quasisteady.py` を修正**: 未知 quantity を黙って無視して `ALL STEADY` を返すバグを
+  **エラー**に変更し、**`wall_tau` を正式対応**。case/40 の定常性を取り直し
+  (`run_0066`/`run_0071` とも `wall_tau: STEADY`、tail mean 1224/1374、drift 0.0%)。
+  当初の「`ALL STEADY`」は既定量 (shock/machmax/pmax) の判定で $\tau_w$ を見ていなかった。
+  ③**解釈を弱めた**: 「一貫した物理変更」→「ケース固有係数の調整ではなく両ケースに
+  約 11–12% の同方向応答を与える構造的介入」。case/40 の絶対誤差は −5.5%→+6.1% で**ほぼ対称**であり
+  「大幅に悪化」ではなく**事前ゲート不合格**。y+1 基準との同一定義比較の正式ツール化は後継 plan へ。
+  ④case/40 run 表に `run_0071_E3` を追加、`methods/turbulence/theory.md` に E3 の仕様と不採用を反映。

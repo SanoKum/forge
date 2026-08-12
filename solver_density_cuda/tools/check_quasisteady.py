@@ -238,6 +238,8 @@ SEV = {'STEADY': 0, 'OSCILLATING': 1, 'TRANSIENT-UNSETTLED': 2, 'DRIFTING': 3}
 BUILTIN = ['shock', 'asym', 'machmax', 'pmax']
 # 平板専用 (明示指定のときだけ有効): --quantity theta,cf_retheta
 FLATPLATE = ['theta', 'cf_retheta']
+# 壁面平均せん断 (res_wall_*.h5 の utau/ro から): 壁関数・壁解像を問わず使える派生量
+WALL = ['wall_tau']
 
 
 def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, cf_x=0.6, cf_ytop=None):
@@ -256,6 +258,13 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
     qa = make_q_asym(cc)
     if qa:
         extractors['asym'] = qa
+    # 未知の量を黙って無視すると「評価していないのに ALL STEADY」になるので必ずエラーにする
+    known = set(extractors) | set(WALL)
+    unknown = [q for q in want if q not in known]
+    if unknown:
+        print(f"\n=== {run_dir}  -> ERROR: unknown quantity {unknown} "
+              f"(available: {sorted(known)}) ===")
+        return 3
     quantities = [q for q in want if q in extractors]
     series = {q: [] for q in quantities}
     for f in fs:
@@ -267,6 +276,32 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
                 series[q].append(float('nan'))
     worst = 0
     lines = []
+    if 'wall_tau' in want:
+        import re as _re
+        wf = []
+        for f in glob.glob(os.path.join(run_dir, 'res_wall_*.h5')):
+            m = _re.match(r'^res_wall_\d+_(\d+)\.h5$', os.path.basename(f))
+            if m:
+                wf.append((int(m.group(1)), f))
+        wf.sort()
+        if len(wf) < 2:
+            lines.append(f"  {'wall_tau':9s}: only {len(wf)} res_wall_*.h5 -> TRANSIENT-UNSETTLED")
+            worst = max(worst, 2)
+        else:
+            wsteps, wvals = [], []
+            for st, f in wf:
+                hw = h5py.File(f, 'r')
+                if 'VALUE/utau' not in hw or 'VALUE/ro' not in hw:
+                    continue
+                xw = hw['MESH/COORD'][:].reshape(-1, 3)[:, 0]
+                tau = hw['VALUE/ro'][:] * hw['VALUE/utau'][:] ** 2
+                mm = xw > 0.01                      # 前縁・入口近傍を除く
+                if mm.sum() < 3:
+                    mm = np.ones_like(xw, bool)
+                wsteps.append(st); wvals.append(float(tau[mm].mean()))
+            v, d, _ = classify(wsteps, wvals, tail_frac, drift_tol, osc_tol, min_snaps)
+            worst = max(worst, SEV[v])
+            lines.append(f"  {'wall_tau':9s}: {d:55s} {v}")
     for q in quantities:
         verdict, detail, _ = classify(steps, series[q], tail_frac, drift_tol, osc_tol, min_snaps)
         worst = max(worst, SEV[verdict])
@@ -284,7 +319,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run_dirs', nargs='+')
     ap.add_argument('--quantity', default=','.join(BUILTIN),
-                    help='comma list of: ' + ','.join(BUILTIN + FLATPLATE) +
+                    help='comma list of: ' + ','.join(BUILTIN + FLATPLATE + WALL) +
                          ' (default all applicable; theta/cf_retheta are flat-plate specific '
                          'and assume the wall is y=0 with the plate at x>0)')
     ap.add_argument('--cf-x', type=float, default=0.6,

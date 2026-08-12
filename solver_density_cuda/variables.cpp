@@ -156,6 +156,16 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             }
         }
     }
+    // E3 (§5) の wf_sprod も env ゲート (OFF ならメモリ・D2H・HDF5 を増やさない)
+    {
+        const char* e = std::getenv("FORGE_WF_OMEGA_SOURCE");
+        if (!(e && std::atoi(e) != 0)) {
+            cellValNames.remove("wf_sprod");
+            output_cellValNames.remove("wf_sprod");
+            c.erase("wf_sprod");
+            c_d.erase("wf_sprod");
+        }
+    }
     // omega 項別収支 (§4.1) も env ゲート
     {
         const char* e = std::getenv("FORGE_OMEGA_BUDGET");
