@@ -10,7 +10,9 @@
 `res_wall_<physID>_<step>.h5` の **`twall_x/y/z`** を使う。これは壁半割面の traction
 (単位面積あたり) であり:
 
-  - **壁解像 run** (`wallTreatmentSST=0`): 解像した粘性 traction = その解の真の壁応力。
+  - **壁解像 run** (`wallTreatmentSST=0`): 解像した粘性 traction。
+    **「真の壁応力」ではなく「壁解像内部基準が与える数値的な壁応力」**として扱うこと
+    (基準解自身も離散誤差・格子・モデルの影響を受ける)。
   - **壁関数 run**: `viscousFlux_d.cu` が向きは解像値・大きさをモデル `tau_w=rho*u_tau^2`
     へ再スケールした値 = **実際に課しているモデル応力**。
 
@@ -100,7 +102,7 @@ def main():
     ap.add_argument("--axisym", action="store_true")
     a = ap.parse_args()
     print(f"# 定義: tau_w = |twall - (twall.n)n| (壁半割面 traction の接線成分)")
-    print(f"#       壁解像 run では解像値 = 真の壁応力 / 壁関数 run ではモデル値に再スケール済み")
+    print(f"#       壁解像 run = 内部基準が与える数値的な壁応力 / 壁関数 run = モデル値に再スケール済み")
     print(f"# 重み: 壁面弧長 ds" + (" x 周長 2*pi*r (axisym)" if a.axisym else "") +
           f"   範囲 x=[{a.xmin},{a.xmax}]")
     print()
