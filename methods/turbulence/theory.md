@@ -451,6 +451,36 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     **cell では同じ DOF の $\omega$ がピンされていて $S$ に応答しない**のが差の出所。
     分離実験と修正候補は
     [plan: turbulence-node-wf-omega-source](../../plans/active/turbulence-node-wf-omega-source.md)。
+  - **★ 分離実験の結果 (2026-08-12)**: この構成の寄与を 2×2 factorial で分離した
+    ($\omega$ Dirichlet ピン × SST shear limiter 迂回、case/26 平板 y+27、
+    外部相関 $C_f/C_{f,\mathrm{KS}}$、W–I 双対面で実際に加わった接線力ベース、
+    判定帯 $x$=[0.640, 0.784] で全 run $Re_\theta\ge4000$):
+
+    | | bypass=0 | bypass=1 |
+    | --- | --- | --- |
+    | pin=0 | 0.7615 | 0.7670 |
+    | pin=1 | 0.8594 | **0.8864** |
+
+    平均主効果 pin **+0.1087** / bypass **+0.0163** / 相互作用 **+0.0215**。
+    → **$\omega$ 状態が最大因子**。limiter 迂回は単独では小さいが ($+0.0055$)、
+    $\omega$ ピン時には $+0.0270$ と有意な正の相互作用を持つ。
+    ただし**両方を入れても 0.8864** で壁解像基準 $0.94\pm0.02$ に届かない
+    (中心まで 70% / 下限まで 79% の回復) ので、
+    **この特定の $\omega$ Dirichlet 値と迂回の組合せでは説明しきれない**。
+    残差分の候補は ①ピン値そのもの ②ピンする DOF/範囲 ③$P_\omega$・拡散・交差拡散など
+    別の $\omega$ 機構 ④$k$–$\omega$ 結合。
+  - **★ 壁応力の伝達は健全 (2026-08-12)**: 「モデル $\tau_w$ が内部ノード残差に届いていない」
+    可能性は診断で否定された。AddTauWall 後の接線力は W–I 双対面上で意図した
+    $\tau_w A_{\rm WI}$ になり、その同じ力が内部ノードの運動量残差へ加算される
+    (壁ノード側の運動量残差は `nodeWallDirichlet_d.cu` でゼロ化されるので反力は内部側に残る)。
+    再スケールが traction ベクトル全体に掛かる件も、**発達域では法線成分が接線の
+    $2.7\times10^{-5}$** で実害なし (ただし前縁の壁∩対称面コーナーでは局所 0.34 に達するので
+    「全域で無害」と一般化しない)。
+  - **診断の使い方**: `FORGE_WI_FORCE_DIAG=1` で `wi_ftan`/`wi_fnrm`/`wi_fnrm_abs`/`wi_ftan_res`
+    を出力する (OFF なら確保も出力もされない)。`FORGE_WF_LIMITER_BYPASS` (−1/0/1) で
+    limiter 迂回を $\omega$ ピンから独立に切れる (node SST 壁関数時のみ有効)。
+    第一内層ノードのマスクは `wf_irep_flag` (`wf_pk>=0` は壁ノードにも立つので代用不可、
+    cell では常に 0)。
 
 #### (f) 断熱壁の熱的閉包 — Crocco 型回復温度 $T_{aw}$ (`sstThermalWallFunction`)
 

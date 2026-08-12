@@ -753,7 +753,7 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
         if (on) printf("[DIAG] W-I force diagnostic ON (FORGE_WI_FORCE_DIAG)\n");
         return on;
     }();
-    if (wiDiagOn) {
+    if (wiDiagOn && var.c_d.count("wi_ftan")) {
         gpuErrchk(cudaMemset(var.c_d["wi_ftan"],     0, sizeof(flow_float)*msh.nCells_all));
         gpuErrchk(cudaMemset(var.c_d["wi_fnrm"],     0, sizeof(flow_float)*msh.nCells_all));
         gpuErrchk(cudaMemset(var.c_d["wi_fnrm_abs"], 0, sizeof(flow_float)*msh.nCells_all));
@@ -854,8 +854,10 @@ void viscousFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh 
          || wmlesNodeActive(cfg, msh))
             ? var.c_d["Tau_Wall"] : nullptr,
         // 診断 (§4.2): W-I 実力集計。毎ステップ 0 クリアしてから渡す。
-        wiDiagOn ? var.c_d["wi_ftan"] : nullptr, wiDiagOn ? var.c_d["wi_fnrm"] : nullptr,
-        wiDiagOn ? var.c_d["wi_fnrm_abs"] : nullptr, wiDiagOn ? var.c_d["wi_ftan_res"] : nullptr,
+        (wiDiagOn && var.c_d.count("wi_ftan"))     ? var.c_d["wi_ftan"]     : nullptr,
+        (wiDiagOn && var.c_d.count("wi_fnrm"))     ? var.c_d["wi_fnrm"]     : nullptr,
+        (wiDiagOn && var.c_d.count("wi_fnrm_abs")) ? var.c_d["wi_fnrm_abs"] : nullptr,
+        (wiDiagOn && var.c_d.count("wi_ftan_res")) ? var.c_d["wi_ftan_res"] : nullptr,
         // node WMLES 等温壁 / node SST エネルギー壁関数 (§6.5(g)) のとき Qw_Wall を渡し
         // AddQWall (W-I 熱流束置換)。それ以外は nullptr (Qw_Wall 未初期化のため)。
         (wmlesNodeIsothermalActive(cfg, msh) || sstEnergyWfNodeActive(cfg, msh))
