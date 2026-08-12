@@ -403,6 +403,10 @@ __global__ void compute_des_length_d(
 
 void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
+    // node SST 壁関数が有効か (2×2 分離ゲートと wf_irep_flag の受け渡しに使う)
+    const bool sstWfActive = (cfg.discretization == "node" && cfg.LESorRANS == 2
+                              && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1);
+
     if (cfg.LESorRANS == 1) { // LES
 
         if (cfg.LESmodel == 1) {
@@ -459,9 +463,12 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
             var.c_d["vis_turb"],
             (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeOmegaWfDirichlet == 1)
                 ? var.c_d["roOmega_wf"] : nullptr,
-                var.c_d["wf_irep_flag"],
-                // 2×2 分離: FORGE_WF_LIMITER_BYPASS (未設定=-1 従来 / 0=OFF / 1=ON)
-                [] {
+                // wf_irep_flag は ransWallFunction の init でのみ 0 クリアされるので、
+                // node SST 壁関数が有効なときだけ渡す (未初期化値を読ませない)。
+                sstWfActive ? var.c_d["wf_irep_flag"] : nullptr,
+                // 2×2 分離: FORGE_WF_LIMITER_BYPASS (未設定=-1 従来 / 0=OFF / 1=ON)。
+                // 壁関数が非有効な構成では常に -1 (従来経路) に固定する。
+                !sstWfActive ? -1 : [] {
                     static const int v = [] {
                         const char* s = std::getenv("FORGE_WF_LIMITER_BYPASS");
                         const int x = s ? std::atoi(s) : -1;

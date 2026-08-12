@@ -125,11 +125,16 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0043_node_yp112_planar_2nd` | 同掃引の粗い側: 第一層 6.588e-4 (`mesh/flat_plate_ny38_planar.geo`, y+101.5) | $u_\tau$=2.350。**y+ 27→102 (3.7 倍) で $u_\tau$ の変化 0.3%** = node 壁関数は y+ 非依存 | active (y+ 掃引) |
 | `run_0044_cell_yp30_wf_regr` | cell y+30 壁関数を**現行バイナリで再走** (run_0017 は旧バイナリで `wf_pk`/`Pk_diag` 未出力のため対照にならない)。run_0017 res_10000 から restart、5000 step | $u_\tau$=2.586 (run_0017 と一致)。生産収支比較の cell 基準 | active (cell 対照) |
 | `run_0045_node_yp30_kwfdir0` | **`nodeKwfDirichlet: 0` A/B** (既定 1 = 第一内層 k を Dirichlet 固定)。run_0042 と同一 IC/設定 | 実効生産が 3.1 倍になるが $u_\tau$ は +0.55% のみ → **「生産規約が真因」を反証** | active (反証の証拠) |
-| `run_0046_node_yp30_omgwfdir1` | **`nodeOmegaWfDirichlet: 1` A/B** (第一内層の $\omega$ も固定)。run_0042 と同一 IC/設定 | $\omega$@第一内層 2.645e5→1.213e5、**$C_f$/真値 0.843→0.957 = 欠損の 73% 回復** → **主因は $\omega$** | active (**主因特定の証拠**) |
+| `run_0046_node_yp30_omgwfdir1` | **`nodeOmegaWfDirichlet: 1` A/B** (第一内層の $\omega$ も固定)。run_0042 と同一 IC/設定 | $\omega$@第一内層 2.645e5→1.213e5。ただしこのスイッチは $\omega$ ピンと limiter 迂回を**束ねている**ので単独因子の証拠にならない (§3 の 2×2 で分離済: 平均主効果 pin +0.108 / bypass +0.016 / 相互作用 +0.021) | active (2×2 の $Y_{11}$ 相当) |
 | `run_0050_node_lowre_fine_regr` | **node の壁解像 (壁関数なし) 検証**: planar 細メッシュ (`flat_plate_planar.h5`, y+0.7) + `wallTreatmentSST: 0` + MUSCL、現行 binary、`run_node_sst_muscl_cont` res_90000 から restart 20000 step | **$C_f/C_{f,\mathrm{KS}}$ = 0.943** (cell 壁解像 0.954 と 1.1% 差)、収支 1.036、quasisteady **ALL STEADY** → **node 離散化そのものは健全**と確定 | active (**node 無罪の証拠**) |
 | `run_0047_su2_sst_ny52` | SU2 v8.5.0 low-Re (壁関数なし)、`run_0042` と同一メッシュ | $C_f/C_{f,\mathrm{KS}}$=0.365、収支 0.181、$\mu_t/\mu$ 340–452 で**破綻** → low-Re を y+27 に当てる誤りは SU2 でも同じ | 破棄予定 (設定誤りの記録) |
 | `run_0048_su2_sst_wf_ny52` | **SU2 + `STANDARD_WALL_FUNCTION`**、`run_0042` と**完全同一メッシュ・BC・物性・流入乱流** | 壁 $C_f$/KS=0.793–0.796 だが **運動量収支 0.790 = 21% 破綻**、残差も rms −4.4 止まり (壁解像版は −12.4) → **解として棄却**。「SU2 も 0.75」という当初結論は撤回 | 破棄予定 (未収束・収支破綻の記録) |
 | `run_0049_su2_sst_lowre_fine` | **SU2 壁解像** (planar 細メッシュ, 第一 DOF y+0.70, low-Re) — node 壁解像の独立検証 | **rms −12.4 まで収束**。壁 $C_f$/KS=**0.938–0.944**、運動量収支 **0.999/0.995 (ほぼ完璧)** → forge node 壁解像 0.943 と **0.5% 以内で一致** | active (**node 離散化検証の正**) |
+| `run_0051_node_wf_widiag` | **W–I 実力診断の初回** (`wi_ftan`/`wi_fnrm`/`wi_ftan_res` 追加後、`run_0042` 場から 500 step) | $\Sigma$`wi_ftan`/$\int\rho u_\tau^2dx$=1.016–1.043、再スケール係数 0.640 | active (§4.2 初回) |
+| `run_0052_regr_bitinv` | `wf_irep_flag` 追加後の既定経路回帰 (`run_0051` と同一入力) | 差は rel 1e-6 = node の run-to-run 床 → 既定経路不変 | 破棄予定 (回帰記録) |
+| `run_0053_2x2_Y00` … `run_0056_2x2_Y11` | **2×2 factorial** ($\omega$ pin × limiter bypass、同一 IC・20000 step) | (1) W–I 実力 $C_f$/KS = 0.752 / 0.849 / 0.758 / 0.876。平均主効果 pin +0.1075、bypass +0.0160、相互作用 +0.0213 | active (**因子分離の正**) |
+| `run_0057_widiag2` | 法線力を**絶対値**で再測定 (`wi_fnrm_abs` 追加後) | $\Sigma\lvert F_n\rvert/\Sigma\lvert F_t\rvert$=0.0027%、局所最大 6.1e-5、再スケール係数 min 0.6400/median 0.6405/max 0.6410 | active (法線力無害の正) |
+| `run_005{3,4,5,6}_2x2_*_widiag` | 上記 4 run に `FORGE_WI_FORCE_DIAG=1` を付けた 500 step 再走 (W–I 実力取得用) | 判定 3 点セットの (1) 列の出所 | active (診断) |
 | `run_0041_node_yp30_z4_2nd` | **機構対照**: 押し出しを 1 層 → **4 層** (z ノード 2 枚 → 5 枚) にした同一 2 次設定 (`mesh/flat_plate_yp30_z4.geo`, 53775 ノード, 3000 step) | スパン方向モードの成長が **350 分の 1** (step3000 で spread 0.598 m/s vs run_0032 の 211.9)。= 発散は「node の slip BC 欠陥」でも「前縁」でもなく **spanwise が 2 ノードしかないこと**が原因と確定 | 破棄予定 (機構確定の記録) |
 | `run_0012_keep_es_ewt_fine` / `run_0013_keep_es_ewt_cont` | **単一スキーム KEEP+ES の RANS 検証 (正)**: 確立済み Cf 基準 run_0009 (EWT 細メッシュ y+0.35) と同一設定で flux のみ KEEP+ES 化、40k+20k ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)) | **合格**: implicit cfl20 安定・quasisteady `ALL STEADY`・**Cf ドリフト +0.006〜0.041%/20k で完全収束**。Cf/Schl = **0.88/0.91/0.94** (SLAU 0.91/0.95/0.97 比 **−3.6〜−3.9%** = 本 case の確立済みスキーム間ばらつき node vs cell MUSCL −3.4〜−3.9% と同帯)。**「KEEP+ES で SST-RANS」は成立** | active (KEEP+ES RANS 検証) |
 
@@ -1018,22 +1023,41 @@ AddTauWall 再スケール直後で `atomicAdd`、毎ステップ 0 クリア)�
 | x=[0.20, 0.95] | 4.9573e+00 | 4.8780e+00 | **1.0163** | 0.003% |
 | x=[0.45, 0.75] | 1.9399e+00 | 1.8595e+00 | **1.0432** | 0.002% |
 
-### 結論 1: 伝達は健全 (仮説を 1 つ消せた)
+### 結論 1: 配線は健全 (仮説を 1 つ消せた)
 
-**モデル $\tau_w=\rho u_\tau^2$ は W–I 双対面で 2–4% の精度で実際に流体へ作用している**。
-→ **「狙った壁応力が残差へ届いていない」という可能性は消えた**。欠損は伝達ではなく、
-**壁関数が低い $u_\tau$ を算出していること自体**にある (第一内点速度が低い → 低い $u_\tau$ →
-低い $\tau_w$ → 薄い BL、が自己整合している)。
+**【表現の訂正】** 比 1.016–1.043 を「伝達精度 2–4%」と書いたのは不正確だった。
+[`viscousFlux_d.cu`](../../solver_density_cuda/cuda_forge/viscousFlux_d.cu) の再スケールは
+**局所的に $|F_t|=\tau_w A_{\rm WI}$ になるようコード自身が強制している**ので、
+比の 2–4% は主に **W–I 双対面積による和と壁面側 $\int\tau_w dx$ の幾何・積分差、
+および station の切り方/端点処理**である。正確な結論は:
 
-### 結論 2: 余計な法線力は実害なし (もう 1 つ消せた)
+> **AddTauWall 後の接線力は W–I 双対面上で意図した $\tau_w A_{\rm WI}$ になり、
+> その同じ力が内部ノード残差へ加算される。したがって本ケースの低摩擦は
+> 「壁応力が内部残差へ届かない」ことでは説明できない。**
 
-AddTauWall 再スケールが traction ベクトル全体に掛かる件 (コメントは「接線成分を再スケール」)
-を実測したところ、**法線成分は接線の 0.003%** で無視できる。
-コード/コメントの不一致は残るが、**本ケースでは実害なし**。
+壁ノード側の運動量残差は [`nodeWallDirichlet_d.cu`](../../solver_density_cuda/cuda_forge/nodeWallDirichlet_d.cu)
+でゼロ化されるので、**内部側に反力が残る構造**もコード上確認できる。
+
+### 結論 2: 余計な法線力は実害なし (絶対値・局所最大で再確認)
+
+初回は**符号付き和** `wi_fnrm` で見ており相殺の可能性があったため、
+**絶対値和 `wi_fnrm_abs`** を追加して再測定した (帯 x=[0.3,0.9]):
+
+| 量 | 値 |
+| --- | --- |
+| $\Sigma\lvert F_t\rvert$ | 3.87959e+00 N |
+| $\Sigma F_n$ (符号付き) | 1.06627e-04 N (0.0027%) |
+| **$\Sigma\lvert F_n\rvert$ (絶対値)** | **1.06627e-04 N (0.0027%)** |
+| 壁ノードごとの $\lvert F_n\rvert/\lvert F_t\rvert$ | max 6.13e-5 / median 2.90e-5 / min 8.62e-6 |
+
+符号付き和と絶対値和が一致 = **相殺は起きていない**。局所最大でも 6e-5。
+→ **法線力は無害**で確定。コード/コメントの不一致は残るが本ケースでは実害なし。
 
 ### 結論 3: 再スケールの向きは「増幅」ではなく「低減」だった (前提の訂正)
 
-$\Sigma$`wi_ftan_res` (再スケール前) = 6.0581 N → 再スケール後 3.8796 N で **係数 0.640**。
+$\Sigma$`wi_ftan_res` (再スケール前) = 6.0581 N → 再スケール後 3.8796 N で **集約比 0.6404**。
+**壁ノードごとの分布も min 0.6400 / median 0.6405 / max 0.6410 でほぼ一様**
+(帯域集約だけで語らないための確認)。
 $C_{f,\rm model}/C_{f,\rm molec}\approx2.1$ から「~2.1 倍に増幅される」と推定していたのは**誤り**。
 W–I 双対面の解像 traction は**壁の分子勾配ではなく $\mu_{\rm total}$ (乱流粘性込み) と双対面距離**で
 評価されるので、モデル $\tau_w$ より**大きい**。AddTauWall はそれを**下げて**モデル値に合わせている。
@@ -1044,45 +1068,63 @@ W–I 双対面の解像 traction は**壁の分子勾配ではなく $\mu_{\rm 
 次は §3 の 2×2 factorial ($\omega$ pin × strain limiter bypass) で
 $\omega$ 状態 / limiter / 源項のどれが効いているかを分離する。
 
-## §3 の 2×2 factorial — $\omega$ 状態が支配、limiter 迂回はほぼ無効 (2026-08-12)
+## §3 の 2×2 factorial — $\omega$ pin が最大因子 (2026-08-12、判定は 3 点セット)
 
-`nodeOmegaWfDirichlet` が $\omega$ ピンと SST shear limiter 迂回を**束ねていた**問題を、
-2 ビットに分解して分離した。
+`nodeOmegaWfDirichlet` が $\omega$ ピンと SST shear limiter 迂回を**束ねていた**問題を 2 ビットへ分解。
 
 ### 実装
 
-- **`wf_irep_flag`** (新規): node 壁関数の**第一内層ノード (irep) だけ**を 1 でマークする
-  ([`ransWallFunction_d.cu`](../../solver_density_cuda/cuda_forge/ransWallFunction_d.cu))。
-  `wf_pk>=0` は壁ノードにも立つのでマスクに使えない。**cell では常に 0** なので cell ビット不変が構造的に保証される。
-- **`FORGE_WF_LIMITER_BYPASS`** (env, 既定 −1): $\mu_t=\rho a_1k/\max(a_1\omega,SF_2)$ の迂回を
-  $\omega$ ピンから切り離す。−1=従来 (ピンに追随) / 0=強制 OFF / 1=強制 ON (irep のみ)
-  ([`turbulent_viscosity_d.cu`](../../solver_density_cuda/cuda_forge/turbulent_viscosity_d.cu))。
-  **既定 −1 は従来と完全同一経路**。
+- **`wf_irep_flag`**: node 壁関数の**第一内層ノード (irep) だけ**を 1 でマーク
+  (`wf_pk>=0` は壁ノードにも立つのでマスクに使えない)。**cell では常に 0** = cell ビット不変が構造的に保証。
+  **node SST 壁関数が有効なときだけ**カーネルへ渡す (未初期化値を読ませない)。
+- **`FORGE_WF_LIMITER_BYPASS`** (env, 既定 −1=従来 / 0=OFF / 1=ON@irep)。壁関数非有効時は常に −1 に固定。
+- **`FORGE_WI_FORCE_DIAG`** (env): W–I 実力診断の 0 クリア/集計を**診断時のみ**有効化 (通常経路の性能を変えない)。
 
-### 結果 (x=0.6、全 run 同一 IC・20000 step・quasisteady `STEADY`)
+### 判定 3 点セット (帯 x=[0.60, 0.80]、全 run 同一 IC・20000 step・quasisteady `STEADY`)
 
-| | bypass=0 | bypass=1 |
-| --- | --- | --- |
-| **pin=0** | $Y_{00}$ = **0.762** (`run_0053`) | $Y_{01}$ = **0.768** (`run_0055`) |
-| **pin=1** | $Y_{10}$ = **0.862** (`run_0054`) | $Y_{11}$ = **0.889** (`run_0056`) |
+| run | (1) **W–I 実力** $C_f$/KS | (2) 運動量積分 $C_f$/KS | (1)/(2) 収支 | (参考) 壁法則 $C_f$/KS |
+| --- | --- | --- | --- | --- |
+| $Y_{00}$ pin0 byp0 (`run_0053`) | **0.752** | 0.800 | 0.941 | 0.765 |
+| $Y_{10}$ pin1 byp0 (`run_0054`) | **0.849** | 0.873 | 0.972 | 0.864 |
+| $Y_{01}$ pin0 byp1 (`run_0055`) | **0.758** | 0.799 | 0.949 | 0.771 |
+| $Y_{11}$ pin1 byp1 (`run_0056`) | **0.876** | 0.888 | 0.987 | 0.891 |
 
-($C_f/C_{f,\mathrm{KS}}$、(d) 壁法則逆解き。運動量積分 (c) は 0.752/0.753/0.848/0.873 で全 run 自己整合)
+(W–I 実力は `*_widiag` run で `FORGE_WI_FORCE_DIAG=1` 再走して取得)
 
-$$\text{主効果 pin} = +0.100,\qquad
-\text{主効果 bypass} = +0.006,\qquad
-\Delta_{\rm int}=Y_{11}-Y_{10}-Y_{01}+Y_{00} = +0.021$$
+### factorial (応答量 = (1) W–I 実力 $C_f$/KS)
+
+| | 値 |
+| --- | --- |
+| 単純効果 pin (byp=0) $Y_{10}-Y_{00}$ | **+0.0968** |
+| 単純効果 pin (byp=1) $Y_{11}-Y_{01}$ | **+0.1181** |
+| 単純効果 bypass (pin=0) $Y_{01}-Y_{00}$ | +0.0054 |
+| 単純効果 bypass (pin=1) $Y_{11}-Y_{10}$ | **+0.0267** |
+| **平均主効果 pin** | **+0.1075** |
+| **平均主効果 bypass** | **+0.0160** |
+| **相互作用** $\Delta_{\rm int}$ | **+0.0213** |
+
+**用語の訂正**: 以前「主効果」と書いていた $Y_{10}-Y_{00}$ / $Y_{01}-Y_{00}$ は
+**相手因子が OFF のときの単純効果**であり、factorial の平均主効果ではない。
 
 ### 結論
 
-1. **$\omega$ 状態が支配因子** — 全効果 +0.127 のうち **+0.100 (79%)** がピン単独。
-2. **limiter 迂回は単独ではほぼ無効** (+0.006)。
-   「case/40 の過大化は主に limiter bypass 由来」という従来の見立ては、少なくとも本ケースでは支持されない。
-3. **相互作用は +0.021 で無視できない** → 「$E1+E2$ の和」で評価してはいけないという指摘は正しかった。
-   ただし実際には pin が支配的なので、結論は変わらない。
-4. **両方入れても 0.889 で目標帯 0.94±0.02 に届かない** (必要 +0.178 に対し +0.127 = **71%**)。
-   → **残り ~29% は $\omega$ 状態でも limiter でもない別の要因**。§5 の E3 ($P_\omega$ を壁法則整合形へ) が次の候補。
+1. **$\omega$ pin が最大因子** (平均主効果 +0.1075 vs bypass +0.0160)。
+   **「全効果の 79% が $\omega$ 状態」という寄与率は撤回** — 相互作用の配分方法に依存するので一意に決まらない。
+2. **limiter 迂回は「ほぼ無効」ではない**。pin=0 では +0.0054 だが **pin=1 では +0.0267** で
+   事前に定めた有意差 $\pm0.02$ を超える。正しくは
+   **「単独効果は小さいが $\omega$ pin 時に正の相互作用を持つ。それでも pin 効果より小さい」**。
+3. **回復率**: $Y_{11}$=0.876 は目標帯 0.94±0.02 に対し
+   **中心 0.94 まで 66% / 下限 0.92 まで 74%** の回復 (どちらを基準にしたか必ず明記する)。
+4. **「残り ~29% は $\omega$ 状態でも limiter でもない別要因」は撤回**。
+   $Y_{11}$ が目標に届かないことから言えるのは
+   **「今回試した特定の $\omega$ Dirichlet 値と bypass の組合せでは目標を再現しない」**までである。
+   残差分は ①pin 値そのものが不適切 ②pin する DOF/範囲が不適切
+   ③$P_\omega$・拡散・交差拡散など**別の $\omega$ 機構** ④$k$–$\omega$ 結合、のいずれもありうる。
+   E3 はまさに $\omega$ 方程式への介入なので、「$\omega$ 状態でも limiter でもない」と断定すると自己矛盾する。
+5. 収束は**全 run `NOT CONVERGED`**、派生量が `STEADY`。「収束した」とは言わない。
 
-### 位置づけ
+### 位置づけと次
 
-`nodeOmegaWfDirichlet: 1` は依然として**採用しない** (case/40 で $\tau_w$ 過大化)。
-本実験は「どの因子が低摩擦解を作っているか」の分離が目的であり、Dirichlet を対策にする話ではない。
+`nodeOmegaWfDirichlet: 1` は依然**採用しない** (case/40 で $\tau_w$ 過大化)。本実験は因子分離が目的。
+**次は §4.1 の $\omega$ 方程式の項別収支** ($P_\omega$/$D_\omega$/交差拡散/輸送) を出し、
+**それを根拠に E3 を設計**する。E3 へ直行しない。

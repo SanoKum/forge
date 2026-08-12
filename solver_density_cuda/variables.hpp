@@ -133,10 +133,11 @@ public:
         // 運動量残差へ加えられた** 粘性 traction を壁ノードに集計する。狙った τ_w が本当に
         // 作用しているかの確認用 (twall 出力はモデル目標値へ再スケール済みで独立検証にならない)。
         //   wi_ftan     : AddTauWall 再スケール **後** の接線力の大きさ [N] (面積込み)
-        //   wi_fnrm     : 同じく法線成分 [N] (再スケールが法線も増幅する件の実測)
+        //   wi_fnrm     : 同じく法線成分の **符号付き** 和 [N] (相殺しうるので単独で判断しない)
+        //   wi_fnrm_abs : 同じく法線成分の **絶対値** 和 [N] (相殺なし。|Fn|/|Ft| はこちらで見る)
         //   wi_ftan_res : 再スケール **前** の解像接線力 [N]
         // 毎ステップ 0 クリアして atomicAdd で積む。壁ノード以外は 0。
-        "wi_ftan", "wi_fnrm", "wi_ftan_res",
+        "wi_ftan", "wi_fnrm", "wi_fnrm_abs", "wi_ftan_res",
         // 診断/分離実験 (2026-08-12, plan §3 の 2×2 factorial): node 壁関数の **第一内層ノード
         // (irep)** を 1 でマークする (壁ノード・非対象は 0)。`wf_pk>=0` は壁ノードにも立つため
         // 「第一内層だけ」を選ぶマスクとしては使えない。cell では常に 0 (= cell ビット不変が構造的に保証)。
@@ -223,7 +224,7 @@ public:
         "res_roOmega" , "src_jac_omega" , "transport_diag_omega" , "res_roK" ,
 
         // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
-        "wi_ftan" , "wi_fnrm" , "wi_ftan_res" , "wf_irep_flag" ,
+        "wi_ftan" , "wi_fnrm" , "wi_fnrm_abs" , "wi_ftan_res" , "wf_irep_flag" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"
