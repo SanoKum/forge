@@ -452,7 +452,10 @@ BL が薄い ($\theta$ −15%) → $\tau_w$ が小さい ($u_\tau$ −9%) → $P
 cell は壁解像解に対し $C_f$ を +2.7% で再現しており**較正済みの規約**なので、当面は
 これを基準に node を合わせるのが妥当。
 
-### 反証と真の主因: 第一内層ノードの $\omega$ スパイク (2026-08-12)
+### 反証と、第一内層ノード $\omega$ への局在化 (2026-08-12) — **主因は未分離 (仮説段階)**
+
+> **本節の「真の主因」表現は 2 度目のレビューで再度差し戻した**。$\omega$ 周辺への局在化は妥当だが、
+> ①機構の説明が現行実装と違い、②A/B が limiter bypass と交絡している。§2'/§3' に訂正を置く。
 
 前節の「生産規約 78% が真因」を**実験で反証**し、主因を $\omega$ に特定した。
 
@@ -527,3 +530,59 @@ cell と整合させること** (壁関数生産を受ける DOF と $\omega$ �
 残差は全 run で block-DPLUR の構造プラトー (`NOT CONVERGED`) だが、**報告している派生量 $u_\tau$ は
 定常**: 最終 2 スナップショット間のドリフトは run_0040 0.001% / run_0042 0.075% / run_0043 0.025% /
 run_0044 0.001% / run_0045 0.013% / run_0046 0.070%。
+
+#### 2'. 機構の訂正: $P_\omega$ は `wf_pk` と結合していない
+
+「第一内層が `wf_pk` を受け、$\nu_t$ が小さいので $P_\omega\propto P_k/\nu_t$ が過大」という説明は
+**現行実装として誤り**。[`ransSource_d.cu:178`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) は
+
+$$P_\omega=\alpha\rho S^2$$
+
+であり `wf_pk` と独立。`wf_pk` を変えても $P_\omega$ は動かない (それが §1 の反証とも整合する)。
+
+**実測による正しい説明**: スパイクは **$\alpha\rho S^2$ と $\beta\rho\omega^2$ の局所源項平衡そのもの**。
+`run_0042` 第一内層 (x=0.6) を再構成すると
+
+| 量 | 値 |
+| --- | --- |
+| 解像ひずみ $S$ | 1.0750e5 s⁻¹ |
+| $F_1$ | 0.621 → $\alpha$=0.5118, $\beta$=0.07796 |
+| 局所平衡 $\sqrt{\alpha/\beta}\,S$ | 2.754e5 |
+| **実測 $\omega$** | **2.645e5** (比 0.960) |
+
+で、ほぼ完全に源項平衡で決まっている。「第一層距離の半分での Menter blend と一致」は結果的な近さで、
+こちらが直接の説明。**cell では同じ DOF の $\omega$ がピンされていて $S$ に応答しない**のが差の出所。
+
+さらに、壁法則整合のひずみ $S_{\rm wf}=u_\tau^2 g/\nu$ と比べると
+
+| $y^+$ | 解像 $S$ | $S_{\rm wf}$ | $S/S_{\rm wf}$ | $(S/S_{\rm wf})^2$ |
+| --- | --- | --- | --- | --- |
+| 27.1 | 1.075e5 | 5.146e4 | 2.09 | **4.36** |
+| 56.9 | 3.192e4 | 1.623e4 | 1.97 | 3.87 |
+| 89.6 | 1.531e4 | 9.611e3 | 1.59 | 2.54 |
+
+→ y+30 メッシュの**未解像な離散勾配**が壁法則の 2 倍あり、$S^2$ で 4.4 倍の $P_\omega$ を生んでいる。
+
+#### 3'. A/B の交絡: `nodeOmegaWfDirichlet` は $\omega$ だけを変えていない
+
+[`turbulent_viscosity_d.cu:222`](../../solver_density_cuda/cuda_forge/turbulent_viscosity_d.cu):
+
+```cpp
+const bool wfPin = (roOmega_wf != nullptr && roOmega_wf[ic] >= 0);
+vis_turb[ic] = wfPin ? rho * k_c / w_c
+                     : rho * a1 * k_c / max(a1 * w_c, S_mag * F2);
+```
+
+このスイッチは (a) 第一内層 $\omega$ のピン、(b) **SST shear limiter $\max(a_1\omega, SF_2)$ の迂回**、
+(c) $\mu_t=\rho k/\omega$ への切替を**同時に**行う。したがって $C_f$ 0.843→0.957 は
+「$\omega$ 低下」と「limiter bypass」の**合成効果**であり、$\omega$ 単独の効果ではない。
+case/40 で $\tau_w$ が 1.237 倍に過大化したのも、既存調査では主に limiter bypass による $\mu_t$ 過大とされている
+([plan §10c](../../plans/accepted/turbulence-sst-su2-taw-coupling.md))。
+
+#### 4'. 現時点の正確な結論
+
+**第一内層ノードの「k 半拘束ピン + $\omega$ free + 解像 $S$ による $P_\omega$」の周辺に問題があり、
+`nodeOmegaWfDirichlet` 経路を通すと大幅改善する。ただし効いているのが $\omega$ 状態なのか
+strain limiter なのか両方なのかは未分離。** 「真因確定」とは言わない。
+
+分離実験と恒久修正候補は [plan: turbulence-node-wf-omega-source.md](../../plans/active/turbulence-node-wf-omega-source.md) に起票した。
