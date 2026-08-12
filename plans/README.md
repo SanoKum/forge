@@ -36,8 +36,6 @@
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [tooling-cloud-gpu-env.md](active/tooling-cloud-gpu-env.md) | `tooling / infra` | クラウド GPU 環境 (AWS EC2 spot): Docker 構築・計算投入・速度計測基盤。MPI 化の実行基盤を先行整備 |
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
-| [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ。E2E 現バイナリ回帰済 (run_0071)、クローズ準備中 |
-| [tooling-nozzle-moo-loop.md](active/tooling-nozzle-moo-loop.md) | `tooling / optimization` | ↑の Phase 2 子 plan (2026-08-13 起票): ③ベル MOO ループ — **TOP 直接幾何 dv** ($\theta_n,\theta_e,L$)・pymoo+SMT・EHVI infill・**Rao 照合** (帰還エンジン非依存、①のモード F へ後送) |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
@@ -47,6 +45,8 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [tooling-nozzle-moo-loop.md](accepted/tooling-nozzle-moo-loop.md) | `tooling / optimization` | ノズル設計 Phase 2 (2026-08-13 完了): ③ベル **TOP 幾何 dv** の MOO ループ — 自作 EHVI (MC 照合 ≤0.1%・ZDT1 99.96%)・バッチドライバ (2 段起動・物理ゲート)・50 評価 28 分で前線 19 点 (ポリッシュ 19/19 settled)・**Rao 照合合格** (チャート点が前線上 +0.05%) |
+| [tooling-nozzle-phase0-foundation.md](accepted/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ノズル設計 Phase 0 (2026-08-13 完了): 問題定義 YAML・区分構成ジオメトリ・TFI→msh4.1→forge メッシュ・バッチ評価 CLI・推力メトリクス。E2E 基準 = run_0071/0072。Kliegel–Levine 高次は③2巡目へ後送 |
 | [turbulence-sst-su2-taw-coupling.md](accepted/turbulence-sst-su2-taw-coupling.md) | `turbulence / boundary` | SST 断熱壁の熱的閉包 **mode 3 defect-flux を正式採用** (2026-08-11): Couette 恒等式 q+τu=0 に基づく保存的 W–I 全エネルギー流束 $H_T(T_{aw}-T_W)$ で T[W]→Taw を残差の解として実現 (壁温 1418K プラトー・SU2 実状態 10K 一致・η 不変)。mode 2 (SU2 overlay) は未採用の失敗記録。follow-up: ω irep ピン正式化・壁 μt 監査 |
 | [turbulence-sst-adiabatic-taw-fluxmodel.md](accepted/turbulence-sst-adiabatic-taw-fluxmodel.md) | `turbulence / boundary` | SST 断熱壁 T_aw の W-I 流束注入初回試行は**実測発散で棄却** (壁ノードが EOS 床まで異常冷却; root cause は未確定で壁半 CV 全体が調査対象)。現行 = output-only fallback (Tsb/Taw_diag 出力専用, 生産 baseline)。後継: [turbulence-sst-su2-taw-coupling.md](accepted/turbulence-sst-su2-taw-coupling.md) (mode 3 defect-flux 採用で決着) |
 | [architecture-node-boundary-gradient-dof-only.md](accepted/architecture-node-boundary-gradient-dof-only.md) | `architecture / discretization` | node 境界勾配 (GG/LSQ) から bvar を排除し owner-state のみに統一 (node outlet P/T interior 化の一般化)。outlet 非退行・cell 不変を検証済。turbulence-sst-adiabatic-taw-fluxmodel (未完了) の前提 |

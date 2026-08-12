@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) (現在仕様)
 - **related_plans**:
@@ -88,13 +88,23 @@
 
 ## 8. 完了条件
 
-- [ ] §5 の 1–6 実装・実行
-- [ ] Rao 照合の合格判定 (§6) を親計画 §6 Phase 2 に記録
-- [ ] `methods/design/overview.md` 同期
-- [ ] status を done にして `accepted/` へ移動、`plans/README.md` 同期
+- [x] §5 の 1–6 実装・実行
+- [x] Rao 照合の合格判定 (§6) を親計画 §6 Phase 2 に記録
+- [x] `methods/design/overview.md` 同期
+- [x] status を done にして `accepted/` へ移動、`plans/README.md` 同期
 
 ## 9. 変更ログ
 
+- `2026-08-13` — **完了 (ステップ 5b ポリッシュ + ステップ 6 Rao 照合合格)**。
+  (i) **前線ポリッシュ**: `opt/polish.py` (チャンク継続 + |Δη|<3e-4 頭打ちゲート — ユーザ指摘
+  「収束解で比較を強制」の実装)。前線 19 点全てが +12000 step 継続で **19/19 settled・η 不変**
+  = 残差 STALLED 12 点もリミットサイクルであって未収束ではないことを実証。前線確定。
+  (ii) **Rao 照合** (`run_0075_rao_check`, 同一評価系・ポリッシュ込み): チャート忠実点
+  rao80 (θn33.8°/θe12.1°/L5.97, case/29 digitize の log 補間 @ε=9) は **η=0.96608 で前線補間値
+  0.96661 と差 +0.053%** — 前線に載る (合格基準 ±0.3% 内)。対照の rao100 (θn を 80% 値の
+  まま 100% 長に流用 = 意図的に非最適) は前線が **+0.28% 支配** — 「誤った θn は正しく
+  支配される」の整合。**§6 合格基準 (i)(ii) とも成立 → Phase 2 完了**、`accepted/` へ移動。
+  図 = `run_0074_moo_top_r1/pareto_final_rao.png`。
 - `2026-08-13` — §5 ステップ 5 完了 (本番キャンペーン `run_0074_moo_top_r1`): **50 評価 28 分で
   49 PASS**、パレート 19 点 (η 0.953@L5 → 0.980@L10)。所見: (i) 前線ほぼ全点で θe が下限 4° に
   張り付く (同 L では出口角を寝かせて発散損失を削るのが最適 — 物理的に妥当)、θn は 21–27° の

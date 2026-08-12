@@ -6,7 +6,8 @@ forge を粘性評価器とする超音速ノズル設計ツールの現在仕�
 [`notes/investigations/nozzle-optimization-tool-survey.md`](../../notes/investigations/nozzle-optimization-tool-survey.md)
 を参照。本文書は「ツールが現在どう動くか」のみを記す。
 
-> 状態: Phase 0 (基盤) 実装中。本文書は実装と同期して更新する。
+> 状態: Phase 0 (基盤)・Phase 2 (③ベル MOO + Rao 照合合格) 完了 (2026-08-13)。
+> 次 = Phase 3 (①風洞: モード F + 帰還エンジン v1–v3 + CONTUR 照合)。本文書は実装と同期して更新する。
 
 ## 全体像
 
@@ -40,8 +41,8 @@ v2 Euler 帰還 [凍結特性線マップ] → v3 NS トレース) で決まる�
 | `meshing` | 構造化 TFI メッシュ生成 (トポロジ固定) → forge HDF5 直書き、品質ゲート |
 | `evaluate` | バッチ評価 CLI: run ディレクトリ準備 → forge 起動 → 収束/NaN 自動判定 |
 | `metrics` | `res_*.h5` からの目的関数抽出 (固定サンプリング格子補間) |
-| `feedback` | 帰還エンジン (Phase 1) |
-| `opt` | サロゲート MOO ループ (Phase 2: pymoo + SMT) |
+| `feedback` | 帰還エンジン (①モード F の Phase 3 で実装 — 親計画 §4.7 改訂) |
+| `opt` | サロゲート MOO ループ (**実装済み**): `ehvi` (2目的 EHVI 閉形式・MC照合済) / `doe` (LHS) / `surrogate` (SMT KRG) / `moo` (NSGA-II+EHVI infill) / `driver` (バッチ評価: 2段起動・VERDICT/物理ゲート・warm seed) / `polish` (チャンク継続+ηドリフトゲート)。実行は `design/.venv-opt` |
 | `menu` | 特殊解析メニュー (凝縮・高度スイープ — Phase 3〜) |
 
 ## 問題定義 YAML

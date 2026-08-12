@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) (現在仕様)
 - **related_plans**:
@@ -85,10 +85,12 @@
 
 ## 8. 完了条件
 
-- [ ] §5 の 1–5 実装
-- [ ] §6 の検証 3 点 PASS (VERDICT 記録)
-- [ ] `methods/design/overview.md` を実装と同期
-- [ ] status を done にして `accepted/` へ移動、`plans/README.md` 同期
+- [x] §5 の 1–5 実装
+- [x] §6 の検証 3 点 PASS (VERDICT 記録 — 単体 ALL PASS / メッシュ品質 PASS / E2E は
+  run_0002 (cell)・run_0022 (node)・run_0071 (現バイナリ回帰, ALL STEADY) で記録)
+- [x] `methods/design/overview.md` を実装と同期
+- [x] status を done にして `accepted/` へ移動、`plans/README.md` 同期 (2026-08-13。
+  Kliegel–Levine 高次は③2巡目へ後送で確定 — 親計画 §4.6③)
 
 ## 9. 変更ログ
 
