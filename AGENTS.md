@@ -34,6 +34,8 @@
 
 `solverConfig.yaml` の `convMethod`・`limiter` などの数値設定を変更・確認するときは、必ず `procedures/solver-settings.md` を参照すること。設定値の意味を記憶や推測で判断しないこと。
 
+**`mesh.bndFirstOrder` は使用禁止**。新規 config に書かないこと。既存 run から複製するときも必ず落とすこと。このフラグは (1) 対流再構成だけでなく `viscousFlux` が読む速度勾配も 0 にするため**粘性応力を破壊**し、(2) `bnode_flag` が「いずれかの bcond の CV」なので疑似 2D (1 セル厚) メッシュでは spanwise 境界が全ノードを覆い**全域に効いてしまう**。したがって安定化しても交絡した副作用であり、切り分けにも対策にも使えない。詳細と削除計画は [`procedures/solver-settings.md`](procedures/solver-settings.md) の該当節と [`plans/active/architecture-bndfirstorder-removal.md`](plans/active/architecture-bndfirstorder-removal.md) を参照。
+
 **新規計算の投入時、および計算が発散 (NaN / 残差爆発) したときは、まず [`procedures/divergence-and-startup.md`](procedures/divergence-and-startup.md) を参照し、そのチェックリストと段階起動手順に従うこと。** 発散の大半は物理やメッシュでなく投入設定 (初期値が入口流れと不整合 / 超音速向け BC を亜音速に使用・出口逆流 Pt/Tt 未設定 / 初手から 2 次移流・乱流・no-slip / 非直交での free-stream 桁落ち) が原因であり、易しい条件で収束させてから引き継ぎ計算で段階的に上げるのが基本。
 
 エージェント自身が計算検証を実行する場合も、既存の `run_*` ディレクトリをそのまま使い回さず、必ず複製した新しい `run_*` ディレクトリで実行すること。

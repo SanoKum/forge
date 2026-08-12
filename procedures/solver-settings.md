@@ -127,13 +127,30 @@ time:
 `mesh.discretization` (任意, 既定 `"cell"`)。`"node"` で node-centered (中点双対 median-dual) 化。
 詳細は [`methods/discretization/`](../methods/discretization/)。
 
-`mesh.bndFirstOrder` (任意, 既定 `0`)。`1` で境界隣接 CV の 2 次 MUSCL 再構成を 1 次に落とす。
-node-centered の壁近傍高マッハ発散 (近壁 2 次再構成のロバスト性問題) の対策。explicit では
-リミットサイクルが残ることがあり、implicit と併用すると完全収束する (bump Mach1.65 で確認)。
-cell-centered では通常不要 (既定 0)。
+### `mesh.bndFirstOrder` — **使用禁止 (2026-08-12〜)**
+
+**`bndFirstOrder` は新規・既存を問わず使わないこと。** 設定ファイルに書かない。既存 run の
+config に残っている場合も、そこから複製するときに必ず落とす。削除は将来課題
+([plans/active/architecture-bndfirstorder-removal.md](../plans/active/architecture-bndfirstorder-removal.md))。
+
+禁止理由 (2026-08-12, case/26 の 2 次精度切り分けで判明):
+
+1. **粘性応力を破壊する**。`zeroBndNodeGradient_d` は再構成勾配として `dUxdx…dUzdz` を 0 にするが、
+   同じ配列を `viscousFlux_d.cu:114-118` が Newton 応力の面勾配として読む。「対流再構成のみを
+   対象とする」というコメントの意図に反し、**境界隣接 CV の粘性せん断応力が消える**。
+2. **適用範囲が意図より遥かに広い**。`bnode_flag` は *いずれかの* bcond の `iCells` を立てるため、
+   疑似 2D (1 セル厚) メッシュでは spanwise の `side1`/`side2` が全ノードを覆い
+   **flag が全域 1** になる (case/26: 21510/21510)。結果として「境界近傍だけ 1 次化」ではなく
+   **全域 1 次化 + 全域の粘性応力喪失**になる。
+3. そのため本フラグを付けた A/B は**切り分けとして成立しない** (2 つの副作用が交絡する)。
+   過去に「bndFirstOrder で解決/改善しなかった」と記録された判定は再解釈が必要。
+
+過去に本フラグで安定化したと記録されたケース (bump hiM node, 旧 node ノズルレシピ) は、
+実際には上記 1.–2. の副作用による安定化であり、正しい対策ではない。node ノズルのレシピからは
+すでに撤去済み ([plan §2.7](../plans/active/boundary-node-nozzle-wall-outlet-stability.md))。
 
 ```yaml
 mesh:
   discretization: "node"   # cell | node
-  bndFirstOrder: 1         # node-centered の壁近傍高マッハ安定化
+  # bndFirstOrder: 使用禁止 (書かないこと)
 ```

@@ -23,6 +23,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [architecture-bndfirstorder-removal.md](active/architecture-bndfirstorder-removal.md) | `architecture / boundary` | **`mesh.bndFirstOrder` の廃止**。使用禁止をルール化済 (粘性応力を破壊 + 疑似 2D で全域に効く)、コード削除が残タスク |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
 | [convection-keep-cb-pressure-correction.md](active/convection-keep-cb-pressure-correction.md) | `convection` | 高周波圧力欠陥 δp^HF 駆動の mass-flux 補正 (Rhie–Chow 型市松キラー, σ_min 独立で丘頂 spanwise 鋸歯を減衰) |
@@ -31,7 +32,7 @@
 | [discretization-lsq-gradient.md](active/discretization-lsq-gradient.md) | `gradient / architecture` | node-centered 最小二乗 (LSQ) 勾配 |
 | [discretization-median-dual-3d.md](active/discretization-median-dual-3d.md) | `architecture` | 3D median-dual (M4): 3D 双対生成 + periodic 双対面 (3D node DDES/LES の起点) |
 | [axisymmetric-su2-source-formulation.md](active/axisymmetric-su2-source-formulation.md) | `axisymmetric / discretization` | 軸対称を SU2 流 (planar 幾何+1/y ソース) に切替える `axisymMethod: 1`。node 軸行真空化の根治 (nodeAxisDirichlet 撤去) |
-| [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2/3 解決済 (§2.6-2.9)、**node 出口列不整合も根治 (§2.11, outlet Psb 動的化 — η 出口積分が正値に)**。残: 壁 T エントロピー市松 (§2.8) |
+| [boundary-node-nozzle-wall-outlet-stability.md](active/boundary-node-nozzle-wall-outlet-stability.md) | `boundary / discretization` | node ノズル安定性。課題1/2/3 解決済 (§2.6-2.9)、**node 出口列不整合も根治 (§2.11, outlet Psb 動的化 — η 出口積分が正値に)**。壁 T エントロピー市松も解消を実測確認 (§2.8, 43.5→0.25 K)。残: 帰属の同一メッシュ A/B のみ |
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [tooling-cloud-gpu-env.md](active/tooling-cloud-gpu-env.md) | `tooling / infra` | クラウド GPU 環境 (AWS EC2 spot): Docker 構築・計算投入・速度計測基盤。MPI 化の実行基盤を先行整備 |
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |

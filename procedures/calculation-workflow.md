@@ -273,6 +273,30 @@ python3 solver_density_cuda/tools/check_mesh_quality.py <run_dir>/mesh.h5
 - ツールは AR・skew の max / p99 / 違反セル数を出し `VERDICT: PASS / SOFT-PASS / FAIL` を返す。**FAIL なら計算を投入しない**。`SOFT-PASS` (違反<0.1%) は局所外れ値として許容しうるが、場所を確認する。
 - 近壁を細分化 (wall-resolved, 第一セル数μm) すると AR が増えやすい。**接線方向セルを細かくしすぎず、AR が 1000 を超えないよう第一セル厚と接線長のバランスを取る** (高 Re では y+~1 と AR≤1000 は両立しないことがあり、その場合は y+~30-80 + `wallTreatmentSST=1` を選ぶ)。
 - 「メッシュできた」「収束した」と報告する応答には、本ツールの品質 VERDICT も根拠として併記する。
+- なお `check_mesh_quality.py` は **primal (cell) 変換の h5 専用**で、median-dual (node) 変換した
+  h5 を渡すと `CONNE が NumberOfElements より短い` で落ちる (ツール側の制約)。node メッシュの
+  品質ゲートは、**同じ `.msh` を `discretization: "cell"` で変換した h5** に対して実行する
+  (primal 形状は同一なので AR/skew の判定として妥当)。
+
+## node モードのメッシュは平面 2D で作る (2D 問題・必須)
+
+**node-centered (median-dual) で 2D 問題を解くときは、cell で常用する「1 層押し出し + spanwise slip」の
+メッシュを使ってはならない。** 押し出しメッシュは node では spanwise に**ノードを 2 枚**作り、
+2 ノードしかない方向では **2 次精度 MUSCL の左右再構成が厳密に一致して上流差分の散逸が完全に消える**。
+その結果 spanwise 市松モードだけが無減衰になり、丸め誤差から指数成長して計算を壊す。
+**リミッタ (barth/venkata) も CFL 低減も LSQ 勾配も効かない** (機構と実測は
+[`methods/discretization.md`](../methods/discretization.md) §5.1)。
+
+- **2D 問題**: `.geo` で `Extrude` せず、`Physical Curve` で境界タグを付けた**平面 2D メッシュ**を作る
+  (例: [`case/26.flat_plate_sst/mesh/flat_plate_yp30_planar.geo`](../case/26.flat_plate_sst/mesh/flat_plate_yp30_planar.geo),
+  [`flat_plate_planar.geo`](../case/26.flat_plate_sst/mesh/flat_plate_planar.geo))。
+  `bcondConfig.yaml` から spanwise の `side1`/`side2` エントリを落とすこと。
+- **3D で均質方向を持つ場合**: その方向に**最低 3 ノード (2 層以上)** 確保する。
+- **症状の見分け方**: 発散したとき、まず**同一 (x,y) にある spanwise ノード間の値のばらつき**を測る。
+  疑似 2D なら厳密に 0 のはずで、これが成長していれば本件。局所的な「前縁の暴走」等に見えても
+  最終スナップショットだけ見ると発生源を取り違える (case/26 の実例)。
+- 既存の node run を複製するときは、**種メッシュが押し出し版でないか**を確認する
+  (`CELLS/centCoords` の z ユニーク値が 2 個なら該当)。
 
 ## 結果ディレクトリの明示 (投入時・まとめ時)
 

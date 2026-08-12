@@ -109,6 +109,43 @@ tet 非構造メッシュでは node-centered の自由度が大幅に少なく�
 - **粘性 over-relaxed 補正**: 双対では面法線とエッジ方向が概ね揃い、非直交補正項が小さく安定しやすい。
 - **混合要素双対**: セル重心がノード平均近似のとき双対体積も近似を継ぐ。高歪み・非凸要素では
   負体積に注意 (前処理でチェック)。
+- **★ 均質方向に 2 ノードしかないメッシュを使ってはならない (2 次精度が破綻する)**:
+  下記 §5.1。
+
+#### 5.1 2 ノード方向で MUSCL 散逸が厳密に消える (押し出し疑似 2D メッシュの禁止)
+
+cell-centered で 2D 問題を「1 層押し出し + spanwise slip」で解くのは常套手段だが、
+**node-centered では同じメッシュが spanwise に *ノード 2 枚* を作り、2 次精度が構造的に破綻する**。
+
+z=0 のノード $i$、z=dz のノード $j$、その間の双対面 (z=dz/2) を考える。両端は slip 境界なので
+GG 勾配は境界半割面 (owner-state) と内部 z 面の寄与だけで決まり、両ノードとも
+
+$$\left(\frac{\partial\phi}{\partial z}\right)_i=\left(\frac{\partial\phi}{\partial z}\right)_j=\frac{\phi_j-\phi_i}{dz}$$
+
+となる。これを面へ MUSCL 外挿すると
+
+$$\phi_L=\phi_i+\frac{\partial\phi}{\partial z}\Big|_i\frac{dz}{2}=\frac{\phi_i+\phi_j}{2},\qquad
+\phi_R=\phi_j-\frac{\partial\phi}{\partial z}\Big|_j\frac{dz}{2}=\frac{\phi_i+\phi_j}{2}$$
+
+で **$\phi_L=\phi_R$ が任意の場について厳密に成立する**。face jump が恒等的に 0 なので
+**Riemann/上流差分の散逸がこの方向で完全に消え、純中心差分になる**。2 ノード方向が表現できる
+唯一のモードは spanwise 市松 ($\phi_i\neq\phi_j$) なので、**そのモードだけが無減衰**となり
+丸め誤差から指数成長する。
+
+重要なのは、**リミッタでは止まらない**ことである。再構成値が隣接 2 点の**算術平均**なので
+常に min/max 内に収まり、Barth も Venkatakrishnan も作動しない (limiter = 1)。CFL を下げても
+散逸の欠落は空間離散の性質なので効かない。LSQ 勾配も 2 点ステンシルでは同じ相殺を起こし、
+GG の $f_x$ 平均によるわずかな平滑化すら失うため**さらに悪化する**。
+
+- **運用ルール**: node で 2D 問題を解くときは**押し出しをせず平面 2D メッシュ**
+  (`Physical Curve` タグ, z レベル 1) を作る。3D で均質方向を持つ場合は**最低 3 ノード
+  (2 層以上)** 確保する。
+- **実測**: case/26 平板で 1 層押し出し (z ノード 2 枚) は 2 次精度が step 1000 で
+  spanwise 非対称 120 m/s に暴走、4 層 (z ノード 5 枚) では同 step 数で 0.065 m/s
+  (**350 分の 1**)、平面 2D では 40000 step 完走。詳細と全観測の整合は
+  [`case/26.flat_plate_sst/README.md`](../case/26.flat_plate_sst/README.md) の該当節。
+- **将来課題**: 変換時 (`convertGmshToForge`) に「node モード × ある方向のノード数 2」を
+  検出して警告/エラーにする。
 
 ### 6. 境界条件: ゴースト法 vs 弱形式 (node-centered)
 
