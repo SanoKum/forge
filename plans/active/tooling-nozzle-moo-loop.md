@@ -95,6 +95,17 @@
 
 ## 9. 変更ログ
 
+- `2026-08-13` — §5 ステップ 4 完了: `opt/driver.py` (バッチドライバ)。スモーク
+  (`run_0073_moo_smoke`, DOE4+infill1) で 2 つの実装欠陥を発見し修正した:
+  (1) **cross-geometry warm start の陰解法 cfl4 直投入は発散せず「不始動流」という偽アトラクタ
+  に収束し得る** (machmax~1.4・CF~7・ṁ −13%) — 残差・quasisteady だけでは弾けないため、
+  **物理ゲート (ṁ/ṁ_1D ∈ [0.94,1.005], η ∈ (0.5,1.02), res_step=規定 step) を追加**し、
+  **全評価を soft 段 (convMethod 0+cfl0.5, 3000 step) → 本段の 2 段起動に統一** (run_0019/0034
+  レシピの常用化)。(2) soft 段の `outStepInterval` が段長を超え最終場が未ダンプ → 本段が seed
+  直投入相当になる罠 (+ quasisteady の「NOT ALL STEADY」部分文字列誤パース) を修正。
+  修正後スモーク = **5/5 PASS** (~33s/評価, conv PASS・ALL STEADY・ṁ 比 0.9858±0.0003,
+  η は L に単調応答 0.952@L5.1→0.978@L10.9)。本番キャンペーン `run_0074_moo_top_r1`
+  (DOE24+infill2×13=50 評価, seed=run_0072, ref=(−0.90,13)) を投入。
 - `2026-08-13` — §5 ステップ 3 完了: `opt/` モジュール新設 (`ehvi.py` = 2 目的 EHVI 閉形式
   [Hupkens–Yang–Emmerich 区分和] + hypervolume + 非劣解 / `doe.py` = LHS / `surrogate.py` =
   SMT KRG 束 [既定で決定的・補間的を確認] / `moo.py` = NSGA-II サロゲート探索 + EHVI infill

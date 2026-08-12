@@ -31,10 +31,12 @@ class _SurrogateProblem(Problem):
 
 def propose_infill(surro, X_eval, F_eval, ref, bounds, n_infill: int = 1,
                    seed: int = 0, pop_size: int = 64, n_gen: int = 60,
-                   n_explore: int = 1024, min_dist: float = 5e-3) -> np.ndarray:
+                   n_explore: int = 1024, min_dist: float = 5e-3,
+                   feasible=None) -> np.ndarray:
     """EHVI 最大の未評価点を n_infill 個提案する。
 
     min_dist: 正規化座標での重複排除半径 (提案同士と評価済み点の両方に適用)。
+    feasible: 実スケール x を受けて bool を返す事前フィルタ (幾何整合など)。
     """
     bounds = np.asarray(bounds, dtype=float)
     lo, span = bounds[:, 0], bounds[:, 1] - bounds[:, 0]
@@ -51,6 +53,8 @@ def propose_infill(surro, X_eval, F_eval, ref, bounds, n_infill: int = 1,
     Xn_eval = (np.atleast_2d(np.asarray(X_eval, dtype=float)) - lo) / span
     picked: list = []
     for i in np.argsort(-scores):
+        if feasible is not None and not feasible(cand[i]):
+            continue
         xn = (cand[i] - lo) / span
         if np.min(np.linalg.norm(Xn_eval - xn, axis=1)) < min_dist:
             continue
