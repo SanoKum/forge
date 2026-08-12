@@ -97,6 +97,102 @@ def q_pmax(cc, V):
     return float(V['P'][:].max())
 
 
+# ---- 平板専用: 運動量厚さ theta と Cf/Cf_KS (Karman-Schoenherr 外部相関) ----
+# 前提: 壁は y=0 で x>0 が平板 (case/26 系)。x<0 は slip の助走区間なので除外する。
+# Cf は「壁関数/壁解像を問わず同じ定義」にするため Reichardt 則の逆解きで u_tau を求める
+# (壁解像 y+<1 でも Reichardt は u+=y+ に縮退するので同一定義で扱える)。
+# theta は積分核が十分ゼロになる外部流まで積分する (delta99 で打ち切らない)。
+KAPPA_WL = 0.41
+
+
+def _reichardt_uplus(yp):
+    return np.log(1.0 + KAPPA_WL * yp) / KAPPA_WL + 7.8 * (
+        1.0 - np.exp(-yp / 11.0) - (yp / 11.0) * np.exp(-yp / 3.0))
+
+
+def _solve_utau(Ut, y, nu):
+    utau = np.sqrt(max(nu * Ut / max(y, 1e-30), 1e-30))
+    for _ in range(80):
+        utau = max(utau, 1e-12)
+        f = Ut / utau - _reichardt_uplus(utau * y / nu)
+        d = 1e-6 * utau
+        df = ((Ut / (utau + d) - _reichardt_uplus((utau + d) * y / nu)) - f) / d
+        if abs(df) < 1e-20:
+            break
+        utau -= f / df
+    return max(utau, 0.0)
+
+
+def cf_karman_schoenherr(re_theta):
+    """NASA TMR flat-plate validation と同じ Karman-Schoenherr 相関。"""
+    if not np.isfinite(re_theta) or re_theta <= 1.0:
+        return float('nan')
+    l = np.log10(re_theta)
+    return 1.0 / (17.08 * l * l + 25.11 * l + 6.012)
+
+
+def _plate_column(cc, V, xs):
+    """平板上 x=xs 最近傍の壁法線カラムを壁から昇順で返す。"""
+    x, y = cc[:, 0], cc[:, 1]
+    on = x > 1e-6
+    if not np.any(on):
+        return None
+    xa = np.unique(np.round(x[on], 6))
+    xc = xa[np.argmin(np.abs(xa - xs))]
+    idx = np.sort(np.where(np.abs(x - xc) < 1e-4)[0])
+    o = np.argsort(y[idx])
+    return idx[o]
+
+
+def _theta_and_utau(cc, V, xs, ytop=None):
+    col = _plate_column(cc, V, xs)
+    if col is None or len(col) < 5:
+        return float('nan'), float('nan'), float('nan')
+    yy = cc[col, 1]
+    ro = V['ro'][:][col]
+    ux = V['roUx'][:][col] / ro
+    mu = V['vis_lam'][:][col]
+    # 壁点 (y=0, u=0) を必ず含める: node は既にある / cell は補う
+    if yy[0] > 1e-12:
+        yy = np.concatenate(([0.0], yy))
+        ux = np.concatenate(([0.0], ux))
+        ro = np.concatenate((ro[:1], ro))
+        mu = np.concatenate((mu[:1], mu))
+        first = 1
+    else:
+        first = 1                      # 壁点の次が第一 DOF
+    m = np.ones(len(yy), dtype=bool) if ytop is None else (yy <= ytop)
+    ue = ux[m].max()
+    roe = ro[m][int(np.argmax(ux[m]))]
+    core = (ro[m] / roe) * (ux[m] / ue) * (1.0 - ux[m] / ue)
+    theta = float(np.trapz(core, yy[m]))
+    nu1 = mu[first] / ro[first]
+    utau = _solve_utau(ux[first], yy[first], nu1)
+    return theta, utau, ue
+
+
+def make_q_flatplate(xs, ytop):
+    def q_theta(cc, V):
+        return _theta_and_utau(cc, V, xs, ytop)[0]
+
+    def q_cf_retheta(cc, V):
+        theta, utau, ue = _theta_and_utau(cc, V, xs, ytop)
+        col = _plate_column(cc, V, xs)
+        if col is None:
+            return float('nan')
+        ro = V['ro'][:][col]
+        mu = V['vis_lam'][:][col]
+        ux = V['roUx'][:][col] / ro
+        j = int(np.argmax(ux))
+        roe, mue = ro[j], mu[j]
+        re_theta = roe * ue * theta / mue
+        cf = 2.0 * (utau / ue) ** 2
+        ks = cf_karman_schoenherr(re_theta)
+        return float(cf / ks) if np.isfinite(ks) and ks > 0 else float('nan')
+
+    return q_theta, q_cf_retheta
+
+
 def make_q_asym(cc):
     idx, dmax = mirror_index(cc)
     if idx is None or dmax > 1e-5:   # scipy 無し or 非対称メッシュ
@@ -140,9 +236,11 @@ def classify(steps, vals, tail_frac, drift_tol, osc_tol, min_snaps):
 
 SEV = {'STEADY': 0, 'OSCILLATING': 1, 'TRANSIENT-UNSETTLED': 2, 'DRIFTING': 3}
 BUILTIN = ['shock', 'asym', 'machmax', 'pmax']
+# 平板専用 (明示指定のときだけ有効): --quantity theta,cf_retheta
+FLATPLATE = ['theta', 'cf_retheta']
 
 
-def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg):
+def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, cf_x=0.6, cf_ytop=None):
     mesh = find_mesh(run_dir, mesh_arg)
     if mesh is None:
         print(f"\n=== {run_dir}  -> NO mesh (.h5 with /CELLS/centCoords) ==="); return 3
@@ -151,6 +249,10 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg):
         print(f"\n=== {run_dir}  -> TRANSIENT-UNSETTLED (only {len(fs)} res_*.h5) ==="); return 2
     cc = centroids(mesh)
     extractors = {'shock': q_shock, 'machmax': q_machmax, 'pmax': q_pmax}
+    if any(q in want for q in FLATPLATE):
+        qt, qc = make_q_flatplate(cf_x, cf_ytop)
+        extractors['theta'] = qt
+        extractors['cf_retheta'] = qc
     qa = make_q_asym(cc)
     if qa:
         extractors['asym'] = qa
@@ -182,7 +284,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run_dirs', nargs='+')
     ap.add_argument('--quantity', default=','.join(BUILTIN),
-                    help='comma list of: ' + ','.join(BUILTIN) + ' (default all applicable)')
+                    help='comma list of: ' + ','.join(BUILTIN + FLATPLATE) +
+                         ' (default all applicable; theta/cf_retheta are flat-plate specific '
+                         'and assume the wall is y=0 with the plate at x>0)')
+    ap.add_argument('--cf-x', type=float, default=0.6,
+                    help='streamwise station [m] for theta / cf_retheta (default 0.6)')
+    ap.add_argument('--cf-ytop', type=float, default=None,
+                    help='upper limit [m] of the theta integral (default: full column). '
+                         'Use to check sensitivity of theta to the truncation height.')
     ap.add_argument('--mesh', default=None, help='input mesh h5 (auto-detected if omitted)')
     ap.add_argument('--tail', type=float, default=0.4, help='tail fraction of snapshots for the steadiness check')
     ap.add_argument('--drift', type=float, default=0.05, help='max fractional trend across tail for STEADY')
@@ -192,7 +301,8 @@ def main():
     want = [q.strip() for q in args.quantity.split(',') if q.strip()]
     worst = 0
     for rd in args.run_dirs:
-        worst = max(worst, analyze(rd, want, args.tail, args.drift, args.osc, args.min_snaps, args.mesh))
+        worst = max(worst, analyze(rd, want, args.tail, args.drift, args.osc, args.min_snaps,
+                                   args.mesh, args.cf_x, args.cf_ytop))
     print(f"\nOVERALL: {'ALL STEADY' if worst == 0 else 'NOT ALL STEADY (see above)'}")
     sys.exit(0 if worst == 0 else 1)
 

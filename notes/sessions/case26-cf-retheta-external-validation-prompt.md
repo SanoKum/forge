@@ -14,8 +14,11 @@ cell 壁解像解との内部比較だけでなく、**外部相関 $C_f(Re_\the
 **制約 (厳守)**:
 
 - **既存の保存済み結果だけで調査すること。新規計算を投入しない。**
-- **ソース (`solver_density_cuda/`) を変更しない。** ツール修正も今回はやらない (提案に留める)。
-- 成果物は「調査報告」+「`plans/active/turbulence-node-wf-omega-source.md` の検証・採否基準の更新」。
+- **ソルバ本体 (`solver_density_cuda/cuda_forge/`, `*.cpp`) を変更しない。**
+- **例外: `solver_density_cuda/tools/check_quasisteady.py` への `cf_retheta` 量の追加だけは許可する** (§2.7)。
+  case/26 系の相関ツール (`case/26.flat_plate_sst/tools/*.py`) の修正は今回やらない (提案に留める)。
+- 成果物は「調査報告」+「`plans/active/turbulence-node-wf-omega-source.md` の検証・採否基準の更新」
+  +「`case/26.flat_plate_sst/README.md` への検証基準・実測値の反映」。
 - **新たな「真因確定」をしない。** 分離実験と収支が揃うまでは仮説として扱う
   (本セッションで既に 2 回、根拠不足の「真因」を出して撤回している。§7 参照)。
 
@@ -45,6 +48,24 @@ $$C_{f,\mathrm{KS}}=\left[17.08(\log_{10}Re_\theta)^2+25.11\log_{10}Re_\theta+6.
 ---
 
 ## 2. 依頼事項
+
+### 2.0 【前提ゲート】ZPG と「十分発達した乱流」であることを先に確認する
+
+Kármán–Schoenherr は **zero-pressure-gradient の十分発達した乱流境界層**が前提。
+case/26 は入口全圧・出口静圧で流れを作っているので、**名前だけで ZPG と仮定してはいけない**。
+K–S を当てる前に次を調べ、**ゲートとして扱う**こと。
+
+**(a) ZPG 判定**: 各 run で BL 外縁の $U_e(x)$、$p_e(x)$、および平板区間全体での
+$\Delta U_e/U_e$ を出す。加速/減速があれば K–S 比較の前提が崩れる。
+実質 ZPG とみなせるか、みなせないならどの x 範囲でならみなせるかを明記する。
+
+**(b) 発達乱流判定**: $k(x)$、$\mu_t/\mu(x)$、$C_f(x)$ の streamwise 分布から
+**「十分発達した乱流になった $x$」を特定**し、**それより下流だけを K–S 比較に使う**。
+明示的な transition model は無いが、モデル自身の turbulence activation 位置が生じるため、
+前縁直後は乱流として成立していない可能性がある。
+
+**(c) 結論の書き方**: 有効域が短ければ、**K–S を唯一の合否基準にはできない**。
+「条件を満たす station における主外部基準」と位置づけ、補助基準・収支・内部基準と併用する。
 
 ### 2.1 既存 run の $C_f(Re_\theta)$ を再計算する
 
@@ -102,7 +123,20 @@ README 記載値からの概算では x=0.6 付近で:
 - node: $\theta\approx8.75\times10^{-4}$, $Re_\theta\approx3900$, $C_f/C_{f,\mathrm{KS}}\approx0.75$
 
 **これは概算なので実データから再計算すること。** 違っていれば、
-使用した**定義・積分範囲 (特に上限の取り方)・使用 snapshot** を示して訂正する。
+使用した**定義・積分範囲・使用 snapshot** を示して訂正する。
+
+#### $\theta$ 積分の規約 (これで統一すること)
+
+$\delta_{99}$ は**境界層厚さの定義であって $\theta$ 積分の打切り位置ではない**。
+$\theta$ は積分核 $\frac{\rho}{\rho_\infty}\frac{u}{U_\infty}(1-\frac{u}{U_\infty})$ が
+**十分ゼロになる外部流まで**積分する。
+
+- **原則として領域上端 ($y=0.2$) まで積分**し、**上端を下げても値が変わらないことを感度確認**する。
+- 感度: 上端を $y=0.2$ / $0.1$ / $2\delta_{99}$ 程度で振り、$\theta$ の変化を表に出す。
+- **node**: 壁点 ($y=0$, $u=0$) を**そのまま含める**。
+- **cell**: 最下点がセル重心なので $(y,u)=(0,0)$ を**補って**積分する。
+- **両者とも同じ $U_\infty$, $\rho_\infty$ の定義**を使う (BL 外縁の局所値でなく、
+  §2.5 の自由流条件で固定するか、局所 $U_e$ を使うかを決めて明記する)。
 
 ### 2.5 現ケースと NASA ケースの条件差を確認する
 
@@ -117,7 +151,9 @@ README 記載値からの概算では x=0.6 付近で:
 - 流入乱流 `k=0.3, omega=300` → **freestream $\mu_t/\mu = 65.9$**
 - 領域: $x\in[-0.1,1.0]$, $y\in[0,0.2]$。底面は $x<0$ が slip (sym)、$x\ge0$ が no-slip wall。
   上面 slip、入口 `inlet_Pressure`、出口 `outlet_statPress`
-- transition model なし (全域乱流)
+- **明示的な transition model はない。乱流輸送方程式は全域で解くが、境界層が前縁直後から
+  十分発達した乱流になっているとは限らない** (transition model 無しでもモデル自身の
+  turbulence activation 位置が生じる。NASA の SST 平板も同様)
 
 **★ NASA SST-Vm 標準ケースの freestream $\mu_t/\mu$ は約 0.009** で、現ケースの 65.9 と**4 桁違う**。
 このため **NASA の SST 数値解との直接比較は apples-to-apples ではない**。
@@ -146,8 +182,15 @@ README 記載値からの概算では x=0.6 付近で:
 - 報告する $C_f$, $\theta$, $Re_\theta$ の**準定常性**
 - 使用した snapshot と run path
 
-**`check_quasisteady.py` は $\theta$ や $C_f(Re_\theta)$ に未対応**なので、保存 snapshot の時系列から
-同等の判定を行い、**その方法と窓幅を示すこと**。「最後の 2 snapshot が近い」だけでは不十分。
+**`check_quasisteady.py` は `shock,asym,machmax,pmax` にしか対応しておらず $\theta$ / $C_f(Re_\theta)$ を
+判定できない。** 一方 AGENTS.md は派生量の報告に同ツールの VERDICT を必須としている。
+「ツール修正はしない」と「保存 snapshot から同等判定」は**この点で衝突する**ので、次で解消する:
+
+- **`solver_density_cuda/tools/check_quasisteady.py` に `cf_retheta` 量を追加することだけ許可する**
+  (再現可能性のため。他のツール修正は今回やらない)。追加した量で各 run の VERDICT を出すこと。
+- **保存済み `CONVERGENCE_VERDICT.txt` を信用するだけでなく、`check_convergence.py` を各 run に
+  再実行**して現行ツールの VERDICT を取り直すこと (`run_0007` は VERDICT ファイルが無い)。
+- 「最後の 2 snapshot が近い」だけでは不十分。判定に使った窓幅を明示する。
 
 > 注: 本 case の残差は block-DPLUR の近似ヤコビアン由来で**構造的にプラトー**し、
 > 受理済み本番 `run_0007` を含め VERDICT は `NOT CONVERGED` になる。これは既知で、
@@ -251,16 +294,17 @@ primal (cell) 変換した h5 に対して実行する。
 
 **新たな「真因確定」はしないこと。** 現時点の正確な言い方は:
 
-> 第一内層ノードの「$P_k$ だけ壁関数値・$\omega$ は解像 $S$ で解く」不整合の周辺に問題があり、
-> `nodeOmegaWfDirichlet` 経路を通すと大幅改善する。ただし効いているのが $\omega$ 状態か
-> strain limiter 迂回か両方かは**未分離**。
+> 第一内層ノードでは **$k$ が壁関数由来の Dirichlet 値に固定される一方、$\omega$ は free で
+> 解像 strain による $P_\omega$ を受け、標準 SST limiter が適用される**。この組合せの周辺に
+> 問題が局在するが、**状態量・limiter・源項の寄与は未分離**である。
 
 ---
 
 ## 5. 参考: 現在の plan と経緯
 
 - 計画: [`plans/active/turbulence-node-wf-omega-source.md`](../../plans/active/turbulence-node-wf-omega-source.md)
-  (作業順序は plan → methods → 収支診断 → 2×2 factorial → E3)
+  (作業順序: **調査 → plan 方針更新 → 実装前に `methods/` の現仕様・変更仕様を更新 → plan 最終化
+  → 診断実装 → 2×2 factorial → E3**。AGENTS.md の開発フローに従い、実装前に methods を更新する)
 - 経緯と実測値: [`case/26.flat_plate_sst/README.md`](../../case/26.flat_plate_sst/README.md)
   の「node × 2 次精度の発散」「反証と、第一内層ノード $\omega$ への局在化」節
 - SST-2003 の $P_\omega$ 誤記 (NASA TMR で一次確認済): [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §3.1.1

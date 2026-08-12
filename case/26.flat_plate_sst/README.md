@@ -586,3 +586,138 @@ case/40 で $\tau_w$ が 1.237 倍に過大化したのも、既存調査では�
 strain limiter なのか両方なのかは未分離。** 「真因確定」とは言わない。
 
 分離実験と恒久修正候補は [plan: turbulence-node-wf-omega-source.md](../../plans/active/turbulence-node-wf-omega-source.md) に起票した。
+
+## 検証基準の改訂: 外部相関 $C_f(Re_\theta)$ (Kármán–Schoenherr) を主基準に (2026-08-12)
+
+**結論から**: 外部相関に対し **cell は 4–5% 低い / node は 22–23% 低い**。
+これまで「cell = 真値」として node を 0.843 と評価していたが、**cell 自身が外部相関を外している**ので、
+その枠組みでは node の欠損量を正しく測れていなかった。
+
+$$C_{f,\mathrm{KS}}=\left[17.08(\log_{10}Re_\theta)^2+25.11\log_{10}Re_\theta+6.012\right]^{-1},\quad
+Re_\theta=\frac{\rho_\infty U_\infty\theta}{\mu_\infty}$$
+
+(NASA TMR flat-plate validation と同じ。<https://tmbwg.github.io/turbmodels/flatplate_val.html>)
+
+**呼称**: cell 壁解像解は今後「**内部基準**」と呼び「真値」と呼ばない。K–S も厳密解ではないので
+「**外部相関**」と呼ぶ。
+
+### 前提ゲート (これを満たす station だけで判定する)
+
+| ゲート | 結果 | 判定 |
+| --- | --- | --- |
+| **ZPG** | 加速パラメータ $K=(\nu/U_e^2)dU_e/dx=2.1\times10^{-9}$ ($\ll3\times10^{-6}$)。$\Delta U_e/U_e=+0.6\%$, $\Delta p/q=-1.4\%$ (x=0.2→0.9) | **合格 (実質 ZPG)** |
+| **発達乱流** | $\theta(x)$ 単調増加は $x\gtrsim0.009$ (cell 壁解像) / $0.024$ (cell wf) / $0.052$ (node)。ただし **BL 内 peak $\mu_t/\mu$ が自由流値 65.9 を超えるのは $x\approx0.25$–$0.37$** | **$x\ge0.3$ を条件とする** |
+| **K–S 有効域** ($4000<Re_\theta<13000$) | $Re_\theta$ は $x=0.90$ でも **5571 (node) – 6427 (cell)**。**上限 13000 に全く届かない**。$Re_\theta>4000$ は $x\gtrsim0.60$ (cell) / $x\gtrsim0.75$ (node) | **下端のみカバー** |
+| **収支の信頼域** | $C_f/(2d\theta/dx)$ は $x=0.45$–$0.75$ で 0.99–1.05、$x\ge0.9$ で 0.49–1.10 に崩れる (局所 fit の station 不足+出口影響) | **$x\le0.8$ に限る** |
+
+→ **判定帯は $x\in[0.60,0.80]$** ($Re_\theta\approx3900$–$5500$)。**K–S を唯一の合否基準にはできない**。
+
+### $C_f$ の 4 定義 (混ぜないこと)
+
+1. **wall-resolved**: $\tau_w=\mu\,\partial u/\partial y$ (第一 DOF の分子勾配)
+2. **wall-function**: Reichardt 逆解きの $\tau_w=\rho u_\tau^2$ (ソルバが運動量式に課す値と整合)
+3. **`twall` 出力**: AddTauWall で 2. の目標値へ**再スケール済み**なので**独立検証にならない** (使わない)
+4. **運動量積分**: $C_f=2\,d\theta/dx$
+
+本表の $C_f$ は **2.** で統一 (壁解像 run では 1. と 2. がほぼ一致する: x=0.6 で 2.9149e-3 vs 2.8411e-3)。
+**node の W–I 双対面に実際に加わった接線力からの $C_f$ は保存出力から取得できず「未確認」**
+(取得には plan §4.2 の診断追加が必要)。
+
+### 主表 (判定帯を含む 5 station、$C_f$ は wall-function 定義)
+
+$d\theta/dx$ は $x\pm0.08$ m の局所 2 次 fit (使用 station 7–26 個)。$\theta$ は全域積分。前縁 $x<0.10$・出口 $x>0.95$ 除外。
+
+| run | $x$ | $Re_\theta$ | K–S域 | $C_f$ | $C_f/C_{f,\mathrm{KS}}$ | $C_f/(2d\theta/dx)$ |
+| --- | --- | --- | --- | --- | --- | --- |
+| `run_0007` cell 壁解像 (内部基準) | 0.596 | 4614 | ○ | 2.915e-3 | **0.954** | 1.102 |
+| | 0.745 | 5499 | ○ | 2.820e-3 | **0.956** | 1.069 |
+| `run_0044` cell y+30 wf | 0.596 | 4599 | ○ | 2.933e-3 | **0.960** | 1.026 |
+| | 0.745 | 5541 | ○ | 2.834e-3 | **0.962** | 1.035 |
+| `run_0042` node h=1.77e-4 (y+27) | 0.602 | 3905 | △ | 2.406e-3 | **0.762** | 1.023 |
+| | 0.753 | 4696 | ○ | 2.332e-3 | **0.766** | 0.993 |
+| `run_0040` node h=3.40e-4 (y+52) | 0.602 | 4009 | ○ | 2.408e-3 | **0.766** | 1.043 |
+| `run_0043` node h=6.59e-4 (y+102) | 0.602 | 4184 | ○ | 2.426e-3 | **0.779** | 1.049 |
+| `run_0045` node kwfDir=0 | 0.753 | 4686 | ○ | 2.361e-3 | **0.775** | 0.999 |
+| `run_0046` node omgWfDir=1 | 0.602 | 4464 | ○ | 2.734e-3 | **0.889** | 1.044 |
+
+- **cell 壁解像と cell y+30 wf は外部相関に対し 0.954–0.962** で互いに 0.6% 以内。
+- **node は 0.762–0.779** で、第一 DOF の y+ を 27→102 と 3.7 倍振っても **±0.011 に収まる**
+  (壁関数としての y+ 非依存は成立している)。
+- `nodeOmegaWfDirichlet:1` で 0.889 まで戻るが、**これは $\omega$ ピンと shear limiter 迂回の合成効果**
+  (plan §1.3) なので単独因子の証拠にならない。
+
+### $\theta$ 積分の規約と感度
+
+$\delta_{99}$ は BL 厚さの定義であって $\theta$ の打切り位置ではないので、**積分核が十分ゼロになる
+外部流まで (領域上端 $y=0.2$) 積分**するのを主値とする。node は壁点 ($y=0,u=0$) をそのまま含め、
+cell は $(y,u)=(0,0)$ を補う。上端感度 (x=0.6):
+
+| 上端 | cell 壁解像 | cell y+30 | node h=1.77e-4 | node omgWfDir=1 |
+| --- | --- | --- | --- | --- |
+| $y=0.2$ (全域) | 1.0373e-3 | 1.0341e-3 | 8.7775e-4 | 1.0036e-3 |
+| $y=0.1$ | 1.0147e-3 | 1.0183e-3 | 8.7507e-4 | 9.9387e-4 |
+| $2\delta_{99}$ | 9.9807e-4 | 1.0171e-3 | 8.7426e-4 | 9.8944e-4 |
+| **最大偏差** | **3.79%** | 1.64% | 0.40% | 1.41% |
+
+**「上端を下げても値が変わらない」は厳密には成立しない** (自由流の微小非一様性を長い距離で拾うため。
+壁解像 run で最大 3.8%)。ただし $C_{f,\mathrm{KS}}$ の $Re_\theta$ 感度は
+$\partial\ln C_f/\partial\ln Re_\theta\approx-0.2$ なので、**比への影響は $\pm0.8\%$** に留まる。
+
+### Schlichting 係数 0.0592 と 0.0576 の整理
+
+リポジトリ内で混在していた 2 つは**同じ式ではない**。1/7 乗則から自己整合に導出すると:
+
+$u/U=(y/\delta)^{1/7}$ ($\theta/\delta=7/72$) + Blasius $\tau_w=0.0225\rho U^2(\nu/U\delta)^{1/4}$
++ 運動量積分 → $\delta/x=0.3707\,Re_x^{-1/5}$、$C_f=\mathbf{0.0577}\,Re_x^{-1/5}$
+
+- **0.0576** = $\delta/x=0.37Re_x^{-1/5}$ と**対になる 1/7 乗則の自己整合値** (`tools/compare_cf_bl_cell_node.py`)
+- **0.0592** = 同じ 1/7 乗則族の**別の経験フィット** (Schlichting, $5\times10^5<Re_x<10^7$)
+  (`tools/postprocess_wall_law.py`, `wall_law_modeled.py`, `plot_uplus_truth_compare.py`)
+- 差は **2.8%** で、数 % を論じる本 case では**混用不可**。
+- **提案 (未実施)**: 補助基準は 0.0592 に統一し、0.0576 を使う箇所はラベルを
+  「1/7 乗則自己整合値」に変える。ツール修正は別途。
+
+### 収束・準定常 (使用 snapshot と VERDICT)
+
+`check_convergence.py` は **8 run すべて `NOT CONVERGED (stalled/plateau)`** — これは本 case の
+block-DPLUR 近似ヤコビアン由来の構造プラトーで既知 (受理済み `run_0007` も同じ)。したがって
+**派生量の準定常で判定する**。`check_quasisteady.py` に `theta` / `cf_retheta` を追加した
+(2026-08-12。これが唯一のツール変更)。
+
+```bash
+python3 solver_density_cuda/tools/check_quasisteady.py <run_dir> \
+    --quantity theta,cf_retheta --cf-x 0.6 --tail 0.5 --drift 0.02 --osc 0.02
+```
+
+| run | 使用 snapshot | VERDICT | $\theta$ drift/tail | $C_f/C_{f,\mathrm{KS}}$ drift/tail |
+| --- | --- | --- | --- | --- |
+| `run_0007` | `res_120000.h5` | TRANSIENT-UNSETTLED | 1.6% | 0.1% |
+| `run_0017` | `res_10000.h5` | STEADY | 0.1% | 0.0% |
+| `run_0044` | `res_5000.h5` | STEADY | 0.0% | 0.0% |
+| `run_0040` | `res_40000.h5` | STEADY | 0.0% | 0.0% |
+| `run_0042` | `res_20000.h5` | TRANSIENT-UNSETTLED | 1.4% | 0.1% |
+| `run_0043` | `res_20000.h5` | STEADY | 1.3% | 0.5% |
+| `run_0045` | `res_20000.h5` | STEADY | 0.4% | 0.0% |
+| `run_0046` | `res_20000.h5` | STEADY | 1.0% | 0.8% |
+
+**報告する比 $C_f/C_{f,\mathrm{KS}}$ は全 run で drift ≤0.8%/tail** (窓 = 末尾 50%)。
+`run_0007`/`run_0042` の UNSETTLED は **$\theta$ 側**の残ドリフト (1.4–1.6%) が
+系列の極値を末尾に持つため。$\theta$ の 1.6% は比へ 0.3% しか効かないので、
+**比の判定には影響しない**が、$\theta$ 単独を報告するときは注記が要る。
+
+### NASA TMR ケースとの条件差 (直接比較は不可)
+
+| 項目 | case/26 | NASA TMR flat plate |
+| --- | --- | --- |
+| $M$ | 0.2 | 0.2 |
+| $Re$ | $Re/m=4.464\times10^6$, $Re_{x,\max}=4.46\times10^6$ | $Re_L=5\times10^6$ |
+| SST variant | forge 実装 ($P_\omega=\alpha\rho S^2$ = **SST-2003 の誤記形**) | SST-Vm 等 |
+| **freestream $\mu_t/\mu$** | **65.9** (`k=0.3, omega=300`) | **≈0.009** |
+| transition model | 無し (モデル自身の activation 位置あり) | 無し |
+| 前縁 | $x<0$ に slip 助走区間 0.1 m | 同様 (symmetry) |
+| BC | 入口 全圧全温 / 出口 静圧 / 上端 slip | riemann / 上端 farfield 等 |
+| $Re_\theta$ 範囲 | ~2200–6400 | K–S 主比較域を広くカバー |
+
+**freestream $\mu_t/\mu$ が 4 桁違う**ため、**NASA の SST 数値解との直接比較は apples-to-apples ではない**。
+K–S 相関との物理比較 (本節) と、NASA SST 数値解による実装 verification は分けて扱う。
+後者には流入乱流量を合わせた別ケースが要る (未実施)。
