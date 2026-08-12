@@ -1,0 +1,44 @@
+dv:
+  L_over_rt:
+    max: 12.0
+    min: 5.0
+    value: 5.9713
+  theta_a_deg:
+    max: 38.0
+    min: 12.0
+    value: 33.77
+  theta_e_deg:
+    max: 16.0
+    min: 4.0
+    value: 12.13
+evaluate:
+  nStepOuter: 12000
+  objectives:
+  - eta_cf
+  - length
+  outStepInterval: 4000
+  turbulence: sst
+gas:
+  cp: 1004.5
+  gamma: 1.4
+geometry:
+  L_contract: 3.0
+  L_pipe: 0.5
+  Rd: 0.4
+  Ru: 3.0
+  bell_type: top
+  phi_u_deg: 25.0
+  r_inlet: 2.5
+mesh:
+  ni: 221
+  nj: 65
+  throat_refine: 3.0
+  wall_first_frac: 0.005
+name: bell_rao_ru30
+spec:
+  Pt: 4.0e6
+  Tt: 1500.0
+  eps: 9.0
+  p_ambient: 20000.0
+  r_throat: 0.01
+type: thruster_bell

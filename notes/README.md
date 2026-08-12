@@ -17,6 +17,7 @@
 | [convection-central-scheme-oscillation-control.md](investigations/convection-central-scheme-oscillation-control.md) | `convection` | LES/DES における中心差分 (KEEP) のスプリアス振動抑制 技術調査 (振動源4分類の統括) |
 | [convection-pep-scheme-survey.md](investigations/convection-pep-scheme-survey.md) | `convection` | PEP (Pressure-Equilibrium-Preserving) 系スキーム技術調査と forge 実装方針 |
 | [nozzle-optimization-tool-survey.md](investigations/nozzle-optimization-tool-survey.md) | `—` | 超音速・極超音速ノズル最適化ツール — 技術動向調査と開発フロー提案 |
+| [nozzle-top-internal-shock-diagnosis.md](investigations/nozzle-top-internal-shock-diagnosis.md) | `verification / nozzle` | TOP ベルの内部衝撃波と軸 M 過大 (+22%) は物理と確証 — SU2 同一メッシュ 2×2 (RANS/Euler) で forge と定量一致、Rd/Ru スイープで円弧曲率起因も確認 (2026-08-13) |
 | [su2-nemo-contact-thermo-investigation.md](investigations/su2-nemo-contact-thermo-investigation.md) | `convection / thermophysics` | SU2-NEMO contact/interface thermo 取り扱い調査 (forge mixed-order face-state 比較) |
 | [turbulence-des-flux-survey.md](investigations/turbulence-des-flux-survey.md) | `turbulence` | DES/DDES/IDDES 用 低散逸対流 flux 設計 技術調査（圧縮性 LES/DES） |
 | [turbulence-des-wmles-survey.md](investigations/turbulence-des-wmles-survey.md) | `turbulence` | DES / WMLES 最新動向サーベイ（超音速ノズル・ピントルバルブ適用向け） |
