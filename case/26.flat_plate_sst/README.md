@@ -123,6 +123,9 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0040_node_yp30_planar_2nd_long` | 同構成の本収束 (run_0039 から 40000 step) | NaN なし・Ux max 71.3 m/s (run_0032 の 199-249 の暴走は消滅)・Uz ~1e-14。残差は block-DPLUR 構造プラトー (本 case 既知, run_0007 も同様) だが **quasisteady `ALL STEADY`**、**Cf は 20k/30k/40k で 4 桁一致**。**Cf/真値 = 0.848/0.847/0.848** | active (**node 平板の生産基準**) |
 | `run_0042_node_yp30_planar_2nd` | **壁関数 y+ 非依存性テスト**: 第一層 1.768e-4 (`mesh/flat_plate_ny52_planar.geo`, node 第一 DOF y+27.1 = cell 第一 DOF と同高さ)、run_0040 から cross-mesh interp、20000 step | $u_\tau$=2.343 (ny=45 と同値)。**cell (同高さ 1.700e-4) の 2.586 に対し 9.4% 低いまま** = 第一層高さ仮説の棄却 | active (y+ 掃引) |
 | `run_0043_node_yp112_planar_2nd` | 同掃引の粗い側: 第一層 6.588e-4 (`mesh/flat_plate_ny38_planar.geo`, y+101.5) | $u_\tau$=2.350。**y+ 27→102 (3.7 倍) で $u_\tau$ の変化 0.3%** = node 壁関数は y+ 非依存 | active (y+ 掃引) |
+| `run_0044_cell_yp30_wf_regr` | cell y+30 壁関数を**現行バイナリで再走** (run_0017 は旧バイナリで `wf_pk`/`Pk_diag` 未出力のため対照にならない)。run_0017 res_10000 から restart、5000 step | $u_\tau$=2.586 (run_0017 と一致)。生産収支比較の cell 基準 | active (cell 対照) |
+| `run_0045_node_yp30_kwfdir0` | **`nodeKwfDirichlet: 0` A/B** (既定 1 = 第一内層 k を Dirichlet 固定)。run_0042 と同一 IC/設定 | 実効生産が 3.1 倍になるが $u_\tau$ は +0.55% のみ → **「生産規約が真因」を反証** | active (反証の証拠) |
+| `run_0046_node_yp30_omgwfdir1` | **`nodeOmegaWfDirichlet: 1` A/B** (第一内層の $\omega$ も固定)。run_0042 と同一 IC/設定 | $\omega$@第一内層 2.645e5→1.213e5、**$C_f$/真値 0.843→0.957 = 欠損の 73% 回復** → **主因は $\omega$** | active (**主因特定の証拠**) |
 | `run_0041_node_yp30_z4_2nd` | **機構対照**: 押し出しを 1 層 → **4 層** (z ノード 2 枚 → 5 枚) にした同一 2 次設定 (`mesh/flat_plate_yp30_z4.geo`, 53775 ノード, 3000 step) | スパン方向モードの成長が **350 分の 1** (step3000 で spread 0.598 m/s vs run_0032 の 211.9)。= 発散は「node の slip BC 欠陥」でも「前縁」でもなく **spanwise が 2 ノードしかないこと**が原因と確定 | 破棄予定 (機構確定の記録) |
 | `run_0012_keep_es_ewt_fine` / `run_0013_keep_es_ewt_cont` | **単一スキーム KEEP+ES の RANS 検証 (正)**: 確立済み Cf 基準 run_0009 (EWT 細メッシュ y+0.35) と同一設定で flux のみ KEEP+ES 化、40k+20k ([iddes plan §4.8 設計更新](../../plans/active/turbulence-iddes-sst.md)) | **合格**: implicit cfl20 安定・quasisteady `ALL STEADY`・**Cf ドリフト +0.006〜0.041%/20k で完全収束**。Cf/Schl = **0.88/0.91/0.94** (SLAU 0.91/0.95/0.97 比 **−3.6〜−3.9%** = 本 case の確立済みスキーム間ばらつき node vs cell MUSCL −3.4〜−3.9% と同帯)。**「KEEP+ES で SST-RANS」は成立** | active (KEEP+ES RANS 検証) |
 
@@ -384,7 +387,15 @@ $\tau_w$ が小さい ($u_\tau$ −9% / $C_f$ −15%)**。壁関数は犯人で�
 cell の壁関数は自身の壁解像解に対し $k$ を +35% 過大に出す一方、node は −12% 過小である点も
 生産項側を示唆する。関連: [`turbulence-node-wall-function-coverage.md`](../../plans/accepted/turbulence-node-wall-function-coverage.md)。
 
-### 真因の特定: node の壁関数 $P_k$ は構造的に cell の 78% しか注入していない (2026-08-12)
+### 【撤回済み】node の壁関数 $P_k$ は構造的に cell の 78% しか注入していない (2026-08-12 起票 → 同日撤回)
+
+> **この節の「真因」「78%」「閉じた因果」は撤回する** (Codex レビュー指摘 + 実験で反証、下の
+> 「反証と真の主因」節を参照)。**測った量が間違っていた**: `nodeKwfDirichlet` の既定は `1` で
+> ([`solverConfig.cpp:460`](../../solver_density_cuda/input/solverConfig.cpp))、第一内層ノードは
+> `roK_wf` に Dirichlet 固定され `res_roK=0` にされる。実測で `roK == roK_wf` が厳密一致し、
+> **$\Sigma P_kV$ の 67.7% は k 収支から消される量**だった。以下は記録として残す。
+
+### 【撤回された記述】node の壁関数 $P_k$ の規約差 (2026-08-12)
 
 **先の「B が一致 = 速度場はほぼ同じ」という記述を撤回する。** $\theta$ が 15% 違う以上、速度場は
 違う。B が揃って見えたのは、共通 $u_\tau$ で正規化すると $u^+_\infty=U_\infty/u_\tau$ が
@@ -440,3 +451,79 @@ BL が薄い ($\theta$ −15%) → $\tau_w$ が小さい ($u_\tau$ −9%) → $P
 なお cell の factor 2.000 が物理的に厳密という保証はない (Launder–Spalding 系の慣用)。ただし
 cell は壁解像解に対し $C_f$ を +2.7% で再現しており**較正済みの規約**なので、当面は
 これを基準に node を合わせるのが妥当。
+
+### 反証と真の主因: 第一内層ノードの $\omega$ スパイク (2026-08-12)
+
+前節の「生産規約 78% が真因」を**実験で反証**し、主因を $\omega$ に特定した。
+
+#### 1. 生産規約は主因ではない (反証)
+
+`nodeKwfDirichlet: 0` (第一内層 k のピン解除) の A/B で、**k 収支に実際に入る生産量**を測り直した:
+
+| run | $\Sigma P_kV$ 全体 | うち k がピンされた分 | **実効生産** | 対 cell |
+| --- | --- | --- | --- | --- |
+| cell y+30 (`run_0044`) | 1.622 | 0 | **1.622** | 1.000 |
+| node kwfDir=1 (`run_0042`, 既定) | 0.963 | 0.652 (67.7%) | **0.311** | **0.192** |
+| node kwfDir=0 (`run_0045`) | 0.977 | 0 | **0.977** | **0.602** |
+
+**実効生産が 3.1 倍 (0.311→0.977) になっても $u_\tau$ は 2.343→2.356 (+0.55%) しか動かない。**
+$C_f$/真値 0.843→0.852。→ **壁関数の $P_k$ 積分量は $\tau_w$ をほとんど支配していない**。
+前節の「規約 factor 0.782 × $(u_\tau$比$)^3$ 0.744 = 0.582 が実測 0.594 と 2% 一致」は、
+$u_\tau$ 比を説明対象の解から取っている**循環論**であり、因果の証明ではなかった。
+`wf_pk` × 1.279 の実験は**やらない** (物理補正でなく cell への経験的チューニングであり、
+かつ第一内層が k ピンされている既定では仮説の検証にすらならない)。
+
+#### 2. 主因は第一内層ノードの $\omega$ スパイク
+
+内部スケーリング ($\omega_{eq}=u_\tau^2/\nu/(\sqrt{\beta^*}\kappa y^+)$) で見ると node だけ近壁で $\omega$ 過大:
+
+| $y^+$ | cell $\omega/\omega_{eq}$ | node $\omega/\omega_{eq}$ |
+| --- | --- | --- |
+| 30 | 1.09 | **2.55** |
+| 60 | 1.49 | 1.89 |
+| 100 | 1.28 | 1.55 |
+| 400 | 1.25 | 1.38 |
+
+壁法線プロファイルを見ると異常が直接見える (`wall_dist` は両者とも座標と厳密一致でバグではない):
+
+| | 壁ノード $y=0$ | 第一内層 $y=1.768$e-4 | 第二 $3.707$e-4 |
+| --- | --- | --- | --- |
+| node $\omega$ | 1.146e5 (ピン=Menter blend) | **2.645e5** | 9.635e4 |
+| node $k$ | 20.72 | **10.46** | 18.27 |
+
+**$\omega$ が壁の値より高く跳ねている** (単調減少すべきところが逆転)。その値 2.645e5 は
+**第一層距離の半分**での Menter blend (2.663e5) にほぼ一致する。高い $\omega$ は
+$\mu_t=\rho k/\omega$ を下げ、同時に散逸 $\beta^*\rho k\omega$ を上げて $k$ も下げる = 両症状を同時に説明する。
+
+**構造的な非対称が原因と考えられる (仮説)**:
+
+- **cell**: `wf_pk` と $\omega$ ピンが**同じ DOF** (第一セル) にある → $\omega$ は固定なので暴走しない。
+- **node**: $\omega$ ピンは**壁ノード**だが `wf_pk` は**壁ノードと第一内層の両方**に入る
+  ([`ransWallFunction_d.cu:209,213`](../../solver_density_cuda/cuda_forge/ransWallFunction_d.cu))。
+  第一内層は $\omega$ を**解きながら**壁関数生産を受け、そこでは $\nu_t$ が小さい ($\mu_t/\mu\approx2$)
+  ため $\omega$ 生産 $\propto P_k/\nu_t$ が過大になる。
+
+#### 3. $\omega$ が主因であることの A/B (`nodeOmegaWfDirichlet`)
+
+| run | $u_\tau$ | /真値 | $C_f$/真値 | $\omega$@第一内層 | $k$@第一内層 | $\mu_t/\mu$@y+100 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `run_0042` node 既定 | 2.343 | 0.908 | 0.843 | 2.645e5 | 10.46 | 26.7 |
+| `run_0045` kwfDir=0 | 2.356 | 0.913 | 0.852 | 2.642e5 | 11.74 | 26.8 |
+| `run_0046` **omgWfDir=1** | **2.497** | **0.968** | **0.957** | 1.213e5 | 12.46 | 32.8 |
+| `run_0044` cell y+30 (対照) | 2.586 | 1.002 | 1.027 | 1.307e5 | 27.93 | 37.9 |
+
+$\omega$ を固定すると $\omega$ が cell 並み (1.213e5 vs 1.307e5) に戻り、**$C_f$ 欠損の 73% が回復する**
+(0.843→0.957, 目標 1.027)。→ **主因は $\omega$**。
+
+ただし **`nodeOmegaWfDirichlet: 1` は解ではない**: case/40 ベルノズルでは同じスイッチが
+$\tau_w$ を y+1 真値の **1.237 倍に過大化**して正式化が見送られている
+([plan §10c](../../plans/accepted/turbulence-sst-su2-taw-coupling.md))。本ケースでは 0.957 と不足、
+ノズルでは 1.237 と過大 = Dirichlet で殴るのは対症療法。**正しい修正は第一内層の $\omega$ ソース項を
+cell と整合させること** (壁関数生産を受ける DOF と $\omega$ を解く DOF の関係を cell に合わせる) で、
+これは未着手。
+
+#### 4. 準定常確認
+
+残差は全 run で block-DPLUR の構造プラトー (`NOT CONVERGED`) だが、**報告している派生量 $u_\tau$ は
+定常**: 最終 2 スナップショット間のドリフトは run_0040 0.001% / run_0042 0.075% / run_0043 0.025% /
+run_0044 0.001% / run_0045 0.013% / run_0046 0.070%。
