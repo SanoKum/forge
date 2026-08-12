@@ -92,6 +92,14 @@
 
 ## 9. 変更ログ
 
+- `2026-08-13` — 方針改訂の反映 (親計画 §4.6③/§4.7 の 2026-08-13 改訂): ③は TOP 直接幾何 dv と
+  なり、**Kliegel–Levine 高次級数の宿題は「③2 巡目 (モード K を試す場合)」まで後送で確定**
+  (Phase 0/1 の残タスクから除外)。TOP 放物線壁と MOO は Phase 2 子 plan
+  ([tooling-nozzle-moo-loop.md](tooling-nozzle-moo-loop.md)) スコープ。**現バイナリでの E2E 回帰
+  を取得**: `case/40.nozzle_design_tool/run_0071_node_e2e_regr` (runner 既定・warm from run_0029)
+  — 完走・warm start からさらに全列 2.6–4.5 桁低下後プラトー (rms_ro 2.4e-9 = 既知ノイズ床、
+  ツール判定は NOT CONVERGED/stalled 表記)・quasisteady **ALL STEADY**・η=0.9734・ṁ=1.2928
+  (run_0029 と一致。旧 η 0.9884 との差は node 出口列欠陥 [2026-08-11 根治] の解消による正常化)。
 - `2026-08-03` (深夜追記) — **node 再計算成立**: ユーザ指摘で case/29 の node ノズル実績を発見し、
   実証レシピ (壁第一セル 5e-3・warm start 必須・explicit RK3 cfl0.1・1 次・katoLaunder) を
   runner の node 既定として実装 (`--warm-from` 追加)。run_0006 で node 初の VERDICT PASS

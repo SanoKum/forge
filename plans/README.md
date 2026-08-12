@@ -36,7 +36,8 @@
 | [discretization-node-boundary-ghostless.md](active/discretization-node-boundary-ghostless.md) | `boundary` | node-centered 境界のゴースト撤廃 (段階導入: まず壁, 次に流入出/slip) |
 | [tooling-cloud-gpu-env.md](active/tooling-cloud-gpu-env.md) | `tooling / infra` | クラウド GPU 環境 (AWS EC2 spot): Docker 構築・計算投入・速度計測基盤。MPI 化の実行基盤を先行整備 |
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
-| [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
+| [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ。E2E 現バイナリ回帰済 (run_0071)、クローズ準備中 |
+| [tooling-nozzle-moo-loop.md](active/tooling-nozzle-moo-loop.md) | `tooling / optimization` | ↑の Phase 2 子 plan (2026-08-13 起票): ③ベル MOO ループ — **TOP 直接幾何 dv** ($\theta_n,\theta_e,L$)・pymoo+SMT・EHVI infill・**Rao 照合** (帰還エンジン非依存、①のモード F へ後送) |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-node-wf-representative-point.md](active/turbulence-node-wf-representative-point.md) | `turbulence / boundary` | node 壁関数の代表点 (Normal_Neighbor) 診断。$\omega$ 側を出し切っても両ケースの符号が逆 (case/26 不足 / case/40 過剰) なので $u_\tau$ の入口側へ。**幾何 / 代表点速度 / 壁解像基準の同一位置サンプリング**の 3 分離が先、アルゴリズム変更は後 |
 | [turbulence-node-wf-omega-source.md](active/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node 壁関数経路の低摩擦解。$\omega$ 介入 3 種 (pin / limiter bypass / E3) を分離検証したが**両ケースのゲートを同時に満たせず** (case/26 は 0.84–0.86 止まり、E3 は case/40 で ≈1.061)。E3 は不採用・実験経路として残置。後継 = 代表点診断 plan |
