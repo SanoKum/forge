@@ -156,6 +156,18 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             }
         }
     }
+    // omega 項別収支 (§4.1) も env ゲート
+    {
+        const char* e = std::getenv("FORGE_OMEGA_BUDGET");
+        if (!(e && std::atoi(e) != 0)) {
+            for (const char* n : {"omg_prod", "omg_dest", "omg_cross", "omg_trans"}) {
+                cellValNames.remove(n);
+                output_cellValNames.remove(n);
+                c.erase(n);
+                c_d.erase(n);
+            }
+        }
+    }
     for (auto& cellValName : cellValNames)
     {
         //this->c[cellValName].resize(msh.nCells);
@@ -167,7 +179,8 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             gpuErrchk( cudaMalloc((void**) &(this->c_d.at(cellValName)), (msh.nCells_all)*sizeof(flow_float)) );
             // 診断配列は毎ステップ書かれるとは限らないので確保直後に 0 初期化する
             // (未初期化 device メモリを出力しないため)。
-            if (cellValName.rfind("wi_", 0) == 0 || cellValName == "wf_irep_flag") {
+            if (cellValName.rfind("wi_", 0) == 0 || cellValName.rfind("omg_", 0) == 0
+                || cellValName == "wf_irep_flag") {
                 gpuErrchk( cudaMemset(this->c_d.at(cellValName), 0, (msh.nCells_all)*sizeof(flow_float)) );
             }
         }

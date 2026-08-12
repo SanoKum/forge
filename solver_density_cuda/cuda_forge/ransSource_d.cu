@@ -43,6 +43,8 @@ __global__ void rans_sst_source_d(
     int wallTreatment,
     flow_float* wf_pk,
     flow_float* Pk_diag,   // 診断: 確定した最終 k 生産 (wall-function 置換後)
+    // 診断 (§4.1): omega 方程式の項別収支。nullptr 可 (診断オフ)。単位は res_roOmega と同じ (体積込み)。
+    flow_float* omg_prod, flow_float* omg_dest, flow_float* omg_cross, flow_float* omg_trans,
     flow_float* res_roK,
     flow_float* res_roOmega,
     // SST 陰解法 (point-implicit) 用: 消散項ヤコビアン対角（β* ω, 2 β ω）
@@ -185,6 +187,15 @@ __global__ void rans_sst_source_d(
     const flow_float CDw = (static_cast<flow_float>(1.0) - F1) *
         static_cast<flow_float>(2.0) * rho * kSigmaW2 / w_c * grad_k_dot_w;
 
+    // 診断 (§4.1): ソース加算 **前** の res_roOmega = 輸送 (対流+拡散) の寄与。
+    // 各ソース項も体積込みで保存し、平衡がどの項で決まっているかを直接見られるようにする。
+    if (omg_trans != nullptr) {
+        omg_trans[ic] = res_roOmega[ic];
+        omg_prod[ic]  = Pw  * v;
+        omg_dest[ic]  = Dw  * v;
+        omg_cross[ic] = CDw * v;
+    }
+
     // 残差に加算（符号: ソース項は保存変数を増加させる正方向）
     atomicAdd(&res_roK[ic],     (Pk - Dk) * v);
     atomicAdd(&res_roOmega[ic], (Pw - Dw + CDw) * v);
@@ -289,6 +300,10 @@ void ransSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         cfg.wallTreatmentSST,
         var.c_d["wf_pk"],
         var.c_d["Pk_diag"],
+        var.c_d.count("omg_prod")  ? var.c_d["omg_prod"]  : nullptr,
+        var.c_d.count("omg_dest")  ? var.c_d["omg_dest"]  : nullptr,
+        var.c_d.count("omg_cross") ? var.c_d["omg_cross"] : nullptr,
+        var.c_d.count("omg_trans") ? var.c_d["omg_trans"] : nullptr,
         var.c_d["res_roK"],
         var.c_d["res_roOmega"],
         var.c_d["src_jac_k"],

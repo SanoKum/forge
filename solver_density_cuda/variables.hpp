@@ -138,6 +138,15 @@ public:
         //   wi_ftan_res : 再スケール **前** の解像接線力 [N]
         // 毎ステップ 0 クリアして atomicAdd で積む。壁ノード以外は 0。
         "wi_ftan", "wi_fnrm", "wi_fnrm_abs", "wi_ftan_res",
+        // 診断 (2026-08-13, plan turbulence-node-wf-omega-source §4.1): omega 方程式の項別収支。
+        // res_roOmega に加える前後を分解して、平衡がどの項で決まっているかを直接見る。
+        // 単位はすべて [kg/(m·s²)] 相当 = res_roOmega と同じ (体積込み)。
+        //   omg_prod  : 生産 P_ω·V   (現行 = α ρ S²·V)
+        //   omg_dest  : 消滅 D_ω·V   (= β ρ ω²·V)
+        //   omg_cross : 交差拡散 CD_ω·V
+        //   omg_trans : 輸送 (対流+拡散) = ソース加算 **前** の res_roOmega
+        // FORGE_OMEGA_BUDGET=1 のときだけ確保・出力される (OFF ならメモリも出力も増えない)。
+        "omg_prod", "omg_dest", "omg_cross", "omg_trans",
         // 診断/分離実験 (2026-08-12, plan §3 の 2×2 factorial): node 壁関数の **第一内層ノード
         // (irep)** を 1 でマークする (壁ノード・非対象は 0)。`wf_pk>=0` は壁ノードにも立つため
         // 「第一内層だけ」を選ぶマスクとしては使えない。cell では常に 0 (= cell ビット不変が構造的に保証)。
@@ -225,6 +234,7 @@ public:
 
         // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
         "wi_ftan" , "wi_fnrm" , "wi_fnrm_abs" , "wi_ftan_res" , "wf_irep_flag" ,
+        "omg_prod" , "omg_dest" , "omg_cross" , "omg_trans" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"
