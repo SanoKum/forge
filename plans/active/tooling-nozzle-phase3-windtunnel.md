@@ -110,4 +110,20 @@ $\varepsilon_M,\varepsilon_\theta$ の実装。MOO (co-kriging 多忠実度)・�
 
 ## 9. 変更ログ
 
+- `2026-08-13` (夜間自走) — **§5 ステップ 1–5 完了 (v1+v2 成立)**:
+  - **逆 MOC マーチ** (`moc_inverse.py`): 軸 Cauchy 三角充填 + 壁流線抽出。単体 ALL PASS
+    (一様流=機械精度 / 源流レイ 0.13% / Md4 ノズル: リップ完成・$r_e/\sqrt\varepsilon$=0.996
+    [=√Cd]・質量保存 0.2%・決定性)。軸目標の下流延長則を定量確認 (リップ回復には
+    C⁻ 足まで = 素朴 margin の約 2 倍)。
+  - **v1 チェーン** (`wall_modef`/`deltastar`/`runner_wt`, `case/41` run_0001): Md=4 設計壁の
+    forge Euler 実測 = 出口軸 M 4.024 (+0.6%)・ΔM_max 3.0%Md。誤差構造 = 接合波の軸着地
+    スパイク (円弧/設計壁 C1 接合の曲率跳び — マスク領域) + 減速部の滑らかな欠損 (v2 対象)。
+    Sauer 線形化の壁 θ 過小は kernel と同じ接線上書きで解消。
+  - **v2 Euler 帰還** (`euler_loop.py`, run_0003_v2_tr): 凍結 C⁻ マップ + PM 換算 + 平滑化/
+    クリップ + 同一トポロジ再メッシュ + warm restart。固定 ω=0.4 は高 M 末端でリンギング
+    (run_0002 — dν/dM 縮小による実効過ゲイン) → **決定的 trust-region (悪化 reject → 最良壁
+    巻き戻し + ω 半減) で単調降下 2.89%→**0.45% Md** (13 パス, reject 1回) — §4.7(c) の
+    0.5% 基準達成**。図 = `run_0003_v2_tr/v2_convergence.png`。
+  - 残り: §5 ステップ 4 の $\varepsilon_M/\varepsilon_\theta$ 実装、ステップ 6 (独立目標での
+    自己一貫 + Sivells 照合)、ステップ 7–8 (MOO / 凝縮メニュー)。
 - `2026-08-13` — 起票 (親計画 §5 Phase 3。Phase 1 の帰還エンジンを統合)。
