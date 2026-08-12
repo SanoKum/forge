@@ -7,7 +7,7 @@
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5(e)
 - **related_plans**:
-  - [`turbulence-node-wf-omega-source.md`](turbulence-node-wf-omega-source.md) (親: $\omega$ 側の切り分けはここで完了。E3 は不採用)
+  - [`turbulence-node-wf-omega-source.md`](turbulence-node-wf-omega-source.md) (親: $\omega$ 介入 3 種 (pin / limiter bypass / E3) の分離検証。E3 は不採用)
 - **created**: `2026-08-13`
 - **owner**: `sano`
 
@@ -113,8 +113,8 @@ $$\underbrace{U_{t,\rm coarse}(\texttt{irep})}_{\text{現在選んでいる斜�
 
 ## 6. 変更ログ
 
-- `2026-08-13` — 起票。親 plan で $\omega$ 側 (pin / limiter / $P_\omega$ 源項) を出し切り、
-  **両ケースが同方向に約 11–12% 応答するのに基準に対する符号が逆**という結果を受けて、
+- `2026-08-13` — 起票。親 plan の $\omega$ 介入 3 種 (pin / limiter bypass / $P_\omega$ 源項整合) が
+  **両ケースが同方向に約 11–12% 応答するのに基準に対する符号が逆**でゲートを同時に満たせなかったため、
   $u_\tau$ の入口側 (代表点) へ調査を移す。**「第一内層速度が低い = 代表点選択の誤り」と
   即断しない**ことを §2 に明記。
 - `2026-08-13 (2)` — レビュー反映: ①「$\omega$ 側を出し切った」「単一ノブでは閉じない」を
