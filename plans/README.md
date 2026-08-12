@@ -38,7 +38,7 @@
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase0-foundation.md](active/tooling-nozzle-phase0-foundation.md) | `tooling / optimization` | ↑の Phase 0 子 plan: 問題定義 YAML・区分構成ジオメトリ・TFI→forge h5 メッシュ・バッチ評価 CLI・目的関数ライブラリ |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
-| [turbulence-node-wf-omega-source.md](active/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node 壁関数 DOF の $\omega$ 生産を壁法則整合形へ。第一内層の $\omega$ スパイク (解像 S が壁法則の 2 倍) が node の $C_f$ −15% の有力仮説。**主因は未分離** — 3 分離実験 (pin / limiter bypass / $P_\omega$ 置換) が先 |
+| [turbulence-node-wf-omega-source.md](active/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node 壁関数 DOF の $\omega$ 生産閉包。第一内層は $P_k$ だけ壁関数値・$\omega$ は解像 $S$ で解く不整合 (解像 $S$ が壁法則の 2.09 倍) が node $C_f$ 0.843 の有力仮説。**主因は未分離** — 順序: methods 更新 → 収支診断 → 2×2 factorial → E3 ($S_{\rm wf}$ 置換) |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
 

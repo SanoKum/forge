@@ -110,6 +110,35 @@ $$
 と書ける。`F_1` は壁近傍で 1 に寄る blending function で、壁から離れるほど 0 に近づく。
 したがって cross-diffusion は壁近傍では消え、自由流側で効いてくる。
 
+#### 3.1.1 $\omega$ 生産項の 3 つの流儀と、forge 実装の現状 (2026-08-12 追記)
+
+$\omega$ 生産項には文献上 3 つの書き方があり、**forge の実装は上式 (本文の標準形) と一致していない**。
+
+| # | 形 | 出典・位置づけ |
+| --- | --- | --- |
+| (a) | $P_\omega=\alpha\dfrac{\omega}{\max(k,k_{\min})}P_k$ | 本文の標準形 (上式)。$\nu_t=k/\omega$ の限りで (c) と等価 |
+| (b) | $P_\omega=\alpha\rho S^2$ | Menter 2003 論文の記載。**NASA TMR が誤記 (typo) と明記** |
+| (c) | $P_\omega=\alpha\dfrac{\dot P_k}{\nu_t}$ | **正しい形** (TMR)。$\dot P_k$ は production limiter 適用後の値、$\nu_t$ は SST の (shear-limited) 実値 |
+
+**一次情報** ([NASA Turbulence Modeling Resource, SST](https://tmbwg.github.io/turbmodels/sst.html)):
+
+> "a typographical error existed in this paper that was subsequently corrected by the authors.
+> In the omega equation (2nd part of eqn (1) in the paper), the production term was incorrectly
+> given as α ρ S² (using the paper's notation). Instead, it should have read **α Ṗₖ / νₜ**."
+>
+> "the production limiter is used for **both** k and omega equations, and the constant is changed
+> from 20 to 10."
+
+**forge の現状**: [`ransSource_d.cu`](../../solver_density_cuda/cuda_forge/ransSource_d.cu) は
+`Pw = alpha * rho * S_prod` = **(b) の誤記形**を実装している。また production limiter は
+$k$ 側にのみ適用され $\omega$ 側には適用されていない。
+
+(b) と (c) は $\nu_t$ が shear limiter で抑えられている領域 (近壁・強せん断) で乖離する。
+本件の実害は node 壁関数の第一内層で観測されている
+([plan: turbulence-node-wf-omega-source](../../plans/active/turbulence-node-wf-omega-source.md))。
+**一般内部場を (c) へ直す変更は cell/node 全ケースに影響するため、別 plan として起票し
+回帰を取ってから行う** (本文のこの節は現状の記述であり、修正されたら更新すること)。
+
 ### 3.2 blending による係数切替
 
 SST では係数を 2 組持ち、$F_1$ で混合する。
@@ -407,6 +436,21 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     より長くなる)。場の清浄さ ($\mu_t$ ピーク除去) と $x_R$ 精度のトレードオフ。**既定 ON** (2026-06-28, user 指示;
     `nodeKwfDirichlet=0` で $k$ を解く prod-fix に戻すと $x_R$ が cell/SU2 寄り)。$\omega$ ピンは Dirichlet 化しても
     壁ノードのまま (第一内層へ移すと凹コーナーで $\omega$ ピン値が race し崩壊するため不可)。
+
+  - **★ 既知の不整合 (2026-08-12, 未修正)**: 第一内層ノードは **$P_k$ だけ壁関数値に置換され、
+    $\omega$ は解像ひずみ $S$ で解かれる**という非対称な状態にある。$\omega$ 生産は
+    $P_\omega=\alpha\rho S^2$ で $P_k$ と結合していない (§3.1.1 の誤記形) ため、y+≫1 の
+    未解像な離散勾配がそのまま $\omega$ を駆動する。実測 (case/26 平板 y+30, x=0.6):
+    解像 $S$=1.075e5 に対し壁法則整合 $S_{\rm wf}=u_\tau^2g/\nu$=5.146e4 = **2.09 倍**
+    ($S^2$ で 4.36 倍)。結果、第一内層 $\omega$ が**壁ノードのピン値より高く跳ねる**
+    (1.146e5 → 2.645e5 → 9.635e4)。これは $\alpha\rho S^2$ と $\beta\rho\omega^2$ の局所平衡
+    ($\sqrt{\alpha/\beta}S$=2.754e5, 実測比 0.960) そのもの。
+    高い $\omega$ は $D_k=\beta^*\rho k\omega$ を増やして $k$ を下げ、第一内層では
+    $\mu_t$ が strain-limited 枝 ($SF_2/(a_1\omega)$=1.288) にあるため分子経由で $\mu_t$ も下がる。
+    node の $C_f$ が壁解像基準の 0.843 に留まる件の有力仮説。
+    **cell では同じ DOF の $\omega$ がピンされていて $S$ に応答しない**のが差の出所。
+    分離実験と修正候補は
+    [plan: turbulence-node-wf-omega-source](../../plans/active/turbulence-node-wf-omega-source.md)。
 
 #### (f) 断熱壁の熱的閉包 — Crocco 型回復温度 $T_{aw}$ (`sstThermalWallFunction`)
 
