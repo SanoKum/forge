@@ -238,11 +238,15 @@ SEV = {'STEADY': 0, 'OSCILLATING': 1, 'TRANSIENT-UNSETTLED': 2, 'DRIFTING': 3}
 BUILTIN = ['shock', 'asym', 'machmax', 'pmax']
 # 平板専用 (明示指定のときだけ有効): --quantity theta,cf_retheta
 FLATPLATE = ['theta', 'cf_retheta']
-# 壁面平均せん断 (res_wall_*.h5 の utau/ro から): 壁関数・壁解像を問わず使える派生量
-WALL = ['wall_tau']
+# 壁モデル応力 (res_wall_<physID>_<step>.h5 の utau/ro から tau = rho*utau^2 の面平均)。
+# **壁関数 run 専用** — wallTreatmentSST=0 (壁解像) では utau が出力されず全ゼロになるので
+# NOT APPLICABLE を返す。壁解像の壁応力が要るなら接線 traction を別途算出する必要がある。
+# 範囲は --wall-xmin/--wall-xmax、対象壁は --wall-phys-id で指定する (ケース固有値をハードコードしない)。
+WALL = ['wall_model_tau']
 
 
-def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, cf_x=0.6, cf_ytop=None):
+def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, cf_x=0.6, cf_ytop=None,
+            wall_phys_id=None, wall_xmin=None, wall_xmax=None):
     mesh = find_mesh(run_dir, mesh_arg)
     if mesh is None:
         print(f"\n=== {run_dir}  -> NO mesh (.h5 with /CELLS/centCoords) ==="); return 3
@@ -258,13 +262,15 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
     qa = make_q_asym(cc)
     if qa:
         extractors['asym'] = qa
-    # 未知の量を黙って無視すると「評価していないのに ALL STEADY」になるので必ずエラーにする
-    known = set(extractors) | set(WALL)
+    # 未知の量を黙って無視すると「評価していないのに ALL STEADY」になるので必ずエラーにする。
+    # ただし判定は **固定集合** に対して行う (run 依存で適用不能な asym 等を unknown 扱いしない)。
+    known = set(BUILTIN) | set(FLATPLATE) | set(WALL)
     unknown = [q for q in want if q not in known]
     if unknown:
         print(f"\n=== {run_dir}  -> ERROR: unknown quantity {unknown} "
               f"(available: {sorted(known)}) ===")
         return 3
+    # 適用不能な量 (非対称メッシュの asym 等) は従来どおり skip する
     quantities = [q for q in want if q in extractors]
     series = {q: [] for q in quantities}
     for f in fs:
@@ -276,32 +282,52 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
                 series[q].append(float('nan'))
     worst = 0
     lines = []
-    if 'wall_tau' in want:
+    if 'wall_model_tau' in want:
         import re as _re
-        wf = []
+        pat_w = _re.compile(r'^res_wall_(\d+)_(\d+)\.h5$')
+        by_step = {}
         for f in glob.glob(os.path.join(run_dir, 'res_wall_*.h5')):
-            m = _re.match(r'^res_wall_\d+_(\d+)\.h5$', os.path.basename(f))
-            if m:
-                wf.append((int(m.group(1)), f))
-        wf.sort()
-        if len(wf) < 2:
-            lines.append(f"  {'wall_tau':9s}: only {len(wf)} res_wall_*.h5 -> TRANSIENT-UNSETTLED")
+            m = pat_w.match(os.path.basename(f))
+            if not m:
+                continue
+            pid, st = int(m.group(1)), int(m.group(2))
+            if wall_phys_id is not None and pid != wall_phys_id:
+                continue
+            by_step.setdefault(st, []).append(f)
+        wsteps, wvals = [], []
+        allzero = True
+        for st in sorted(by_step):
+            num = den = 0.0                    # 同一 step の複数壁面は面積(点数)重みで集約
+            for f in by_step[st]:
+                with h5py.File(f, 'r') as hw:
+                    if 'VALUE/utau' not in hw or 'VALUE/ro' not in hw:
+                        continue
+                    xw = hw['MESH/COORD'][:].reshape(-1, 3)[:, 0]
+                    tau = hw['VALUE/ro'][:] * hw['VALUE/utau'][:] ** 2
+                    mm = np.ones_like(xw, bool)
+                    if wall_xmin is not None:
+                        mm &= (xw >= wall_xmin)
+                    if wall_xmax is not None:
+                        mm &= (xw <= wall_xmax)
+                    if mm.sum() == 0:
+                        continue
+                    if np.any(hw['VALUE/utau'][:][mm] > 0.0):
+                        allzero = False
+                    num += float(tau[mm].sum()); den += float(mm.sum())
+            if den > 0:
+                wsteps.append(st); wvals.append(num / den)
+        if allzero and wsteps:
+            lines.append(f"  {'wall_model_tau':14s}: utau is all zero -> NOT APPLICABLE "
+                         f"(wall-function run only; wallTreatmentSST=0 does not output utau)")
+            worst = max(worst, 3)
+        elif len(wsteps) < 2:
+            lines.append(f"  {'wall_model_tau':14s}: only {len(wsteps)} usable res_wall_*.h5 "
+                         f"-> TRANSIENT-UNSETTLED")
             worst = max(worst, 2)
         else:
-            wsteps, wvals = [], []
-            for st, f in wf:
-                hw = h5py.File(f, 'r')
-                if 'VALUE/utau' not in hw or 'VALUE/ro' not in hw:
-                    continue
-                xw = hw['MESH/COORD'][:].reshape(-1, 3)[:, 0]
-                tau = hw['VALUE/ro'][:] * hw['VALUE/utau'][:] ** 2
-                mm = xw > 0.01                      # 前縁・入口近傍を除く
-                if mm.sum() < 3:
-                    mm = np.ones_like(xw, bool)
-                wsteps.append(st); wvals.append(float(tau[mm].mean()))
             v, d, _ = classify(wsteps, wvals, tail_frac, drift_tol, osc_tol, min_snaps)
             worst = max(worst, SEV[v])
-            lines.append(f"  {'wall_tau':9s}: {d:55s} {v}")
+            lines.append(f"  {'wall_model_tau':14s}: {d:50s} {v}")
     for q in quantities:
         verdict, detail, _ = classify(steps, series[q], tail_frac, drift_tol, osc_tol, min_snaps)
         worst = max(worst, SEV[verdict])
@@ -324,6 +350,11 @@ def main():
                          'and assume the wall is y=0 with the plate at x>0)')
     ap.add_argument('--cf-x', type=float, default=0.6,
                     help='streamwise station [m] for theta / cf_retheta (default 0.6)')
+    ap.add_argument('--wall-phys-id', type=int, default=None,
+                    help='wall_model_tau: 対象壁の physID (res_wall_<physID>_*.h5)。既定は全壁を集約')
+    ap.add_argument('--wall-xmin', type=float, default=None,
+                    help='wall_model_tau: 集約する x の下限 [m] (前縁・淀み域を除くのに使う)')
+    ap.add_argument('--wall-xmax', type=float, default=None, help='wall_model_tau: x の上限 [m]')
     ap.add_argument('--cf-ytop', type=float, default=None,
                     help='upper limit [m] of the theta integral (default: full column). '
                          'Use to check sensitivity of theta to the truncation height.')
@@ -337,7 +368,8 @@ def main():
     worst = 0
     for rd in args.run_dirs:
         worst = max(worst, analyze(rd, want, args.tail, args.drift, args.osc, args.min_snaps,
-                                   args.mesh, args.cf_x, args.cf_ytop))
+                                   args.mesh, args.cf_x, args.cf_ytop,
+                                   args.wall_phys_id, args.wall_xmin, args.wall_xmax))
     print(f"\nOVERALL: {'ALL STEADY' if worst == 0 else 'NOT ALL STEADY (see above)'}")
     sys.exit(0 if worst == 0 else 1)
 

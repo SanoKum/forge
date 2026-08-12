@@ -490,8 +490,12 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     (**node SST 壁関数のときだけ有効**。そうでないと `wf_sprod` が未初期化のまま参照され
     $\omega$ 生産を全域で消すため、ゲートは必須)。
     両ケースが同方向に約 11–12% 動くので、**ケース固有係数の調整ではなく構造的介入**である。
-    ただし case/26 は不足側 (−15.6%→−6.1%)、case/40 は過剰側 (−5.5%→+6.1%) と**符号が違う**ので、
-    **残る不一致は単一ノブでは閉じない**。
+    ただし基準に対する絶対誤差は **case/26 が −23.9%→−15.6% (不足側のまま)**、
+    **case/40 が −5.5%→+6.1% (不足→過剰へ)** と**符号が違う**。
+    → **今回試した 3 つの $\omega$ 介入 (Dirichlet ピン / limiter 迂回 / E3) では
+    両ケースのゲートを同時に満たせなかった**。$\omega$ の輸送・ブレンド・適用範囲・$k$ との結合は
+    未検証であり、「$\omega$ 側を出し切った」わけではない。次は独立性の高い代表点経路を診断する
+    ([plan: turbulence-node-wf-representative-point](../../plans/active/turbulence-node-wf-representative-point.md))。
   - **診断の使い方**: `FORGE_WI_FORCE_DIAG=1` で `wi_ftan`/`wi_fnrm`/`wi_fnrm_abs`/`wi_ftan_res`
     を出力する (OFF なら確保も出力もされない)。`FORGE_WF_LIMITER_BYPASS` (−1/0/1) で
     limiter 迂回を $\omega$ ピンから独立に切れる (node SST 壁関数時のみ有効)。

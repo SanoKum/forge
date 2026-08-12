@@ -10,7 +10,7 @@
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5 (automatic wall treatment)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
 - **related_plans**:
-  - [`turbulence-node-wf-representative-point.md`](turbulence-node-wf-representative-point.md) (**後継**: $\omega$ 側を出し切ったので代表点側へ)
+  - [`turbulence-node-wf-representative-point.md`](turbulence-node-wf-representative-point.md) (**後継**: $\omega$ 介入 3 種でゲートを満たせず代表点側へ)
   - [`../accepted/turbulence-node-wall-function-coverage.md`](../accepted/turbulence-node-wall-function-coverage.md) (第一内層への `wf_pk` 適用を入れた計画 = 本件の前段)
   - [`../accepted/turbulence-sst-su2-taw-coupling.md`](../accepted/turbulence-sst-su2-taw-coupling.md) §10c (`nodeOmegaWfDirichlet` を case/40 で棄却した記録)
   - **未起票**: 一般内部場の $P_\omega$ を SST-2003 正式形へ直す件 (§6。影響範囲が大きいので別 plan)
@@ -378,13 +378,15 @@ NASA SST-Vm 標準ケースが約 0.009 と **4 桁違う**ため apples-to-appl
 - [x] 検証基準を外部相関 $C_f(Re_\theta)$ ベースへ改訂 (§7)、前提ゲートと許容差を明文化
 - [x] node 離散化の無罪確認 (`run_0050` vs SU2 `run_0049`, §0.1)
 - [x] 後処理の正式ツール化 (`case/26.flat_plate_sst/tools/cf_retheta_analysis.py`)
-- [x] **実 W–I 接線力の診断 (§4.2)**: 狙った $\tau_w$ は 2–4% 精度で作用 (伝達は健全)、
-      余計な法線力は接線の 0.003% (実害なし)。残: inlet/outlet 収支との閉合
+- [x] **実 W–I 接線力の診断 (§4.2)**: 意図した $\tau_w A_{\rm WI}$ がそのまま内部ノード残差へ加算される
+      (伝達は健全)。法線力は**発達域**で接線の 2.75e-5 (壁全体 6.87e-4、前縁コーナー局所 0.343)。
+      残: inlet/outlet 収支との閉合
 - [x] `methods/turbulence/theory.md` §6.5(e) に分離結果・伝達診断・診断の使い方を反映
-- [x] **$\omega$ 項別収支の診断出力 (§4.1)**: 第一内層は局所 P–D 平衡 96%、収支 0.00% で閉じる。
-      E3 の事前予測 ($\omega$→1.27e5 ≈ ピン値、効果は $Y_{10}$≈0.859 相当) を立てた
-- [x] 2×2 分離実験と相互作用の評価 (§3): 平均主効果 pin +0.1075 / bypass +0.0160 /
-      相互作用 +0.0213。$Y_{11}$=0.876 で目標中心まで 66% (下限まで 74%) の回復
+- [x] **$\omega$ 項別収支の診断出力 (§4.1)**: 第一内層は $D/P$=0.922・$|T|/P$=0.078 で局所源項が支配。
+      収支が閉じるのは `omg_trans` の定義上ほぼ代数的 (物理検証ではない)。
+      E3 の事前見積り ($\omega$→1.27e5、凍結場) を立て、実測 1.345e5 で 6% 以内に的中
+- [x] 2×2 分離実験と相互作用の評価 (§3): 平均主効果 pin **+0.1087** / bypass **+0.0163** /
+      相互作用 **+0.0215**。$Y_{11}$=**0.8864** で目標中心まで **70%** (下限まで **79%**) の回復
 - [x] **E3 実装 (`wf_irep_flag` + `wf_sprod`) と判定**: case/26 で 0.7615→**0.8445**
       ($\omega$ 2.62e5→1.35e5、事前見積り 0.484 倍に対し実測 0.513 倍)。
       **case/40 で $\tau_w$ が 1.1226 倍 = y+1 真値比 ≈1.061 に過大化** →
@@ -497,3 +499,11 @@ NASA SST-Vm 標準ケースが約 0.009 と **4 桁違う**ため apples-to-appl
   約 11–12% の同方向応答を与える構造的介入」。case/40 の絶対誤差は −5.5%→+6.1% で**ほぼ対称**であり
   「大幅に悪化」ではなく**事前ゲート不合格**。y+1 基準との同一定義比較の正式ツール化は後継 plan へ。
   ④case/40 run 表に `run_0071_E3` を追加、`methods/turbulence/theory.md` に E3 の仕様と不採用を反映。
+- `2026-08-13 (5)` — レビュー反映: ①`check_quasisteady.py` の**新規回帰を修正** —
+  未知量チェックを run 依存の extractor でなく**固定集合**に対して行うようにし、
+  非対称メッシュの `asym` が unknown 扱いされる問題を解消 (適用不能な量は従来どおり skip)。
+  ②`wall_tau` を **`wall_model_tau`** へ改名し汎用化 — `--wall-phys-id` / `--wall-xmin` /
+  `--wall-xmax` を追加 (ケース固有値のハードコード撤廃)、**同一 step の複数壁面を点数重みで集約**、
+  `with h5py.File(...)` でクローズ、**utau 全ゼロなら NOT APPLICABLE** (壁関数 run 専用と明記)。
+  ③`methods/turbulence/theory.md` の case/26 誤差を **−23.9%→−15.6%** に訂正
+  (誤って −15.6%→−6.1% と書いていた)。④完了条件の古い数値を本文と同期。
