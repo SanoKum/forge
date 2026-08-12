@@ -95,6 +95,14 @@
 
 ## 9. 変更ログ
 
+- `2026-08-13` — §5 ステップ 3 完了: `opt/` モジュール新設 (`ehvi.py` = 2 目的 EHVI 閉形式
+  [Hupkens–Yang–Emmerich 区分和] + hypervolume + 非劣解 / `doe.py` = LHS / `surrogate.py` =
+  SMT KRG 束 [既定で決定的・補間的を確認] / `moo.py` = NSGA-II サロゲート探索 + EHVI infill
+  提案 [候補 = 最終個体群 ∪ LHS 探査点、正規化距離で重複排除])。**検証 ALL PASS**
+  (`design/tests/run_opt_tests.py`, .venv-opt): EHVI は (i) 空前線の解析解一致、(ii) σ→0 極限 =
+  決定的 HVI 厳密一致、(iii) **Monte-Carlo 照合 4 配置で ≤0.1% 一致**、(iv) **ZDT1 ミニ BO
+  (d=4, DOE24+infill2×14=52 評価) で HV 96.6→120.62 = 真値 120.667 の 99.96%**。LHS/infill の
+  同一 seed 決定性・KRG 補間性も PASS。§4 の「A' 昇格」条項は不発 (自作 EHVI で足りる)。
 - `2026-08-13` — §5 ステップ 1–2 完了: `wall.py` に `bell_type: top` (TOP 放物線 = 2 次 Bézier。
   $t(x)$ 逆変換は Citardauq 型で $A\to0$ 安定、整合条件 $\tan\theta_n >$ 弦勾配 $> \tan\theta_e$ を
   構築時検査)。単体テスト 10 本追加 ALL PASS (端点/接線/C1/凸性/数値微分整合/NG 検出)。runner の
