@@ -95,5 +95,12 @@
 
 ## 9. 変更ログ
 
+- `2026-08-13` — §5 ステップ 1–2 完了: `wall.py` に `bell_type: top` (TOP 放物線 = 2 次 Bézier。
+  $t(x)$ 逆変換は Citardauq 型で $A\to0$ 安定、整合条件 $\tan\theta_n >$ 弦勾配 $> \tan\theta_e$ を
+  構築時検査)。単体テスト 10 本追加 ALL PASS (端点/接線/C1/凸性/数値微分整合/NG 検出)。runner の
+  `theta_e_deg` dv 化 + `problem_bell_top.yaml`。E2E スモーク
+  `case/40.nozzle_design_tool/run_0072_bell_top_smoke` = 品質 PASS / 収束 **ALL PASS**
+  (3.4–6.0 桁) / quasisteady **ALL STEADY**、η=0.9731・ṁ=1.2928 (同条件 Hermite run_0071 と
+  −0.03%/一致)。
 - `2026-08-13` — 起票 (親計画 §4.6③ の 2026-08-13 改訂 = TOP 直接幾何 dv を受けて、旧予定の
   「モード K + 帰還前提の MOO」から「TOP 幾何 dv の MOO」にスコープ確定)。

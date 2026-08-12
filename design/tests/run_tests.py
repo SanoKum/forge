@@ -71,6 +71,33 @@ d2l = (w.r(np.array([xa - h]))[0] - 2 * w.r(np.array([xa - 2 * h]))[0] + w.r(np.
 curv = 1.0 / (wp.Ru * np.cos(wp.phi_u) ** 3)
 check("wall C2 接続 @contraction/Ru", abs(d2l - curv) / curv < 0.05)
 
+# --- TOP 放物線ベル (Phase 2) --------------------------------------------------
+wpt = WallParams(bell_type="top")
+wt = NozzleWall(wpt)
+check("TOP validate OK", wt.validate() == [])
+check("TOP r(P_a)=r_a", abs(wt.r(np.array([wt.x_a]))[0] - wt.r_a) < 1e-12)
+check("TOP r(x_e)=r_exit", abs(wt.r(np.array([wpt.L_div]))[0] - wpt.r_exit) < 1e-9)
+check("TOP 接線 θn @P_a",
+      abs(wt.drdx(np.array([wt.x_a + 1e-12]))[0] - np.tan(wpt.theta_a)) < 1e-6)
+check("TOP 接線 θe @出口",
+      abs(wt.drdx(np.array([wpt.L_div]))[0] - np.tan(wpt.theta_e)) < 1e-9)
+h = 1e-6
+dl = (wt.r(np.array([wt.x_a - h]))[0] - wt.r(np.array([wt.x_a - 2 * h]))[0]) / h
+dr_ = (wt.r(np.array([wt.x_a + 2 * h]))[0] - wt.r(np.array([wt.x_a + h]))[0]) / h
+check("TOP C1 連続 @Rd/bell", abs(dl - dr_) < 5e-3)
+xs_t = np.linspace(wt.x_a, wpt.L_div, 500)
+check("TOP drdx 単調減少 (放物線の凸性)", np.all(np.diff(wt.drdx(xs_t)) < 1e-12))
+# r(x) と数値微分の整合 (t(x) 逆変換の検証)
+dnum = (wt.r(xs_t[1:-1] + 1e-6) - wt.r(xs_t[1:-1] - 1e-6)) / 2e-6
+check("TOP drdx = 数値微分", np.max(np.abs(wt.drdx(xs_t[1:-1]) - dnum)) < 1e-5)
+# 整合チェック: θn < 弦勾配 / θe > 弦勾配 は明示エラー
+for bad in (dict(theta_a=np.deg2rad(10.0)), dict(theta_e=np.deg2rad(20.0))):
+    try:
+        NozzleWall(WallParams(bell_type="top", **bad))
+        check(f"TOP 整合 NG 検出 {bad}", False)
+    except ValueError:
+        check(f"TOP 整合 NG 検出 {list(bad)[0]}", True)
+
 # --- メッシュ: 決定性・整合 ---------------------------------------------------
 mp = Mesh2DParams(ni=61, nj=21, scale=0.01)
 c1, q1, b1 = generate_axisym_mesh(w, mp)

@@ -34,6 +34,9 @@ def build_wall(p: Problem) -> tuple:
     g = p.geometry
     theta_a = np.deg2rad(dv_value(p, "theta_a_deg"))
     L_div = dv_value(p, "L_over_rt")
+    # theta_e は dv 宣言があれば dv (TOP 幾何 dv — 親計画 §4.6③)、なければ geometry 固定値
+    theta_e_deg = (dv_value(p, "theta_e_deg") if "theta_e_deg" in p.dv
+                   else float(g.get("theta_e_deg", 8.0)))
     wp = WallParams(
         r_inlet=float(g.get("r_inlet", 2.5)),
         L_pipe=float(g.get("L_pipe", 0.5)),
@@ -44,7 +47,8 @@ def build_wall(p: Problem) -> tuple:
         theta_a=theta_a,
         L_div=L_div,
         r_exit=float(np.sqrt(p.spec["eps"])),
-        theta_e=np.deg2rad(float(g.get("theta_e_deg", 8.0))),
+        theta_e=np.deg2rad(theta_e_deg),
+        bell_type=str(g.get("bell_type", "hermite")),
     )
     wall = NozzleWall(wp)
     msgs = wall.validate()

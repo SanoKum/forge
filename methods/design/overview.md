@@ -61,8 +61,11 @@ Bézier 自由度勘定の整合。
 壁は上流から: 入口配管 → 収縮 (Bell–Mehta 5 次) → 曲率ブレンド → 上流円弧 $R_u$ →
 スロート → 下流円弧 $R_d$ (終端角 $\theta_a$) → 下流壁 → 出口。
 
-- 下流壁の初期形状は **3 次 Hermite ベル** (円弧終端 $P_a$ に C1 接続、出口半径 $\sqrt{\varepsilon}$・
-  出口角 $\theta_e$)。逆設計の出発点であり、精度は帰還 (Phase 1) の収束速度にのみ影響する。
+- 下流壁は `geometry.bell_type` で選ぶ: **`top` = TOP 放物線** ($P_a$ で接線 $\theta_n$・出口
+  $(L,\sqrt{\varepsilon})$ で接線 $\theta_e$ の 2 次 Bézier。③の既定で、$\theta_n,\theta_e,L$ が
+  そのまま dv。整合条件 $\tan\theta_n >$ 弦勾配 $> \tan\theta_e$ は構築時に検査) /
+  **`hermite` = 3 次 Hermite** (同じ端点条件の旧初期壁・回帰対照。①②では逆設計の出発点で、
+  精度は帰還の収束速度にのみ影響)。`theta_e_deg` は dv 宣言があれば dv、なければ geometry 固定値。
 - 中心線マッハ Bézier: CP の x 等間隔固定で $M_c(x)$ は次数 $n$ の多項式。両端 C2 拘束で
   自由 CP 数 $k=n-5$ (`geometry/bezier.py`)。
 - アンカー (始点 $x_k$ での $M,M',M''$): Sauer 遷音速解 (`geometry/transonic.py` — 幾何スロートと

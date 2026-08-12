@@ -49,10 +49,11 @@ class WallParams:
     Ru: float = 1.5             # 上流円弧曲率半径
     Rd: float = 0.4             # 下流円弧曲率半径
     phi_u: float = np.deg2rad(25.0)   # 上流円弧の入口側角
-    theta_a: float = np.deg2rad(20.0) # 下流円弧終端角 (= 初期膨張角)
+    theta_a: float = np.deg2rad(20.0) # 下流円弧終端角 (= 初期膨張角 θn)
     L_div: float = 7.0          # スロート → 出口の軸長
     r_exit: float = 3.0         # 出口半径 (= sqrt(面積比))
-    theta_e: float = np.deg2rad(8.0)  # 出口壁角 (ベル初期壁用)
+    theta_e: float = np.deg2rad(8.0)  # 出口壁角
+    bell_type: str = "hermite"  # 下流壁の族: "hermite" (3次) | "top" (Rao TOP 放物線)
 
 
 class NozzleWall:
@@ -75,14 +76,39 @@ class NozzleWall:
         # 下流円弧終端
         self.x_a = p.Rd * np.sin(p.theta_a)
         self.r_a = 1.0 + p.Rd * (1.0 - np.cos(p.theta_a))
-        # ベル初期壁 (3 次 Hermite: 値+勾配)
+        # ベル壁: TOP 放物線 (2 次 Bézier) または 3 次 Hermite
         h = p.L_div - self.x_a
         if h <= 0:
             raise ValueError("L_div が下流円弧より短い")
-        A = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [1, 1, 1, 1], [0, 1, 2, 3]], dtype=float)
-        b = np.array([self.r_a, np.tan(p.theta_a) * h, p.r_exit, np.tan(p.theta_e) * h])
-        self._c_bell = np.linalg.solve(A, b)
         self.x_e = p.L_div
+        if p.bell_type == "top":
+            # Rao TOP: P_a で接線 θn(=θa)・出口で接線 θe の放物線 (任意の 2 次 Bézier
+            # は放物線)。制御点 P1 = 両接線の交点。整合には θn > 弦勾配 > θe が必要
+            s0, s2 = np.tan(p.theta_a), np.tan(p.theta_e)
+            sc = (p.r_exit - self.r_a) / h
+            if not (s0 > sc > s2):
+                raise ValueError(
+                    f"TOP 整合 NG: tanθn({s0:.4f}) > 弦勾配({sc:.4f}) > tanθe({s2:.4f}) が必要")
+            x1 = (p.r_exit - self.r_a + s0 * self.x_a - s2 * self.x_e) / (s0 - s2)
+            r1 = self.r_a + s0 * (x1 - self.x_a)
+            # x(t) = x_a + Bx·t + Ax·t², r(t) 同型 (t∈[0,1] の Bernstein 2 次)
+            self._top_Bx = 2.0 * (x1 - self.x_a)
+            self._top_Ax = self.x_a - 2.0 * x1 + self.x_e
+            self._top_Br = 2.0 * (r1 - self.r_a)
+            self._top_Ar = self.r_a - 2.0 * r1 + p.r_exit
+        elif p.bell_type == "hermite":
+            A = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [1, 1, 1, 1], [0, 1, 2, 3]], dtype=float)
+            b = np.array([self.r_a, np.tan(p.theta_a) * h, p.r_exit, np.tan(p.theta_e) * h])
+            self._c_bell = np.linalg.solve(A, b)
+        else:
+            raise ValueError(f"bell_type '{p.bell_type}' は未実装 (hermite | top)")
+
+    def _top_t(self, x):
+        """TOP 放物線の t(x) (Citardauq 型 — A→0 でも安定, x(t) 単調前提)。"""
+        dx = np.asarray(x, dtype=float) - self.x_a
+        B, A = self._top_Bx, self._top_Ax
+        disc = np.sqrt(np.maximum(B * B + 4.0 * A * dx, 0.0))
+        return 2.0 * dx / (B + disc)
 
     # -- 評価 ---------------------------------------------------------------
     def r(self, x):
@@ -98,7 +124,11 @@ class NozzleWall:
         out[m_con] = _poly_eval(self._c_con, self.x_cs, self.x_au, x[m_con])
         out[m_ru] = 1.0 + p.Ru - np.sqrt(np.maximum(p.Ru ** 2 - x[m_ru] ** 2, 0.0))
         out[m_rd] = 1.0 + p.Rd - np.sqrt(np.maximum(p.Rd ** 2 - x[m_rd] ** 2, 0.0))
-        out[m_bell] = _poly_eval(self._c_bell, self.x_a, self.x_e, x[m_bell])
+        if p.bell_type == "top":
+            t = self._top_t(x[m_bell])
+            out[m_bell] = self.r_a + self._top_Br * t + self._top_Ar * t * t
+        else:
+            out[m_bell] = _poly_eval(self._c_bell, self.x_a, self.x_e, x[m_bell])
         return out
 
     def drdx(self, x):
@@ -112,7 +142,12 @@ class NozzleWall:
         out[m_con] = _poly_eval(self._c_con, self.x_cs, self.x_au, x[m_con], order=1)
         out[m_ru] = x[m_ru] / np.sqrt(np.maximum(p.Ru ** 2 - x[m_ru] ** 2, 1e-30))
         out[m_rd] = x[m_rd] / np.sqrt(np.maximum(p.Rd ** 2 - x[m_rd] ** 2, 1e-30))
-        out[m_bell] = _poly_eval(self._c_bell, self.x_a, self.x_e, x[m_bell], order=1)
+        if p.bell_type == "top":
+            t = self._top_t(x[m_bell])
+            out[m_bell] = ((self._top_Br + 2.0 * self._top_Ar * t)
+                           / (self._top_Bx + 2.0 * self._top_Ax * t))
+        else:
+            out[m_bell] = _poly_eval(self._c_bell, self.x_a, self.x_e, x[m_bell], order=1)
         return out
 
     # -- 健全性 (事前フィルタの一部) -----------------------------------------
