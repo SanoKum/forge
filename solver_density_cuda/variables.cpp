@@ -166,6 +166,19 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             c_d.erase("wf_sprod");
         }
     }
+    // 代表点幾何診断 (§3.1) も env ゲート
+    {
+        const char* e = std::getenv("FORGE_WF_REP_DIAG");
+        if (!(e && std::atoi(e) != 0)) {
+            for (const char* n : {"rep_id", "rep_y", "rep_dist", "rep_cos", "rep_toff", "rep_wdratio",
+                                  "rep_nx", "rep_ny", "rep_nz"}) {
+                cellValNames.remove(n);
+                output_cellValNames.remove(n);
+                c.erase(n);
+                c_d.erase(n);
+            }
+        }
+    }
     // omega 項別収支 (§4.1) も env ゲート
     {
         const char* e = std::getenv("FORGE_OMEGA_BUDGET");
@@ -190,6 +203,7 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             // 診断配列は毎ステップ書かれるとは限らないので確保直後に 0 初期化する
             // (未初期化 device メモリを出力しないため)。
             if (cellValName.rfind("wi_", 0) == 0 || cellValName.rfind("omg_", 0) == 0
+                || cellValName.rfind("rep_", 0) == 0
                 || cellValName == "wf_irep_flag" || cellValName == "wf_sprod") {
                 gpuErrchk( cudaMemset(this->c_d.at(cellValName), 0, (msh.nCells_all)*sizeof(flow_float)) );
             }

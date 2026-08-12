@@ -24,6 +24,9 @@ constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 // 共存しない (wmlesActiveForBcond は RANS で false) ため二重初期化にならない)。
 __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf,
                             flow_float* wf_irep_flag, flow_float* wf_sprod,
+                            flow_float* rep_id, flow_float* rep_y, flow_float* rep_dist,
+                            flow_float* rep_cos, flow_float* rep_toff, flow_float* rep_wdratio,
+                            flow_float* rep_nx, flow_float* rep_ny, flow_float* rep_nz,
                              flow_float* roOmega_wf, flow_float* Taw_diag, flow_float* Qw_Wall,
                              flow_float* Taw_Prim_Overlay,
                              flow_float* Taw_HTnx, flow_float* Taw_HTny, flow_float* Taw_HTnz)
@@ -33,6 +36,11 @@ __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau
         wf_pk[ic] = static_cast<flow_float>(-1.0);
         if (wf_irep_flag != nullptr) wf_irep_flag[ic] = static_cast<flow_float>(0.0);
         if (wf_sprod != nullptr) wf_sprod[ic] = static_cast<flow_float>(-1.0);
+        if (rep_id != nullptr) {
+            rep_id[ic] = rep_y[ic] = rep_dist[ic] = static_cast<flow_float>(-1.0);
+            rep_cos[ic] = rep_toff[ic] = rep_wdratio[ic] = static_cast<flow_float>(-1.0);
+            rep_nx[ic] = rep_ny[ic] = rep_nz[ic] = static_cast<flow_float>(0.0);
+        }
         Tau_Wall[ic] = static_cast<flow_float>(-1.0);
         roK_wf[ic] = static_cast<flow_float>(-1.0);
         roOmega_wf[ic] = static_cast<flow_float>(-1.0);
@@ -59,6 +67,10 @@ __global__ void compute_wall_friction_sst_d(
     flow_float* wf_pk,
     flow_float* wf_irep_flag,   // node: 第一内層ノード (irep) を 1 でマーク (2×2 分離用マスク)
     flow_float* wf_sprod,       // E3: 第一内層に壁法則整合ひずみ二乗 S_wf^2 (非対象 -1)
+    // 診断 (§3.1): 代表点選択の幾何を壁ノードへ格納。nullptr 可 (診断オフ)。
+    flow_float* rep_id, flow_float* rep_y, flow_float* rep_dist,
+    flow_float* rep_cos, flow_float* rep_toff, flow_float* rep_wdratio,
+    flow_float* rep_nx, flow_float* rep_ny, flow_float* rep_nz,
     // node-centered (isNode=1): bplane_cell は壁ノード W (u=0,Dirichlet)。代表内部点を選ぶための
     // CV 座標と CSR 隣接。SU2 Normal_Neighbor 流。cell モード (isNode=0) では未使用 (nullptr 可)。
     int isNode,
@@ -114,6 +126,7 @@ __global__ void compute_wall_friction_sst_d(
         flow_float best_cos = static_cast<flow_float>(-2.0);
         geom_int   bestI = -1;
         flow_float bestDn = kSmall;
+        flow_float bestDist = kSmall;
         const flow_float xw = ccx[ic], yw = ccy[ic], zw = ccz[ic];
         for (geom_int j = cell_planes_index[ic]; j < cell_planes_index[ic + 1]; ++j) {
             const geom_int ipn = cell_planes[j];
@@ -130,7 +143,7 @@ __global__ void compute_wall_friction_sst_d(
             const flow_float dn_in = -(dx * nx + dy * ny + dz * nz);  // 壁内向き距離 (>0 が内部側)
             if (dn_in <= static_cast<flow_float>(0.0)) continue;
             const flow_float cosv = dn_in / dist;               // 内向き法線との cos
-            if (cosv > best_cos) { best_cos = cosv; bestI = cand; bestDn = dn_in; }
+            if (cosv > best_cos) { best_cos = cosv; bestI = cand; bestDn = dn_in; bestDist = dist; }
         }
         if (bestI < 0) {                                        // 代表点なし: 退避
             utau_b[ib] = static_cast<flow_float>(0.0);
@@ -141,6 +154,17 @@ __global__ void compute_wall_friction_sst_d(
         }
         irep = bestI;
         y    = max(bestDn, kSmall);
+        // 診断 (§3.1): 選択の幾何。接線オフセットは |d| と法線成分から
+        //   |d_t| = sqrt(max(|d|^2 - y^2, 0))  (d = x_I - x_W)
+        if (rep_id != nullptr) {
+            rep_id[ic]      = static_cast<flow_float>(irep);
+            rep_y[ic]       = y;
+            rep_dist[ic]    = bestDist;
+            rep_cos[ic]     = best_cos;
+            rep_toff[ic]    = sqrt(max(bestDist * bestDist - y * y, static_cast<flow_float>(0.0)));
+            rep_wdratio[ic] = wall_dist[irep] / max(y, kSmall);
+            rep_nx[ic] = nx; rep_ny[ic] = ny; rep_nz[ic] = nz;   // 壁の外向き単位法線
+        }
     }
 
     const flow_float rho = max(ro[irep], kSmall);
@@ -312,7 +336,17 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["wf_irep_flag"], var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr, var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["wf_irep_flag"], var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr,
+        var.c_d.count("rep_id") ? var.c_d["rep_id"] : nullptr,
+        var.c_d.count("rep_y") ? var.c_d["rep_y"] : nullptr,
+        var.c_d.count("rep_dist") ? var.c_d["rep_dist"] : nullptr,
+        var.c_d.count("rep_cos") ? var.c_d["rep_cos"] : nullptr,
+        var.c_d.count("rep_toff") ? var.c_d["rep_toff"] : nullptr,
+        var.c_d.count("rep_wdratio") ? var.c_d["rep_wdratio"] : nullptr,
+        var.c_d.count("rep_nz") ? var.c_d["rep_nz"] : nullptr,
+        var.c_d.count("rep_ny") ? var.c_d["rep_ny"] : nullptr,
+        var.c_d.count("rep_nx") ? var.c_d["rep_nx"] : nullptr,
+        var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
 }
 
 namespace {
@@ -433,6 +467,15 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         var.c_d["wf_pk"],
         var.c_d["wf_irep_flag"],
         var.c_d.count("wf_sprod") ? var.c_d["wf_sprod"] : nullptr,
+        var.c_d.count("rep_id") ? var.c_d["rep_id"] : nullptr,
+        var.c_d.count("rep_y") ? var.c_d["rep_y"] : nullptr,
+        var.c_d.count("rep_dist") ? var.c_d["rep_dist"] : nullptr,
+        var.c_d.count("rep_cos") ? var.c_d["rep_cos"] : nullptr,
+        var.c_d.count("rep_toff") ? var.c_d["rep_toff"] : nullptr,
+        var.c_d.count("rep_wdratio") ? var.c_d["rep_wdratio"] : nullptr,
+        var.c_d.count("rep_nx") ? var.c_d["rep_nx"] : nullptr,
+        var.c_d.count("rep_ny") ? var.c_d["rep_ny"] : nullptr,
+        var.c_d.count("rep_nz") ? var.c_d["rep_nz"] : nullptr,
         // node: SU2 Normal_Neighbor 代表内部点選択用 (cell では未使用)
         isNode,
         msh.nNormalPlanes,

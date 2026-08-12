@@ -155,6 +155,19 @@ public:
         // ransSource が omega 生産にのみ使う (k 生産は既に wf_pk で置換済み)。
         // FORGE_WF_OMEGA_SOURCE=1 のときだけ ransSource が参照する (既定はビット不変)。
         "wf_sprod",
+        // 診断 (2026-08-13, plan turbulence-node-wf-representative-point §3.1): node 壁関数の
+        // 代表点 (Normal_Neighbor) 選択の幾何。**壁ノード**に格納 (非壁は -1)。
+        //   rep_id      : 選ばれた irep のインデックス (float 化。取り違え検出用)
+        //   rep_y       : 壁関数が使う法線距離 y=(x_I-x_W)·(-n)
+        //   rep_dist    : 実距離 |x_I-x_W|
+        //   rep_cos     : best_cos (内向き法線との cos。現行の唯一の選択基準)
+        //   rep_toff    : 接線方向オフセット |(x_I-x_W) - y·(-n)|
+        //   rep_wdratio : wall_dist[irep]/y (壁距離場との整合)
+        // FORGE_WF_REP_DIAG=1 のときだけ確保・出力される。
+        //   rep_nx/ny/nz: 壁の **外向き** 単位法線 (後処理で法線上補間をするのに要る。
+        //                  代表点方向で代用すると曲面で 15-20 度ずれる)
+        "rep_id", "rep_y", "rep_dist", "rep_cos", "rep_toff", "rep_wdratio",
+        "rep_nx", "rep_ny", "rep_nz",
         // 診断/分離実験 (2026-08-12, plan §3 の 2×2 factorial): node 壁関数の **第一内層ノード
         // (irep)** を 1 でマークする (壁ノード・非対象は 0)。`wf_pk>=0` は壁ノードにも立つため
         // 「第一内層だけ」を選ぶマスクとしては使えない。cell では常に 0 (= cell ビット不変が構造的に保証)。
@@ -243,6 +256,8 @@ public:
         // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
         "wi_ftan" , "wi_fnrm" , "wi_fnrm_abs" , "wi_ftan_res" , "wf_irep_flag" ,
         "omg_prod" , "omg_dest" , "omg_cross" , "omg_trans" , "omg_axisym" , "wf_sprod" ,
+        "rep_id" , "rep_y" , "rep_dist" , "rep_cos" , "rep_toff" , "rep_wdratio" ,
+        "rep_nx" , "rep_ny" , "rep_nz" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"
