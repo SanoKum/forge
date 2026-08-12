@@ -39,7 +39,7 @@
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
-| [turbulence-reichardt-gap-residual.md](active/turbulence-reichardt-gap-residual.md) | `turbulence / boundary` | 壁解像プロファイルが $y^+\approx30$ で Reichardt 相関を約 5% 下回る件。**SU2 (全残差収束) も 0.948 で forge と 0.1–0.2% 一致**するため forge 固有性・自由流乱流・補間手法は除外済み。残る候補は有限 $Re$ / 入口・前縁の扱い / 相関そのものの適合限界 |
+| [turbulence-reichardt-gap-residual.md](active/turbulence-reichardt-gap-residual.md) | `turbulence / boundary` | 壁解像プロファイルが $y^+\approx30$ で Reichardt 相関を約 5% 下回る件。**SU2 (全残差収束) も 0.948 で forge と 0.1–0.2% 一致**するため forge 固有性・自由流乱流・補間手法は除外済み。**壁法則スイープで Spalding は逆に 1.020** (法則間の広がり 7%) なので差の相当部分は相関側。**forge の実装バグではないが壁関数の低摩擦バイアスには寄与する** (壁法則段 1.0425)。残る候補は有限 $Re$ ($Re_\theta$ 3600–5800) / 入口・前縁の扱い |
 
 ## accepted (現役の設計判断)
 
@@ -97,7 +97,7 @@
 | [turbulence-sst-freestream-init.md](accepted/turbulence-sst-freestream-init.md) | `turbulence` | SST 初期乱流の freestream 初期化 (kInit / omegaInit) |
 | [verification-passive-pseudoshock-control.md](accepted/verification-passive-pseudoshock-control.md) | `verification` | 多孔壁パッシブコントロールの逆解析 (case/36)。2D で中心軸波状 ~30% 低減=ショックレス化を定性再現 (Phase 1 完了) |
 | [turbulence-node-wf-representative-point.md](accepted/turbulence-node-wf-representative-point.md) | `turbulence / boundary` | node 壁関数の代表点 (Normal_Neighbor) 診断。$\omega$ 側を出し切っても両ケースの符号が逆 (case/26 不足 / case/40 過剰) なので $u_\tau$ の入口側へ。**幾何 / 代表点速度 / 壁解像基準の同一位置サンプリング**の 3 分離が先、アルゴリズム変更は後 **完了 (2026-08-13)**: 候補 A (法線化) は凍結場で $\tau_w$ 比 0.610 と逆効果のため不採用、候補 B (自由流乱流) は棄却、SU2 クロスチェックで forge 固有性を除外。残件は Reichardt 差 plan へ |
-| [turbulence-node-wf-omega-source.md](accepted/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node 壁関数経路の低摩擦解。$\omega$ 介入 3 種 (pin / limiter bypass / E3) を分離検証したが**両ケースのゲートを同時に満たせず** (case/26 は 0.84–0.86 止まり、E3 は case/40 で ≈1.061)。E3 は不採用・実験経路として残置。後継 = 代表点診断 plan |
+| [turbulence-node-wf-omega-source.md](accepted/turbulence-node-wf-omega-source.md) | `turbulence / boundary` | node 壁関数経路の低摩擦解。$\omega$ 介入 3 種 (pin / limiter bypass / E3) を分離検証したが**両ケースのゲートを同時に満たせず** (case/26 は 0.84–0.86 止まり、E3 は case/40 で 1.1414)。E3 は不採用・実験経路として残置。後継 = 代表点診断 plan |
 
 ## archived (superseded / 終了)
 

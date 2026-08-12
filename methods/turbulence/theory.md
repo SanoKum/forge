@@ -135,7 +135,7 @@ $k$ 側にのみ適用され $\omega$ 側には適用されていない。
 
 (b) と (c) は $\nu_t$ が shear limiter で抑えられている領域 (近壁・強せん断) で乖離する。
 本件の実害は node 壁関数の第一内層で観測されている
-([plan: turbulence-node-wf-omega-source](../../plans/active/turbulence-node-wf-omega-source.md))。
+([plan: turbulence-node-wf-omega-source](../../plans/accepted/turbulence-node-wf-omega-source.md))。
 **一般内部場を (c) へ直す変更は cell/node 全ケースに影響するため、別 plan として起票し
 回帰を取ってから行う** (本文のこの節は現状の記述であり、修正されたら更新すること)。
 
@@ -450,7 +450,7 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     node の $C_f$ が壁解像基準の 0.843 に留まる件の有力仮説。
     **cell では同じ DOF の $\omega$ がピンされていて $S$ に応答しない**のが差の出所。
     分離実験と修正候補は
-    [plan: turbulence-node-wf-omega-source](../../plans/active/turbulence-node-wf-omega-source.md)。
+    [plan: turbulence-node-wf-omega-source](../../plans/accepted/turbulence-node-wf-omega-source.md)。
   - **★ 分離実験の結果 (2026-08-12)**: この構成の寄与を 2×2 factorial で分離した
     ($\omega$ Dirichlet ピン × SST shear limiter 迂回、case/26 平板 y+27、
     外部相関 $C_f/C_{f,\mathrm{KS}}$、W–I 双対面で実際に加わった接線力ベース、
@@ -484,7 +484,7 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     `ransSource_d.cu` が $\omega$ 生産の入力にのみ使う。$\alpha P_{k,\rm wf}/\nu_{t,\rm wf}$ の形は
     低 $y^+$ で 0/0 になるため $S_{\rm wf}^2$ を直接使う。
     **結果**: case/26 平板で $C_f/C_{f,\mathrm{KS}}$ 0.7615→**0.8445** ($\omega$ 2.62e5→1.35e5)。
-    **case/40 ベルノズルでは $\tau_w$ が 1.1226 倍 = y+1 基準比 ≈1.061 に過大化**し、
+    **case/40 ベルノズルでは $\tau_w$ が 1.1226 倍 = y+1 内部基準比 1.1414 に過大化**し、
     事前に定めた採否ゲート (「case/26 の改善が case/40 の過大化を伴わない」) を満たさないため
     **既定化しない**。実験経路として `FORGE_WF_OMEGA_SOURCE=1` で残す
     (**node SST 壁関数のときだけ有効**。そうでないと `wf_sprod` が未初期化のまま参照され
@@ -495,7 +495,7 @@ $C_f/C_{f,\text{corr}}$ がいずれも 0.9–1.0 に収まる)。
     → **今回試した 3 つの $\omega$ 介入 (Dirichlet ピン / limiter 迂回 / E3) では
     両ケースのゲートを同時に満たせなかった**。$\omega$ の輸送・ブレンド・適用範囲・$k$ との結合は
     未検証であり、「$\omega$ 側を出し切った」わけではない。次は独立性の高い代表点経路を診断する
-    ([plan: turbulence-node-wf-representative-point](../../plans/active/turbulence-node-wf-representative-point.md))。
+    ([plan: turbulence-node-wf-representative-point](../../plans/accepted/turbulence-node-wf-representative-point.md))。
   - **診断の使い方**: `FORGE_WI_FORCE_DIAG=1` で `wi_ftan`/`wi_fnrm`/`wi_fnrm_abs`/`wi_ftan_res`
     を出力する (OFF なら確保も出力もされない)。`FORGE_WF_LIMITER_BYPASS` (−1/0/1) で
     limiter 迂回を $\omega$ ピンから独立に切れる (node SST 壁関数時のみ有効)。

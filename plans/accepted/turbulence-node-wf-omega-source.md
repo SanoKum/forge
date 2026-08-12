@@ -5,7 +5,7 @@
 ## メタ
 
 - **area**: `turbulence / boundary`
-- **status**: `draft`
+- **status**: `done`
 - **related_docs**:
   - [`methods/turbulence/theory.md`](../../methods/turbulence/theory.md) §6.5 (automatic wall treatment)
   - [`methods/turbulence/implementation.md`](../../methods/turbulence/implementation.md) §3.7
@@ -389,11 +389,11 @@ NASA SST-Vm 標準ケースが約 0.009 と **4 桁違う**ため apples-to-appl
       相互作用 **+0.0215**。$Y_{11}$=**0.8864** で目標中心まで **70%** (下限まで **79%**) の回復
 - [x] **E3 実装 (`wf_irep_flag` + `wf_sprod`) と判定**: case/26 で 0.7615→**0.8445**
       ($\omega$ 2.62e5→1.35e5、事前見積り 0.484 倍に対し実測 0.513 倍)。
-      **case/40 で $\tau_w$ が 1.1226 倍 = y+1 真値比 ≈1.061 に過大化** →
+      **case/40 で $\tau_w$ が 1.1226 倍 = y+1 内部基準比 1.1414 に過大化** →
       **このままでは採用不可** ($\omega$ ピンの 1.237 より遥かに軽い)。
       両ケースが同方向に同程度動くので**残りは単一ノブで閉じない**
-- [ ] `methods/turbulence/` の §6.5 に仕様追記、`methods/index.md` 同期
-- [ ] `status: done` で `plans/accepted/` へ移動、[`plans/README.md`](../README.md) 同期
+- [x] `methods/turbulence/` の §6.5 に仕様追記、`methods/index.md` 同期
+- [x] `status: done` で `plans/accepted/` へ移動、[`plans/README.md`](../README.md) 同期 (2026-08-13)
 
 ## 9. 変更ログ
 
@@ -479,7 +479,7 @@ NASA SST-Vm 標準ケースが約 0.009 と **4 桁違う**ため apples-to-appl
   **case/26**: $C_f$/KS 0.7615→**0.8445** ($Y_{10}$=0.8594 の近く、目標 0.94±0.02 に未達)。
   $\omega$ は 2.621e5→1.345e5 で**凍結場見積り 0.484 倍に対し実測 0.513 倍** (6% 以内)。
   ただし**輸送も再平衡** (1403→491) し「輸送比 33%」の素朴外挿は起きず 7.8%→10.5%。
-  **case/40**: $\tau_w$ が生産比 **1.1226 倍 = y+1 真値比 ≈1.061** に過大化 →
+  **case/40**: $\tau_w$ が生産比 **1.1226 倍 = y+1 内部基準比 1.1414** に過大化 (旧記載「≈1.061」は $\tau_w$ 比を 0.945 に掛けた**推定で過小・撤回済み**) →
   **採用不可**。ただし $\omega$ ピン (1.237) より遥かに軽く、Dirichlet を使わず
   $k$/$\omega$ の非対称を解消する点は正しい方向。
   **両ケースが同方向に同程度動く** = E3 は一貫した物理変更であり、
