@@ -137,6 +137,10 @@ public:
         //   wi_ftan_res : 再スケール **前** の解像接線力 [N]
         // 毎ステップ 0 クリアして atomicAdd で積む。壁ノード以外は 0。
         "wi_ftan", "wi_fnrm", "wi_ftan_res",
+        // 診断/分離実験 (2026-08-12, plan §3 の 2×2 factorial): node 壁関数の **第一内層ノード
+        // (irep)** を 1 でマークする (壁ノード・非対象は 0)。`wf_pk>=0` は壁ノードにも立つため
+        // 「第一内層だけ」を選ぶマスクとしては使えない。cell では常に 0 (= cell ビット不変が構造的に保証)。
+        "wf_irep_flag",
         // SST automatic wall treatment (node, wallTreatmentSST==1) / WMLES (node) 用: 壁ノードの
         // モデル壁せん断応力 τ_w=ρu_τ² [Pa] を格納 (非壁ノードは -1 = inactive)。viscousFlux_d が片端のみ
         // 壁ノードの内部双対面 (W-I エッジ) の接線粘性応力を τ_w に再スケールする (SU2 AddTauWall 相当)。
@@ -219,7 +223,7 @@ public:
         "res_roOmega" , "src_jac_omega" , "transport_diag_omega" , "res_roK" ,
 
         // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
-        "wi_ftan" , "wi_fnrm" , "wi_ftan_res" ,
+        "wi_ftan" , "wi_fnrm" , "wi_ftan_res" , "wf_irep_flag" ,
 
         // SST-DES 診断 (DESmode>0 で意味を持つ。DESmode==0 でも 0 埋めで出力されるだけ・無害)
         "delta_les" , "l_des" , "fd_shield" , "rd_des" , "fe_iddes"

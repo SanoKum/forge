@@ -1043,3 +1043,46 @@ W–I 双対面の解像 traction は**壁の分子勾配ではなく $\mu_{\rm 
 伝達も法線力も無罪なので、**なぜ解が低摩擦で釣り合うのか**が残る。
 次は §3 の 2×2 factorial ($\omega$ pin × strain limiter bypass) で
 $\omega$ 状態 / limiter / 源項のどれが効いているかを分離する。
+
+## §3 の 2×2 factorial — $\omega$ 状態が支配、limiter 迂回はほぼ無効 (2026-08-12)
+
+`nodeOmegaWfDirichlet` が $\omega$ ピンと SST shear limiter 迂回を**束ねていた**問題を、
+2 ビットに分解して分離した。
+
+### 実装
+
+- **`wf_irep_flag`** (新規): node 壁関数の**第一内層ノード (irep) だけ**を 1 でマークする
+  ([`ransWallFunction_d.cu`](../../solver_density_cuda/cuda_forge/ransWallFunction_d.cu))。
+  `wf_pk>=0` は壁ノードにも立つのでマスクに使えない。**cell では常に 0** なので cell ビット不変が構造的に保証される。
+- **`FORGE_WF_LIMITER_BYPASS`** (env, 既定 −1): $\mu_t=\rho a_1k/\max(a_1\omega,SF_2)$ の迂回を
+  $\omega$ ピンから切り離す。−1=従来 (ピンに追随) / 0=強制 OFF / 1=強制 ON (irep のみ)
+  ([`turbulent_viscosity_d.cu`](../../solver_density_cuda/cuda_forge/turbulent_viscosity_d.cu))。
+  **既定 −1 は従来と完全同一経路**。
+
+### 結果 (x=0.6、全 run 同一 IC・20000 step・quasisteady `STEADY`)
+
+| | bypass=0 | bypass=1 |
+| --- | --- | --- |
+| **pin=0** | $Y_{00}$ = **0.762** (`run_0053`) | $Y_{01}$ = **0.768** (`run_0055`) |
+| **pin=1** | $Y_{10}$ = **0.862** (`run_0054`) | $Y_{11}$ = **0.889** (`run_0056`) |
+
+($C_f/C_{f,\mathrm{KS}}$、(d) 壁法則逆解き。運動量積分 (c) は 0.752/0.753/0.848/0.873 で全 run 自己整合)
+
+$$\text{主効果 pin} = +0.100,\qquad
+\text{主効果 bypass} = +0.006,\qquad
+\Delta_{\rm int}=Y_{11}-Y_{10}-Y_{01}+Y_{00} = +0.021$$
+
+### 結論
+
+1. **$\omega$ 状態が支配因子** — 全効果 +0.127 のうち **+0.100 (79%)** がピン単独。
+2. **limiter 迂回は単独ではほぼ無効** (+0.006)。
+   「case/40 の過大化は主に limiter bypass 由来」という従来の見立ては、少なくとも本ケースでは支持されない。
+3. **相互作用は +0.021 で無視できない** → 「$E1+E2$ の和」で評価してはいけないという指摘は正しかった。
+   ただし実際には pin が支配的なので、結論は変わらない。
+4. **両方入れても 0.889 で目標帯 0.94±0.02 に届かない** (必要 +0.178 に対し +0.127 = **71%**)。
+   → **残り ~29% は $\omega$ 状態でも limiter でもない別の要因**。§5 の E3 ($P_\omega$ を壁法則整合形へ) が次の候補。
+
+### 位置づけ
+
+`nodeOmegaWfDirichlet: 1` は依然として**採用しない** (case/40 で $\tau_w$ 過大化)。
+本実験は「どの因子が低摩擦解を作っているか」の分離が目的であり、Dirichlet を対策にする話ではない。

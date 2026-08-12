@@ -23,6 +23,7 @@ constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
 // Qw_Wall も -1 化する (sstEnergyWallFunction の AddQWall マーカ。§6.5(g)。WMLES と SST は
 // 共存しない (wmlesActiveForBcond は RANS で false) ため二重初期化にならない)。
 __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau_Wall, flow_float* roK_wf,
+                            flow_float* wf_irep_flag,
                              flow_float* roOmega_wf, flow_float* Taw_diag, flow_float* Qw_Wall,
                              flow_float* Taw_Prim_Overlay,
                              flow_float* Taw_HTnx, flow_float* Taw_HTny, flow_float* Taw_HTnz)
@@ -30,6 +31,7 @@ __global__ void init_wf_pk_d(geom_int nCells, flow_float* wf_pk, flow_float* Tau
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic < nCells) {
         wf_pk[ic] = static_cast<flow_float>(-1.0);
+        if (wf_irep_flag != nullptr) wf_irep_flag[ic] = static_cast<flow_float>(0.0);
         Tau_Wall[ic] = static_cast<flow_float>(-1.0);
         roK_wf[ic] = static_cast<flow_float>(-1.0);
         roOmega_wf[ic] = static_cast<flow_float>(-1.0);
@@ -54,6 +56,7 @@ __global__ void compute_wall_friction_sst_d(
     flow_float* utau_b,
     flow_float* ypls_b,
     flow_float* wf_pk,
+    flow_float* wf_irep_flag,   // node: 第一内層ノード (irep) を 1 でマーク (2×2 分離用マスク)
     // node-centered (isNode=1): bplane_cell は壁ノード W (u=0,Dirichlet)。代表内部点を選ぶための
     // CV 座標と CSR 隣接。SU2 Normal_Neighbor 流。cell モード (isNode=0) では未使用 (nullptr 可)。
     int isNode,
@@ -173,6 +176,7 @@ __global__ void compute_wall_friction_sst_d(
         // 解像生産 P_k=μ_t S² が残り淀みコーナーで k 暴走するため (methods/turbulence §6.5(e))。
         if (isNode != 0) {
             wf_pk[irep] = static_cast<flow_float>(0.0); Tau_Wall[ic] = static_cast<flow_float>(0.0);
+            if (wf_irep_flag != nullptr) wf_irep_flag[irep] = static_cast<flow_float>(1.0);
             // 淀み域 u_τ=0 → k_wf=0。node k Dirichlet (SU2 SetTurbVars_WF 流, wallTreatment==1 のみ)。
             if (enableKwf == 1) {
                 roK_wf[irep] = static_cast<flow_float>(0.0);
@@ -211,6 +215,7 @@ __global__ void compute_wall_friction_sst_d(
     // 残り k 暴走。methods/turbulence §6.5(e))。ω ピン/decouple は壁ノードのまま (ここでは触らない)。
     if (isNode != 0) {
         wf_pk[irep] = pk_wf;
+        if (wf_irep_flag != nullptr) wf_irep_flag[irep] = static_cast<flow_float>(1.0);
         // node k Dirichlet (SU2 SetTurbVars_WF 流, enableKwf==1 のみ): 第一内層ノードの k を
         // k_wf = ω_w·μ_t,wall/ρ = ω_w·ν·(1/g - 1) に固定し、近壁 k 蓄積 (再付着 μ_t ピーク) を断つ。
         // ω_w は Menter ブレンド (壁ノードのピンと同式)、μ_t,wall は壁モデル渦粘性 (Reichardt g 由来)。
@@ -296,7 +301,7 @@ void initWallFunctionPk_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     if (!(cfg.LESorRANS == 2 && cfg.RANSmodel == 1 && cfg.wallTreatmentSST == 1)) {
         return;
     }
-    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
+    init_wf_pk_d<<<cuda_cfg.dimGrid_normalcell , cuda_cfg.dimBlock>>>(msh.nCells, var.c_d["wf_pk"], var.c_d["Tau_Wall"], var.c_d["roK_wf"], var.c_d["wf_irep_flag"], var.c_d["roOmega_wf"], var.c_d["Taw_diag"], var.c_d["Qw_Wall"], var.c_d["Taw_Prim_Overlay"], var.c_d["Taw_HTnx"], var.c_d["Taw_HTny"], var.c_d["Taw_HTnz"]);
 }
 
 namespace {
@@ -415,6 +420,7 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         bc.bvar_d["utau"],
         bc.bvar_d["ypls"],
         var.c_d["wf_pk"],
+        var.c_d["wf_irep_flag"],
         // node: SU2 Normal_Neighbor 代表内部点選択用 (cell では未使用)
         isNode,
         msh.nNormalPlanes,

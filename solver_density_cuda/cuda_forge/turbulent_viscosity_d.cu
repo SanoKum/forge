@@ -1,4 +1,6 @@
 #include "calcGradient_d.cuh"
+#include <cstdlib>
+#include <cstdio>
 #include "cuda_forge/cudaWrapper.cuh"
 
 
@@ -180,7 +182,11 @@ __global__ void sst_eddy_viscosity_d(
     // リミッタを迂回し νt=ρk/ω (=構成上 ρν_t,wall の mixing-length 値) を使う。ジャンプの巨大 S が
     // リミッタ経由で νt を頭打ちにし「S 大→νt 小→混合無→ジャンプ維持」の正帰還ロックを作るため
     // (case/38 run_0011/0012 で実測・log 則張替でも再形成 = 構造不安定)。nullptr で無効。
-    flow_float* roOmega_wf)
+    flow_float* roOmega_wf,
+    // 2×2 分離実験 (plan §3): ω ピンと strain limiter 迂回を独立に切る。
+    //   wf_irep_flag : 第一内層ノードのマスク (bypass を pin と独立に当てるため)
+    //   bypassMode   : -1=従来 (roOmega_wf>=0 に追随) / 0=強制 OFF / 1=強制 ON (irep のみ)
+    flow_float* wf_irep_flag, int bypassMode)
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -220,8 +226,14 @@ __global__ void sst_eddy_viscosity_d(
     const flow_float F2     = tanh(arg2 * arg2);
 
     const bool wfPin = (roOmega_wf != nullptr && roOmega_wf[ic] >= static_cast<flow_float>(0.0));
-    vis_turb[ic] = wfPin ? rho * k_c / w_c
-                         : rho * a1 * k_c / max(a1 * w_c, S_mag * F2);
+    // limiter 迂回の可否を ω ピンから切り離す (既定 bypassMode=-1 は従来と完全同一)。
+    bool bypass;
+    if (bypassMode < 0)       bypass = wfPin;                       // 従来
+    else if (bypassMode == 0) bypass = false;                       // 強制 OFF (E1: pin のみ)
+    else                      bypass = (wf_irep_flag != nullptr
+                                        && wf_irep_flag[ic] > static_cast<flow_float>(0.5)); // 強制 ON (E2)
+    vis_turb[ic] = bypass ? rho * k_c / w_c
+                          : rho * a1 * k_c / max(a1 * w_c, S_mag * F2);
 }
 
 
@@ -446,7 +458,19 @@ void turbulent_viscosity_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , me
             var.c_d["axisym_uy_over_r"],
             var.c_d["vis_turb"],
             (cfg.discretization == "node" && cfg.wallTreatmentSST == 1 && cfg.nodeOmegaWfDirichlet == 1)
-                ? var.c_d["roOmega_wf"] : nullptr);
+                ? var.c_d["roOmega_wf"] : nullptr,
+                var.c_d["wf_irep_flag"],
+                // 2×2 分離: FORGE_WF_LIMITER_BYPASS (未設定=-1 従来 / 0=OFF / 1=ON)
+                [] {
+                    static const int v = [] {
+                        const char* s = std::getenv("FORGE_WF_LIMITER_BYPASS");
+                        const int x = s ? std::atoi(s) : -1;
+                        if (s) printf("[EXPERIMENT] SST shear limiter bypass mode = %d "
+                                      "(FORGE_WF_LIMITER_BYPASS)\n", x);
+                        return x;
+                    }();
+                    return v;
+                }());
 
         // SST-DES: vis_turb 計算直後に l_DDES とシールド診断を計算する (依存順・plan §4.7)。
         // DESmode==0 (既定) では呼ばない → 既存 SST と完全ビット不変。
