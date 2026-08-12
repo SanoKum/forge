@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import yaml
 
-KNOWN_TYPES = ("thruster_bell",)  # Phase 3+ で wind_tunnel_axisym 等を追加
+KNOWN_TYPES = ("thruster_bell", "wind_tunnel_axisym")
 
 
 @dataclass
@@ -72,6 +72,18 @@ def _validate(p: Problem) -> None:
         for k in ("eps",):
             if k not in p.spec:
                 errs.append("spec.eps (面積比 Ae/At) が必要")
+    elif p.type == "wind_tunnel_axisym":
+        for k in ("Pt", "Tt"):
+            if k not in p.spec:
+                errs.append(f"spec.{k} が必要")
+        # (D_e, r_throat, M_design) は独立指定 2 つまで (過拘束チェック — 親計画 §4.6(a))
+        given = [k for k in ("D_e", "r_throat", "M_design") if k in p.spec]
+        if len(given) > 2:
+            errs.append(f"(D_e, r_throat, M_design) は 2 つまで指定可 (過拘束: {given})")
+        if "M_design" not in p.spec:
+            errs.append("spec.M_design が必要 (現実装は M_design + r_throat の組を要求)")
+        if "r_throat" not in p.spec:
+            errs.append("spec.r_throat が必要 (D_e 従属モードは未実装 — 閉ループ派生で追加予定)")
     # dv の bound 検査
     for name, d in p.dv.items():
         if isinstance(d, dict) and not d.get("fixed", False):

@@ -97,7 +97,8 @@ class InverseMOC(KernelMOC):
 
 
 def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
-                   n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02):
+                   n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02,
+                   th_wall0: float | None = None):
     """starting line (throat: SauerThroat) + 軸目標 target(x) から壁を逆設計する。
 
     target: 呼び出し可能 M(x) — starting line の軸点 x0 で場に C1 整合していること
@@ -114,6 +115,9 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
     init = [_Pt(float(x), 0.0, 0.0, float(pm_nu(float(target(x)), g)), g) for x in ax]
     init += [_Pt(float(x0), float(rr[i]), float(tt[i]), float(pm_nu(float(MM[i]), g)), g)
              for i in range(n_start)]
+    if th_wall0 is not None:
+        # 壁足の θ を厳密壁接線で上書き (Sauer 線形化 vbar は過小 — kernel と同じ補正)
+        init[-1].th = float(th_wall0)
     pts = inv.fill(init)
     wall = inv.wall_streamline(pts, x0, float(rr[-1]), dx=dx_wall)
     # 一様出口設計ではリップ (θ が最大値を経て ~0 に戻る点) で壁が完成する。
