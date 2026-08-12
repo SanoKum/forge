@@ -66,7 +66,7 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     if msgs:
         raise ValueError("モード F 壁フィルタ不合格: " + "; ".join(msgs))
     return {"wall": wall, "wall_inv": wall_inv, "target": target, "x0": float(x0),
-            "xd": float(xd), "Md": Md,
+            "xd": float(xd), "Md": Md, "pts": res["pts"], "R": R,
             "mdot_ratio_moc": res["mdot_exit"] / res["mdot_start"]}
 
 
