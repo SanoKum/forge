@@ -111,7 +111,15 @@ __global__ void compute_wall_friction_sst_d(
     //   0 = Reichardt (既定・従来と演算列不変)  /  1 = Spalding (κ=0.41, B=5.0)
     // **逆解き則だけ**を替える。wf_pk の g と E3 の wf_sprod は Reichardt 固定のまま
     // (g のモデル形式変更を除外して u⁺ 逆解きの上流介入だけを分離するため)。
-    int invLawSel)
+    int invLawSel,
+    // 【③ 整合実験】閉包則セレクタ (plan §5.2 ③)。**逆解きセレクタとは独立**にする
+    // (② の「逆解きだけ Spalding」構成をいつでも再現できるようにするため)。
+    //   0 = Reichardt (既定・従来と演算列不変) / 1 = Spalding
+    // g = du+/dy+ を替える。g は wf_pk (k 生産) と mut_wall=nu(1/g-1) → roK_wf の**両方**に
+    // 入り、y+~28 では wf_pk を下げ roK_wf を上げる **逆向き 2 効果**になる。
+    // omega 生産 (解像ひずみ)・E3・熱側 (Kader)・圧縮性補正は**触らない**。
+    int closureLawSel,
+    flow_float* wf_g)          // 診断: 採用した g (env ゲート、既定 nullptr)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
     if (ib >= nb) return;
@@ -248,10 +256,15 @@ __global__ void compute_wall_friction_sst_d(
     // wall-function 生産 P_k = (τ_w - τ_visc)·∂U/∂y = ρu_τ⁴/ν · g(1-g), g = du⁺/dy⁺(y⁺₁)
     // (methods/turbulence §6.5(d))。粘性低層 g→1 で P_k→0 (壁解像極限を保つ)、対数層 g→1/(κy⁺) で
     // P_k→ρu_τ³/(κy)。これと ω ピン留めで k が平衡値 u_τ²/√β* に収束し runaway を断つ。
-    // 【診断実験 (invLawSel!=0) でも g は Reichardt 固定】= g のモデル形式変更を除外する仕様。
-    // ただし引数 yp1 は utau 由来なので値は動く (u⁺ 逆解き則の変更が上流介入として波及する分)。
+    // g のモデル形式は **closureLawSel** で決まる (invLawSel とは独立)。
+    //   ② 診断実験: invLawSel=1, closureLawSel=0 → g は Reichardt のまま (混成・不整合)
+    //   ③ 整合実験: invLawSel=1, closureLawSel=1 → g も Spalding (u_τ と k 側閉包が整合)
+    // closureLawSel=0 では従来と演算列不変。yp1 は utau 由来なので値自体は逆解き則にも依存する。
     const flow_float yp1 = utau * y / nu;
-    const flow_float g   = wallLaw_reichardt_duplus_dyp(yp1);
+    const flow_float g   = (closureLawSel == 0)
+        ? wallLaw_reichardt_duplus_dyp(yp1)
+        : wallLaw_spalding_duplus_dyp_from_up(Ut / max(utau, kSmall));
+    if (wf_g != nullptr) wf_g[ic] = g;
     const flow_float pk_wf = max(rho * utau * utau * utau * utau / nu * g * (static_cast<flow_float>(1.0) - g),
                     static_cast<flow_float>(0.0));
     wf_pk[ic] = pk_wf;
@@ -259,6 +272,7 @@ __global__ void compute_wall_friction_sst_d(
     // 残り k 暴走。methods/turbulence §6.5(e))。ω ピン/decouple は壁ノードのまま (ここでは触らない)。
     if (isNode != 0) {
         wf_pk[irep] = pk_wf;
+        if (wf_g != nullptr) wf_g[irep] = g;
         if (wf_irep_flag != nullptr) wf_irep_flag[irep] = static_cast<flow_float>(1.0);
         // E3 (§5): omega 生産の入力ひずみを壁法則整合にするための S_wf^2。
         //   S_wf = u_tau^2/nu * g   (g = du+/dy+ = wallLaw_reichardt_duplus_dyp(y+))
@@ -492,13 +506,40 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         }
         return 1;
     }();
+    // 【③】閉包則セレクタ。逆解きセレクタとは**別 env** にして ②↔③ を往復比較できるようにする。
+    static const int closureLawSel = [] {
+        const char* s = std::getenv("FORGE_WF_CLOSURE_LAW");
+        if (!s || std::string(s) == "reichardt" || std::string(s) == "0") return 0;
+        if (std::string(s) != "spalding" && std::string(s) != "1") {
+            printf("[FATAL] FORGE_WF_CLOSURE_LAW='%s' は不正 (reichardt|spalding)\n", s);
+            std::exit(1);
+        }
+        const char* e = std::getenv("FORGE_WF_OMEGA_SOURCE");
+        if (e && std::atoi(e) != 0) {
+            printf("[FATAL] FORGE_WF_CLOSURE_LAW=spalding と FORGE_WF_OMEGA_SOURCE=1 は同時指定不可。\n"
+                   "        §5.2 ③ の整合実験は E3 OFF が仕様 (壁法則整合化と棄却済み omega 介入の交絡を断つため)。\n");
+            std::exit(1);
+        }
+        return 1;
+    }();
     static bool invLawLogged = false;
     const int invLawUse = (invLawSel != 0 && isNode != 0 && cfg.wallTreatmentSST == 1) ? 1 : 0;
+    const int closureUse = (closureLawSel != 0 && isNode != 0 && cfg.wallTreatmentSST == 1) ? 1 : 0;
+    static bool closureLogged = false;
+    if (closureLawSel != 0 && !closureLogged) {
+        closureLogged = true;
+        printf(closureUse
+               ? "[EXPERIMENT] wall closure law = Spalding (g -> wf_pk and roK_wf). "
+                 "omega production / E3 / Kader heat side unchanged. (FORGE_WF_CLOSURE_LAW)\n"
+               : "[EXPERIMENT] FORGE_WF_CLOSURE_LAW=spalding は無視 "
+                 "(node + SST + wallTreatmentSST==1 のときだけ有効)\n");
+    }
     if (invLawSel != 0 && !invLawLogged) {
         invLawLogged = true;
         if (invLawUse) {
             printf("[EXPERIMENT] u_tau inversion law = Spalding (kappa=0.41, B=5.0). "
-                   "wf_pk g stays Reichardt; E3 must be OFF. (FORGE_WF_INV_LAW)\n");
+                   "E3 must be OFF. g follows FORGE_WF_CLOSURE_LAW (default Reichardt). "
+                   "(FORGE_WF_INV_LAW)\n");
         } else {
             printf("[EXPERIMENT] FORGE_WF_INV_LAW=spalding は無視 "
                    "(node + SST + wallTreatmentSST==1 のときだけ有効)\n");
@@ -550,5 +591,7 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         (cfg.sstEnergyWallFunction == 1 && bc.bcondKind == "wall_isothermal") ? 1 : 0,
         bc.bvar_d["Ts"], var.c_d["thermCond"], cfg.turbulentPrandtl,
         bc.bvar_d["qwall"], var.c_d["Qw_Wall"],
-        invLawUse);
+        invLawUse,
+        closureUse,
+        var.c_d.count("wf_g") ? var.c_d["wf_g"] : nullptr);
 }

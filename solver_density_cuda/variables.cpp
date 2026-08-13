@@ -166,6 +166,16 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             c_d.erase("wf_sprod");
         }
     }
+    // 閉包則診断 (§5.2 ③) の wf_g も env ゲート
+    {
+        const char* e = std::getenv("FORGE_WF_CLOSURE_DIAG");
+        if (!(e && std::atoi(e) != 0)) {
+            cellValNames.remove("wf_g");
+            output_cellValNames.remove("wf_g");
+            c.erase("wf_g");
+            c_d.erase("wf_g");
+        }
+    }
     // 代表点幾何診断 (§3.1) も env ゲート
     {
         const char* e = std::getenv("FORGE_WF_REP_DIAG");
@@ -204,7 +214,8 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             // (未初期化 device メモリを出力しないため)。
             if (cellValName.rfind("wi_", 0) == 0 || cellValName.rfind("omg_", 0) == 0
                 || cellValName.rfind("rep_", 0) == 0
-                || cellValName == "wf_irep_flag" || cellValName == "wf_sprod") {
+                || cellValName == "wf_irep_flag" || cellValName == "wf_sprod"
+                || cellValName == "wf_g") {
                 gpuErrchk( cudaMemset(this->c_d.at(cellValName), 0, (msh.nCells_all)*sizeof(flow_float)) );
             }
         }

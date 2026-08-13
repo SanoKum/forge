@@ -155,6 +155,7 @@ public:
         // ransSource が omega 生産にのみ使う (k 生産は既に wf_pk で置換済み)。
         // FORGE_WF_OMEGA_SOURCE=1 のときだけ ransSource が参照する (既定はビット不変)。
         "wf_sprod",
+        "wf_g",          // 診断: 壁関数が採用した g=du+/dy+ (FORGE_WF_CLOSURE_DIAG)
         // 診断 (2026-08-13, plan turbulence-node-wf-representative-point §3.1): node 壁関数の
         // 代表点 (Normal_Neighbor) 選択の幾何。**壁ノード**に格納 (非壁は -1)。
         //   rep_id      : 選ばれた irep のインデックス (float 化。取り違え検出用)
@@ -255,7 +256,7 @@ public:
 
         // W-I 実力診断 (plan turbulence-node-wf-omega-source §4.2)
         "wi_ftan" , "wi_fnrm" , "wi_fnrm_abs" , "wi_ftan_res" , "wf_irep_flag" ,
-        "omg_prod" , "omg_dest" , "omg_cross" , "omg_trans" , "omg_axisym" , "wf_sprod" ,
+        "omg_prod" , "omg_dest" , "omg_cross" , "omg_trans" , "omg_axisym" , "wf_sprod" , "wf_g" ,
         "rep_id" , "rep_y" , "rep_dist" , "rep_cos" , "rep_toff" , "rep_wdratio" ,
         "rep_nx" , "rep_ny" , "rep_nz" ,
 
