@@ -135,7 +135,7 @@ def _rebuild_wall(wall_pts: np.ndarray, dtheta_fn, x_anchor: float) -> np.ndarra
 
 def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
              tol_rel: float = 0.005, clip_deg: float = 0.5, nsteps=None,
-             map_mode: str = "frozen") -> dict:
+             map_mode: str = "frozen", gate_mode: str = "formal") -> dict:
     """map_mode: "frozen" = v2 (v1 MOC 設計場の凍結マップ) /
     "cfd" = **v3** (毎パスその回の CFD 収束場から C⁻ を引き直す)。"""
     p = load_problem(problem_path)
@@ -227,8 +227,11 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         #     ΔM と ε が単調に一致しなくても (実測: pass9 ε_M=0.020% < pass13 0.039%)
         #     本ループの欠陥ではない。
         from ..metrics.extract import exit_uniformity
-        from ..evaluate.health import health
-        hl = health(rd)          # A3: check_convergence を必須で記録 (読み替えなし)
+        from ..evaluate.health import gate
+        # A3: **正式ゲート** — PASS 以外では壁もマップも更新しない (未収束誤差で
+        # 帰還を汚さない)。探索目的なら gate_mode="exploratory" を明示し、正式
+        # 評価とは別の run ディレクトリに分離すること。
+        hl = gate(rd, M_design=Md, x_d=xd * scale, mode=gate_mode)
         try:
             eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md,
                                  x_d=xd * scale)   # 有効菱形コア (実寸)
@@ -241,7 +244,8 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                      "eps_theta_max_deg": eu.get("eps_theta_max_deg"),
                      "convergence_verdict": hl["convergence_verdict"],
                      "quasisteady_verdict": hl["quasisteady_verdict"],
-                     "usable": hl["usable"]})
+                     "eps_series_verdict": hl.get("eps_steady", {}).get("verdict"),
+                     "gate_ok": hl["ok"], "gate_reasons": hl["gate_reasons"]})
         print(f"[pass {k}] masked ‖ΔM‖∞ = {dM_inf:.4f} ({dM_inf/Md*100:.2f}% Md)"
               f"  εM={('%.4f%%' % (eu['eps_M_rms']*100)) if eu.get('eps_M_rms') is not None else 'n/a'}"
               f"  εθ={('%.3f°' % eu['eps_theta_max_deg']) if eu.get('eps_theta_max_deg') is not None else 'n/a'}"
@@ -250,9 +254,9 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         np.savetxt(rd / "achieved_vs_target.csv", np.c_[xi, Mt, Ma, w],
                    delimiter=",", header="x_rt,M_target,M_achieved,weight", comments="")
         (rd / "metrics_pass.json").write_text(json.dumps(hist[-1]))
-        if not hl["usable"]:
-            print(f"[pass {k}] **中止**: CFD が発散 ({hl['convergence_verdict']}, "
-                  f"nonfinite={hl['nonfinite_residual']}) — 帰還を停止", flush=True)
+        if not hl["ok"]:
+            print(f"[pass {k}] **中止**: ゲート不合格 ({'; '.join(hl['gate_reasons'])}) "
+                  f"— 未収束/非定常の場から壁とマップを作らない", flush=True)
             break
         if rejected:
             omega *= 0.5           # 過ゲイン → 最良壁から小さい ω でやり直し
@@ -294,12 +298,14 @@ def main(argv=None) -> int:
     ap.add_argument("work_dir")
     ap.add_argument("--passes", type=int, default=8)
     ap.add_argument("--omega", type=float, default=0.4)
+    ap.add_argument("--gate-mode", choices=("formal", "exploratory"), default="formal",
+                    help="formal = PASS 以外は停止 (正式) / exploratory = 発散以外は継続")
     ap.add_argument("--map-mode", choices=("frozen", "cfd"), default="frozen",
                     help="frozen = v2 (v1 MOC 場の凍結マップ) / cfd = v3 (毎パス実場)")
     ap.add_argument("--steps", type=int, default=None)
     a = ap.parse_args(argv)
     run_loop(a.problem, a.work_dir, n_pass=a.passes, omega=a.omega, nsteps=a.steps,
-             map_mode=a.map_mode)
+             map_mode=a.map_mode, gate_mode=a.gate_mode)
     return 0
 
 

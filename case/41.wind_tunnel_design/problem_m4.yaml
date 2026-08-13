@@ -18,6 +18,7 @@ dv:
 
 geometry:
   R: 2.0             # スロート円弧 (Ru=Rd 単一 — モード F)
+  blend_len: 0.0     # 曲率ブレンド無効 (撤回済み — plan §9.1)
   r_inlet: 2.5
   L_pipe: 0.5
   L_contract: 3.0

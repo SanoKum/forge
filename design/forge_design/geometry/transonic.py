@@ -18,7 +18,7 @@ import numpy as np
 
 class SauerThroat:
     def __init__(self, R: float, gamma: float = 1.4,
-                 theta_mode: str = "linearized") -> None:
+                 theta_mode: str = "exact_ratio") -> None:
         if R < 1.0:
             import warnings
 
@@ -60,16 +60,18 @@ class SauerThroat:
     def theta(self, x, r):
         r"""流れ角。`theta_mode` で摂動の扱いを選ぶ (2026-08-14)。
 
-        - `"linearized"` (既定): $\theta=\arctan\bar v$。Sauer 解は**線形化壁 BC**
-          $\bar v = dr_w/dx$ を満たすよう構成されているので、この定義なら
-          **壁流線が壁に沿う** (幾何整合)。
-        - `"exact_ratio"`: $\theta=\arctan(\bar v/(1+\bar u))$。流れ角の厳密定義だが、
-          Sauer の $\bar v$ が線形化 BC しか満たさないため壁で $1+\bar u\approx1.25$ の
-          分だけ角度が**過小**になる (R=2 で実測 7.39°→5.89°, −25.7%)。これは
-          starting line の時点で円弧と 1.5° のキンクを作り、圧縮波の源になる。
+        - `"exact_ratio"` (**既定**): $\theta=\operatorname{atan2}(\bar v, 1+\bar u)$ —
+          流れ角の**物理的定義**。`mach()` が速度ベクトル $(1+\bar u,\bar v)$ から
+          計算しているので、M と θ が**同一の速度ベクトルを表す**という整合が保たれる。
+        - `"linearized"` (**実験オプション**): $\theta=\arctan\bar v$。Sauer 解が満たす
+          線形化壁 BC $\bar v=dr_w/dx$ と揃うため壁足で円弧接線に近くなる (R=2 で
+          7.64° vs 円弧 7.39°、`exact_ratio` は 5.89°) が、**M と θ が別の速度ベクトルを
+          指す**ため非線形 MOC へ渡す状態としては不整合。一次資料照合と整合試験が
+          済むまで既定にしない (2026-08-14 レビュー指摘)。
 
-        両者は $O(\varepsilon)$ で一致し、差は 2 次。根治は Kliegel–Levine 高次
-        (未実装) — 本オプションは 1 次解の枠内で幾何整合を優先する暫定。"""
+        両者は $O(\varepsilon)$ で一致し差は 2 次。なお**壁足 θ は `inverse_design`
+        の `th_wall0` で円弧接線に上書きされる**ので、「従来は starting line が直接
+        1.5° のキンクを渡していた」という説明は不正確 (撤回)。"""
         v = self.vbar(x, r)
         if self.theta_mode == "linearized":
             return np.arctan(v)
