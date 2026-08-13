@@ -67,6 +67,41 @@ class MachBezier:
             cp[i0 + k] = v
         return cls(x0, x1, cp)
 
+    @classmethod
+    def fit_free_cp(cls, x0: float, x1: float, start, n_free: int, end,
+                    ref_fn, n_sample: int = 400) -> "MachBezier":
+        r"""端点拘束の下で **自由 CP を参照曲線へ拘束付き最小二乗射影**する (B10)。
+
+        Bernstein 基底は CP について線形なので、端点拘束で確定する CP を右辺へ
+        移せば自由 CP は 3 変数の線形最小二乗で**決定的に**決まる (手調整不要):
+        $\min_{P_{free}}\sum_k\bigl(\sum_i P_iB_{i,n}(t_k)-M_{ref}(x_k)\bigr)^2$。
+
+        用途: target の起点を $x_0\to x_{reach,CFD}$ へ移す際、旧起点用に調整
+        された自由 CP 値をインデックスずらしで流用すると制御多角形が壊れる
+        (実測: 旧値 2.0/2.9/3.6 を order=2 へ流用して $P_2{=}3.67\to P_3{=}2.00$
+        のジグザグ)。参照曲線への射影なら旧 target の形を保ったまま新起点・新拘束
+        へ載せ替えられる。`ref_fn`: 参照 $M(x)$ (呼び出し可能)。
+        """
+        start, endc = tuple(start), tuple(end)
+        n = len(start) + int(n_free) + len(endc) - 1
+        L = x1 - x0
+        base = cls.from_constraints(x0, x1, start, [0.0] * int(n_free), endc)
+        fixed = np.zeros(n + 1, dtype=bool)
+        fixed[:len(start)] = True
+        fixed[n + 1 - len(endc):] = True
+        i_free = np.where(~fixed)[0]
+        xs = np.linspace(x0, x1, int(n_sample))
+        t = (xs - x0) / L
+        # 基底行列 B[k,i] = B_{i,n}(t_k)
+        from math import comb
+        B = np.stack([comb(n, i) * t ** i * (1 - t) ** (n - i) for i in range(n + 1)], axis=1)
+        rhs = np.asarray([float(np.atleast_1d(ref_fn(float(x)))[0]) for x in xs])
+        rhs = rhs - B[:, fixed] @ base.cp[fixed]
+        sol, *_ = np.linalg.lstsq(B[:, i_free], rhs, rcond=None)
+        cp = base.cp.copy()
+        cp[i_free] = sol
+        return cls(x0, x1, cp)
+
     # -- 評価 ---------------------------------------------------------------
     def _t(self, x):
         return (np.asarray(x, dtype=float) - self.x0) / (self.x1 - self.x0)

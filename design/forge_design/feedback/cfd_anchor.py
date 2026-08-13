@@ -194,6 +194,92 @@ class CFDThroat:
         return float(x0), r, Mo, To
 
 
+def axis_curve_true(run_dir, x_lo: float, x_hi: float, scale: float = 0.01,
+                    n_last: int = 3, band: float = 0.35, r_deg: int = 4) -> tuple:
+    r"""**真の軸値** $a_0(x)$ を各 $x$ station の偶関数フィットで復元する (B10)。
+
+    cell 計算は軸上に DOF が無いため、近軸帯の単純平均は径方向勾配を混入させる
+    (実測: 近スロートで真値より +0.02〜0.04)。軸対称性から $M$ は $r$ の偶関数
+    $M(x,r)=a_0(x)+a_2(x)r^2+a_4(x)r^4+\cdots$ なので、station ごとに偶多項式を
+    最小二乗し $a_0$ を採る。**末尾 `n_last` スナップ平均**を先に取る。
+    戻り: (x_stations, a0)。
+    """
+    from ..geometry.cminus_cfd import load_field
+    fld = load_field(run_dir, n_last=n_last, scale=scale, discretization="cell")
+    m = (fld["x"] >= x_lo) & (fld["x"] <= x_hi) & (fld["r"] < band)
+    xs, rs, Ms = fld["x"][m], fld["r"][m], fld["M"][m]
+    col = np.round(xs, 3)
+    out = []
+    for xc in np.unique(col):
+        s = col == xc
+        rr, MM = rs[s], Ms[s]
+        k = min(r_deg // 2 + 1, max(len(rr), 1))
+        B = np.stack([rr ** (2 * j) for j in range(k)], axis=1)
+        if len(rr) < k:
+            out.append((float(np.mean(xs[s])), float(np.mean(MM))))
+            continue
+        a, *_ = np.linalg.lstsq(B, MM, rcond=None)
+        out.append((float(np.mean(xs[s])), float(a[0])))
+    arr = np.asarray(sorted(out))
+    return arr[:, 0], arr[:, 1]
+
+
+def onesided_axis_anchor(run_dir, x_c: float, side: str = "left",
+                         degree: int = 3, window: float = 0.6,
+                         scale: float = 0.01, n_last: int = 3,
+                         band: float = 0.35) -> dict:
+    r"""$x_c$ の**片側だけ**を使う局所回帰で $(M,M',M'')$ を返す (B10 正本)。
+
+    $M_r=M(x_{reach}^-)$ 等の**左極限**が要る。$x>x_{reach}$ はこれから設計し直す
+    領域なので、左右対称窓のフィット (既存 `local_anchor`) に混ぜてはいけない —
+    下流の仮壁の影響が境界条件へ漏れる。
+
+    **メッシュ値の差分は使わない**。$\xi=x-x_c$ の局所多項式
+    $M=c_0+c_1\xi+c_2\xi^2+\cdots$ を上流側 (`side="left"`) の真の軸値
+    $a_0(x)$ (`axis_curve_true`) へ最小二乗し、係数から解析的に
+    $M_r=c_0,\;M'_r=c_1,\;M''_r=2c_2$ を取る。
+    """
+    lo, hi = ((x_c - window, x_c) if side == "left" else (x_c, x_c + window))
+    xs, a0 = axis_curve_true(run_dir, lo - 0.05, hi + 0.05, scale=scale,
+                             n_last=n_last, band=band)
+    m = (xs >= lo) & (xs <= hi)
+    xi, Mi = xs[m] - x_c, a0[m]
+    if len(xi) < degree + 2:
+        return {"ok": False, "reason": f"station 不足 ({len(xi)}, deg={degree}, win={window})"}
+    c = np.polyfit(xi, Mi, degree)          # 高次→低次
+    return {"ok": True, "M": float(c[-1]), "Mp": float(c[-2]), "Mpp": float(2.0 * c[-3]),
+            "n_station": int(len(xi)), "side": side, "degree": degree,
+            "window": window, "rms_fit": float(np.sqrt(np.mean(
+                (np.polyval(c, xi) - Mi) ** 2)))}
+
+
+def anchor_sensitivity(run_dir, x_c: float, scale: float = 0.01,
+                       n_last: int = 3, x_c_err: float = 0.01) -> dict:
+    """B10 が要求する $(M,M',M'')$ の感度一式を測る。
+
+    次数 (2/3/4) × 上流窓幅 / 末尾スナップ数 / $x_{reach}$ トレース誤差 /
+    **左右片側フィットの勾配差** (格子収束後も残るなら仮壁に本当に接続波がある)。
+    """
+    out = {"x_c": x_c, "left": {}, "right": {}, "snap": {}, "x_c_shift": {}}
+    for deg in (2, 3, 4):
+        for win in (0.3, 0.45, 0.6, 0.9):
+            r = onesided_axis_anchor(run_dir, x_c, "left", deg, win, scale, n_last)
+            if r.get("ok"):
+                out["left"][f"deg{deg}_win{win}"] = (r["M"], r["Mp"], r["Mpp"], r["rms_fit"])
+            r2 = onesided_axis_anchor(run_dir, x_c, "right", deg, win, scale, n_last)
+            if r2.get("ok"):
+                out["right"][f"deg{deg}_win{win}"] = (r2["M"], r2["Mp"], r2["Mpp"], r2["rms_fit"])
+    for n in (1, 3, 5):
+        r = onesided_axis_anchor(run_dir, x_c, "left", 3, 0.6, scale, n)
+        if r.get("ok"):
+            out["snap"][f"n{n}"] = (r["M"], r["Mp"], r["Mpp"])
+    for dx in (-x_c_err, 0.0, x_c_err):
+        r = onesided_axis_anchor(run_dir, x_c + dx, "left", 3, 0.6, scale, n_last)
+        if r.get("ok"):
+            out["x_c_shift"][f"{dx:+.3f}"] = (r["M"], r["Mp"], r["Mpp"])
+    return out
+
+
 def from_run(run_dir, scale: float, R: float, gamma: float = 1.4) -> CFDThroat:
     """run ディレクトリ (nozzle.h5 + 末尾 res_*.h5 最大 3 個の平均) から作る。
 

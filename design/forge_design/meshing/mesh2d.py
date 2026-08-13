@@ -25,12 +25,26 @@ class Mesh2DParams:
     throat_refine: float = 3.0       # スロート近傍の間隔比 (far/throat)
     throat_width: float = 1.5        # 細分の e^-x^2 幅 (r* 単位)
     scale: float = 1.0               # r* [m] (無次元 → m)
+    # --- 接合部近傍の局所細分 (B10: x_reach のアンカー安定性・こぶの格子収束用) ---
+    local_center: float = 0.0        # 細分中心 [r*] (0 で無効)
+    local_refine: float = 1.0        # 中心での間隔比 (1.0 で無効)
+    local_width: float = 0.75        # 細分の e^-x^2 幅 [r*]
 
 
-def _x_stations(x0: float, x1: float, ni: int, refine: float, width: float) -> np.ndarray:
-    """間隔 h(x) ∝ 1/(1+(refine-1)·exp(-(x/w)^2)) の逆積分で station を置く。"""
-    xs = np.linspace(x0, x1, 4001)
+def _x_stations(x0: float, x1: float, ni: int, refine: float, width: float,
+                local_center: float = 0.0, local_refine: float = 1.0,
+                local_width: float = 0.75) -> np.ndarray:
+    """間隔 h(x) ∝ 1/(密度) の逆積分で station を置く。
+
+    密度 = スロート細分 (中心 x=0) × 局所細分 (中心 `local_center`)。後者は
+    **接合部近傍だけ**を細かくして、$x_{reach}$ の局所微分アンカーと接合こぶの
+    格子収束を、全域解像度を上げずに調べるためのもの (B10)。
+    """
+    xs = np.linspace(x0, x1, 8001)
     dens = 1.0 + (refine - 1.0) * np.exp(-((xs / width) ** 2))
+    if local_refine > 1.0:
+        dens = dens * (1.0 + (local_refine - 1.0)
+                       * np.exp(-(((xs - local_center) / local_width) ** 2)))
     cum = np.concatenate([[0.0], np.cumsum(0.5 * (dens[1:] + dens[:-1]) * np.diff(xs))])
     cum /= cum[-1]
     return np.interp(np.linspace(0.0, 1.0, ni), cum, xs)
@@ -58,7 +72,8 @@ def _radial_fracs(nj: int, first_frac: float) -> np.ndarray:
 
 def generate_axisym_mesh(wall, prm: Mesh2DParams):
     """wall: NozzleWall。戻り値 (coords (N,3) [m], quads (M,4), 境界辺 dict)。"""
-    xs = _x_stations(wall.x_in, wall.x_e, prm.ni, prm.throat_refine, prm.throat_width)
+    xs = _x_stations(wall.x_in, wall.x_e, prm.ni, prm.throat_refine, prm.throat_width,
+                     prm.local_center, prm.local_refine, prm.local_width)
     rw = wall.r(xs)
     s = _radial_fracs(prm.nj, prm.wall_first_frac)
     ni, nj = prm.ni, prm.nj
