@@ -169,8 +169,11 @@ def _config_euler_node(p: Problem, nsteps: int, out_int: int, cfl: float,
     測定値 −1.33/+0.51/−5.59 と同オーダー)。node は雑音床 ~1e-6 で約 600 倍良い。
 
     設定の注意:
-    - `nodeWallDirichlet` は**使わない**。これは壁速度を 0 に固定する no-slip 用で、
-      Euler の slip 壁で有効にすると接線速度まで殺す
+    - `nodeWallDirichlet` は**書かない**。既定は 1 だが、これが作用する `wall_flag`
+      は `bcondKind` が `wall`/`wall_isothermal` の CV にしか立たない
+      (`mesh/mesh.cpp`) ため、**slip 壁では no-op** で害はない (2026-08-17 に
+      ソース確認。「slip で接線速度まで殺す」と書いた旧記述は誤りで訂正)。
+      no-slip へ切り替えるときに初めて意味を持つ
       ([[node-wall-velocity-needs-dirichlet-flag]])。
     - 軸対称 node には `nodeAxisDirichlet` (軸行真空化の対症) と
       `axisCentroidShift` が要る ([[node-axisym-axis-dirichlet]])。

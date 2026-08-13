@@ -66,7 +66,7 @@ def cf_ideal(eps, gamma, pa_over_pt) -> float:
 
 def core_radius_traced(mesh_h5, res_h5, x_d, x_plane, r_start_frac=0.02,
                        ds_frac=2e-4, gamma=1.4) -> float:
-    """**有効菱形の上流境界**を実場でトレースして求める (テストコア半径)。
+    r"""**有効菱形の上流境界**を実場でトレースして求める (テストコア半径)。
 
     軸が $M_d$ に達する点 $(x_d,0)$ から出る C⁺ ($dr/dx=\tan(\theta+\mu)$) を
     **実際の CFD 場**の中で前進積分し、`x_plane` での半径を返す。この線より下が
@@ -176,15 +176,36 @@ def exit_uniformity(mesh_h5, res_h5, M_design, x_d=None, outlet_physid=2,
 
 
 def axis_mach(mesh_h5, res_h5, axis_band) -> tuple:
-    """軸近傍セル帯 (cy < axis_band [m]) の (x, M) を x 昇順で返す。"""
+    r"""軸上/軸近傍の (x, M) を x 昇順で返す。**node では真の軸値**を返す。
+
+    **cell/node で座標の意味が変わる罠** (2026-08-17 実測):
+    node モードでは `/CELLS/centCoords` が**双対 CV 重心**に書き換わり VALUE と
+    同じ長さになる。したがって cell 用の実装がエラーも出さずに「動いてしまう」が、
+    軸上ノード (`MESH/COORD` で $r=0$) の双対 CV 重心は $r>0$ (実測 中央値
+    0.022 $r_t$、最大 0.029) なので、`cy < axis_band` の帯選択には**非軸ノードが
+    混入する** (実測: band=0.09 で 567 DOF 中 246 個が非軸、$M$ が最大 +0.001
+    ずれる)。node は軸上に DOF を持つのが利点なので、それを使う。
+
+    - node (`/MESH/COORD` の長さ = VALUE 長): $r=0$ の**軸ノードのみ**を返す。
+      `axis_band` は無視される (真の軸値なので帯平均が不要)。
+    - cell: 従来どおり `/CELLS/centCoords` の $r<$`axis_band` 帯。cell には軸上に
+      DOF が無いため帯平均が避けられない (真の軸値が要る用途では
+      `feedback.cfd_anchor.axis_curve_true` の偶関数フィットを使う)。
+    """
     with h5py.File(mesh_h5, "r") as nz:
         cc = nz["/CELLS/centCoords"][:].reshape(-1, 3)
+        node_c = (nz["/MESH/COORD"][:].reshape(-1, 3) if "/MESH/COORD" in nz else None)
     with h5py.File(res_h5, "r") as f:
         Ux = f["/VALUE/Ux"][:]
         Uy = f["/VALUE/Uy"][:]
         son = f["/VALUE/sonic"][:]
-    m = cc[:, 1] < axis_band
-    x = cc[m, 0]
+    is_node = node_c is not None and len(node_c) == len(Ux)
+    if is_node:
+        m = node_c[:, 1] < 1e-12 * max(float(np.max(node_c[:, 1])), 1.0)
+        x = node_c[m, 0]
+    else:
+        m = cc[:, 1] < axis_band
+        x = cc[m, 0]
     M = np.hypot(Ux[m], Uy[m]) / np.maximum(son[m], 1e-9)
     o = np.argsort(x)
     return x[o], M[o]
