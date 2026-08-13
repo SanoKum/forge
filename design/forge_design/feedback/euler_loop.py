@@ -239,8 +239,15 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     x_w0 = float(d["wall_inv"][0, 0])
 
     def make_ax2w(cm):
+        r"""軸→壁の逆引き。`np.interp` は範囲外を端値へ**黙ってクランプ**するため、
+        「壁が届かない (物理)」と「マップの被覆が単に足りない (測定限界)」を
+        区別できない (2026-08-15 レビュー指摘)。呼び出し側が `.lo`/`.hi` で
+        被覆範囲を診断できるよう関数に持たせる — 挙動 (クランプ) 自体は変えず、
+        `mask_out_of_coverage_frac` として記録するに留める。"""
         o = np.argsort(cm[:, 1])
-        return lambda xi: np.interp(xi, cm[o, 1], cm[o, 0])
+        f = lambda xi: np.interp(xi, cm[o, 1], cm[o, 0])
+        f.lo, f.hi = float(cm[o, 1].min()), float(cm[o, 1].max())
+        return f
 
     ax2w = make_ax2w(cmap)   # v3 では各パスの CFD 場で毎回置き換える
 
@@ -262,6 +269,11 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                              L_contract=float(p.geometry.get("L_contract", 3.0)),
                              phi_u=np.deg2rad(float(p.geometry.get("phi_u_deg", 25.0))),
                      blend_len=float(p.geometry.get("blend_len", 0.0)))
+            # design_chain の初回壁と同じ検査をパス毎の再構築壁にも課す
+            # (以前は呼ばれておらず、帰還が壁を壊しても気づけなかった — レビュー指摘)
+            wmsgs = wall.validate()
+            if wmsgs:
+                raise ValueError(f"pass {k} 壁フィルタ不合格: " + "; ".join(wmsgs))
             mp = Mesh2DParams(ni=int(p.mesh.get("ni", 321)), nj=int(p.mesh.get("nj", 65)),
                               wall_first_frac=float(p.mesh.get("wall_first_frac", 5.0e-3)),
                               throat_refine=float(p.mesh.get("throat_refine", 3.0)),
@@ -379,6 +391,12 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                   "dM_inf_mid_band": float(eA[(xi >= 4.0) & (xi <= 12.0)].max())}
         # マスク/重みランプ: 壁足が接合近傍 or 目標終端近傍
         xw = ax2w(xi)
+        # **被覆外クランプの明示記録** (2026-08-15 レビュー指摘): マスクの挙動
+        # (w=0) は変えないが、「物理的に到達不能」と「マップの被覆がそもそも
+        # 無い (測定限界)」を区別できるよう、被覆外だった軸ステーション数を
+        # 別途記録する。実測 (run_0018): x/rt<1.62 はマップ被覆外で、そこは
+        # 独立に実 CFD 場を後退トレースして円弧着地 (到達不能) と確認済み。
+        out_of_cov = (xi < ax2w.lo) | (xi > ax2w.hi)
         if mask_mode == "narrow":
             # **凍結された円弧に着地する station のみ**マスクする (本来の §4.7(c))。
             # 設計壁は可動なので殺さない。接合の C2 保存は Δθ のテーパで担保する。
@@ -386,6 +404,8 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         else:   # "wide" (従来): 接合から 0.3 + ランプ 1.0 r* まで設計壁も殺す
             w = np.clip((xw - (x_w0 + 0.3)) / 1.0, 0.0, 1.0) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
         w *= (Mt > 1.15)
+        mask_diag = {"mask_out_of_coverage_frac": float(np.mean(out_of_cov)),
+                     "mask_out_of_coverage_and_zero_frac": float(np.mean(out_of_cov & (w < 0.5)))}
         dM_inf = float(np.max(np.abs(dM * (w > 0.5))))
         rejected = bool(dM_inf > best["dM_inf"] * 1.02)
         # 出口一様性は**診断として**毎パス記録する (安価)。役割の区別 (2026-08-14):
@@ -404,7 +424,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         except Exception as e:  # 測定面が取れない等
             eu = {"error": f"{type(e).__name__}: {e}"}
         hist.append({"pass": k, "dM_inf_masked": dM_inf, "omega": omega,
-                     "rejected": rejected, **common,
+                     "rejected": rejected, **common, **mask_diag,
                      "n_chunks": len(_chunk_dirs(rd)),
                      "total_steps": _snaps_of(rd)[-1][0],
                      "axis_M_verdict": hl.get("axis_M_steady", {}).get("verdict"),
