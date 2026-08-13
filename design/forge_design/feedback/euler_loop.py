@@ -145,7 +145,9 @@ def _rebuild_wall(wall_pts: np.ndarray, wall_th: np.ndarray, dtheta_fn,
 
 
 CHUNK = 6000          # warm 継続チャンク長 [step] (= axis_M_series_steady の n_ref)
-MAX_WARM_CHUNKS = 4   # warm パスの継続上限 (6000×4 = cold アンカーと同長で打ち切り)
+MAX_WARM_CHUNKS = 6   # warm パスの継続上限 (実測: 壁更新後の遅い波の定常化に
+                      # 24000 step で trend 0.008 vs tol 0.005 の僅差不足が
+                      # 2 run で再現 [run_0023 pass6 / run_0024 pass8] → 36000 まで許可)
 
 
 def _steps_of(f: Path) -> int:
@@ -208,6 +210,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     scale = float(p.spec["r_throat"])
     cmap = build_cminus_map(d["pts"], d["wall_inv"], p.gamma)
     x_w0 = float(d["wall_inv"][0, 0])
+    x_reach = float(d.get("x_reach", x_w0))   # 評価目標の分割点 (B7)
 
     def make_ax2w(cm):
         r"""軸→壁の逆引き。`np.interp` は範囲外を端値へ**黙ってクランプ**するため、
@@ -378,6 +381,19 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         else:   # "wide" (従来): 接合から 0.3 + ランプ 1.0 r* まで設計壁も殺す
             w = np.clip((xw - (x_w0 + 0.3)) / 1.0, 0.0, 1.0) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
         w *= (Mt > 1.15)
+        # **被覆外は w=0 を強制する** (2026-08-15): クランプされた xw は最初の
+        # マップ点 (> x_w0) を返すため、到達不能な境界ステーションが w=1 に化け、
+        # 直せない境界スパイク (+0.058) が masked 指標を頭打ちにし、かつテーパ帯の
+        # 壁へ誤帰還されて壁を歪めていた (run_0023 で実測)。被覆外 = 壁足が不明 =
+        # 帰還不能、なので w=0 が正しい。
+        w *= (~out_of_cov).astype(float)
+        # **x_reach 未満も w=0** (2026-08-15, run_0024 で発見): x_reach は
+        # ブートストラップ設計のマップ由来、ax2w は最終設計のマップ由来で被覆が
+        # 僅かに違い、x∈[map.lo, x_reach) の隙間ステーションが「到達可能」判定に
+        # なる。だがそこの評価目標は凍結アンカー実測 (設計意図でない) で、責任壁は
+        # テーパ帯 (係数 ~0) — 7 パス押しても 0.058 のまま動かず masked を頭打ちに
+        # した。評価目標の分割点とマスクを一致させるのが整合的。
+        w *= (xi >= x_reach).astype(float)
         mask_diag = {"mask_out_of_coverage_frac": float(np.mean(out_of_cov)),
                      "mask_out_of_coverage_and_zero_frac": float(np.mean(out_of_cov & (w < 0.5)))}
         dM_inf = float(np.max(np.abs(dM * (w > 0.5))))

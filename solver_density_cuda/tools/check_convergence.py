@@ -63,7 +63,15 @@ def analyze(path, min_drop, tail_frac):
         b = ser[int(n * (1 - 2 * tail_frac)):int(n * (1 - tail_frac))] or a
         ma = sum(abs(x) for x in a) / len(a)
         mb = sum(abs(x) for x in b) / len(b)
-        trend = 'rising' if ma > mb * 1.05 else ('flat' if ma > mb * 0.9 else 'falling')
+        # rising = 窓平均が 5% 増 **かつ** プラトーを実際に離脱している (系列最小の
+        # 2 倍超)。後者のガードが無いと、深く収束したプラトー (例: 3.4 桁低下後の
+        # 1e-7 台) のリミットサイクル呼吸 ±5% を「発散傾向」と誤判定する
+        # (run 毎の非決定性で同一設定が PASS/NOT CONVERGED に割れる実害が出た
+        # 2026-08-15)。本物のリバウンド発散は最小値の 2 倍を速やかに超えるので
+        # 検出力は保たれる。
+        smin = min(abs(x) for x in ser if x != 0.0) if any(x != 0.0 for x in ser) else 0.0
+        trend = ('rising' if (ma > mb * 1.05 and ma > 2.0 * smin)
+                 else ('flat' if ma > mb * 0.9 else 'falling'))
 
         # init==0 (例: アライン格子で Uy が初期厳密 0): 相対低下は無意味。最大初期残差から
         # 立ち上がっていなければ inactive 扱い (rising でなければ収束済みとみなす)。
