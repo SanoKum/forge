@@ -104,6 +104,11 @@ def q_pmax(cc, V):
 # theta は積分核が十分ゼロになる外部流まで積分する (delta99 で打ち切らない)。
 KAPPA_WL = 0.41
 
+# 平板の抽出・壁法則・運動量積分は **正式後処理と共通のモジュール**を使う
+# (かつて式を複製していて fit 窓/端条件/音速が食い違い、同じ run に別の値を報告していた)。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import flatplate_bl as _fbl
+
 
 def _reichardt_uplus(yp):
     return np.log(1.0 + KAPPA_WL * yp) / KAPPA_WL + 7.8 * (
@@ -134,25 +139,11 @@ def _uplus(yp, law):
 
 
 def _solve_utau(Ut, y, nu, law='reichardt'):
-    """壁法則の逆解き。**ソルバが使った法則と揃えること** (揃えないと符号すら逆に見える)。"""
-    utau = np.sqrt(max(nu * Ut / max(y, 1e-30), 1e-30))
-    for _ in range(80):
-        utau = max(utau, 1e-12)
-        f = Ut / utau - _uplus(utau * y / nu, law)
-        d = 1e-6 * utau
-        df = ((Ut / (utau + d) - _uplus((utau + d) * y / nu, law)) - f) / d
-        if abs(df) < 1e-20:
-            break
-        utau -= f / df
-    return max(utau, 0.0)
+    """壁法則の逆解き (共通実装)。**ソルバが使った法則と揃えること**。"""
+    return _fbl.solve_utau(Ut, y, nu, law)
 
 
-def cf_karman_schoenherr(re_theta):
-    """NASA TMR flat-plate validation と同じ Karman-Schoenherr 相関。"""
-    if not np.isfinite(re_theta) or re_theta <= 1.0:
-        return float('nan')
-    l = np.log10(re_theta)
-    return 1.0 / (17.08 * l * l + 25.11 * l + 6.012)
+cf_karman_schoenherr = _fbl.cf_karman_schoenherr
 
 
 def _plate_column(cc, V, xs):
@@ -210,41 +201,15 @@ def _dstar(cc, V, xs, ytop=None):
     return float(np.trapz(1.0 - (ro[m] * ux[m]) / (roe * ue), yy[m]))
 
 
-def make_q_cf_momentum(xs, ytop, window=0.08, order=2):
-    """運動量積分 Cf (cf_retheta_analysis.py の定義 (c)) の時系列判定。
-
-    **壁出力に依存しない**ので、壁法則を替えた A/B で「後処理定義の不整合」に
-    引っかからない。ただし定常性・境界層近似・積分上端・fit に依存する
-    **収支診断**であって定義非依存の壁摩擦ではない (同ツールの注記と同じ)。
-      Cf/2 = dtheta/dx + theta*(H + 2 - Me^2)/Ue * dUe/dx
-    """
+def make_q_cf_momentum(xs, ytop, window=0.08, order=2, xmin=0.1, xmax=0.95):
+    """運動量積分 Cf (壁出力非依存) の時系列判定。**正式後処理と同一実装** (flatplate_bl)。"""
     def f(cc, V):
-        x = cc[:, 0]
-        xa = np.unique(np.round(x[x > 1e-6], 6))
-        xa = xa[np.abs(xa - xs) <= max(window, 1e-9) * 1.5]
-        if len(xa) < order + 2:
-            return float('nan')
-        th = np.array([_theta_and_utau(cc, V, xx, ytop)[0] for xx in xa])
-        ue = np.array([_theta_and_utau(cc, V, xx, ytop)[2] for xx in xa])
-        good = np.isfinite(th) & np.isfinite(ue)
-        if good.sum() < order + 2:
-            return float('nan')
-        xa, th, ue = xa[good], th[good], ue[good]
-        xc = xa[int(np.argmin(np.abs(xa - xs)))]
-        dthdx = np.polyval(np.polyder(np.polyfit(xa, th, order)), xc)
-        duedx = np.polyval(np.polyder(np.polyfit(xa, ue, order)), xc)
-        thc, _, uec = _theta_and_utau(cc, V, xc, ytop)
-        ds = _dstar(cc, V, xc, ytop)
-        if not (np.isfinite(thc) and thc > 0 and np.isfinite(ds)):
-            return float('nan')
-        H = ds / thc
-        Me = uec / np.sqrt(1.4 * 287.0 * 288.15)
-        pg = thc * (H + 2.0 - Me * Me) / uec * duedx
-        cf = 2.0 * (dthdx + pg)
-        ret = uec * thc / (V['vis_lam'][:][_plate_column(cc, V, xc)][-1]
-                           / V['ro'][:][_plate_column(cc, V, xc)][-1])
-        ks = cf_karman_schoenherr(ret)
-        return float(cf / ks) if np.isfinite(ks) and ks > 0 else float('nan')
+        Vv = dict(u=V['roUx'][:] / V['ro'][:], ro=V['ro'][:], mu=V['vis_lam'][:],
+                  P=V['P'][:] if 'P' in V else None)
+        cf, ret = _fbl.cf_momentum(cc, Vv, xs, xmin, xmax, ytop,
+                                   fit_window=window, fit_order=order)
+        ks = _fbl.cf_karman_schoenherr(ret)
+        return float(cf / ks) if np.isfinite(ks) and ks > 0 and np.isfinite(cf) else float('nan')
     return f
 
 

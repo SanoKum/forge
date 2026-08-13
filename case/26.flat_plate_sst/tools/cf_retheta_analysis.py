@@ -47,15 +47,17 @@ TS = TT * (1.0 + 0.5 * (GAM - 1.0) * MACH ** 2) ** (-1.0)
 RHO_INF = PS / (R * TS)
 A_INF = np.sqrt(GAM * R * TS)
 U_INF = MACH * A_INF
-KAPPA, BLOG = 0.41, 5.0
+# 壁法則・KS 相関・カラム抽出は **共通モジュール**に一本化する
+# (準定常ツール check_quasisteady.py と式が食い違って別々の値を報告した経緯があるため)。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "..", "..", "solver_density_cuda", "tools"))
+import flatplate_bl as _fbl
+
+KAPPA, BLOG = _fbl.KAPPA, _fbl.B_LOG
 
 
 # ---------------------------------------------------------------- 外部相関
-def cf_karman_schoenherr(re_theta):
-    """NASA TMR flat-plate validation と同じ Kármán–Schoenherr 相関 (外部相関)。"""
-    ret = np.asarray(re_theta, float)
-    l = np.log10(np.where(ret > 1.0, ret, np.nan))
-    return 1.0 / (17.08 * l * l + 25.11 * l + 6.012)
+cf_karman_schoenherr = _fbl.cf_karman_schoenherr
 
 
 def cf_schlichting(re_x, coeff=0.0592):
@@ -64,41 +66,7 @@ def cf_schlichting(re_x, coeff=0.0592):
 
 
 # ---------------------------------------------------------------- 壁法則
-def uplus_reichardt(yp):
-    return np.log(1.0 + KAPPA * yp) / KAPPA + 7.8 * (
-        1.0 - np.exp(-yp / 11.0) - (yp / 11.0) * np.exp(-yp / 3.0))
-
-
-def uplus_spalding(yp, up):
-    """Spalding: y+ = u+ + e^{-kB}(e^{ku+} - 1 - ku+ - (ku+)^2/2 - (ku+)^3/6) の残差。"""
-    ku = KAPPA * up
-    return up + np.exp(-KAPPA * BLOG) * (
-        np.exp(ku) - 1.0 - ku - ku * ku / 2.0 - ku ** 3 / 6.0) - yp
-
-
-def solve_utau(Ut, y, nu, law="reichardt"):
-    if law == "none":
-        return float("nan")
-    utau = np.sqrt(max(nu * Ut / max(y, 1e-30), 1e-30))
-    for _ in range(200):
-        utau = max(utau, 1e-12)
-        if law == "reichardt":
-            f = Ut / utau - uplus_reichardt(utau * y / nu)
-        else:  # spalding
-            f = uplus_spalding(utau * y / nu, Ut / utau)
-        d = 1e-6 * utau
-        if law == "reichardt":
-            f2 = Ut / (utau + d) - uplus_reichardt((utau + d) * y / nu)
-        else:
-            f2 = uplus_spalding((utau + d) * y / nu, Ut / (utau + d))
-        df = (f2 - f) / d
-        if abs(df) < 1e-30:
-            break
-        step = f / df
-        utau -= step
-        if abs(step) < 1e-14 * max(utau, 1e-12):
-            break
-    return max(utau, 0.0)
+solve_utau = _fbl.solve_utau
 
 
 # ---------------------------------------------------------------- 読み込み
@@ -194,16 +162,8 @@ def load_su2(run, fname="flow.vtu"):
 
 
 # ---------------------------------------------------------------- 抽出
-def stations(C, xmin, xmax):
-    x = C[:, 0]
-    xa = np.unique(np.round(x[x > 1e-6], 6))
-    return xa[(xa >= xmin) & (xa <= xmax)]
-
-
-def column(C, xc):
-    x, y = C[:, 0], C[:, 1]
-    i = np.sort(np.where(np.abs(x - xc) < 1e-4)[0])
-    return i[np.argsort(y[i])]
+stations = _fbl.stations
+column = _fbl.column
 
 
 def profile(C, V, xc, ytop, edge):
