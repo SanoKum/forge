@@ -75,6 +75,17 @@ Bézier 自由度勘定の整合。
   格子収束 <0.5% で検証済み) が設計変数のみの決定的関数として与える。
   **既知の制約**: $R_d \lesssim 1$ は Sauer パッチが円弧終端を超えるため明示エラー
   (Kliegel–Levine 高次の実装が今後の課題)。
+- **CFD アンカー (①モード F の逆設計)**: Sauer 一次解は実 CFD と $M'$ +25% / $M''$ 2.3 倍
+  ずれることが実測され ([plan §9.2 B5](../../plans/active/tooling-nozzle-phase3-windtunnel.md))、
+  接合波の主因は設計 Cauchy データと実流の不整合だった。`geometry.throat_anchor_run` に
+  既存 run を指定すると、`feedback/cfd_anchor.py` の `CFDThroat` がその CFD 場から
+  軸 $M(x)$ の局所多項式フィットと starting line の $M(r),\theta(r)$ (偶/奇多項式
+  最小二乗) を抽出し、SauerThroat 互換 (`starting_line`/`mach`) で `design_chain` /
+  `inverse_design` に供給する。$x_0$ は「CFD 軸 M = M_start」で決め、アンカーは
+  抽出元 run に**凍結** (遷音速場は下流壁にほぼ依存しない — 実測 ΔM 0.0024 — ため
+  1 回の抽出で足りる)。**残課題 (ユーザ指示 2026-08-15)**: ブートストラップ元の
+  初期壁品質と CFD 不要のプレビュー経路のため、初期遷音速解の二次化
+  (Kliegel–Levine) は別途実装する。
 - 事前フィルタ: CP 単調性、$dM_c/dx$ 凝縮上限 (足切りのみ)、壁 `validate()` (単調性・スロート最小)。
 
 ## メッシュ (構造化・トポロジ固定)

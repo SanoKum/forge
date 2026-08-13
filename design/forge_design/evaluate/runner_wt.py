@@ -33,7 +33,14 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     g = p.gamma
     Md = float(p.spec["M_design"])
     R = float(p.geometry.get("R", 2.0))
-    st = SauerThroat(R=R, gamma=g)
+    # **B6 CFD アンカー** (plan §9.2): `geometry.throat_anchor_run` があれば
+    # Sauer をその run の CFD 抽出値で置き換える (アンカーは抽出元 run に凍結)
+    anchor_run = p.geometry.get("throat_anchor_run")
+    if anchor_run:
+        from ..feedback.cfd_anchor import from_run
+        st = from_run(anchor_run, float(p.spec["r_throat"]), R, g)
+    else:
+        st = SauerThroat(R=R, gamma=g)
     x0, rr0, MM0, tt0 = st.starting_line(M_start=1.05, n=int(p.geometry.get("n_start", 41)))
     h = 1e-4
     M0 = float(st.mach(x0, 0.0))
