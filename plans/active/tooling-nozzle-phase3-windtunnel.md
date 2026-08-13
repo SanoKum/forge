@@ -513,11 +513,40 @@ CFD 抽出値をアンカーにした目標曲線 + starting line 置換 (遷音
   - $M\approx1.9424$ (stencil 間 9.3e-4 ≒ 雑音床。雑音床上で収束)
   - $M'$ は雑音寄与が細分で増える ($\epsilon/dx$ = 0.007→0.015→0.034) ため
     **未収束のまま**。
-- **次の一手**: **node (median-dual) で基準 run を取り直す**。node は雑音床
-  ~1e-6 で cell の ~600 倍良く ([[cell-atomicadd-nondeterminism]])、
-  $M''$ 雑音は $10^{-6}/0.0223^2\approx0.002$ となり測定可能域に入る。
-  ユーザ方針 [[user-prefers-node-base]] とも整合。node 化後に $M',M''$ の
-  収束判定と C2 境界値の存否判定をやり直す。
+**B10-b. node 化で C2 境界値が確定 — 以後 node をベースとする (2026-08-17)**
+
+根拠 run: `run_0034_node_base` / `run_0035_node_local2x` / `run_0036_node_local4x`
+(cell 系列と同一仮壁・同一解像度・同一 CFD 条件、node Euler `_config_euler_node`)。
+
+- **node Euler の設定** (`runner_wt._config_euler_node`): `discretization: node` +
+  `isAxisymmetric` + `axisCentroidShift` + **`nodeAxisDirichlet: 1`**。
+  **`nodeWallDirichlet` は使わない** — 壁速度を 0 に固定する no-slip 用で、Euler の
+  slip 壁で有効にすると接線速度まで殺す ([[node-wall-velocity-needs-dirichlet-flag]])。
+  メッシュは**この config で変換**する ([[node-mesh-must-convert-with-node-config]])。
+- **残差**: node は cell より 2 桁深く落ちる (rms_ro 9.4e-10 / 低下 5.3 桁 vs
+  cell 9.5e-8 / 3.3 桁)。形式判定が NOT CONVERGED なのは `rms_roUy` の init が
+  既に 4.5e-6 と微小で「低下桁数」が意味を持たないため (主要列は全て 5 桁超低下)。
+- **境界値が全て収束** (最細格子 node 4x、上流最近傍 stencil):
+
+  | 量 | cell の stencil ばらつき | **node** | 改善 | 格子差分比 (node) |
+  | --- | --- | --- | --- | --- |
+  | $M$ | 9.3e-4 | **0.0 (完全一致)** | — | 0.67 |
+  | $M'$ | 0.0951 | **4e-4** | **238×** | 0.17 |
+  | $M''$ | 6.0949 (符号不一致) | **0.049** | **124×** | 0.50–0.96 |
+
+- **確定値** ($x_{reach,CFD}$ = **1.7042**、格子ばらつき 0.0034、first_step 依存 0.0007):
+  $$M=1.9458,\qquad M'=+0.2896,\qquad M''=+0.19\pm0.03$$
+  cell では $M''$ が −1.33/+0.51/−5.59 と符号すら定まらなかったのに対し、node は
+  3 stencil が +0.169/+0.188/+0.218 に収まる。
+- **前項 B10-a の「C2 境界値の存否は未判定」を解決**: **C2 境界値は存在し、
+  測定可能**。cell で測れなかったのは離散化由来の雑音が原因だった。
+- **こぶも node で再確認**: 振幅 0.0180→0.0191→0.0187 @ x≈1.44、
+  谷 −0.0231→−0.0258→−0.0255 @ x≈1.85–1.91。cell (0.0218→0.0227 @1.43) と
+  同位置・同オーダーで、**実在の物理構造という結論は node でも維持**
+  (振幅は node の方が ~15% 小さい = cell は雑音を上乗せしていた)。
+- **方針決定 (ユーザ指示 2026-08-17)**: **以後 case/41 の設計・検証は node を
+  ベースとする**。cell は回帰対照としてのみ残す。[[user-prefers-node-base]]
+  の一般方針を本ケースにも適用。
 - **target 立ち上がりの帰結** (`run_0033_local4x/target_rise_C0_C1_C2.png`):
   同等に正当な 3 つの $M''$ 推定で target が**全く別物**になる —
   $M''=-1.33$ は $x_{reach}$ 直後で target が下降、$M''=-5.59$ は 4.5↔0.9 の

@@ -159,6 +159,49 @@ initial: "uniform_p101325_u10"
 """
 
 
+def _config_euler_node(p: Problem, nsteps: int, out_int: int, cfl: float,
+                       conv: int = 1) -> str:
+    """**node (median-dual) Euler** — B10 の基準 run 用 (2026-08-17)。
+
+    動機: cell モードは atomicAdd 由来のセルレベル雑音床 ~6e-4 を持ち
+    ([[cell-atomicadd-nondeterminism]])、軸 $M$ の 2 階微分がこの雑音に埋もれて
+    $M''$ を測定できない (実測: 雑音 $\\epsilon/dx^2$ が細分で 0.097→1.53 と増え、
+    測定値 −1.33/+0.51/−5.59 と同オーダー)。node は雑音床 ~1e-6 で約 600 倍良い。
+
+    設定の注意:
+    - `nodeWallDirichlet` は**使わない**。これは壁速度を 0 に固定する no-slip 用で、
+      Euler の slip 壁で有効にすると接線速度まで殺す
+      ([[node-wall-velocity-needs-dirichlet-flag]])。
+    - 軸対称 node には `nodeAxisDirichlet` (軸行真空化の対症) と
+      `axisCentroidShift` が要る ([[node-axisym-axis-dirichlet]])。
+    - `bndFirstOrder` は**使用禁止** (AGENTS)。
+    - メッシュは**この config で変換**すること — cell 用 h5 を流用すると黙って
+      primal cell で解かれる ([[node-mesh-must-convert-with-node-config]])。
+    - 既知の未解決事項: node slip 壁 + 接線密度勾配の市松スプリアス流
+      ([[node-slip-spurious-flow]])。本ケースは slip 壁なので、同じ市松診断で
+      cell と比較して確認すること。
+    """
+    return f"""mesh: {{meshFormat: "hdf5", discretization: "node", isAxisymmetric: 1, axisCentroidShift: 1, nodeAxisDirichlet: 1, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
+gpu: 1
+solver: "SLAU"
+physProp: {{isCompressible: 1, thermalMethod: 0, viscMethod: 0,
+           ro: 1.2, visc: 0.0, thermCond: 0.0, cp: {p.cp}, gamma: {p.gamma}}}
+time:
+  unsteady: 0
+  dualTime: 0
+  last: {{control: 0, nStepOuter: {nsteps}}}
+  deltaT: {{control: 1, dt: 1e-8, cfl: {cfl}, cfl_pseudo: {cfl},
+           dt_min: 1e-9, dt_max: 0.001, blockDPLUR: 1, lowMachPrecond: 0, detectNaN: 1}}
+  outStepStart: 0
+  outStepInterval: {out_int}
+  timeIntegration: 11
+  nStepInner: 5
+space: {{convMethod: {conv}, limiter: 2}}
+turbulence: {{model: "none"}}
+initial: "uniform_p101325_u10"
+"""
+
+
 def _config_sst_node(p: Problem, nsteps: int, out_int: int, cfl: float) -> str:
     """NS v1 (δ* 段) の node 壁解像 y+~1 SST 設定。
 
