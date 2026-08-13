@@ -151,6 +151,8 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0074_diag_spalding` | §5.2 ② **診断実験**: `FORGE_WF_INV_LAW=spalding` (逆解き則のみ Spalding、`wf_pk` の $g$ は Reichardt 固定、E3 OFF) | $u_\tau$ 比 **1.0597** / $\tau_w$ 比 **1.1230** (凍結場予測 1.0599/1.1234 と 0.02–0.04%)。デバイス実装 = CPU 後処理 **1.0000** | active (② の正) |
 | `run_0075_coupled_reichardt` | §5.2 連成 A/B の**対照**: `run_0063` 場から 20000 step、env OFF | (c) 運動量積分/KS=0.754、(d)=0.764、$\tau_w$=6.80 Pa。全残差 `NOT CONVERGED` / $\theta$,$C_f$ `STEADY` | active (A/B 対照) |
 | `run_0076_coupled_spalding` | §5.2 連成 A/B の**本命**: 同 restart + `FORGE_WF_INV_LAW=spalding` | (c)=**0.811**、(d)[整合後処理]=**0.822**、$\tau_w$=**7.24 Pa** (+6.5%)。$\theta$ drift 2.0% で `STEADY` の縁 | active (§5.2 の正) |
+| `run_0077_ext_reichardt` | 延長対照 (`run_0075` から 60000 step、env OFF) | (c)=**0.7511**、(d)=0.7643、$\tau_w$=6.80 Pa。全量 `STEADY` | active (確定値の正) |
+| `run_0078_ext_spalding` | 延長本命 (`run_0076` から 60000 step、`FORGE_WF_INV_LAW=spalding`) | (c)=**0.8136** (+8.3%)、(d)=0.8199、$\tau_w$=7.23 Pa。全量 `STEADY` | active (確定値の正) |
 | `run_0062_repdiag` | **代表点幾何診断** (`FORGE_WF_REP_DIAG=1`、`run_0053` 場から 100 step) | `best_cos`=1.0000・接線オフセット/y=9.3e-5 → **平板では代表点が数値許容差内で法線上**。§3.3 の粗場側入力 | active (§3 の正) |
 | `run_0060_E3` | **E3: $\omega$ 生産を壁法則整合 $S_{\rm wf}^2$ へ** (`FORGE_WF_OMEGA_SOURCE=1`、`run_0053` 場から 20000 step) | (w) $C_f$/KS = **0.8445** (E3 前 0.7615、pin 0.8594)、$\omega$ 2.62e5→1.35e5、quasisteady `ALL STEADY` | active (**E3 の正**) |
 | `run_0060_E3_widiag` | 同 E3 の W–I 実力 + $\omega$ 収支取得 (500 step 再走) | $D/P$=0.895、$\lvert T\rvert/P$=0.105 (E3 前 0.078) | active (診断) |
@@ -1825,7 +1827,18 @@ python3 tools/wall_law_inverse.py <run_dir> --mode wf --xmin 0.05 --ypmin 25 --y
 Spalding run をそのまま通すと 0.764→0.735 と**悪化して見える**が、これは後処理定義の
 不整合であって物理ではない。**`--wall-law spalding` を明示すること**。
 
-**★ (c) はまだ動いている**: `check_quasisteady.py --quantity cf_momentum` で
+**【確定 (2026-08-13)】** 延長 run (各 60000 step) で**全量 `STEADY`** になった:
+
+| 量 | Reichardt (`run_0077`) | Spalding (`run_0078`) | 変化 |
+| --- | --- | --- | --- |
+| **(c) 運動量積分/KS** | **0.7511** | **0.8136** | **+8.3%** |
+| (d) 壁法則逆解き/KS [整合後処理] | 0.7643 | 0.8199 | +7.3% |
+| 生 $\tau_w$ | 6.80 Pa | 7.23 Pa | +6.3% |
+| $\theta$ | 9.919e-4 | 1.049e-3 | +5.8% |
+
+**20000 step の (c)=0.811 は未収束値**だった。**目標 0.94 までまだ +15.5% 必要**。
+
+(以下は 20000 step 時点の記録) **(c) はまだ動いていた**: `check_quasisteady.py --quantity cf_momentum` で
 **drift 6.6%/tail `DRIFTING`** (step 10000/15000/20000 = 0.761/0.798/0.811 と増加中)。
 一方 Spalding 整合 (d) は 0.824/0.823/0.822、生 $\tau_w$ は 7.274/7.251/7.240 Pa で落ち着いている。
 → **改善方向は信用できるが (c)=0.811 を最終値としない**。
