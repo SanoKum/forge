@@ -38,14 +38,21 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     h = 1e-4
     M0 = float(st.mach(x0, 0.0))
     dM0 = float((st.mach(x0 + h, 0.0) - st.mach(x0 - h, 0.0)) / (2 * h))
-    # 現状は M, M' のみの C1 拘束。**この選択は見直し中** (plan §9.2 B1):
-    # 「M'' を合わせても効かない」という以前の判定は not-a-knot 端の
-    # アーティファクトを測った誤りで、清浄位置で再測すると現行の目標は
-    # M''(x0) = -0.483 に対し Sauer は +0.326 (符号違い) だった。Sivells の
-    # 古典要件は中心線分布の 1・2 階微分整合であり、B1 で C2 化を評価する。
+    # **B1: 中心線 Cauchy データの接続次数** (plan §9.2)。
+    # `geometry.centerline_start_order` = 1 (M, M' の C1 — 従来) / 2 (M, M', M''
+    # の C2 — Sivells の古典要件)。以前の「M'' を合わせても効かない」判定は
+    # not-a-knot 端のアーティファクトを測った誤りで、清浄位置で再測すると C1 の
+    # 目標は M''(x0) = -0.483 に対し Sauer は +0.326 (符号違い) だった。
+    # **これは中心線データの整合であり、壁の C2 を保証するものではない** (B2 が担当)。
+    # 自由 CP 数を変えない (= 探索次元を保つ) ため、次数が 1 上がるだけ。
+    d2M0 = float((st.mach(x0 + h, 0.0) - 2.0 * M0 + st.mach(x0 - h, 0.0)) / h ** 2)
+    order = int(p.geometry.get("centerline_start_order", 1))
+    if order not in (1, 2):
+        raise ValueError("geometry.centerline_start_order は 1 か 2")
+    start_bc = (M0, dM0) if order == 1 else (M0, dM0, d2M0)
     xd = dv_value(p, "L_ax")
     cps = [dv_value(p, f"mc_cp{i+1}") for i in range(3)]
-    bz = MachBezier.from_constraints(x0, xd, start=(M0, dM0), free_cp=cps,
+    bz = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
                                      end=(Md, 0.0, 0.0))
 
     def target(x: float) -> float:
@@ -73,6 +80,8 @@ def design_chain(p: Problem, viscous: bool) -> dict:
         raise ValueError("モード F 壁フィルタ不合格: " + "; ".join(msgs))
     return {"wall": wall, "wall_inv": wall_inv, "target": target, "x0": float(x0),
             "xd": float(xd), "Md": Md, "pts": res["pts"], "R": R,
+            "centerline_start_order": order, "sauer_d2M0": d2M0,
+            "target_d2M0": float(np.atleast_1d(bz.deriv(x0, 2))[0]),
             "mdot_ratio_moc": res["mdot_exit"] / res["mdot_start"]}
 
 

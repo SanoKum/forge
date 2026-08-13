@@ -17,7 +17,8 @@ import numpy as np
 
 
 class SauerThroat:
-    def __init__(self, R: float, gamma: float = 1.4) -> None:
+    def __init__(self, R: float, gamma: float = 1.4,
+                 theta_mode: str = "linearized") -> None:
         if R < 1.0:
             import warnings
 
@@ -25,6 +26,9 @@ class SauerThroat:
                 f"R={R:.3g} < 1: Sauer 一次解の適用域外 (Kliegel-Levine 高次未実装)。"
                 "アンカー精度は帰還で吸収されるが初期形状の質は落ちる"
             )
+        if theta_mode not in ("linearized", "exact_ratio"):
+            raise ValueError("theta_mode は 'linearized' か 'exact_ratio'")
+        self.theta_mode = theta_mode
         self.R = float(R)
         self.g = float(gamma)
         self.A = np.sqrt(2.0 / ((self.g + 1.0) * self.R))
@@ -54,7 +58,22 @@ class SauerThroat:
         return qb / np.sqrt(np.maximum(ab2, 1e-12))
 
     def theta(self, x, r):
-        return np.arctan2(self.vbar(x, r), 1.0 + self.ubar(x, r))
+        r"""流れ角。`theta_mode` で摂動の扱いを選ぶ (2026-08-14)。
+
+        - `"linearized"` (既定): $\theta=\arctan\bar v$。Sauer 解は**線形化壁 BC**
+          $\bar v = dr_w/dx$ を満たすよう構成されているので、この定義なら
+          **壁流線が壁に沿う** (幾何整合)。
+        - `"exact_ratio"`: $\theta=\arctan(\bar v/(1+\bar u))$。流れ角の厳密定義だが、
+          Sauer の $\bar v$ が線形化 BC しか満たさないため壁で $1+\bar u\approx1.25$ の
+          分だけ角度が**過小**になる (R=2 で実測 7.39°→5.89°, −25.7%)。これは
+          starting line の時点で円弧と 1.5° のキンクを作り、圧縮波の源になる。
+
+        両者は $O(\varepsilon)$ で一致し、差は 2 次。根治は Kliegel–Levine 高次
+        (未実装) — 本オプションは 1 次解の枠内で幾何整合を優先する暫定。"""
+        v = self.vbar(x, r)
+        if self.theta_mode == "linearized":
+            return np.arctan(v)
+        return np.arctan2(v, 1.0 + self.ubar(x, r))
 
     # -- MOC 初期値線 -------------------------------------------------------
     def qbar_of_mach(self, M: float) -> float:
@@ -79,4 +98,4 @@ class SauerThroat:
         r = np.linspace(0.0, 1.0, n)
         ub = self.ubar(0.0, r)
         flux = 1.0 - 0.5 * (g + 1.0) * ub * ub  # ρu/(ρ*a*) の M=1 近傍展開
-        return float(np.trapz(flux * 2.0 * r, r))
+        return float(np.trapezoid(flux * 2.0 * r, r))
