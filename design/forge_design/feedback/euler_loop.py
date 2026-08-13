@@ -36,7 +36,7 @@ from ..evaluate import runner_wt
 
 def build_cminus_map_cfd(run_dir, wall_pts, scale: float, gamma: float,
                          m_floor: float = 1.05) -> np.ndarray:
-    """**v3**: そのパスの CFD 最終場の中で C⁻ を壁→軸へ積分してマップを作る。
+    r"""**v3**: そのパスの CFD 最終場の中で C⁻ を壁→軸へ積分してマップを作る。
 
     注: 「収束場」とは呼ばない — 収束判定は `evaluate.health` が
     `check_convergence.py` の VERDICT として別途記録し、読み替えはしない (A3)。
@@ -173,12 +173,50 @@ def _rebuild_wall(wall_pts: np.ndarray, wall_th: np.ndarray, dtheta_fn,
     return np.c_[x, r_new], th_new
 
 
+CHUNK = 6000          # warm 継続チャンク長 [step] (= axis_M_series_steady の n_ref)
+MAX_WARM_CHUNKS = 4   # warm パスの継続上限 (6000×4 = cold アンカーと同長で打ち切り)
+
+
+def _steps_of(f: Path) -> int:
+    return int("".join(c for c in f.stem if c.isdigit()))
+
+
+def _chunk_dirs(rd: Path) -> list:
+    """パスのチャンク列 [rd, rd/cont_1, ...] (存在するものだけ・番号順)。"""
+    return [rd] + sorted(rd.glob("cont_[0-9]*"),
+                         key=lambda d: int(d.name.split("_")[1]))
+
+
+def _snaps_of(rd: Path) -> list:
+    """全チャンクを通しの step に直したスナップショット列 [(step, res, mesh)]。
+
+    各チャンクの res_0 は直前チャンク最終場の貼り直し (同一メッシュ最近傍 = 恒等)
+    なので通し step は「オフセット + チャンク内 step」。判定側は dstep>0 の対のみ
+    使うため res_0 の重複は無害。"""
+    out, off = [], 0
+    for d in _chunk_dirs(rd):
+        res = sorted(d.glob("res_[0-9]*.h5"), key=_steps_of)
+        out += [(off + _steps_of(f), f, d / "nozzle.h5") for f in res]
+        if res:
+            off += _steps_of(res[-1])
+    return out
+
+
 def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
              tol_rel: float = 0.005, clip_deg: float = 0.5, nsteps=None,
              map_mode: str = "frozen", gate_mode: str = "formal",
-             mask_mode: str = "wide", taper_width: float = 0.3) -> dict:
+             mask_mode: str = "wide", taper_width: float = 0.3,
+             drop: float = 2.0) -> dict:
     """map_mode: "frozen" = v2 (v1 MOC 設計場の凍結マップ) /
-    "cfd" = **v3** (毎パスその回の CFD 収束場から C⁻ を引き直す)。"""
+    "cfd" = **v3** (毎パスその回の CFD 収束場から C⁻ を引き直す)。
+
+    **実行方針 (2026-08-15, レビュー反映)**: pass 1 は準 1D IC から cold で
+    `nsteps` (既定 24000) 回し、正式ゲート (PASS + 準定常 + 軸 M 定常) の
+    アンカーとする。pass 2 以降は**前パス最終場を cross-mesh restart**
+    (`interp_field.py`, AGENTS のメッシュ変更後 restart 必須ルール) して
+    CHUNK step ずつ回し、**軸 M 定常 (レート正規化) になり次第停止**する
+    (適応停止)。壁は 1 パスに数十 µm しか動かないので過渡は小さく、
+    cold 24000 step/パスの大半は無駄だった (ユーザ指摘)。"""
     p = load_problem(problem_path)
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
@@ -230,34 +268,73 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                               scale=scale)
             coords, quads, bedges = generate_axisym_mesh(wall, mp)
             write_msh41_2d(rd / "nozzle.msh", coords, quads, bedges)
-            n = nsteps or int(p.evaluate.get("nStepOuter", 12000))
+            warm = (k > 1 and prev_res is not None)
+            # pass 1 (cold アンカー): 24000 step 固定 — 残差は step ~371 で全列
+            # 2 桁到達後プラトーだが、軸 M の定常化に 24000 要る (実測 run_0008:
+            # 射影ドリフト 12k=0.0079 → 24k=0.0036)。
+            # pass ≥2 (warm): CHUNK ずつの適応継続なのでここは 1 チャンク分。
+            n = CHUNK if warm else max(nsteps or 24000, 12000)
             (rd / "solverConfig.yaml").write_text(
-                runner_wt._config_euler(p, n, max(n // 3, 1), 4.0, 1))
+                runner_wt._config_euler(p, n, max(n // 4, 1), 4.0, 1))
             (rd / "bcondConfig.yaml").write_text(runner_wt._bcond(p, euler=True))
             (rd / "probe.yaml").write_text(PROBE_STUB)
             subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
                            cwd=rd, env=_ENV, check=True, capture_output=True, text=True)
-            paste_isentropic_ic(rd / "nozzle.h5", wall, scale,
-                                float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
-            if prev_res is not None:
+            if warm:
+                # メッシュ変更後の cross-mesh restart (AGENTS 必須ルール):
+                # 前パス収束場を最近傍で移植 — uniform/準1D IC からやり直さない
                 subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
                                 str(prev_res), str(rd / "nozzle.h5")],
                                env=_ENV, check=True, capture_output=True, text=True)
-                run_forge(rd)
             else:
-                runner_wt.run_staged(problem_path, rd, nsteps)
-        res = sorted(rd.glob("res_[0-9]*.h5"),
-                     key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+                paste_isentropic_ic(rd / "nozzle.h5", wall, scale,
+                                    float(p.spec["Pt"]), float(p.spec["Tt"]),
+                                    p.gamma, p.cp)
+            run_forge(rd)
+            # === 適応停止: 軸 M 判定が合格 (STEADY / OSCILLATING+平均精度) に
+            # なるまで CHUNK 継続 === cold パスにも適用する (正式 PASS は第 1
+            # チャンクの過渡で判定するので継続しても壊れない — conv/eff 分離)。
+            # DRIFTING (系統移動) と OSCILLATING で平均がまだ粗い場合に継続 —
+            # 後者は追いサンプルで平均の標準誤差が締まる。
+            from ..evaluate.health import axis_M_series_steady, axis_ok
+            import shutil
+            for j in range(1, MAX_WARM_CHUNKS):
+                ax = axis_M_series_steady(
+                    rd, scale, (x0 + 0.3) * scale, (xd - 0.2) * scale,
+                    snaps=_snaps_of(rd))
+                if axis_ok(ax):
+                    break
+                cd = rd / f"cont_{j}"
+                cd.mkdir(exist_ok=True)
+                last = _snaps_of(rd)[-1]   # 直近チャンクの最終場 (継続 IC)
+                shutil.copy(rd / "nozzle.h5", cd / "nozzle.h5")  # メッシュは全チャンク同一
+                # 継続チャンクは常に CHUNK step (cold 第 1 チャンクが長くても)
+                (cd / "solverConfig.yaml").write_text(
+                    runner_wt._config_euler(p, CHUNK, max(CHUNK // 4, 1), 4.0, 1))
+                for cf in ("bcondConfig.yaml", "probe.yaml"):
+                    shutil.copy(rd / cf, cd / cf)
+                subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
+                                str(last[1]), str(cd / "nozzle.h5")],
+                               env=_ENV, check=True, capture_output=True, text=True)
+                run_forge(cd)
+        eff = _chunk_dirs(rd)[-1]   # 最終チャンク = 評価に使う場
+        res = sorted(eff.glob("res_[0-9]*.h5"), key=_steps_of)
         prev_res = res[-1]
         # === A3 ゲートは最終場を得た**直後**に判定する ===
         # 不合格ならマップ生成・軸残差評価・正式 metrics の**いずれにも進まない**
         # (未収束/非定常の場から特性線マップや壁を作らないため — レビュー指摘)。
+        # 軸 M 定常 (レート正規化) を axis_window で**実接続** (2026-08-15 —
+        # 以前は渡し忘れで一度も実行されていなかった: レビュー指摘)。
+        # warm パスは低下桁数要件なし (gate docstring 参照, cold アンカーが前提)。
         from ..evaluate.health import gate
-        hl = gate(rd, M_design=Md, x_d=xd * scale, mode=gate_mode)
+        hl = gate(rd, M_design=Md, x_d=xd * scale, mode=gate_mode, drop=drop,
+                  axis_window=((x0 + 0.3) * scale, (xd - 0.2) * scale), scale=scale,
+                  warm=(k > 1), snaps=_snaps_of(rd), eff_dir=eff)
         if not hl["ok"]:
             hist.append({"pass": k, "gate_ok": False,
                          "gate_reasons": hl["gate_reasons"],
                          "convergence_verdict": hl["convergence_verdict"],
+                     "convergence_drop_threshold": hl.get("convergence_drop_threshold"),
                          "quasisteady_verdict": hl["quasisteady_verdict"],
                          "eps_series_verdict": hl.get("eps_steady", {}).get("verdict"),
                          "note": "ゲート不合格のため残差評価・マップ生成を行わず中止"})
@@ -266,7 +343,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                   f"— 未収束/非定常の場から壁もマップも作らない", flush=True)
             break
         if map_mode == "cfd":
-            cm = build_cminus_map_cfd(rd, wall_pts, scale, p.gamma)
+            cm = build_cminus_map_cfd(eff, wall_pts, scale, p.gamma)
             if len(cm) >= 10:
                 ax2w = make_ax2w(cm)
                 np.savetxt(rd / "cminus_map.csv", cm, delimiter=",",
@@ -274,13 +351,32 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
             else:
                 print(f"[pass {k}] CFD マップ生成失敗 ({len(cm)} 点) — 前回の表を継続",
                       flush=True)
-        # 軸 ΔM 評価
+        # 軸 ΔM 評価 — **末尾スナップショットの平均**を使う (2026-08-15)。
+        # 中域 x/rt≈9 に片振幅 ~0.004 の弱い音響リミットサイクルがあり (run_0017
+        # pass_01 実測)、単一スナップだと位相次第で ±0.004 の測定ノイズが乗る。
+        # STEADY 場では平均は恒等なので常時平均で害はない (AGENTS:
+        # OSCILLATING は平均±振幅で扱う、の実体化)。窓はゲートと同じ末尾 5 個 —
+        # ゲートの mean_se がこの平均の精度をそのまま保証する。
         from ..metrics.extract import axis_mach
-        x_ach, M_ach = axis_mach(rd / "nozzle.h5", res[-1], axis_band=0.09 * scale)
+        sn_tail = [s for s in _snaps_of(rd) if s[0] > 0][-5:]
+        x_ach = None
+        M_acc = []
+        for _st, _rf, _mh in sn_tail:
+            _x, _M = axis_mach(_mh, _rf, axis_band=0.09 * scale)
+            x_ach = _x
+            M_acc.append(_M)
+        M_ach = np.mean(M_acc, axis=0)
         xi = np.linspace(x0 + 0.3, xd - 0.2, 240)
         Mt = np.interp(xi, tgt[:, 0], tgt[:, 1])
         Ma = np.interp(xi * scale, x_ach, M_ach)
         dM = Mt - Ma
+        # **マスク非依存の共通指標** (2026-08-15 レビュー指摘): dM_inf_masked は
+        # wide/narrow で評価集合が違い A/B 比較に使えない。固定窓の最大 |ΔM| を
+        # 全構成共通で記録する (接合帯 = 接合波スパイク含む / 中域 = 帰還の主対象)。
+        eA = np.abs(dM)
+        common = {"dM_inf_common": float(eA.max()),
+                  "dM_inf_junction_band": float(eA[xi <= 2.5].max()),
+                  "dM_inf_mid_band": float(eA[(xi >= 4.0) & (xi <= 12.0)].max())}
         # マスク/重みランプ: 壁足が接合近傍 or 目標終端近傍
         xw = ax2w(xi)
         if mask_mode == "narrow":
@@ -303,23 +399,30 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         #     本ループの欠陥ではない。
         from ..metrics.extract import exit_uniformity
         try:
-            eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md,
+            eu = exit_uniformity(eff / "nozzle.h5", res[-1], Md,
                                  x_d=xd * scale, core_mode="traced")
         except Exception as e:  # 測定面が取れない等
             eu = {"error": f"{type(e).__name__}: {e}"}
         hist.append({"pass": k, "dM_inf_masked": dM_inf, "omega": omega,
-                     "rejected": rejected,
+                     "rejected": rejected, **common,
+                     "n_chunks": len(_chunk_dirs(rd)),
+                     "total_steps": _snaps_of(rd)[-1][0],
+                     "axis_M_verdict": hl.get("axis_M_steady", {}).get("verdict"),
+                     "axis_M_trend": hl.get("axis_M_steady", {}).get("trend_dM_per_nref"),
+                     "axis_M_amplitude": hl.get("axis_M_steady", {}).get("amplitude"),
                      "dM_rms": float(np.sqrt(np.mean((dM * w) ** 2))),
                      "eps_M_rms": eu.get("eps_M_rms"),
                      "eps_theta_max_deg": eu.get("eps_theta_max_deg"),
                      "convergence_verdict": hl["convergence_verdict"],
+                     "convergence_drop_threshold": hl.get("convergence_drop_threshold"),
                      "quasisteady_verdict": hl["quasisteady_verdict"],
                      "eps_series_verdict": hl.get("eps_steady", {}).get("verdict"),
                      "gate_ok": hl["ok"], "gate_reasons": hl["gate_reasons"]})
         print(f"[pass {k}] masked ‖ΔM‖∞ = {dM_inf:.4f} ({dM_inf/Md*100:.2f}% Md)"
-              f"  εM={('%.4f%%' % (eu['eps_M_rms']*100)) if eu.get('eps_M_rms') is not None else 'n/a'}"
-              f"  εθ={('%.3f°' % eu['eps_theta_max_deg']) if eu.get('eps_theta_max_deg') is not None else 'n/a'}"
-              f"  [{hl['convergence_verdict']}/{hl['quasisteady_verdict']}]"
+              f"  共通: 全域 {common['dM_inf_common']:.4f} / 接合帯 "
+              f"{common['dM_inf_junction_band']:.4f} / 中域 {common['dM_inf_mid_band']:.4f}"
+              f"  [{hl['convergence_verdict']}/axis:{hl.get('axis_M_steady',{}).get('verdict','n/a')}"
+              f"/{_snaps_of(rd)[-1][0]}step]"
               f"{' [reject→ω/2]' if rejected else ''}", flush=True)
         np.savetxt(rd / "achieved_vs_target.csv", np.c_[xi, Mt, Ma, w],
                    delimiter=",", header="x_rt,M_target,M_achieved,weight", comments="")
@@ -352,15 +455,16 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         np.savetxt(rd / "wall_next.csv", wall_pts, delimiter=",",
                    header="x_rt,r_rt", comments="")
     last = hist[-1] if hist else {}
-    # 収束の主張には ΔM 条件だけでなく**ゲート合格と PASS 判定**を必須とする
-    # (ゲート不合格の場を「収束」と呼ばない — レビュー指摘)
+    # 収束の主張には ΔM 条件だけでなく**ゲート合格**を必須とする (warm パスの
+    # ゲートは「DIVERGED でない + 軸 M 定常」— gate() docstring 参照。cold の
+    # PASS アンカーは pass 1 が担う)
     converged = bool(
         last.get("gate_ok") is True
-        and last.get("convergence_verdict") == "PASS"
         and last.get("dM_inf_masked") is not None
         and last["dM_inf_masked"] <= tol_rel * Md)
     out = {"history": hist, "passes": len(hist), "converged": converged,
-           "converged_criteria": "gate_ok AND convergence_verdict==PASS AND dM_inf<=tol",
+           "converged_criteria": "gate_ok (cold: PASS+準定常+軸M定常 / warm: "
+                                 "非DIVERGED+軸M定常) AND dM_inf_masked<=tol",
            "gate_mode": gate_mode, "tol": tol_rel * Md}
     (work / "loop_summary.json").write_text(json.dumps(out, indent=1))
     print(json.dumps(out, indent=1), flush=True)
@@ -374,6 +478,8 @@ def main(argv=None) -> int:
     ap.add_argument("work_dir")
     ap.add_argument("--passes", type=int, default=8)
     ap.add_argument("--omega", type=float, default=0.4)
+    ap.add_argument("--drop", type=float, default=2.0,
+                    help="check_convergence の要求低下桁数 (既定 2 + 準定常)")
     ap.add_argument("--mask-mode", choices=("wide", "narrow"), default="wide",
                     help="wide = 従来 (接合から 1.3 r* を無効化) / narrow = 円弧のみ + Δθ テーパ")
     ap.add_argument("--taper-width", type=float, default=0.3,
@@ -386,7 +492,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     run_loop(a.problem, a.work_dir, n_pass=a.passes, omega=a.omega, nsteps=a.steps,
              map_mode=a.map_mode, gate_mode=a.gate_mode,
-             mask_mode=a.mask_mode, taper_width=a.taper_width)
+             mask_mode=a.mask_mode, taper_width=a.taper_width, drop=a.drop)
     return 0
 
 

@@ -1,9 +1,18 @@
-"""モード F 壁 (①風洞): 上流解析区分 + 逆設計壁テーブルの複合壁。
+r"""モード F 壁 (①風洞): 上流解析区分 + 逆設計壁テーブルの複合壁。
 
 区間: 入口直管 → Bell–Mehta 5 次収縮 (両端 C2) → 単一円弧 R (φu → スロート →
-starting line 壁足 s_w0) → **逆設計壁 (点列テーブルを通す not-a-knot CubicSpline)**
-→ リップ。円弧と設計壁の接続は **C1 が事後検査、C2 は未保証** (`blend_len>0` で
-曲率ブレンドを挟めるが既定 off・撤回済み — 下記)。
+starting line 壁足 s_w0) → **逆設計壁 (点列テーブルを通す端条件付き 5 次
+B-spline)** → リップ。
+
+**接合点の C2 は壁表現そのものが拘束する (2026-08-15, レビュー指摘)**: 設計壁
+スプラインの左端条件を円弧の解析値 $r'=x_0/\sqrt{R^2-x_0^2}$、
+$r''=R^2/(R^2-x_0^2)^{3/2}$ に**クランプ**する (`make_interp_spline` k=5、両端に
+1 階+2 階の 2 条件ずつ)。旧実装の not-a-knot CubicSpline は接合の $r''$ が
+円弧 +0.51 / spline −3.21 と跳んでおり、「r'' 固定」の要求を満たしていなかった。
+3 次 spline では端 1 条件しか置けないため 5 次にする。テーブル点は全点通過した
+まま端微分だけ拘束するので、幾何を上書きした撤回済み曲率ブレンドとは別物
+(曲率はテーブルが暗示する値へ最初のノット間隔内で滑らかに遷移する)。
+右端は点列の 3 次 spline 推定値をそのまま与える (拘束の追加ではなく延長)。
 
 **曲率ブレンドは既定 off・撤回済み (2026-08-14)**: 以下は経緯の記録。実測で
 健全な設計壁を上書きして出口指標を悪化させたため既定 0.0。C2 接続は
@@ -22,7 +31,7 @@ starting line 壁足 s_w0) → **逆設計壁 (点列テーブルを通す not-a
 from __future__ import annotations
 
 import numpy as np
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline, make_interp_spline
 
 from .wall import _hermite_quintic, _poly_eval
 
@@ -46,10 +55,18 @@ class ModeFWall:
         self._c_con = _hermite_quintic(self.x_cs, self.x_au,
                                        r_inlet, 0.0, 0.0,
                                        self.r_au, -np.tan(phi_u), curv_au)
-        # 逆設計壁テーブル (円弧終端 = 先頭点)
+        # 逆設計壁テーブル (円弧終端 = 先頭点)。左端は円弧の r',r'' にクランプした
+        # 5 次 B-spline (docstring 参照) — 接合の C2 を表現レベルで保証する。
         self.x_w0 = float(wall_pts[0, 0])
-        self._spl = CubicSpline(wall_pts[:, 0], wall_pts[:, 1])
-        self.x_e = float(wall_pts[-1, 0])
+        d0j = self.x_w0 / np.sqrt(max(R ** 2 - self.x_w0 ** 2, 1e-30))
+        s0j = R ** 2 / max(R ** 2 - self.x_w0 ** 2, 1e-30) ** 1.5
+        _cs = CubicSpline(wall_pts[:, 0], wall_pts[:, 1])   # 右端微分の推定用
+        xN = float(wall_pts[-1, 0])
+        self._spl = make_interp_spline(
+            wall_pts[:, 0], wall_pts[:, 1], k=5,
+            bc_type=([(1, d0j), (2, s0j)],
+                     [(1, float(_cs(xN, 1))), (2, float(_cs(xN, 2)))]))
+        self.x_e = xN
         # 円弧終端 (値・接線・曲率, 解析) → ブレンド終端 (スプラインを内側で評価)
         # blend_len <= 0 でブレンド無効 (C1 のみで直接スプライン接続 = 旧挙動)
         if float(blend_len) <= 0.0:
@@ -130,8 +147,7 @@ class ModeFWall:
             dr_ = float(self.drdx(np.array([xc + h]))[0])
             if abs(dl - dr_) > 5e-3:
                 msgs.append(f"{name} の接線不連続 ({dl:.4f} vs {dr_:.4f})")
-            if self._c_bl is None:
-                continue   # ブレンド無効時は曲率跳びが既知の前提 (接線のみ検査)
+            # クランプ端条件により接合 C2 は表現が保証する — 常時検査 (2026-08-15)
             cl = float(self.curvature(np.array([xc - h]))[0])
             cr = float(self.curvature(np.array([xc + h]))[0])
             if abs(cl - cr) > 0.05 * max(abs(cl), abs(cr), 1.0):
