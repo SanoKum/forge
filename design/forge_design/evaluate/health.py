@@ -77,6 +77,11 @@ def eps_series_steady(run_dir, M_design, x_d=None, rel_tol: float = 2e-2,
                       n_last: int = 3) -> dict:
     """報告量そのもの ($\varepsilon_M$/$\varepsilon_\theta$) の時系列定常性。
 
+    **注意 (2026-08-14)**: 本判定が使う `exit_uniformity` は **A2 未完成**
+    (仮想境界による環状面積・$(x_d,0)$ 直線によるコア定義) なので、現時点の
+    数値は「**ゲート機構の動作確認値**」に限る。A2 を仕様通り (固定半径格子へ
+    補間 / リップからの最終特性線) に完成させてから正式指標として扱うこと。
+
     `check_quasisteady.py` の既定量 (shock/machmax/pmax) は報告量ではないので、
     出力スナップショット列から $\varepsilon$ を直接計算して末尾 `n_last` 個の
     相対変動が `rel_tol` 未満かを見る (2026-08-14 レビュー指摘)。"""

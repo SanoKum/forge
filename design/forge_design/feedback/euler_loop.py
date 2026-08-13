@@ -141,6 +141,18 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     p = load_problem(problem_path)
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
+    # 同一 work dir を formal / exploratory で使い回さない (結果の由来が混ざるため)
+    man_f = work / "run_manifest.json"
+    if man_f.exists():
+        man = json.loads(man_f.read_text())
+        if man.get("gate_mode") != gate_mode:
+            raise RuntimeError(
+                f"work dir {work} は gate_mode='{man.get('gate_mode')}' で作成済み。"
+                f"'{gate_mode}' との混用は不可 — 別の run ディレクトリを使うこと")
+    else:
+        man_f.write_text(json.dumps({"gate_mode": gate_mode,
+                                     "problem": str(problem_path),
+                                     "map_mode": map_mode}, indent=1))
     d = runner_wt.design_chain(p, viscous=False)
     Md, xd, x0 = d["Md"], d["xd"], d["x0"]
     scale = float(p.spec["r_throat"])
@@ -195,6 +207,22 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         res = sorted(rd.glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
         prev_res = res[-1]
+        # === A3 ゲートは最終場を得た**直後**に判定する ===
+        # 不合格ならマップ生成・軸残差評価・正式 metrics の**いずれにも進まない**
+        # (未収束/非定常の場から特性線マップや壁を作らないため — レビュー指摘)。
+        from ..evaluate.health import gate
+        hl = gate(rd, M_design=Md, x_d=xd * scale, mode=gate_mode)
+        if not hl["ok"]:
+            hist.append({"pass": k, "gate_ok": False,
+                         "gate_reasons": hl["gate_reasons"],
+                         "convergence_verdict": hl["convergence_verdict"],
+                         "quasisteady_verdict": hl["quasisteady_verdict"],
+                         "eps_series_verdict": hl.get("eps_steady", {}).get("verdict"),
+                         "note": "ゲート不合格のため残差評価・マップ生成を行わず中止"})
+            (rd / "metrics_pass.json").write_text(json.dumps(hist[-1]))
+            print(f"[pass {k}] **中止**: ゲート不合格 ({'; '.join(hl['gate_reasons'])}) "
+                  f"— 未収束/非定常の場から壁もマップも作らない", flush=True)
+            break
         if map_mode == "cfd":
             cm = build_cminus_map_cfd(rd, wall_pts, scale, p.gamma)
             if len(cm) >= 10:
@@ -227,11 +255,6 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         #     ΔM と ε が単調に一致しなくても (実測: pass9 ε_M=0.020% < pass13 0.039%)
         #     本ループの欠陥ではない。
         from ..metrics.extract import exit_uniformity
-        from ..evaluate.health import gate
-        # A3: **正式ゲート** — PASS 以外では壁もマップも更新しない (未収束誤差で
-        # 帰還を汚さない)。探索目的なら gate_mode="exploratory" を明示し、正式
-        # 評価とは別の run ディレクトリに分離すること。
-        hl = gate(rd, M_design=Md, x_d=xd * scale, mode=gate_mode)
         try:
             eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md,
                                  x_d=xd * scale)   # 有効菱形コア (実寸)
@@ -254,10 +277,6 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         np.savetxt(rd / "achieved_vs_target.csv", np.c_[xi, Mt, Ma, w],
                    delimiter=",", header="x_rt,M_target,M_achieved,weight", comments="")
         (rd / "metrics_pass.json").write_text(json.dumps(hist[-1]))
-        if not hl["ok"]:
-            print(f"[pass {k}] **中止**: ゲート不合格 ({'; '.join(hl['gate_reasons'])}) "
-                  f"— 未収束/非定常の場から壁とマップを作らない", flush=True)
-            break
         if rejected:
             omega *= 0.5           # 過ゲイン → 最良壁から小さい ω でやり直し
             xi_c, Mt_c, Ma_c, w_c = best["resid"]
@@ -283,9 +302,17 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         wall_pts = _rebuild_wall(best["wall"], dtheta_fn, x_anchor=x_w0)
         np.savetxt(rd / "wall_next.csv", wall_pts, delimiter=",",
                    header="x_rt,r_rt", comments="")
-    out = {"history": hist, "passes": len(hist),
-           "converged": bool(hist and hist[-1]["dM_inf_masked"] <= tol_rel * Md),
-           "tol": tol_rel * Md}
+    last = hist[-1] if hist else {}
+    # 収束の主張には ΔM 条件だけでなく**ゲート合格と PASS 判定**を必須とする
+    # (ゲート不合格の場を「収束」と呼ばない — レビュー指摘)
+    converged = bool(
+        last.get("gate_ok") is True
+        and last.get("convergence_verdict") == "PASS"
+        and last.get("dM_inf_masked") is not None
+        and last["dM_inf_masked"] <= tol_rel * Md)
+    out = {"history": hist, "passes": len(hist), "converged": converged,
+           "converged_criteria": "gate_ok AND convergence_verdict==PASS AND dM_inf<=tol",
+           "gate_mode": gate_mode, "tol": tol_rel * Md}
     (work / "loop_summary.json").write_text(json.dumps(out, indent=1))
     print(json.dumps(out, indent=1), flush=True)
     return out
