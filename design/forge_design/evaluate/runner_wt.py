@@ -159,6 +159,36 @@ initial: "uniform_p101325_u10"
 """
 
 
+def _config_sst_node(p: Problem, nsteps: int, out_int: int, cfl: float) -> str:
+    """NS v1 (δ* 段) の node 壁解像 y+~1 SST 設定。
+
+    case/40 `run_0050_node_yp1_outletic` (node y+1 の生産構成、「正 (最終形)」判定)
+    の設定を踏襲: node + `nodeWallDirichlet` (壁速度 Dirichlet — 既定 0 だと壁速度が
+    非零 [[node-wall-velocity-needs-dirichlet-flag]]) + `nodeAxisDirichlet` +
+    `axisCentroidShift` + 低 Re SST (`wallTreatmentSST: 0` — **壁関数は使わない**。
+    node 壁関数経路には既知の Cf 欠損 [[node-wallfunction-pk-convention-deficit]]、
+    ユーザ指示 2026-08-16)。粘性は Sutherland (viscMethod 1)。"""
+    return f"""mesh: {{meshFormat: "hdf5", discretization: "node", isAxisymmetric: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
+gpu: 1
+solver: "SLAU"
+physProp: {{isCompressible: 1, thermalMethod: 0, viscMethod: 1,
+           ro: 1.2, visc: 1.8e-5, thermCond: 0.0257, thermCondMethod: 1, prandtlLam: 0.72, cp: {p.cp}, gamma: {p.gamma}}}
+time:
+  unsteady: 0
+  dualTime: 0
+  last: {{control: 0, nStepOuter: {nsteps}}}
+  deltaT: {{control: 1, dt: 1e-8, cfl: {cfl}, cfl_pseudo: {cfl},
+           dt_min: 1e-9, dt_max: 0.001, blockDPLUR: 1, lowMachPrecond: 0, detectNaN: 1}}
+  outStepStart: 0
+  outStepInterval: {out_int}
+  timeIntegration: 11
+  nStepInner: 5
+space: {{convMethod: 1, limiter: 2}}
+turbulence: {{model: "sst", scalarDiffusion: 1, dilatationCorrection: 2, katoLaunder: 1, wallTreatmentSST: 0, turbulentPrandtl: 0.9}}
+initial: "uniform_p101325_u10"
+"""
+
+
 def _bcond(p: Problem, euler: bool) -> str:
     Pt, Tt = float(p.spec["Pt"]), float(p.spec["Tt"])
     pa = float(p.spec.get("p_ambient", 1000.0))
@@ -170,7 +200,16 @@ axis:   {{physID: 4, kind: axis,             outputHDFflg: 0, ints: , floats: }}
 """
 
 
-def prepare(problem_path, run_dir, euler: bool = True, nsteps=None) -> dict:
+def prepare(problem_path, run_dir, euler: bool = True, nsteps=None,
+            ic_from=None) -> dict:
+    """run ディレクトリ準備。euler=False で **NS v1** (δ* オフセット壁 +
+    node 壁解像 y+~1 SST — `_config_sst_node`)。
+
+    ic_from: warm start 元の run dir (最終 res を `interp_field.py` で cross-mesh
+    移植。AGENTS のメッシュ変更後 restart 必須ルール)。Euler 場を SST へ移植する
+    場合、Euler res の k/omega は 0 なので **interp 後に roK/roOmega を入口相当値
+    で貼り直す** (SST init 0 は step 0 で omega 発散 [[sst-mesh-walldist-gotcha]])。
+    """
     p = load_problem(problem_path)
     if p.type != "wind_tunnel_axisym":
         raise ValueError("runner_wt は wind_tunnel_axisym 専用")
@@ -194,23 +233,80 @@ def prepare(problem_path, run_dir, euler: bool = True, nsteps=None) -> dict:
                np.c_[d["wall_inv"] * [scale, scale, 1.0, 1.0]], delimiter=",",
                header="x_m,r_m,theta_rad,M_wall", comments="")
     n = nsteps or int(p.evaluate.get("nStepOuter", 12000))
-    (run_dir / "solverConfig.yaml").write_text(
-        _config_euler(p, n, int(p.evaluate.get("outStepInterval", max(n // 3, 1))),
-                      4.0, 1))
+    out_int = int(p.evaluate.get("outStepInterval", max(n // 3, 1)))
+    # solverConfig は convertGmshToForge が cwd から読む — node/SST の場合は
+    # **変換前に**書いておくことで node (median-dual) メッシュ + no-slip 壁の
+    # wall_dist が作られる ([[node-mesh-must-convert-with-node-config]])
+    cfg = (_config_euler(p, n, out_int, 4.0, 1) if euler
+           else _config_sst_node(p, n, out_int, 4.0))
     (run_dir / "bcondConfig.yaml").write_text(_bcond(p, euler))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
+    if not euler:
+        # 品質ツールは node 形式の CONNE を読めない (cell 前提)。品質は primal
+        # メッシュの性質なので **cell 変換の一時コピーで検査**してから node 変換。
+        (run_dir / "solverConfig.yaml").write_text(_config_euler(p, n, out_int, 4.0, 1))
+        subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
+                       cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+        q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"),
+                            "nozzle_qc.h5"], cwd=run_dir, env=_ENV,
+                           capture_output=True, text=True)
+        (run_dir / "MESH_QUALITY.txt").write_text("# cell 変換コピーで検査 (品質は primal の性質)\n"
+                                                  + q.stdout + q.stderr)
+        (run_dir / "nozzle_qc.h5").unlink()
+        if q.returncode != 0:
+            raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
+    (run_dir / "solverConfig.yaml").write_text(cfg)
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
-    q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"),
-                        "nozzle.h5"], cwd=run_dir, env=_ENV, capture_output=True, text=True)
-    (run_dir / "MESH_QUALITY.txt").write_text(q.stdout + q.stderr)
-    if q.returncode != 0:
-        raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
+    if euler:
+        q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"),
+                            "nozzle.h5"], cwd=run_dir, env=_ENV, capture_output=True, text=True)
+        (run_dir / "MESH_QUALITY.txt").write_text(q.stdout + q.stderr)
+        if q.returncode != 0:
+            raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                         float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
-    info = {"x0": d["x0"], "xd": d["xd"], "Md": d["Md"],
+    if ic_from is not None:
+        src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
+                     key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
+        subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
+                        str(src), str(run_dir / "nozzle.h5")],
+                       env=_ENV, check=True, capture_output=True, text=True)
+        # ソースが Euler (k/omega≈0) のときだけ乱流を入口相当で貼り直す。
+        # ソースが SST 中継場なら**実 k/ω 構造を保持** (これを潰すと y+~1 の
+        # 剛直壁で 2 次化直後に出口コーナー ω NaN — run_0028 で実測)
+        import h5py as _h5
+        with _h5.File(src) as fs:
+            om_src_max = float(np.max(fs["/VALUE/omega"][:])) if "/VALUE/omega" in fs else 0.0
+        if om_src_max < 1.0:
+            with _h5.File(run_dir / "nozzle.h5", "r+") as f:
+                ro = f["/VALUE/ro"][:]
+                f["/VALUE/roK"][:] = ro * 1.0
+                f["/VALUE/roOmega"][:] = ro * 18000.0
+        if not euler:
+            # **近壁 ω の粘性底層フロア** (2026-08-16, run_0030 初回で実測):
+            # 粗→細 (y+50→y+1.5) の最近傍 interp は細メッシュ近壁の ω を
+            # 粗第一セル値 (~1e7) のまま貼るが、平衡値は ~1e12 — 5 桁不足の
+            # 調整過渡で本段 (2次+cfl4) が壁帯 ω NaN。標準の底層解
+            # ω = 6ν/(β1 y²) (β1=0.075) を床として適用する (壁遠方は床が
+            # 微小になり無影響)。
+            from ..feedback.deltastar import _sutherland
+            g = p.gamma
+            R_gas = p.cp * (g - 1.0) / g
+            with _h5.File(run_dir / "nozzle.h5", "r+") as f:
+                ro = f["/VALUE/ro"][:]
+                roUx, roUy = f["/VALUE/roUx"][:], f["/VALUE/roUy"][:]
+                roe = f["/VALUE/roe"][:]
+                wd = f["/VALUE/wall_dist"][:]
+                T = np.maximum((roe - 0.5 * (roUx ** 2 + roUy ** 2) / np.maximum(ro, 1e-12))
+                               * (g - 1.0) / (np.maximum(ro, 1e-12) * R_gas), 50.0)
+                nu = _sutherland(T) / np.maximum(ro, 1e-12)
+                om_floor = 6.0 * nu / (0.075 * np.maximum(wd, 1e-9) ** 2)
+                f["/VALUE/roOmega"][:] = np.maximum(f["/VALUE/roOmega"][:], ro * om_floor)
+    info = {"x0": d["x0"], "xd": d["xd"], "Md": d["Md"], "x_reach": d["x_reach"],
             "mdot_ratio_moc": d["mdot_ratio_moc"], "scale_m": scale,
-            "mesh": {"ni": mp.ni, "nj": mp.nj}}
+            "euler": euler, "ic_from": str(ic_from) if ic_from else None,
+            "mesh": {"ni": mp.ni, "nj": mp.nj, "wall_first_frac": mp.wall_first_frac}}
     (run_dir / "prepare_info.json").write_text(json.dumps(info, indent=1))
     return info
 
@@ -223,6 +319,10 @@ def run_staged(problem_path, run_dir, nsteps=None) -> None:
     cfg_main = (run_dir / "solverConfig.yaml").read_text()
     cfg_soft = cfg_main.replace("cfl: 4.0, cfl_pseudo: 4.0", "cfl: 0.5, cfl_pseudo: 0.5")
     cfg_soft = cfg_soft.replace("convMethod: 1", "convMethod: 0")
+    # node y+~1 SST の確定レシピ ([[node-yp1-dual-geometry-float32-fix]]):
+    # soft 段は nStepInner 10 (壁 ω ~1e10 の剛性対策。cfl4 直投入は step ~69 で
+    # roOmega NaN — run_0028 初回で再確認)
+    cfg_soft = cfg_soft.replace("nStepInner: 5", "nStepInner: 10")
     import re
     cfg_soft = re.sub(r"nStepOuter: \d+", "nStepOuter: 3000", cfg_soft)
     cfg_soft = re.sub(r"outStepInterval: \d+", "outStepInterval: 3000", cfg_soft)
