@@ -215,7 +215,15 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     scale = float(p.spec["r_throat"])
     cmap = build_cminus_map(d["pts"], d["wall_inv"], p.gamma)
     x_w0 = float(d["wall_inv"][0, 0])
-    x_reach = float(d.get("x_reach", x_w0))   # 評価目標の分割点 (B7)
+    # **x_reach はループ中 固定** (B10): design_chain が config の
+    # `geometry.x_reach_cfd` (node 基準 run 由来) を返すのでパス毎に再導出しない。
+    # 旧 B8 経路では逆 MOC マップ由来の値が入る。
+    x_reach = float(d.get("x_reach", x_w0))
+    x_reach_mode = d.get("x_reach_mode", "moc")
+    # node/cell は problem YAML の `mesh.discretization` で選ぶ (既定 node — B10)
+    use_node = str(p.mesh.get("discretization", "node")).lower() == "node"
+    _cfg = ((lambda n_, oi: runner_wt._config_euler_node(p, n_, oi, 4.0, 1)) if use_node
+            else (lambda n_, oi: runner_wt._config_euler(p, n_, oi, 4.0, 1)))
 
     def make_ax2w(cm):
         r"""軸→壁の逆引き。`np.interp` は範囲外を端値へ**黙ってクランプ**するため、
@@ -240,9 +248,34 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     # 着地する壁 (x_w ≲ 13) までが帰還可能で、以遠は最終 Δθ の定数外挿。
     x_lip = float(d["wall_inv"][-1, 0])
     x_eval_end = x_lip - 0.5
-    tgt = np.array([[x, tgt_fn(x)] for x in np.linspace(x0, x_eval_end, 800)])
+    # **評価窓の始点** (B10): target が定義されるのは x >= x_reach のみなので、
+    # そこから始める。上流は target 誤差ではなく物理診断として別途記録する。
+    x_eval_lo = (x_reach if x_reach_mode == "cfd" else x0)
+    tgt = np.array([[x, tgt_fn(x)] for x in np.linspace(x_eval_lo, x_eval_end, 800)])
     wall_pts = d["wall_inv"][:, :2].copy()
     wall_th = d["wall_inv"][:, 2].copy()   # θ を主変数として持ち回る (数値微分を避ける)
+    # **初期壁を仮壁で置き換える** (B10 手順 6: 「現在の仮壁を初期値として帰還
+    # ループで J→リップを更新する」)。新 target から逆設計し直した壁で始めると、
+    # 既存 run が積んだ改良を捨てることになる (実測: 逆設計壁は仮壁と最大 170 µm
+    # 違い、うねり 0.0214→0.0279・出口 |θ|max 0.0150→0.0474° と物理が後退した)。
+    # θ は主変数なので壁点列から復元する (r の数値微分を避けるため、設計 θ を
+    # 仮壁の勾配で置き換えるのではなく、仮壁の x 上で θ=arctan(dr/dx) を
+    # スプライン微分で作る — ModeFWall と同じクランプ付き 5 次表現を使う)。
+    init_wall = p.geometry.get("initial_wall_csv")
+    if init_wall:
+        w0 = np.loadtxt(init_wall, delimiter=",", skiprows=1)
+        mw0 = ModeFWall(w0, R=d["R"],
+                        r_inlet=float(p.geometry.get("r_inlet", 2.5)),
+                        L_pipe=float(p.geometry.get("L_pipe", 0.5)),
+                        L_contract=float(p.geometry.get("L_contract", 3.0)),
+                        phi_u=np.deg2rad(float(p.geometry.get("phi_u_deg", 25.0))),
+                        blend_len=0.0)
+        msgs0 = mw0.validate()
+        if msgs0:
+            raise ValueError("initial_wall_csv の壁が不合格: " + "; ".join(msgs0))
+        wall_pts = w0[:, :2].copy()
+        wall_th = np.arctan(mw0.drdx(w0[:, 0]))
+        print(f"[init] 仮壁を初期値に採用: {init_wall} ({len(wall_pts)} 点)", flush=True)
     prev_res = None
     hist = []
     # trust-region 型の決定的下り探索: 悪化したら最良壁に巻き戻し ω 半減
@@ -276,7 +309,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
             # pass ≥2 (warm): CHUNK ずつの適応継続なのでここは 1 チャンク分。
             n = CHUNK if warm else max(nsteps or 24000, 12000)
             (rd / "solverConfig.yaml").write_text(
-                runner_wt._config_euler(p, n, max(n // 4, 1), 4.0, 1))
+                _cfg(n, max(n // 4, 1)))
             (rd / "bcondConfig.yaml").write_text(runner_wt._bcond(p, euler=True))
             (rd / "probe.yaml").write_text(PROBE_STUB)
             subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
@@ -311,7 +344,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                 shutil.copy(rd / "nozzle.h5", cd / "nozzle.h5")  # メッシュは全チャンク同一
                 # 継続チャンクは常に CHUNK step (cold 第 1 チャンクが長くても)
                 (cd / "solverConfig.yaml").write_text(
-                    runner_wt._config_euler(p, CHUNK, max(CHUNK // 4, 1), 4.0, 1))
+                    _cfg(CHUNK, max(CHUNK // 4, 1)))
                 for cf in ("bcondConfig.yaml", "probe.yaml"):
                     shutil.copy(rd / cf, cd / cf)
                 subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
@@ -367,7 +400,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
             x_ach = _x
             M_acc.append(_M)
         M_ach = np.mean(M_acc, axis=0)
-        xi = np.linspace(x0 + 0.3, x_eval_end, 440)   # C3: リップ−0.5 まで
+        xi = np.linspace(max(x_eval_lo, x0 + 0.3), x_eval_end, 440)  # C3+B10
         Mt = np.interp(xi, tgt[:, 0], tgt[:, 1])
         Ma = np.interp(xi * scale, x_ach, M_ach)
         dM = Mt - Ma

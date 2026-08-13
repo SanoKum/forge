@@ -76,45 +76,80 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     n_axis_inv = int(p.geometry.get("n_axis_inv", 500))
     th_wall0 = float(np.arcsin(min(x0 / R, 1.0)))
 
-    # === B8 (2026-08-16): **設計 = B6 グローバル Bézier / 評価 = B7 分割帳簿** ===
-    # 経緯: B7 は x_reach で設計目標を再アンカーした (Hermite + 再アンカー Bézier)
-    # が、意図非依存のうねり指標 (実流 M(x) の 3 次カーブからの片振幅) で測ると
-    # スロート近傍の**実流が後退**していた: Sauer ±0.073 → B6 ±0.023 → B7 ±0.062。
-    # B6 のグローバル Bézier は (CP ジグザグにも関わらず) 逆設計を通じ実質的に
-    # 接合波をキャンセルする壁を作っており、設計目標の構成としては B6 が上。
-    # B7 の帳簿 (到達不能域 ±0.009) は「凍結アンカー = Sauer 壁の波だらけの場」を
-    # 参照していたため後退を隠した — アンカーは B6 壁の場 (run_0018) へ更新する
-    # (problem YAML の throat_anchor_run)。
-    # 残す B7 資産: x_reach の概念 (マスク w=0 境界 + 評価分割点)、実測こぶ曲線に
-    # よる到達不能域の評価、被覆外/隙間ステーションの除外、規約整合抽出。
-    # 設計はブートストラップ 1 回で完結する (2 回目の逆設計は不要になった)。
-    bz = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
-                                     end=(Md, 0.0, 0.0))
+    # === B10 (2026-08-17): **target と自由 dv の起点を $x_{reach,CFD}$ にする** ===
+    # `geometry.x_reach_cfd` が与えられていればその方式。無ければ従来 B8。
+    #
+    # 思想: 自由壁が軸へ影響できる最初の位置は $J$ (固定円弧終端) 発の C⁻ が軸へ
+    # 着地する $x_{reach,CFD}$ であり、$x_0$ ではない。そこより上流に target を
+    # 置くと「直しようのないズレ」を設計に組み込むことになる。B7 は上流に実測こぶ
+    # 曲線をコピーする帳簿で回避しようとしたが、それは帳簿操作であって設計ではない。
+    # B10 は**上流に target を置かない** — 上流の軸 M・こぶ・圧力勾配は target 誤差
+    # ではなく**独立の物理診断**として記録する (plan §9.2 B10)。
+    #
+    # $x_{reach,CFD}$ と境界値 $(M,M',M'')$ は正式ゲートを通した **node** 基準 run
+    # から一度取得して固定する (cell は離散化雑音で $M''$ が測定不能 — 実測で
+    # stencil 間 6.09、node は 0.049。plan §9.2 B10-a/b)。
+    x_reach_cfd = p.geometry.get("x_reach_cfd")
+    if x_reach_cfd is not None:
+        x_reach = float(x_reach_cfd)
+        anc = p.geometry.get("x_reach_anchor")     # [M, M', M''] (node 基準 run 由来)
+        if anc is None or len(anc) != 3:
+            raise ValueError("geometry.x_reach_cfd 指定時は geometry.x_reach_anchor: "
+                             "[M, M', M''] が必須 (node 基準 run から取得した値)")
+        start_r = (float(anc[0]), float(anc[1]), float(anc[2]))
+        # 自由 CP は**拘束付き最小二乗で決定的に射影**する (手調整・旧値の
+        # インデックスずらし流用は禁止 — plan §9.2 B10)。参照曲線は現行下流 target。
+        bz_ref = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
+                                             end=(Md, 0.0, 0.0))
+        bz = MachBezier.fit_free_cp(x_reach, xd, start_r, len(cps), (Md, 0.0, 0.0),
+                                    lambda x: float(np.atleast_1d(bz_ref(float(x)))[0]))
 
-    def target(x: float) -> float:          # 設計用 = B6 グローバル (滑らか)
-        return Md if x >= xd else float(np.atleast_1d(bz(float(x)))[0])
-
-    res = inverse_design(st, target, x_axis_end=float(x_end), n_axis=n_axis_inv,
-                         n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
-    cmap = build_cminus_map(res["pts"], res["wall"], g)
-    if len(cmap) < 4:
-        raise ValueError("C⁻ マップ点が不足 (x_reach 未確定)")
-    x_reach = float(cmap[:, 1].min())
-
-    # 評価用: 到達不能域 [x0,x_reach) は実測こぶ曲線 (帯規約 — axis_mach と同じ
-    # 母集団で抽出。規約が違うだけで系統残差 0.04 になる)、以降は設計 Bézier。
-    # 「狙い通りか」を到達可能性に即して測る。x_reach の段差は「届く波の残余 =
-    # 帰還が打ち消すべき量」として残る。
-    if hasattr(st, "axis_segment_curve"):   # CFDThroat
-        seg = st.axis_segment_curve(x0, x_reach)
-
-        def target_eval(x: float) -> float:
+        def target(x: float) -> float:      # $x \ge x_{reach}$ にのみ定義
             x = float(x)
             if x < x_reach:
-                return float(seg(np.float64(x)))
+                raise ValueError(f"target は x >= x_reach ({x_reach:.4f}) にのみ定義 "
+                                 f"(要求 x={x:.4f})。上流は物理診断であって target 誤差ではない")
+            return Md if x >= xd else float(np.atleast_1d(bz(x))[0])
+
+        # 逆設計へは $[x_0, x_{reach})$ の軸データも要る (MOC の Cauchy 入力)。
+        # ここは**設計 target ではなく**、基準 run の実測軸 M をそのまま渡す
+        # (壁は $J$ 上流で固定なので実測が「達成される値」そのもの)。
+        seg = st.axis_segment_curve(x0, x_reach) if hasattr(st, "axis_segment_curve") else None
+
+        def target_moc(x: float) -> float:
+            x = float(x)
+            if x < x_reach:
+                return (float(seg(np.float64(x))) if seg is not None
+                        else float(st.mach(x, 0.0)))
             return target(x)
-    else:                                    # SauerThroat: 分割は自然に消える
-        target_eval = target
+
+        target_eval = target        # 評価も $x \ge x_{reach}$ のみ (帳簿コピー廃止)
+        res = inverse_design(st, target_moc, x_axis_end=float(x_end), n_axis=n_axis_inv,
+                             n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
+    else:
+        # === [旧] B8 (2026-08-16): 設計 = B6 グローバル Bézier / 評価 = B7 分割帳簿 ===
+        bz = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
+                                         end=(Md, 0.0, 0.0))
+
+        def target(x: float) -> float:      # 設計用 = B6 グローバル (滑らか)
+            return Md if x >= xd else float(np.atleast_1d(bz(float(x)))[0])
+
+        res = inverse_design(st, target, x_axis_end=float(x_end), n_axis=n_axis_inv,
+                             n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
+        cmap = build_cminus_map(res["pts"], res["wall"], g)
+        if len(cmap) < 4:
+            raise ValueError("C⁻ マップ点が不足 (x_reach 未確定)")
+        x_reach = float(cmap[:, 1].min())
+        if hasattr(st, "axis_segment_curve"):
+            seg = st.axis_segment_curve(x0, x_reach)
+
+            def target_eval(x: float) -> float:
+                x = float(x)
+                if x < x_reach:
+                    return float(seg(np.float64(x)))
+                return target(x)
+        else:
+            target_eval = target
 
     wall_inv = res["wall"]
     pts = (deltastar_offset(wall_inv, float(p.spec["r_throat"]),
@@ -133,7 +168,9 @@ def design_chain(p: Problem, viscous: bool) -> dict:
             "target_eval": target_eval, "x0": float(x0),
             "xd": float(xd), "Md": Md, "pts": res["pts"], "R": R,
             "centerline_start_order": order, "sauer_d2M0": d2M0,
-            "x_reach": x_reach, "target_d2M0": float(np.atleast_1d(bz.deriv(x0, 2))[0]),
+            "x_reach": x_reach, "x_reach_mode": ("cfd" if x_reach_cfd is not None else "moc"),
+            "free_cp": [float(v) for v in bz.cp[len(bz.cp) - 3 - len(cps):len(bz.cp) - 3]],
+            "target_d2M0": float(np.atleast_1d(bz.deriv(bz.x0, 2))[0]),
             "mdot_ratio_moc": res["mdot_exit"] / res["mdot_start"]}
 
 
