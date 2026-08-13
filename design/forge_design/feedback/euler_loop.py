@@ -20,6 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import h5py
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 
@@ -33,8 +34,60 @@ from ..evaluate.runner import FORGE_BUILD, FORGE_TOOLS, PROBE_STUB, _ENV, run_fo
 from ..evaluate import runner_wt
 
 
+def build_cminus_map_cfd(run_dir, wall_pts, scale: float, gamma: float,
+                         m_floor: float = 1.05) -> np.ndarray:
+    """**v3**: そのパスの CFD 収束場の中で C⁻ を壁→軸へ積分してマップを作る。
+
+    v2 の凍結マップ (v1 の MOC 設計場= 完全気体・等エントロピー・単一組成) と違い、
+    局所の流れ角 θ と マッハ角 μ を**実場から**読むため、粘性による有効形状の変化・
+    組成分布・物性の温度依存が自動的に入る (ユーザ指摘 2026-08-14)。
+    ガード: トレースが $M<m\_floor$ 域に入った壁点は棄却 (§4.7(c))。
+    戻り: (n,2) [x_w, x_axis] (無次元 r*)。"""
+    run_dir = Path(run_dir)
+    res = sorted(run_dir.glob("res_[0-9]*.h5"),
+                 key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
+    with h5py.File(run_dir / "nozzle.h5") as nz:
+        cc = nz["CELLS/centCoords"][:].reshape(-1, 3)
+    with h5py.File(res) as f:
+        Ux, Uy, son = f["VALUE/Ux"][:], f["VALUE/Uy"][:], f["VALUE/sonic"][:]
+    x, r = cc[:, 0] / scale, cc[:, 1] / scale          # → r* 単位
+    M = np.hypot(Ux, Uy) / np.maximum(son, 1e-9)
+    th = np.arctan2(Uy, Ux)
+    itp_M = LinearNDInterpolator(np.c_[x, r], M)
+    itp_th = LinearNDInterpolator(np.c_[x, r], th)
+    # **cell モード限定の回避策**: cell 中心は軸上に無いので補間の凸包が r_min で
+    # 切れ、軸到達前に必ず NaN になり全点棄却される (2026-08-14 実測)。そこまで
+    # 積分して最後の C⁻ 勾配で r=0 へ外挿する (θ→0 で勾配は緩やかなので誤差は小)。
+    # **node (median-dual) 化したらこの外挿は不要** — node は軸上に DOF を持つので
+    # 凸包が r=0 まで届く (ユーザ方針: 今後は node 主体)。r_axis=0 で自然に動く。
+    r_axis = float(r.min()) * 1.5
+    rows = []
+    for xw, rw in wall_pts[::4, :2]:
+        xx, rr = float(xw), float(rw) * 0.985          # 壁のわずか内側から出発
+        ok, slope = True, None
+        for _ in range(4000):
+            if rr <= r_axis:
+                break
+            Mv, tv = float(itp_M(xx, rr)), float(itp_th(xx, rr))
+            if not (np.isfinite(Mv) and np.isfinite(tv)) or Mv < m_floor:
+                ok = False
+                break
+            mu = np.arcsin(1.0 / max(Mv, 1.0 + 1e-9))
+            dr = -min(0.02, rr - r_axis)
+            slope = np.tan(tv - mu)
+            if abs(slope) < 1e-9:
+                ok = False
+                break
+            xx += dr / slope
+            rr += dr
+        if ok and slope is not None and rr <= r_axis * 1.01:
+            rows.append((float(xw), xx - rr / slope))   # r=0 へ外挿
+    return np.asarray(rows)
+
+
 def build_cminus_map(pts, wall_inv, gamma: float) -> np.ndarray:
-    """v1 場で各壁点から C⁻ を軸まで前進積分し (x_w → x_axis) マップを作る。"""
+    """**v2**: v1 の MOC 設計場で各壁点から C⁻ を軸まで前進積分し (x_w → x_axis)
+    マップを作る (以後のパスで凍結して使う)。"""
     xy = np.array([[p.x, p.r] for p in pts])
     th = np.array([p.th for p in pts])
     nu = np.array([p.nu for p in pts])
@@ -78,7 +131,10 @@ def _rebuild_wall(wall_pts: np.ndarray, dtheta_fn, x_anchor: float) -> np.ndarra
 
 
 def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
-             tol_rel: float = 0.005, clip_deg: float = 0.5, nsteps=None) -> dict:
+             tol_rel: float = 0.005, clip_deg: float = 0.5, nsteps=None,
+             map_mode: str = "frozen") -> dict:
+    """map_mode: "frozen" = v2 (v1 MOC 設計場の凍結マップ) /
+    "cfd" = **v3** (毎パスその回の CFD 収束場から C⁻ を引き直す)。"""
     p = load_problem(problem_path)
     work = Path(work_dir)
     work.mkdir(parents=True, exist_ok=True)
@@ -87,9 +143,12 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     scale = float(p.spec["r_throat"])
     cmap = build_cminus_map(d["pts"], d["wall_inv"], p.gamma)
     x_w0 = float(d["wall_inv"][0, 0])
-    # 逆マップ: 軸 x_i → 壁 x_w (単調前提で補間)
-    o = np.argsort(cmap[:, 1])
-    ax2w = lambda xi: np.interp(xi, cmap[o, 1], cmap[o, 0])  # noqa: E731
+
+    def make_ax2w(cm):
+        o = np.argsort(cm[:, 1])
+        return lambda xi: np.interp(xi, cm[o, 1], cm[o, 0])
+
+    ax2w = make_ax2w(cmap)   # v3 では各パスの CFD 場で毎回置き換える
 
     tgt = np.array([[x, d["target"](x)] for x in np.linspace(x0, xd, 500)])
     wall_pts = d["wall_inv"][:, :2].copy()
@@ -105,7 +164,8 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
                              r_inlet=float(p.geometry.get("r_inlet", 2.5)),
                              L_pipe=float(p.geometry.get("L_pipe", 0.5)),
                              L_contract=float(p.geometry.get("L_contract", 3.0)),
-                             phi_u=np.deg2rad(float(p.geometry.get("phi_u_deg", 25.0))))
+                             phi_u=np.deg2rad(float(p.geometry.get("phi_u_deg", 25.0))),
+                     blend_len=float(p.geometry.get("blend_len", 0.0)))
             mp = Mesh2DParams(ni=int(p.mesh.get("ni", 321)), nj=int(p.mesh.get("nj", 65)),
                               wall_first_frac=float(p.mesh.get("wall_first_frac", 5.0e-3)),
                               throat_refine=float(p.mesh.get("throat_refine", 3.0)),
@@ -131,6 +191,15 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         res = sorted(rd.glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
         prev_res = res[-1]
+        if map_mode == "cfd":
+            cm = build_cminus_map_cfd(rd, wall_pts, scale, p.gamma)
+            if len(cm) >= 10:
+                ax2w = make_ax2w(cm)
+                np.savetxt(rd / "cminus_map.csv", cm, delimiter=",",
+                           header="x_wall,x_axis_landing", comments="")
+            else:
+                print(f"[pass {k}] CFD マップ生成失敗 ({len(cm)} 点) — 前回の表を継続",
+                      flush=True)
         # 軸 ΔM 評価
         from ..metrics.extract import axis_mach
         x_ach, M_ach = axis_mach(rd / "nozzle.h5", res[-1], axis_band=0.09 * scale)
@@ -144,10 +213,28 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         w *= (Mt > 1.15)
         dM_inf = float(np.max(np.abs(dM * (w > 0.5))))
         rejected = bool(dM_inf > best["dM_inf"] * 1.02)
+        # 出口一様性は**診断として**毎パス記録する (安価)。役割の区別 (2026-08-14):
+        #   本ループの目的 = ΔM→0 = 「宣言した目標 M_c(x) を実際に達成する壁を作る」。
+        #     これは出口品質のためでなく**評価の忠実性**のため — dv が「達成された
+        #     目標分布」を意味して初めて dv→メトリクス写像が決定的になり、
+        #     サロゲートが劣化しない (親計画 §4.7(c))。
+        #   ε_M/ε_θ = **最適化ループ (§5 ステップ 7) の目的** — Bézier CP・L・R を
+        #     振って最小化する量であり、1 評価内で追うものではない。したがって
+        #     ΔM と ε が単調に一致しなくても (実測: pass9 ε_M=0.020% < pass13 0.039%)
+        #     本ループの欠陥ではない。
+        from ..metrics.extract import exit_uniformity
+        try:
+            eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md)
+        except Exception as e:  # 測定面が取れない等
+            eu = {"error": f"{type(e).__name__}: {e}"}
         hist.append({"pass": k, "dM_inf_masked": dM_inf, "omega": omega,
                      "rejected": rejected,
-                     "dM_rms": float(np.sqrt(np.mean((dM * w) ** 2)))})
+                     "dM_rms": float(np.sqrt(np.mean((dM * w) ** 2))),
+                     "eps_M_rms": eu.get("eps_M_rms"),
+                     "eps_theta_max_deg": eu.get("eps_theta_max_deg")})
         print(f"[pass {k}] masked ‖ΔM‖∞ = {dM_inf:.4f} ({dM_inf/Md*100:.2f}% Md)"
+              f"  εM={('%.4f%%' % (eu['eps_M_rms']*100)) if eu.get('eps_M_rms') is not None else 'n/a'}"
+              f"  εθ={('%.3f°' % eu['eps_theta_max_deg']) if eu.get('eps_theta_max_deg') is not None else 'n/a'}"
               f"{' [reject→ω/2]' if rejected else ''}", flush=True)
         np.savetxt(rd / "achieved_vs_target.csv", np.c_[xi, Mt, Ma, w],
                    delimiter=",", header="x_rt,M_target,M_achieved,weight", comments="")
@@ -191,9 +278,12 @@ def main(argv=None) -> int:
     ap.add_argument("work_dir")
     ap.add_argument("--passes", type=int, default=8)
     ap.add_argument("--omega", type=float, default=0.4)
+    ap.add_argument("--map-mode", choices=("frozen", "cfd"), default="frozen",
+                    help="frozen = v2 (v1 MOC 場の凍結マップ) / cfd = v3 (毎パス実場)")
     ap.add_argument("--steps", type=int, default=None)
     a = ap.parse_args(argv)
-    run_loop(a.problem, a.work_dir, n_pass=a.passes, omega=a.omega, nsteps=a.steps)
+    run_loop(a.problem, a.work_dir, n_pass=a.passes, omega=a.omega, nsteps=a.steps,
+             map_mode=a.map_mode)
     return 0
 
 

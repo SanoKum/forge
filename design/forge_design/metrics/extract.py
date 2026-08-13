@@ -64,6 +64,47 @@ def cf_ideal(eps, gamma, pa_over_pt) -> float:
     return float(gterm + (pe_pt - pa_over_pt) * eps)
 
 
+def exit_uniformity(mesh_h5, res_h5, M_design, core_frac: float = 0.85,
+                    x_plane=None, band=None) -> dict:
+    """出口一様性 $\\varepsilon_M$ / $\\varepsilon_\\theta$ (サーベイ B4.5 定義)。
+
+    - $\\varepsilon_M$ = テストコア上の**質量流束重み RMS 偏差**
+      $\\sqrt{\\langle (M-M_d)^2\\rangle_{\\rho u}}/M_d$ (RMS を主指標、max は副指標)
+    - $\\varepsilon_\\theta$ = コア上の $\\max|\\theta|$ [deg] (軸からの流れ角。
+      $\\varepsilon_M$ とは**独立の目的** — マッハだけ見ると軸ズレ流れを見逃す)
+    - 重みは質量流束 $\\rho u$ (模型が実際に「見る」流れ)。幾何・積分系 (推力) の
+      面積重みとは区別する規約。
+
+    測定面は既定でリップ直前 (x_plane=None → x_max−0.3·r*)。テストコアは
+    有効菱形の簡易代理として半径の core_frac 倍以内 (正式な菱形幾何は将来課題)。
+    """
+    with h5py.File(mesh_h5, "r") as nz:
+        cc = nz["/CELLS/centCoords"][:].reshape(-1, 3)
+    with h5py.File(res_h5, "r") as f:
+        Ux, Uy = f["/VALUE/Ux"][:], f["/VALUE/Uy"][:]
+        son, ro = f["/VALUE/sonic"][:], f["/VALUE/ro"][:]
+    x, r = cc[:, 0], cc[:, 1]
+    M = np.hypot(Ux, Uy) / np.maximum(son, 1e-9)
+    th_deg = np.degrees(np.arctan2(Uy, Ux))
+    r_ref = float(r.max())
+    xp = float(x.max() - 0.03 * r_ref) if x_plane is None else float(x_plane)
+    bw = 0.02 * r_ref if band is None else float(band)
+    m = np.abs(x - xp) < bw
+    if m.sum() < 8:
+        raise ValueError(f"測定面 x={xp:.4g} にセルが不足 ({m.sum()})")
+    rr, MM, tt = r[m], M[m], th_deg[m]
+    w = ro[m] * Ux[m]
+    core = rr < core_frac * rr.max()
+    Mw = float(np.average(MM[core], weights=w[core]))
+    eM = float(np.sqrt(np.average((MM[core] - M_design) ** 2, weights=w[core])) / M_design)
+    return {"x_plane_m": xp, "core_frac": core_frac,
+            "eps_M_rms": eM,
+            "eps_M_max": float(np.max(np.abs(MM[core] - M_design)) / M_design),
+            "eps_theta_max_deg": float(np.max(np.abs(tt[core]))),
+            "M_core_massflux_avg": Mw,
+            "n_core_cells": int(core.sum())}
+
+
 def axis_mach(mesh_h5, res_h5, axis_band) -> tuple:
     """軸近傍セル帯 (cy < axis_band [m]) の (x, M) を x 昇順で返す。"""
     with h5py.File(mesh_h5, "r") as nz:

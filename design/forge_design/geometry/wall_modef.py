@@ -1,10 +1,14 @@
 """モード F 壁 (①風洞): 上流解析区分 + 逆設計壁テーブルの複合壁。
 
 区間: 入口直管 → Bell–Mehta 5 次収縮 (両端 C2) → 単一円弧 R (φu → スロート →
-starting line 壁足 s_w0) → **曲率ブレンド (5 次 Hermite, C2)** → **逆設計壁
-(点列テーブル, 3 次スプライン)** → リップ。
+starting line 壁足 s_w0) → **逆設計壁 (点列テーブルを通す not-a-knot CubicSpline)**
+→ リップ。円弧と設計壁の接続は **C1 が事後検査、C2 は未保証** (`blend_len>0` で
+曲率ブレンドを挟めるが既定 off・撤回済み — 下記)。
 
-**曲率連続の理由 (2026-08-14 修正)**: 円弧終端で接線だけ合わせて (C1) 直接
+**曲率ブレンドは既定 off・撤回済み (2026-08-14)**: 以下は経緯の記録。実測で
+健全な設計壁を上書きして出口指標を悪化させたため既定 0.0。C2 接続は
+(B1) 中心線 Cauchy データの C2 整合 と (B2) 拘束付き B-spline 表現 で保証する
+方針に変更した (plan §9.2)。以下は旧説明 — 円弧終端で接線だけ合わせて (C1) 直接
 スプラインに繋ぐと、曲率が円弧の $1/R$ から逆設計壁側の局所曲率へ**符号反転
 込みで跳ぶ** (実測: +0.51 → −3.18, +719%)。Sivells/CONTUR の古典法は
 「曲率連続の非粘性コンタ」を要件にしており (サーベイ A0)、この跳びはスロート
@@ -26,7 +30,7 @@ from .wall import _hermite_quintic, _poly_eval
 class ModeFWall:
     def __init__(self, wall_pts, R: float = 2.0, r_inlet: float = 2.5,
                  L_pipe: float = 0.5, L_contract: float = 3.0,
-                 phi_u: float = np.deg2rad(25.0), blend_len: float = 1.2) -> None:
+                 phi_u: float = np.deg2rad(25.0), blend_len: float = 0.0) -> None:
         """wall_pts: (n,>=2) [x, r] — 逆設計壁 (無次元 r*=1)。先頭点は円弧上。
 
         blend_len: 円弧→逆設計壁の曲率ブレンド長 (無次元 r* 単位)。"""
@@ -47,6 +51,11 @@ class ModeFWall:
         self._spl = CubicSpline(wall_pts[:, 0], wall_pts[:, 1])
         self.x_e = float(wall_pts[-1, 0])
         # 円弧終端 (値・接線・曲率, 解析) → ブレンド終端 (スプラインを内側で評価)
+        # blend_len <= 0 でブレンド無効 (C1 のみで直接スプライン接続 = 旧挙動)
+        if float(blend_len) <= 0.0:
+            self.x_bl = self.x_w0
+            self._c_bl = None
+            return
         self.x_bl = self.x_w0 + float(blend_len)
         r0 = 1.0 + R - np.sqrt(max(R ** 2 - self.x_w0 ** 2, 0.0))
         d0 = self.x_w0 / np.sqrt(max(R ** 2 - self.x_w0 ** 2, 1e-30))
@@ -67,7 +76,8 @@ class ModeFWall:
         out[m_pipe] = self.r_inlet
         out[m_con] = _poly_eval(self._c_con, self.x_cs, self.x_au, x[m_con])
         out[m_arc] = 1.0 + self.R - np.sqrt(np.maximum(self.R ** 2 - x[m_arc] ** 2, 0.0))
-        out[m_bl] = _poly_eval(self._c_bl, self.x_w0, self.x_bl, x[m_bl])
+        if self._c_bl is not None and m_bl.any():
+            out[m_bl] = _poly_eval(self._c_bl, self.x_w0, self.x_bl, x[m_bl])
         out[m_dsg] = self._spl(np.minimum(x[m_dsg], self.x_e))
         return out
 
@@ -80,7 +90,8 @@ class ModeFWall:
         m_dsg = x >= self.x_bl
         out[m_con] = _poly_eval(self._c_con, self.x_cs, self.x_au, x[m_con], order=1)
         out[m_arc] = x[m_arc] / np.sqrt(np.maximum(self.R ** 2 - x[m_arc] ** 2, 1e-30))
-        out[m_bl] = _poly_eval(self._c_bl, self.x_w0, self.x_bl, x[m_bl], order=1)
+        if self._c_bl is not None and m_bl.any():
+            out[m_bl] = _poly_eval(self._c_bl, self.x_w0, self.x_bl, x[m_bl], order=1)
         out[m_dsg] = self._spl(np.minimum(x[m_dsg], self.x_e), 1)
         return out
 
@@ -94,7 +105,8 @@ class ModeFWall:
         m_dsg = x >= self.x_bl
         out[m_con] = _poly_eval(self._c_con, self.x_cs, self.x_au, x[m_con], order=2)
         out[m_arc] = self.R ** 2 / np.maximum(self.R ** 2 - x[m_arc] ** 2, 1e-30) ** 1.5
-        out[m_bl] = _poly_eval(self._c_bl, self.x_w0, self.x_bl, x[m_bl], order=2)
+        if self._c_bl is not None and m_bl.any():
+            out[m_bl] = _poly_eval(self._c_bl, self.x_w0, self.x_bl, x[m_bl], order=2)
         out[m_dsg] = self._spl(np.minimum(x[m_dsg], self.x_e), 2)
         return out
 
@@ -111,11 +123,15 @@ class ModeFWall:
             msgs.append("設計壁区間で半径が非単調")
         # 円弧/ブレンド/設計壁の接線・曲率連続 (構成的に一致するはずだが実測で保証)
         h = 1e-6
-        for name, xc in (("円弧/ブレンド", self.x_w0), ("ブレンド/設計壁", self.x_bl)):
+        joints = ([("円弧/設計壁", self.x_w0)] if self._c_bl is None
+                  else [("円弧/ブレンド", self.x_w0), ("ブレンド/設計壁", self.x_bl)])
+        for name, xc in joints:
             dl = float(self.drdx(np.array([xc - h]))[0])
             dr_ = float(self.drdx(np.array([xc + h]))[0])
             if abs(dl - dr_) > 5e-3:
                 msgs.append(f"{name} の接線不連続 ({dl:.4f} vs {dr_:.4f})")
+            if self._c_bl is None:
+                continue   # ブレンド無効時は曲率跳びが既知の前提 (接線のみ検査)
             cl = float(self.curvature(np.array([xc - h]))[0])
             cr = float(self.curvature(np.array([xc + h]))[0])
             if abs(cl - cr) > 0.05 * max(abs(cl), abs(cr), 1.0):

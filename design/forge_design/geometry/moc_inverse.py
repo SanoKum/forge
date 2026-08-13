@@ -38,31 +38,35 @@ class InverseMOC(KernelMOC):
         """init_front: _Pt 列。**最下流軸点 → 上流軸点 → starting line を壁へ**
         の順 (L 字に沿って単調)。戻り値: 全計算点 (init 含む)。
 
-        単位プロセスの役割 (A=C⁺ 担体 / B=C⁻ 担体) は前線の向きに依存する
-        (軸区間では上流側が C⁺ 担体、縦の starting line 区間では下の点が C⁺
-        担体)。固定割当てだと縦線区間で幾何的に逆転し、交点が後方に出て棄却
-        され**スロート直後の楔領域が無計算のまま残る** (2026-08-14 に実測で
-        発見 — 壁流線の付け根の曲率ゴミ/スロート直後圧縮波の真因)。ここでは
-        ペアごとに両割当てを試し、**前方交点** (両点より下流) を与える側を
-        採る向き非依存の充填にする。"""
+        **既知の限界と、棄却された「修正」の記録 (2026-08-14)**: 単位プロセスの
+        役割 (A=C⁺ 担体 / B=C⁻ 担体) は本来前線の向きに依存し、縦の starting
+        line 区間では下の点が C⁺ 担体であるべき。この固定割当てでは縦線区間で
+        逆転するため交点が棄却され、**スロート直後の楔領域が無計算のまま残る**
+        (壁流線はそこを凸包補間で跨ぐ)。そこで「両割当てを試し前方交点を採る」
+        向き非依存の充填を試したが、**実設計は悪化した** — 楔が埋まる代わりに
+        誤ったデータで埋まり、壁流線がそれを拾うため:
+
+        | 設計 | 出口 ε_M | コア M (目標 4.0) |
+        | --- | --- | --- |
+        | 本実装 (楔は空・凸包補間) | 0.173% | 3.9995 |
+        | 向き非依存 fill | 0.932% | 4.0353 |
+
+        よって**本実装 (楔を空のまま残す) を維持**する。楔を正しく埋める正攻法は
+        レベル充填の patch でなく **C⁺ 線マーチ + 質量流束による壁閉包**
+        (`_CPlusMarch`, WIP) であり、そちらで根治する。"""
         pts = list(init_front)
         front = list(init_front)
         while len(front) >= 2:
             new = []
             for i in range(len(front) - 1):
-                P = None
-                for A, B in ((front[i + 1], front[i]), (front[i], front[i + 1])):
-                    try:
-                        cand = self._interior(A, B)
-                    except RuntimeError:
-                        continue
-                    if (np.isfinite(cand.x) and np.isfinite(cand.r)
-                            and cand.r > -1e-12
-                            and cand.x >= min(A.x, B.x) - 1e-9):
-                        P = cand
-                        break
-                if P is not None:
-                    new.append(P)
+                B, A = front[i], front[i + 1]  # B=右(下流)側 C⁻ 担体, A=左側 C⁺ 担体
+                try:
+                    P = self._interior(A, B)
+                except RuntimeError:
+                    continue
+                if not (np.isfinite(P.x) and np.isfinite(P.r)) or P.r < -1e-12:
+                    continue
+                new.append(P)
             front = new
             pts.extend(new)
         return pts
@@ -223,10 +227,10 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
     M_d 一定を伸ばすだけ)。
     戻り値 dict: wall (n,4 [x,r,θ,M]), pts, mdot_start, mdot_exit。
     """
-    # 注: _CPlusMarch (壁点=流束閉包の古典法) は WIP — 壁帯の被覆は正しいが
-    # 壁閉包の凍結延長が粗く壁角が崩れる。現行は向き修正済み三角充填 + 壁流線
-    # (既知の限界: 壁足の曲率が円弧 1/R でなく ~0 に寝る — 接合は ModeFWall の
-    # 曲率ブレンドで C2 化する)。
+    # 注: _CPlusMarch (壁点=流束閉包の古典法) は WIP。現行は**旧実装の三角充填**
+    # + 壁流線 (向き非依存 fill への「修正」は出口指標を悪化させ撤回 — plan §9.1)。
+    # 既知の限界: 壁足の曲率が円弧 1/R でなく ~0 に寝る。**曲率ブレンドは撤回**し、
+    # C2 は B1 (中心線 C2 整合) / B2 (拘束付き B-spline) で保証する (plan §9.2)。
     inv = InverseMOC(gamma=gamma, delta=1.0)
     x0, rr, MM, tt = throat.starting_line(M_start=1.05, n=n_start)
     g = gamma
