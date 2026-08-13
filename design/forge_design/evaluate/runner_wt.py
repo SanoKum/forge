@@ -38,6 +38,9 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     h = 1e-4
     M0 = float(st.mach(x0, 0.0))
     dM0 = float((st.mach(x0 + h, 0.0) - st.mach(x0 - h, 0.0)) / (2 * h))
+    # M'' は目標側の拘束に使わない: 逆設計 (壁抽出) は非線形 2D プロセスのため
+    # 軸 M'' を合わせても壁曲率は制御できない (実測: 曲率跳びが悪化)。
+    # 曲率連続は ModeFWall 側の幾何ブレンドで直接保証する (2026-08-14)。
     xd = dv_value(p, "L_ax")
     cps = [dv_value(p, f"mc_cp{i+1}") for i in range(3)]
     bz = MachBezier.from_constraints(x0, xd, start=(M0, dM0), free_cp=cps,
