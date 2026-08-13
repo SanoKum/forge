@@ -64,85 +64,115 @@ def cf_ideal(eps, gamma, pa_over_pt) -> float:
     return float(gterm + (pe_pt - pa_over_pt) * eps)
 
 
-def _annular_areas(r_sorted: np.ndarray) -> np.ndarray:
-    """半径昇順のサンプル列に対する環状面積 π(r_out²−r_in²)。
+def core_radius_traced(mesh_h5, res_h5, x_d, x_plane, r_start_frac=0.02,
+                       ds_frac=2e-4, gamma=1.4) -> float:
+    """**有効菱形の上流境界**を実場でトレースして求める (テストコア半径)。
 
-    半径方向が非一様なので単純な 2πr·dr では重みが崩れる (セル幅が違う)。
-    境界は隣接サンプルの中点、両端は片側幅を鏡像で外挿する。"""
-    r = np.asarray(r_sorted, dtype=float)
-    mid = 0.5 * (r[:-1] + r[1:])
-    lo = np.concatenate([[max(2.0 * r[0] - mid[0], 0.0)], mid])
-    hi = np.concatenate([mid, [2.0 * r[-1] - mid[-1]]])
-    return np.pi * (np.maximum(hi, 0.0) ** 2 - np.maximum(lo, 0.0) ** 2)
+    軸が $M_d$ に達する点 $(x_d,0)$ から出る C⁺ ($dr/dx=\tan(\theta+\mu)$) を
+    **実際の CFD 場**の中で前進積分し、`x_plane` での半径を返す。この線より下が
+    一様域 (有効菱形の内側)。
 
-
-def test_core_radius(x_plane: float, x_d: float, M_design: float,
-                     r_wall: float, gamma: float = 1.4) -> float:
-    r"""**有効菱形 (テストコア) の幾何定義** — サーベイ B4.5。
-
-    一様出口設計では、軸が $M_d$ に達する点 $(x_d,0)$ から出る C⁺ より下が
-    一様域。一様域では傾きが $\tan\mu_d$ 一定の直線なので
-
-        r_core(x) = (x − x_d)·tan μ_d,   μ_d = arcsin(1/M_d)
-
-    (壁半径で上限クリップ)。設計上リップ平面でちょうど壁に達する。
-    x, x_d, r_wall は同一単位 (無次元 r* でも実寸でも可)。"""
-    mu = np.arcsin(1.0 / max(float(M_design), 1.0 + 1e-12))
-    return float(min(max((float(x_plane) - float(x_d)) * np.tan(mu), 0.0), float(r_wall)))
-
-
-def exit_uniformity(mesh_h5, res_h5, M_design, x_d=None, x_plane=None,
-                    core_radius=None, gamma=1.4) -> dict:
-    r"""出口一様性 $\varepsilon_M$ / $\varepsilon_\theta$ (サーベイ B4.5 定義)。
-
-    - $\varepsilon_M$ = テストコア上の**質量流束重み RMS 偏差**
-      $\sqrt{\langle (M-M_d)^2\rangle_w}/M_d$。重みは $w_i=\rho_i u_{x,i} A_i$ で
-      $A_i$ は**環状面積** $\pi(r_{out}^2-r_{in}^2)$ (半径方向が非一様なので
-      $\rho u$ だけではメッシュ密度に依存する)。RMS が主指標、max は副指標。
-    - $\varepsilon_\theta$ = コア上の $\max|\theta|$ [deg]。$\varepsilon_M$ とは
-      **独立の目的** (マッハだけ見ると軸ズレ流れを見逃す)。
-
-    測定面: `x_plane` 未指定なら**最下流のセル列** (x.max() の列) をそのまま使う。
-    テストコア: `core_radius` 未指定かつ `x_d` 指定時は `test_core_radius()` の
-    幾何定義。どちらも無ければ壁半径 (=コア制限なし) とし、その旨を返り値に残す。
+    直線近似 $(x-x_d)\tan\mu_d$ は特性線が**一様域でしか直線でない**ことを無視する
+    ため近似にすぎない (本ケースでは 0.824 vs 実トレース 0.830 で 0.7% 差)。
+    軸上ちょうどは cell 中心が無く補間の凸包外なので、`r_start_frac`×r_max から
+    開始する (node 化すれば 0 から開始できる)。
     """
     with h5py.File(mesh_h5, "r") as nz:
         cc = nz["/CELLS/centCoords"][:].reshape(-1, 3)
     with h5py.File(res_h5, "r") as f:
-        Ux, Uy = f["/VALUE/Ux"][:], f["/VALUE/Uy"][:]
-        son, ro = f["/VALUE/sonic"][:], f["/VALUE/ro"][:]
+        Ux, Uy, son = f["/VALUE/Ux"][:], f["/VALUE/Uy"][:], f["/VALUE/sonic"][:]
+    from scipy.interpolate import LinearNDInterpolator
     x, r = cc[:, 0], cc[:, 1]
+    itp_M = LinearNDInterpolator(np.c_[x, r], np.hypot(Ux, Uy) / np.maximum(son, 1e-9))
+    itp_th = LinearNDInterpolator(np.c_[x, r], np.arctan2(Uy, Ux))
+    r_max = float(r.max())
+    xx, rr = float(x_d), max(r_start_frac * r_max, float(r.min()) * 1.05)
+    ds = ds_frac * float(x.max() - x.min())
+    for _ in range(200000):
+        if xx >= x_plane or rr >= r_max:
+            break
+        Mv, tv = float(itp_M(xx, rr)), float(itp_th(xx, rr))
+        if not (np.isfinite(Mv) and np.isfinite(tv)) or Mv <= 1.0:
+            break
+        mu = np.arcsin(1.0 / max(Mv, 1.0 + 1e-12))
+        rr += ds * np.tan(tv + mu)
+        xx += ds
+    return float(min(rr, r_max))
+
+
+def core_radius_straight(x_plane: float, x_d: float, M_design: float,
+                         r_wall: float) -> float:
+    r"""有効菱形上流境界の**直線近似** $(x-x_d)\tan\mu_d$ (壁でクリップ)。
+
+    一様域外では特性線が曲がるので近似。トレース版との差は本ケースで 0.7%。"""
+    mu = np.arcsin(1.0 / max(float(M_design), 1.0 + 1e-12))
+    return float(min(max((float(x_plane) - float(x_d)) * np.tan(mu), 0.0), float(r_wall)))
+
+
+def exit_uniformity(mesh_h5, res_h5, M_design, x_d=None, outlet_physid=2,
+                    core_mode: str = "traced", core_radius=None,
+                    gamma=1.4, n_grid: int | None = None) -> dict:
+    r"""出口一様性 $\varepsilon_M$ / $\varepsilon_\theta$ (サーベイ B4.5 定義)。
+
+    **幾何は出口境界面の実 connectivity から取る** (`BCONDS/<id>/iPlanes` +
+    `PLANES/surfArea`)。軸対称では面中心が半径中点なので
+    $2\pi r_c\,dr = \pi(r_{out}^2-r_{in}^2)$ が**厳密**に成り立ち、環状面積は
+    近似なしで得られる (セル中心から仮想境界を作る旧実装は近似だった)。
+    壁半径も最外面の $r_{out}$ = **真の壁半径** (最外セル中心ではない)。
+
+    - $\varepsilon_M$ = コア上の**質量流束重み RMS 偏差**
+      $\sqrt{\langle (M-M_d)^2\rangle_w}/M_d$、$w_i=\rho_i u_{x,i} A_i$。
+    - $\varepsilon_\theta$ = コア上の $\max|\theta|$ [deg] (独立の目的)。
+
+    `core_mode`: `"traced"` (既定, 実場で C⁺ をトレース) / `"straight"` (直線近似)
+    / `"full"` (コア制限なし) / `core_radius` 明示。
+    `n_grid` を指定すると $r/r_{wall}$ 固定格子へ補間して積分し直す
+    (サーベイの別法。厳密面積との一致を確認する交差検証用)。
+    """
+    with h5py.File(mesh_h5, "r") as nz:
+        ip = nz[f"/BCONDS/{outlet_physid}/iPlanes"][:]
+        ic = nz[f"/BCONDS/{outlet_physid}/iCells"][:]
+        pc = nz["/PLANES/centCoords"][:].reshape(-1, 3)
+        rf, xf = pc[ip, 1], pc[ip, 0]
+        dr = nz["/PLANES/surfArea"][:][ip]
+    with h5py.File(res_h5, "r") as f:
+        Ux, Uy = f["/VALUE/Ux"][:][ic], f["/VALUE/Uy"][:][ic]
+        son, ro = f["/VALUE/sonic"][:][ic], f["/VALUE/ro"][:][ic]
+    o = np.argsort(rf)
+    rf, dr, Ux, Uy, son, ro = rf[o], dr[o], Ux[o], Uy[o], son[o], ro[o]
+    A = 2.0 * np.pi * rf * dr              # = π(r_out²−r_in²) (厳密)
+    r_wall = float(rf[-1] + 0.5 * dr[-1])  # 真の壁半径 (最外面の外縁)
+    x_plane = float(np.mean(xf))
     M = np.hypot(Ux, Uy) / np.maximum(son, 1e-9)
     th_deg = np.degrees(np.arctan2(Uy, Ux))
-    # 測定面 = 最下流のセル列 (構造格子なので x がほぼ揃う)
-    xp = float(x.max()) if x_plane is None else float(x_plane)
-    xs = np.unique(np.round(x, 12))
-    tol = 0.25 * float(np.min(np.diff(xs))) if len(xs) > 1 else 1e-9
-    m = np.abs(x - xp) <= tol
-    if m.sum() < 8:
-        raise ValueError(f"測定面 x={xp:.6g} のセルが不足 ({int(m.sum())})")
-    o = np.argsort(r[m])
-    rr, MM, tt = r[m][o], M[m][o], th_deg[m][o]
-    w_rho_u, A = ro[m][o] * Ux[m][o], _annular_areas(r[m][o])
-    r_wall = float(rr.max())
+    Md = float(M_design)
+
     if core_radius is not None:
         rc, how = float(core_radius), "explicit"
-    elif x_d is not None:
-        rc, how = test_core_radius(xp, x_d, M_design, r_wall, gamma), "effective_rhombus"
+    elif core_mode == "full" or x_d is None:
+        rc, how = r_wall, "full(no_core_limit)"
+    elif core_mode == "straight":
+        rc, how = core_radius_straight(x_plane, x_d, Md, r_wall), "rhombus_straight"
     else:
-        rc, how = r_wall, "no_core_limit"
-    core = rr <= rc
+        rc, how = core_radius_traced(mesh_h5, res_h5, x_d, x_plane, gamma=gamma), "rhombus_traced"
+    core = rf <= rc
     if core.sum() < 4:
-        raise ValueError(f"コア内セルが不足 ({int(core.sum())}, r_core={rc:.4g})")
-    w = w_rho_u[core] * A[core]
-    Md = float(M_design)
-    eM = float(np.sqrt(np.average((MM[core] - Md) ** 2, weights=w)) / Md)
-    return {"x_plane": xp, "r_core": rc, "core_def": how, "r_wall": r_wall,
-            "eps_M_rms": eM,
-            "eps_M_max": float(np.max(np.abs(MM[core] - Md)) / Md),
-            "eps_theta_max_deg": float(np.max(np.abs(tt[core]))),
-            "M_core_massflux_avg": float(np.average(MM[core], weights=w)),
-            "n_core_cells": int(core.sum())}
+        raise ValueError(f"コア内の出口面が不足 ({int(core.sum())}, r_core={rc:.4g})")
+    w = ro[core] * Ux[core] * A[core]
+    eM = float(np.sqrt(np.average((M[core] - Md) ** 2, weights=w)) / Md)
+    out = {"x_plane": x_plane, "r_core": rc, "core_def": how, "r_wall": r_wall,
+           "eps_M_rms": eM,
+           "eps_M_max": float(np.max(np.abs(M[core] - Md)) / Md),
+           "eps_theta_max_deg": float(np.max(np.abs(th_deg[core]))),
+           "M_core_massflux_avg": float(np.average(M[core], weights=w)),
+           "n_core_faces": int(core.sum()), "n_exit_faces": int(len(rf))}
+    if n_grid:   # 交差検証: 固定 r 格子へ補間して同じ量を積分し直す
+        rg = np.linspace(0.0, rc, int(n_grid))
+        Mg = np.interp(rg, rf, M)
+        wg = np.interp(rg, rf, ro * Ux) * 2.0 * np.pi * rg
+        out["eps_M_rms_grid"] = float(np.sqrt(np.average((Mg - Md) ** 2,
+                                                         weights=np.maximum(wg, 0))) / Md)
+    return out
 
 
 def axis_mach(mesh_h5, res_h5, axis_band) -> tuple:

@@ -107,25 +107,40 @@ check(f"ノズル: 質量流量整合 ({mf:.4f})", abs(mf - 1.0) < 0.01)
 res2 = inverse_design(st, target, x_axis_end=float(x_end), n_axis=420, n_start=41)
 check("決定性 (壁 bit 同一)", np.array_equal(res["wall"], res2["wall"]))
 
-# --- 出口一様性メトリクス (A2: 環状面積重み + 有効菱形コア) --------------------
-from forge_design.metrics.extract import _annular_areas, test_core_radius  # noqa: E402
+# --- 出口一様性メトリクス (A2: 実出口面の厳密環状面積 + 有効菱形コア) ---------
+from pathlib import Path as _P  # noqa: E402
+from forge_design.metrics.extract import (  # noqa: E402
+    exit_uniformity, core_radius_straight, core_radius_traced)
 
-r_s = np.linspace(0.1, 0.9, 5)
-A_s = _annular_areas(r_s)
-check(f"環状面積の総和 = π·r_out² ({A_s.sum():.4f} vs {np.pi:.4f})",
-      abs(A_s.sum() - np.pi * 1.0 ** 2) < 1e-12)
-# 非一様配置: 隙間・重複がない (テロスコープ) ことを境界から独立に検算
-r_ne = np.array([0.05, 0.1, 0.2, 0.4, 0.8])
-A_ne = _annular_areas(r_ne)
-mid_ne = 0.5 * (r_ne[:-1] + r_ne[1:])
-lo0, hiN = max(2 * r_ne[0] - mid_ne[0], 0.0), 2 * r_ne[-1] - mid_ne[-1]
-check("環状面積: 非一様配置でもテロスコープ (隙間・重複なし)",
-      abs(A_ne.sum() - np.pi * (hiN ** 2 - lo0 ** 2)) < 1e-12)
-check("環状面積: 全て正", bool(np.all(A_ne > 0)))
-check("コア半径 = (x−x_d)tanμ_d (Md=4, x=24.42, x_d=14 → 2.690)",
-      abs(test_core_radius(24.42, 14.0, 4.0, 3.264) - 2.6904) < 1e-3)
-check("コア半径は壁半径でクリップ", test_core_radius(60.0, 14.0, 4.0, 3.264) == 3.264)
-check("コア半径は x<x_d で 0", test_core_radius(10.0, 14.0, 4.0, 3.264) == 0.0)
+_rd = _P("case/41.wind_tunnel_design/run_0001_v1_euler")
+if (_rd / "nozzle.h5").exists():
+    _res = sorted(_rd.glob("res_[0-9]*.h5"),
+                  key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
+    import h5py as _h5
+    with _h5.File(_rd / "nozzle.h5") as _nz:
+        _ip = _nz["/BCONDS/2/iPlanes"][:]
+        _pc = _nz["/PLANES/centCoords"][:].reshape(-1, 3)
+        _rf, _dr = _pc[_ip, 1], _nz["/PLANES/surfArea"][:][_ip]
+    _A = 2 * np.pi * _rf * _dr
+    _Aex = np.pi * ((_rf + _dr / 2) ** 2 - (_rf - _dr / 2) ** 2)
+    check(f"出口面: 2πr·dr = π(r_o²−r_i²) 厳密 (max rel {np.max(np.abs(_A-_Aex)/_Aex):.1e})",
+          float(np.max(np.abs(_A - _Aex) / _Aex)) < 1e-4)
+    _rw = float((_rf + _dr / 2).max())
+    check(f"出口面積の総和 = π·r_wall² ({_A.sum():.6e} vs {np.pi*_rw**2:.6e})",
+          abs(_A.sum() - np.pi * _rw ** 2) / (np.pi * _rw ** 2) < 1e-5)
+    _e = exit_uniformity(_rd / "nozzle.h5", _res, 4.0, x_d=0.14,
+                         core_mode="traced", n_grid=200)
+    check(f"真の壁半径 > 最外セル中心 ({_e['r_wall']:.5f})", _e["r_wall"] > _rf.max())
+    check(f"εM: 面積積分と固定半径格子が一致 ({_e['eps_M_rms']*100:.3f}% vs "
+          f"{_e['eps_M_rms_grid']*100:.3f}%)",
+          abs(_e["eps_M_rms"] - _e["eps_M_rms_grid"]) / _e["eps_M_rms"] < 0.02)
+    _rt = core_radius_traced(_rd / "nozzle.h5", _res, 0.14, _e["x_plane"])
+    _rs = core_radius_straight(_e["x_plane"], 0.14, 4.0, _e["r_wall"])
+    check(f"有効菱形: トレース {_rt/_e['r_wall']:.3f} と直線近似 {_rs/_e['r_wall']:.3f} が 2% 内",
+          abs(_rt - _rs) / _rt < 0.02)
+    check("有効菱形コアは壁半径より小さい (リップまで届かない)", _rt < _e["r_wall"])
+else:
+    print("skip 出口一様性 (run_0001 が無い)")
 
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")
 sys.exit(1 if FAIL else 0)

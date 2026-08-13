@@ -257,7 +257,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         from ..metrics.extract import exit_uniformity
         try:
             eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md,
-                                 x_d=xd * scale)   # 有効菱形コア (実寸)
+                                 x_d=xd * scale, core_mode="traced")
         except Exception as e:  # 測定面が取れない等
             eu = {"error": f"{type(e).__name__}: {e}"}
         hist.append({"pass": k, "dM_inf_masked": dM_inf, "omega": omega,
