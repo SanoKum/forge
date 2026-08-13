@@ -110,13 +110,37 @@ def _reichardt_uplus(yp):
         1.0 - np.exp(-yp / 11.0) - (yp / 11.0) * np.exp(-yp / 3.0))
 
 
-def _solve_utau(Ut, y, nu):
+B_WL = 5.0
+
+
+def _spalding_uplus(yp):
+    """Spalding は陰形式 y+=H(u+) なので u+ を Newton で求める (kappa=0.41, B=5.0)。"""
+    up = np.log(max(yp, 1e-12)) / KAPPA_WL + B_WL
+    for _ in range(200):
+        e = KAPPA_WL * up
+        f = up + np.exp(-KAPPA_WL * B_WL) * (np.exp(e) - 1 - e - e**2 / 2 - e**3 / 6) - yp
+        df = 1 + np.exp(-KAPPA_WL * B_WL) * KAPPA_WL * (np.exp(e) - 1 - e - e**2 / 2)
+        st = f / df
+        up -= st
+        if abs(st) < 1e-13:
+            break
+    return up
+
+
+def _uplus(yp, law):
+    if law == 'spalding':
+        return _spalding_uplus(yp)
+    return _reichardt_uplus(yp)
+
+
+def _solve_utau(Ut, y, nu, law='reichardt'):
+    """壁法則の逆解き。**ソルバが使った法則と揃えること** (揃えないと符号すら逆に見える)。"""
     utau = np.sqrt(max(nu * Ut / max(y, 1e-30), 1e-30))
     for _ in range(80):
         utau = max(utau, 1e-12)
-        f = Ut / utau - _reichardt_uplus(utau * y / nu)
+        f = Ut / utau - _uplus(utau * y / nu, law)
         d = 1e-6 * utau
-        df = ((Ut / (utau + d) - _reichardt_uplus((utau + d) * y / nu)) - f) / d
+        df = ((Ut / (utau + d) - _uplus((utau + d) * y / nu, law)) - f) / d
         if abs(df) < 1e-20:
             break
         utau -= f / df
@@ -144,7 +168,7 @@ def _plate_column(cc, V, xs):
     return idx[o]
 
 
-def _theta_and_utau(cc, V, xs, ytop=None):
+def _theta_and_utau(cc, V, xs, ytop=None, law='reichardt'):
     col = _plate_column(cc, V, xs)
     if col is None or len(col) < 5:
         return float('nan'), float('nan'), float('nan')
@@ -167,16 +191,69 @@ def _theta_and_utau(cc, V, xs, ytop=None):
     core = (ro[m] / roe) * (ux[m] / ue) * (1.0 - ux[m] / ue)
     theta = float(np.trapz(core, yy[m]))
     nu1 = mu[first] / ro[first]
-    utau = _solve_utau(ux[first], yy[first], nu1)
+    utau = _solve_utau(ux[first], yy[first], nu1, law)
     return theta, utau, ue
 
 
-def make_q_flatplate(xs, ytop):
+def _dstar(cc, V, xs, ytop=None):
+    col = _plate_column(cc, V, xs)
+    if col is None or len(col) < 5:
+        return float('nan')
+    yy = cc[col, 1]
+    ro = V['ro'][:][col]
+    ux = V['roUx'][:][col] / ro
+    if yy[0] > 1e-12:
+        yy = np.concatenate(([0.0], yy)); ux = np.concatenate(([0.0], ux))
+        ro = np.concatenate((ro[:1], ro))
+    m = np.ones(len(yy), bool) if ytop is None else (yy <= ytop)
+    ue = ux[m].max(); roe = ro[m][int(np.argmax(ux[m]))]
+    return float(np.trapz(1.0 - (ro[m] * ux[m]) / (roe * ue), yy[m]))
+
+
+def make_q_cf_momentum(xs, ytop, window=0.08, order=2):
+    """運動量積分 Cf (cf_retheta_analysis.py の定義 (c)) の時系列判定。
+
+    **壁出力に依存しない**ので、壁法則を替えた A/B で「後処理定義の不整合」に
+    引っかからない。ただし定常性・境界層近似・積分上端・fit に依存する
+    **収支診断**であって定義非依存の壁摩擦ではない (同ツールの注記と同じ)。
+      Cf/2 = dtheta/dx + theta*(H + 2 - Me^2)/Ue * dUe/dx
+    """
+    def f(cc, V):
+        x = cc[:, 0]
+        xa = np.unique(np.round(x[x > 1e-6], 6))
+        xa = xa[np.abs(xa - xs) <= max(window, 1e-9) * 1.5]
+        if len(xa) < order + 2:
+            return float('nan')
+        th = np.array([_theta_and_utau(cc, V, xx, ytop)[0] for xx in xa])
+        ue = np.array([_theta_and_utau(cc, V, xx, ytop)[2] for xx in xa])
+        good = np.isfinite(th) & np.isfinite(ue)
+        if good.sum() < order + 2:
+            return float('nan')
+        xa, th, ue = xa[good], th[good], ue[good]
+        xc = xa[int(np.argmin(np.abs(xa - xs)))]
+        dthdx = np.polyval(np.polyder(np.polyfit(xa, th, order)), xc)
+        duedx = np.polyval(np.polyder(np.polyfit(xa, ue, order)), xc)
+        thc, _, uec = _theta_and_utau(cc, V, xc, ytop)
+        ds = _dstar(cc, V, xc, ytop)
+        if not (np.isfinite(thc) and thc > 0 and np.isfinite(ds)):
+            return float('nan')
+        H = ds / thc
+        Me = uec / np.sqrt(1.4 * 287.0 * 288.15)
+        pg = thc * (H + 2.0 - Me * Me) / uec * duedx
+        cf = 2.0 * (dthdx + pg)
+        ret = uec * thc / (V['vis_lam'][:][_plate_column(cc, V, xc)][-1]
+                           / V['ro'][:][_plate_column(cc, V, xc)][-1])
+        ks = cf_karman_schoenherr(ret)
+        return float(cf / ks) if np.isfinite(ks) and ks > 0 else float('nan')
+    return f
+
+
+def make_q_flatplate(xs, ytop, law='reichardt'):
     def q_theta(cc, V):
-        return _theta_and_utau(cc, V, xs, ytop)[0]
+        return _theta_and_utau(cc, V, xs, ytop, law)[0]
 
     def q_cf_retheta(cc, V):
-        theta, utau, ue = _theta_and_utau(cc, V, xs, ytop)
+        theta, utau, ue = _theta_and_utau(cc, V, xs, ytop, law)
         col = _plate_column(cc, V, xs)
         if col is None:
             return float('nan')
@@ -237,8 +314,10 @@ def classify(steps, vals, tail_frac, drift_tol, osc_tol, min_snaps):
 SEV = {'STEADY': 0, 'OSCILLATING': 1, 'TRANSIENT-UNSETTLED': 2, 'DRIFTING': 3}
 BUILTIN = ['shock', 'asym', 'machmax', 'pmax']
 # 平板専用 (明示指定のときだけ有効): --quantity theta,cf_retheta
-FLATPLATE = ['theta', 'cf_retheta']
-# 壁モデル応力 (res_wall_<physID>_<step>.h5 の utau/ro から tau = rho*utau^2 の面平均)。
+FLATPLATE = ['theta', 'cf_retheta', 'cf_momentum']
+# 壁応力 (res_wall_<physID>_<step>.h5 の **twall 接線成分**を弧長 (×周長) 重みで平均)。
+# **正式評価関数 case/26 tools/wall_tau_eval.py と同一定義**。twall が無い古い出力だけ
+# rho*utau^2 へフォールバックする。
 # **壁関数 run 専用** — wallTreatmentSST=0 (壁解像) では utau が出力されず全ゼロになるので
 # NOT APPLICABLE を返す。壁解像の壁応力が要るなら接線 traction を別途算出する必要がある。
 # 範囲は --wall-xmin/--wall-xmax、対象壁は --wall-phys-id で指定する (ケース固有値をハードコードしない)。
@@ -246,7 +325,8 @@ WALL = ['wall_model_tau']
 
 
 def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, cf_x=0.6, cf_ytop=None,
-            wall_phys_id=None, wall_xmin=None, wall_xmax=None):
+            wall_phys_id=None, wall_xmin=None, wall_xmax=None, wall_law='reichardt',
+            wall_axisym=False):
     mesh = find_mesh(run_dir, mesh_arg)
     if mesh is None:
         print(f"\n=== {run_dir}  -> NO mesh (.h5 with /CELLS/centCoords) ==="); return 3
@@ -256,9 +336,11 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
     cc = centroids(mesh)
     extractors = {'shock': q_shock, 'machmax': q_machmax, 'pmax': q_pmax}
     if any(q in want for q in FLATPLATE):
-        qt, qc = make_q_flatplate(cf_x, cf_ytop)
+        qt, qc = make_q_flatplate(cf_x, cf_ytop, wall_law)
         extractors['theta'] = qt
         extractors['cf_retheta'] = qc
+        if 'cf_momentum' in want:
+            extractors['cf_momentum'] = make_q_cf_momentum(cf_x, cf_ytop)
     qa = make_q_asym(cc)
     if qa:
         extractors['asym'] = qa
@@ -302,8 +384,36 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
                 with h5py.File(f, 'r') as hw:
                     if 'VALUE/utau' not in hw or 'VALUE/ro' not in hw:
                         continue
-                    xw = hw['MESH/COORD'][:].reshape(-1, 3)[:, 0]
-                    tau = hw['VALUE/ro'][:] * hw['VALUE/utau'][:] ** 2
+                    Cw = hw['MESH/COORD'][:].reshape(-1, 3)
+                    o = np.argsort(Cw[:, 0])
+                    xw, yw = Cw[o, 0], Cw[o, 1]
+                    # 正式評価関数と同一定義: twall の接線成分を弧長 (×周長) 重みで平均
+                    # (case/26 tools/wall_tau_eval.py と揃える。旧実装の rho*utau^2 節点算術
+                    #  平均は別の汎関数で、A/B の値がツール間で食い違う原因になっていた)。
+                    if 'VALUE/twall_x' in hw:
+                        tx = hw['VALUE/twall_x'][:][o]
+                        ty = hw['VALUE/twall_y'][:][o]
+                        tg = np.empty((len(xw), 2))
+                        if len(xw) >= 3:
+                            tg[1:-1] = np.column_stack([xw[2:] - xw[:-2], yw[2:] - yw[:-2]])
+                            tg[0] = [xw[1] - xw[0], yw[1] - yw[0]]
+                            tg[-1] = [xw[-1] - xw[-2], yw[-1] - yw[-2]]
+                        else:
+                            tg[:] = [1.0, 0.0]
+                        tg /= np.maximum(np.linalg.norm(tg, axis=1, keepdims=True), 1e-30)
+                        nrm = np.column_stack([-tg[:, 1], tg[:, 0]])
+                        t2 = np.column_stack([tx, ty])
+                        tau = np.linalg.norm(t2 - np.sum(t2 * nrm, axis=1)[:, None] * nrm, axis=1)
+                    else:
+                        tau = hw['VALUE/ro'][:][o] * hw['VALUE/utau'][:][o] ** 2
+                    ds = np.empty(len(xw))
+                    if len(xw) >= 3:
+                        ds[1:-1] = 0.5 * np.hypot(xw[2:] - xw[:-2], yw[2:] - yw[:-2])
+                        ds[0] = np.hypot(xw[1] - xw[0], yw[1] - yw[0])
+                        ds[-1] = np.hypot(xw[-1] - xw[-2], yw[-1] - yw[-2])
+                    else:
+                        ds[:] = 1.0
+                    ww = ds * (2.0 * np.pi * np.maximum(yw, 1e-30) if wall_axisym else 1.0)
                     mm = np.ones_like(xw, bool)
                     if wall_xmin is not None:
                         mm &= (xw >= wall_xmin)
@@ -311,9 +421,9 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
                         mm &= (xw <= wall_xmax)
                     if mm.sum() == 0:
                         continue
-                    if np.any(hw['VALUE/utau'][:][mm] > 0.0):
+                    if np.any(hw['VALUE/utau'][:][o][mm] > 0.0):
                         allzero = False
-                    num += float(tau[mm].sum()); den += float(mm.sum())
+                    num += float((tau[mm] * ww[mm]).sum()); den += float(ww[mm].sum())
             if den > 0:
                 wsteps.append(st); wvals.append(num / den)
         if allzero and wsteps:
@@ -355,9 +465,14 @@ def main():
     ap.add_argument('--wall-xmin', type=float, default=None,
                     help='wall_model_tau: 集約する x の下限 [m] (前縁・淀み域を除くのに使う)')
     ap.add_argument('--wall-xmax', type=float, default=None, help='wall_model_tau: x の上限 [m]')
+    ap.add_argument('--wall-axisym', action='store_true',
+                    help='wall_model_tau: 面積重みに周長 2*pi*r を掛ける (軸対称。正式評価関数と揃える)')
     ap.add_argument('--cf-ytop', type=float, default=None,
                     help='upper limit [m] of the theta integral (default: full column). '
                          'Use to check sensitivity of theta to the truncation height.')
+    ap.add_argument('--wall-law', default='reichardt', choices=['reichardt', 'spalding'],
+                    help='cf_retheta の逆解きに使う壁法則。**ソルバが使った法則と揃えること** '
+                         '(揃えないと A/B の符号すら逆に見える)。cf_momentum は壁出力非依存なので無関係')
     ap.add_argument('--mesh', default=None, help='input mesh h5 (auto-detected if omitted)')
     ap.add_argument('--tail', type=float, default=0.4, help='tail fraction of snapshots for the steadiness check')
     ap.add_argument('--drift', type=float, default=0.05, help='max fractional trend across tail for STEADY')
@@ -369,7 +484,8 @@ def main():
     for rd in args.run_dirs:
         worst = max(worst, analyze(rd, want, args.tail, args.drift, args.osc, args.min_snaps,
                                    args.mesh, args.cf_x, args.cf_ytop,
-                                   args.wall_phys_id, args.wall_xmin, args.wall_xmax))
+                                   args.wall_phys_id, args.wall_xmin, args.wall_xmax,
+                                   args.wall_law, args.wall_axisym))
     print(f"\nOVERALL: {'ALL STEADY' if worst == 0 else 'NOT ALL STEADY (see above)'}")
     sys.exit(0 if worst == 0 else 1)
 
