@@ -74,14 +74,22 @@ def core_radius_traced(mesh_h5, res_h5, x_d, x_plane, r_start_frac=0.02,
 
     直線近似 $(x-x_d)\tan\mu_d$ は特性線が**一様域でしか直線でない**ことを無視する
     ため近似にすぎない (本ケースでは 0.824 vs 実トレース 0.830 で 0.7% 差)。
-    軸上ちょうどは cell 中心が無く補間の凸包外なので、`r_start_frac`×r_max から
-    開始する (node 化すれば 0 から開始できる)。
+
+    **cell/node の違い** (2026-08-17): cell は軸上に DOF が無く補間の凸包が
+    $r_{min}$ で切れるため `r_start_frac`×r_max から開始せざるを得ない。
+    node は軸上に DOF を持つので、補間点を **`MESH/COORD` (真の節点座標)** に
+    すれば $r=0$ から開始できる。`/CELLS/centCoords` は node では双対 CV 重心に
+    書き換わり最小 $r$ が 0 でない (実測 0.0089 $r_t$) ので、node では使わない。
     """
     with h5py.File(mesh_h5, "r") as nz:
         cc = nz["/CELLS/centCoords"][:].reshape(-1, 3)
+        node_c = (nz["/MESH/COORD"][:].reshape(-1, 3) if "/MESH/COORD" in nz else None)
     with h5py.File(res_h5, "r") as f:
         Ux, Uy, son = f["/VALUE/Ux"][:], f["/VALUE/Uy"][:], f["/VALUE/sonic"][:]
     from scipy.interpolate import LinearNDInterpolator
+    if node_c is not None and len(node_c) == len(Ux):
+        cc = node_c                      # node: 真の節点座標 (軸 r=0 を含む)
+        r_start_frac = 0.0
     x, r = cc[:, 0], cc[:, 1]
     itp_M = LinearNDInterpolator(np.c_[x, r], np.hypot(Ux, Uy) / np.maximum(son, 1e-9))
     itp_th = LinearNDInterpolator(np.c_[x, r], np.arctan2(Uy, Ux))

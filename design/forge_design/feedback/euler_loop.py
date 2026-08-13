@@ -52,8 +52,14 @@ def build_cminus_map_cfd(run_dir, wall_pts, scale: float, gamma: float,
                  key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
     with h5py.File(run_dir / "nozzle.h5") as nz:
         cc = nz["CELLS/centCoords"][:].reshape(-1, 3)
+        node_c = (nz["MESH/COORD"][:].reshape(-1, 3) if "MESH/COORD" in nz else None)
     with h5py.File(res) as f:
         Ux, Uy, son = f["VALUE/Ux"][:], f["VALUE/Uy"][:], f["VALUE/sonic"][:]
+    # node は軸上に DOF を持つので**真の節点座標**を使い r=0 まで積分できる
+    # (`CELLS/centCoords` は node では双対 CV 重心で最小 r が 0 でない)
+    is_node = node_c is not None and len(node_c) == len(Ux)
+    if is_node:
+        cc = node_c
     x, r = cc[:, 0] / scale, cc[:, 1] / scale          # → r* 単位
     M = np.hypot(Ux, Uy) / np.maximum(son, 1e-9)
     th = np.arctan2(Uy, Ux)
@@ -62,9 +68,8 @@ def build_cminus_map_cfd(run_dir, wall_pts, scale: float, gamma: float,
     # **cell モード限定の回避策**: cell 中心は軸上に無いので補間の凸包が r_min で
     # 切れ、軸到達前に必ず NaN になり全点棄却される (2026-08-14 実測)。そこまで
     # 積分して最後の C⁻ 勾配で r=0 へ外挿する (θ→0 で勾配は緩やかなので誤差は小)。
-    # **node (median-dual) 化したらこの外挿は不要** — node は軸上に DOF を持つので
-    # 凸包が r=0 まで届く (ユーザ方針: 今後は node 主体)。r_axis=0 で自然に動く。
-    r_axis = float(r.min()) * 1.5
+    # **node では外挿不要** — 真の節点座標を使うので凸包が r=0 まで届く (2026-08-17)。
+    r_axis = 0.0 if is_node else float(r.min()) * 1.5
     rows = []
     for xw, rw in wall_pts[::4, :2]:
         xx, rr = float(xw), float(rw) * 0.985          # 壁のわずか内側から出発
