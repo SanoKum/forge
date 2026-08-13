@@ -55,15 +55,22 @@ def latest_wall(run, explicit=None, phys_id=None):
 
 
 def eval_wall_tau(path, xmin, xmax, axisym):
-    """壁面積重み付き平均の接線 traction [Pa] を返す。"""
+    """壁面積重み付き平均の (接線 traction [Pa], q_w [W/m2], 壁温 [K]) を返す。
+
+    q_w と壁温を同じ範囲・同じ重みで併せて返すのは、case/40 のように u_τ が
+    Kader 熱流束にも入る構成で **τ_w だけを見て採否を決めない**ため
+    (plan turbulence-reichardt-gap-residual §5.3)。
+    """
     with h5py.File(path, "r") as h:
         C = h["MESH/COORD"][:].reshape(-1, 3)
         tx = h["VALUE/twall_x"][:]
         ty = h["VALUE/twall_y"][:]
         tz = h["VALUE/twall_z"][:] if "VALUE/twall_z" in h else np.zeros_like(tx)
+        qw = h["VALUE/qwall"][:] if "VALUE/qwall" in h else np.full_like(tx, np.nan)
+        Tw = h["VALUE/Ts"][:] if "VALUE/Ts" in h else np.full_like(tx, np.nan)
     x, y = C[:, 0], C[:, 1]
     o = np.argsort(x)                       # 壁面に沿って並べる (単調な x を仮定)
-    x, y, tx, ty, tz = x[o], y[o], tx[o], ty[o], tz[o]
+    x, y, tx, ty, tz, qw, Tw = x[o], y[o], tx[o], ty[o], tz[o], qw[o], Tw[o]
     m = np.ones(len(x), bool)
     if xmin is not None:
         m &= x >= xmin
@@ -88,7 +95,9 @@ def eval_wall_tau(path, xmin, xmax, axisym):
     ds[0] = np.hypot(x[1] - x[0], y[1] - y[0])
     ds[-1] = np.hypot(x[-1] - x[-2], y[-1] - y[-2])
     w = ds * (2.0 * np.pi * np.maximum(y, 1e-30) if axisym else 1.0)
-    return float(np.sum(tau[idx] * w[idx]) / np.sum(w[idx])), len(idx), (x[idx].min(), x[idx].max())
+    wt = np.sum(w[idx])
+    avg = lambda v: float(np.sum(v[idx] * w[idx]) / wt)
+    return (avg(tau), avg(qw), avg(Tw)), len(idx), (x[idx].min(), x[idx].max())
 
 
 def main():
@@ -106,18 +115,23 @@ def main():
     print(f"# 重み: 壁面弧長 ds" + (" x 周長 2*pi*r (axisym)" if a.axisym else "") +
           f"   範囲 x=[{a.xmin},{a.xmax}]")
     print()
-    print(f'{"run":46s} {"tau_w [Pa]":>12s} {"n":>5s} {"x範囲":>21s}')
+    print(f'{"run":40s} {"tau_w [Pa]":>12s} {"q_w [W/m2]":>13s} {"壁温 [K]":>10s} {"n":>5s}')
     vals = []
     for r in a.runs:
         p = latest_wall(r, a.wall_file, a.phys_id)
         v, n, rng = eval_wall_tau(p, a.xmin, a.xmax, a.axisym)
         vals.append((r, v))
-        print(f'{os.path.basename(r):46s} {v:12.2f} {n:5d}  [{rng[0]:.4f},{rng[1]:.4f}]  ({os.path.basename(p)})')
+        print(f'{os.path.basename(r):40s} {v[0]:12.2f} {v[1]:13.4g} {v[2]:10.2f} {n:5d}'
+              f'  [{rng[0]:.4f},{rng[1]:.4f}] ({os.path.basename(p)})')
     if len(vals) >= 2:
         print()
         base = vals[-1][1]
+        print(f'  (比 = 各 run / {os.path.basename(vals[-1][0])})')
+        print(f'  {"run":38s} {"tau_w":>9s} {"q_w":>9s} {"壁温":>9s}')
         for r, v in vals[:-1]:
-            print(f'  {os.path.basename(r)} / {os.path.basename(vals[-1][0])} = {v/base:.4f}')
+            rr = [v[i] / base[i] if base[i] not in (0.0,) and np.isfinite(base[i]) else float("nan")
+                  for i in range(3)]
+            print(f'  {os.path.basename(r):38s} {rr[0]:9.4f} {rr[1]:9.4f} {rr[2]:9.4f}')
 
 
 if __name__ == "__main__":

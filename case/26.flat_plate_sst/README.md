@@ -149,6 +149,8 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0073b_baseline` | 同上を**変更前バイナリ**で実行 (env OFF 不変性の検証用) | 変更前 vs 変更後の差 ≤1.5e-6 = ノイズ同オーダー | active (検証) |
 | `run_0073c_repeat` | `run_0073_diag_reichardt` の**同一バイナリ再実行** (実行間ノイズ測定) | node は run-to-run 非決定的 (~1e-6) と確定 | active (検証) |
 | `run_0074_diag_spalding` | §5.2 ② **診断実験**: `FORGE_WF_INV_LAW=spalding` (逆解き則のみ Spalding、`wf_pk` の $g$ は Reichardt 固定、E3 OFF) | $u_\tau$ 比 **1.0597** / $\tau_w$ 比 **1.1230** (凍結場予測 1.0599/1.1234 と 0.02–0.04%)。デバイス実装 = CPU 後処理 **1.0000** | active (② の正) |
+| `run_0075_coupled_reichardt` | §5.2 連成 A/B の**対照**: `run_0063` 場から 20000 step、env OFF | (c) 運動量積分/KS=0.754、(d)=0.764、$\tau_w$=6.80 Pa。全残差 `NOT CONVERGED` / $\theta$,$C_f$ `STEADY` | active (A/B 対照) |
+| `run_0076_coupled_spalding` | §5.2 連成 A/B の**本命**: 同 restart + `FORGE_WF_INV_LAW=spalding` | (c)=**0.811**、(d)[整合後処理]=**0.822**、$\tau_w$=**7.24 Pa** (+6.5%)。$\theta$ drift 2.0% で `STEADY` の縁 | active (§5.2 の正) |
 | `run_0062_repdiag` | **代表点幾何診断** (`FORGE_WF_REP_DIAG=1`、`run_0053` 場から 100 step) | `best_cos`=1.0000・接線オフセット/y=9.3e-5 → **平板では代表点が数値許容差内で法線上**。§3.3 の粗場側入力 | active (§3 の正) |
 | `run_0060_E3` | **E3: $\omega$ 生産を壁法則整合 $S_{\rm wf}^2$ へ** (`FORGE_WF_OMEGA_SOURCE=1`、`run_0053` 場から 20000 step) | (w) $C_f$/KS = **0.8445** (E3 前 0.7615、pin 0.8594)、$\omega$ 2.62e5→1.35e5、quasisteady `ALL STEADY` | active (**E3 の正**) |
 | `run_0060_E3_widiag` | 同 E3 の W–I 実力 + $\omega$ 収支取得 (500 step 再走) | $D/P$=0.895、$\lvert T\rvert/P$=0.105 (E3 前 0.078) | active (診断) |
@@ -1806,3 +1808,29 @@ python3 tools/wall_law_inverse.py run_0063_B_nasa_wf --mode wf --ypmin 25 --ypma
 FORGE_WF_INV_LAW=spalding ../../solver_density_cuda/tools/run_case.sh <run_dir>
 python3 tools/wall_law_inverse.py <run_dir> --mode wf --xmin 0.05 --ypmin 25 --ypmax 35
 ```
+
+
+### §5.2 連成 A/B — 両ケースが同方向に改善 (2026-08-13)
+
+診断構成 (逆解き則のみ Spalding、$g$ は Reichardt 固定、E3 OFF) を**準定常まで**回した。
+対照は**同じ restart から**走らせた Reichardt 版。
+
+| 定義 | Reichardt (`run_0075`) | Spalding (`run_0076`) | 変化 |
+| --- | --- | --- | --- |
+| (c) 運動量積分/KS [壁出力非依存] | 0.754 | **0.811** | +7.6% |
+| (d) 壁法則逆解き/KS [整合後処理] | 0.764 | **0.822** | +7.6% |
+| 生 $\tau_w$ (x=[0.05,1.0]) | 6.80 Pa | **7.24 Pa** | +6.5% |
+
+**★ 落とし穴**: `cf_retheta_analysis.py` の (d) は既定が **Reichardt 後処理**。
+Spalding run をそのまま通すと 0.764→0.735 と**悪化して見える**が、これは後処理定義の
+不整合であって物理ではない。**`--wall-law spalding` を明示すること**。
+
+case/40 側は $\tau_w$ が y+1 内部基準比 **0.9562 → 1.0077** (壁温 +0.9 K、断熱壁なので $q_w$=0)。
+
+**これまでの介入で初めて両ケースが同方向に動き、かつ両方が改善した**
+($\omega$ pin は case/40 を 1.2352、E3 は 1.1414 に過大化させたが Spalding は 1.0077)。
+
+**採用はまだ決めない**: (1) これは**診断構成で正式仕様ではない** ($g$ が Reichardt のままで
+物理的に不整合)、(2) case/26 は 0.822 で**目標 0.94±0.02 に未達**、
+(3) 凍結場見積り +12.3% に対し連成は +6.5% = **再平衡が約半分を打ち消した**。
+詳細と次段は [plan §7](../../plans/active/turbulence-reichardt-gap-residual.md)。
