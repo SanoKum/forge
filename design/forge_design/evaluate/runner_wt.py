@@ -76,75 +76,46 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     n_axis_inv = int(p.geometry.get("n_axis_inv", 500))
     th_wall0 = float(np.arcsin(min(x0 / R, 1.0)))
 
-    # === B7 stage 1: ブートストラップ (旧来の x0 単一アンカー Bézier) で
-    # x_reach を得る (MOC のみ・CFD 不要、安価) ===
-    bz_boot = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
-                                          end=(Md, 0.0, 0.0))
-
-    def target_boot(x: float) -> float:
-        return Md if x >= xd else float(np.atleast_1d(bz_boot(float(x)))[0])
-
-    boot = inverse_design(st, target_boot, x_axis_end=float(x_end), n_axis=n_axis_inv,
-                          n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
-    cmap = build_cminus_map(boot["pts"], boot["wall"], g)
-    if len(cmap) < 4:
-        raise ValueError("B7 ブートストラップ: C⁻ マップ点が不足 (x_reach 未確定)")
-    x_reach = float(cmap[:, 1].min())
-
-    # === B7 stage 2 (最終形): **設計目標と評価目標を分離する** ===
-    # 到達不能域 [x0,x_reach) の軸こぶ (接合波の軸着地、実在) の扱いで 2 案が失敗:
-    #  (i) 両端 Hermite でこぶを均す → 評価が実流と食い違い人工残差 +0.07 を計上
-    #      (run_0020)。(ii) こぶを逆設計の目標に入れる → こぶは「円弧が作る波の
-    #      結果」なので設計壁が同じ波をもう一度作ろうとし (原因の二重計上)、かつ
-    #      M 減少区間の Cauchy データが特性線を収束させ逆設計が悪条件化 —
-    #      壁キンク d2θ~9° (通常の 20 倍)・mdot 0.90 で場が崩壊 (run_0021, ΔM 1.8)。
-    # 正しい分離:
-    #  - **設計用** (inverse_design に渡す軸データ): 滑らかな設計意図。
-    #    [x0,x_reach) は 5 次 Hermite、以降は自由 CP Bézier。MOC が扱える単調データ。
-    #  - **評価用** (ΔM 測定の目標): [x0,x_reach) は実測こぶ曲線 (帯規約 —
-    #    axis_mach と同じ母集団で抽出)、以降は設計 Bézier。「狙い通りか」を
-    #    到達可能性に即して測る (到達不能域は円弧の実勢が達成可能の定義)。
-    #  - 両者は x_reach のアンカー (M,M',M'') を実測曲線から共有し接続は C2。
-    # 評価用の実測曲線 (こぶ込み・帯規約)。設計アンカーには**使わない** —
-    # こぶの下り勾配 (M'<0) が設計データへ混入すると非単調化して逆設計が悪条件化
-    # する (実測: 壁 d2θ 6°・mdot 0.87)。
-    if hasattr(st, "axis_segment_curve"):   # CFDThroat
-        seg = st.axis_segment_curve(x0, x_reach)
-
-        def seg_M(x):
-            return float(seg(np.float64(x)))
-    else:                                    # SauerThroat: 解析式 (単調) — 設計と
-        def seg_M(x):                        # 評価が同一で分離は自然に消える
-            return float(st.mach(x, 0.0))
-
-    # 設計アンカー @x_reach: 単調な狭窓ローカルフィット (LOCAL_ANCHOR)。実測こぶ
-    # 曲線の x_reach 値とは ~0.02 ずれる — この段差は「x_reach 以降に届く波の残余で、
-    # 帰還 (到達可能域) が打ち消すべき量」として評価目標に意図的に残す。
-    if hasattr(st, "local_anchor"):
-        Mr, Mrp, Mrpp = st.local_anchor(x_reach)
-    else:
-        Mr = seg_M(x_reach)
-        Mrp = (seg_M(x_reach + h) - seg_M(x_reach - h)) / (2 * h)
-        Mrpp = (seg_M(x_reach + h) - 2.0 * Mr + seg_M(x_reach - h)) / h ** 2
-    bz_seg = MachBezier.from_constraints(x0, x_reach, start=(M0, dM0, d2M0),
-                                         free_cp=[], end=(Mr, Mrp, Mrpp))
-    bz = MachBezier.from_constraints(x_reach, xd, start=(Mr, Mrp, Mrpp), free_cp=cps,
+    # === B8 (2026-08-16): **設計 = B6 グローバル Bézier / 評価 = B7 分割帳簿** ===
+    # 経緯: B7 は x_reach で設計目標を再アンカーした (Hermite + 再アンカー Bézier)
+    # が、意図非依存のうねり指標 (実流 M(x) の 3 次カーブからの片振幅) で測ると
+    # スロート近傍の**実流が後退**していた: Sauer ±0.073 → B6 ±0.023 → B7 ±0.062。
+    # B6 のグローバル Bézier は (CP ジグザグにも関わらず) 逆設計を通じ実質的に
+    # 接合波をキャンセルする壁を作っており、設計目標の構成としては B6 が上。
+    # B7 の帳簿 (到達不能域 ±0.009) は「凍結アンカー = Sauer 壁の波だらけの場」を
+    # 参照していたため後退を隠した — アンカーは B6 壁の場 (run_0018) へ更新する
+    # (problem YAML の throat_anchor_run)。
+    # 残す B7 資産: x_reach の概念 (マスク w=0 境界 + 評価分割点)、実測こぶ曲線に
+    # よる到達不能域の評価、被覆外/隙間ステーションの除外、規約整合抽出。
+    # 設計はブートストラップ 1 回で完結する (2 回目の逆設計は不要になった)。
+    bz = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
                                      end=(Md, 0.0, 0.0))
 
-    def target(x: float) -> float:          # 設計用 (滑らか)
-        x = float(x)
-        if x < x_reach:
-            return float(np.atleast_1d(bz_seg(x))[0])
-        return Md if x >= xd else float(np.atleast_1d(bz(x))[0])
-
-    def target_eval(x: float) -> float:     # 評価用 (到達不能域 = 実測)
-        x = float(x)
-        if x < x_reach:
-            return seg_M(x)
-        return Md if x >= xd else float(np.atleast_1d(bz(x))[0])
+    def target(x: float) -> float:          # 設計用 = B6 グローバル (滑らか)
+        return Md if x >= xd else float(np.atleast_1d(bz(float(x)))[0])
 
     res = inverse_design(st, target, x_axis_end=float(x_end), n_axis=n_axis_inv,
                          n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
+    cmap = build_cminus_map(res["pts"], res["wall"], g)
+    if len(cmap) < 4:
+        raise ValueError("C⁻ マップ点が不足 (x_reach 未確定)")
+    x_reach = float(cmap[:, 1].min())
+
+    # 評価用: 到達不能域 [x0,x_reach) は実測こぶ曲線 (帯規約 — axis_mach と同じ
+    # 母集団で抽出。規約が違うだけで系統残差 0.04 になる)、以降は設計 Bézier。
+    # 「狙い通りか」を到達可能性に即して測る。x_reach の段差は「届く波の残余 =
+    # 帰還が打ち消すべき量」として残る。
+    if hasattr(st, "axis_segment_curve"):   # CFDThroat
+        seg = st.axis_segment_curve(x0, x_reach)
+
+        def target_eval(x: float) -> float:
+            x = float(x)
+            if x < x_reach:
+                return float(seg(np.float64(x)))
+            return target(x)
+    else:                                    # SauerThroat: 分割は自然に消える
+        target_eval = target
+
     wall_inv = res["wall"]
     pts = (deltastar_offset(wall_inv, float(p.spec["r_throat"]),
                             float(p.spec["Pt"]), float(p.spec["Tt"]), g, p.cp)
@@ -162,7 +133,7 @@ def design_chain(p: Problem, viscous: bool) -> dict:
             "target_eval": target_eval, "x0": float(x0),
             "xd": float(xd), "Md": Md, "pts": res["pts"], "R": R,
             "centerline_start_order": order, "sauer_d2M0": d2M0,
-            "x_reach": x_reach, "target_d2M0": float(np.atleast_1d(bz.deriv(x_reach, 2))[0]),
+            "x_reach": x_reach, "target_d2M0": float(np.atleast_1d(bz.deriv(x0, 2))[0]),
             "mdot_ratio_moc": res["mdot_exit"] / res["mdot_start"]}
 
 
