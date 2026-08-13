@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include "cuda_forge/cudaWrapper.cuh"
 #include "cuda_forge/wallLaw_d.cuh"
@@ -14,7 +15,10 @@ namespace {
 
 constexpr flow_float kKappa    = kWallLawKappa;                  // von Karman 定数
 constexpr flow_float kSmall    = kWallLawSmall;
-constexpr int        kNewtonIt = 5;                              // Newton 反復回数
+constexpr int        kNewtonIt = 5;                              // Newton 反復回数 (Reichardt)
+// 【診断実験】Spalding 直接 Newton は層流初期値から 5 回では収束しない (高 u_τ 側で −4%)。
+// float32 精度は無関係で、10 回で機械精度に達する。余裕を見て 30 回 (境界カーネルのみ・診断経路)。
+constexpr int        kNewtonItSpalding = 30;
 constexpr flow_float kSstBeta1  = static_cast<flow_float>(0.075); // SST β₁ (ω_vis 用)
 constexpr flow_float kSstBetaSt = static_cast<flow_float>(0.09);  // SST β* (ω_log・k_wf 用)
 constexpr flow_float kOmegaMin  = static_cast<flow_float>(1.0e-10);
@@ -102,7 +106,12 @@ __global__ void compute_wall_friction_sst_d(
     //   Tw_b は等温壁の指定壁温 (bvar Ts, 固定入力)。thermCond_arr は Pr 評価用。
     //   energyWf=0 では qwall_b/Qw_Wall に一切触れない (ビット不変)。
     int energyWf, flow_float* Tw_b, flow_float* thermCond_arr, flow_float Prt,
-    flow_float* qwall_b, flow_float* Qw_Wall)
+    flow_float* qwall_b, flow_float* Qw_Wall,
+    // 【診断実験専用】u_τ 逆解き則セレクタ (plan turbulence-reichardt-gap-residual §5.2 ②)。
+    //   0 = Reichardt (既定・従来と演算列不変)  /  1 = Spalding (κ=0.41, B=5.0)
+    // **逆解き則だけ**を替える。wf_pk の g と E3 の wf_sprod は Reichardt 固定のまま
+    // (g のモデル形式変更を除外して u⁺ 逆解きの上流介入だけを分離するため)。
+    int invLawSel)
 {
     const geom_int ib = blockDim.x * blockIdx.x + threadIdx.x;
     if (ib >= nb) return;
@@ -220,19 +229,27 @@ __global__ void compute_wall_friction_sst_d(
 
     // Newton 法で f(u_τ) = U_t/u_τ - u⁺(y⁺(u_τ)) = 0 を解く。初期値は粘性則。
     flow_float utau = sqrt(nu * Ut / y);
-    for (int it = 0; it < kNewtonIt; ++it) {
-        utau = max(utau, kSmall);
-        const flow_float yp = utau * y / nu;
-        const flow_float f  = Ut / utau - wallLaw_reichardt_uplus(yp);
-        const flow_float df = -Ut / (utau * utau) - wallLaw_reichardt_duplus_dyp(yp) * (y / nu);
-        if (fabs(df) < kSmall) break;
-        utau -= f / df;
+    if (invLawSel == 0) {
+        for (int it = 0; it < kNewtonIt; ++it) {
+            utau = max(utau, kSmall);
+            const flow_float yp = utau * y / nu;
+            const flow_float f  = Ut / utau - wallLaw_reichardt_uplus(yp);
+            const flow_float df = -Ut / (utau * utau) - wallLaw_reichardt_duplus_dyp(yp) * (y / nu);
+            if (fabs(df) < kSmall) break;
+            utau -= f / df;
+        }
+        utau = max(utau, static_cast<flow_float>(0.0));
+    } else {
+        // 【診断実験】Spalding は陰形式 y⁺=H(u⁺) なので F(u_τ)=H(U_t/u_τ)−u_τ y/ν を直接解く
+        // (二重 Newton は使わない)。wallLaw_d.cuh 参照。
+        utau = wallLaw_spalding_solve_utau(Ut, y, nu, kNewtonItSpalding);
     }
-    utau = max(utau, static_cast<flow_float>(0.0));
 
     // wall-function 生産 P_k = (τ_w - τ_visc)·∂U/∂y = ρu_τ⁴/ν · g(1-g), g = du⁺/dy⁺(y⁺₁)
     // (methods/turbulence §6.5(d))。粘性低層 g→1 で P_k→0 (壁解像極限を保つ)、対数層 g→1/(κy⁺) で
     // P_k→ρu_τ³/(κy)。これと ω ピン留めで k が平衡値 u_τ²/√β* に収束し runaway を断つ。
+    // 【診断実験 (invLawSel!=0) でも g は Reichardt 固定】= g のモデル形式変更を除外する仕様。
+    // ただし引数 yp1 は utau 由来なので値は動く (u⁺ 逆解き則の変更が上流介入として波及する分)。
     const flow_float yp1 = utau * y / nu;
     const flow_float g   = wallLaw_reichardt_duplus_dyp(yp1);
     const flow_float pk_wf = max(rho * utau * utau * utau * utau / nu * g * (static_cast<flow_float>(1.0) - g),
@@ -453,6 +470,41 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
     }
 
     const int isNode = (cfg.discretization == "node" && msh.wall_flag_d != nullptr) ? 1 : 0;
+
+    // 【診断実験】u_τ 逆解き則セレクタ (plan turbulence-reichardt-gap-residual §5.2 ②)。
+    // env は host 側で **一度だけ** 読み、selector 値だけを kernel へ渡す。
+    //   FORGE_WF_INV_LAW = reichardt(既定) | spalding
+    // ゲート: node + SST + wallTreatmentSST==1 のときだけ有効 (それ以外は無視して既定)。
+    // E3 (FORGE_WF_OMEGA_SOURCE=1) との同時指定は**黙って進めずエラー終了**する
+    // (E3 OFF を運用依存にしない = 交絡を仕様で排除する)。
+    static const int invLawSel = [] {
+        const char* s = std::getenv("FORGE_WF_INV_LAW");
+        if (!s || std::string(s) == "reichardt" || std::string(s) == "0") return 0;
+        if (std::string(s) != "spalding" && std::string(s) != "1") {
+            printf("[FATAL] FORGE_WF_INV_LAW='%s' は不正 (reichardt|spalding)\n", s);
+            std::exit(1);
+        }
+        const char* e = std::getenv("FORGE_WF_OMEGA_SOURCE");
+        if (e && std::atoi(e) != 0) {
+            printf("[FATAL] FORGE_WF_INV_LAW=spalding と FORGE_WF_OMEGA_SOURCE=1 は同時指定不可。\n"
+                   "        §5.2 ② の診断実験は E3 OFF が仕様 (g のモデル形式変更を除外するため)。\n");
+            std::exit(1);
+        }
+        return 1;
+    }();
+    static bool invLawLogged = false;
+    const int invLawUse = (invLawSel != 0 && isNode != 0 && cfg.wallTreatmentSST == 1) ? 1 : 0;
+    if (invLawSel != 0 && !invLawLogged) {
+        invLawLogged = true;
+        if (invLawUse) {
+            printf("[EXPERIMENT] u_tau inversion law = Spalding (kappa=0.41, B=5.0). "
+                   "wf_pk g stays Reichardt; E3 must be OFF. (FORGE_WF_INV_LAW)\n");
+        } else {
+            printf("[EXPERIMENT] FORGE_WF_INV_LAW=spalding は無視 "
+                   "(node + SST + wallTreatmentSST==1 のときだけ有効)\n");
+        }
+    }
+
     compute_wall_friction_sst_d<<<cuda_cfg.dimGrid_bplane , cuda_cfg.dimBlock>>>(
         static_cast<geom_int>(bc.iPlanes.size()),
         bc.map_bplane_plane_d,
@@ -497,5 +549,6 @@ void computeWallFrictionSST_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg ,
         // エネルギー壁関数 (§6.5(g)): 等温壁のみ。Tw は bvar Ts (固定入力)。
         (cfg.sstEnergyWallFunction == 1 && bc.bcondKind == "wall_isothermal") ? 1 : 0,
         bc.bvar_d["Ts"], var.c_d["thermCond"], cfg.turbulentPrandtl,
-        bc.bvar_d["qwall"], var.c_d["Qw_Wall"]);
+        bc.bvar_d["qwall"], var.c_d["Qw_Wall"],
+        invLawUse);
 }

@@ -35,6 +35,68 @@ __device__ __forceinline__ flow_float wallLaw_reichardt_duplus_dyp(flow_float yp
     return dlg + dtr;
 }
 
+// ---------------------------------------------------------------------------
+// Spalding 則 (診断実験専用) — plans/active/turbulence-reichardt-gap-residual.md §5.2 ②
+//
+// Spalding は **陰形式** y⁺ = H(u⁺) で与えられる:
+//   H(u⁺) = u⁺ + e^{-κB}[ e^{κu⁺} − 1 − κu⁺ − (κu⁺)²/2 − (κu⁺)³/6 ]
+// したがって u⁺(y⁺) を内側 Newton で解いてから外側で u_τ を解く**二重 Newton は不要**。
+//   F(u_τ) = H(U_t/u_τ) − u_τ y/ν = 0
+// を直接 Newton で解けばよい。勾配も解析的に得られる:
+//   du⁺/dy⁺ = 1/H'(u⁺)
+//
+// 定数は case/26 の後処理ツール (tools/wall_law_inverse.py) と同一: κ=0.41, B=5.0。
+// **この経路は診断実験専用**であり、既定 (selector=0) では一切呼ばれない。
+constexpr flow_float kWallLawSpaldingB = static_cast<flow_float>(5.0);
+
+// y⁺ = H(u⁺)
+__device__ __forceinline__ flow_float wallLaw_spalding_yplus(flow_float up)
+{
+    const flow_float e = kWallLawKappa * up;
+    const flow_float ex = exp(e);
+    return up + exp(-kWallLawKappa * kWallLawSpaldingB) *
+        (ex - static_cast<flow_float>(1.0) - e
+         - e * e / static_cast<flow_float>(2.0)
+         - e * e * e / static_cast<flow_float>(6.0));
+}
+
+// H'(u⁺) = dy⁺/du⁺
+__device__ __forceinline__ flow_float wallLaw_spalding_dyplus_dup(flow_float up)
+{
+    const flow_float e = kWallLawKappa * up;
+    const flow_float ex = exp(e);
+    return static_cast<flow_float>(1.0) + exp(-kWallLawKappa * kWallLawSpaldingB) * kWallLawKappa *
+        (ex - static_cast<flow_float>(1.0) - e - e * e / static_cast<flow_float>(2.0));
+}
+
+// du⁺/dy⁺ = 1/H'(u⁺)。**整合実験 (§5.2 ③) 用**。診断実験 (②) では使わない
+// (g は Reichardt 固定が仕様)。
+__device__ __forceinline__ flow_float wallLaw_spalding_duplus_dyp_from_up(flow_float up)
+{
+    return static_cast<flow_float>(1.0) / max(wallLaw_spalding_dyplus_dup(up), kWallLawSmall);
+}
+
+// F(u_τ) = H(U_t/u_τ) − u_τ y/ν = 0 の直接 Newton。
+//   dF/du_τ = H'(u⁺)·(−U_t/u_τ²) − y/ν  < 0 (単調)
+__device__ __forceinline__ flow_float wallLaw_spalding_solve_utau(
+    flow_float Ut, flow_float y, flow_float nu, int maxIt)
+{
+    flow_float utau = sqrt(max(nu * Ut / max(y, kWallLawSmall), kWallLawSmall));  // 層流推定
+    for (int it = 0; it < maxIt; ++it) {
+        utau = max(utau, kWallLawSmall);
+        const flow_float up = Ut / utau;
+        const flow_float F  = wallLaw_spalding_yplus(up) - utau * y / nu;
+        const flow_float dF = wallLaw_spalding_dyplus_dup(up) * (-Ut / (utau * utau)) - y / nu;
+        if (fabs(dF) < kWallLawSmall) break;
+        const flow_float du = -F / dF;
+        utau += du;
+        if (utau <= static_cast<flow_float>(0.0))
+            utau = sqrt(max(nu * Ut / max(y, kWallLawSmall), kWallLawSmall));
+        if (fabs(du) < static_cast<flow_float>(1.0e-10) * max(utau, kWallLawSmall)) break;
+    }
+    return max(utau, static_cast<flow_float>(0.0));
+}
+
 // WMLES 用 u_τ ソルバ (theory §10.2): F(u_τ) = u_τ·f(y⁺(u_τ)) − u_∥ = 0 の Newton。
 // SST 壁関数の残差形 U_t/u_τ − u⁺ と根は同一だが、この形は u_τ→0 で正則で warm start 向き。
 // F' = f + y⁺ f' > 0 (f, f' > 0) なので単調・ゼロ割なし。

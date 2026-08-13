@@ -145,6 +145,10 @@ python3 tools/postprocess_wall_law.py run_0006_slau_muscl 0.3 0.6 0.89
 | `run_0064_B_nasa_ref` | 同 TMR 範囲内条件 × y+0.7 壁解像 | $C_f$/KS=0.943 (現行 0.944)、実測/Reichardt=**0.9494** (現行 0.9492)。全残差 `NOT CONVERGED` / 判定量 `STEADY` | active (同上) |
 | `run_0065_B_mid_wf` | 中間条件 ($\mu_t/\mu$=1.0) × y+27 壁関数 (単調性確認) | $C_f$/KS=0.764。全残差 `NOT CONVERGED` / 判定量 `STEADY` | active (単調性確認) |
 | `run_0066_B_mid_ref` | 同中間条件 × y+0.7 壁解像 | $C_f$/KS=0.943、実測/Reichardt=0.9494。全残差 `NOT CONVERGED` / 判定量 `STEADY` | active (単調性確認) |
+| `run_0073_diag_reichardt` | §5.2 ② 診断実験の対照 (env OFF)。`run_0063` 収束場から 20 step | `utau` 基準値。変更前バイナリとの差は run-to-run ノイズと区別不能 | active (② の対照) |
+| `run_0073b_baseline` | 同上を**変更前バイナリ**で実行 (env OFF 不変性の検証用) | 変更前 vs 変更後の差 ≤1.5e-6 = ノイズ同オーダー | active (検証) |
+| `run_0073c_repeat` | `run_0073_diag_reichardt` の**同一バイナリ再実行** (実行間ノイズ測定) | node は run-to-run 非決定的 (~1e-6) と確定 | active (検証) |
+| `run_0074_diag_spalding` | §5.2 ② **診断実験**: `FORGE_WF_INV_LAW=spalding` (逆解き則のみ Spalding、`wf_pk` の $g$ は Reichardt 固定、E3 OFF) | $u_\tau$ 比 **1.0597** / $\tau_w$ 比 **1.1230** (凍結場予測 1.0599/1.1234 と 0.02–0.04%)。デバイス実装 = CPU 後処理 **1.0000** | active (② の正) |
 | `run_0062_repdiag` | **代表点幾何診断** (`FORGE_WF_REP_DIAG=1`、`run_0053` 場から 100 step) | `best_cos`=1.0000・接線オフセット/y=9.3e-5 → **平板では代表点が数値許容差内で法線上**。§3.3 の粗場側入力 | active (§3 の正) |
 | `run_0060_E3` | **E3: $\omega$ 生産を壁法則整合 $S_{\rm wf}^2$ へ** (`FORGE_WF_OMEGA_SOURCE=1`、`run_0053` 場から 20000 step) | (w) $C_f$/KS = **0.8445** (E3 前 0.7615、pin 0.8594)、$\omega$ 2.62e5→1.35e5、quasisteady `ALL STEADY` | active (**E3 の正**) |
 | `run_0060_E3_widiag` | 同 E3 の W–I 実力 + $\omega$ 収支取得 (500 step 再走) | $D/P$=0.895、$\lvert T\rvert/P$=0.105 (E3 前 0.078) | active (診断) |
@@ -1775,4 +1779,30 @@ $$\frac{1.1234-1}{1.234-1} = 0.527$$
 python3 tools/wall_law_inverse.py run_0064_B_nasa_ref --mode resolved \
     --yrep 1.7681e-4 --ypmin 25 --ypmax 35
 python3 tools/wall_law_inverse.py run_0063_B_nasa_wf --mode wf --ypmin 25 --ypmax 35
+```
+
+
+### §5.2 ② 診断実験の実装・検証 (2026-08-13)
+
+`FORGE_WF_INV_LAW=spalding` で**逆解き則だけ**を Spalding へ替える診断経路を実装した
+(既定 `reichardt`)。**`wf_pk` の $g$ は Reichardt 固定・E3 は同時指定でエラー終了**という
+交絡分離の仕様は plan §6 の表に記載。
+
+| 合格条件 | 結果 |
+| --- | --- |
+| デバイス Spalding == CPU 後処理 (`wall_law_inverse.py`) | **1.0000** (min/max とも) |
+| $u_\tau^{Sp}/u_\tau^{R}$ (凍結場予測 1.0599) | **1.0597** |
+| $\tau_w^{Sp}/\tau_w^{R}$ (凍結場予測 1.1234) | **1.1230** |
+| E3 同時指定 | `[FATAL]` exit=1 |
+| env OFF の不変性 | ビット同一は不可 (node は run-to-run 非決定的)。**変更の寄与は実行間ノイズと区別不能** |
+
+**★ 実装上の落とし穴**: 既存の `kNewtonIt=5` では Spalding 直接 Newton が
+層流初期値から収束せず、高 $u_\tau$ 側でデバイス値が CPU と **0.9%** ずれた。
+**float32 は無関係**で 10 回で機械精度。`kNewtonItSpalding=30` で解消した。
+
+再生成:
+
+```bash
+FORGE_WF_INV_LAW=spalding ../../solver_density_cuda/tools/run_case.sh <run_dir>
+python3 tools/wall_law_inverse.py <run_dir> --mode wf --xmin 0.05 --ypmin 25 --ypmax 35
 ```
