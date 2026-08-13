@@ -36,7 +36,10 @@ from ..evaluate import runner_wt
 
 def build_cminus_map_cfd(run_dir, wall_pts, scale: float, gamma: float,
                          m_floor: float = 1.05) -> np.ndarray:
-    """**v3**: そのパスの CFD 収束場の中で C⁻ を壁→軸へ積分してマップを作る。
+    """**v3**: そのパスの CFD 最終場の中で C⁻ を壁→軸へ積分してマップを作る。
+
+    注: 「収束場」とは呼ばない — 収束判定は `evaluate.health` が
+    `check_convergence.py` の VERDICT として別途記録し、読み替えはしない (A3)。
 
     v2 の凍結マップ (v1 の MOC 設計場= 完全気体・等エントロピー・単一組成) と違い、
     局所の流れ角 θ と マッハ角 μ を**実場から**読むため、粘性による有効形状の変化・
@@ -155,7 +158,8 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     prev_res = None
     hist = []
     # trust-region 型の決定的下り探索: 悪化したら最良壁に巻き戻し ω 半減
-    best = {"wall": wall_pts.copy(), "dM_inf": np.inf, "resid": None}
+    best = {"wall": wall_pts.copy(), "dM_inf": np.inf, "resid": None,
+            "ax2w": ax2w}   # C1: マップも最良状態と一緒に保持し reject 時に戻す
     for k in range(1, n_pass + 1):
         rd = work / f"pass_{k:02d}"
         if not (rd / "metrics_pass.json").exists():
@@ -223,28 +227,40 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         #     ΔM と ε が単調に一致しなくても (実測: pass9 ε_M=0.020% < pass13 0.039%)
         #     本ループの欠陥ではない。
         from ..metrics.extract import exit_uniformity
+        from ..evaluate.health import health
+        hl = health(rd)          # A3: check_convergence を必須で記録 (読み替えなし)
         try:
-            eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md)
+            eu = exit_uniformity(rd / "nozzle.h5", res[-1], Md,
+                                 x_d=xd * scale)   # 有効菱形コア (実寸)
         except Exception as e:  # 測定面が取れない等
             eu = {"error": f"{type(e).__name__}: {e}"}
         hist.append({"pass": k, "dM_inf_masked": dM_inf, "omega": omega,
                      "rejected": rejected,
                      "dM_rms": float(np.sqrt(np.mean((dM * w) ** 2))),
                      "eps_M_rms": eu.get("eps_M_rms"),
-                     "eps_theta_max_deg": eu.get("eps_theta_max_deg")})
+                     "eps_theta_max_deg": eu.get("eps_theta_max_deg"),
+                     "convergence_verdict": hl["convergence_verdict"],
+                     "quasisteady_verdict": hl["quasisteady_verdict"],
+                     "usable": hl["usable"]})
         print(f"[pass {k}] masked ‖ΔM‖∞ = {dM_inf:.4f} ({dM_inf/Md*100:.2f}% Md)"
               f"  εM={('%.4f%%' % (eu['eps_M_rms']*100)) if eu.get('eps_M_rms') is not None else 'n/a'}"
               f"  εθ={('%.3f°' % eu['eps_theta_max_deg']) if eu.get('eps_theta_max_deg') is not None else 'n/a'}"
+              f"  [{hl['convergence_verdict']}/{hl['quasisteady_verdict']}]"
               f"{' [reject→ω/2]' if rejected else ''}", flush=True)
         np.savetxt(rd / "achieved_vs_target.csv", np.c_[xi, Mt, Ma, w],
                    delimiter=",", header="x_rt,M_target,M_achieved,weight", comments="")
         (rd / "metrics_pass.json").write_text(json.dumps(hist[-1]))
+        if not hl["usable"]:
+            print(f"[pass {k}] **中止**: CFD が発散 ({hl['convergence_verdict']}, "
+                  f"nonfinite={hl['nonfinite_residual']}) — 帰還を停止", flush=True)
+            break
         if rejected:
             omega *= 0.5           # 過ゲイン → 最良壁から小さい ω でやり直し
             xi_c, Mt_c, Ma_c, w_c = best["resid"]
+            ax2w = best["ax2w"]    # C1: 棄却場のマップで最良場の残差を戻さない
         else:
             best = {"wall": wall_pts.copy(), "dM_inf": dM_inf,
-                    "resid": (xi, Mt, Ma, w)}
+                    "resid": (xi, Mt, Ma, w), "ax2w": ax2w}
             if dM_inf <= tol_rel * Md:
                 break
             xi_c, Mt_c, Ma_c, w_c = xi, Mt, Ma, w

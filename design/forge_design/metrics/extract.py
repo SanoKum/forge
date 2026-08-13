@@ -64,19 +64,47 @@ def cf_ideal(eps, gamma, pa_over_pt) -> float:
     return float(gterm + (pe_pt - pa_over_pt) * eps)
 
 
-def exit_uniformity(mesh_h5, res_h5, M_design, core_frac: float = 0.85,
-                    x_plane=None, band=None) -> dict:
-    """出口一様性 $\\varepsilon_M$ / $\\varepsilon_\\theta$ (サーベイ B4.5 定義)。
+def _annular_areas(r_sorted: np.ndarray) -> np.ndarray:
+    """半径昇順のサンプル列に対する環状面積 π(r_out²−r_in²)。
 
-    - $\\varepsilon_M$ = テストコア上の**質量流束重み RMS 偏差**
-      $\\sqrt{\\langle (M-M_d)^2\\rangle_{\\rho u}}/M_d$ (RMS を主指標、max は副指標)
-    - $\\varepsilon_\\theta$ = コア上の $\\max|\\theta|$ [deg] (軸からの流れ角。
-      $\\varepsilon_M$ とは**独立の目的** — マッハだけ見ると軸ズレ流れを見逃す)
-    - 重みは質量流束 $\\rho u$ (模型が実際に「見る」流れ)。幾何・積分系 (推力) の
-      面積重みとは区別する規約。
+    半径方向が非一様なので単純な 2πr·dr では重みが崩れる (セル幅が違う)。
+    境界は隣接サンプルの中点、両端は片側幅を鏡像で外挿する。"""
+    r = np.asarray(r_sorted, dtype=float)
+    mid = 0.5 * (r[:-1] + r[1:])
+    lo = np.concatenate([[max(2.0 * r[0] - mid[0], 0.0)], mid])
+    hi = np.concatenate([mid, [2.0 * r[-1] - mid[-1]]])
+    return np.pi * (np.maximum(hi, 0.0) ** 2 - np.maximum(lo, 0.0) ** 2)
 
-    測定面は既定でリップ直前 (x_plane=None → x_max−0.3·r*)。テストコアは
-    有効菱形の簡易代理として半径の core_frac 倍以内 (正式な菱形幾何は将来課題)。
+
+def test_core_radius(x_plane: float, x_d: float, M_design: float,
+                     r_wall: float, gamma: float = 1.4) -> float:
+    r"""**有効菱形 (テストコア) の幾何定義** — サーベイ B4.5。
+
+    一様出口設計では、軸が $M_d$ に達する点 $(x_d,0)$ から出る C⁺ より下が
+    一様域。一様域では傾きが $\tan\mu_d$ 一定の直線なので
+
+        r_core(x) = (x − x_d)·tan μ_d,   μ_d = arcsin(1/M_d)
+
+    (壁半径で上限クリップ)。設計上リップ平面でちょうど壁に達する。
+    x, x_d, r_wall は同一単位 (無次元 r* でも実寸でも可)。"""
+    mu = np.arcsin(1.0 / max(float(M_design), 1.0 + 1e-12))
+    return float(min(max((float(x_plane) - float(x_d)) * np.tan(mu), 0.0), float(r_wall)))
+
+
+def exit_uniformity(mesh_h5, res_h5, M_design, x_d=None, x_plane=None,
+                    core_radius=None, gamma=1.4) -> dict:
+    r"""出口一様性 $\varepsilon_M$ / $\varepsilon_\theta$ (サーベイ B4.5 定義)。
+
+    - $\varepsilon_M$ = テストコア上の**質量流束重み RMS 偏差**
+      $\sqrt{\langle (M-M_d)^2\rangle_w}/M_d$。重みは $w_i=\rho_i u_{x,i} A_i$ で
+      $A_i$ は**環状面積** $\pi(r_{out}^2-r_{in}^2)$ (半径方向が非一様なので
+      $\rho u$ だけではメッシュ密度に依存する)。RMS が主指標、max は副指標。
+    - $\varepsilon_\theta$ = コア上の $\max|\theta|$ [deg]。$\varepsilon_M$ とは
+      **独立の目的** (マッハだけ見ると軸ズレ流れを見逃す)。
+
+    測定面: `x_plane` 未指定なら**最下流のセル列** (x.max() の列) をそのまま使う。
+    テストコア: `core_radius` 未指定かつ `x_d` 指定時は `test_core_radius()` の
+    幾何定義。どちらも無ければ壁半径 (=コア制限なし) とし、その旨を返り値に残す。
     """
     with h5py.File(mesh_h5, "r") as nz:
         cc = nz["/CELLS/centCoords"][:].reshape(-1, 3)
@@ -86,22 +114,34 @@ def exit_uniformity(mesh_h5, res_h5, M_design, core_frac: float = 0.85,
     x, r = cc[:, 0], cc[:, 1]
     M = np.hypot(Ux, Uy) / np.maximum(son, 1e-9)
     th_deg = np.degrees(np.arctan2(Uy, Ux))
-    r_ref = float(r.max())
-    xp = float(x.max() - 0.03 * r_ref) if x_plane is None else float(x_plane)
-    bw = 0.02 * r_ref if band is None else float(band)
-    m = np.abs(x - xp) < bw
+    # 測定面 = 最下流のセル列 (構造格子なので x がほぼ揃う)
+    xp = float(x.max()) if x_plane is None else float(x_plane)
+    xs = np.unique(np.round(x, 12))
+    tol = 0.25 * float(np.min(np.diff(xs))) if len(xs) > 1 else 1e-9
+    m = np.abs(x - xp) <= tol
     if m.sum() < 8:
-        raise ValueError(f"測定面 x={xp:.4g} にセルが不足 ({m.sum()})")
-    rr, MM, tt = r[m], M[m], th_deg[m]
-    w = ro[m] * Ux[m]
-    core = rr < core_frac * rr.max()
-    Mw = float(np.average(MM[core], weights=w[core]))
-    eM = float(np.sqrt(np.average((MM[core] - M_design) ** 2, weights=w[core])) / M_design)
-    return {"x_plane_m": xp, "core_frac": core_frac,
+        raise ValueError(f"測定面 x={xp:.6g} のセルが不足 ({int(m.sum())})")
+    o = np.argsort(r[m])
+    rr, MM, tt = r[m][o], M[m][o], th_deg[m][o]
+    w_rho_u, A = ro[m][o] * Ux[m][o], _annular_areas(r[m][o])
+    r_wall = float(rr.max())
+    if core_radius is not None:
+        rc, how = float(core_radius), "explicit"
+    elif x_d is not None:
+        rc, how = test_core_radius(xp, x_d, M_design, r_wall, gamma), "effective_rhombus"
+    else:
+        rc, how = r_wall, "no_core_limit"
+    core = rr <= rc
+    if core.sum() < 4:
+        raise ValueError(f"コア内セルが不足 ({int(core.sum())}, r_core={rc:.4g})")
+    w = w_rho_u[core] * A[core]
+    Md = float(M_design)
+    eM = float(np.sqrt(np.average((MM[core] - Md) ** 2, weights=w)) / Md)
+    return {"x_plane": xp, "r_core": rc, "core_def": how, "r_wall": r_wall,
             "eps_M_rms": eM,
-            "eps_M_max": float(np.max(np.abs(MM[core] - M_design)) / M_design),
+            "eps_M_max": float(np.max(np.abs(MM[core] - Md)) / Md),
             "eps_theta_max_deg": float(np.max(np.abs(tt[core]))),
-            "M_core_massflux_avg": Mw,
+            "M_core_massflux_avg": float(np.average(MM[core], weights=w)),
             "n_core_cells": int(core.sum())}
 
 

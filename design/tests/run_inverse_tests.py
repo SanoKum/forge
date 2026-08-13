@@ -107,5 +107,25 @@ check(f"ノズル: 質量流量整合 ({mf:.4f})", abs(mf - 1.0) < 0.01)
 res2 = inverse_design(st, target, x_axis_end=float(x_end), n_axis=420, n_start=41)
 check("決定性 (壁 bit 同一)", np.array_equal(res["wall"], res2["wall"]))
 
+# --- 出口一様性メトリクス (A2: 環状面積重み + 有効菱形コア) --------------------
+from forge_design.metrics.extract import _annular_areas, test_core_radius  # noqa: E402
+
+r_s = np.linspace(0.1, 0.9, 5)
+A_s = _annular_areas(r_s)
+check(f"環状面積の総和 = π·r_out² ({A_s.sum():.4f} vs {np.pi:.4f})",
+      abs(A_s.sum() - np.pi * 1.0 ** 2) < 1e-12)
+# 非一様配置: 隙間・重複がない (テロスコープ) ことを境界から独立に検算
+r_ne = np.array([0.05, 0.1, 0.2, 0.4, 0.8])
+A_ne = _annular_areas(r_ne)
+mid_ne = 0.5 * (r_ne[:-1] + r_ne[1:])
+lo0, hiN = max(2 * r_ne[0] - mid_ne[0], 0.0), 2 * r_ne[-1] - mid_ne[-1]
+check("環状面積: 非一様配置でもテロスコープ (隙間・重複なし)",
+      abs(A_ne.sum() - np.pi * (hiN ** 2 - lo0 ** 2)) < 1e-12)
+check("環状面積: 全て正", bool(np.all(A_ne > 0)))
+check("コア半径 = (x−x_d)tanμ_d (Md=4, x=24.42, x_d=14 → 2.690)",
+      abs(test_core_radius(24.42, 14.0, 4.0, 3.264) - 2.6904) < 1e-3)
+check("コア半径は壁半径でクリップ", test_core_radius(60.0, 14.0, 4.0, 3.264) == 3.264)
+check("コア半径は x<x_d で 0", test_core_radius(10.0, 14.0, 4.0, 3.264) == 0.0)
+
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")
 sys.exit(1 if FAIL else 0)
