@@ -18,6 +18,14 @@ $M''$ が 2.3 倍ずれ、starting line 半径方向も壁に向かって ΔM �
 - **凍結**: 遷音速場は下流壁にほぼ依存しない (実測 ΔM=0.0024) ため、抽出元 run
   1 つに固定して使い回す。パスごとに再抽出しない (目標が動くと ΔM 評価の
   ゴールポストが移動するため)。
+- **到達不能域の目標 (B7)**: `local_anchor(x_c)` は $x_0$ の点アンカーと同じ狭窓
+  局所フィットを任意の中心点で行う (`design_chain` が $x_{\mathrm{reach}}$ で
+  呼ぶ)。$[x_0,x_{\mathrm{reach}})$ 全体は**両端の $(M,M',M'')$ だけで決まる
+  5 次 Hermite** (`MachBezier.from_constraints` に free_cp なしで渡す) で繋ぐ —
+  この区間全体を 1 本の曲線として直接フィットする方式は、近スロート域のセル列が
+  疎 (cell モードに軸上 DOF が無い) なため高次多項式が Runge 振動・bin 平均は
+  非単調・等調回帰は勾配を潰す、と軒並み破綻したため不採用 (経緯は
+  `local_anchor` の docstring 参照)。
 
 使い方: problem YAML の `geometry.throat_anchor_run: <run_dir>` を指定すると
 `runner_wt.design_chain` が本モジュールで throat を構築して Sauer を置き換える。
@@ -36,21 +44,37 @@ class CFDThroat:
     def __init__(self, mesh_h5, res_h5, scale: float, R: float,
                  gamma: float = 1.4, fit_halfwidth: float = 0.4,
                  axis_band_frac: float = 0.09, x0_guess: float = 0.26) -> None:
+        """res_h5: 単一ファイルまたはリスト。リストなら M,θ をスナップショット平均
+        してから抽出する (中域リミットサイクルの位相ノイズを落とす — 軸 M 測定を
+        末尾平均で行うのと同じ理由)。"""
         self.R, self.g, self.scale = float(R), float(gamma), float(scale)
         with h5py.File(mesh_h5) as nz:
             cc = nz["/CELLS/centCoords"][:].reshape(-1, 3)
-        with h5py.File(res_h5) as f:
-            Ux, Uy, son = f["/VALUE/Ux"][:], f["/VALUE/Uy"][:], f["/VALUE/sonic"][:]
+        res_list = [res_h5] if isinstance(res_h5, (str, Path)) else list(res_h5)
+        Ms, ths = [], []
+        for rf in res_list:
+            with h5py.File(rf) as f:
+                Ux, Uy, son = f["/VALUE/Ux"][:], f["/VALUE/Uy"][:], f["/VALUE/sonic"][:]
+            Ms.append(np.hypot(Ux, Uy) / np.maximum(son, 1e-9))
+            ths.append(np.arctan2(Uy, Ux))
         x, r = cc[:, 0] / scale, cc[:, 1] / scale     # r* 単位
-        M = np.hypot(Ux, Uy) / np.maximum(son, 1e-9)
-        th = np.arctan2(Uy, Ux)
-        # --- 軸 M(x) の局所 4 次フィット ---
+        M = np.mean(Ms, axis=0)
+        th = np.mean(ths, axis=0)
+        # --- 軸 M(x) の局所 4 次フィット (点アンカー M,M',M'' 用の狭窓) ---
         ax = (r < axis_band_frac) & (np.abs(x - x0_guess) < fit_halfwidth)
         if ax.sum() < 12:
             raise ValueError(f"軸帯セル不足 ({int(ax.sum())})")
         self._axis_c = np.polyfit(x[ax] - x0_guess, M[ax], 4)
         self._axis_x0g = float(x0_guess)
         self._axis_win = (float(x[ax].min()), float(x[ax].max()))
+        # 広窓 (x 制限なし) の軸帯生データも保持 — local_anchor() が使う
+        ax_wide = r < axis_band_frac
+        self._axis_x_wide = x[ax_wide].copy()
+        self._axis_M_wide = M[ax_wide].copy()
+        self._axis_band_frac = float(axis_band_frac)
+        # 近スロートの全セル (r 制限緩め) — axis_segment_curve() の列ごと外挿が使う
+        seg = (x < 6.0) & (r < 0.6)
+        self._seg_x, self._seg_r, self._seg_M = x[seg].copy(), r[seg].copy(), M[seg].copy()
         # --- 縦線サンプル用の近傍データ (starting_line で利用) ---
         near = (np.abs(x - x0_guess) < 1.0) & (r < 1.3)
         from scipy.interpolate import LinearNDInterpolator
@@ -66,6 +90,73 @@ class CFDThroat:
             raise NotImplementedError("CFDThroat.mach は軸上 (r=0) のみ")
         xq = np.asarray(x, dtype=float) - self._axis_x0g
         return np.polyval(self._axis_c, xq)
+
+    def axis_segment_curve(self, x_lo: float, x_hi: float, band: float | None = None,
+                           pad: float = 0.25, lam: float | None = 1e-5):
+        r"""$[x_{lo},x_{hi}]$ の軸 $M(x)$ を **C2 平滑化スプライン**で返す (B7 改)。
+
+        **単調性は仮定しない** — 到達不能域には接合波の軸着地による実在の局所こぶ
+        (実測 run_0017: x/rt≈1.4 に山、3 スナップ平均でも再現) があり、以前の
+        等調回帰・両端 Hermite はこれを潰して**人工残差 ±0.05〜0.07 を作った**
+        (run_0020 で実証)。到達不能域の目標は「実流がやること」そのもの — 山ごと写す。
+
+        **測定規約との整合が最重要**: ΔM 評価 (`metrics.extract.axis_mach`) は
+        「r < axis_band のセルの値」をそのまま使う**帯規約**で、近スロートの
+        径方向勾配では真の軸値より +0.02〜0.04 大きい。ループは測定値を目標へ
+        寄せるので、**目標も同じ帯規約で抽出する** (r→0 の偶基底外挿 [真値] を
+        使うと規約差がそのまま系統残差になる — 実測 0.04)。抽出は列ごと
+        (構造化メッシュの x 列を丸めで同定) に r<band セルを平均し、列点列を
+        `make_smoothing_spline` (C2 3 次平滑化スプライン, 列点残差 ~1e-3) に通す。
+        戻り値はそのスプライン (`.derivative(k)` で $M',M''$ — x_reach アンカーも
+        この曲線から取ることで接続 C2 が構成的に成り立つ)。`pad` は両端の微分を
+        安定させるための延長窓。band 既定 = コンストラクタの axis_band_frac
+        (= 測定と同じ帯)。"""
+        if band is None:
+            band = self._axis_band_frac
+        m = (self._seg_x >= x_lo - pad) & (self._seg_x <= x_hi + pad) & (self._seg_r < band)
+        xs, rs, Ms = self._seg_x[m], self._seg_r[m], self._seg_M[m]
+        xcol = np.round(xs, 3)
+        uniq = np.unique(xcol)
+        if len(uniq) < 8:
+            raise ValueError(f"axis_segment_curve: 列不足 ({len(uniq)})")
+        pts = []
+        for xc in uniq:
+            mm = xcol == xc
+            pts.append((float(np.mean(xs[mm])), float(np.mean(Ms[mm]))))
+        pts = np.asarray(sorted(pts))
+        from scipy.interpolate import make_smoothing_spline
+        return make_smoothing_spline(pts[:, 0], pts[:, 1], lam=lam)
+
+    def local_anchor(self, x_c: float, halfwidth: float = 0.4, degree: int = 2) -> tuple:
+        r"""$x_c$ 近傍の狭窓局所フィットで $(M,M',M'')$ を返す (B7)。
+
+        コンストラクタの $x_0$ 点アンカー (`_axis_c`) と同じ手法を任意の中心点に
+        一般化したもの — $x_{\mathrm{reach}}$ でのアンカー取得に使う。
+
+        **経緯 (2026-08-15 実測)**: 当初 $[x_0,x_{\mathrm{reach}})$ 全体を 1 本の
+        曲線としてフィットしようとしたが、この近スロート域は軸方向のセル列が
+        非常に疎 (実測: 幅 1.4 $r_t$ の区間にわずか ~30 列、cell モードに軸上
+        DOF が無いため列ごとに近軸セルも 1 個程度) で、高次多項式は Runge 振動、
+        bin 平均は列疎密の混入で非単調、等調回帰は物理的な勾配まで潰して
+        $x_{\mathrm{reach}}$ で $M'\approx0$ になった。**全区間を 1 本でフィット
+        するのをやめ**、$x_0$ の点アンカーと同じ**狭窓ローカルフィット**を
+        $x_{\mathrm{reach}}$ でも取り、区間全体は両端の $(M,M',M'')$ だけで
+        決まる 5 次 Hermite (`MachBezier.from_constraints`, free_cp なし) で
+        繋ぐ。ただし $x_0$ 近傍 (throat_refine でセル密) と違い任意点近傍は
+        セル列が疎な場合があるため、既定は $x_0$ の点アンカー (degree=4,
+        halfwidth=0.4) より**低次・広窓** (degree=2, halfwidth=0.4) — 実測で
+        degree=4/halfwidth=0.15 は $x_{\mathrm{reach}}$ 近傍のセル不足で $M'$ の
+        符号が反転した (負の傾き)。degree=2/halfwidth=0.4 で正の傾きに安定
+        (2026-08-15)。"""
+        ax = np.abs(self._axis_x_wide - x_c) < halfwidth
+        if int(ax.sum()) < degree + 4:
+            raise ValueError(f"local_anchor: セル不足 ({int(ax.sum())}, x_c={x_c:.3f})")
+        c = np.polyfit(self._axis_x_wide[ax] - x_c, self._axis_M_wide[ax], degree)
+        h = 1e-4
+        M = float(np.polyval(c, 0.0))
+        Mp = float((np.polyval(c, h) - np.polyval(c, -h)) / (2 * h))
+        Mpp = float((np.polyval(c, h) - 2.0 * M + np.polyval(c, -h)) / h ** 2)
+        return M, Mp, Mpp
 
     def x_axis_of_mach(self, M_start: float) -> float:
         xs = np.linspace(self._axis_win[0], self._axis_win[1], 2000)
@@ -104,10 +195,18 @@ class CFDThroat:
 
 
 def from_run(run_dir, scale: float, R: float, gamma: float = 1.4) -> CFDThroat:
-    """run ディレクトリ (nozzle.h5 + 最新 res_*.h5) から CFDThroat を作る。"""
+    """run ディレクトリ (nozzle.h5 + 末尾 res_*.h5 最大 3 個の平均) から作る。
+
+    末尾平均は中域リミットサイクル (片振幅 ~0.003) の位相ノイズ対策 — 軸 M の
+    測定を末尾スナップ平均で行うのと同じ規約。"""
     rd = Path(run_dir)
     res = sorted(rd.glob("res_[0-9]*.h5"),
                  key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+    res = [f for f in res if _steps_of_name(f) > 0]
     if not res:
         raise FileNotFoundError(f"{rd} に res_*.h5 が無い")
-    return CFDThroat(rd / "nozzle.h5", res[-1], scale, R, gamma)
+    return CFDThroat(rd / "nozzle.h5", res[-3:], scale, R, gamma)
+
+
+def _steps_of_name(f: Path) -> int:
+    return int("".join(c for c in f.stem if c.isdigit()))

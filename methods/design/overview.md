@@ -81,11 +81,33 @@ Bézier 自由度勘定の整合。
   既存 run を指定すると、`feedback/cfd_anchor.py` の `CFDThroat` がその CFD 場から
   軸 $M(x)$ の局所多項式フィットと starting line の $M(r),\theta(r)$ (偶/奇多項式
   最小二乗) を抽出し、SauerThroat 互換 (`starting_line`/`mach`) で `design_chain` /
-  `inverse_design` に供給する。$x_0$ は「CFD 軸 M = M_start」で決め、アンカーは
+  `inverse_design` に供給する。$x_0$ は「CFD 軸 $M=M_{start}$」で決め ($M_{start}$ は
+  `geometry.M_start`、既定 1.05 — 数値上の選択であり物理定数ではない)、アンカーは
   抽出元 run に**凍結** (遷音速場は下流壁にほぼ依存しない — 実測 ΔM 0.0024 — ため
   1 回の抽出で足りる)。**残課題 (ユーザ指示 2026-08-15)**: ブートストラップ元の
   初期壁品質と CFD 不要のプレビュー経路のため、初期遷音速解の二次化
   (Kliegel–Levine) は別途実装する。
+- **目標曲線の $x_{\mathrm{reach}}$ 分割 (B7, plan §9.2)**: 設計壁始点 $x_0$ から
+  $x_{\mathrm{reach}}$ (=設計壁の**最初に成功する** C⁻ が軸へ着地する位置。凍結
+  v1 MOC マップ `build_cminus_map` の被覆下限として一意に決まる、taper 幅とは無関係の
+  幾何量) までは、壁側の帰還がそもそも届かない区間である。ここへ**自由 CP が生成する
+  グローバル Bézier の値**を目標として課すと、Bézier の大域台 (Bernstein 基底は局所
+  支持を持たない) を通じて遠方 CP の形が押し戻り、到達不能な区間に「直しようのない
+  ズレ」を最初から作り込む (実測: run_0018 の主残差 $x/r_t\approx1.38$ で
+  $\Delta M\approx+0.05$、CP2 の基底重みが既にその位置で 11%)。そこで
+  `design_chain` は 2 段構成にする: **① ブートストラップ**（$x_0$ アンカーだけの
+  旧来の単一 Bézier で仮設計 → MOC マップ被覆から $x_{\mathrm{reach}}$ を得る)、
+  **② 本設計**（$x_0\le x<x_{\mathrm{reach}}$ は $x_0$ と $x_{\mathrm{reach}}$
+  両端の局所アンカー $(M,M',M'')$ だけで決まる**5 次 Hermite** (free_cp なしの
+  `MachBezier.from_constraints`) を通し、$x\ge x_{\mathrm{reach}}$ だけを自由 CP
+  の Bézier に担当させ、$x_{\mathrm{reach}}$ で $M,M',M''$ を接続する)。
+  **区間全体を 1 本の曲線として直接フィットする方式は不採用** (実測 2026-08-15):
+  この近スロート域は cell モードに軸上 DOF が無く軸方向のセル列が疎 (幅 1.4 $r_t$
+  に ~30 列) で、高次多項式は Runge 振動・bin 平均は列疎密混入で非単調・等調回帰は
+  勾配ごと潰す、と軒並み破綻した。$x_{\mathrm{reach}}$ でのアンカーは `CFDThroat`
+  の `local_anchor()` ($x_0$ の点アンカーと同じ狭窓ローカルフィットを任意点に一般化。
+  ただしセル疎な場所向けに既定を低次・広窓化: degree=2, halfwidth=0.4)、Sauer 時は
+  `SauerThroat.mach()` (解析式、全域で有効) を使う。
 - 事前フィルタ: CP 単調性、$dM_c/dx$ 凝縮上限 (足切りのみ)、壁 `validate()` (単調性・スロート最小)。
 
 ## メッシュ (構造化・トポロジ固定)

@@ -218,7 +218,7 @@ class _CPlusMarch(InverseMOC):
 
 def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
                    n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02,
-                   th_wall0: float | None = None):
+                   th_wall0: float | None = None, M_start: float = 1.05):
     """starting line (throat: SauerThroat) + 軸目標 target(x) から壁を逆設計する。
 
     target: 呼び出し可能 M(x) — starting line の軸点 x0 で場に C1 整合していること
@@ -232,7 +232,7 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
     # 既知の限界: 壁足の曲率が円弧 1/R でなく ~0 に寝る。**曲率ブレンドは撤回**し、
     # C2 は B1 (中心線 C2 整合) / B2 (拘束付き B-spline) で保証する (plan §9.2)。
     inv = InverseMOC(gamma=gamma, delta=1.0)
-    x0, rr, MM, tt = throat.starting_line(M_start=1.05, n=n_start)
+    x0, rr, MM, tt = throat.starting_line(M_start=M_start, n=n_start)
     g = gamma
     ax = np.linspace(x0, x_axis_end, n_axis)[1:][::-1]
     init = [_Pt(float(x), 0.0, 0.0, float(pm_nu(float(target(x)), g)), g) for x in ax]

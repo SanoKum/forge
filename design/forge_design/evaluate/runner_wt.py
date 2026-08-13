@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from ..geometry.bezier import MachBezier
+from ..geometry.cminus_map import build_cminus_map
 from ..geometry.moc_inverse import inverse_design
 from ..geometry.transonic import SauerThroat
 from ..geometry.wall_modef import ModeFWall
@@ -29,10 +30,23 @@ from .runner import FORGE_BUILD, FORGE_TOOLS, PROBE_STUB, _ENV, run_forge
 
 
 def design_chain(p: Problem, viscous: bool) -> dict:
-    """dv → 目標 Bézier → 逆設計壁 (+δ*) → ModeFWall。決定的。"""
+    r"""dv → 目標 Bézier → 逆設計壁 (+δ*) → ModeFWall。決定的。
+
+    **B7 (plan §9.2)**: 目標曲線は $x_{\mathrm{reach}}$ (設計壁始点 $x_0$ から出て
+    最初に成功する C⁻ の軸着地点 — 壁の帰還がそもそも届かない境界) で分割する。
+    $x_0\le x<x_{\mathrm{reach}}$ は実測 (CFD アンカー時は `axis_segment`、Sauer
+    時は解析式) をそのまま目標にし、自由 CP は $x\ge x_{\mathrm{reach}}$ だけを
+    担当する。Bézier のグローバル台 (Bernstein 基底は局所支持を持たない) が遠方
+    CP の形を到達不能域まで押し戻す問題を解消する (実測: 分割前は
+    $x/r_t\approx1.38$ で CP2 が既に 11% の重みを持ち $\Delta M\approx+0.05$ の
+    主残差を作っていた)。$x_{\mathrm{reach}}$ 自体は下流形状にほぼ依存しない
+    ため、**まず旧来の単一 Bézier ("ブートストラップ") で仮設計して MOC マップの
+    被覆から $x_{\mathrm{reach}}$ を得てから、本目標を組んで MOC をやり直す**。
+    """
     g = p.gamma
     Md = float(p.spec["M_design"])
     R = float(p.geometry.get("R", 2.0))
+    M_start = float(p.geometry.get("M_start", 1.05))   # 物理定数でなく数値上の選択
     # **B6 CFD アンカー** (plan §9.2): `geometry.throat_anchor_run` があれば
     # Sauer をその run の CFD 抽出値で置き換える (アンカーは抽出元 run に凍結)
     anchor_run = p.geometry.get("throat_anchor_run")
@@ -41,37 +55,96 @@ def design_chain(p: Problem, viscous: bool) -> dict:
         st = from_run(anchor_run, float(p.spec["r_throat"]), R, g)
     else:
         st = SauerThroat(R=R, gamma=g)
-    x0, rr0, MM0, tt0 = st.starting_line(M_start=1.05, n=int(p.geometry.get("n_start", 41)))
+    n_start = int(p.geometry.get("n_start", 41))
+    x0, rr0, MM0, tt0 = st.starting_line(M_start=M_start, n=n_start)
     h = 1e-4
     M0 = float(st.mach(x0, 0.0))
     dM0 = float((st.mach(x0 + h, 0.0) - st.mach(x0 - h, 0.0)) / (2 * h))
-    # **B1: 中心線 Cauchy データの接続次数** (plan §9.2)。
-    # `geometry.centerline_start_order` = 1 (M, M' の C1 — 従来) / 2 (M, M', M''
-    # の C2 — Sivells の古典要件)。以前の「M'' を合わせても効かない」判定は
-    # not-a-knot 端のアーティファクトを測った誤りで、清浄位置で再測すると C1 の
-    # 目標は M''(x0) = -0.483 に対し Sauer は +0.326 (符号違い) だった。
-    # **これは中心線データの整合であり、壁の C2 を保証するものではない** (B2 が担当)。
-    # 自由 CP 数を変えない (= 探索次元を保つ) ため、次数が 1 上がるだけ。
     d2M0 = float((st.mach(x0 + h, 0.0) - 2.0 * M0 + st.mach(x0 - h, 0.0)) / h ** 2)
+    # **B1: ブートストラップ段の中心線接続次数のみに効く** (plan §9.2)。B7 導入後は
+    # 本目標側の x_reach 接続が常に C2 (M,M',M'') を課すため、ここは x_reach の
+    # 推定に使う仮設計の質にしか影響しない。
     order = int(p.geometry.get("centerline_start_order", 1))
     if order not in (1, 2):
         raise ValueError("geometry.centerline_start_order は 1 か 2")
     start_bc = (M0, dM0) if order == 1 else (M0, dM0, d2M0)
     xd = dv_value(p, "L_ax")
     cps = [dv_value(p, f"mc_cp{i+1}") for i in range(3)]
-    bz = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
-                                     end=(Md, 0.0, 0.0))
-
-    def target(x: float) -> float:
-        return Md if x >= xd else float(np.atleast_1d(bz(float(x)))[0])
-
     eps = (1.0 / Md) * ((2.0 + (g - 1.0) * Md * Md) / (g + 1.0)) ** (
         (g + 1.0) / (2.0 * (g - 1.0)))
     x_end = xd + 2.3 * np.sqrt(eps) / np.tan(np.arcsin(1.0 / Md))
-    res = inverse_design(st, target, x_axis_end=float(x_end),
-                         n_axis=int(p.geometry.get("n_axis_inv", 500)),
-                         n_start=int(p.geometry.get("n_start", 41)), gamma=g,
-                         th_wall0=float(np.arcsin(min(x0 / R, 1.0))))
+    n_axis_inv = int(p.geometry.get("n_axis_inv", 500))
+    th_wall0 = float(np.arcsin(min(x0 / R, 1.0)))
+
+    # === B7 stage 1: ブートストラップ (旧来の x0 単一アンカー Bézier) で
+    # x_reach を得る (MOC のみ・CFD 不要、安価) ===
+    bz_boot = MachBezier.from_constraints(x0, xd, start=start_bc, free_cp=cps,
+                                          end=(Md, 0.0, 0.0))
+
+    def target_boot(x: float) -> float:
+        return Md if x >= xd else float(np.atleast_1d(bz_boot(float(x)))[0])
+
+    boot = inverse_design(st, target_boot, x_axis_end=float(x_end), n_axis=n_axis_inv,
+                          n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
+    cmap = build_cminus_map(boot["pts"], boot["wall"], g)
+    if len(cmap) < 4:
+        raise ValueError("B7 ブートストラップ: C⁻ マップ点が不足 (x_reach 未確定)")
+    x_reach = float(cmap[:, 1].min())
+
+    # === B7 stage 2 (最終形): **設計目標と評価目標を分離する** ===
+    # 到達不能域 [x0,x_reach) の軸こぶ (接合波の軸着地、実在) の扱いで 2 案が失敗:
+    #  (i) 両端 Hermite でこぶを均す → 評価が実流と食い違い人工残差 +0.07 を計上
+    #      (run_0020)。(ii) こぶを逆設計の目標に入れる → こぶは「円弧が作る波の
+    #      結果」なので設計壁が同じ波をもう一度作ろうとし (原因の二重計上)、かつ
+    #      M 減少区間の Cauchy データが特性線を収束させ逆設計が悪条件化 —
+    #      壁キンク d2θ~9° (通常の 20 倍)・mdot 0.90 で場が崩壊 (run_0021, ΔM 1.8)。
+    # 正しい分離:
+    #  - **設計用** (inverse_design に渡す軸データ): 滑らかな設計意図。
+    #    [x0,x_reach) は 5 次 Hermite、以降は自由 CP Bézier。MOC が扱える単調データ。
+    #  - **評価用** (ΔM 測定の目標): [x0,x_reach) は実測こぶ曲線 (帯規約 —
+    #    axis_mach と同じ母集団で抽出)、以降は設計 Bézier。「狙い通りか」を
+    #    到達可能性に即して測る (到達不能域は円弧の実勢が達成可能の定義)。
+    #  - 両者は x_reach のアンカー (M,M',M'') を実測曲線から共有し接続は C2。
+    # 評価用の実測曲線 (こぶ込み・帯規約)。設計アンカーには**使わない** —
+    # こぶの下り勾配 (M'<0) が設計データへ混入すると非単調化して逆設計が悪条件化
+    # する (実測: 壁 d2θ 6°・mdot 0.87)。
+    if hasattr(st, "axis_segment_curve"):   # CFDThroat
+        seg = st.axis_segment_curve(x0, x_reach)
+
+        def seg_M(x):
+            return float(seg(np.float64(x)))
+    else:                                    # SauerThroat: 解析式 (単調) — 設計と
+        def seg_M(x):                        # 評価が同一で分離は自然に消える
+            return float(st.mach(x, 0.0))
+
+    # 設計アンカー @x_reach: 単調な狭窓ローカルフィット (LOCAL_ANCHOR)。実測こぶ
+    # 曲線の x_reach 値とは ~0.02 ずれる — この段差は「x_reach 以降に届く波の残余で、
+    # 帰還 (到達可能域) が打ち消すべき量」として評価目標に意図的に残す。
+    if hasattr(st, "local_anchor"):
+        Mr, Mrp, Mrpp = st.local_anchor(x_reach)
+    else:
+        Mr = seg_M(x_reach)
+        Mrp = (seg_M(x_reach + h) - seg_M(x_reach - h)) / (2 * h)
+        Mrpp = (seg_M(x_reach + h) - 2.0 * Mr + seg_M(x_reach - h)) / h ** 2
+    bz_seg = MachBezier.from_constraints(x0, x_reach, start=(M0, dM0, d2M0),
+                                         free_cp=[], end=(Mr, Mrp, Mrpp))
+    bz = MachBezier.from_constraints(x_reach, xd, start=(Mr, Mrp, Mrpp), free_cp=cps,
+                                     end=(Md, 0.0, 0.0))
+
+    def target(x: float) -> float:          # 設計用 (滑らか)
+        x = float(x)
+        if x < x_reach:
+            return float(np.atleast_1d(bz_seg(x))[0])
+        return Md if x >= xd else float(np.atleast_1d(bz(x))[0])
+
+    def target_eval(x: float) -> float:     # 評価用 (到達不能域 = 実測)
+        x = float(x)
+        if x < x_reach:
+            return seg_M(x)
+        return Md if x >= xd else float(np.atleast_1d(bz(x))[0])
+
+    res = inverse_design(st, target, x_axis_end=float(x_end), n_axis=n_axis_inv,
+                         n_start=n_start, gamma=g, th_wall0=th_wall0, M_start=M_start)
     wall_inv = res["wall"]
     pts = (deltastar_offset(wall_inv, float(p.spec["r_throat"]),
                             float(p.spec["Pt"]), float(p.spec["Tt"]), g, p.cp)
@@ -85,10 +158,11 @@ def design_chain(p: Problem, viscous: bool) -> dict:
     msgs = wall.validate()
     if msgs:
         raise ValueError("モード F 壁フィルタ不合格: " + "; ".join(msgs))
-    return {"wall": wall, "wall_inv": wall_inv, "target": target, "x0": float(x0),
+    return {"wall": wall, "wall_inv": wall_inv, "target": target,
+            "target_eval": target_eval, "x0": float(x0),
             "xd": float(xd), "Md": Md, "pts": res["pts"], "R": R,
             "centerline_start_order": order, "sauer_d2M0": d2M0,
-            "target_d2M0": float(np.atleast_1d(bz.deriv(x0, 2))[0]),
+            "x_reach": x_reach, "target_d2M0": float(np.atleast_1d(bz.deriv(x_reach, 2))[0]),
             "mdot_ratio_moc": res["mdot_exit"] / res["mdot_start"]}
 
 

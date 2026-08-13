@@ -24,7 +24,8 @@ import h5py
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 
-from ..geometry.moc_kernel import pm_nu, pm_mach
+from ..geometry.moc_kernel import pm_nu
+from ..geometry.cminus_map import build_cminus_map
 from ..geometry.wall_modef import ModeFWall
 from ..meshing.mesh2d import Mesh2DParams, generate_axisym_mesh, write_msh41_2d
 from ..probdef import load_problem
@@ -85,36 +86,6 @@ def build_cminus_map_cfd(run_dir, wall_pts, scale: float, gamma: float,
             rr += dr
         if ok and slope is not None and rr <= r_axis * 1.01:
             rows.append((float(xw), xx - rr / slope))   # r=0 へ外挿
-    return np.asarray(rows)
-
-
-def build_cminus_map(pts, wall_inv, gamma: float) -> np.ndarray:
-    """**v2**: v1 の MOC 設計場で各壁点から C⁻ を軸まで前進積分し (x_w → x_axis)
-    マップを作る (以後のパスで凍結して使う)。"""
-    xy = np.array([[p.x, p.r] for p in pts])
-    th = np.array([p.th for p in pts])
-    nu = np.array([p.nu for p in pts])
-    itp_th = LinearNDInterpolator(xy, th)
-    itp_nu = LinearNDInterpolator(xy, nu)
-    rows = []
-    for xw, rw in wall_inv[::4, :2]:
-        x, r = float(xw), float(rw)
-        ok = True
-        for _ in range(4000):
-            t = itp_th(x, r)
-            v = itp_nu(x, r)
-            if not (np.isfinite(t) and np.isfinite(v)):
-                ok = False
-                break
-            M = pm_mach(max(float(v), 1e-9))
-            mu = np.arcsin(1.0 / max(M, 1.0 + 1e-9))
-            dr = -min(0.02, r)
-            x += dr / np.tan(float(t) - mu)
-            r += dr
-            if r <= 1e-9:
-                break
-        if ok and r <= 1e-6:
-            rows.append((float(xw), x))
     return np.asarray(rows)
 
 
@@ -251,7 +222,10 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
 
     ax2w = make_ax2w(cmap)   # v3 では各パスの CFD 場で毎回置き換える
 
-    tgt = np.array([[x, d["target"](x)] for x in np.linspace(x0, xd, 500)])
+    # 評価目標: 到達不能域 [x0,x_reach) は実測こぶ曲線・以降は設計 Bézier
+    # (B7 最終形 — 設計用 d["target"] と分離。無ければ後方互換で design を使う)
+    tgt_fn = d.get("target_eval", d["target"])
+    tgt = np.array([[x, tgt_fn(x)] for x in np.linspace(x0, xd, 500)])
     wall_pts = d["wall_inv"][:, :2].copy()
     wall_th = d["wall_inv"][:, 2].copy()   # θ を主変数として持ち回る (数値微分を避ける)
     prev_res = None
