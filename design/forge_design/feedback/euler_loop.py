@@ -228,7 +228,14 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
     # 評価目標: 到達不能域 [x0,x_reach) は実測こぶ曲線・以降は設計 Bézier
     # (B7 最終形 — 設計用 d["target"] と分離。無ければ後方互換で design を使う)
     tgt_fn = d.get("target_eval", d["target"])
-    tgt = np.array([[x, tgt_fn(x)] for x in np.linspace(x0, xd, 500)])
+    # === C3 (2026-08-16): 評価窓をリップ−マージンまで延長 ===
+    # 旧窓は x_d−0.2 で切れており、その C⁻ 足より下流の壁 (整流区間〜リップ側)
+    # は一度も帰還を受けなかった。x_d 以降の目標は M_d 一定 (target が返す)。
+    # メッシュはリップまでしか無いので軸点もそこまで — C⁻ 足がメッシュ内に
+    # 着地する壁 (x_w ≲ 13) までが帰還可能で、以遠は最終 Δθ の定数外挿。
+    x_lip = float(d["wall_inv"][-1, 0])
+    x_eval_end = x_lip - 0.5
+    tgt = np.array([[x, tgt_fn(x)] for x in np.linspace(x0, x_eval_end, 800)])
     wall_pts = d["wall_inv"][:, :2].copy()
     wall_th = d["wall_inv"][:, 2].copy()   # θ を主変数として持ち回る (数値微分を避ける)
     prev_res = None
@@ -289,7 +296,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
             import shutil
             for j in range(1, MAX_WARM_CHUNKS):
                 ax = axis_M_series_steady(
-                    rd, scale, (x0 + 0.3) * scale, (xd - 0.2) * scale,
+                    rd, scale, (x0 + 0.3) * scale, (x_eval_end - 0.2) * scale,
                     snaps=_snaps_of(rd))
                 if axis_ok(ax):
                     break
@@ -317,7 +324,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         # warm パスは低下桁数要件なし (gate docstring 参照, cold アンカーが前提)。
         from ..evaluate.health import gate
         hl = gate(rd, M_design=Md, x_d=xd * scale, mode=gate_mode, drop=drop,
-                  axis_window=((x0 + 0.3) * scale, (xd - 0.2) * scale), scale=scale,
+                  axis_window=((x0 + 0.3) * scale, (x_eval_end - 0.2) * scale), scale=scale,
                   warm=(k > 1), snaps=_snaps_of(rd), eff_dir=eff)
         if not hl["ok"]:
             hist.append({"pass": k, "gate_ok": False,
@@ -355,7 +362,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
             x_ach = _x
             M_acc.append(_M)
         M_ach = np.mean(M_acc, axis=0)
-        xi = np.linspace(x0 + 0.3, xd - 0.2, 240)
+        xi = np.linspace(x0 + 0.3, x_eval_end, 440)   # C3: リップ−0.5 まで
         Mt = np.interp(xi, tgt[:, 0], tgt[:, 1])
         Ma = np.interp(xi * scale, x_ach, M_ach)
         dM = Mt - Ma
@@ -365,7 +372,10 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         eA = np.abs(dM)
         common = {"dM_inf_common": float(eA.max()),
                   "dM_inf_junction_band": float(eA[xi <= 2.5].max()),
-                  "dM_inf_mid_band": float(eA[(xi >= 4.0) & (xi <= 12.0)].max())}
+                  "dM_inf_mid_band": float(eA[(xi >= 4.0) & (xi <= 12.0)].max()),
+                  # C3: x_d 以降の下流帯 (目標 = M_d 一定、旧窓では無評価だった)
+                  "dM_inf_downstream_band": float(eA[xi >= xd].max())
+                                            if np.any(xi >= xd) else None}
         # マスク/重みランプ: 壁足が接合近傍 or 目標終端近傍
         xw = ax2w(xi)
         # **被覆外クランプの明示記録** (2026-08-15 レビュー指摘): マスクの挙動
@@ -377,9 +387,9 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         if mask_mode == "narrow":
             # **凍結された円弧に着地する station のみ**マスクする (本来の §4.7(c))。
             # 設計壁は可動なので殺さない。接合の C2 保存は Δθ のテーパで担保する。
-            w = (xw > x_w0).astype(float) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
+            w = (xw > x_w0).astype(float) * np.clip((x_eval_end - 0.5 - xi) / 1.0, 0.0, 1.0)
         else:   # "wide" (従来): 接合から 0.3 + ランプ 1.0 r* まで設計壁も殺す
-            w = np.clip((xw - (x_w0 + 0.3)) / 1.0, 0.0, 1.0) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
+            w = np.clip((xw - (x_w0 + 0.3)) / 1.0, 0.0, 1.0) * np.clip((x_eval_end - 0.5 - xi) / 1.0, 0.0, 1.0)
         w *= (Mt > 1.15)
         # **被覆外は w=0 を強制する** (2026-08-15): クランプされた xw は最初の
         # マップ点 (> x_w0) を返すため、到達不能な境界ステーションが w=1 に化け、
