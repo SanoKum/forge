@@ -52,3 +52,4 @@ solver_density_cuda/tools/__pycache__/
 # 回帰テストハーネスが生成する一時 run (--keep 時のみ残る)
 **/run_regression_*/
 design/.venv-opt/
+case/**/run_*/
