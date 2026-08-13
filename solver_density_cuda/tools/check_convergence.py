@@ -16,7 +16,9 @@ forge の run ディレクトリの residual_history.csv を読み、**全保存
 
 判定基準 (既定):
   - NaN/Inf が無い。
-  - 各非ゼロ保存量残差が初期から >= --drop 桁 (既定 3) 低下している。
+  - 各非ゼロ保存量残差が**系列のピークから** >= --drop 桁 (既定 3) 低下している
+    (step 0 基準ではない: IC の作り方で step 0 が過渡ピークより桁違いに小さい
+     成分があり [node の準1D IC は Uy≈0]、初期比だと誤って停滞判定になる)。
   - 末尾 (--tail, 既定 20%) が rising でない (flat/falling)。
 "all-zero" 列 (例: 2D の rms_roUz) は判定から除外する。
 """
@@ -82,7 +84,15 @@ def analyze(path, min_drop, tail_frac):
             ok = ok and col_ok
             continue
 
-        drop = math.log10(abs(init) / abs(fin)) if fin != 0 else float('inf')
+        # 低下桁数は **step 0 ではなく系列のピーク**から測る。IC の作り方によっては
+        # ある成分の step 0 残差が過渡ピークより桁違いに小さいことがあり (node の
+        # 準 1D IC は半径方向速度がほぼ厳密 0 なので rms_roUy の init が 4.5e-6、
+        # 一方 step 2 のピークは 4.8e-2 = 4 桁上)、初期比だと実際に 5.0 桁落ちて
+        # いる収束列を「0.9 桁で停滞」と誤判定する (2026-08-17 実測)。ピークは
+        # 「その成分が実際にどこから落ちたか」なので物理的にも正しい尺度。
+        # step 0 がピークの通常ケースでは値は変わらない (後方互換)。
+        peak = max(abs(x) for x in ser)
+        drop = math.log10(peak / abs(fin)) if fin != 0 else float('inf')
         col_ok = drop >= min_drop and trend != 'rising'
         ok = ok and col_ok
         # 未達の理由を区別: falling=収束途中(あと steps)、flat=停滞、rising=発散傾向
@@ -91,7 +101,8 @@ def analyze(path, min_drop, tail_frac):
             if trend == 'rising':   status = '  <-- RISING (divergent)'
             elif trend == 'flat':   status = '  <-- STALLED (plateau)'; any_stalled = True
             else:                   status = '  <-- still converging'; any_converging = True
-        report[c] = (f"init={init:.2e} fin={fin:.2e} drop={drop:4.1f}dec {trend:7s}{status}", col_ok)
+        pk = "" if abs(peak - init) <= 1e-30 * max(abs(init), 1.0) else f" peak={peak:.2e}"
+        report[c] = (f"init={init:.2e}{pk} fin={fin:.2e} drop={drop:4.1f}dec {trend:7s}{status}", col_ok)
     return laststep, report, ok, any_nan, any_stalled, any_converging
 
 
