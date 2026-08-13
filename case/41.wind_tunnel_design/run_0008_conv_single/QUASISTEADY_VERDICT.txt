@@ -1,0 +1,8 @@
+
+=== case/41.wind_tunnel_design/run_0008_conv_single  [5 snapshots, steps 0..24000]  -> STEADY ===
+  shock    : tail mean=-42.92  drift=0.0%/tail  fluct=0.0%           STEADY
+  machmax  : tail mean=4.03  drift=0.0%/tail  fluct=0.0%             STEADY
+  pmax     : tail mean=9.96e+05  drift=0.0%/tail  fluct=0.0%         STEADY
+  (asym skipped: mesh not up-down symmetric or scipy missing)
+
+OVERALL: ALL STEADY

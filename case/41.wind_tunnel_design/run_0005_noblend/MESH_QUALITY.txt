@@ -1,0 +1,5 @@
+mode: 2D (x-y projection)
+cells: 20480
+aspect ratio : max=14.6  p99=11.3  mean=3.7  >1000: 0 (0.00%)
+skewness     : max=0.395  p99=0.357  mean=0.062  >0.90: 0 (0.00%)
+VERDICT: PASS (AR<= 1000, skew<= 0.90)

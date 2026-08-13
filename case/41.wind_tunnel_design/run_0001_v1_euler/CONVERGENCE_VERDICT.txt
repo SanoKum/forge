@@ -1,0 +1,9 @@
+
+=== case/41.wind_tunnel_design/run_0001_v1_euler  [last step 11999]  -> NOT CONVERGED (stalled/plateau — needs scheme change, not more steps) ===
+  rms_ro      : init=3.45e-07 fin=8.26e-08 drop= 0.6dec flat     <-- STALLED (plateau)
+  rms_roUx    : init=3.37e-04 fin=7.84e-05 drop= 0.6dec flat     <-- STALLED (plateau)
+  rms_roUy    : init=2.34e-04 fin=3.09e-05 drop= 0.9dec flat     <-- STALLED (plateau)
+  rms_roUz    : all-zero (inactive, skip)
+  rms_roe     : init=2.77e-01 fin=6.94e-02 drop= 0.6dec flat     <-- STALLED (plateau)
+
+OVERALL: CHECK FAILURES ABOVE

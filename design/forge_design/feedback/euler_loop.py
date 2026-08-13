@@ -118,24 +118,65 @@ def build_cminus_map(pts, wall_inv, gamma: float) -> np.ndarray:
     return np.asarray(rows)
 
 
-def _rebuild_wall(wall_pts: np.ndarray, dtheta_fn, x_anchor: float) -> np.ndarray:
-    """現壁 (n,2)[x,r] の壁角に Δθ(x) を加えて r=∫tanθ で再構築 (接合点固定)。"""
+def junction_taper(x: np.ndarray, x_j: float, width: float,
+                   order: int = 5) -> np.ndarray:
+    r"""接合点 $x_j$ で $\Delta\theta$ を滑らかに立ち上げるテーパ。
+
+    壁補正を流れ角 $\Delta\theta$ で与えるとき、接合点で
+    $\Delta\theta(x_j)=0$ かつ $\Delta\theta'(x_j)=0$ を課せば、$r'=\tan\theta$ より
+    **$r'$ と $r''$ の両方が保たれる** (円弧との C2 接続を壊さない)。再構築は
+    $r_{new}'=\tan(\theta+\Delta\theta)$、
+    $r_{new}''=\sec^2(\theta+\Delta\theta)\,(\theta'+\Delta\theta')$
+    なので、この 2 条件から保存は**構成的に厳密**。
+
+    $x\le x_j$ では 0 (円弧区間は完全凍結)、$x_j+width$ 以降で 1。
+    `order=3` は smoothstep $t^2(3-2t)$ ($f=f'=0$ @0)、`order=5` は quintic
+    $t^3(10-15t+6t^2)$ ($f=f'=f''=0$ @0) で曲率の立ち上がりも滑らか (既定)。
+
+    幅マスクで広範囲を殺すのではなく**接合点でのみ拘束**するのが要点
+    (2026-08-14 の指摘): 広幅マスクは接合波の帯ごと帰還を無効化してしまう。
+    """
+    t = np.clip((np.asarray(x, dtype=float) - x_j) / max(width, 1e-12), 0.0, 1.0)
+    if order == 3:
+        return t * t * (3.0 - 2.0 * t)
+    return t ** 3 * (10.0 - 15.0 * t + 6.0 * t * t)
+
+
+def _rebuild_wall(wall_pts: np.ndarray, wall_th: np.ndarray, dtheta_fn,
+                  x_anchor: float, taper_width: float = 0.0,
+                  taper_order: int = 5) -> tuple:
+    r"""壁角 $\theta$ を**主変数として持ち回り**、$r=\int\tan\theta\,dx$ で再構築する。
+
+    **重要 (2026-08-14)**: 以前は $r$ を `np.gradient` で数値微分して $\theta$ を作り
+    再積分していたが、この往復は $r$ に $O(h^2)$ の形状誤差を入れ、2 階微分では
+    $O(1)$ の誤差になる — 実測で**接合点の $r''$ が 0.50→0.25 と半減し、しかも
+    解像度に依らなかった**。$\theta$ を配列として持ち回れば微分が不要になり、
+    $r'(x_j)=\tan\theta[0]$、$r''(x_j)=\sec^2\theta\,\theta'(x_j)$ が入力どおり保たれる。
+
+    `taper_width>0` のとき接合点で $\Delta\theta=\Delta\theta'=0$ (テーパ) となり、
+    円弧との $r,r',r''$ 連続が**構成的に**保たれる。戻り: (wall_pts_new, th_new)。
+    """
     x, r = wall_pts[:, 0], wall_pts[:, 1]
-    th = np.arctan(np.gradient(r, x))
-    th_new = th + dtheta_fn(x)
+    th = np.asarray(wall_th, dtype=float)
+    dth = np.asarray(dtheta_fn(x), dtype=float)
+    if taper_width > 0.0:
+        dth = dth * junction_taper(x, x_anchor, taper_width, order=taper_order)
+    th_new = th + dth
     r_new = np.empty_like(r)
     i0 = int(np.argmin(np.abs(x - x_anchor)))
     r_new[i0] = r[i0]
+    tn = np.tan(th_new)
     for i in range(i0 + 1, len(x)):
-        r_new[i] = r_new[i - 1] + 0.5 * (np.tan(th_new[i - 1]) + np.tan(th_new[i])) * (x[i] - x[i - 1])
+        r_new[i] = r_new[i - 1] + 0.5 * (tn[i - 1] + tn[i]) * (x[i] - x[i - 1])
     for i in range(i0 - 1, -1, -1):
-        r_new[i] = r_new[i + 1] - 0.5 * (np.tan(th_new[i]) + np.tan(th_new[i + 1])) * (x[i + 1] - x[i])
-    return np.c_[x, r_new]
+        r_new[i] = r_new[i + 1] - 0.5 * (tn[i] + tn[i + 1]) * (x[i + 1] - x[i])
+    return np.c_[x, r_new], th_new
 
 
 def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
              tol_rel: float = 0.005, clip_deg: float = 0.5, nsteps=None,
-             map_mode: str = "frozen", gate_mode: str = "formal") -> dict:
+             map_mode: str = "frozen", gate_mode: str = "formal",
+             mask_mode: str = "wide", taper_width: float = 0.3) -> dict:
     """map_mode: "frozen" = v2 (v1 MOC 設計場の凍結マップ) /
     "cfd" = **v3** (毎パスその回の CFD 収束場から C⁻ を引き直す)。"""
     p = load_problem(problem_path)
@@ -167,11 +208,12 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
 
     tgt = np.array([[x, d["target"](x)] for x in np.linspace(x0, xd, 500)])
     wall_pts = d["wall_inv"][:, :2].copy()
+    wall_th = d["wall_inv"][:, 2].copy()   # θ を主変数として持ち回る (数値微分を避ける)
     prev_res = None
     hist = []
     # trust-region 型の決定的下り探索: 悪化したら最良壁に巻き戻し ω 半減
-    best = {"wall": wall_pts.copy(), "dM_inf": np.inf, "resid": None,
-            "ax2w": ax2w}   # C1: マップも最良状態と一緒に保持し reject 時に戻す
+    best = {"wall": wall_pts.copy(), "th": wall_th.copy(), "dM_inf": np.inf,
+            "resid": None, "ax2w": ax2w}   # C1: マップも最良状態と一緒に保持し reject 時に戻す
     for k in range(1, n_pass + 1):
         rd = work / f"pass_{k:02d}"
         if not (rd / "metrics_pass.json").exists():
@@ -241,7 +283,12 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         dM = Mt - Ma
         # マスク/重みランプ: 壁足が接合近傍 or 目標終端近傍
         xw = ax2w(xi)
-        w = np.clip((xw - (x_w0 + 0.3)) / 1.0, 0.0, 1.0) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
+        if mask_mode == "narrow":
+            # **凍結された円弧に着地する station のみ**マスクする (本来の §4.7(c))。
+            # 設計壁は可動なので殺さない。接合の C2 保存は Δθ のテーパで担保する。
+            w = (xw > x_w0).astype(float) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
+        else:   # "wide" (従来): 接合から 0.3 + ランプ 1.0 r* まで設計壁も殺す
+            w = np.clip((xw - (x_w0 + 0.3)) / 1.0, 0.0, 1.0) * np.clip((xd - 0.5 - xi) / 1.0, 0.0, 1.0)
         w *= (Mt > 1.15)
         dM_inf = float(np.max(np.abs(dM * (w > 0.5))))
         rejected = bool(dM_inf > best["dM_inf"] * 1.02)
@@ -282,7 +329,7 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
             xi_c, Mt_c, Ma_c, w_c = best["resid"]
             ax2w = best["ax2w"]    # C1: 棄却場のマップで最良場の残差を戻さない
         else:
-            best = {"wall": wall_pts.copy(), "dM_inf": dM_inf,
+            best = {"wall": wall_pts.copy(), "th": wall_th.copy(), "dM_inf": dM_inf,
                     "resid": (xi, Mt, Ma, w), "ax2w": ax2w}
             if dM_inf <= tol_rel * Md:
                 break
@@ -299,7 +346,9 @@ def run_loop(problem_path, work_dir, n_pass: int = 8, omega: float = 0.4,
         def dtheta_fn(x):
             return np.interp(x, xw_s, dth_w, left=0.0, right=dth_w[-1])
 
-        wall_pts = _rebuild_wall(best["wall"], dtheta_fn, x_anchor=x_w0)
+        wall_pts, wall_th = _rebuild_wall(
+            best["wall"], best["th"], dtheta_fn, x_anchor=x_w0,
+            taper_width=(taper_width if mask_mode == "narrow" else 0.0))
         np.savetxt(rd / "wall_next.csv", wall_pts, delimiter=",",
                    header="x_rt,r_rt", comments="")
     last = hist[-1] if hist else {}
@@ -325,6 +374,10 @@ def main(argv=None) -> int:
     ap.add_argument("work_dir")
     ap.add_argument("--passes", type=int, default=8)
     ap.add_argument("--omega", type=float, default=0.4)
+    ap.add_argument("--mask-mode", choices=("wide", "narrow"), default="wide",
+                    help="wide = 従来 (接合から 1.3 r* を無効化) / narrow = 円弧のみ + Δθ テーパ")
+    ap.add_argument("--taper-width", type=float, default=0.3,
+                    help="narrow 時に Δθ=O((x-xj)^2) を立ち上げる幅 [r*]")
     ap.add_argument("--gate-mode", choices=("formal", "exploratory"), default="formal",
                     help="formal = PASS 以外は停止 (正式) / exploratory = 発散以外は継続")
     ap.add_argument("--map-mode", choices=("frozen", "cfd"), default="frozen",
@@ -332,7 +385,8 @@ def main(argv=None) -> int:
     ap.add_argument("--steps", type=int, default=None)
     a = ap.parse_args(argv)
     run_loop(a.problem, a.work_dir, n_pass=a.passes, omega=a.omega, nsteps=a.steps,
-             map_mode=a.map_mode, gate_mode=a.gate_mode)
+             map_mode=a.map_mode, gate_mode=a.gate_mode,
+             mask_mode=a.mask_mode, taper_width=a.taper_width)
     return 0
 
 
