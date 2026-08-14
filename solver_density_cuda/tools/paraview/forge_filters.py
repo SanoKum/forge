@@ -8,10 +8,10 @@
   Tools > Manage Plugins > Load New... で本ファイルを選び、
   必要なら "Auto Load" を有効にする。以後 Filters > Alphabetical に
   "Forge Derived Quantities" が現れる。
-  ただし ParaView 5.11 + Python 3.12 (Ubuntu 24.04 の paraview パッケージ等) では
-  ParaView 側の paraview.detail.pythonalgorithm が壊れていてこの経路が失敗する。
-  その場合は同ディレクトリの macro_load_forge_filters.py を
-  Macros > Add new macro... で登録し、そのボタンから読み込む。
+  "Failed to import paraview.detail.pythonalgorithm" で失敗する環境
+  (ParaView 5.11 + Python 3.12 の組み合わせ。ParaView 側が Python 3.11 で削除された
+  inspect.getargspec を import するため) では、代わりに同ディレクトリの
+  macro_load_forge_filters.py を Macros > Add new macro... で登録し、そのボタンから読み込む。
 
 pvpython / pvbatch から使う場合:
   from paraview.simple import *

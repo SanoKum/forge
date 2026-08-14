@@ -198,13 +198,13 @@ cd /home/sano/work/forge/solver_density_cuda
 
 読み込み方法は 2 通り。
 
-1. **マクロ経由 (推奨)**: Macros > Add new macro... で
-   `solver_density_cuda/tools/paraview/macro_load_forge_filters.py` を登録し、
-   ツールバーのボタンを押す。Ubuntu の ParaView 5.11 + Python 3.12 のように
-   `paraview.detail.pythonalgorithm` が `inspect.getargspec` を import して壊れている環境でも、
-   マクロ側で shim を入れてから読むので動く。
-2. **プラグイン直接**: Tools > Manage Plugins > Load New... で `forge_filters.py` を選ぶ
-   (上記の壊れた環境では失敗するので、その場合は 1. を使う)。
+1. **プラグイン直接 (通常はこちら)**: Tools > Manage Plugins > Load New... で `forge_filters.py` を選ぶ。
+   "Auto Load" を有効にしておくと次回起動時から自動で入る。
+2. **マクロ経由 (フォールバック)**: Macros > Add new macro... で
+   `solver_density_cuda/tools/paraview/macro_load_forge_filters.py` を登録し、ツールバーのボタンを押す。
+   1. が `Failed to import paraview.detail.pythonalgorithm` で失敗する環境
+   (Ubuntu 24.04 の paraview 5.11.2 + Python 3.12 など。ParaView 側が Python 3.11 で削除された
+   `inspect.getargspec` を import するため) 用。マクロが shim を入れてから読むので、そこでも動く。
 
 出力される配列:
 
