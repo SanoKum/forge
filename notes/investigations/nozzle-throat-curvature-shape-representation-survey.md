@@ -21,16 +21,24 @@
 
 ## 1. 前提の訂正 — ローカル `papers/` の棚卸し
 
-依頼プロンプトの「Sivells / CONTUR の一次資料はローカルに無い」は**誤り**。以下が既にある:
+依頼プロンプトの「Sivells / CONTUR の一次資料はローカルに無い」は**誤り**。以下が既にある。
+
+**本調査を機に、超音速ノズル設計関連の PDF は [`papers/nozzle_design/`](../../papers/nozzle_design/) へ集約した** (dual bell 系は [`papers/nozzle_design/dual_bell/`](../../papers/nozzle_design/dual_bell/) の下位クラスタ)。以下のパスは全てこのディレクトリ基準。
 
 | ファイル | 実体 |
 | --- | --- |
-| `papers/aerodynamic design program for axisymmetric and planar nozzles (CONTUR, Sivells AEDC-TR-78-63).pdf` | **CONTUR 本体レポート** (151p、精読済) |
-| `papers/general characteristics of flow through nozzles at near critical speeds (Sauer NACA TM-1147).pdf` | Sauer 一次解の原典 |
-| `papers/inviscid design of hypersonic wind tunnel nozzles for a real gas (AIAA 2000-0677).pdf` | Korte による Sivells 法の現代的解説 + 実在気体拡張 |
-| `papers/preliminary nozzle design for a small-scale high-enthalpy facility (OSTI 1568032).pdf` | 卓上 HWT 予備設計 (Shope 文献へのポインタ源) |
+| `aerodynamic design program for axisymmetric and planar nozzles (CONTUR, Sivells AEDC-TR-78-63).pdf` | **CONTUR 本体レポート** (151p、精読済) |
+| `general characteristics of flow through nozzles at near critical speeds (Sauer NACA TM-1147).pdf` | Sauer 一次解の原典 |
+| `inviscid design of hypersonic wind tunnel nozzles for a real gas (AIAA 2000-0677).pdf` | Korte による Sivells 法の現代的解説 + 実在気体拡張 |
+| `preliminary nozzle design for a small-scale high-enthalpy facility (OSTI 1568032).pdf` | 卓上 HWT 予備設計 (Shope 文献へのポインタ源) |
+| `Cuffel Back Massier transonic flowfield ... (AIAA J 1969).pdf` | 小スロート曲率の遷音速流れ場 (適用下限 $r_c/r_{th}\ge2$ の出典) |
+| `Szaniszlo ... sonic nozzle discharge coefficients (NASA TN D-7848).pdf` | スロート曲率と流量係数 $C_d$ |
+| `Kulfan_Universal_Parametric_Geometry_Representation_CST_AIAA-2007-62.pdf` | CST 形状表現 (§3.3) |
+| `Ogawa Boyce 2012 nozzle design optimization axisymmetric scramjets ....pdf` | 軸対称ノズルのパラメトライズ + サロゲート最適化 |
+| `contraction design for small low-speed wind tunnels (Bell Mehta NASA CR-177488).pdf` | `ModeFWall` の 5 次収縮の出典 |
+| `dual_bell/Genin Stark - inflection geometry ... (DLR 2011).pdf` | 意図的な曲率不連続 (変曲) の流れへの影響 (§9-9) |
 
-また `papers/Korte explicit upwind algorithm ... (NASA TP-3050).pdf` は**ノズル設計論文ではない** (PNS ソルバのアルゴリズム開発のみ。全文走査で design/contour/throat の記載なし)。Korte の CFD-in-the-loop 設計の正本は AIAA 92-4009 (CAN-DO) / Korte & Hodge JSR 1995 で、ローカルに無い (§10)。`papers/Arthur_pd_1952.pdf` は N₂ 過飽和の凝縮実験 (Caltech PhD) で本件と無関係 (`case/16.nozzle_wys` の文脈では有用)。
+また `Korte explicit upwind algorithm ... (NASA TP-3050).pdf` は (同ディレクトリに置いたが) **ノズル設計論文ではない** (PNS ソルバのアルゴリズム開発のみ。全文走査で design/contour/throat の記載なし)。Korte の CFD-in-the-loop 設計の正本は AIAA 92-4009 (CAN-DO) / Korte & Hodge JSR 1995 で、ローカルに無い (§10)。`papers/Arthur_pd_1952.pdf` は N₂ 過飽和の凝縮実験 (Caltech PhD) で本件と無関係 (`case/16.nozzle_wys` の文脈では有用なので `papers/` 直下に残置)。
 
 ---
 
@@ -230,7 +238,7 @@
 
 ## 10. 主要書誌と入手可否
 
-**ローカルにあり (精読済)**: Sivells AEDC-TR-78-63 (CONTUR)。Cuffel–Back–Massier AIAA J 7(7) 1969。Sauer NACA TM-1147。Szaniszlo NASA TN D-7848。Kulfan AIAA 2007-62。Korte AIAA 2000-0677。Korte NASA TP-3050 (※ノズル設計とは無関係と判明)。Ogawa–Boyce JPP 28(6) 2012。Genin–Stark DLR 2011。Arthur 1952 (無関係)。
+**ローカルにあり (精読済)** — 特記なき限り [`papers/nozzle_design/`](../../papers/nozzle_design/): Sivells AEDC-TR-78-63 (CONTUR)。Cuffel–Back–Massier AIAA J 7(7) 1969。Sauer NACA TM-1147。Szaniszlo NASA TN D-7848。Kulfan AIAA 2007-62。Korte AIAA 2000-0677。Korte NASA TP-3050 (※ノズル設計とは無関係と判明)。Ogawa–Boyce JPP 28(6) 2012。Genin–Stark DLR 2011 (`nozzle_design/dual_bell/`)。Arthur 1952 (無関係、`papers/` 直下)。
 
 **Web 公開 (未ダウンロード、入手可)**:
 

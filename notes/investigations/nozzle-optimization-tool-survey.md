@@ -536,14 +536,14 @@ flowchart LR
 - 【◎】Rao, "Exhaust Nozzle Contour for Optimum Thrust," *Jet Propulsion*, 28(6):377–382, 1958.
 - 【○】Bartz, "A Simple Equation for Rapid Estimation of Rocket Nozzle Convective Heat Transfer Coefficients," *Jet Propulsion*, 27:49–51, 1957.
 - 【◎】Morel, "Comprehensive Design of Axisymmetric Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 97(2):225–233, 1975.
-- 【◎ 一次資料精読 2026-06-14】Bell & Mehta, *Contraction Design for Small Low-Speed Wind Tunnels*, NASA CR-177488 (JIAA-TR-84), 1988（NTRS 19880012661, public）。確認: 壁形状 $Y=H_i-(H_i-H_e)[6\xi^5-15\xi^4+10\xi^3]$、両端で曲率ゼロ／3・5・7 次＋マッチドキュービック比較で**7 次・マッチドキュービックは入口剥離、5 次を採用**。PDF: `papers/contraction design for small low-speed wind tunnels (Bell Mehta NASA CR-177488).pdf`。
+- 【◎ 一次資料精読 2026-06-14】Bell & Mehta, *Contraction Design for Small Low-Speed Wind Tunnels*, NASA CR-177488 (JIAA-TR-84), 1988（NTRS 19880012661, public）。確認: 壁形状 $Y=H_i-(H_i-H_e)[6\xi^5-15\xi^4+10\xi^3]$、両端で曲率ゼロ／3・5・7 次＋マッチドキュービック比較で**7 次・マッチドキュービックは入口剥離、5 次を採用**。PDF: `papers/nozzle_design/contraction design for small low-speed wind tunnels (Bell Mehta NASA CR-177488).pdf`。
 - 【◎】Cuffel, Back, Massier, "Transonic Flowfield in a Supersonic Nozzle with Small Throat Radius of Curvature," *AIAA Journal*, 7(7):1364–1366, 1969.
 - 【◎】Tulapurkara & Bhalla, "Experimental Investigation of Morel's Method for Wind Tunnel Contractions," *ASME J. Fluids Engineering*, 110(1):45–47, 1988.
 - 【◎】Hassan/Zanoun ら, "Flow characteristics in low-speed wind tunnel contractions: Simulation and testing," *Alexandria Engineering Journal*, 2017.
 - 【△】Witoszynski 収縮曲線（古典解析形）／`aldorona/contur`・`noahess/conturpy`（Sivells CONTUR のオープン移植, GitHub）。
 
 **スロート近傍幾何の標準構成 — A2.5(E)（2026-06-12 軽検証追補）**
-- 【◎ 一次資料精読 2026-06-14】Sivells AEDC-TR-78-63 本文（DTIC ADA062944, archive.org, public domain）。確認事項: 中心線**速度**の一般 5 次多項式（Eq.35）が端点 1・2 階微分整合で 3〜4 次に縮退／スロート曲率 `RC`（曲率半径/スロート半径、`ETAD=60°` 時必須、Mach 6 設計で RC≈5.5）／曲率連続は「速度分布の 1・2 階微分を遷音速解・放射流に整合し設計マッハで消失」（B2 モード K の C2 接続根拠）。PDF: `papers/aerodynamic design program for axisymmetric and planar nozzles (CONTUR, Sivells AEDC-TR-78-63).pdf`。
+- 【◎ 一次資料精読 2026-06-14】Sivells AEDC-TR-78-63 本文（DTIC ADA062944, archive.org, public domain）。確認事項: 中心線**速度**の一般 5 次多項式（Eq.35）が端点 1・2 階微分整合で 3〜4 次に縮退／スロート曲率 `RC`（曲率半径/スロート半径、`ETAD=60°` 時必須、Mach 6 設計で RC≈5.5）／曲率連続は「速度分布の 1・2 階微分を遷音速解・放射流に整合し設計マッハで消失」（B2 モード K の C2 接続根拠）。PDF: `papers/nozzle_design/aerodynamic design program for axisymmetric and planar nozzles (CONTUR, Sivells AEDC-TR-78-63).pdf`。
 - 【○】Rao 流 TOC/TOP の円弧慣行（下流円弧 $R_d=0.382\,r^*$ を変曲点 $\theta_n$ まで保持 → MOC 旋回コンタ）: Rao 1958／Sutton & Biblarz, *Rocket Propulsion Elements*（標準教科書慣行）。
 - 【△】"Investigation of nozzle contours in the CSIR supersonic wind tunnel," *R&D Journal of the South African Institution of Mechanical Engineering*, 2017（既存コンタ由来の弱波が試験部流れ品質を劣化させることを実測、Sivells 流の曲率連続設計を採用）。
 

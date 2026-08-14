@@ -186,21 +186,24 @@ $|\theta|_{max}$ 0.015° → 0.183°)。
 
 ## 7.5 `papers/` に既にある関連 PDF (まずここから読むこと)
 
-ローカルに以下がある。**新規に探す前にこれらを読んで Q1/Q2 に答えられる部分を
+ローカルに以下がある (**2026-08-17 に `papers/nozzle_design/` へ集約済み**。dual bell 系は
+`papers/nozzle_design/dual_bell/`)。**新規に探す前にこれらを読んで Q1/Q2 に答えられる部分を
 先に埋めること**。
 
 | ファイル | 本件との関係 |
 | --- | --- |
-| `papers/Cuffel Back Massier transonic flowfield supersonic nozzle small throat radius of curvature (AIAA J 1969).pdf` | **最重要候補**。まさに「スロート曲率半径が小さいときの遷音速流れ場」。本ケースは $R_d=2r_t$ と小さめで、Sauer 一次解が実 CFD と $M'$ +25% ずれた原因もここにあるはず。$R_d/r_t$ と壁・軸の $M$ 分布の関係、遷音速解の妥当範囲を確認 |
-| `papers/Kulfan_Universal_Parametric_Geometry_Representation_CST_AIAA-2007-62.pdf` | Q2 の CST。曲率制御能力と端点挙動を確認 |
-| `papers/Korte explicit upwind algorithm parabolized Navier-Stokes hypersonic nozzle (NASA TP-3050).pdf` | 極超音速ノズル設計。コンタ生成法と throat 扱いを確認 |
-| `papers/Szaniszlo experimental and analytical sonic nozzle discharge coefficients (NASA TN D-7848).pdf` | スロート曲率と流量係数 $C_d$ の関係 (本ケースの mdot 比 0.994 の妥当性検証にも使える) |
-| `papers/Genin Stark - inflection geometry on dual bell nozzle flow behavior (DLR 2011).pdf` | 「変曲点の幾何が流れに与える影響」— 接合部の扱いの参考 |
-| `papers/Ogawa Boyce 2012 nozzle design optimization axisymmetric scramjets surrogate-assisted EA (Kyushu).pdf` | 軸対称ノズルの形状パラメトライズ + サロゲート最適化。設計変数の取り方の参考 |
+| `papers/nozzle_design/Cuffel Back Massier transonic flowfield supersonic nozzle small throat radius of curvature (AIAA J 1969).pdf` | **最重要候補**。まさに「スロート曲率半径が小さいときの遷音速流れ場」。本ケースは $R_d=2r_t$ と小さめで、Sauer 一次解が実 CFD と $M'$ +25% ずれた原因もここにあるはず。$R_d/r_t$ と壁・軸の $M$ 分布の関係、遷音速解の妥当範囲を確認 |
+| `papers/nozzle_design/Kulfan_Universal_Parametric_Geometry_Representation_CST_AIAA-2007-62.pdf` | Q2 の CST。曲率制御能力と端点挙動を確認 |
+| `papers/nozzle_design/Korte explicit upwind algorithm parabolized Navier-Stokes hypersonic nozzle (NASA TP-3050).pdf` | 極超音速ノズル設計。コンタ生成法と throat 扱いを確認 |
+| `papers/nozzle_design/Szaniszlo experimental and analytical sonic nozzle discharge coefficients (NASA TN D-7848).pdf` | スロート曲率と流量係数 $C_d$ の関係 (本ケースの mdot 比 0.994 の妥当性検証にも使える) |
+| `papers/nozzle_design/dual_bell/Genin Stark - inflection geometry on dual bell nozzle flow behavior (DLR 2011).pdf` | 「変曲点の幾何が流れに与える影響」— 接合部の扱いの参考 |
+| `papers/nozzle_design/Ogawa Boyce 2012 nozzle design optimization axisymmetric scramjets surrogate-assisted EA (Kyushu).pdf` | 軸対称ノズルの形状パラメトライズ + サロゲート最適化。設計変数の取り方の参考 |
 | `papers/Arthur_pd_1952.pdf` | 年代的に古典的ノズル設計の可能性。中身を確認して該当すれば活用 |
 
-**Sivells / CONTUR の一次資料はローカルに無い**ようなので、書誌情報を特定し
-入手可否 (NTRS 等で公開されているか) を報告してほしい。
+~~**Sivells / CONTUR の一次資料はローカルに無い**ようなので~~ → **誤り (2026-08-17 訂正)**:
+`papers/nozzle_design/aerodynamic design program for axisymmetric and planar nozzles (CONTUR, Sivells AEDC-TR-78-63).pdf` として**ローカルにある** (151p)。同様に Sauer TM-1147・
+Korte AIAA 2000-0677 もある。調査結果は
+[`notes/investigations/nozzle-throat-curvature-shape-representation-survey.md`](../investigations/nozzle-throat-curvature-shape-representation-survey.md) を参照。
 
 ## 8. 参考: 関連する既存文書
 
