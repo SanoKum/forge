@@ -190,6 +190,51 @@ cd /home/sano/work/forge/solver_density_cuda
 - WSL2 では WSLg を前提に GUI 転送する。
 - ParaView のアイコン表示が崩れる場合は `solver_density_cuda/Dockerfile.cuda.dev` から Docker イメージを再ビルドする。
 
+## ParaView プラグイン (マッハ数 / シュリーレン / Q 値 / ヘリシティ)
+
+`res_*.xmf` には保存量と原始変数しか入っていないため、可視化用の派生量は
+`solver_density_cuda/tools/paraview/forge_filters.py` の Python プラグインで計算する。
+フィルタ名は **Forge Derived Quantities** (Filters > Alphabetical)。
+
+読み込み方法は 2 通り。
+
+1. **マクロ経由 (推奨)**: Macros > Add new macro... で
+   `solver_density_cuda/tools/paraview/macro_load_forge_filters.py` を登録し、
+   ツールバーのボタンを押す。Ubuntu の ParaView 5.11 + Python 3.12 のように
+   `paraview.detail.pythonalgorithm` が `inspect.getargspec` を import して壊れている環境でも、
+   マクロ側で shim を入れてから読むので動く。
+2. **プラグイン直接**: Tools > Manage Plugins > Load New... で `forge_filters.py` を選ぶ
+   (上記の壊れた環境では失敗するので、その場合は 1. を使う)。
+
+出力される配列:
+
+| 配列 | 定義 |
+| --- | --- |
+| `U` | 速度ベクトル (`Ux`,`Uy`,`Uz` を束ねたもの) |
+| `Mach`, `sound_speed` | $M=\lvert U\rvert/a$。$a$ は配列 `sonic`、無ければ $a=\sqrt{\gamma P/\rho}$ |
+| `grad_ro` | $\nabla\rho$ (ベクトル) |
+| `schlieren_mag` | $\lvert\nabla\rho\rvert/\max\lvert\nabla\rho\rvert$ (0–1) |
+| `schlieren_dir` | $(\hat n\cdot\nabla\rho)/\max\lvert\hat n\cdot\nabla\rho\rvert$ (−1–1)。$\hat n$ は Schlieren Direction (既定 x=流れ方向) |
+| `schlieren` | $\exp(-k\,\lvert\nabla\rho\rvert/\max\lvert\nabla\rho\rvert)$ の疑似シュリーレン画像 (白黒反転して表示すると実験像に近い) |
+| `vorticity`, `vorticity_mag` | $\omega=\nabla\times U$ |
+| `Q`, `Q_norm` | $Q=\tfrac12(\lVert\Omega\rVert^2-\lVert S\rVert^2)$、`Q_norm` はその $\tfrac12(\lVert\Omega\rVert^2+\lVert S\rVert^2)$ 正規化 (−1–1) |
+| `lambda2` | $S^2+\Omega^2$ の中間固有値 (既定 OFF) |
+| `helicity`, `helicity_norm` | $U\cdot\omega$ と $U\cdot\omega/(\lvert U\rvert\lvert\omega\rvert)$ |
+
+使い方のポイント:
+
+- **勾配の出所**: `Use Solver Gradients` (既定 ON) ならソルバが出力した `dUxdx…`/`drodx…` をそのまま使い、
+  無ければ `vtkGradientFilter` でメッシュから計算する。ソルバの離散勾配と可視化を一致させたいときは ON、
+  出力に勾配が無い run や外部データでは OFF でよい。
+- **cell / node 両対応**: `ro` が Cell Data にあれば Cell、Point Data にあれば Point として処理する。
+  cell モードの結果を滑らかに描きたいときは後段に `Cell Data to Point Data` を挟む。
+- **シュリーレンの正規化**は「その時刻・全ブロックの最大値」で行うため、時系列でスケールが変わる。
+  アニメーションでレンジを固定したいときは色マップの Rescale を切る。`Schlieren Exponent` $k$ は
+  大きいほど弱い密度勾配を強調する (既定 15)。
+- **Q 値の等値面**は `Q` (次元 1/s²) に閾値を決めにくいので、まず `Q_norm > 0.1` 程度で当たりを付けるとよい。
+- 検算: ABC (Beltrami) 流 $\omega=U$ の解析場で `vorticity`・`grad_ro`・`Q` が 2 次精度で一致し、
+  `helicity_norm`=1.000000 になることを確認済み。
+
 ## ケースごとの注意
 
 - `run_case.sh` などのケース専用ヘルパーがあるなら、それを優先する。
