@@ -37,6 +37,7 @@
 | [tooling-cloud-gpu-env.md](active/tooling-cloud-gpu-env.md) | `tooling / infra` | クラウド GPU 環境 (AWS EC2 spot): Docker 構築・計算投入・速度計測基盤。MPI 化の実行基盤を先行整備 |
 | [tooling-nozzle-design-tool.md](active/tooling-nozzle-design-tool.md) | `tooling / optimization` | 超音速ノズル設計ツール親計画 (5 機種・forge 評価器・サロゲート MOO・帰還エンジン・確認 CFD メニュー・AI 対話問題定義)。フェーズごとに子 plan を起票 |
 | [tooling-nozzle-phase3-windtunnel.md](active/tooling-nozzle-phase3-windtunnel.md) | `tooling / optimization` | ↑の Phase 3 子 plan (2026-08-13 起票): ①軸対称風洞 — モード F (中心線マッハ全権)・**帰還エンジン v1 (逆MOC+δ\*経験式) / v2 (Euler帰還・凍結マップ)**・一様性 εM/εθ・自己一貫/Sivells 照合。後半 = co-kriging MOO + 凝縮確認メニュー |
+| [tooling-nozzle-walldriven-chain.md](active/tooling-nozzle-walldriven-chain.md) | `tooling / optimization` | ①風洞の **wall-driven チェーン** (2026-08-15 起票、外部推奨方針の評価・採用): 円弧廃止 U→T→D 多項式壁 + CFD 特性抽出 + D 下流 wave-cancellation MOC + δ\*/B-spline。$M_c(x)$ は診断量。B8 チェーンと並存し W9 で同条件比較。W1–W2 (幾何+検証) 済 |
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
