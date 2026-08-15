@@ -3,13 +3,13 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `draft`  <!-- 2026-08-15 起票。実装未着手 -->
+- **status**: `done`  <!-- 2026-08-15 起票、同日 A0–A5 完了 (inviscid ループ確立)。A6 は不要と判明、A7 は着手時に後続 plan -->
 - **related_docs**:
-  - [`methods/design/overview.md`](../../methods/design/overview.md) (現在仕様。実装着手時に本チェーン節を追加する)
+  - [`methods/design/overview.md`](../../methods/design/overview.md) (現在仕様。「axis-Mach チェーン」節)
 - **related_plans**:
-  - 親: [`tooling-nozzle-design-tool.md`](tooling-nozzle-design-tool.md) (§4.7 のアンカー機構「遷音速系列 + kernel MOC で $x_k$ に $M,M',M''$ を固定」の具体化にあたる)
-  - 兄弟: [`tooling-nozzle-phase3-windtunnel.md`](tooling-nozzle-phase3-windtunnel.md) (現行 B8 生産チェーン。**壊さず回帰対照として維持**)
-  - 兄弟: [`tooling-nozzle-walldriven-chain.md`](tooling-nozzle-walldriven-chain.md) (wall-driven チェーン。**W5 以降は保留** — 本計画を主線とするユーザ判断 2026-08-15。W1–W3 の成果物は流用)
+  - 親: [`../active/tooling-nozzle-design-tool.md`](../active/tooling-nozzle-design-tool.md) (§4.7 のアンカー機構「遷音速系列 + kernel MOC で $x_k$ に $M,M',M''$ を固定」の具体化にあたる)
+  - 兄弟: [`../active/tooling-nozzle-phase3-windtunnel.md`](../active/tooling-nozzle-phase3-windtunnel.md) (現行 B8 生産チェーン。**壊さず回帰対照として維持**)
+  - 兄弟: [`../active/tooling-nozzle-walldriven-chain.md`](../active/tooling-nozzle-walldriven-chain.md) (wall-driven チェーン。**W5 以降は保留** — 本計画を主線とするユーザ判断 2026-08-15。W1–W3 の成果物は流用)
   - 出典調査: [`notes/investigations/nozzle-throat-curvature-shape-representation-survey.md`](../../notes/investigations/nozzle-throat-curvature-shape-representation-survey.md)
   - 引き継ぎ: [`notes/sessions/2026-08-15-handover-wind-tunnel-nozzle-design.md`](../../notes/sessions/2026-08-15-handover-wind-tunnel-nozzle-design.md)
 - **created**: `2026-08-15`
@@ -236,13 +236,13 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
 
 ## 9. 完了条件
 
-- [ ] A0: `methods/design/overview.md` に axis-Mach チェーン節を追加し `methods/index.md` を同期
-- [ ] A1–A3 実装 + 単体テスト ALL PASS + 既存 mode F 回帰不変
-- [ ] A4: Euler CFD 検証 run が品質・収束・準定常ゲートを通過 (VERDICT 添付)
-- [ ] A5: アンカー更新反復が §7 のゲートで収束し、B8 との同条件比較を記録
-- [ ] (条件付き A6 は必要になった時点で本計画に追記)
-- [ ] status を `done` にし §10 に変更ログを記録、`plans/accepted/` へ移動
-- [ ] `plans/README.md` の一覧を同期 (移動元・移動先の両セクション)
+- [x] A0: `methods/design/overview.md` に axis-Mach チェーン節を追加し `methods/index.md` を同期
+- [x] A1–A3 実装 + 単体テスト ALL PASS (`run_axislaw_tests` 15 / `run_hall_tests` 30 / `run_axismach_wall_tests` 13) + 既存 mode F 回帰不変 (`run_inverse_tests` 等 ALL PASS)
+- [x] A4: Euler CFD 検証 run (`run_0044_axismach_v0`) — 品質 PASS (AR 10.1/skew 0.41)・NaN 0・ALL STEADY・場凍結 1.5e-5 (残差はプラトー = warm 床、W3 と同判定)
+- [x] A5: アンカー更新反復が収束 (pass2/3 = 0.451/0.463% Md ≤ 0.5% ゲートを 2 pass 連続)、B8 比較を §10 に記録
+- [x] A6 は**不要と判明** (ゲートは単一 quintic + アンカー更新 + 高解像 MOC で達成。より長いノズル [x_E>~9.6] が要るときに再訪)
+- [x] status を `done` にし §10 に変更ログを記録、`plans/accepted/` へ移動
+- [x] `plans/README.md` の一覧を同期 (移動元・移動先の両セクション)
 
 ## 10. 変更ログ
 
@@ -259,3 +259,39 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
   T 直後の transonic starting line は壁形状ではなく Hall 場のコーシーデータであり、
   そこから下流は既存 `InverseMOC.fill` の出力がそのまま壁になる。独立した「kernel 領域の
   壁マーチ」も設けない (§5.3 を再構成)。
+- `2026-08-15` — **A0–A5 完了 (inviscid ループ確立)、status: done**。実装 =
+  `geometry/axis_law.py`・`transonic.py::HallThroat`・`wall_axismach.py`・
+  `evaluate/runner_axismach.py` (+ probdef type 追加)。テスト 3 系統 ALL PASS。
+  検証 run = `case/41.wind_tunnel_design/run_0044〜0047` (README run 表参照)。
+  **実装で確定した設計知見**:
+  1. **単調ゲートは $L_c$ の上限側を縛る** ($M''_A>0$ で $a_2=\frac12L_c^2M''_A$ が
+     支配し長い $L_c$ が単調性を破る。$L_c\to0$ は smoothstep 退化で常に単調 —
+     原方針 §10 の想定と逆向き)。Hall アンカーの窓上限 9.57 → 単一 quintic では
+     $x_E\approx9.6$ (B8 の 14 より短いノズル)。長いノズルが要るときは A6 (knot)。
+  2. **Hall (KL 置換) は B5 型乖離を実測で縮める**: 壁足 θ ギャップ 1.37° (Sauer)
+     → 0.29°。ただし実測 $M''$ の符号 (−0.05) は Hall 予測 (+0.11) と逆 —
+     アンカー更新は依然必須。
+  3. **pass1 の切り分け**: アンカー更新は接合帯を 0.005 以下に抑えるが、
+     支配残差は $x\approx6$ ピークの分布誤差で、**真因は逆 MOC の質量流束リーク
+     (0.79% @ n_axis=500)** = 壁流線が細る離散化誤差。解像度 2 倍で半減
+     (0.79→0.36→0.14%) し、$r_F$ は $C_D$ 整合値 (−0.2%) へ収束。
+     **生産設定は n_axis=2000 / n_start=121 / dx_wall=0.005** (設計 ~6.5 分)。
+     恒久対処の候補 = `_CPlusMarch` (流束閉包) の完成 (future work)。
+  4. **A5 収束**: pass2 = **0.451% Md** (初のゲート通過)、pass3 = 0.463% Md
+     (固定点)。overshoot なし。出口 $\varepsilon_M$ = 0.049–0.051% /
+     $\varepsilon_\theta$ = 0.012°。軸うねり (deg3 窓 0.55–2.5) **0.0019 =
+     円弧 R=2 の 1/11** (walldriven W3 の 0.0009 と同オーダー — 接合こぶ実質消滅)。
+  5. **B8 同条件比較** (B8 = run_0026 pass9, 9 パス 90k step / axis-Mach =
+     run_0047 pass3, 3 パス 45k step):
+     | 指標 | B8 | axis-Mach |
+     | --- | --- | --- |
+     | ‖ΔM‖∞ (masked) | 0.0198 (0.49% Md) | 0.0185 (0.46% Md) |
+     | ΔM rms | 0.0071 | 0.0119 |
+     | 出口 ε_M rms | 0.026% | 0.049% |
+     | 出口 ε_θ max | 0.018° | 0.012° |
+     | 軸うねり (物理) | ±0.024 (円弧こぶ残存) | 0.0019 (円弧なし) |
+     | 加速区間 | x_E=14 | x_E=9.63 (単一 quintic 上限) |
+     ΔM ゲートは同水準を 1/3 のパス数・1/2 の step 数で達成、**円弧こぶは構造的に
+     消滅** (B8 は円弧維持のため物理うねりが残る)。ΔM rms と ε_M は B8 がやや良い
+     (残る MOC リーク 0.24% が原因候補)。**B8 は生産構成として維持**し、置き換えの
+     判断 (と NS/δ* への接続 = A7) は次段階でユーザと決める。

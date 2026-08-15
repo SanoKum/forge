@@ -1,0 +1,41 @@
+# ① 軸対称風洞ノズル — axis-Mach チェーン A4 (Md=4, 初回 = Hall アンカー)
+# plan: plans/active/tooling-nozzle-axismach-chain.md
+# Hall (R=2) starting line + 軸アンカー → 5次 Hermite 軸 Mach law (自由度 L_c のみ)
+# → 逆 MOC → 直管+U→T Hermite+骨接放物線+設計壁 (円弧なし) → node Euler 段階起動。
+# L_c は Lc_mode: max (許容窓上限×0.98 — 単一 quintic では M''_A>0 のため
+# 上限側が単調ゲートで縛られる。Hall アンカーで x_E≈9.6 となり B8 の 14 より短い)。
+name: wt_m4_axismach
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6          # 入口全圧 [Pa]
+  Tt: 800.0          # 入口全温 [K]
+  p_ambient: 1000.0  # 出口背圧 [Pa] (超音速流出 — 実質未使用)
+  r_throat: 0.010    # スロート半径 [m]
+  M_design: 4.0
+
+dv:
+  L_c: {value: 9.4, min: 1.0, max: 20.0}   # Lc_mode: explicit のときのみ使用
+
+geometry:
+  R: 2.0             # スロート曲率半径 / r_t (Hall のパラメータ + U→T Hermite の r''(T))
+  r_inlet: 2.5
+  L_U: 3.5           # U→T Hermite 長 (walldriven W1 と同値, μ=4.08 ≤ 20)
+  L_pipe: 0.5
+  M_start: 1.05      # starting line の軸 M (数値上の選択)
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3  # 軸 target 延長 = x_E + margin × r_F √(Md²−1)
+  Lc_mode: max       # 許容窓上限×0.98 (アンカー更新反復でも自動追従)
+
+mesh:
+  discretization: node
+  ni: 321
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000

@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import yaml
 
-KNOWN_TYPES = ("thruster_bell", "wind_tunnel_axisym", "wind_tunnel_axisym_walldriven")
+KNOWN_TYPES = ("thruster_bell", "wind_tunnel_axisym", "wind_tunnel_axisym_walldriven",
+               "wind_tunnel_axisym_axismach")
 
 
 @dataclass
@@ -72,7 +73,8 @@ def _validate(p: Problem) -> None:
         for k in ("eps",):
             if k not in p.spec:
                 errs.append("spec.eps (面積比 Ae/At) が必要")
-    elif p.type in ("wind_tunnel_axisym", "wind_tunnel_axisym_walldriven"):
+    elif p.type in ("wind_tunnel_axisym", "wind_tunnel_axisym_walldriven",
+                    "wind_tunnel_axisym_axismach"):
         for k in ("Pt", "Tt"):
             if k not in p.spec:
                 errs.append(f"spec.{k} が必要")

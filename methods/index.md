@@ -24,7 +24,7 @@ forge の理論的背景と実装解説の索引。運用方針は [README.md](R
 | 乱流モデル | [turbulence/theory.md](turbulence/theory.md) ・ [implementation.md](turbulence/implementation.md) | 整備済み (分割) |
 | 多成分熱物性 (TP gas) | [thermophysics.md](thermophysics.md) | M1-M4 + TP境界条件 完了 |
 | 非平衡凝縮 (4 モーメント) | [condensation.md](condensation.md) | 整備中 (Phase 1 受動スカラー骨格) |
-| ノズル設計ツール | [design/overview.md](design/overview.md) | 整備中 (Phase 0/2 完了・①風洞 = axis-Mach チェーン実装中) |
+| ノズル設計ツール | [design/overview.md](design/overview.md) | 整備中 (Phase 0/2 完了・①風洞 = axis-Mach チェーン A0–A5 完了) |
 
 新規領域を追加した場合は本表に行を追加すること。統合済みの領域は 1 リンク、分割の領域は
 theory ・ implementation を併記する。

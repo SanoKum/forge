@@ -1,0 +1,46 @@
+# ① 軸対称風洞 — axis-Mach チェーン A5 pass1 (アンカー更新反復)
+# problem_m4_axismach.yaml との差分: run_0044 の CFD 実測で x_A とアンカーを更新
+#   x_A = x_reach,CFD = 1.7901 (壁始点 J=(0.2477,1.0153) 発 C⁻ の軸着地。
+#     ds/n_snap 感度 ~1e-3, start_offset 感度 0.19 は既知の粗さ — B10 と同様 base 採用)
+#   アンカー = 平滑化スプライン (make_smoothing_spline, lam 1e-6..1e-4 で安定) から
+#     同一フィット関数評価。実測 M'' は負 (-0.049) — Hall 予測 (+0.11) と符号が違う
+#     のが B5 型乖離の実データ。
+# L_c は x_E を pass0 と同一 (9.6304) に固定する explicit 指定 (比較可能性優先)。
+name: wt_m4_axismach_p1
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6
+  Tt: 800.0
+  p_ambient: 1000.0
+  r_throat: 0.010
+  M_design: 4.0
+
+dv:
+  L_c: {value: 7.8403, min: 1.0, max: 20.0}   # = x_E(pass0) 9.6304 − x_reach 1.7901
+
+geometry:
+  R: 2.0
+  r_inlet: 2.5
+  L_U: 3.5
+  L_pipe: 0.5
+  M_start: 1.05
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  Lc_mode: explicit
+  x_reach_cfd: 1.7901
+  x_reach_anchor: [2.08235, 0.65094, -0.04881]
+  axis_segment_run: "../case/41.wind_tunnel_design/run_0044_axismach_v0"
+
+mesh:
+  discretization: node
+  ni: 321
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000

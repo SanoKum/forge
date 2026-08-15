@@ -198,9 +198,9 @@ target})$ を全壁点で一定と置く現行の閉じ方は、**軸対称か�
 (W5 outer loop と統合)。詳細は `moc_cancel.py` docstring と plan §4 参照。
 Phase W5 以降は上記厳密化を経てから着手する。
 
-## axis-Mach チェーン (①風洞・実装中 — 2026-08-15 起票の主線)
+## axis-Mach チェーン (①風洞・実装済み — 2026-08-15 起票・同日 A0–A5 完了の主線)
 
-計画: [`plans/active/tooling-nozzle-axismach-chain.md`](../../plans/active/tooling-nozzle-axismach-chain.md)。
+計画: [`plans/accepted/tooling-nozzle-axismach-chain.md`](../../plans/accepted/tooling-nozzle-axismach-chain.md)。
 軸中心 Mach 分布 $M_{\rm axis}(x)$ を**低自由度の一次設計変数**とする Sivells 型逆設計:
 
 $$\text{Hall 遷音速解} \rightarrow M_{\rm axis}\ (\text{5次 Hermite},\ \text{自由度 } L_c) \rightarrow \text{逆 MOC} \rightarrow \text{Euler CFD} \rightarrow \text{characteristic 追跡でアンカー更新}$$
@@ -231,7 +231,13 @@ $$a_0=M_A,\quad a_1=L_cM'_A,\quad a_2=\tfrac12 L_c^2M''_A,\quad \Delta M=M_d-M_A
 $$a_3=10\Delta M-6a_1-3a_2,\quad a_4=-15\Delta M+8a_1+3a_2,\quad a_5=6\Delta M-3a_1-a_2$$
 
 **設計ゲート**: $M'\ge0$ 全域 (hard — これで $M\le M_d$、overshoot 0 が自動保証) /
-$M''$ 符号反転回数 $\le1$ (品質指標)。$M'\ge0$ が破れる下限 $L_{c,\min}$ は bisection で返す。
+$M''$ 符号反転回数 $\le1$ (品質指標)。許容 $L_c$ は `admissible_Lc_range` (窓探索) で返す。
+
+**実装で確定した構造 (2026-08-15)**: 単調ゲートは $L_c$ の**上限側**を縛る。
+$L_c\to0$ では law が smoothstep に退化し常に単調 (下限は壁角/曲率 QA が課す) だが、
+$a_2=\frac12L_c^2M''_A$ が $L_c^2$ で成長するため $M''_A>0$ では長い $L_c$ が単調性を
+破る。Hall アンカー (R=2) の窓上限は 9.57 → 単一 quintic では $x_E\approx9.6$
+(B8 の 14 より短い)。より長いノズルは区分 $C^2$ spline (計画 A6, 未実装) が必要。
 
 ### Hall 遷音速解 (`geometry/transonic.py::HallThroat`)
 
@@ -265,7 +271,21 @@ $M_A,M'_A,M''_A$ を評価 (生の 2 階差分禁止。窓/次数感度を併記
 $\max_x|M_{\rm CFD}-M_{\rm target}|\le0.5\%\,M_d$・overshoot <1%・出口 $\sigma_M$/$\theta$。
 
 評価 runner は `evaluate/runner_axismach.py` (problem type `wind_tunnel_axisym_axismach`、
-node Euler・段階起動 — wall-driven W3 と同じ 2 段方式)。
+node Euler・段階起動 — wall-driven W3 と同じ 2 段方式)。アンカー抽出は
+`extract_x_reach` (壁始点発 C⁻) + `axis_curve_node` (node 軸 DOF の
+`make_smoothing_spline` — M/M'/M'' を同一フィットから評価、λ 3 桁で安定)。
+
+**逆 MOC の解像度要件 (2026-08-15 実測)**: 三角充填の壁流線は質量流束を
+離散化誤差でリークし壁を細らせる (n_axis=500 で 0.79% → 分布 ΔM 誤差 −1.1% Md が
+x≈6 にピーク)。解像度 2 倍で半減し $r_F$ は $C_D$ 整合値へ収束する。
+**生産設定 = `n_axis_inv: 2000` / `n_start: 121` / `dx_wall: 0.005`** (設計 ~6.5 分)。
+恒久対処の候補は `_CPlusMarch` (流束閉包) の完成。
+
+**A5 実測 (case/41 run_0044–0047, Md=4)**: pass0 (Hall アンカーのみ) ΔM_max
+1.12% Md → pass2/3 (アンカー更新+高解像 MOC) **0.451/0.463% Md ≤ 0.5% ゲート**
+(反復固定点)。overshoot なし。出口 $\varepsilon_M$ 0.049–0.051% /
+$\varepsilon_\theta$ 0.012°。軸うねり (deg3 窓 0.55–2.5) **0.0019 = 円弧 R=2 の
+1/11** (接合こぶ実質消滅)。B8 比較は計画 §10 の表を参照。
 
 ## メッシュ (構造化・トポロジ固定)
 
