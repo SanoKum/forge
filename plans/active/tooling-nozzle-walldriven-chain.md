@@ -168,7 +168,7 @@ D 下流 wave-cancellation MOC → δ\* 補正 → 全域 B-spline → NS/RANS �
 | **W0** | 判別実験: 現行 B8 チェーンで R=5 A/B (調査 §8 の計画のまま)。こぶの R 依存を測る | **済 (2026-08-15, `run_0039_r5_cold`)** — **判定: 円弧起因が支配**。同一コード 3 次トレンドでこぶ振幅 R2 0.0217→R5 0.0106 (比 0.49)、到達不能域のみでは 0.0217→0.0085 (比 0.39)、いずれも $1/\sqrt R$ 比 0.632 より深い。壁 $dM/dx$ の J 跳びは比 0.65→0.98 でほぼ消滅。**帰結**: 調査 §8 に従い MOO/新チェーンの既定は $R_t\ge5$ 帯とし、接合廃止 (E) 単独への投資は保留 — 本 plan の wall-driven チェーンは (b)+(c) を含むため方針変更なし、既定 $R_t=5$ で W3 へ。R5 では山 (x=1.32) が $x_{reach}$=1.10 の下流 = 設計到達域内へ移った (R2 では到達不能) 点も新チェーンに有利。留保: R5 は単一格子。詳細は [case README](../../case/41.wind_tunnel_design/README.md) の run_0039 行と `r5_ab_metrics.json` | 
 | **W1** | 幾何生成器: `wall_walldriven.py` (U→T / T→D / 合成 / validator / 解析 κ・dκ/ds / §10 option) | **済 (2026-08-15)** |
 | **W2** | 解析テスト + 可視化: 端点条件・境界すれすれ・違反ケースの検出、$r,\theta,\kappa,d\kappa/ds$ 図 | **済 (2026-08-15)** |
-| W3 | メッシュ/CFD 接続 | **済 (2026-08-15, `run_0042_walldriven_w3c`)**。`WallDrivenCFDWall` (直管+U→T→D+円錐+**戻しテーパ+円筒** — 円錐のまま outlet を切ると node 既知問題 [傾斜壁∩超音速流出コーナー] で初手発散: run_0040/0041 で実証) + `runner_walldriven` (新 type `wind_tunnel_axisym_walldriven`、**段階起動必須** — cold 単段 conv1+cfl4 は step~9 発散)。品質 PASS / NaN なし / ALL STEADY / 設計+データ線域は maxΔM 4.5e-6 に凍結 (グローバル残差は出口円筒帯起源のプラトーで NOT CONVERGED 表示 — 実害なしと確認済)。**D 発 C⁻ 軸着地 x=8.07 (margin 3.57)、P0 WARN (0.196%)、軸うねり +0.0009 = 円弧 R=5 の 1/11 — §2.2 仮説を初データ点で強く支持** | 
+| W3 | メッシュ/CFD 接続 | **済 (2026-08-15, `run_0042_walldriven_w3c` → `run_0043_conecheck_staged` で訂正確定)**。`WallDrivenCFDWall` (直管+U→T→D+θ_D円錐+任意の戻しテーパ/円筒) + `runner_walldriven` (新 type `wind_tunnel_axisym_walldriven`、**段階起動必須** — cold 単段 conv1+cfl4 は step~9 発散: run_0040/0041)。**訂正**: 当初「円錐のみだと node 既知問題 [傾斜壁∩超音速流出コーナー] で発散する」と誤診断し戻しテーパ+円筒を導入した (run_0042) が、円錐のみ+段階起動だけの切り分け (run_0043、ユーザ指示) で NaN なし完走・うねり指標も同水準と判明。**真因は cold 単段の CFL が高すぎただけ** (`procedures/divergence-and-startup.md` の標準的教訓どおり)。**生産既定を円錐のみ (`L_turn=L_cyl=0`) に簡素化**。品質 PASS / NaN なし / ALL STEADY / 設計+データ線域は maxΔM ~4.5e-6 に凍結。**軸うねり +0.0009 (テーパ有) / +0.00088 (円錐のみ) — 円弧 R=5 の 1/11 — §2.2 仮説を強く支持**。W4 のデータ抽出は run_0042/0043 どちらでも有効 (幾何は同一、下流のみ差) | 
 | W4 | 特性情報抽出 + cancellation MOC: D からの C⁻ データ線抽出 (`cminus_cfd` 拡張)、`moc_kernel` 単位プロセスで非反射壁マーチ、$P_0$ 診断 | 未着手 |
 | W5 | outer loop: $M_e(\theta_D)$ root find (必要なら $R_t, L_D$ も)。$M_c(x)$ ・こぶ振幅を診断出力 | 未着手 |
 | W6 | δ\* 補正: `deltastar` 相関 + smoothing spline + 法線オフセット | 未着手 |
@@ -215,10 +215,15 @@ D 下流 wave-cancellation MOC → δ\* 補正 → 全域 B-spline → NS/RANS �
   深い)。新チェーンの既定 $R_t$ は 5 とし W3 へ進む。§6 W0 行に要約、一次データは
   case README run_0039 行・`r5_ab_metrics.json`・`analyze_r5_ab.py`。
 - 2026-08-15 (W3 実施, ユーザ指示): `WallDrivenCFDWall` / `runner_walldriven` /
-  probdef 新 type を実装、テスト 68 件 ALL PASS。得られた W3 の教訓 2 件:
-  (i) **CFD ドメインは出口で壁を軸平行へ戻す** (円錐のまま切ると node 既知問題で
-  初手発散 — run_0040/0041 が記録、`boundary-node-nozzle-wall-outlet-stability` 参照)、
-  (ii) **段階起動必須** (soft 1次+cfl0.5 → 本段。D 発膨張波の軸反射が壁へ戻る帯
-  x≈8.6 で準 1D IC の過渡が破綻する)。疎通 run `run_0042_walldriven_w3c` で
-  D 発 C⁻ データ線・P0 診断 (WARN 0.196%)・軸うねり +0.0009 (円弧 R=5 の 1/11、
-  こぶ実質消滅) を確認。W4 (特性抽出 + cancellation MOC) へ。
+  probdef 新 type を実装、テスト 68 件 ALL PASS。**段階起動必須** (soft 1次+cfl0.5
+  → 本段。cold 単段 conv1+cfl4 は D 発膨張波の軸反射が壁へ戻る帯 x≈8.6 で準 1D
+  IC の過渡が破綻し step~9 発散 — run_0040/0041)。当初これを node 既知問題
+  「傾斜壁∩超音速流出コーナー」と誤診断し、出口で壁を軸平行へ戻す戻しテーパ+
+  円筒を導入 (`run_0042_walldriven_w3c`)。D 発 C⁻ データ線・P0 診断 (WARN
+  0.196%)・軸うねり +0.0009 (円弧 R=5 の 1/11、こぶ実質消滅) を確認。
+- 2026-08-15 (テーパ要否の切り分け, ユーザ指示): 円錐のみ (テーパなし) +
+  段階起動を単独試験 (`run_0043_conecheck_staged`) → **NaN なし・ALL STEADY で
+  完走、うねりも同水準 (+0.00088)**。**戻しテーパは不要だったと確定** — 真因は
+  cold 単段の CFL (`procedures/divergence-and-startup.md` の標準的教訓どおり)。
+  `WallDrivenCFDWall` の既定を `L_turn=L_cyl=0` に変更し生産構成を簡素化。
+  W4 (特性抽出 + cancellation MOC) へ。

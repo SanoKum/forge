@@ -160,14 +160,22 @@ U→T→D 低自由度多項式壁 → CFD (遷音速+初期超音速を実場�
 検出・解析 κ/dκds と数値微分の一致・CFD 壁の C2 接続・不正入力拒否)。
 
 **W3 (メッシュ/CFD 接続, 実装済み)**: `WallDrivenCFDWall` = 直管 + U→T→D +
-θ_D 円錐 (D 発 C⁻ = W4 データ線を軸着地まで収める延長) + **戻しテーパ + 円筒**。
-終端を円錐のまま outlet で切ると node の既知問題 (傾斜壁∩超音速流出コーナー) で
-初手発散するため、壁角を 0 へ戻してから出口に当てる (テーパの圧縮波はデータ線より
-下流にしか届かない)。評価は `evaluate/runner_walldriven.py`
-(problem type `wind_tunnel_axisym_walldriven`、node Euler、**段階起動必須** —
-soft 1次+cfl0.5 3000 step → 本段)。dv は `theta_D` / `R_t` / `L_D_frac`
-(L_D = frac × 3R_t tanθ_D)。疎通実測 (run_0042): 軸うねり +0.0009 (円弧 R=5 の
-1/11 — 接合こぶ実質消滅)、データ線 P0 変動 0.196% (WARN 帯、非回転 MOC 可)。
+θ_D 円錐 (D 発 C⁻ = W4 データ線を軸着地まで収める延長)。任意で戻しテーパ+円筒も
+持てるが**既定は円錐のまま outlet で打ち切り** (`L_turn=L_cyl=0`)。評価は
+`evaluate/runner_walldriven.py` (problem type `wind_tunnel_axisym_walldriven`、
+node Euler、**段階起動必須** — soft 1次+cfl0.5 3000 step → 本段。cold 単段
+conv1+cfl4 は D 発膨張波の軸反射が壁へ戻る帯で準 1D IC の過渡が破綻し初手発散)。
+dv は `theta_D` / `R_t` / `L_D_frac` (L_D = frac × 3R_t tanθ_D)。
+
+**訂正 (2026-08-15)**: 当初 cold 単段の発散を node の既知問題 (傾斜壁∩超音速
+流出コーナー、`plans/active/boundary-node-nozzle-wall-outlet-stability.md`) と
+誤診断し戻しテーパ+円筒を導入したが (`run_0042_walldriven_w3c`)、円錐のみ+
+段階起動の切り分け (`run_0043_conecheck_staged`) で NaN なし完走・うねり指標も
+同水準 (+0.00088 vs +0.0009) と判明 — **真因は cold 単段の CFL** で、既知問題
+とは無関係。テーパ機能はコードに残すが生産既定は円錐のみ。
+
+疎通実測: 軸うねり +0.0009 (円弧 R=5 の 1/11 — 接合こぶ実質消滅)、データ線
+P0 変動 0.196% (WARN 帯、非回転 MOC 可)。
 Phase W4 以降 (特性抽出/MOC/BL/B-spline) は plan 参照。
 
 ## メッシュ (構造化・トポロジ固定)

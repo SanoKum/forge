@@ -31,9 +31,9 @@ def build_wall(p: Problem) -> tuple[WallDrivenCFDWall, dict]:
 
     L_D は独立入力にせず `L_D_frac × 3 R_t tanθ_D` (変曲なし条件の上限比) で与える。
     円錐長は `L_ext_factor × r_D` (既定 4.0 — D 発 C⁻ の軸着地を覆う。着地位置は
-    run 後に実測で検証し、足りなければ factor を上げて作り直す)。終端は
-    戻しテーパ L_turn + 円筒 L_cyl (node 出口コーナー既知問題の回避 —
-    WallDrivenCFDWall docstring 参照)。
+    run 後に実測で検証し、足りなければ factor を上げて作り直す)。終端は既定で
+    円錐のまま (`L_turn`/`L_cyl` は既定 0) — 段階起動さえすれば戻しテーパは
+    不要と run_0043 で確定済み (WallDrivenCFDWall docstring 参照)。
     """
     theta_D = np.deg2rad(float(dv_value(p, "theta_D")))
     R_t = float(dv_value(p, "R_t"))
@@ -48,8 +48,8 @@ def build_wall(p: Problem) -> tuple[WallDrivenCFDWall, dict]:
     wall = WallDrivenCFDWall(
         region, L_pipe=float(p.geometry.get("L_pipe", 0.5)),
         L_cone=float(p.geometry.get("L_ext_factor", 4.0)) * region.dn.r_D,
-        L_turn=float(p.geometry.get("L_turn", 2.0)),
-        L_cyl=float(p.geometry.get("L_cyl", 1.0)))
+        L_turn=float(p.geometry.get("L_turn", 0.0)),
+        L_cyl=float(p.geometry.get("L_cyl", 0.0)))
     diag = region.diagnostics()
     diag.update({"theta_D_deg": float(np.rad2deg(theta_D)), "R_t": R_t,
                  "L_D": L_D, "L_D_frac": L_D_frac, "L_U": region.up.L_U,
@@ -109,10 +109,10 @@ def prepare(problem_path, run_dir, nsteps=None) -> dict:
 def run_staged(run_dir) -> int:
     """soft 段 (1 次 + cfl0.5, 3000 step) → 本段 (runner_wt.run_staged と同方式)。
 
-    cold 単段 (conv1+cfl4 直投入) は run_0040/0041 で step ~9 発散
-    (円錐→テーパ帯 x≈8.6 の壁近傍が種 — D 発膨張波の軸反射が壁へ戻る位置で、
-    準 1D IC との不整合過渡が最大になる)。divergence-and-startup の標準手順
-    (易しい条件で立ち上げ→引き継ぎ) に従う。
+    cold 単段 (conv1+cfl4 直投入) は run_0040/0041 で step ~9 発散 (D 発膨張波の
+    軸反射が壁へ戻る位置で準 1D IC との不整合過渡が最大になる)。**段階起動だけで
+    十分** (run_0043: 円錐のみ・戻しテーパなしでも段階起動なら NaN なし完走)。
+    divergence-and-startup の標準手順 (易しい条件で立ち上げ→引き継ぎ) に従う。
     """
     import re
     run_dir = Path(run_dir)

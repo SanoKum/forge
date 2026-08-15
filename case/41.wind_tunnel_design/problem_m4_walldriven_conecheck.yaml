@@ -1,9 +1,8 @@
-# ① 軸対称風洞 — wall-driven チェーン W3 (Md=4, R_t=5 既定)
-# plan: plans/active/tooling-nozzle-walldriven-chain.md。
-# 円弧・逆 MOC target を持たない: 壁 = 直管 + U→T quintic + T→D 4次 + θ_D 円錐延長。
-# R_t=5 は W0 判別実験 (run_0039: 円弧起因支配、振幅比 0.49) の帰結。
-# theta_D は W5 で M_e(θ_D) root find の dv になる — W3 は初期値 12° の疎通確認。
-name: wt_m4_walldriven
+# 診断用変種: 戻しテーパ/円筒なし (円錐のまま outlet) + 段階起動で発散するか確認。
+# run_0040 (円錐のみ・cold 単段 conv1+cfl4) は step 9 で発散したが、段階起動を
+# 試していなかった。テーパが本質的に必要か、単に cold 単段の CFL が高すぎた
+# だけかを切り分ける (ユーザ指示 2026-08-15)。
+name: wt_m4_walldriven_conecheck
 type: wind_tunnel_axisym_walldriven
 gas: {gamma: 1.4, cp: 1004.5}
 
@@ -24,9 +23,9 @@ geometry:
   L_U: 3.5           # μ = L_U²/(R_t Δr) = 1.63 ≤ 20 (単調収縮条件内)
   L_pipe: 0.5
   L_ext_factor: 4.0  # 円錐延長 = factor × r_D (D 発 C⁻ の軸着地を覆う。run 後に実測検証)
-  # 終端は円錐のまま (L_turn/L_cyl 既定 0)。段階起動 (runner_walldriven.run_staged)
-  # だけで cold 単段発散 (run_0040/0041) を回避できると run_0043 で確定済み — 戻し
-  # テーパは不要 (WallDrivenCFDWall docstring 参照)。
+  # 診断: テーパ/円筒なし (円錐のまま outlet)
+  L_turn: 0.0
+  L_cyl: 0.0
 
 mesh:
   ni: 321

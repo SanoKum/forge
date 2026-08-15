@@ -244,22 +244,32 @@ class WallDrivenThroatRegion:
 
 class WallDrivenCFDWall:
     """W3 の CFD ドメイン壁: 直管 + U→T→D + θ_D 円錐 (L_cone) + 戻しテーパ
-    (L_turn: 壁角 θ_D→0 の 3 次勾配 Hermite) + 円筒 (L_cyl)。
+    (L_turn: 壁角 θ_D→0 の 3 次勾配 Hermite) + 円筒 (L_cyl)。既定は L_turn=L_cyl=0
+    (円錐のまま打ち切り) — **段階起動 (soft 1次+cfl0.5 → 本段) だけで十分**と
+    run_0043 で確定済み (2026-08-15)。
 
     接続は全て構成上 C2: 直管↔U は (r_U,0,0)、D↔円錐は (r_D,tanθ_D,0)、
     円錐↔テーパ・テーパ↔円筒は勾配 Hermite の端条件 (q'=0, r''=0) が両側一致。
     円錐は D から出る C⁻ (W4 のデータ線) を軸着地まで場に収めるための延長。
-    **戻しテーパ+円筒は node の既知問題「傾斜壁∩超音速流出コーナーの発散」
-    (plans/active/boundary-node-nozzle-wall-outlet-stability.md) の回避**で、
-    動作実績のある構成 (出口で壁がほぼ軸平行) に揃える。テーパの圧縮波は
-    データ線より下流にしか届かない (超音速の依存域) ので W4 の抽出に影響しない。
+
+    **訂正の経緯 (2026-08-15)**: 当初、円錐のまま outlet を切ると cold 単段
+    (conv1+cfl4 直投入) で初手発散したため (run_0040)、node の既知問題
+    「傾斜壁∩超音速流出コーナーの発散」
+    (plans/active/boundary-node-nozzle-wall-outlet-stability.md) と誤診断し、
+    戻しテーパ+円筒 (出口で壁をほぼ軸平行に戻す) を導入した (run_0042)。
+    その後、**円錐のみ+段階起動**を切り分けたところ (run_0043) NaN なし・
+    ALL STEADY で完走し、うねり指標も run_0042 と同水準 (+0.0009 vs +0.0009) と
+    判明。**真因は cold 単段の CFL が高すぎただけ**で、既知問題とは無関係
+    だった (`procedures/divergence-and-startup.md` の標準的な教訓どおり)。
+    テーパ/円筒は不要だが、コード上は残す (`L_turn`/`L_cyl` を明示指定すれば
+    使える。圧縮波はデータ線より下流にしか届かないため W4 抽出には無害)。
     `mesh2d.generate_axisym_mesh` / `paste_isentropic_ic` 互換
-    (`x_in` / `x_e` / `r(x, deriv)`)。L_turn=L_cyl=0 で旧来の円錐打ち切り。
+    (`x_in` / `x_e` / `r(x, deriv)`)。
     """
 
     def __init__(self, region: WallDrivenThroatRegion, L_pipe: float = 0.5,
-                 L_cone: float = 5.0, L_turn: float = 2.0,
-                 L_cyl: float = 1.0) -> None:
+                 L_cone: float = 5.0, L_turn: float = 0.0,
+                 L_cyl: float = 0.0) -> None:
         _check_inputs("WallDrivenCFDWall",
                       positive={"L_pipe": L_pipe, "L_cone": L_cone},
                       finite_only={"L_turn": L_turn, "L_cyl": L_cyl})
