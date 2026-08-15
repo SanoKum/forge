@@ -1,14 +1,20 @@
 r"""axis-Mach チェーンの CFD ドメイン壁と壁 QA (①風洞, 無次元 r* = 1)。
 
-計画: plans/active/tooling-nozzle-axismach-chain.md §5.3。壁構成 (上流→下流):
+計画: plans/accepted/tooling-nozzle-axismach-chain.md §5.3 +
+plans/active/tooling-nozzle-axismach-throat-characteristic.md (A8)。壁構成 (上流→下流):
 
-  入口直管 (r_U) → U→T 5次 Hermite (`UpstreamThroatPoly` 流用, r''(T)=1/R) →
-  [T, x0] 骨接放物線 r = 1 + x²/(2R) (Hall 遷音速解が仮定する壁 — 幾何 DOF ではない)
-  → 逆 MOC 壁流線 [x0, x_F] (端条件クランプ 5 次 B-spline = `ModeFWall` と同じ流儀)
+  入口直管 (r_U) → U→T 5次 Hermite (`UpstreamThroatPoly` 流用, r''(T)=1/R)
+  → 逆 MOC 壁流線 [x_T, x_F] (端条件クランプ 5 次 B-spline = `ModeFWall` と同じ流儀)
 
-スロート下流に円弧などの独立幾何は挟まない (ユーザ指定 2026-08-15)。
-T (x=0) で Hermite↔放物線は (1, 0, 1/R) の共有で C²、x0 で放物線↔設計壁は
-spline 左端クランプ (r' = x0/R, r'' = 1/R) で C²。
+**スロート T (x=0) から下流は全て MOC の出力**で、円弧も放物線も挟まない
+(ユーザ指定 2026-08-15)。初期値線を**スロート特性線**にしたことで壁流線が
+スロート壁点そのものから始まるため、旧実装にあった [T, x0] の骨接放物線区間は
+不要になった (2026-08-15)。T での接続は spline 左端クランプ (r'=0, r''=1/R) と
+Hermite の端点条件 (同じ 0 と 1/R) の一致で C²。
+
+旧・縦 starting line 構成では壁流線が x0>0 から始まるため、[T, x0] を Hall 模型が
+仮定する骨接放物線 r = 1 + x²/(2R) で埋めていた (`throat_start=False` で当時の
+挙動を再現できる)。
 
 `wall_qa` は逆 MOC 壁テーブルの品質指標 (単調性・最大壁角・出口角・x_F/r_F の
 理論比較・曲率) を返す (原方針 §8.3, §28)。
@@ -29,7 +35,8 @@ def area_ratio_isentropic(M_d: float, gamma: float = 1.4) -> float:
 
 
 class AxisMachCFDWall:
-    """直管 + U→T Hermite + 骨接放物線 + 逆 MOC 壁 (クランプ 5 次 B-spline)。
+    """直管 + U→T Hermite + 逆 MOC 壁 (クランプ 5 次 B-spline)。
+    旧・縦 starting line 構成では U→T Hermite と設計壁の間に骨接放物線が入る。
 
     `mesh2d.generate_axisym_mesh` / `paste_isentropic_ic` 互換
     (`x_in` / `x_e` / `r(x, deriv)`)。
@@ -37,7 +44,8 @@ class AxisMachCFDWall:
 
     def __init__(self, wall_pts, R: float, r_U: float = 2.5, L_U: float = 3.5,
                  L_pipe: float = 0.5) -> None:
-        """wall_pts: (n,>=2) [x, r] — 逆 MOC 壁テーブル (先頭点は x0, 放物線上)。"""
+        """wall_pts: (n,>=2) [x, r] — 逆 MOC 壁テーブル。先頭点は
+        スロート (x=0, r=1) か、旧構成では x0>0 (骨接放物線上)。"""
         wall_pts = np.asarray(wall_pts, dtype=float)
         if wall_pts.ndim != 2 or len(wall_pts) < 10:
             raise ValueError("wall_pts は (n>=10, >=2) のテーブル")
@@ -46,15 +54,20 @@ class AxisMachCFDWall:
         self.L_pipe = float(L_pipe)
         self.x_in = -self.up.L_U - self.L_pipe
         self.x0 = float(wall_pts[0, 0])
-        if self.x0 <= 0.0:
-            raise ValueError(f"設計壁始点 x0 = {self.x0:.4g} ≤ 0 (スロート上流)")
-        # 始点が骨接放物線に乗っているか (遷音速モデルとの整合)
-        r0_par = 1.0 + self.x0 ** 2 / (2.0 * self.R)
-        if abs(float(wall_pts[0, 1]) - r0_par) > 5e-3:
-            raise ValueError(f"設計壁始点 r = {wall_pts[0, 1]:.5f} が放物線 "
-                             f"{r0_par:.5f} から乖離")
+        if self.x0 < -1e-9:
+            raise ValueError(f"設計壁始点 x0 = {self.x0:.4g} < 0 (スロート上流)")
+        self.throat_start = self.x0 < 1e-6
+        if self.throat_start:
+            if abs(float(wall_pts[0, 1]) - 1.0) > 5e-3:
+                raise ValueError(f"スロート始点なのに r = {wall_pts[0, 1]:.5f} ≠ 1")
+        else:
+            # [旧] 縦 starting line 構成: 始点が骨接放物線に乗っているか
+            r0_par = 1.0 + self.x0 ** 2 / (2.0 * self.R)
+            if abs(float(wall_pts[0, 1]) - r0_par) > 5e-3:
+                raise ValueError(f"設計壁始点 r = {wall_pts[0, 1]:.5f} が放物線 "
+                                 f"{r0_par:.5f} から乖離")
         self.x_e = float(wall_pts[-1, 0])
-        # 左端 = 放物線の解析微分にクランプ、右端 = テーブルの 3 次推定 (ModeFWall 流儀)
+        # 左端 = スロート (r'=0, r''=1/R) / 旧構成では放物線の解析微分にクランプ
         d0 = self.x0 / self.R
         s0 = 1.0 / self.R
         _cs = CubicSpline(wall_pts[:, 0], wall_pts[:, 1])
@@ -109,8 +122,10 @@ class AxisMachCFDWall:
             msgs.append("設計壁区間で半径が非単調")
         # 接合の C1/C2 (構成的に成り立つはずだが実測で保証 — ModeFWall と同じ流儀)
         h = 1e-6
-        for name, xc in (("直管/U→T", -self.up.L_U), ("U→T/放物線", 0.0),
-                         ("放物線/設計壁", self.x0)):
+        joints = [("直管/U→T", -self.up.L_U)]
+        joints += ([("U→T/設計壁 (スロート)", 0.0)] if self.throat_start
+                   else [("U→T/放物線", 0.0), ("放物線/設計壁", self.x0)])
+        for name, xc in joints:
             dl = float(self.r(np.array([xc - h]), 1)[0])
             dr_ = float(self.r(np.array([xc + h]), 1)[0])
             if abs(dl - dr_) > 5e-3:

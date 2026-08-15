@@ -100,5 +100,27 @@ gap_h, gap_s = abs(th_hall - th_wall_geo), abs(th_sauer - th_wall_geo)
 print(f"info 壁足 θ [deg]: 幾何 {th_wall_geo:.3f} / Hall {th_hall:.3f} / Sauer {th_sauer:.3f}")
 check(f"Hall の壁 θ ギャップ {gap_h:.3f}° < Sauer {gap_s:.3f}°", gap_h < gap_s)
 
+# --- 9. スロート特性線 (A8: 初期値線の CONTUR 化) --------------------------------
+for R in (2.0, 5.0):
+    htc = HallThroat(R=R)
+    xs, rs, Ms, ts = htc.throat_characteristic(n=81)
+    check(f"R={R}: 特性線が軸→壁 (r 単調増 0→1)",
+          abs(rs[0]) < 1e-12 and abs(rs[-1] - 1.0) < 1e-12
+          and bool(np.all(np.diff(rs) > 0)))
+    check(f"R={R}: 壁足 = 幾何スロート (x={xs[-1]:.2e}, θ={np.degrees(ts[-1]):.2e}°)",
+          abs(xs[-1]) < 1e-12 and abs(ts[-1]) < 1e-12)
+    check(f"R={R}: 壁足は超音速 M={Ms[-1]:.4f} > 1", Ms[-1] > 1.0)
+    check(f"R={R}: 軸着地 x_A={xs[0]:.4f} > 0 かつ M が Hall 軸値と一致",
+          xs[0] > 0.0 and abs(Ms[0] - float(htc.mach(xs[0], 0.0))) < 1e-12)
+    check(f"R={R}: 軸着地は縦線 (M=1.05) の軸位置より下流",
+          xs[0] > htc.x_axis_of_mach(1.05))
+    # C⁻ の定義式 dr/dx = tan(θ-μ) を線上で検証 (中点で評価、端は resample 誤差が乗る)
+    xm, rm = 0.5 * (xs[1:] + xs[:-1]), 0.5 * (rs[1:] + rs[:-1])
+    slope_fd = np.diff(rs) / np.diff(xs)
+    Mm, tm = htc.mach(xm, rm), htc.theta(xm, rm)
+    slope_ch = np.tan(tm - np.arcsin(1.0 / Mm))
+    err = float(np.max(np.abs(slope_fd[2:-2] / slope_ch[2:-2] - 1.0)))
+    check(f"R={R}: 線上で dr/dx = tan(θ-μ) (相対誤差 {err:.2e} < 5e-3)", err < 5e-3)
+
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")
 sys.exit(1 if FAIL else 0)

@@ -20,7 +20,22 @@ from __future__ import annotations
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 
-from .moc_kernel import KernelMOC, _Pt, pm_nu, pm_mach
+from .moc_kernel import (KernelMOC, _Pt, interior_vec, pm_mach,
+                         pm_mach_vec, pm_nu)
+
+
+def field_interpolator(pts):
+    r"""全計算点の Delaunay を **1 回だけ**作り、$(\theta, \nu)$ をまとめて返す補間器。
+
+    充填をベクトル化した後 (2026-08-15) は**三角形分割が支配コスト**になった
+    (実測 n_axis=1000 で 1 個 8.4 s、n_axis=2000 で ~35 s)。従来は θ 用と ν 用に
+    別々の `LinearNDInterpolator` を作り、さらに壁流線・質量流束診断・終端特性線が
+    それぞれ作り直していたため同じ分割を 6 回構築していた。値を (n,2) にまとめ、
+    生成した補間器を呼び出し側で使い回すことで 1 回に減らす (数値は完全に同一 —
+    同じ点集合の同じ線形補間)。"""
+    xy = np.array([[p.x, p.r] for p in pts])
+    val = np.array([[p.th, p.nu] for p in pts])
+    return LinearNDInterpolator(xy, val)
 
 
 def _mass_flux_density(M, g):
@@ -54,59 +69,70 @@ class InverseMOC(KernelMOC):
         よって**本実装 (楔を空のまま残す) を維持**する。楔を正しく埋める正攻法は
         レベル充填の patch でなく **C⁺ 線マーチ + 質量流束による壁閉包**
         (`_CPlusMarch`, WIP) であり、そちらで根治する。"""
-        pts = list(init_front)
-        front = list(init_front)
-        while len(front) >= 2:
-            new = []
-            for i in range(len(front) - 1):
-                B, A = front[i], front[i + 1]  # B=右(下流)側 C⁻ 担体, A=左側 C⁺ 担体
-                try:
-                    P = self._interior(A, B)
-                except RuntimeError:
-                    continue
-                if not (np.isfinite(P.x) and np.isfinite(P.r)) or P.r < -1e-12:
-                    continue
-                new.append(P)
-            front = new
-            pts.extend(new)
-        return pts
+        arr = self.fill_arrays(init_front)
+        g = self.g
+        return [_Pt(float(a[0]), float(a[1]), float(a[2]), float(a[3]), g, float(a[4]))
+                for a in arr]
+
+    def fill_arrays(self, init_front) -> np.ndarray:
+        r"""`fill` の**フロント一括ベクトル版**。戻り: (n,5) [x, r, th, nu, M]。
+
+        レベルごとに隣接ペアを**まとめて**単位過程に通す (計算内容はスカラー版と
+        同一で、ループの順序だけが変わる)。スカラー版は 1 点ずつ Python で回すため
+        点数 $\sim n^2/2$ に比例した Python オーバヘッドが支配していた
+        (実測: $n_{axis}$=2000 で 369 秒)。ベクトル版は**レベル数 $n$ 回**の
+        numpy 呼び出しで済む (同 2.4 秒, 150 倍)。numba/C++ を持ち込まずに済むのは、
+        1 レベル内のペアが互いに独立だから (レベル間の依存だけが逐次)。
+        """
+        x = np.array([p.x for p in init_front], dtype=float)
+        r = np.array([p.r for p in init_front], dtype=float)
+        th = np.array([p.th for p in init_front], dtype=float)
+        nu = np.array([p.nu for p in init_front], dtype=float)
+        M = np.array([p.M for p in init_front], dtype=float)
+        out = [np.column_stack([x, r, th, nu, M])]
+        while len(x) >= 2:
+            # B=右(下流)側 C⁻ 担体 = front[:-1], A=左側 C⁺ 担体 = front[1:]
+            xP, rP, thP, nuP, ok = interior_vec(
+                x[1:], r[1:], th[1:], nu[1:], M[1:],
+                x[:-1], r[:-1], th[:-1], nu[:-1], M[:-1],
+                self.g, self.delta, self.n_corr)
+            ok &= rP >= -1e-12
+            if not np.any(ok):
+                break
+            x, r, th, nu = xP[ok], rP[ok], thP[ok], nuP[ok]
+            M = pm_mach_vec(nu, self.g)
+            out.append(np.column_stack([x, r, th, nu, M]))
+        return np.vstack(out)
 
     # -- 壁流線 ---------------------------------------------------------------
     def wall_streamline(self, pts, x_start: float, r_start: float,
-                        dx: float = 0.02) -> np.ndarray:
+                        dx: float = 0.02, itp=None) -> np.ndarray:
         """(x_start, r_start) から dr/dx = tanθ を RK2 積分。場外に出たら終了。
 
+        `itp`: `field_interpolator(pts)` を使い回す場合に渡す (省略時は自前で構築)。
         戻り値: (n,4) [x, r, theta, M]。"""
-        xy = np.array([[p.x, p.r] for p in pts])
-        th = np.array([p.th for p in pts])
-        nu = np.array([p.nu for p in pts])
-        itp_th = LinearNDInterpolator(xy, th)
-        itp_nu = LinearNDInterpolator(xy, nu)
+        itp = field_interpolator(pts) if itp is None else itp
         out = []
         x, r = float(x_start), float(r_start)
-        t0 = float(itp_th(x, r))
-        n0 = float(itp_nu(x, r))
+        t0, n0 = (float(v) for v in itp(x, r))
         while np.isfinite(t0):
             out.append((x, r, t0, pm_mach(max(n0, 1e-9), self.g)))
             xm, rm = x + 0.5 * dx, r + 0.5 * dx * np.tan(t0)
-            tm = float(itp_th(xm, rm))
+            tm = float(itp(xm, rm)[0])
             if not np.isfinite(tm):
                 break
             x, r = x + dx, r + dx * np.tan(tm)
-            t0, n0 = float(itp_th(x, r)), float(itp_nu(x, r))
+            t0, n0 = (float(v) for v in itp(x, r))
         return np.array(out)
 
     # -- 質量流量診断 -----------------------------------------------------------
-    def massflux_across(self, pts, x_plane: float, r_top: float, n: int = 120) -> float:
+    def massflux_across(self, pts, x_plane: float, r_top: float, n: int = 120,
+                        itp=None) -> float:
         """x=x_plane の縦断面 (0..r_top) の ∫ρu·2πr dr (よどみ量規格化)。"""
-        xy = np.array([[p.x, p.r] for p in pts])
-        th = np.array([p.th for p in pts])
-        nu = np.array([p.nu for p in pts])
-        itp_th = LinearNDInterpolator(xy, th)
-        itp_nu = LinearNDInterpolator(xy, nu)
+        itp = field_interpolator(pts) if itp is None else itp
         rr = np.linspace(1e-6, r_top, n)
-        tt = itp_th(np.full(n, x_plane), rr)
-        vv = itp_nu(np.full(n, x_plane), rr)
+        val = itp(np.full(n, x_plane), rr)
+        tt, vv = val[:, 0], val[:, 1]
         ok = np.isfinite(tt) & np.isfinite(vv)
         M = np.array([pm_mach(max(v, 1e-9), self.g) for v in vv[ok]])
         f = _mass_flux_density(M, self.g) * np.cos(tt[ok])
@@ -217,7 +243,7 @@ class _CPlusMarch(InverseMOC):
 
 
 def terminal_exit(pts, wall, x_E: float, M_d: float, gamma: float = 1.4,
-                  ds: float = 2e-3, n_max: int = 400000) -> dict:
+                  ds: float = 2e-3, n_max: int = 400000, itp=None) -> dict:
     r"""**終端特性線による物理出口 F の決定** (2026-08-15, ユーザ指摘)。
 
     軸上で $M=M_d$ に達する点 $E=(x_E,0)$ から出る C⁺ 特性線
@@ -235,16 +261,13 @@ def terminal_exit(pts, wall, x_E: float, M_d: float, gamma: float = 1.4,
     (終端特性線の下流側は定義上一様域なので近似ではない)。戻り値に凍結ステップ数を
     含めるので、追跡の大半が凍結なら「場が短すぎる」と分かる。
     """
-    from scipy.interpolate import LinearNDInterpolator
-    xy = np.array([[p.x, p.r] for p in pts])
-    itp_th = LinearNDInterpolator(xy, np.array([p.th for p in pts]))
-    itp_nu = LinearNDInterpolator(xy, np.array([p.nu for p in pts]))
+    itp = field_interpolator(pts) if itp is None else itp
     wx, wr = wall[:, 0], wall[:, 1]
     mu_d = float(np.arcsin(1.0 / max(M_d, 1.0 + 1e-12)))
     x, r, n_frozen = float(x_E), 0.0, 0
     path = [(x, r)]
     for _ in range(n_max):
-        th, nu = float(itp_th(x, r)), float(itp_nu(x, r))
+        th, nu = (float(v) for v in itp(x, r))
         if np.isfinite(th) and np.isfinite(nu):
             M = pm_mach(max(nu, 1e-9), gamma)
             slope = np.tan(th + np.arcsin(1.0 / max(M, 1.0 + 1e-12)))
@@ -270,7 +293,7 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
                    n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02,
                    th_wall0: float | None = None, M_start: float = 1.05,
                    exit_mode: str = "lip", x_E: float | None = None,
-                   M_d: float | None = None):
+                   M_d: float | None = None, start_line: str = "vertical"):
     """starting line (throat: SauerThroat) + 軸目標 target(x) から壁を逆設計する。
 
     target: 呼び出し可能 M(x) — starting line の軸点 x0 で場に C1 整合していること
@@ -284,25 +307,40 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
     # 既知の限界: 壁足の曲率が円弧 1/R でなく ~0 に寝る。**曲率ブレンドは撤回**し、
     # C2 は B1 (中心線 C2 整合) / B2 (拘束付き B-spline) で保証する (plan §9.2)。
     inv = InverseMOC(gamma=gamma, delta=1.0)
-    x0, rr, MM, tt = throat.starting_line(M_start=M_start, n=n_start)
     g = gamma
+    if start_line == "throat_char":
+        # **スロート特性線を初期値線にする** (CONTUR 流, 2026-08-15 ユーザ指摘)。
+        # 線自体が C⁻ なので担体割当てが区間内で反転せず、縦線構成で残っていた
+        # スロート直後の未計算楔が構造的に消える。壁流線はスロート壁点から始まる。
+        xs_c, rr, MM, tt = throat.throat_characteristic(n=n_start)
+        x0 = float(xs_c[0])            # 軸着地 = 設計が軸に効き始める位置
+        x_line = np.asarray(xs_c, dtype=float)
+    elif start_line == "vertical":
+        x0, rr, MM, tt = throat.starting_line(M_start=M_start, n=n_start)
+        x_line = np.full(n_start, float(x0))
+    else:
+        raise ValueError("start_line は 'throat_char' か 'vertical'")
     ax = np.linspace(x0, x_axis_end, n_axis)[1:][::-1]
     init = [_Pt(float(x), 0.0, 0.0, float(pm_nu(float(target(x)), g)), g) for x in ax]
-    init += [_Pt(float(x0), float(rr[i]), float(tt[i]), float(pm_nu(float(MM[i]), g)), g)
-             for i in range(n_start)]
-    if th_wall0 is not None:
+    init += [_Pt(float(x_line[i]), float(rr[i]), float(tt[i]),
+                 float(pm_nu(float(MM[i]), g)), g) for i in range(n_start)]
+    if th_wall0 is not None and start_line == "vertical":
         # 壁足の θ を厳密壁接線で上書き (Sauer 線形化 vbar は過小 — kernel と同じ補正)
+        # throat_char では壁足 = 幾何スロートで θ=0 が厳密に成り立つので不要。
         init[-1].th = float(th_wall0)
     mdot_star = float(_flux_along(init[len(ax):], g)[-1])
     pts = inv.fill(init)
-    wall = inv.wall_streamline(pts, x0, float(rr[-1]), dx=dx_wall)
+    # Delaunay は充填ベクトル化後の支配コスト → 1 個だけ作って全診断で使い回す
+    itp = field_interpolator(pts)
+    wall = inv.wall_streamline(pts, float(x_line[-1]), float(rr[-1]), dx=dx_wall,
+                               itp=itp)
     wall_full = wall.copy()
     exit_info: dict = {"mode": exit_mode}
     if exit_mode == "characteristic":
         # **物理出口 = 終端 C⁺ (E 発) と壁流線の交点** (正しい定義, `terminal_exit`)
         if x_E is None or M_d is None:
             raise ValueError("exit_mode='characteristic' には x_E と M_d が必要")
-        te = terminal_exit(pts, wall, float(x_E), float(M_d), gamma=gamma)
+        te = terminal_exit(pts, wall, float(x_E), float(M_d), gamma=gamma, itp=itp)
         if not te["ok"]:
             raise RuntimeError("終端特性線が壁に到達しない (軸 target の延長不足の疑い"
                                f" — x_axis_end={x_axis_end:.3g}, wall_end={wall[-1,0]:.3g})")
@@ -323,7 +361,9 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
         raise ValueError("exit_mode は 'characteristic' か 'lip'")
     # 質量流量診断: 壁 (=流管であるべき曲線) までの断面積分を ṁ* と比較
     mdot1 = (inv.massflux_across(pts, wall[-1, 0] - 0.3,
-                                 float(np.interp(wall[-1, 0] - 0.3, wall[:, 0], wall[:, 1])))
+                                 float(np.interp(wall[-1, 0] - 0.3, wall[:, 0], wall[:, 1])),
+                                 itp=itp)
              if len(wall) > 10 else float("nan"))
     return {"wall": wall, "wall_full": wall_full, "pts": pts, "x0": float(x0),
+            "start_line": start_line, "x_wall0": float(x_line[-1]),
             "exit": exit_info, "mdot_start": mdot_star, "mdot_exit": mdot1}

@@ -315,3 +315,12 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
   逆 MOC は解像度に対し ~$O(n^2)$ (500→2000 で 25→369 s)。**高速化の本命は
   `_CPlusMarch` (質量流束閉包) の完成** — 粗い解像度でもリークしなくなれば生産解像度を
   下げられる。図の再生成は `viz_axismach.py`。
+- `2026-08-15` — **後継 A8 で初期値線を差し替え**:
+  [`tooling-nozzle-axismach-throat-characteristic.md`](tooling-nozzle-axismach-throat-characteristic.md)。
+  本計画が据え置いた「縦 starting line ($M_{\rm start}=1.05$)」を**スロート特性線**へ換え、
+  壁を T から全域 MOC 出力にした。本計画の §5.3 で「将来項目」としていた starting line の
+  characteristic 化がこれにあたる。効果: **到達不能帯 1.533 → 0.0019 $r_t$**、
+  **アンカー更新なしの 1 パスで ‖ΔM‖∞ 0.353% $M_d$** (本計画の 3 パス 0.451% より良い)、
+  うねり 0.00043、出口 $\varepsilon_M$ 0.020%。また逆 MOC の高速化 (充填ベクトル化 +
+  Delaunay 共有) で設計 1 回 ~400 s → 33 s となり、上の「1 パス 6.8 分・逆 MOC 90.8%」は
+  **1 パス ~1.1 分・逆 MOC 50%** に更新された (数値は不変)。検証 = run_0049/0050。

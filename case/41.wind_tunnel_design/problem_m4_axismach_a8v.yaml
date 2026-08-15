@@ -1,0 +1,43 @@
+# ① 軸対称風洞 — A8 A/B の【対照】: 旧構成 (縦 starting line M=1.05) を
+# 生産設定 (高解像 MOC + 終端特性線出口) に揃えた pass0 (Hall アンカー)。
+# plan: plans/active/tooling-nozzle-axismach-throat-characteristic.md
+# 相方 = problem_m4_axismach_a8c.yaml (start_line: throat_char)。両者の差分は
+# geometry.start_line と ni (壁長に比例) のみ。
+name: wt_m4_axismach_a8v
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6
+  Tt: 800.0
+  p_ambient: 1000.0
+  r_throat: 0.010
+  M_design: 4.0
+
+dv:
+  L_c: {value: 9.4, min: 1.0, max: 20.0}   # Lc_mode: max なので未使用
+
+geometry:
+  R: 2.0
+  r_inlet: 2.5
+  L_U: 3.5
+  L_pipe: 0.5
+  start_line: vertical
+  M_start: 1.05
+  n_start: 121
+  n_axis_inv: 2000
+  x_end_margin: 2.3
+  dx_wall: 0.005
+  exit_mode: characteristic
+  Lc_mode: max
+
+mesh:
+  discretization: node
+  ni: 357
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000

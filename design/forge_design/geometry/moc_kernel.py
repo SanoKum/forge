@@ -49,12 +49,14 @@ def _mu(M):
 class _Pt:
     __slots__ = ("x", "r", "th", "nu", "M")
 
-    def __init__(self, x, r, th, nu, g):
+    def __init__(self, x, r, th, nu, g, M=None):
         self.x = x
         self.r = r
         self.th = th
         self.nu = nu
-        self.M = pm_mach(nu, g)
+        # M は ν から一意に決まるが、既に計算済みなら渡して Newton を省ける
+        # (ベクトル充填が 100 万点規模の _Pt を作るため — 2026-08-15)
+        self.M = pm_mach(nu, g) if M is None else M
 
 
 def _sin_over_r(p: "_Pt", other: "_Pt"):
@@ -311,3 +313,70 @@ class KernelMOC:
         axis_pts = [(front[0].x, front[0].M)]
         self._march_stations(front, np.asarray(stations, dtype=float), wall_xy, wall_th, axis_pts)
         return np.array(axis_pts)
+
+
+# --- ベクトル化ユーティリティ (fill の O(n²) スカラーループ解消, 2026-08-15) -----
+def pm_mach_vec(nu, g=1.4, tol=1e-13, iters=60):
+    """ν → M の配列版 Newton (`pm_mach` と同じ反復・同じ初期値)。"""
+    nu = np.asarray(nu, dtype=float)
+    M = 1.0 + np.maximum(nu, 1e-6)
+    for _ in range(iters):
+        f = pm_nu(M, g) - nu
+        df = np.sqrt(np.maximum(M * M - 1.0, 0.0)) / (1.0 + 0.5 * (g - 1.0) * M * M) / M
+        dM = f / np.maximum(df, 1e-14)
+        M = M - dM
+        M = np.where(M <= 1.0, 1.0 + 1e-9, M)
+        if np.all(np.abs(dM) < tol):
+            break
+    return M
+
+
+def mu_vec(M):
+    return np.arcsin(1.0 / np.maximum(M, 1.0 + 1e-12))
+
+
+def _sin_over_r_vec(r_p, th_p, r_o, th_o):
+    """`_sin_over_r` の配列版 (軸から遠い方の点で sinθ/r を評価)。"""
+    far = r_p >= r_o
+    ra = np.where(far, r_p, r_o)
+    tha = np.where(far, th_p, th_o)
+    return np.where(ra > 1e-9, np.sin(tha) / np.where(ra > 1e-9, ra, 1.0), 0.0)
+
+
+def interior_vec(Ax, Ar, Ath, Anu, AM, Bx, Br, Bth, Bnu, BM,
+                 g: float, delta: float, n_corr: int):
+    """`KernelMOC._interior` の**配列版** (A=C⁺担体, B=C⁻担体 の対を一括処理)。
+
+    スカラー版と同一の予測子-修正子・同一の係数平均・同一の軸対称源項評価。
+    戻り: (xP, rP, thP, nuP, ok) — ok=False は特性線が平行/非有限で棄却すべき対。
+    """
+    thP = 0.5 * (Ath + Bth)
+    nuP = 0.5 * (Anu + Bnu)
+    muA, muB = mu_vec(AM), mu_vec(BM)
+    xP = np.zeros_like(thP)
+    rP = np.zeros_like(thP)
+    ok = np.ones(thP.shape, dtype=bool)
+    for _ in range(1 + n_corr):
+        MP = pm_mach_vec(nuP, g)
+        muP = mu_vec(MP)
+        ang_p = 0.5 * (Ath + thP) + 0.5 * (muA + muP)
+        ang_m = 0.5 * (Bth + thP) - 0.5 * (muB + muP)
+        mp, mm = np.tan(ang_p), np.tan(ang_m)
+        den = mm - mp
+        good = np.abs(den) >= 1e-12
+        den = np.where(good, den, 1.0)
+        xP = (Ar - Br + mm * Bx - mp * Ax) / den
+        rP = Ar + mp * (xP - Ax)
+        rPc = np.maximum(rP, 0.0)
+        fA = 0.5 * (np.sin(muA) * _sin_over_r_vec(Ar, Ath, Br, Bth)
+                    + np.sin(muP) * _sin_over_r_vec(rPc, thP, Ar, Ath))
+        fB = 0.5 * (np.sin(muB) * _sin_over_r_vec(Br, Bth, Ar, Ath)
+                    + np.sin(muP) * _sin_over_r_vec(rPc, thP, Br, Bth))
+        Sp = -delta * fA / np.cos(ang_p) * (xP - Ax)
+        Sm = +delta * fB / np.cos(ang_m) * (xP - Bx)
+        Jp = (Ath - Anu) + Sp
+        Jm = (Bth + Bnu) + Sm
+        thP, nuP = 0.5 * (Jp + Jm), 0.5 * (Jm - Jp)
+        ok &= good
+    ok &= np.isfinite(xP) & np.isfinite(rP) & np.isfinite(thP) & np.isfinite(nuP)
+    return xP, rP, thP, nuP, ok

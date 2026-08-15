@@ -200,7 +200,9 @@ Phase W5 以降は上記厳密化を経てから着手する。
 
 ## axis-Mach チェーン (①風洞・実装済み — 2026-08-15 起票・同日 A0–A5 完了の主線)
 
-計画: [`plans/accepted/tooling-nozzle-axismach-chain.md`](../../plans/accepted/tooling-nozzle-axismach-chain.md)。
+計画: [`plans/accepted/tooling-nozzle-axismach-chain.md`](../../plans/accepted/tooling-nozzle-axismach-chain.md)
+(A0–A5) + [`plans/accepted/tooling-nozzle-axismach-throat-characteristic.md`](../../plans/accepted/tooling-nozzle-axismach-throat-characteristic.md)
+(A8: 初期値線のスロート特性線化)。
 軸中心 Mach 分布 $M_{\rm axis}(x)$ を**低自由度の一次設計変数**とする Sivells 型逆設計:
 
 $$\text{Hall 遷音速解} \rightarrow M_{\rm axis}\ (\text{5次 Hermite},\ \text{自由度 } L_c) \rightarrow \text{逆 MOC} \rightarrow \text{Euler CFD} \rightarrow \text{characteristic 追跡でアンカー更新}$$
@@ -214,7 +216,7 @@ $L_c$ の 1 個に集約する。wall-driven チェーン (W5 以降保留) と�
 
 | 記号 | 定義 |
 | --- | --- |
-| $x_A$ | 軸 Mach 指定開始点。初回 = 遷音速 starting line の軸上位置 ($M_{\rm start}\approx1.05$)。CFD 反復後 = $x_{\rm reach,CFD}$ (壁始点発 C⁻ の軸着地点) |
+| $x_A$ | 軸 Mach 指定開始点 = **初期値線の軸着地点**。既定 (`start_line: throat_char`) はスロート特性線の軸着地。旧構成 (`vertical`) では $M_{\rm start}\approx1.05$ 縦線の軸位置で、CFD 反復時は $x_{\rm reach,CFD}$ (壁始点発 C⁻ の軸着地点) に更新した |
 | $x_E$ | 軸上で初めて $M=M_d$ に到達する点。$M'(x_E)=M''(x_E)=0$。$L_c = x_E - x_A$ |
 | $x_F$ | 物理出口 (断面全体が $M_d$, $\theta=0$)。$x_E \ne x_F$。第一近似 $x_F - x_E \approx r_F\sqrt{M_d^2-1}$, $r_F = r_t\sqrt{A_e/A_t}$ |
 
@@ -236,6 +238,48 @@ $M_w=4.0000000$ となり (設計の自己整合の検算になる)、**コア�
 $x_F$ は `x_end_margin` を 2.3→3.0 と変えても 0.08% しか動かない (長さは MOC が決めている)
 が、margin が不足すると場が $F$ に届かず追跡が失敗するため**明示エラー**にする
 (旧方式はここで黙って「計算した壁の終端」を返していた)。
+
+### 逆 MOC の初期値線: スロート特性線 (`geometry/transonic.py::throat_characteristic`)
+
+計画: [`plans/accepted/tooling-nozzle-axismach-throat-characteristic.md`](../../plans/accepted/tooling-nozzle-axismach-throat-characteristic.md) (A8)。
+
+曲率のあるスロートでは幾何スロートの壁は既に超音速 (Hall, $R=2$, $\gamma=1.4$ で
+$M_w=1.129$) なので、そこから右進特性線 $dr/dx=\tan(\theta-\mu)$ を Hall 場の中で
+軸まで下ろせる。この **C⁻ が超音速 MOC の初期値線** (CONTUR の throat characteristic) で、
+その軸着地点が $x_A$ = 「壁の設計が軸に影響を及ぼせる最初の位置」になる。
+$r$ 等間隔に $n_{\rm start}$ 点へリサンプルして与える (`start_line: throat_char`、既定)。
+
+**旧・縦 starting line ($M_{\rm start}=1.05$) の何が問題だったか** (2026-08-15 実測、$R=2$/$M_d$=4):
+
+| | 縦線 | スロート特性線 |
+| --- | --- | --- |
+| 軸着地 $x_A$ | 0.2477 | 0.5369 |
+| 壁足 | $(0.2477,\ 1.0153)$、$\theta$ は Sauer 線形化の過小評価を手当てして上書き | $(0,\ 1)$ 厳密・$\theta=0$ 厳密 |
+| 壁流線の始点 | $x_A>0$ → $[T, x_A]$ を骨接放物線で埋める必要がある | スロートそのもの (**T 以降の壁は全域が MOC 出力**) |
+| **到達不能帯** $x_{\rm reach,CFD}-x_A$ | **1.533** $r_t$ | **0.0019** $r_t$ |
+
+縦線は特性線でないため、その壁足から実際に下ろした C⁻ は軸のはるか下流に着地する。
+つまり $[x_A,\ x_{\rm reach}]$ の軸目標は**壁の自由度では原理的に到達できない帯**で、
+設計が指定しても実現されない (B6/B7 の「到達不能域」の正体)。特性線構成ではこの帯が
+構造的に消える (CFD 実測で 0.002 $r_t$ = ほぼ厳密一致)。副次的に (i) 単位過程の担体割当てが
+線上で反転しないのでスロート直後の未計算楔が消え、(ii) 骨接放物線区間が不要になり、
+(iii) 特性線着地点の $M''_A$ が小さい (0.032 vs 0.113) 分だけ $L_c$ の単調ゲート上限が
+緩んで**同じ単一 quintic でより長いノズル**が引ける ($x_E$ 9.63 → 10.25)。
+
+**A/B 実測** (case/41 run_0049 [縦線] vs run_0050 [特性線]、Hall アンカー pass0・
+$n_{\rm axis}$=2000・終端特性線出口・差分は `start_line` と `ni` のみ):
+
+| 指標 | 縦線 | スロート特性線 |
+| --- | --- | --- |
+| $\|\Delta M\|_\infty$ [% $M_d$] | 0.433 | **0.353** |
+| $\Delta M$ rms | 0.0096 | **0.0082** |
+| 軸うねり amp (deg3, 窓 0.55–2.5) | 0.00147 | **0.00043** |
+| 出口 $\varepsilon_M$ rms | 0.041% | **0.020%** |
+| 出口 $\|\varepsilon_\theta\|_{\max}$ | 0.0112° | **0.0062°** |
+| 到達不能帯 | 1.533 $r_t$ | **0.0019** $r_t$ |
+
+**アンカー更新なしの 1 パスで 0.5% $M_d$ ゲートを通る** (旧構成は 3 パス required で
+0.451%)。CFD アンカー更新 (下記) は引き続き使えるが、必須ではなくなった。
 
 ### 軸 Mach law: 5次 Hermite (`geometry/axis_law.py`)
 
@@ -271,10 +315,14 @@ $C_D=1-\frac{\gamma+1}{96S^2}[1-\frac{8\gamma-27}{24S}+\frac{754\gamma^2-757\gam
 ### 壁の全体構成 (`AxisMachCFDWall`)
 
 **入口直管** → **U→T 5次 Hermite** (`UpstreamThroatPoly` 流用: $r''(T)=1/\rho_t$ が Hall の
-局所スロート曲率と整合) → **$[T,\,x_A]$ は遷音速解の壁境界** (骨接放物線
-$r=r_t+x^2/(2\rho_t)$ — Hall 模型が仮定する壁で、幾何 DOF ではない。T で Hermite と $C^2$) →
-**逆 MOC 壁流線** ($x_A$ の starting line 壁足から $x_F$ まで。端条件クランプ 5 次 B-spline
-表現 = `ModeFWall` と同じ流儀) 。スロート下流に円弧などの独立幾何は**挟まない**。
+局所スロート曲率と整合) → **逆 MOC 壁流線** (スロート T から $x_F$ まで。端条件クランプ
+5 次 B-spline 表現 = `ModeFWall` と同じ流儀)。**T 以降は全域が MOC の出力**で、円弧・放物線を
+含む独立幾何を一切挟まない。T での接続は spline 左端クランプ $(r'=0,\ r''=1/\rho_t)$ と
+U→T Hermite の端点条件の一致で $C^2$。
+
+旧・縦 starting line 構成 (`start_line: vertical`) では壁流線が $x_A>0$ から始まるため、
+$[T,\,x_A]$ を Hall 模型が仮定する骨接放物線 $r=r_t+x^2/(2\rho_t)$ で埋めていた
+(幾何 DOF ではない)。`AxisMachCFDWall` は壁テーブルの先頭点でどちらかを自動判定する。
 
 ### CFD-in-the-loop アンカー更新
 
@@ -293,8 +341,16 @@ node Euler・段階起動 — wall-driven W3 と同じ 2 段方式)。アンカ�
 **逆 MOC の解像度要件 (2026-08-15 実測)**: 三角充填の壁流線は質量流束を
 離散化誤差でリークし壁を細らせる (n_axis=500 で 0.79% → 分布 ΔM 誤差 −1.1% Md が
 x≈6 にピーク)。解像度 2 倍で半減し $r_F$ は $C_D$ 整合値へ収束する。
-**生産設定 = `n_axis_inv: 2000` / `n_start: 121` / `dx_wall: 0.005`** (設計 ~6.5 分)。
+**生産設定 = `n_axis_inv: 2000` / `n_start: 121` / `dx_wall: 0.005`**。
 恒久対処の候補は `_CPlusMarch` (流束閉包) の完成。
+
+**逆 MOC の計算コスト (A8 で 2 段階の高速化、数値は不変)**: 生産解像度の設計 1 回は
+当初 ~400 秒で 1 パスの 91% を占めていた。(i) 三角充填をレベル単位でベクトル化
+(`InverseMOC.fill_arrays` — 1 レベル内のペアは独立なので numpy 呼び出しはレベル数 $n$ 回
+で済む。スカラー版と機械精度一致、369 s → 2.4 s)、(ii) Delaunay 分割を 1 個に共有
+(`field_interpolator` — $(\theta,\nu)$ をまとめた補間器を壁流線・質量流束診断・終端特性線で
+使い回す。従来は同じ分割を 6 回構築していた) で、**設計 1 回 33 秒**になった
+(壁は前後でビット一致を確認済み)。1 パス = 設計 33 s + メッシュ/IC 2 s + node Euler 30 s。
 
 **A5 実測 (case/41 run_0044–0047, Md=4)**: pass0 (Hall アンカーのみ) ΔM_max
 1.12% Md → pass2/3 (アンカー更新+高解像 MOC) **0.451/0.463% Md ≤ 0.5% ゲート**

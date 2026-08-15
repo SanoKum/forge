@@ -268,3 +268,49 @@ class HallThroat:
         ab2 = np.maximum(1.0 - 0.5 * (g - 1.0) * (q2 - 1.0), 1e-12)
         flux = ab2 ** (1.0 / (g - 1.0)) * uu       # ρ u_x / (ρ* a*)
         return float(np.trapezoid(flux * 2.0 * r, r))
+
+    # -- スロート特性線 (CONTUR の throat characteristic) -----------------------
+    def throat_characteristic(self, n: int = 61, ds: float = 2e-4,
+                              max_steps: int = 400000) -> tuple:
+        r"""**スロート壁点 $(0, r_t)$ から軸へ下る C⁻** を Hall 場の中で追跡する。
+
+        CONTUR (AEDC-TR-78-63) §2 の "throat characteristic": 幾何スロートの壁は
+        (曲率のあるスロートでは) 既に超音速なので ($R=2$, $\gamma=1.4$ で $M=1.129$)、
+        そこから右進特性線 $dr/dx=\tan(\theta-\mu)$ を軸まで下ろせる。これが古典的な
+        超音速 MOC の**初期値線**であり、その軸着地点が「壁の設計が軸に影響を及ぼせる
+        最初の位置」になる。
+
+        **なぜ縦線 starting line ではだめか** (2026-08-15 ユーザ指摘): $M_{start}=1.05$ の
+        縦線は特性線ではないため、(a) 古典手法に対応物がなく (調査 §9-5)、(b) その壁足
+        から下ろした C⁻ の軸着地は $x=1.81$ と、スロート特性線の $x=0.54$ より **1.3 $r_t$
+        も下流**になる。つまり縦線構成では「スロート直後の壁が軸に効く区間」が設計対象
+        から丸ごと外れていた。さらに (c) 縦線は特性線でないので単位過程の担体割当てが
+        区間内で反転し、スロート直後に未計算の楔が残る (`moc_inverse.InverseMOC.fill`
+        の docstring)。
+
+        戻り値: `(x, r, M, theta)` の 4 配列、**軸→壁**の順 (`starting_line` と同じ規約)、
+        各 n 点 ($r$ 等間隔にリサンプル)。
+        """
+        x, r = 0.0, 1.0
+        path = [(x, r)]
+        for _ in range(max_steps):
+            M = float(self.mach(x, r))
+            if M <= 1.0:
+                raise RuntimeError(
+                    f"throat_characteristic: スロート特性線が亜音速へ入った "
+                    f"(M={M:.4f} @ x={x:.4f}, r={r:.4f})。R={self.R} が小さすぎる可能性")
+            th = float(self.theta(x, r))
+            slope = np.tan(th - np.arcsin(1.0 / M))
+            r_n, x_n = r + ds * slope, x + ds
+            if r_n <= 0.0:
+                t = r / max(r - r_n, 1e-30)
+                path.append((x + t * ds, 0.0))
+                break
+            x, r = x_n, r_n
+            path.append((x, r))
+        else:
+            raise RuntimeError("throat_characteristic: 軸に到達しない")
+        p = np.asarray(path)[::-1]              # 軸→壁
+        r_q = np.linspace(0.0, 1.0, n)
+        x_q = np.interp(r_q, p[:, 1], p[:, 0])
+        return x_q, r_q, self.mach(x_q, r_q), self.theta(x_q, r_q)

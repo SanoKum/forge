@@ -1,11 +1,12 @@
 r"""axis-Mach チェーン A4: Hall + 5次 Hermite 軸 Mach → 逆 MOC → node Euler 評価。
 
-plan: plans/active/tooling-nozzle-axismach-chain.md §6 A4。既存経路 (runner_wt の
+plan: plans/accepted/tooling-nozzle-axismach-chain.md §6 A4。既存経路 (runner_wt の
 モード F / runner_walldriven) には触れない。
 
-チェーン: HallThroat (starting line + 軸アンカー) → QuinticHermiteAxisLaw
+チェーン: HallThroat (初期値線 + 軸アンカー) → QuinticHermiteAxisLaw
 (自由度 L_c のみ) → inverse_design (E→F 閉包込み) → wall_qa →
-AxisMachCFDWall (直管 + U→T Hermite + 骨接放物線 + 設計壁 spline) →
+AxisMachCFDWall (直管 + U→T Hermite + 設計壁 spline。旧・縦線構成のみ
+[T, x0] に骨接放物線が入る) →
 TFI メッシュ → node Euler (段階起動)。
 
 CFD-in-the-loop アンカー更新 (A5) は problem YAML の geometry キーで受ける:
@@ -13,6 +14,8 @@ CFD-in-the-loop アンカー更新 (A5) は problem YAML の geometry キーで�
   x_reach_anchor:  [M, M', M''] (同 run の軸平滑化フィットから)
   axis_segment_run: [x0, x_reach) の実測軸 M を target_moc に渡す元 run
 これらが無ければ初回 (Hall アンカー、x_A = x0)。
+初期値線は geometry.start_line で選ぶ ('throat_char' = スロート特性線 [A8] /
+'vertical' = M_start の縦線 [旧構成])。
 
 使い方:
   design/.venv-opt/bin/python -m forge_design.evaluate.runner_axismach \
@@ -79,7 +82,15 @@ def design_chain(p: Problem) -> dict:
     M_start = float(p.geometry.get("M_start", 1.05))
     n_start = int(p.geometry.get("n_start", 41))
     ht = HallThroat(R=R, gamma=g)
-    x0 = ht.x_axis_of_mach(M_start)
+    # 初期値線: 'throat_char' = スロート壁点発 C⁻ (CONTUR 流、壁が T から MOC 出力に
+    # なる) / 'vertical' = M_start の縦線 (旧構成、回帰対照)。x0 = その軸着地点。
+    start_line = str(p.geometry.get("start_line", "vertical"))
+    if start_line == "throat_char":
+        x0 = float(ht.throat_characteristic(n=n_start)[0][0])
+    elif start_line == "vertical":
+        x0 = ht.x_axis_of_mach(M_start)
+    else:
+        raise ValueError("geometry.start_line は 'throat_char' か 'vertical'")
 
     # --- アンカー: 初回 = Hall 解析値 (x_A = x0)。反復 = CFD 実測 (x_A = x_reach) ---
     x_reach_cfd = p.geometry.get("x_reach_cfd")
@@ -132,7 +143,7 @@ def design_chain(p: Problem) -> dict:
                          dx_wall=float(p.geometry.get("dx_wall", 0.02)),
                          th_wall0=float(np.arctan(x0 / R)), M_start=M_start,
                          exit_mode=str(p.geometry.get("exit_mode", "characteristic")),
-                         x_E=law.x_E, M_d=Md)
+                         x_E=law.x_E, M_d=Md, start_line=start_line)
     qa = wall_qa(res["wall"], Md, law.x_E, g)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
@@ -149,7 +160,7 @@ def design_chain(p: Problem) -> dict:
             "L_c": float(L_c), "Lc_window": (float(lo), float(hi)),
             "anchor": (float(M_A), float(Mp_A), float(Mpp_A)),
             "anchor_source": ("cfd" if x_reach_cfd is not None else "hall"),
-            "Md": Md, "R": R, "gates": gates,
+            "start_line": start_line, "Md": Md, "R": R, "gates": gates,
             "mdot_ratio_moc": float(res["mdot_exit"] / res["mdot_start"]),
             "cd_series": float(ht.cd_series())}
 
@@ -209,7 +220,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     info = {"chain": "axismach", "discretization": "node",
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
-            "anchor_source": d["anchor_source"], "Md": d["Md"], "R": d["R"],
+            "anchor_source": d["anchor_source"], "start_line": d["start_line"],
+            "Md": d["Md"], "R": d["R"],
             "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
             "exit": d["exit"],
             "mdot_ratio_moc": d["mdot_ratio_moc"], "cd_series": d["cd_series"],

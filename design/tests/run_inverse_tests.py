@@ -107,6 +107,64 @@ check(f"ノズル: 質量流量整合 ({mf:.4f})", abs(mf - 1.0) < 0.01)
 res2 = inverse_design(st, target, x_axis_end=float(x_end), n_axis=420, n_start=41)
 check("決定性 (壁 bit 同一)", np.array_equal(res["wall"], res2["wall"]))
 
+# --- 5. 充填のベクトル化 ≡ スカラー版 (A8) --------------------------------------
+def _fill_scalar(inv_, init_):
+    """`InverseMOC.fill` のベクトル化前の実装 (等価性の参照)。"""
+    pts_, front = list(init_), list(init_)
+    while len(front) >= 2:
+        new = []
+        for i in range(len(front) - 1):
+            B, A = front[i], front[i + 1]
+            try:
+                P = inv_._interior(A, B)
+            except RuntimeError:
+                continue
+            if not (np.isfinite(P.x) and np.isfinite(P.r)) or P.r < -1e-12:
+                continue
+            new.append(P)
+        front = new
+        pts_.extend(new)
+    return pts_
+
+
+x0s, rr0s, MM0s, tt0s = st.starting_line(M_start=1.05, n=31)
+_init = ([_Pt(float(x), 0.0, 0.0, float(pm_nu(target(float(x)), G)), G)
+          for x in np.linspace(8.0, x0s, 150)[:-1]]
+         + [_Pt(float(x0s), float(rr0s[i]), float(tt0s[i]),
+                float(pm_nu(float(MM0s[i]), G)), G) for i in range(31)])
+_sc = _fill_scalar(inv, _init)
+_ve = inv.fill_arrays(_init)
+check(f"充填ベクトル化: 点数一致 ({len(_sc)})", len(_sc) == len(_ve))
+if len(_sc) == len(_ve):
+    _d = np.abs(np.array([[p.x, p.r, p.th, p.nu, p.M] for p in _sc]) - _ve).max(axis=0)
+    check(f"充填ベクトル化 ≡ スカラー (max|Δ| x,r,θ,ν,M = {np.max(_d):.1e})",
+          float(np.max(_d)) < 1e-12)
+
+# --- 6. スロート特性線を初期値線にした逆設計 (A8) --------------------------------
+from forge_design.geometry.transonic import HallThroat  # noqa: E402
+
+_ht = HallThroat(R=2.0, gamma=G)
+_xc, _rc, _Mc, _tc = _ht.throat_characteristic(n=41)
+_xA = float(_xc[0])
+_bz2 = MachBezier.from_constraints(_xA, xd, start=_ht.axis_anchor(_xA)[:2],
+                                   free_cp=[2.4, 3.1, 3.7], end=(Md, 0.0, 0.0))
+
+
+def target_tc(x):
+    return Md if x >= xd else float(np.atleast_1d(_bz2(float(x)))[0])
+
+
+_res_tc = inverse_design(_ht, target_tc, x_axis_end=float(x_end), n_axis=420,
+                         n_start=41, start_line="throat_char", exit_mode="lip")
+_w = _res_tc["wall"]
+check(f"特性線始点: 壁流線がスロートから始まる ((x,r)=({_w[0,0]:.2e},{_w[0,1]:.5f}))",
+      abs(_w[0, 0]) < 1e-9 and abs(_w[0, 1] - 1.0) < 1e-9)
+check("特性線始点: 壁が単調拡大", bool(np.all(np.diff(_w[:, 1]) > -1e-9)))
+_mf_tc = _res_tc["mdot_exit"] / _res_tc["mdot_start"]
+# 縦線 (上の §3) との直接比較はしない — 遷音速解 (Sauer/Hall)・目標曲線・x_A が
+# 揃っておらず対照になっていないため。同一条件の A/B は plan §9 に記録する。
+check(f"特性線始点: 質量流量整合 ({_mf_tc:.4f})", abs(_mf_tc - 1.0) < 0.01)
+
 # --- 出口一様性メトリクス (A2: 実出口面の厳密環状面積 + 有効菱形コア) ---------
 from pathlib import Path as _P  # noqa: E402
 from forge_design.metrics.extract import (  # noqa: E402

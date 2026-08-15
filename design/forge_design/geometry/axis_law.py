@@ -1,6 +1,6 @@
 r"""軸中心 Mach 分布の 5 次 Hermite 表現 (axis-Mach チェーン)。
 
-計画: plans/active/tooling-nozzle-axismach-chain.md §5.1。
+計画: plans/accepted/tooling-nozzle-axismach-chain.md §5.1。
 モード F の Bézier (自由 CP 3 個 — B10-c で始端 C² と出口 C² の両立不能が確定) を
 両端 6 条件をちょうど消費する 5 次 Hermite に差し替え、残る自由度を加速区間長
 L_c の 1 個に集約する。
