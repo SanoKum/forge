@@ -20,6 +20,11 @@ T で κ は 1/R_t に連続だが κ' は一般に不連続 — 跳び量は診
 
 座標: x = 軸 (スロート = 0, U は x = -L_U, D は x = +L_D), r = 半径。
 角度は全て radian。
+
+エラー方針 (2026-08-15 レビュー反映): **構築時 ValueError = 入力が不正**
+(非有限・非正の長さ/半径/曲率半径・角度域外・出口半径非正) — 係数生成前に検査し
+NaN 座標が下流 (メッシュ生成) へ流れることを防ぐ。**validate() = 幾何は定義できるが
+設計条件違反** (μ > 20、L_D > 3 R_t tanθ_D、λ 窓外、任意の max|dκ/ds| 上限超過)。
 """
 from __future__ import annotations
 
@@ -28,6 +33,24 @@ from dataclasses import dataclass
 import numpy as np
 
 from .wall import _hermite_quintic
+
+
+def _check_inputs(name: str, positive: dict, finite_only: dict | None = None,
+                  angles: dict | None = None) -> None:
+    """係数生成前の入力検査。不正なら ValueError (validate() には回さない)。
+
+    positive: 有限かつ > 0 を要求。finite_only: 有限のみ要求。
+    angles: 有限かつ 0 < θ < π/2 (radian) を要求。
+    """
+    for k, v in {**positive, **(finite_only or {}), **(angles or {})}.items():
+        if not np.isfinite(v):
+            raise ValueError(f"{name}: {k} = {v!r} が有限でない")
+    for k, v in positive.items():
+        if v <= 0.0:
+            raise ValueError(f"{name}: {k} = {v:.6g} ≤ 0")
+    for k, v in (angles or {}).items():
+        if not 0.0 < v < np.pi / 2.0:
+            raise ValueError(f"{name}: {k} = {v:.6g} rad ∉ (0, π/2)")
 
 
 def _poly_eval(c, xi, deriv=0):
@@ -62,6 +85,12 @@ class UpstreamThroatPoly:
     r_t: float = 1.0
 
     def __post_init__(self):
+        _check_inputs("UpstreamThroatPoly",
+                      positive={"R_t": self.R_t, "L_U": self.L_U, "r_t": self.r_t},
+                      finite_only={"r_U": self.r_U})
+        if self.r_U <= self.r_t:
+            raise ValueError(f"UpstreamThroatPoly: Δr = r_U - r_t = "
+                             f"{self.r_U - self.r_t:.6g} ≤ 0 (収縮が定義できない)")
         self._c = _hermite_quintic(
             -self.L_U, 0.0, self.r_U, 0.0, 0.0, self.r_t, 0.0, 1.0 / self.R_t)
 
@@ -78,12 +107,6 @@ class UpstreamThroatPoly:
 
     def validate(self, n: int = 2001) -> list[str]:
         v = []
-        if self.r_U <= self.r_t:
-            v.append(f"Δr = r_U - r_t = {self.r_U - self.r_t:.4g} ≤ 0")
-        if self.L_U <= 0.0:
-            v.append(f"L_U = {self.L_U:.4g} ≤ 0")
-        if v:
-            return v
         if self.mu > 20.0:
             v.append(f"μ = {self.mu:.4g} > 20 (非単調収縮: L_U ≤ "
                      f"√(20 R_t Δr) = {np.sqrt(20*self.R_t*(self.r_U-self.r_t)):.4g})")
@@ -106,6 +129,11 @@ class ThroatExpansionPoly:
     L_D: float
     theta_D: float
     r_t: float = 1.0
+
+    def __post_init__(self):
+        _check_inputs("ThroatExpansionPoly",
+                      positive={"R_t": self.R_t, "L_D": self.L_D, "r_t": self.r_t},
+                      angles={"theta_D": self.theta_D})
 
     @property
     def m_D(self) -> float:
@@ -138,12 +166,6 @@ class ThroatExpansionPoly:
 
     def validate(self, n: int = 2001) -> list[str]:
         v = []
-        if self.L_D <= 0.0:
-            v.append(f"L_D = {self.L_D:.4g} ≤ 0")
-        if self.theta_D <= 0.0:
-            v.append(f"theta_D = {self.theta_D:.4g} ≤ 0")
-        if v:
-            return v
         if self.L_D > self.L_D_max:
             v.append(f"L_D = {self.L_D:.4g} > 3 R_t tanθ_D = {self.L_D_max:.4g} "
                      "(T–D 間に余分な変曲点)")
@@ -184,9 +206,16 @@ class WallDrivenThroatRegion:
         dn = _dkappa_ds(0.0, 1.0 / self.dn.R_t, float(self.dn.r(0.0, 3)))
         return float(dn - up)
 
-    def validate(self, n: int = 2001) -> list[str]:
-        return (["U→T: " + m for m in self.up.validate(n)]
-                + ["T→D: " + m for m in self.dn.validate(n)])
+    def validate(self, n: int = 2001, dkds_max: float | None = None) -> list[str]:
+        """設計条件の検査。dkds_max を与えると max|dκ/ds| の上限も課す
+        (数値上限の既定値は未定 — CFD 感度で決める。plan W3/W5)。"""
+        v = (["U→T: " + m for m in self.up.validate(n)]
+             + ["T→D: " + m for m in self.dn.validate(n)])
+        if dkds_max is not None:
+            m = float(np.max(np.abs(self.sample(n)["dkappa_ds"])))
+            if m > dkds_max:
+                v.append(f"max|dκ/ds| = {m:.4g} > 上限 {dkds_max:.4g}")
+        return v
 
     def sample(self, n: int = 401) -> dict:
         """診断用サンプル (弧長比例でなく x 等間隔。source_region 付き)。"""
@@ -201,7 +230,7 @@ class WallDrivenThroatRegion:
             "source_region": np.where(x < 0.0, "UPSTREAM_HERMITE", "THROAT_TO_D"),
         }
 
-    def diagnostics(self, n: int = 2001) -> dict:
+    def diagnostics(self, n: int = 2001, dkds_max: float | None = None) -> dict:
         s = self.sample(n)
         return {
             "mu": self.up.mu,
@@ -209,7 +238,7 @@ class WallDrivenThroatRegion:
             "r_D": self.dn.r_D,
             "kappa_prime_jump_at_throat": self.kappa_prime_jump_at_throat,
             "max_abs_dkappa_ds": float(np.max(np.abs(s["dkappa_ds"]))),
-            "violations": self.validate(n),
+            "violations": self.validate(n, dkds_max=dkds_max),
         }
 
 
@@ -229,6 +258,12 @@ class ContractionToConeQuintic:
     L: float
 
     def __post_init__(self):
+        _check_inputs("ContractionToConeQuintic",
+                      positive={"r_in": self.r_in, "dr": self.dr, "L": self.L},
+                      angles={"theta_a": self.theta_a})
+        if self.r_in - self.dr <= 0.0:
+            raise ValueError(f"ContractionToConeQuintic: 出口半径 r_in - dr = "
+                             f"{self.r_in - self.dr:.6g} ≤ 0")
         self._c = _hermite_quintic(
             0.0, self.L, self.r_in, 0.0, 0.0,
             self.r_in - self.dr, -float(np.tan(self.theta_a)), 0.0)

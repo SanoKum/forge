@@ -3,16 +3,19 @@
 
 検証対象 (plans/active/tooling-nozzle-walldriven-chain.md §7):
   1. U→T / T→D の端点条件 (1e-12 級)
-  2. 原案の閉形式 (U→T 勾配, T→D r'', r_D) と実装の一致
+  2. 原案の閉形式 (U→T 勾配, T→D r'', r_D) と実装の一致 (乱数 200 試行・適応求積)
   3. 単調条件 μ ≤ 20 / 変曲条件 L_D ≤ 3 R_t tanθ_D の境界 ±0.1% 判別
   4. 条件違反時に実際に非単調半径・余分な変曲点が発生し validate() が検出すること
   5. 解析 κ・dκ/ds と数値微分の一致 (実装式の独立検証)
   6. geometry option (§10): λ 窓 [5/3, 5/2]・λ=2 の 4 次退化
+  7. 不正入力 (非有限・非正・角度域外・出口半径非正) の構築時 ValueError 拒否
+  8. validate(dkds_max=...) の max|dκ/ds| 上限検査
 """
 import sys
 from pathlib import Path
 
 import numpy as np
+from scipy.integrate import quad
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -50,10 +53,10 @@ check("T→D r'(L_D)=tanθ_D", abs(dn.r(L_D, 1) - np.tan(theta_D)) < 1e-12)
 check("T→D r''(L_D)=0", abs(dn.r(L_D, 2)) < 1e-12)
 check("T→D r(L_D)=r_D 閉形式", abs(dn.r(L_D) - dn.r_D) < 1e-12)
 
-# --- 2. 閉形式と実装の一致 (乱数 50 試行) ---------------------------------------
+# --- 2. 閉形式と実装の一致 (乱数 200 試行・plan §2.4 の記録と同一条件) ----------
 rng = np.random.default_rng(41)
 ok_grad, ok_rpp, ok_rD = True, True, True
-for _ in range(50):
+for _ in range(200):
     ru = rng.uniform(1.2, 8.0)
     Rt = rng.uniform(0.5, 10.0)
     dr_ = ru - 1.0
@@ -72,13 +75,12 @@ for _ in range(50):
     rpp_cf = (1 - xi2) / Rt * (1 + xi2 * (6 * Rt * np.tan(th) / Ld - 3))
     ok_rpp &= bool(np.max(np.abs(d.r(xi2 * Ld, 2) - rpp_cf))
                    <= 1e-9 * max(1.0, np.max(np.abs(rpp_cf))))
-    # r_D = r_t + ∫q dx (高解像 Simpson)
-    from scipy.integrate import simpson
-    xs = np.linspace(0, Ld, 4001)
-    ok_rD &= bool(abs(d.r_D - (1.0 + simpson(d.r(xs, 1), x=xs))) < 1e-9 * d.r_D)
-check("U→T 勾配閉形式 (50 乱数試行)", ok_grad)
-check("T→D r'' 閉形式 (50 乱数試行)", ok_rpp)
-check("T→D r_D = ∫q + r_t (50 乱数試行)", ok_rD)
+    # r_D = r_t + ∫q dx (適応求積。実測誤差は機械精度 ~3e-16)
+    ok_rD &= bool(abs(d.r_D - (1.0 + quad(lambda s: float(d.r(s, 1)), 0, Ld)[0]))
+                  < 1e-12 * d.r_D)
+check("U→T 勾配閉形式 (200 乱数試行)", ok_grad)
+check("T→D r'' 閉形式 (200 乱数試行)", ok_rpp)
+check("T→D r_D = ∫q + r_t (200 乱数試行, 適応求積, 相対 1e-12)", ok_rD)
 
 # --- 3./4. 境界判別と違反検出 ---------------------------------------------------
 dr_ = 1.5
@@ -149,6 +151,51 @@ check("§10 端点 (値・勾配・曲率)",
       and abs(c2.r(0.0, 2)) < 1e-12
       and abs(c2.r(c2.L, 1) + np.tan(th_a)) < 1e-12
       and abs(c2.r(c2.L, 2)) < 1e-12)
+
+# --- 7. 不正入力の構築時拒否 (2026-08-15 レビュー P1) ---------------------------
+def rejects(name, fn):
+    try:
+        fn()
+    except ValueError:
+        check(name, True)
+    else:
+        check(name, False)
+
+
+rejects("拒否 U→T r_U=NaN",
+        lambda: UpstreamThroatPoly(r_U=np.nan, R_t=2.0, L_U=3.5))
+rejects("拒否 U→T R_t=NaN",
+        lambda: UpstreamThroatPoly(r_U=2.5, R_t=np.nan, L_U=3.5))
+rejects("拒否 U→T R_t=0",
+        lambda: UpstreamThroatPoly(r_U=2.5, R_t=0.0, L_U=3.5))
+rejects("拒否 U→T L_U<0",
+        lambda: UpstreamThroatPoly(r_U=2.5, R_t=2.0, L_U=-1.0))
+rejects("拒否 U→T r_U≤r_t (Δr≤0)",
+        lambda: UpstreamThroatPoly(r_U=0.9, R_t=2.0, L_U=3.5))
+rejects("拒否 T→D theta_D=190°",
+        lambda: ThroatExpansionPoly(R_t=2.0, L_D=1.0, theta_D=np.deg2rad(190.0)))
+rejects("拒否 T→D theta_D=0",
+        lambda: ThroatExpansionPoly(R_t=2.0, L_D=1.0, theta_D=0.0))
+rejects("拒否 T→D L_D=0",
+        lambda: ThroatExpansionPoly(R_t=2.0, L_D=0.0, theta_D=theta_D))
+rejects("拒否 T→D R_t=inf",
+        lambda: ThroatExpansionPoly(R_t=np.inf, L_D=1.0, theta_D=theta_D))
+rejects("拒否 §10 出口半径負 (r_in=1, dr=2)",
+        lambda: ContractionToConeQuintic(r_in=1.0, dr=2.0, theta_a=th_a, L=5.0))
+rejects("拒否 §10 theta_a≥π/2",
+        lambda: ContractionToConeQuintic(r_in=2.2, dr=1.2,
+                                         theta_a=np.deg2rad(90.0), L=5.0))
+rejects("拒否 合成壁 (成分へ伝播)",
+        lambda: WallDrivenThroatRegion(r_U=2.5, R_t=np.nan, L_U=3.5,
+                                       L_D=L_D, theta_D=theta_D))
+
+# --- 8. validate(dkds_max=...) -------------------------------------------------
+m_ref = w.diagnostics()["max_abs_dkappa_ds"]
+check("dκ/ds 上限: 緩い上限 (2×実測) で violation なし",
+      w.validate(dkds_max=2.0 * m_ref) == [])
+tight = w.validate(dkds_max=0.5 * m_ref)
+check("dκ/ds 上限: 厳しい上限 (0.5×実測) で violation 検出",
+      len(tight) == 1 and "max|dκ/ds|" in tight[0])
 
 print("-" * 60)
 print(f"{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")

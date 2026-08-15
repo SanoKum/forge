@@ -147,7 +147,11 @@ U→T→D 低自由度多項式壁 → CFD (遷音速+初期超音速を実場�
 - **合成** (`WallDrivenThroatRegion`): $r,r',r'',r'''$ 解析式 → $\theta,\kappa,d\kappa/ds$ も
   解析評価。T で κ は $1/R_t$ に連続、**κ' は一般に不連続** — 跳び量は診断値
   `kappa_prime_jump_at_throat` として常時出力 (許容可否は CFD で判定する)。
-  `validate()` は解析条件と密サンプル検査 (単調性・変曲・$r>0$) の二重返し。
+  `validate()` は解析条件と密サンプル検査 (単調性・変曲・$r>0$) の二重返しで、
+  `dkds_max` を与えると $\max|d\kappa/ds|$ の上限も課せる (数値既定値は W3/W5 で決定)。
+- **エラー 2 層方針**: 不正入力 (非有限・非正の長さ/半径・$\theta\notin(0,\pi/2)$・
+  出口半径非正) は**構築時に `ValueError`** (係数生成前に遮断)。`validate()` は
+  「幾何は定義できるが設計条件違反」のみを返す。全クラス共通。
 - **geometry option** (`contraction_to_cone_quintic`): 直管→一定傾斜 $-\tan\theta_a$ への
   quintic 接続。曲率符号一定 ⇔ $\lambda=L\tan\theta_a/\Delta r\in[5/3,\,5/2]$、
   $\lambda=2$ で 4 次に退化。①主経路では未使用の保存知見。
