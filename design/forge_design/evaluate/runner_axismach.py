@@ -130,7 +130,9 @@ def design_chain(p: Problem) -> dict:
                          n_axis=int(p.geometry.get("n_axis_inv", 500)),
                          n_start=n_start, gamma=g,
                          dx_wall=float(p.geometry.get("dx_wall", 0.02)),
-                         th_wall0=float(np.arctan(x0 / R)), M_start=M_start)
+                         th_wall0=float(np.arctan(x0 / R)), M_start=M_start,
+                         exit_mode=str(p.geometry.get("exit_mode", "characteristic")),
+                         x_E=law.x_E, M_d=Md)
     qa = wall_qa(res["wall"], Md, law.x_E, g)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
@@ -142,6 +144,7 @@ def design_chain(p: Problem) -> dict:
     if msgs:
         raise ValueError("axis-Mach 壁フィルタ不合格: " + "; ".join(msgs))
     return {"wall": wall, "wall_inv": res["wall"], "law": law, "qa": qa,
+            "exit": {k: v for k, v in res["exit"].items() if k != "term_path"},
             "x0": float(x0), "x_A": float(x_A), "x_E": float(law.x_E),
             "L_c": float(L_c), "Lc_window": (float(lo), float(hi)),
             "anchor": (float(M_A), float(Mp_A), float(Mpp_A)),
@@ -208,6 +211,7 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
             "anchor_source": d["anchor_source"], "Md": d["Md"], "R": d["R"],
             "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
+            "exit": d["exit"],
             "mdot_ratio_moc": d["mdot_ratio_moc"], "cd_series": d["cd_series"],
             "nStepOuter": n, "scale_m": scale, "ic_from": str(ic_from) if ic_from else None,
             "mesh": {"ni": mp.ni, "nj": mp.nj, "wall_first_frac": mp.wall_first_frac}}

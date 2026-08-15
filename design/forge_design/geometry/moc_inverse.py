@@ -216,9 +216,61 @@ class _CPlusMarch(InverseMOC):
         return np.asarray(wall), pts
 
 
+def terminal_exit(pts, wall, x_E: float, M_d: float, gamma: float = 1.4,
+                  ds: float = 2e-3, n_max: int = 400000) -> dict:
+    r"""**終端特性線による物理出口 F の決定** (2026-08-15, ユーザ指摘)。
+
+    軸上で $M=M_d$ に達する点 $E=(x_E,0)$ から出る C⁺ 特性線
+    ($dr/dx=\tan(\theta+\mu)$) を MOC 場の中で追跡し、**壁流線との交点**を物理出口
+    $F$ とする。この特性線は一様域の上流境界であり、$F$ より下流の断面は
+    $(M_d,\theta=0)$ で埋まる — これが「一様出口」の定義そのもの。
+
+    **なぜ壁角しきい値ではだめか**: 従来は壁流線の $\theta$ が 0.05° を切った点で
+    切っていた。壁角は $F$ に向けて**漸近的に**ゼロへ近づくので、しきい値は $F$ の
+    数 $r_t$ 上流で発火する (実測 M_d=4, R=2 で 2.5$r_t$ 手前)。半径差は
+    $10^{-3}r_t$ と無視できるが、**その分だけ一様コアが出口面に届かない**
+    (実測: コア半径が出口半径の 80%)。長さの定義として不正確。
+
+    場の外へ出た区間は一様出口状態 $(\theta=0, M=M_d)$ で凍結して直線延長する
+    (終端特性線の下流側は定義上一様域なので近似ではない)。戻り値に凍結ステップ数を
+    含めるので、追跡の大半が凍結なら「場が短すぎる」と分かる。
+    """
+    from scipy.interpolate import LinearNDInterpolator
+    xy = np.array([[p.x, p.r] for p in pts])
+    itp_th = LinearNDInterpolator(xy, np.array([p.th for p in pts]))
+    itp_nu = LinearNDInterpolator(xy, np.array([p.nu for p in pts]))
+    wx, wr = wall[:, 0], wall[:, 1]
+    mu_d = float(np.arcsin(1.0 / max(M_d, 1.0 + 1e-12)))
+    x, r, n_frozen = float(x_E), 0.0, 0
+    path = [(x, r)]
+    for _ in range(n_max):
+        th, nu = float(itp_th(x, r)), float(itp_nu(x, r))
+        if np.isfinite(th) and np.isfinite(nu):
+            M = pm_mach(max(nu, 1e-9), gamma)
+            slope = np.tan(th + np.arcsin(1.0 / max(M, 1.0 + 1e-12)))
+        else:
+            slope = np.tan(mu_d)
+            n_frozen += 1
+        x_n, r_n = x + ds, r + ds * slope
+        rw, rw_n = float(np.interp(x, wx, wr)), float(np.interp(x_n, wx, wr))
+        if r_n >= rw_n:                       # 壁を越えた — 線形補間で交点
+            t = (rw - r) / max((r_n - r) - (rw_n - rw), 1e-30)
+            x_F = x + t * ds
+            return {"x_F": float(x_F), "r_F": float(np.interp(x_F, wx, wr)),
+                    "ok": True, "n_frozen": n_frozen, "path": np.asarray(path)}
+        x, r = x_n, r_n
+        path.append((x, r))
+        if x > wx[-1]:
+            break
+    return {"x_F": float("nan"), "r_F": float("nan"), "ok": False,
+            "n_frozen": n_frozen, "path": np.asarray(path)}
+
+
 def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
                    n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02,
-                   th_wall0: float | None = None, M_start: float = 1.05):
+                   th_wall0: float | None = None, M_start: float = 1.05,
+                   exit_mode: str = "lip", x_E: float | None = None,
+                   M_d: float | None = None):
     """starting line (throat: SauerThroat) + 軸目標 target(x) から壁を逆設計する。
 
     target: 呼び出し可能 M(x) — starting line の軸点 x0 で場に C1 整合していること
@@ -244,16 +296,34 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
     mdot_star = float(_flux_along(init[len(ax):], g)[-1])
     pts = inv.fill(init)
     wall = inv.wall_streamline(pts, x0, float(rr[-1]), dx=dx_wall)
-    # 一様出口設計ではリップ (θ が最大値を経て ~0 に戻る点) で壁が完成する。
-    # そこで切る (以降は一様菱形領域の水平流線で物理壁ではない)
-    if len(wall) > 10:
-        i_pk = int(np.argmax(wall[:, 2]))
-        after = wall[i_pk:, 2] <= np.deg2rad(0.05)
-        if np.any(after):
-            wall = wall[: i_pk + int(np.argmax(after)) + 1]
+    wall_full = wall.copy()
+    exit_info: dict = {"mode": exit_mode}
+    if exit_mode == "characteristic":
+        # **物理出口 = 終端 C⁺ (E 発) と壁流線の交点** (正しい定義, `terminal_exit`)
+        if x_E is None or M_d is None:
+            raise ValueError("exit_mode='characteristic' には x_E と M_d が必要")
+        te = terminal_exit(pts, wall, float(x_E), float(M_d), gamma=gamma)
+        if not te["ok"]:
+            raise RuntimeError("終端特性線が壁に到達しない (軸 target の延長不足の疑い"
+                               f" — x_axis_end={x_axis_end:.3g}, wall_end={wall[-1,0]:.3g})")
+        i_cut = int(np.searchsorted(wall[:, 0], te["x_F"]))
+        wall = wall[:max(i_cut, 10)]
+        exit_info.update({k: te[k] for k in ("x_F", "r_F", "n_frozen")})
+        exit_info["term_path"] = te["path"]
+    elif exit_mode == "lip":
+        # [旧] リップ (θ が最大値を経て 0.05° を切る点) で切る。壁角は F へ漸近的に
+        # 落ちるため、この閾値は F の数 r_t 上流で発火する (`terminal_exit` docstring)。
+        if len(wall) > 10:
+            i_pk = int(np.argmax(wall[:, 2]))
+            after = wall[i_pk:, 2] <= np.deg2rad(0.05)
+            if np.any(after):
+                wall = wall[: i_pk + int(np.argmax(after)) + 1]
+        exit_info.update({"x_F": float(wall[-1, 0]), "r_F": float(wall[-1, 1])})
+    else:
+        raise ValueError("exit_mode は 'characteristic' か 'lip'")
     # 質量流量診断: 壁 (=流管であるべき曲線) までの断面積分を ṁ* と比較
     mdot1 = (inv.massflux_across(pts, wall[-1, 0] - 0.3,
                                  float(np.interp(wall[-1, 0] - 0.3, wall[:, 0], wall[:, 1])))
              if len(wall) > 10 else float("nan"))
-    return {"wall": wall, "pts": pts, "x0": float(x0),
-            "mdot_start": mdot_star, "mdot_exit": mdot1}
+    return {"wall": wall, "wall_full": wall_full, "pts": pts, "x0": float(x0),
+            "exit": exit_info, "mdot_start": mdot_star, "mdot_exit": mdot1}

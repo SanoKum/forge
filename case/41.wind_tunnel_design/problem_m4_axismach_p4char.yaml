@@ -1,0 +1,49 @@
+# ① 軸対称風洞 — axis-Mach A5 pass4: **出口を終端特性線で決める** (ユーザ指摘 2026-08-15)
+# p1 との差分: (i) アンカーを run_0045 から再抽出 (x_reach=1.7920, M''=-0.065)、
+# (ii) 逆 MOC を高解像化 (n_axis 2000 / n_start 121 / dx_wall 0.005)。
+# 動機: p1 の残差 dM_max 1.16% は接合部でなく x≈6 ピークの分布誤差で、
+# 逆 MOC の質量流束リーク (mdot_ratio 0.992, 格子収束で 0.9986 まで縮む =
+# 離散化誤差) が壁を ~0.5% 細らせていたのが主因。アンカーは既に機能している
+# (x_A 近傍の残差 0.005 以下)。x_E は 9.6304 固定を維持。
+name: wt_m4_axismach_p4char
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6
+  Tt: 800.0
+  p_ambient: 1000.0
+  r_throat: 0.010
+  M_design: 4.0
+
+dv:
+  L_c: {value: 7.8465, min: 1.0, max: 20.0}   # = x_E(pass0) 9.6304 − x_reach 1.7901
+
+geometry:
+  R: 2.0
+  r_inlet: 2.5
+  L_U: 3.5
+  L_pipe: 0.5
+  M_start: 1.05
+  n_start: 121
+  n_axis_inv: 2000
+  x_end_margin: 2.3
+  dx_wall: 0.005
+  # 物理出口 F = E 発の終端 C⁺ と壁流線の交点 (壁角しきい値 lip-cut を置換)。
+  # 実測 (analyze_axismach_exit.py): x_F 19.708 (lip) → 22.301 (特性線, θ_wall=8e-11°)。
+  exit_mode: characteristic
+  Lc_mode: explicit
+  x_reach_cfd: 1.7839
+  x_reach_anchor: [2.07549, 0.64351, -0.04266]
+  axis_segment_run: "../case/41.wind_tunnel_design/run_0047_axismach_p3"
+
+mesh:
+  discretization: node
+  ni: 357     # 壁が 2.6 r_t 伸びた分だけ比例増 (軸解像度を pass3 と同等に保つ)
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
