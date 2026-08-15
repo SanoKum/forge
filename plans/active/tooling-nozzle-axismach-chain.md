@@ -80,7 +80,7 @@ W1–W3 で得た資産 (段階起動 runner・cone 検証・`WallDrivenCFDWall`
 | --- | --- | --- |
 | $x_t$, $r_t$, $\rho_t$ | スロート位置・半径・壁曲率半径 | `probdef` の throat 諸元。$\rho_t = R \cdot r_t$ (campaign は R=2) |
 | $x_A$ | 軸 Mach 指定開始点 (MOC 制御の始点) | 初回 = 遷音速 starting line の軸上位置 (Hall 場、$M_{\rm start}\approx1.05$。親 plan §4.7 のアンカー点に相当)。CFD 反復後 = $x_{\rm reach,CFD}$ (`cminus_cfd.extract_x_reach`、B10 の origin と同一) |
-| $M_A, M'_A, M''_A$ | $x_A$ での接続条件 | 初回 = Hall + kernel MOC 場から評価。反復後 = CFD 軸データの平滑化フィットから評価 |
+| $M_A, M'_A, M''_A$ | $x_A$ での接続条件 | 初回 = Hall 軸上解 (解析微分) から評価。反復後 = CFD 軸データの平滑化フィットから評価 (`feedback/cfd_anchor.py` の既存実装を流用) |
 | $x_E$ | 軸上で初めて $M = M_d$ に到達する点 ($M'(x_E)=M''(x_E)=0$) | 現行 `x_axis_end` に相当 (ただし現行は E/F 未区別) |
 | $x_F$ | 物理出口 (断面全体が $M_d$, $\theta=0$) | 新規に明示。第一近似 $x_F - x_E \approx r_F\sqrt{M_d^2-1}$, $r_F = r_t\sqrt{A_e/A_t}$ |
 | $L_c = x_E - x_A$ | 軸 Mach 加速区間長 = **主要設計自由度** | 新規 |

@@ -198,6 +198,75 @@ target})$ を全壁点で一定と置く現行の閉じ方は、**軸対称か�
 (W5 outer loop と統合)。詳細は `moc_cancel.py` docstring と plan §4 参照。
 Phase W5 以降は上記厳密化を経てから着手する。
 
+## axis-Mach チェーン (①風洞・実装中 — 2026-08-15 起票の主線)
+
+計画: [`plans/active/tooling-nozzle-axismach-chain.md`](../../plans/active/tooling-nozzle-axismach-chain.md)。
+軸中心 Mach 分布 $M_{\rm axis}(x)$ を**低自由度の一次設計変数**とする Sivells 型逆設計:
+
+$$\text{Hall 遷音速解} \rightarrow M_{\rm axis}\ (\text{5次 Hermite},\ \text{自由度 } L_c) \rightarrow \text{逆 MOC} \rightarrow \text{Euler CFD} \rightarrow \text{characteristic 追跡でアンカー更新}$$
+
+モード F の Bézier 軸分布 (自由 CP 3 個 — B10-c で「始端 C² と出口 C² を同時に満たせない」と
+確定) を、**両端 6 条件をちょうど消費する 5 次 Hermite に差し替え**、残る自由度を加速区間長
+$L_c$ の 1 個に集約する。wall-driven チェーン (W5 以降保留) とはスロート上流の壁表現
+(`UpstreamThroatPoly`) を共有する。
+
+### 点の定義 (A / E / F)
+
+| 記号 | 定義 |
+| --- | --- |
+| $x_A$ | 軸 Mach 指定開始点。初回 = 遷音速 starting line の軸上位置 ($M_{\rm start}\approx1.05$)。CFD 反復後 = $x_{\rm reach,CFD}$ (壁始点発 C⁻ の軸着地点) |
+| $x_E$ | 軸上で初めて $M=M_d$ に到達する点。$M'(x_E)=M''(x_E)=0$。$L_c = x_E - x_A$ |
+| $x_F$ | 物理出口 (断面全体が $M_d$, $\theta=0$)。$x_E \ne x_F$。第一近似 $x_F - x_E \approx r_F\sqrt{M_d^2-1}$, $r_F = r_t\sqrt{A_e/A_t}$ |
+
+逆 MOC の target 軸配列は $x>x_E$ を $M=M_d$ 一定で $x_F$ 予測値+マージンまで延長する。
+壁流線はリップ ($\theta$ がピーク後 ~0 へ戻る点) で切られ、その点が $x_F$ になる
+(`inverse_design` の既存リップ判定)。
+
+### 軸 Mach law: 5次 Hermite (`geometry/axis_law.py`)
+
+$s=(x-x_A)/L_c\in[0,1]$、$M(s)=\sum a_i s^i$。両端 6 条件
+($M_A,M'_A,M''_A$ / $M_d,0,0$) の閉形式:
+
+$$a_0=M_A,\quad a_1=L_cM'_A,\quad a_2=\tfrac12 L_c^2M''_A,\quad \Delta M=M_d-M_A$$
+$$a_3=10\Delta M-6a_1-3a_2,\quad a_4=-15\Delta M+8a_1+3a_2,\quad a_5=6\Delta M-3a_1-a_2$$
+
+**設計ゲート**: $M'\ge0$ 全域 (hard — これで $M\le M_d$、overshoot 0 が自動保証) /
+$M''$ 符号反転回数 $\le1$ (品質指標)。$M'\ge0$ が破れる下限 $L_{c,\min}$ は bisection で返す。
+
+### Hall 遷音速解 (`geometry/transonic.py::HallThroat`)
+
+Hall (1962) の軸対称遷音速級数を CONTUR (Sivells AEDC-TR-78-63, `papers/nozzle_design/`
+ローカル) の実装形で持つ: Kliegel–Levine の置換 $R^{-1}=S^{-1}+S^{-2}+S^{-3}$ ($S=R+1$) を
+施した Appendix A 式 (A-1) [$u$]・(A-26) [$v$]、係数は軸対称用 (A-14)〜(A-25)・(A-34)〜(A-40)、
+$\lambda=\sqrt{(1+\sigma)/((\gamma+1)S)}$、$x,y$ は $r_t$ 規格化・$x=0$ が幾何スロート。
+速度は音速点規格化 ($u=q_x/a_*$) で、$M$/$\theta$ は速度ベクトルから厳密等エントロピー関係で
+評価する (SauerThroat と同じ流儀)。**抽出の検算済み恒等式** (実装テストでも機械精度で確認):
+スロート壁 $u(0,1)$ が本文 Eq. (8) に一致・$v(0,1)=0$ が係数表から厳密に成立
+($V_{42}-V_{22}+V_{02}=0$ 等)。独立検証は $C_D$ 級数 Eq. (14)
+$C_D=1-\frac{\gamma+1}{96S^2}[1-\frac{8\gamma-27}{24S}+\frac{754\gamma^2-757\gamma+3615}{2880S^2}]$
+との照合、および $R\to\infty$ での Sauer 一次解への退化。
+軸上アンカー $(M,M',M'')$ は同一級数の解析微分で返す (`axis_anchor(x)` — 生差分は使わない)。
+
+### 壁の全体構成 (`AxisMachCFDWall`)
+
+**入口直管** → **U→T 5次 Hermite** (`UpstreamThroatPoly` 流用: $r''(T)=1/\rho_t$ が Hall の
+局所スロート曲率と整合) → **$[T,\,x_A]$ は遷音速解の壁境界** (骨接放物線
+$r=r_t+x^2/(2\rho_t)$ — Hall 模型が仮定する壁で、幾何 DOF ではない。T で Hermite と $C^2$) →
+**逆 MOC 壁流線** ($x_A$ の starting line 壁足から $x_F$ まで。端条件クランプ 5 次 B-spline
+表現 = `ModeFWall` と同じ流儀) 。スロート下流に円弧などの独立幾何は**挟まない**。
+
+### CFD-in-the-loop アンカー更新
+
+反復 $k$: node Euler run → 壁始点発の C⁻ を CFD 場でトレースし $x_A^{(k+1)}=x_{\rm reach,CFD}$
+(`geometry/cminus_cfd`) → 軸 $M(x)$ に平滑化フィットを当て**同一フィット関数から**
+$M_A,M'_A,M''_A$ を評価 (生の 2 階差分禁止。窓/次数感度を併記) → Hermite 再構築 → 逆 MOC →
+次の run。$[x_0, x_A)$ の軸 target は実測軸曲線をそのまま渡す (B10 と同じ帳簿方針:
+そこは設計 target ではなく物理診断)。収束ゲートは
+$\max_x|M_{\rm CFD}-M_{\rm target}|\le0.5\%\,M_d$・overshoot <1%・出口 $\sigma_M$/$\theta$。
+
+評価 runner は `evaluate/runner_axismach.py` (problem type `wind_tunnel_axisym_axismach`、
+node Euler・段階起動 — wall-driven W3 と同じ 2 段方式)。
+
 ## メッシュ (構造化・トポロジ固定)
 
 構造化 (i,j) quad メッシュを壁曲線から代数生成し (x: スロート細分の間隔関数逆積分 /
