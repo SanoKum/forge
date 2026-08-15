@@ -196,15 +196,32 @@ cd /home/sano/work/forge/solver_density_cuda
 `solver_density_cuda/tools/paraview/forge_filters.py` の Python プラグインで計算する。
 フィルタ名は **Forge Derived Quantities** (Filters > Alphabetical)。
 
-読み込み方法は 2 通り。
+読み込みは Tools > Manage Plugins > Load New... で `forge_filters.py` を選ぶ
+("Auto Load" を有効にすれば次回起動から自動で入る)。
 
-1. **プラグイン直接 (通常はこちら)**: Tools > Manage Plugins > Load New... で `forge_filters.py` を選ぶ。
-   "Auto Load" を有効にしておくと次回起動時から自動で入る。
-2. **マクロ経由 (フォールバック)**: Macros > Add new macro... で
-   `solver_density_cuda/tools/paraview/macro_load_forge_filters.py` を登録し、ツールバーのボタンを押す。
-   1. が `Failed to import paraview.detail.pythonalgorithm` で失敗する環境
-   (Ubuntu 24.04 の paraview 5.11.2 + Python 3.12 など。ParaView 側が Python 3.11 で削除された
-   `inspect.getargspec` を import するため) 用。マクロが shim を入れてから読むので、そこでも動く。
+**WSL native の ParaView は起動方法に注意**。Ubuntu 24.04 の paraview 5.11.2 は Python 3.12 上で動くが、
+ParaView 同梱の `paraview/detail/pythonalgorithm.py` が Python 3.11 で削除された `inspect.getargspec` を
+import するため、素で `paraview` と打つと Python プラグインの読み込みが必ず次のエラーで失敗する。
+
+```
+WARN| Failed to load Python plugin: Failed to import `paraview.detail.pythonalgorithm`.
+ImportError: cannot import name 'getargspec' from 'inspect'
+ERR | .../forge_filters.py: invalid ELF header
+```
+
+native ではラッパー経由で起動すれば、この shim (`tools/paraview/pvshim/sitecustomize.py` を PYTHONPATH に追加)
+が入るので Manage Plugins も auto load もそのまま通る。
+
+```bash
+cd /home/sano/work/forge/solver_density_cuda
+./tools/run_paraview_native.sh                       # native (WSL)
+./tools/run_paraview_native.sh ../case/08.bump/run_0006_slau_loM_imp_cfl5/res_8000.xmf
+```
+
+Docker 経由 (`./tools/run_paraview_gui.sh`) の ParaView は Python 3.10 なので shim 不要でそのまま読める。
+どうしても素の `paraview` から使いたいときは、Macros > Add new macro... で
+`tools/paraview/macro_load_forge_filters.py` を登録し、そのボタンから読み込む
+(マクロ側で同じ shim を入れてからプラグインを読む)。
 
 出力される配列:
 
