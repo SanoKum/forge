@@ -1,4 +1,4 @@
-"""円弧スロートの遷音速解 (Sauer 一次・軸対称)。
+"""円弧スロートの遷音速解 (Sauer 一次 / Hall–Kliegel–Levine 高次・軸対称)。
 
 無次元化: 長さ = r* (スロート半径)、速度摂動 ubar=(u-a*)/a*。Sauer 内部座標 xs
 (軸上ソニック点 = 0) で
@@ -9,7 +9,17 @@
 (< 0)、すなわち**軸上ソニック点は幾何スロートより下流** (古典的事実)。
 本クラスの公開 API は幾何座標 x (壁最小断面 = 0) で受け、内部で xs = x + xs_t に
 変換する。導出は plans §4.7(b)、一次資料 Sauer NACA TM-1147 / Hall 1962。
-Kliegel–Levine 高次 (1/(R+1) 級数) は未実装 — R < 1 は精度警告 (サーベイ A2.5(A))。
+
+`HallThroat` (2026-08-15, axis-Mach チェーン A2) は Hall (1962) の軸対称 3 次系列を
+Kliegel–Levine の置換 R⁻¹ = S⁻¹+S⁻²+S⁻³ (S = R+1) 込みで実装したもの。式の出典は
+CONTUR (Sivells AEDC-TR-78-63, papers/nozzle_design/ ローカル) Appendix A:
+一般式 (A-1) [u]・(A-26) [v] の σ=1 (軸対称)、係数 (A-14)〜(A-25)・(A-34)〜(A-40)、
+λ = sqrt((1+σ)/((γ+1)S)) (本文 Eq. 10 — 原文の "(γ-1)" は Sauer 退化・Eq. (3)/(4)
+との整合から (γ+1) の誤植/判読と確定)。座標は x=0 が幾何スロート (壁最小断面、
+そこで壁 v=0)・y0=r*=1 規格化、速度は音速点規格化 (u = q_x/a*)。抽出の検算
+(2026-08-15): スロート壁 u(0,1) = 本文 Eq. (8) を係数恒等式で確認、v(0,1)=0 が
+V42−V22+V02=0 / V63−V43+V23−V03=0 の厳密恒等式として成立、du/dx(0,1) = Eq. (9)
+(GT+UP2−UP0 = −(64γ²+117γ−1026)/1152 を確認)。
 """
 from __future__ import annotations
 
@@ -100,4 +110,161 @@ class SauerThroat:
         r = np.linspace(0.0, 1.0, n)
         ub = self.ubar(0.0, r)
         flux = 1.0 - 0.5 * (g + 1.0) * ub * ub  # ρu/(ρ*a*) の M=1 近傍展開
+        return float(np.trapezoid(flux * 2.0 * r, r))
+
+
+class HallThroat:
+    """Hall–Kliegel–Levine 軸対称遷音速解 (3 次系列, S = R+1)。
+
+    API は `SauerThroat` 互換 (`mach` / `theta` / `x_axis_of_mach` /
+    `starting_line` / `qbar_of_mach`) + 軸上アンカーの解析微分 `axis_anchor`。
+    座標は幾何スロート原点 (x=0 = 壁最小断面)、y0 = r* = 1 規格化。
+    出典・検算はモジュール docstring 参照。
+    """
+
+    def __init__(self, R: float, gamma: float = 1.4) -> None:
+        if R < 0.5:
+            import warnings
+
+            warnings.warn(f"R={R:.3g} < 0.5: Hall–KL 系列でも精度低下域 "
+                          "(Cuffel らの実験照合範囲外)")
+        self.R = float(R)
+        self.g = g = float(gamma)
+        self.S = S = self.R + 1.0
+        self.lam = np.sqrt(2.0 / ((g + 1.0) * S))
+        # --- 係数 (CONTUR Appendix A, 軸対称 σ=1) ---
+        self.GR = (15.0 - 10.0 * g) / 288.0
+        self.GS = (2708.0 * g * g + 2079.0 * g + 2115.0) / 82944.0
+        self.GT = (92.0 * g * g + 180.0 * g - 9.0) / 1152.0
+        self.GV = (g + 1.0) / 8.0
+        self.GK = (4.0 * g * g - 57.0 * g + 27.0) / 48.0
+        self.U42 = (2.0 * g + 9.0) / 24.0
+        self.U22 = (4.0 * g + 3.0) / 24.0
+        self.U63 = (556.0 * g * g + 1737.0 * g + 3069.0) / 10368.0
+        self.U43 = (388.0 * g * g + 777.0 * g + 153.0) / 2304.0
+        self.U23 = (304.0 * g * g + 255.0 * g - 54.0) / 1728.0
+        self.UP2 = (52.0 * g * g + 51.0 * g + 327.0) / 384.0
+        self.UP0 = (52.0 * g * g + 75.0 * g - 9.0) / 192.0
+        self.V42 = (g + 3.0) / 9.0
+        self.V22 = (20.0 * g + 27.0) / 96.0
+        self.V02 = (28.0 * g - 15.0) / 288.0
+        self.V63 = (6836.0 * g * g + 23031.0 * g + 30627.0) / 82944.0
+        self.V43 = (3380.0 * g * g + 7551.0 * g + 3771.0) / 13824.0
+        self.V23 = (3424.0 * g * g + 4071.0 * g - 972.0) / 13824.0
+        self.V03 = (7100.0 * g * g + 2151.0 * g + 2169.0) / 82944.0
+        # 軸上 u(x) = c0 + c1 z + c2 z² + c3 z³, z = λx (解析微分・根探索に使う)
+        self._c_ax = (
+            1.0 - 1.0 / (4.0 * S) - self.GR / S ** 2 - self.GS / S ** 3,
+            1.0 - 1.0 / (8.0 * S) + self.GT / S ** 2,
+            0.5 * (1.0 - 2.0 * g / 3.0 - self.GV / S),
+            self.GK / 3.0,
+        )
+        # 軸上ソニック点 (u=1) の幾何座標 (>0: スロート下流)
+        self.x_sonic_axis = self._x_of_u_axis(1.0)
+
+    # -- 速度場 (音速点規格化の全量: u = q_x/a*, v = q_r/a*) -------------------
+    def u(self, x, y):
+        g, S = self.g, self.S
+        z = self.lam * np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        y2 = y * y
+        c0, c1, c2, c3 = self._c_ax
+        return (c0 + c1 * z + c2 * z * z + c3 * z ** 3
+                + y2 / (2.0 * S) + (self.U42 * y2 * y2 - self.U22 * y2) / S ** 2
+                + (self.U63 * y2 ** 3 - self.U43 * y2 * y2 + self.U23 * y2) / S ** 3
+                + z * (y2 / S + (self.UP2 * y2 * y2 - self.UP0 * y2) / S ** 2)
+                + 0.5 * z * z * y2 * (3.0 - 7.0 * g) / (4.0 * S))
+
+    def v(self, x, y):
+        g, S = self.g, self.S
+        z = self.lam * np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        y2 = y * y
+        return (y / (self.lam * S)) * (
+            (y2 - 1.0) / (4.0 * S)
+            + (self.V42 * y2 * y2 - self.V22 * y2 + self.V02) / S ** 2
+            + (self.V63 * y2 ** 3 - self.V43 * y2 * y2 + self.V23 * y2 - self.V03) / S ** 3
+            + z * (1.0 + ((2.0 * g + 9.0) * y2 - 2.0 * g - 1.5) / (6.0 * S)
+                   + (6.0 * self.U63 * y2 * y2 - 4.0 * self.U43 * y2
+                      + 2.0 * self.U23) / S ** 2)
+            + 0.5 * z * z * (2.0 + (4.0 * self.UP2 * y2 - 2.0 * self.UP0) / S)
+            + (z ** 3 / 3.0) * (3.0 - 13.0 * g) / 4.0)
+
+    # -- SauerThroat 互換 API --------------------------------------------------
+    def mach(self, x, r):
+        g = self.g
+        qb = np.hypot(self.u(x, r), self.v(x, r))
+        ab2 = 1.0 - 0.5 * (g - 1.0) * (qb * qb - 1.0)
+        return qb / np.sqrt(np.maximum(ab2, 1e-12))
+
+    def theta(self, x, r):
+        return np.arctan2(self.v(x, r), self.u(x, r))
+
+    def qbar_of_mach(self, M: float) -> float:
+        g = self.g
+        return float(np.sqrt(M * M * (2.0 + (g - 1.0)) / (2.0 + (g - 1.0) * M * M)))
+
+    def _x_of_u_axis(self, u_target: float) -> float:
+        """軸上 u(x) = u_target の根 (Newton, スロート近傍の枝)。"""
+        c0, c1, c2, c3 = self._c_ax
+        z = (float(u_target) - c0) / c1
+        for _ in range(60):
+            f = c0 + c1 * z + c2 * z * z + c3 * z ** 3 - u_target
+            df = c1 + 2.0 * c2 * z + 3.0 * c3 * z * z
+            dz = f / df
+            z -= dz
+            if abs(dz) < 1e-15:
+                break
+        return z / self.lam
+
+    def x_axis_of_mach(self, M: float) -> float:
+        """軸上 (r=0) で M に達する幾何座標 x。"""
+        return self._x_of_u_axis(self.qbar_of_mach(M))
+
+    def starting_line(self, M_start: float = 1.05, n: int = 25):
+        """x = x0 の縦線 (軸→壁) 上の (x0, r, M, theta)。壁は骨接放物線。"""
+        x0 = self.x_axis_of_mach(M_start)
+        r_w = 1.0 + x0 * x0 / (2.0 * self.R)
+        r = np.linspace(0.0, r_w, n)
+        return x0, r, self.mach(x0, r), self.theta(x0, r)
+
+    # -- 軸上アンカー (M, M', M'') の解析微分 -----------------------------------
+    def axis_anchor(self, x: float) -> tuple:
+        """軸上 x での (M, dM/dx, d²M/dx²) を同一級数の解析微分で返す。
+
+        M = f(u), f(u) = u·ab2^(-1/2), ab2 = 1 − (γ−1)(u²−1)/2。
+        f' = ab2^(-1/2)·(1 + (γ−1)u²/(2·ab2)),
+        f'' = 2g' + u·g'',  g = ab2^(-1/2) (導出は素直な連鎖律)。
+        """
+        g = self.g
+        c0, c1, c2, c3 = self._c_ax
+        z = self.lam * float(x)
+        u = c0 + c1 * z + c2 * z * z + c3 * z ** 3
+        up = self.lam * (c1 + 2.0 * c2 * z + 3.0 * c3 * z * z)
+        upp = self.lam ** 2 * (2.0 * c2 + 6.0 * c3 * z)
+        ab2 = 1.0 - 0.5 * (g - 1.0) * (u * u - 1.0)
+        gg = ab2 ** -0.5
+        ggp = 0.5 * (g - 1.0) * u * ab2 ** -1.5                    # dg/du
+        ggpp = 0.5 * (g - 1.0) * ab2 ** -1.5 * (1.0 + 1.5 * (g - 1.0) * u * u / ab2)
+        f = u * gg
+        fp = gg + u * ggp
+        fpp = 2.0 * ggp + u * ggpp
+        return float(f), float(fp * up), float(fpp * up * up + fp * upp)
+
+    # -- 流量係数 --------------------------------------------------------------
+    def cd_series(self) -> float:
+        """CONTUR Eq. (14) の解析級数 (軸対称)。"""
+        g, S = self.g, self.S
+        return float(1.0 - (g + 1.0) / (96.0 * S * S)
+                     * (1.0 - (8.0 * g - 27.0) / (24.0 * S)
+                        + (754.0 * g * g - 757.0 * g + 3615.0) / (2880.0 * S * S)))
+
+    def cd_estimate(self, n: int = 400) -> float:
+        """幾何スロート断面 (x=0) の質量流束数値積分 (級数場の厳密等エントロピー密度)。"""
+        g = self.g
+        r = np.linspace(0.0, 1.0, n)
+        uu, vv = self.u(0.0, r), self.v(0.0, r)
+        q2 = uu * uu + vv * vv
+        ab2 = np.maximum(1.0 - 0.5 * (g - 1.0) * (q2 - 1.0), 1e-12)
+        flux = ab2 ** (1.0 / (g - 1.0)) * uu       # ρ u_x / (ρ* a*)
         return float(np.trapezoid(flux * 2.0 * r, r))
