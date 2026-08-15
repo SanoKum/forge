@@ -1,0 +1,44 @@
+# ① 軸対称風洞ノズル (モード F) — W0 判別実験: R=5 の単発 A/B (Md=4)
+# problem_m4_b8.yaml との差分は 2 点のみ:
+#   - geometry.R: 2.0 → 5.0 (こぶ振幅の R 依存を測る。調査 §8 / walldriven plan W0)
+#   - throat_anchor_run を外す (CFD アンカーは R=2 場に凍結されているため使えない。
+#     Sauer アンカーの pass 1 相当仮壁で評価する — こぶは到達不能域にあり
+#     下流壁の成熟度に依存しない [3 種の壁で軸 M 4 桁一致] ので比較は成立する)
+# 対照 = run_0031_baseline_cold / run_0034_node_base 系列 (R=2)。
+name: wt_m4_r5
+type: wind_tunnel_axisym
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6          # 入口全圧 [Pa]
+  Tt: 800.0          # 入口全温 [K]
+  p_ambient: 1000.0  # 出口背圧 [Pa] (超音速流出 — 実質未使用)
+  r_throat: 0.010    # スロート半径 [m]
+  M_design: 4.0      # 設計マッハ (D_e は従属)
+
+dv:
+  L_ax:   {value: 14.0, min: 10.0, max: 20.0}   # 目標 Bézier の軸スパン / rt
+  mc_cp1: {value: 2.0,  min: 1.3,  max: 3.0}    # 自由 CP (単調)
+  mc_cp2: {value: 2.9,  min: 1.6,  max: 3.6}
+  mc_cp3: {value: 3.6,  min: 2.0,  max: 3.95}
+
+geometry:
+  R: 5.0             # スロート円弧 (Ru=Rd 単一 — モード F)。W0 の変更点
+  blend_len: 0.0
+  r_inlet: 2.5
+  L_pipe: 0.5
+  L_contract: 3.0
+  phi_u_deg: 25.0
+  n_axis_inv: 500
+  n_start: 41
+  centerline_start_order: 2
+
+mesh:
+  ni: 321
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 24000      # run_0034_node_base と同一 (cold 単段)
+  outStepInterval: 6000
