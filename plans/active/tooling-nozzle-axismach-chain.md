@@ -30,6 +30,8 @@ $$\text{Hall 遷音速解} \rightarrow M_{\rm axis} \text{ (5次 Hermite, 自由
 ## 2. スコープ
 
 - **やる**
+  - 壁上流部の構成確定と組立: **入口直管 + U→T 5次 Hermite** (W1 資産
+    `wall_walldriven.UpstreamThroatPoly` を流用。上流円弧は使わない — ユーザ指定 2026-08-15)
   - 5次 Hermite 軸 Mach law (閉形式係数、設計ゲート、最小 $L_c$ 探索) の実装
   - Hall (1962) 遷音速解の実装 (CONTUR 実装形、Kliegel–Levine $S=R+1$ 置換) と Sauer との差し替え可能化
   - 逆 MOC への配線 (starting line 状態値の Hall 化、$E \to F$ 閉包、壁 QA 指標)
@@ -62,10 +64,13 @@ $$\text{Hall 遷音速解} \rightarrow M_{\rm axis} \text{ (5次 Hermite, 自由
 W1–W3 で得た資産 (段階起動 runner・cone 検証・`WallDrivenCFDWall`) と W0 の計測手法
 (`analyze_r5_ab.py` の trend-residual うねり指標) は本チェーンの検証にそのまま流用する。
 
-**円弧こぶ問題との関係**: W0 で「R=2 円弧が軸 M こぶの支配要因」と確定しているが、本チェーンでは
-壁形状側で対処せず、**CFD 反復でアンカー $x_A, M_A, M'_A, M''_A$ を実測値に更新することで吸収する**
-(B6 がこの経路の有効性を半減として実測済み)。$\rho_t$ (= $R \cdot r_t$) は設計入力として残るので、
-将来 R を上げる/wall-driven スロートに差し替える判断は outer loop の話として分離する。
+**円弧こぶ問題との関係**: W0 で「R=2 円弧が軸 M こぶの支配要因」と確定している。本チェーンでは
+3 段で対処する: (i) **スロート上流の壁は円弧でなく入口直管 + U→T 5次 Hermite** (W1 資産流用、
+ユーザ指定 2026-08-15) とし、$\rho_t$ は端点条件 $r''(T) = 1/\rho_t$ として入る (Hall が要る局所
+スロート曲率と整合)、(ii) スロート下流の円弧は starting line 壁足までの短い stub に縮退させる、
+(iii) 残るこぶ成分は **CFD 反復でアンカー $x_A, M_A, M'_A, M''_A$ を実測値に更新して吸収する**
+(B6 がこの経路の有効性を半減として実測済み)。将来 $\rho_t$ (= $R \cdot r_t$) を動かす判断は
+outer loop の話として分離する。
 
 ## 4. 記号と repo 内対応
 
@@ -110,8 +115,14 @@ API は `SauerThroat` 互換 (`mach` / `theta` / `x_axis_of_mach` / `starting_li
 (ii) Cuffel–Back–Massier (AIAA J 1969、ローカル PDF) の小 R 実験データ照合、
 (iii) 既存 run のスロート近傍 CFD 場との直接比較 (B5 と同じ手法。Sauer 比で乖離が縮むこと)。
 
-### 5.3 逆 MOC への配線と E→F 閉包
+### 5.3 壁の全体構成、逆 MOC への配線と E→F 閉包
 
+- **壁の全体構成** (上流→下流):
+  **入口直管** ($r = r_U$) → **U→T 5次 Hermite** (`wall_walldriven.UpstreamThroatPoly` 流用:
+  直管と $C^2$ 接続、$r'(T) = 0$, $r''(T) = 1/\rho_t$、適合条件 $\mu \le 20$ 等の検証済みロジックごと使う)
+  → **T→starting line 壁足の短い円弧 stub** (曲率 $\rho_t$。T で U→T 多項式と $G^2$ 接続し、
+  Hall の遷音速域の壁仮定とも整合) → **逆 MOC 壁流線** → ($x_F$ 以降は平行部)。
+  上流に円弧は使わない (ユーザ指定 2026-08-15)。
 - **starting line**: 初回は現行の縦 starting line の**幾何を据え置き、線上の状態値評価だけ
   Sauer → Hall に差し替える**最小差分とする (`InverseMOC.fill` の位相を触らない)。
   縦線構成が古典に対応物を持たない問題 (調査 §9-5) は認識しつつ、starting line の
@@ -166,9 +177,11 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
    テスト `design/tests/run_axislaw_tests.py` (端点条件機械精度・ゲート判定・$L_{c,\min}$ の性質)。
 3. **A2 — Hall 遷音速** [Phase 1]: `geometry/transonic.py` に `HallThroat` 追加 (§5.2)。
    テストは Sauer 退化・文献照合・CFD 照合の 3 系統。
-4. **A3 — 逆 MOC 配線 + E→F 閉包 + 壁 QA** [Phase 3]: `moc_inverse.py` の starting line
+4. **A3 — 壁組立 + 逆 MOC 配線 + E→F 閉包 + 壁 QA** [Phase 3]: `moc_inverse.py` の starting line
    状態評価の抽象化 (Sauer/Hall 差し替え可能に)、target 延長と $x_F$ 確定、壁 QA ユーティリティ
-   (`geometry/wall_qa.py` 等)。放射源流照合・既存 mode F 回帰 (Sauer 指定で従来結果不変) を確認。
+   (`geometry/wall_qa.py` 等)。全域壁 (直管 + `UpstreamThroatPoly` + 下流 stub + MOC 壁 + 平行部) を
+   CFD 用壁 CSV へ出力する組立クラスを追加 (`WallDrivenCFDWall` を雛型に)。
+   放射源流照合・既存 mode F 回帰 (Sauer 指定で従来結果不変) を確認。
 5. **A4 — Euler CFD 検証** [Phase 4]: `case/41.wind_tunnel_design/problem_m4_axismach.yaml` 新設、
    既存 `runner_wt` 流用 (壁 CSV の供給経路のみ追加)。**段階起動必須** (W3 の教訓)、node、
    run 命名 `run_00NN_axismach_<slug>` (既存連番に継続)、README run 表同期。
@@ -200,8 +213,9 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
 
 ## 8. 影響範囲
 
-- **コード**: `design/forge_design/geometry/` (新規 `axis_law.py`・`wall_qa.py`、変更
-  `transonic.py`・`moc_inverse.py`)、`design/forge_design/feedback/` (反復ドライバ追加)。
+- **コード**: `design/forge_design/geometry/` (新規 `axis_law.py`・`wall_qa.py`・壁組立クラス、変更
+  `transonic.py`・`moc_inverse.py`。`wall_walldriven.py` の `UpstreamThroatPoly` は流用のみで
+  既存挙動は変えない)、`design/forge_design/feedback/` (反復ドライバ追加)。
   ソルバ本体 (`solver_density_cuda/`) は不変。
 - **既存チェーン**: B8 (phase3) は回帰対照として不変。Sauer 指定の既存経路は挙動不変を回帰テストで保証。
   wall-driven チェーンは W5 以降保留 (当該 plan に追記済み)。
@@ -224,3 +238,6 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
   既存 mode F 資産との照合 (§3) と A0–A7 の実装ステップを定義。B10-c の failure
   (3 自由 CP で両端 C² 両立不能) を 5次 Hermite で構造的に解消する位置づけを明記。
   ユーザ判断により wall-driven チェーン W5 以降を保留し、本計画を主線とする。
+- `2026-08-15` — ユーザ指定を反映: スロート上流の壁表現を**入口直管 + U→T 5次 Hermite**
+  (W1 資産 `UpstreamThroatPoly` 流用) に確定。上流円弧は不採用、下流円弧は starting line
+  壁足までの stub に縮退 (§5.3 壁の全体構成)。
