@@ -65,19 +65,21 @@ W1–W3 で得た資産 (段階起動 runner・cone 検証・`WallDrivenCFDWall`
 (`analyze_r5_ab.py` の trend-residual うねり指標) は本チェーンの検証にそのまま流用する。
 
 **円弧こぶ問題との関係**: W0 で「R=2 円弧が軸 M こぶの支配要因」と確定している。本チェーンでは
-3 段で対処する: (i) **スロート上流の壁は円弧でなく入口直管 + U→T 5次 Hermite** (W1 資産流用、
-ユーザ指定 2026-08-15) とし、$\rho_t$ は端点条件 $r''(T) = 1/\rho_t$ として入る (Hall が要る局所
-スロート曲率と整合)、(ii) スロート下流の円弧は starting line 壁足までの短い stub に縮退させる、
-(iii) 残るこぶ成分は **CFD 反復でアンカー $x_A, M_A, M'_A, M''_A$ を実測値に更新して吸収する**
-(B6 がこの経路の有効性を半減として実測済み)。将来 $\rho_t$ (= $R \cdot r_t$) を動かす判断は
-outer loop の話として分離する。
+2 段で対処する: (i) **スロート上流の壁は円弧でなく入口直管 + U→T 5次 Hermite** (W1 資産流用、
+ユーザ指定 2026-08-15) とし、$\rho_t$ は端点条件 $r''(T) = 1/\rho_t$ として入る。**スロート T
+から下流は自由設計** — 円弧を幾何として引き継がない (Hall/Sauer の $\rho_t$ はスロートを骨接円
+[osculating circle] で局所近似する漸近解の**入力パラメータ**にすぎず、実際の壁がその先も円弧を
+描くことを要求しない。T での曲率一致 $r''(T)=1/\rho_t$ で接続条件は完結する — ユーザ訂正
+2026-08-15)、(ii) 残るこぶ成分は **CFD 反復でアンカー $x_A, M_A, M'_A, M''_A$ を実測値に更新して
+吸収する** (B6 がこの経路の有効性を半減として実測済み)。将来 $\rho_t$ (= $R \cdot r_t$) を動かす
+判断は outer loop の話として分離する。
 
 ## 4. 記号と repo 内対応
 
 | 原方針の記号 | 定義 | repo 内の対応物 |
 | --- | --- | --- |
 | $x_t$, $r_t$, $\rho_t$ | スロート位置・半径・壁曲率半径 | `probdef` の throat 諸元。$\rho_t = R \cdot r_t$ (campaign は R=2) |
-| $x_A$ | 軸 Mach 指定開始点 (MOC 制御の始点) | 初回 = kernel MOC の軸到達点 $x_k$ (親 plan §4.7 のアンカー点)。CFD 反復後 = $x_{\rm reach,CFD}$ (`cminus_cfd.extract_x_reach`、B10 の origin と同一) |
+| $x_A$ | 軸 Mach 指定開始点 (MOC 制御の始点) | 初回 = 遷音速 starting line の軸上位置 (Hall 場、$M_{\rm start}\approx1.05$。親 plan §4.7 のアンカー点に相当)。CFD 反復後 = $x_{\rm reach,CFD}$ (`cminus_cfd.extract_x_reach`、B10 の origin と同一) |
 | $M_A, M'_A, M''_A$ | $x_A$ での接続条件 | 初回 = Hall + kernel MOC 場から評価。反復後 = CFD 軸データの平滑化フィットから評価 |
 | $x_E$ | 軸上で初めて $M = M_d$ に到達する点 ($M'(x_E)=M''(x_E)=0$) | 現行 `x_axis_end` に相当 (ただし現行は E/F 未区別) |
 | $x_F$ | 物理出口 (断面全体が $M_d$, $\theta=0$) | 新規に明示。第一近似 $x_F - x_E \approx r_F\sqrt{M_d^2-1}$, $r_F = r_t\sqrt{A_e/A_t}$ |
@@ -120,13 +122,23 @@ API は `SauerThroat` 互換 (`mach` / `theta` / `x_axis_of_mach` / `starting_li
 - **壁の全体構成** (上流→下流):
   **入口直管** ($r = r_U$) → **U→T 5次 Hermite** (`wall_walldriven.UpstreamThroatPoly` 流用:
   直管と $C^2$ 接続、$r'(T) = 0$, $r''(T) = 1/\rho_t$、適合条件 $\mu \le 20$ 等の検証済みロジックごと使う)
-  → **T→starting line 壁足の短い円弧 stub** (曲率 $\rho_t$。T で U→T 多項式と $G^2$ 接続し、
-  Hall の遷音速域の壁仮定とも整合) → **逆 MOC 壁流線** → ($x_F$ 以降は平行部)。
-  上流に円弧は使わない (ユーザ指定 2026-08-15)。
-- **starting line**: 初回は現行の縦 starting line の**幾何を据え置き、線上の状態値評価だけ
-  Sauer → Hall に差し替える**最小差分とする (`InverseMOC.fill` の位相を触らない)。
-  縦線構成が古典に対応物を持たない問題 (調査 §9-5) は認識しつつ、starting line の
-  characteristic 化は本計画では扱わない (乖離が CFD 反復で吸収しきれない場合の将来項目)。
+  → **T (スロート) から下流は完全に自由** — 円弧・その他の幾何を一切挟まない (ユーザ指摘
+  2026-08-15: 「スロート点以降は自由に設計、接続部のみ曲率保持」)。T での曲率一致
+  $r''(T)=1/\rho_t$ が唯一の接続条件であり、それは U→T Hermite の端点条件と Hall/Sauer 遷音速解の
+  パラメータ $\rho_t$ が共有することで自動的に満たされる。T 以降の壁は**逆 MOC の出力**そのもの
+  (下記) であり、独立した幾何 DOF は持たない。
+- **starting line と T→A 間の扱い**: Hall/Sauer の遷音速解は「スロートを骨接円 $\rho_t$ で局所近似する
+  漸近解」であり、$\rho_t$ はモデルの入力パラメータであって、実際の壁がその先も円弧を描くことを
+  要求しない。T のすぐ下流に置く transonic starting line ($M_{\rm start}\approx1.05$ 程度、
+  `SauerThroat.starting_line` / `HallThroat.starting_line` 互換 API) は**壁形状ではなく場の
+  コーシーデータ**であり、その線上の壁点位置・状態も遷音速解の場そのものから評価する
+  (T に近いほど U→T Hermite の曲率に収束する近似で、独立した幾何設計ではない)。
+  この starting line から下流は、既存の `InverseMOC.fill` (軸 Mach law 駆動) がそのまま
+  壁流線を出力する — これが「T 以降は自由設計」の実体であり、別途「kernel 領域の壁マーチ」を
+  設けない。初回は starting line の**幾何を当面据え置き、線上の状態値評価だけ Sauer → Hall に
+  差し替える**最小差分から始める (`InverseMOC.fill` の位相を触らない)。縦線構成が古典に
+  対応物を持たない問題 (調査 §9-5) は認識しつつ、starting line の characteristic 化は
+  本計画では扱わない (乖離が CFD 反復で吸収しきれない場合の将来項目)。
 - **wedge 制限**: `moc_inverse` 既知の未計算 wedge (convex-hull 補間で壁流線が横断) は
   据え置き、壁 QA でその区間の曲率振動を監視する。
 - **E→F 閉包**: target 軸配列を $x_E$ より下流へ $M = M_d$ 一定で
@@ -179,9 +191,9 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
    テストは Sauer 退化・文献照合・CFD 照合の 3 系統。
 4. **A3 — 壁組立 + 逆 MOC 配線 + E→F 閉包 + 壁 QA** [Phase 3]: `moc_inverse.py` の starting line
    状態評価の抽象化 (Sauer/Hall 差し替え可能に)、target 延長と $x_F$ 確定、壁 QA ユーティリティ
-   (`geometry/wall_qa.py` 等)。全域壁 (直管 + `UpstreamThroatPoly` + 下流 stub + MOC 壁 + 平行部) を
-   CFD 用壁 CSV へ出力する組立クラスを追加 (`WallDrivenCFDWall` を雛型に)。
-   放射源流照合・既存 mode F 回帰 (Sauer 指定で従来結果不変) を確認。
+   (`geometry/wall_qa.py` 等)。全域壁 (直管 + `UpstreamThroatPoly` + T 以降は逆 MOC 壁流線 + 平行部。
+   円弧やその他の中間幾何を挟まない) を CFD 用壁 CSV へ出力する組立クラスを追加
+   (`WallDrivenCFDWall` を雛型に)。放射源流照合・既存 mode F 回帰 (Sauer 指定で従来結果不変) を確認。
 5. **A4 — Euler CFD 検証** [Phase 4]: `case/41.wind_tunnel_design/problem_m4_axismach.yaml` 新設、
    既存 `runner_wt` 流用 (壁 CSV の供給経路のみ追加)。**段階起動必須** (W3 の教訓)、node、
    run 命名 `run_00NN_axismach_<slug>` (既存連番に継続)、README run 表同期。
@@ -241,3 +253,9 @@ MOC の実測 $x_F(L_c)$ に対する root finding を外側ループとして�
 - `2026-08-15` — ユーザ指定を反映: スロート上流の壁表現を**入口直管 + U→T 5次 Hermite**
   (W1 資産 `UpstreamThroatPoly` 流用) に確定。上流円弧は不採用、下流円弧は starting line
   壁足までの stub に縮退 (§5.3 壁の全体構成)。
+- `2026-08-15` — ユーザ訂正を反映: 前項で入れた「T→starting line 壁足の円弧 stub」を撤回。
+  スロート T から下流は完全に自由設計であり、接続条件は T での曲率一致
+  $r''(T)=1/\rho_t$ のみ (U→T Hermite の端点条件と Hall/Sauer の $\rho_t$ パラメータが共有)。
+  T 直後の transonic starting line は壁形状ではなく Hall 場のコーシーデータであり、
+  そこから下流は既存 `InverseMOC.fill` の出力がそのまま壁になる。独立した「kernel 領域の
+  壁マーチ」も設けない (§5.3 を再構成)。
