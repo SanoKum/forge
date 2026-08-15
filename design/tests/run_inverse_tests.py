@@ -165,6 +165,70 @@ _mf_tc = _res_tc["mdot_exit"] / _res_tc["mdot_start"]
 # 揃っておらず対照になっていないため。同一条件の A/B は plan §9 に記録する。
 check(f"特性線始点: 質量流量整合 ({_mf_tc:.4f})", abs(_mf_tc - 1.0) < 0.01)
 
+# --- 7. 流束閉包による壁決定 (A9 — CFD で棄却済み、性質を固定する特性化テスト) ----
+# 既定は wall_mode='streamline'。本節は「実装は正しいが壁としては流線に劣る」ことを
+# 記録に固定する (plans/archived/tooling-nozzle-moc-flux-closure-wall.md)。
+from forge_design.geometry.moc_inverse import (field_interpolator,  # noqa: E402
+                                               flux_closure_wall)
+
+# 一様流 (M=2, θ=0) の解析解: ṁ(r) = ρV·πr² なので ṁ* = ρV·π → r_w ≡ 1
+inv_u = InverseMOC(gamma=G, delta=1.0)
+init_u = ([_Pt(float(x), 0.0, 0.0, nuU, G) for x in np.linspace(4.0, 0.0, 81)[:-1]]
+          + [_Pt(0.0, float(r), 0.0, nuU, G) for r in np.linspace(0.0, 1.0, 41)])
+pts_u = inv_u.fill(init_u)
+itp_u = field_interpolator(pts_u)
+mdot_u = inv_u.massflux_across(pts_u, 0.05, 1.0, n=400, itp=itp_u)
+xs_u = np.linspace(0.3, 1.5, 25)
+rw_u = flux_closure_wall(itp_u, mdot_u, xs_u, np.full_like(xs_u, 1.2), gamma=G)
+check(f"流束閉包: 一様流で r_w ≡ 1 (max|r−1| = {np.max(np.abs(rw_u-1)):.1e})",
+      bool(np.all(np.isfinite(rw_u))) and float(np.max(np.abs(rw_u - 1.0))) < 2e-3)
+
+# ノズル: 解像度を 2 倍振っても出口半径が動かない (流線壁は動く)
+_rs = {}
+for _n, _ns in ((250, 31), (500, 41)):
+    for _mode in ("streamline", "flux"):
+        _r = inverse_design(_ht, target_tc, x_axis_end=float(x_end), n_axis=_n,
+                            n_start=_ns, dx_wall=0.02, start_line="throat_char",
+                            exit_mode="lip", wall_mode=_mode)
+        _rs[(_n, _mode)] = _r
+_d_fx = abs(_rs[(500, "flux")]["wall"][-1, 1] - _rs[(250, "flux")]["wall"][-1, 1])
+_d_sl = abs(_rs[(500, "streamline")]["wall"][-1, 1] - _rs[(250, "streamline")]["wall"][-1, 1])
+check(f"流束閉包: 出口半径が解像度にほぼ依存しない (Δr {_d_fx:.1e} < 流線 {_d_sl:.1e}/3)",
+      _d_fx < _d_sl / 3.0)
+check(f"流束閉包: 壁始点はスロートのまま ({_rs[(500,'flux')]['wall'][0,1]:.6f})",
+      abs(_rs[(500, "flux")]["wall"][0, 1] - 1.0) < 1e-9)
+check("流束閉包: 壁が単調拡大",
+      bool(np.all(np.diff(_rs[(500, "flux")]["wall"][:, 1]) > -1e-9)))
+_wm = _rs[(500, "flux")]["wall_mode"]
+check(f"流束閉包: 合成帯で流線壁との差が小さい ({_wm['d_blend_max']:.1e} < 5e-3)",
+      _wm["d_blend_max"] < 5e-3)
+
+# **棄却の根拠を固定** (厳密解 = 放射源流のレイ): 流束閉包は解像度に依らない
+# **バイアス床**を持ち、流線は細かくすればその床を下回る。粗い場では流束閉包の方が
+# 良く見えるので「解像度非依存 = 良い壁」と誤読しやすい — 両解像度で測って固定する。
+_e = {}
+for _n_ax, _n_st, _dxw in ((141, 25, 0.02), (281, 49, 0.01)):
+    _in = ([_Pt(float(x), 0.0, 0.0, float(pm_nu(src_M(x, 0.0), G)), G)
+            for x in np.linspace(5.5, x1, _n_ax)[:-1]]
+           + [_Pt(x1, float(r), float(np.arctan2(r, x1)),
+                  float(pm_nu(src_M(x1, r), G)), G)
+              for r in np.linspace(0.0, r_top, _n_st)])
+    _p = inv.fill(_in)
+    _it = field_interpolator(_p)
+    _md = inv.massflux_across(_p, x1 + 0.01, r_top * 1.01, n=800, itp=_it)
+    _xq = np.linspace(1.4, 2.4, 21)
+    _ex = _xq * np.tan(thc)
+    _rq = flux_closure_wall(_it, _md, _xq, _ex * 1.15, gamma=G)
+    _ws = inv.wall_streamline(_p, x1, r_top, dx=_dxw, itp=_it)
+    _e[_n_ax] = (float(np.max(np.abs(np.interp(_xq, _ws[:, 0], _ws[:, 1]) / _ex - 1.0))),
+                 float(np.max(np.abs(_rq / _ex - 1.0))))
+    print(f"info 源流 n={_n_ax}: 流線 {_e[_n_ax][0]:.2e} / 流束閉包 {_e[_n_ax][1]:.2e}")
+check("源流: 流束閉包はバイアス床を持つ (解像度 2 倍で改善しない)",
+      abs(_e[281][1] - _e[141][1]) < 0.5 * _e[141][1])
+check(f"源流: 細かい場では流線が流束閉包を下回る "
+      f"({_e[281][0]:.2e} < {_e[281][1]:.2e}) — A9 棄却の根拠",
+      _e[281][0] < _e[281][1])
+
 # --- 出口一様性メトリクス (A2: 実出口面の厳密環状面積 + 有効菱形コア) ---------
 from pathlib import Path as _P  # noqa: E402
 from forge_design.metrics.extract import (  # noqa: E402

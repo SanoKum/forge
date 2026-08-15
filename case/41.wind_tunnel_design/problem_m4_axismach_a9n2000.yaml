@@ -1,0 +1,44 @@
+# ① 軸対称風洞 — A9 の清潔な A/B: **wall_mode だけ**を run_0050 から変える。
+# (n_axis 2000 / n_start 121 は run_0050 と同一。dx_wall だけ 0.005→0.02 だが
+#  これは精度に寄与しないことを実測済み [mdot 比が 5 桁不動])。
+# 目的: run_0051 の悪化が「流束閉包のせい」か「n_axis を 500 に落としたせい」かの判別。
+# plan: plans/active/tooling-nozzle-moc-flux-closure-wall.md
+name: wt_m4_axismach_a9n2000
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6
+  Tt: 800.0
+  p_ambient: 1000.0
+  r_throat: 0.010
+  M_design: 4.0
+
+dv:
+  L_c: {value: 9.4, min: 1.0, max: 20.0}   # Lc_mode: max なので未使用
+
+geometry:
+  R: 2.0
+  r_inlet: 2.5
+  L_U: 3.5
+  L_pipe: 0.5
+  start_line: throat_char
+  M_start: 1.05
+  n_start: 121
+  n_axis_inv: 2000
+  x_end_margin: 2.3
+  dx_wall: 0.02
+  wall_mode: flux      # 断面 ∫ρ(u·n)dA = ṁ* で壁を決める (A9)
+  exit_mode: characteristic
+  Lc_mode: max
+
+mesh:
+  discretization: node
+  ni: 365     # 壁が x_F 22.88 と長い分だけ比例増 (対照 357 と軸解像度を揃える)
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000

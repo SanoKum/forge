@@ -107,6 +107,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [tooling-nozzle-moc-flux-closure-wall.md](archived/tooling-nozzle-moc-flux-closure-wall.md) | `tooling / optimization` | 逆 MOC の壁を「流線積分」から「断面の質量流束閉包」へ替える案 (A9)。**CFD で棄却** (2026-08-16): 同一場で `wall_mode` だけ振ると ‖ΔM‖∞ 0.353→0.507% $M_d$・出口 ε_M 0.020→0.057% と悪化 (run_0050 vs run_0052)。実装は正しい (一様流 1.7e-7) が、**「解像度非依存」はバイアス床**で、放射源流の厳密解では流線が細かい場で下回る (6.1e-4 vs 1.4e-3)。MOC 場は離散レベルで質量保存を満たさないため、閉包を変えても不整合は壁半径から壁形状へ移るだけ。`mdot_ratio_moc` が循環指標になる罠も記録。副産物: `dx_wall` は 0.02 でよい |
 | [diffusion-node-scalar-nonortho-limit.md](archived/diffusion-node-scalar-nonortho-limit.md) | `diffusion` | node-centered flux の dcc に node 座標を使う (双対 CV 重心由来の見かけ非直交を排し SST omega 爆発を根治) |
 | [precision-mixed-axisym.md](archived/precision-mixed-axisym.md) | `precision` | 混合精度 (iterative refinement) で軸対称 近軸の陰解法を root-fix する |
 | [turbulence-sst-thermal-wall-function.md](archived/turbulence-sst-thermal-wall-function.md) | `turbulence / boundary` | SST 壁関数の熱的閉包 (Crocco 型 T_aw「弱閉包」旧版)。**superseded**: 境界勾配が当時 bvar を読んでいたため場に触れる経路が実在し、かつ実データでは壁ノード実状態がほぼ動いていなかった (「4K 一致」は出力 Taw 診断値同士)。後継: `accepted/turbulence-sst-adiabatic-taw-fluxmodel.md` |

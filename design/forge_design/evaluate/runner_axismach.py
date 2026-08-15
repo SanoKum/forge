@@ -15,7 +15,8 @@ CFD-in-the-loop アンカー更新 (A5) は problem YAML の geometry キーで�
   axis_segment_run: [x0, x_reach) の実測軸 M を target_moc に渡す元 run
 これらが無ければ初回 (Hall アンカー、x_A = x0)。
 初期値線は geometry.start_line で選ぶ ('throat_char' = スロート特性線 [A8] /
-'vertical' = M_start の縦線 [旧構成])。
+'vertical' = M_start の縦線 [旧構成])。壁の決め方は geometry.wall_mode
+('flux' = 断面の質量流束閉包 [A9] / 'streamline' = 流線積分 [旧構成])。
 
 使い方:
   design/.venv-opt/bin/python -m forge_design.evaluate.runner_axismach \
@@ -143,7 +144,9 @@ def design_chain(p: Problem) -> dict:
                          dx_wall=float(p.geometry.get("dx_wall", 0.02)),
                          th_wall0=float(np.arctan(x0 / R)), M_start=M_start,
                          exit_mode=str(p.geometry.get("exit_mode", "characteristic")),
-                         x_E=law.x_E, M_d=Md, start_line=start_line)
+                         x_E=law.x_E, M_d=Md, start_line=start_line,
+                         wall_mode=str(p.geometry.get("wall_mode", "streamline")),
+                         blend_width=float(p.geometry.get("wall_blend_width", 1.0)))
     qa = wall_qa(res["wall"], Md, law.x_E, g)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
@@ -160,7 +163,8 @@ def design_chain(p: Problem) -> dict:
             "L_c": float(L_c), "Lc_window": (float(lo), float(hi)),
             "anchor": (float(M_A), float(Mp_A), float(Mpp_A)),
             "anchor_source": ("cfd" if x_reach_cfd is not None else "hall"),
-            "start_line": start_line, "Md": Md, "R": R, "gates": gates,
+            "start_line": start_line, "wall_mode": res["wall_mode"],
+            "Md": Md, "R": R, "gates": gates,
             "mdot_ratio_moc": float(res["mdot_exit"] / res["mdot_start"]),
             "cd_series": float(ht.cd_series())}
 
@@ -221,6 +225,7 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
             "anchor_source": d["anchor_source"], "start_line": d["start_line"],
+            "wall_mode": d["wall_mode"],
             "Md": d["Md"], "R": d["R"],
             "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
             "exit": d["exit"],
