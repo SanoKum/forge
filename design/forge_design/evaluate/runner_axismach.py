@@ -40,7 +40,8 @@ from ..meshing.mesh2d import Mesh2DParams, generate_axisym_mesh, write_msh41_2d
 from ..probdef import Problem, dv_value, load_problem
 from .ic import paste_isentropic_ic
 from .runner import FORGE_BUILD, FORGE_TOOLS, PROBE_STUB, _ENV, run_forge
-from .runner_wt import _bcond, _config_euler, _config_euler_node
+from .runner_wt import (_bcond, _config_euler, _config_euler_node,
+                        _config_sst_node)
 
 
 def axis_curve_node(run_dir, scale: float, lam: float = 1e-5):
@@ -325,3 +326,160 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- A12: 粘性 δ* 補正 (RANS 経路) ------------------------------------------------
+def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
+               dstar_csv=None) -> dict:
+    r"""**物理壁 (inviscid + δ*) の RANS run** を準備する (A12)。
+
+    plan: plans/active/tooling-nozzle-axismach-viscous-deltastar.md。
+
+    - `dstar_csv` なし → v1: `feedback.deltastar.deltastar_offset` (相関) で法線オフセット
+    - `dstar_csv` あり → v2: CSV (x_rt, dstar_rt) を補間して法線オフセット
+      (CFD 抽出 δ* の固定点反復)
+    - メッシュ/段階起動レシピは B8 系 NS v1 (run_0028-0030) で確立したものを流用。
+      coarse 中継 (y+~50) は YAML の mesh/evaluate 設定だけの違いで同じ関数で作る
+    """
+    from ..feedback.deltastar import _sutherland, deltastar_offset
+    p = load_problem(problem_path)
+    if p.type != "wind_tunnel_axisym_axismach":
+        raise ValueError("runner_axismach は wind_tunnel_axisym_axismach 専用")
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    d = design_chain(p)
+    scale = float(p.spec["r_throat"])
+    wall_inv = d["wall_inv"]                      # (n,4) [x,r,th,M] r_t 単位
+    if dstar_csv is None:
+        phys = deltastar_offset(wall_inv, scale, float(p.spec["Pt"]),
+                                float(p.spec["Tt"]), p.gamma, p.cp)
+        dstar_src = "correlation_v1"
+    else:
+        tbl = np.loadtxt(dstar_csv, delimiter=",", skiprows=1)
+        ds = np.interp(wall_inv[:, 0], tbl[:, 0], tbl[:, 1])
+        th = wall_inv[:, 2]
+        phys = np.c_[wall_inv[:, 0] - ds * np.sin(th),
+                     wall_inv[:, 1] + ds * np.cos(th)]
+        dstar_src = str(dstar_csv)
+    wall = AxisMachCFDWall(phys, R=float(d["R"]),
+                           r_U=float(p.geometry.get("r_inlet", 2.5)),
+                           L_U=float(p.geometry.get("L_U", 3.5)),
+                           L_pipe=float(p.geometry.get("L_pipe", 0.5)))
+    msgs = wall.validate()
+    if msgs:
+        raise ValueError("物理壁フィルタ不合格: " + "; ".join(msgs))
+    mp = Mesh2DParams(ni=int(p.mesh.get("ni", 561)), nj=int(p.mesh.get("nj", 97)),
+                      wall_first_frac=float(p.mesh.get("wall_first_frac", 4.5e-5)),
+                      throat_refine=float(p.mesh.get("throat_refine", 3.0)),
+                      scale=scale)
+    coords, quads, bedges = generate_axisym_mesh(wall, mp)
+    write_msh41_2d(run_dir / "nozzle.msh", coords, quads, bedges)
+    law = d["law"]
+    xs = np.linspace(d["x0"], d["x_E"], 400)
+    tgt = [float(law(x)) if x >= d["x_A"] else float("nan") for x in xs]
+    np.savetxt(run_dir / "target_axis_M.csv", np.c_[xs * scale, tgt],
+               delimiter=",", header="x_m,M_target", comments="")
+    np.savetxt(run_dir / "wall_design.csv",
+               np.c_[d["wall_inv"] * [scale, scale, 1.0, 1.0]], delimiter=",",
+               header="x_m,r_m,theta_rad,M_wall", comments="")
+    np.savetxt(run_dir / "wall_physical.csv", np.c_[phys * scale],
+               delimiter=",", header="x_m,r_m", comments="")
+    n = nsteps or int(p.evaluate.get("nStepOuter", 48000))
+    out_int = int(p.evaluate.get("outStepInterval", max(n // 6, 1)))
+    cfl_main = float(p.evaluate.get("cfl_main", 1.0))
+    (run_dir / "bcondConfig.yaml").write_text(_bcond(p, euler=False))
+    (run_dir / "probe.yaml").write_text(PROBE_STUB)
+    # 品質は cell 変換コピーで検査 (品質ツールは node CONNE 非対応)
+    (run_dir / "solverConfig.yaml").write_text(_config_euler(p, n, out_int, 4.0, 1))
+    subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
+                   cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+    q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"),
+                        "nozzle_qc.h5"], cwd=run_dir, env=_ENV,
+                       capture_output=True, text=True)
+    (run_dir / "MESH_QUALITY.txt").write_text(
+        "# cell 変換コピーで検査 (品質は primal の性質)\n" + q.stdout + q.stderr)
+    (run_dir / "nozzle_qc.h5").unlink()
+    if q.returncode != 0:
+        raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
+    # node/SST 変換 (config を先に書く — wall_dist は no-slip 壁で作られる)
+    (run_dir / "solverConfig.yaml").write_text(_config_sst_node(p, n, out_int, cfl_main))
+    subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
+                   cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+    paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
+                        float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
+    if ic_from is not None:
+        src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
+                     key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
+        subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
+                        str(src), str(run_dir / "nozzle.h5")],
+                       env=_ENV, check=True, capture_output=True, text=True)
+        import h5py as _h5
+        # ソースが Euler (k/omega~0) のときだけ入口相当を貼る (runner_wt と同じ規約)
+        with _h5.File(src) as fs:
+            om_src_max = float(np.max(fs["/VALUE/omega"][:])) if "/VALUE/omega" in fs else 0.0
+        if om_src_max < 1.0:
+            with _h5.File(run_dir / "nozzle.h5", "r+") as f:
+                ro = f["/VALUE/ro"][:]
+                f["/VALUE/roK"][:] = ro * 1.0
+                f["/VALUE/roOmega"][:] = ro * 18000.0
+        # 近壁 omega の粘性底層フロア omega = 6 nu / (beta1 y^2) (run_0030 の教訓)
+        g = p.gamma
+        R_gas = p.cp * (g - 1.0) / g
+        with _h5.File(run_dir / "nozzle.h5", "r+") as f:
+            ro = f["/VALUE/ro"][:]
+            roUx, roUy = f["/VALUE/roUx"][:], f["/VALUE/roUy"][:]
+            roe = f["/VALUE/roe"][:]
+            wd = f["/VALUE/wall_dist"][:]
+            T = np.maximum((roe - 0.5 * (roUx ** 2 + roUy ** 2) / np.maximum(ro, 1e-12))
+                           * (g - 1.0) / (np.maximum(ro, 1e-12) * R_gas), 50.0)
+            nu = _sutherland(T) / np.maximum(ro, 1e-12)
+            om_floor = 6.0 * nu / (0.075 * np.maximum(wd, 1e-9) ** 2)
+            f["/VALUE/roOmega"][:] = np.maximum(f["/VALUE/roOmega"][:], ro * om_floor)
+    info = {"chain": "axismach_ns", "discretization": "node", "viscous": True,
+            "dstar_source": dstar_src, "mdot_ratio_moc": None,
+            "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
+            "anchor": list(d["anchor"]), "anchor_source": d["anchor_source"],
+            "start_line": d["start_line"], "wall_mode": d["wall_mode"],
+            "Md": d["Md"], "R": d["R"],
+            "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
+            "nStepOuter": n, "cfl_main": cfl_main, "scale_m": scale,
+            "ic_from": str(ic_from) if ic_from else None,
+            "mesh": {"ni": mp.ni, "nj": mp.nj, "wall_first_frac": mp.wall_first_frac}}
+    (run_dir / "prepare_info.json").write_text(json.dumps(info, indent=1))
+    return info
+
+
+def run_staged_ns(run_dir) -> int:
+    """NS の 3 段起動 (run_0030 レシピ): soft (1次 cfl0.5 ni10) → mid (1次 cfl1)
+    → 本段 (2次 cfl_main)。各段の最終場を IC に引き継ぐ。"""
+    import re
+    run_dir = Path(run_dir)
+    cfg_main = (run_dir / "solverConfig.yaml").read_text()
+
+    def _stage(cfg, nsteps):
+        cfg = re.sub(r"nStepOuter: \d+", f"nStepOuter: {nsteps}", cfg)
+        cfg = re.sub(r"outStepInterval: \d+", f"outStepInterval: {nsteps}", cfg)
+        (run_dir / "solverConfig.yaml").write_text(cfg)
+        rc = run_forge(run_dir)
+        res = sorted(run_dir.glob("res_[0-9]*.h5"),
+                     key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+        if rc != 0 or not res or int("".join(c for c in res[-1].stem if c.isdigit())) < nsteps:
+            raise RuntimeError(f"段階起動が失敗 (rc={rc}, res={res[-1].name if res else None})")
+        subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
+                        str(res[-1]), str(run_dir / "nozzle.h5")],
+                       env=_ENV, check=True, capture_output=True, text=True)
+        for f in run_dir.glob("res_*"):
+            f.unlink()
+
+    soft = cfg_main
+    soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 0.5, cfl_pseudo: 0.5", soft)
+    soft = soft.replace("convMethod: 1", "convMethod: 0")
+    soft = soft.replace("nStepInner: 5", "nStepInner: 10")
+    _stage(soft, 3000)
+    mid = cfg_main
+    mid = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 1.0, cfl_pseudo: 1.0", mid)
+    mid = mid.replace("convMethod: 1", "convMethod: 0")
+    mid = mid.replace("nStepInner: 5", "nStepInner: 10")
+    _stage(mid, 3000)
+    (run_dir / "solverConfig.yaml").write_text(cfg_main)
+    return run_forge(run_dir)

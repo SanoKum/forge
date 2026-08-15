@@ -416,8 +416,37 @@ n=4000 で 1.32e-3 と素直に減る)。採否の最終判定は CFD の軸 M /
 (2.6 s / 0.224%)。$\varepsilon_M$ rms だけ旧生産が良く (0.020% vs 0.035%)、
 源項修正後も残る未解明の残件 (下記)。
 
+**$L_c$ の選び方 (2026-08-16 スイープ実測、run_0056–0068)**: 単調ゲートは上限
+($L_c \le 9.9$、単一 quintic の表現限界 — より長くは A6 knot spline) を縛り、下限は
+**内部衝撃波**が縛る。$M_d$=4/R=2 では **$L_c \ge 6$ が 0.5% ゲートの下限**
+($L_c$=6 で 0.437%、5.5 で 0.895% と崖)。崖下では急峻な $M''<0$ 尾部の圧縮波が壁到達前に
+集束し (逆 MOC の衝撃なし仮定が破れ)、$L_c$=3 で M 欠損 −0.70 (衝撃損失)。壁 QA は
+これを検出できない (characteristic crossing チェック未実装)。ゲート内の全長短縮は
+$x_F$ 22.85→19.11 (−16%) が上限 — **$x_F - x_E \approx 12.6\,r_t$ (終端特性線の一様化
+区間) は $L_c$ に依らない物理の床**。詳細 =
+[notes/investigations/nozzle-axismach-lc-sweep.md](../../notes/investigations/nozzle-axismach-lc-sweep.md)。
+
+### 粘性 δ\* 補正 (A12, `runner_axismach.prepare_ns` / `metrics/deltastar.py`)
+
+計画: [`plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md`](../../plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md)。
+
+物理壁 = inviscid 壁 (cplus) + 排除厚 $\delta^*(x)$ の法線オフセット。**相関 δ\*
+(`feedback/deltastar.py`, Eckert 参照温度 + 乱流平板) で十分** — CFD 抽出 δ\* との差
+(~10%、下流ほど増) は RANS 軸 M に観測可能な影響を持たず (v1/v2 でプロファイル全点
+1e-3 一致)、δ\* は 1 反復で固定点に達する (run_0070/0071 実測)。
+
+- **RANS チェーン**: coarse SST 中継 (y+~50, 43 s) → y+1.5 低 Re SST 本計算
+  (48k step cfl1, 162 s)。起動レシピは B8 系 NS v1 (run_0028–0030) のものを流用
+  (`prepare_ns` / `run_staged_ns` に実装: 3 段起動・ω 底層フロア・整合背圧 6588 Pa)。
+- **無帰還の到達点**: RANS 軸 M ‖ΔM‖∞ **0.533% $M_d$** (B8 系の 1.2% の半分以下)。
+  残差は δ\* で表現できない設計側残差 (Euler の x≈6 谷と同源) + 近スロート粘性効果で、
+  0.5% ゲート化には law 側帰還 (A5 の RANS 版) が要る (future work)。
+- **δ\* 抽出** (`metrics/deltastar.py`): 質量流束欠損の積分。探索窓はフリーストリーム
+  まで (1.5 $r_t$)、x<8 はコア未一様で測らず相関へブレンド。測定域端は端勾配の
+  線形外挿 (端値クリップは壁 B-spline を非単調化する — 実測)。
+
 **今後の課題** (2026-08-16 時点、ユーザ判断で後回し):
-出口 $\varepsilon_M$ の差の原因究明 / MOC の 2 次精度化 (軸上の解析極限
+RANS 軸 M の law 側帰還 / 粘性の出口一様性 (BL 除外) 評価 / 出口 $\varepsilon_M$ の差の原因究明 / MOC の 2 次精度化 (軸上の解析極限
 $\partial\theta/\partial r|_{r=0}=-\frac12 d\ln F/dx$・適合式の Simpson 化・軸点の非一様配置) /
 `AXIS_LIMIT_FRAC` のしきい値不要化。
 なお **ΔM の支配残差 (x≈6.2 の谷) は壁の抽出法に依存しない** ため、
