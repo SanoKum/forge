@@ -1,0 +1,44 @@
+# ① 軸対称風洞 — L_c スイープ点 (L_c=6.5, ノズル長トレードオフの実測)
+# notes/investigations/nozzle-axismach-lc-sweep.md 参照。cplus n2000 (短 L_c の
+# 急曲率で n500 は B-spline が overshoot するため頑健側)。他は生産既定と同一。
+# 対照 = run_0050 (problem_m4_axismach_a8c.yaml, 流線壁 n2000, 33 s)。
+# 設計目標・初期値線・アンカー・出口決定・メッシュは同一。
+name: wt_m4_axismach_lc6p5
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6
+  Tt: 800.0
+  p_ambient: 1000.0
+  r_throat: 0.010
+  M_design: 4.0
+
+dv:
+  L_c: {value: 6.5, min: 0.5, max: 20.0}
+
+geometry:
+  R: 2.0
+  r_inlet: 2.5
+  L_U: 3.5
+  L_pipe: 0.5
+  start_line: throat_char
+  M_start: 1.05
+  n_start: 121
+  n_axis_inv: 2000
+  x_end_margin: 2.3
+  dx_wall: 0.02
+  wall_mode: cplus    # 壁 = 各 C⁺ 線上の流束閉包 (A10)
+  exit_mode: characteristic
+  Lc_mode: explicit
+
+mesh:
+  discretization: node
+  ni: 321     # 壁長 x_F≈19.63 に比例 (軸解像度を L_c=max と揃える)
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000

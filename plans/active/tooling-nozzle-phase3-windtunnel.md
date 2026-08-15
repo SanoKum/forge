@@ -11,6 +11,12 @@
   - 前提: [`../accepted/tooling-nozzle-phase0-foundation.md`](../accepted/tooling-nozzle-phase0-foundation.md) (評価パイプライン) / [`../accepted/tooling-nozzle-moo-loop.md`](../accepted/tooling-nozzle-moo-loop.md) (MOO 基盤)
   - 参考: [`../../notes/investigations/nozzle-top-internal-shock-diagnosis.md`](../../notes/investigations/nozzle-top-internal-shock-diagnosis.md) (forge/SU2 Euler が安価で信頼できる対照であることの確証)
 - **created**: `2026-08-13`
+- **注記 (2026-08-16)**: 本 plan の **B8 チェーンは①風洞の生産構成の座を
+  [axis-Mach チェーン](../accepted/tooling-nozzle-axismach-chain.md) (A8/A10/A11 後) に
+  譲った** (ユーザ判断 2026-08-16)。axis-Mach は ‖ΔM‖∞ 0.240% $M_d$・設計 0.39 s
+  (B8 は 0.49%・9 パス 90k step) で全物理指標が同等以上。B8 系の記録 (B0–B10) は
+  設計判断の経緯として本 plan に残す。モード F 資産 (逆 MOC・壁 QA・評価器) は
+  axis-Mach チェーンが流用しており現役
 - **owner**: `sano` (実装: Claude 自走)
 
 ## 1. 目的
