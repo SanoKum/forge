@@ -59,16 +59,36 @@ class _Pt:
         self.M = pm_mach(nu, g) if M is None else M
 
 
-def _sin_over_r(p: "_Pt", other: "_Pt"):
-    """軸対称項 sinθ/r。
+# 軸に寄りすぎた点は θ の誤差が 1/r で増幅されるため、相手点から極限を代用する。
+# しきい値は「相手点の半径に対する比」(スケール不変)。0 = 常に自身で評価。
+AXIS_LIMIT_FRAC = 0.05
 
-    軸近傍では θ の丸め/打ち切り誤差 δθ が δθ/r に増幅されるため、
-    (p, other) のうち**軸から遠い方**の点で比を評価する (l'Hôpital 的に
-    sinθ/r → ∂θ/∂r で、滑らかな場では両者の比はほぼ共通)。
+
+def _sin_over_r(p: "_Pt", other: "_Pt"):
+    r"""軸対称項 $\sin\theta/r$ を **$p$ 自身**で評価する。
+
+    適合式の源項は特性線分の両端 ($A$ と $P$ など) での値を台形則で平均する。
+    したがってここは**その点自身の値**でなければならない。
+
+    **2026-08-16 の修正**: 旧実装は「$p$ と $other$ のうち軸から遠い方」で評価して
+    いた (軸上の $0/0$ 回避が目的)。しかし非軸点でも隣接点の値へ置換されるため
+    台形則の片端がずれ、**スキーム全体が 1 次精度に落ちていた**。放射源流の厳密解で
+    実測 (壁誤差, C⁺ 流束閉包):
+
+    | n_axis | 旧 (遠い方で評価) | 新 (自身で評価) |
+    | --- | --- | --- |
+    | 140 | 1.131e-3 | 1.06e-4 |
+    | 1120 | 1.329e-4 | 3.3e-6 |
+    | 観測次数 | 1.02 | 1.6–1.7 |
+
+    軸上 ($r\approx0$) だけは $0/0$ なので $other$ から極限を代用する
+    (ここが残る 1 次要因。連続の式から $\partial\theta/\partial r|_{r=0}
+    = -\frac12 d\ln F(M_{\rm axis})/dx$ を与えれば除ける — 未実装)。
     """
-    a, b = (p, other) if p.r >= other.r else (other, p)
-    if a.r > 1e-9:
-        return np.sin(a.th) / a.r
+    if p.r > 1e-9 and p.r >= AXIS_LIMIT_FRAC * other.r:
+        return np.sin(p.th) / p.r
+    if other.r > 1e-9:
+        return np.sin(other.th) / other.r
     return 0.0
 
 
@@ -336,11 +356,12 @@ def mu_vec(M):
 
 
 def _sin_over_r_vec(r_p, th_p, r_o, th_o):
-    """`_sin_over_r` の配列版 (軸から遠い方の点で sinθ/r を評価)。"""
-    far = r_p >= r_o
-    ra = np.where(far, r_p, r_o)
-    tha = np.where(far, th_p, th_o)
-    return np.where(ra > 1e-9, np.sin(tha) / np.where(ra > 1e-9, ra, 1.0), 0.0)
+    """`_sin_over_r` の配列版 (点自身で評価、軸上のみ相手から極限を代用)。"""
+    on_axis = (r_p <= 1e-9) | (r_p < AXIS_LIMIT_FRAC * r_o)
+    ra = np.where(on_axis, r_o, r_p)
+    tha = np.where(on_axis, th_o, th_p)
+    ok = ra > 1e-9
+    return np.where(ok, np.sin(tha) / np.where(ok, ra, 1.0), 0.0)
 
 
 def interior_vec(Ax, Ar, Ath, Anu, AM, Bx, Br, Bth, Bnu, BM,

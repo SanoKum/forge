@@ -1,0 +1,44 @@
+# ① 軸対称風洞 — A10: **壁を C⁺ 線上の質量流束閉包で決める** (古典的な逆設計閉包)。
+# 網の点だけで壁が決まるので Delaunay も流線 ODE も不要。設計 2.6 s。
+# plan: plans/active/tooling-nozzle-moc-wall-unit-process.md
+# 対照 = run_0050 (problem_m4_axismach_a8c.yaml, 流線壁 n2000, 33 s)。
+# 設計目標・初期値線・アンカー・出口決定・メッシュは同一。
+name: wt_m4_axismach_a10
+type: wind_tunnel_axisym_axismach
+gas: {gamma: 1.4, cp: 1004.5}
+
+spec:
+  Pt: 1.0e6
+  Tt: 800.0
+  p_ambient: 1000.0
+  r_throat: 0.010
+  M_design: 4.0
+
+dv:
+  L_c: {value: 9.4, min: 1.0, max: 20.0}   # Lc_mode: max なので未使用
+
+geometry:
+  R: 2.0
+  r_inlet: 2.5
+  L_U: 3.5
+  L_pipe: 0.5
+  start_line: throat_char
+  M_start: 1.05
+  n_start: 121
+  n_axis_inv: 2000
+  x_end_margin: 2.3
+  dx_wall: 0.02
+  wall_mode: cplus    # 壁 = 各 C⁺ 線上の流束閉包 (A10)
+  exit_mode: characteristic
+  Lc_mode: max
+
+mesh:
+  discretization: node
+  ni: 365     # 壁が x_F 22.88 と長い分だけ比例増 (対照 357 と軸解像度を揃える)
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000

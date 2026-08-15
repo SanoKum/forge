@@ -229,6 +229,59 @@ check(f"源流: 細かい場では流線が流束閉包を下回る "
       f"({_e[281][0]:.2e} < {_e[281][1]:.2e}) — A9 棄却の根拠",
       _e[281][0] < _e[281][1])
 
+
+# --- 8. C⁺ 線上の流束閉包による壁 (A10) ------------------------------------------
+from forge_design.geometry.moc_inverse import (cplus_flux_wall,  # noqa: E402
+                                               cplus_lines)
+
+
+def _cum0(init_, n_ax_):
+    """起点ごとの『すでに軸から流れている流束』(軸点は 0、初期値線上は累積)。"""
+    c = np.zeros(len(init_))
+    c[n_ax_:] = _flux_along(init_[n_ax_:], G)
+    return c
+
+
+from forge_design.geometry.moc_inverse import _flux_along  # noqa: E402
+
+# (a) レベル配列の反対角線が本当に C⁺ 線か (幾何で検算)
+_nax, _nst = 60, 21
+_iu = ([_Pt(float(x), 0.0, 0.0, nuU, G) for x in np.linspace(3.0, 0.0, _nax + 1)[:-1]]
+       + [_Pt(0.0, float(r), 0.0, nuU, G) for r in np.linspace(0.0, 1.0, _nst)])
+_lev = inv.fill_levels(_iu)
+_ln = cplus_lines(_lev, len(_iu) - 5)
+_sl = np.diff(_ln[:, 1]) / np.diff(_ln[:, 0])
+_mu = np.arcsin(1.0 / _ln[:-1, 4])
+_exp = np.tan(_ln[:-1, 2] + _mu)
+check(f"C⁺ 線: 反対角線の傾きが tan(θ+μ) ({np.max(np.abs(_sl/_exp-1)):.1e})",
+      len(_ln) > 5 and float(np.max(np.abs(_sl / _exp - 1.0))) < 1e-6)
+
+# (b) 一様流の厳密解 r_w ≡ 1
+_md = float(_flux_along(_iu[_nax:], G)[-1])
+_wc = cplus_flux_wall(_lev, _cum0(_iu, _nax), _md, G)
+check(f"C⁺ 流束閉包: 一様流で r_w ≡ 1 (max|r−1| = {np.max(np.abs(_wc[:,1]-1)):.1e})",
+      len(_wc) > 10 and float(np.max(np.abs(_wc[:, 1] - 1.0))) < 5e-4)
+check(f"C⁺ 流束閉包: 最外 C⁺ の壁点が初期値線の壁足そのもの "
+      f"(x={_wc[0,0]:.1e}, r={_wc[0,1]:.6f})",
+      abs(_wc[0, 0]) < 1e-12 and abs(_wc[0, 1] - 1.0) < 1e-12)
+
+# (c) 放射源流の厳密解 (レイ) — 収束次数と、A9 のようなバイアス床が無いこと
+_e = {}
+for _n, _ns in ((140, 25), (280, 49)):
+    _i2 = ([_Pt(float(x), 0.0, 0.0, float(pm_nu(src_M(x, 0.0), G)), G)
+            for x in np.linspace(5.5, x1, _n + 1)[:-1]]
+           + [_Pt(x1, float(r), float(np.arctan2(r, x1)),
+                  float(pm_nu(src_M(x1, r), G)), G)
+              for r in np.linspace(0.0, r_top, _ns)])
+    _l2 = inv.fill_levels(_i2)
+    _w2 = cplus_flux_wall(_l2, _cum0(_i2, _n), float(_flux_along(_i2[_n:], G)[-1]), G)
+    _xq2 = np.linspace(1.4, 2.4, 21)
+    _e[_n] = float(np.max(np.abs(np.interp(_xq2, _w2[:, 0], _w2[:, 1])
+                                 / (_xq2 * np.tan(thc)) - 1.0)))
+    print(f"info 源流 C⁺流束 n={_n}: {_e[_n]:.3e}")
+check(f"C⁺ 流束閉包: 源流で ~1.6 次収束 (p = {np.log2(_e[140]/_e[280]):.2f}, "
+      "床に乗らない)", 1.3 < np.log2(_e[140] / _e[280]) < 2.2)
+
 # --- 出口一様性メトリクス (A2: 実出口面の厳密環状面積 + 有効菱形コア) ---------
 from pathlib import Path as _P  # noqa: E402
 from forge_design.metrics.extract import (  # noqa: E402

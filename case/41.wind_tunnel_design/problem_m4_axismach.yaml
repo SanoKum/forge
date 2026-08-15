@@ -24,9 +24,12 @@ geometry:
   L_U: 3.5           # U→T Hermite 長 (walldriven W1 と同値, μ=4.08 ≤ 20)
   L_pipe: 0.5
   M_start: 1.05      # starting line の軸 M (数値上の選択)
-  n_start: 41
-  n_axis_inv: 500
+  n_start: 121
+  n_axis_inv: 2000
   x_end_margin: 2.3  # 軸 target 延長 = x_E + margin × r_F √(Md²−1)
+  start_line: throat_char  # 初期値線 = スロート特性線 (A8)
+  wall_mode: cplus         # 壁 = C⁺ 線上の質量流束閉包 (A10, 古典法)
+  exit_mode: characteristic
   Lc_mode: max       # 許容窓上限×0.98 (アンカー更新反復でも自動追従)
 
 mesh:

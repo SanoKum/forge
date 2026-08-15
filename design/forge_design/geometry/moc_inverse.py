@@ -66,9 +66,9 @@ class InverseMOC(KernelMOC):
         | 本実装 (楔は空・凸包補間) | 0.173% | 3.9995 |
         | 向き非依存 fill | 0.932% | 4.0353 |
 
-        よって**本実装 (楔を空のまま残す) を維持**する。楔を正しく埋める正攻法は
-        レベル充填の patch でなく **C⁺ 線マーチ + 質量流束による壁閉包**
-        (`_CPlusMarch`, WIP) であり、そちらで根治する。"""
+        よって**本実装 (楔を空のまま残す) を維持**する。なお初期値線をスロート
+        特性線にした (A8) 時点で縦線区間が無くなり、この楔自体が構造的に消えた。
+        壁を古典的に閉じる経路は `cplus_flux_wall` (A10) を使う。"""
         arr = self.fill_arrays(init_front)
         g = self.g
         return [_Pt(float(a[0]), float(a[1]), float(a[2]), float(a[3]), g, float(a[4]))
@@ -103,6 +103,51 @@ class InverseMOC(KernelMOC):
             M = pm_mach_vec(nu, self.g)
             out.append(np.column_stack([x, r, th, nu, M]))
         return np.vstack(out)
+
+    def fill_levels(self, init_front) -> np.ndarray:
+        r"""`fill_arrays` の**レベル構造を保ったまま**返す版。戻り: (n_lev, n_pt, 5)。
+
+        `[k, i]` = レベル $k$ の位置 $i$ の点 $[x, r, \theta, \nu, M]$、
+        欠損 (棄却された対・前線の縮み) は NaN。**添字を詰めない**のが要点で、
+        これにより特性線が添字だけで読み出せる (`cplus_lines`)。
+
+        $L_k[i]$ は $L_{k-1}[i]$ (C⁻ 担体) と $L_{k-1}[i+1]$ (C⁺ 担体) から作るので:
+
+        - **C⁻ 線** = 添字固定の列 $L_k[i],\ k=0,1,\dots$
+        - **C⁺ 線** = 反対角線 $L_k[m-k],\ k=0,1,\dots,m$ (起点 $L_0[m]$)
+
+        つまり三角充填の網と特性線網は同じもので、走査順が違うだけ。
+        """
+        x = np.array([p.x for p in init_front], dtype=float)
+        r = np.array([p.r for p in init_front], dtype=float)
+        th = np.array([p.th for p in init_front], dtype=float)
+        nu = np.array([p.nu for p in init_front], dtype=float)
+        M = np.array([p.M for p in init_front], dtype=float)
+        n = len(x)
+        out = np.full((n, n, 5), np.nan)
+        out[0] = np.column_stack([x, r, th, nu, M])
+        live = np.ones(n, dtype=bool)          # レベル k で有効な添字
+        for k in range(1, n):
+            # 対 (i, i+1) がともに有効なときだけ新点を作る (添字は i を継承)
+            pair = live[:-1] & live[1:]
+            if not np.any(pair):
+                break
+            xP, rP, thP, nuP, ok = interior_vec(
+                x[1:], r[1:], th[1:], nu[1:], M[1:],
+                x[:-1], r[:-1], th[:-1], nu[:-1], M[:-1],
+                self.g, self.delta, self.n_corr)
+            ok &= pair & (rP >= -1e-12)
+            if not np.any(ok):
+                break
+            MP = pm_mach_vec(np.where(ok, nuP, 0.0), self.g)
+            x = np.where(ok, xP, np.nan)
+            r = np.where(ok, rP, np.nan)
+            th = np.where(ok, thP, np.nan)
+            nu = np.where(ok, nuP, np.nan)
+            M = np.where(ok, MP, np.nan)
+            out[k, :len(x)] = np.column_stack([x, r, th, nu, M])
+            live = ok
+        return out
 
     # -- 壁流線 ---------------------------------------------------------------
     def wall_streamline(self, pts, x_start: float, r_start: float,
@@ -214,6 +259,71 @@ def flux_closure_wall(itp, mdot_star: float, xs, r_top, gamma: float = 1.4,
     return out
 
 
+def cplus_lines(levels: np.ndarray, m: int) -> np.ndarray:
+    r"""レベル配列から**起点 $L_0[m]$ の C⁺ 線**を取り出す (`fill_levels` の反対角線)。
+
+    $L_k[i]$ は $A=L_{k-1}[i+1]$ を C⁺ 担体として作られるので、$L_0[m]$ から出る
+    C⁺ 線は $L_k[m-k]$ ($k=0,\dots,m$)。**計算は一切せず添字を読むだけ**。
+    戻り: (L,5)、NaN の手前まで。"""
+    n = levels.shape[1]
+    d = np.diagonal(levels[:, ::-1], offset=n - 1 - m, axis1=0, axis2=1).T
+    ok = np.isfinite(d[:, 0]) & np.isfinite(d[:, 1])
+    cut = int(np.argmin(ok)) if not ok.all() else len(ok)
+    return d[:cut]
+
+
+def cplus_flux_wall(levels: np.ndarray, init_cum: np.ndarray, mdot_star: float,
+                    gamma: float = 1.4) -> np.ndarray:
+    r"""**壁点 = C⁺ 線上で累積質量流束が $\dot m^*$ に達する点** (古典的な逆設計閉包)。
+
+    計画: plans/active/tooling-nozzle-moc-wall-unit-process.md。
+
+    定常流では壁は流線であり、流線は質量流束一定面なので、「軸から数えて
+    $\dot m^*$ 分の流れが通った高さ」がその位置の壁になる。各 C⁺ 線に沿って
+
+    $$\Delta\dot m = \rho V(\cos\theta\,\Delta r - \sin\theta\,\Delta x)\cdot 2\pi\bar r$$
+
+    を足し上げ、$\dot m^*$ を跨いだ線分を線形補間して切る。
+
+    **`flux_closure_wall` (A9, 棄却済) との決定的な違いは積分する線と使う値**:
+    あちらは鉛直断面 × Delaunay 補間場だったので半径方向プロファイル全体の
+    補間誤差を拾った。本関数は **C⁺ 線 × 網の点そのもの**で、補間を一切通さない。
+    壁が網を作る過程から出てくるので、Delaunay も流線 ODE 積分も不要になる
+    (`wall_streamline` は補間場の中で $dr/dx=\tan\theta$ を積分するため、
+    誤差が下流へ累積し、それを抑えるために網を極端に細かくする必要があった)。
+
+    `init_cum[m]`: 起点 $L_0[m]$ までに**すでに軸から流れている**流束。初期値線上の
+    点なら軸からその点までの累積、軸上の点なら 0。
+    戻り: (n,4) [x, r, theta, M] を x 昇順で。"""
+    n = levels.shape[1]
+    out = []
+    for m in range(n - 1, -1, -1):
+        line = cplus_lines(levels, m)
+        if len(line) < 2:
+            continue
+        x, r, th, nu, M = (line[:, i] for i in range(5))
+        Mm = 0.5 * (M[1:] + M[:-1])
+        thm = 0.5 * (th[1:] + th[:-1])
+        rm = 0.5 * (r[1:] + r[:-1])
+        d = (_mass_flux_density(Mm, gamma)
+             * (np.cos(thm) * np.diff(r) - np.sin(thm) * np.diff(x))
+             * 2.0 * np.pi * rm)
+        cum = init_cum[m] + np.concatenate([[0.0], np.cumsum(d)])
+        if cum[0] >= mdot_star:                 # 起点が既に壁 (初期値線の壁足)
+            out.append((x[0], r[0], th[0], M[0]))
+            continue
+        j = int(np.argmax(cum >= mdot_star))
+        if cum[j] < mdot_star:                  # 線が尽きた = 壁に届かない
+            continue
+        s = (mdot_star - cum[j - 1]) / max(cum[j] - cum[j - 1], 1e-30)
+        out.append((x[j - 1] + s * (x[j] - x[j - 1]),
+                    r[j - 1] + s * (r[j] - r[j - 1]),
+                    th[j - 1] + s * (th[j] - th[j - 1]),
+                    M[j - 1] + s * (M[j] - M[j - 1])))
+    w = np.asarray(out, dtype=float)
+    return w[np.argsort(w[:, 0])] if len(w) else w
+
+
 def _smoothstep(t):
     t = np.clip(t, 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
@@ -234,92 +344,6 @@ def _flux_along(line, g: float) -> np.ndarray:
                                   - np.sin(thm) * (P1.x - P0.x)) * 2.0 * np.pi * rm)
     return np.asarray(acc)
 
-
-class _CPlusMarch(InverseMOC):
-    """C⁺ 線マーチ (Foelsch/CONTUR 型): 各軸点から C⁺ 線を立ち上げ、
-    **壁点 = 累積質量流束が ṁ* に達する点** (C⁻ 担体不要の閉包) で切る。
-
-    レベル三角充填は前線が縮む構造のため「壁自身の依存領域」(starting line
-    頂点の C⁻ より上の帯) を埋められず、壁流線の付け根曲率が壊れる
-    (2026-08-14 実測: 円弧 0.51 に対し 0.03)。壁点を流束閉包で直接決める
-    本方式が古典の正解で、付け根は自然に円弧の続きになる。"""
-
-    @staticmethod
-    def _mu2(p: _Pt) -> float:
-        return np.arcsin(1.0 / max(p.M, 1.0 + 1e-12))
-
-    def _foot_index(self, line, xp, rp, m):
-        """点 (xp,rp) を通る傾き m の直線と折れ線 line の交点 (セグメント index)。"""
-        for i in range(len(line) - 1):
-            P0, P1 = line[i], line[i + 1]
-            dx, dr = P1.x - P0.x, P1.r - P0.r
-            den = dr - m * dx
-            if abs(den) < 1e-14:
-                continue
-            t = (rp + m * (P0.x - xp) - P0.r) / den
-            if -1e-9 <= t <= 1.0 + 1e-9:
-                return i
-        return 0
-
-    def _seg_flux(self, A: _Pt, P: _Pt) -> float:
-        Mm, thm, rm = 0.5 * (A.M + P.M), 0.5 * (A.th + P.th), 0.5 * (A.r + P.r)
-        return (float(_mass_flux_density(Mm, self.g))
-                * (np.cos(thm) * (P.r - A.r) - np.sin(thm) * (P.x - A.x))
-                * 2.0 * np.pi * rm)
-
-    def march(self, init_line, axis_x, target, mdot_star: float):
-        """init_line: starting line (軸→壁足, 壁足 θ 補正済み)。axis_x: 軸点列 (昇順)。
-
-        各軸点から C⁺ 線を「はしご」で立ち上げる: 新線の次点 = interior(直前点,
-        前線の次の点)。前線の点のうち軸点の C⁻ 足より上のものだけが担体になる
-        (足より下の C⁻ は A の上流の軸に落ちる)。累積流束が ṁ* に達した
-        セグメントで壁点を補間し、前線トップまで使っても不足する場合は
-        **C⁺ 方向へ凍結状態で延長して流束閉包** (壁間の薄い帯の古典的処理 —
-        不足分は前線間隔 O(Δ) で小さい)。戻り: wall (n,4), 全点。"""
-        g = self.g
-        prev = list(init_line)
-        wall = [(prev[-1].x, prev[-1].r, prev[-1].th, prev[-1].M)]
-        pts = list(prev)
-        for xk in axis_x:
-            A0 = _Pt(float(xk), 0.0, 0.0, float(pm_nu(float(target(xk)), g)), g)
-            i0 = self._foot_index(prev, A0.x, A0.r, np.tan(A0.th - self._mu2(A0)))
-            line = [A0]
-            flux = 0.0
-            top = None
-            for B in prev[i0 + 1:]:
-                try:
-                    P = self._interior(line[-1], B)
-                except RuntimeError:
-                    break  # 担体を飛ばすと はしごの順序が壊れる — 線を打ち切り延長閉包へ
-                if (not (np.isfinite(P.x) and np.isfinite(P.r))
-                        or P.r <= line[-1].r or P.x < line[-1].x - 0.5):
-                    break
-                df = self._seg_flux(line[-1], P)
-                if flux + df >= mdot_star:
-                    s = (mdot_star - flux) / max(df, 1e-30)
-                    A = line[-1]
-                    top = _Pt(A.x + s * (P.x - A.x), A.r + s * (P.r - A.r),
-                              A.th + s * (P.th - A.th), A.nu + s * (P.nu - A.nu), g)
-                    line.append(top)
-                    break
-                flux += df
-                line.append(P)
-            if top is None:
-                # 前線トップまで使って ṁ* 未達 — C⁺ 方向へ凍結状態で延長して閉包。
-                # 単位 dr あたり flux = c·r (c = f(M)(cosθ − sinθ/mp)·2π) の線形則から
-                # r_top を陽に解く。
-                A = line[-1]
-                mp = np.tan(A.th + self._mu2(A))
-                c = (float(_mass_flux_density(A.M, g))
-                     * (np.cos(A.th) - np.sin(A.th) / mp) * 2.0 * np.pi)
-                rem = mdot_star - flux
-                r_top = float(np.sqrt(max(A.r ** 2 + 2.0 * rem / max(c, 1e-30), 0.0)))
-                top = _Pt(A.x + (r_top - A.r) / mp, r_top, A.th, A.nu, g)
-                line.append(top)
-            wall.append((top.x, top.r, top.th, top.M))
-            pts.extend(line[1:])
-            prev = line
-        return np.asarray(wall), pts
 
 
 def terminal_exit(pts, wall, x_E: float, M_d: float, gamma: float = 1.4,
@@ -369,6 +393,67 @@ def terminal_exit(pts, wall, x_E: float, M_d: float, gamma: float = 1.4,
             "n_frozen": n_frozen, "path": np.asarray(path)}
 
 
+def _design_cplus(inv, init, n_ax, ax, mdot_star, g, x0, x_wall0,
+                  exit_mode, x_E, M_d, start_line) -> dict:
+    r"""`wall_mode='cplus'` の設計本体 — **補間構造を一切作らない**経路。
+
+    壁は各 C⁺ 線上の流束閉包 (`cplus_flux_wall`)、物理出口 $F$ は $E=(x_E,0)$ を
+    起点とする**網の C⁺ 線**と壁の交点。どちらも網の点だけで決まるので Delaunay も
+    流線 ODE も不要 (設計コストの 82% を占めていた三角形分割が丸ごと消える)。
+
+    診断は `mdot_ratio_moc` を返さない — 本閉包では構成的に 1 になる**循環指標**に
+    なるため (A9 の教訓)。代わりに**流線整合残差** $\max|dr/dx-\tan\theta_{\rm net}|$
+    を返す: 壁は流線でもあるはずなので、独立な 2 つの閉包の食い違いを測っている。
+    """
+    lev = inv.fill_levels(init)
+    cum0 = np.zeros(len(init))
+    cum0[n_ax:] = _flux_along(init[n_ax:], g)
+    wall = cplus_flux_wall(lev, cum0, mdot_star, g)
+    if len(wall) < 10:
+        raise RuntimeError(f"cplus: 壁点が {len(wall)} 個しか取れない (場が不足)")
+    wall_full = wall.copy()
+    exit_info: dict = {"mode": exit_mode}
+    if exit_mode == "characteristic":
+        if x_E is None or M_d is None:
+            raise ValueError("exit_mode='characteristic' には x_E と M_d が必要")
+        m_E = int(np.argmin(np.abs(np.asarray(ax) - float(x_E))))
+        term = cplus_lines(lev, m_E)
+        if len(term) < 3:
+            raise RuntimeError("cplus: 終端 C⁺ が短すぎる")
+        # 終端 C⁺ と壁の交点 (どちらも網由来の折れ線)
+        rw_on_term = np.interp(term[:, 0], wall[:, 0], wall[:, 1],
+                               left=np.nan, right=np.nan)
+        d = term[:, 1] - rw_on_term
+        j = int(np.argmax(d >= 0.0)) if np.any(d >= 0.0) else -1
+        if j <= 0:
+            raise RuntimeError("終端特性線が壁に到達しない (軸 target の延長不足)")
+        s = -d[j - 1] / max(d[j] - d[j - 1], 1e-30)
+        x_F = float(term[j - 1, 0] + s * (term[j, 0] - term[j - 1, 0]))
+        exit_info.update({"x_F": x_F,
+                          "r_F": float(np.interp(x_F, wall[:, 0], wall[:, 1])),
+                          "x_E_index": m_E, "n_frozen": 0})
+        wall = wall[wall[:, 0] <= x_F]
+    elif exit_mode == "lip":
+        i_pk = int(np.argmax(wall[:, 2]))
+        after = wall[i_pk:, 2] <= np.deg2rad(0.05)
+        if np.any(after):
+            wall = wall[: i_pk + int(np.argmax(after)) + 1]
+        exit_info.update({"x_F": float(wall[-1, 0]), "r_F": float(wall[-1, 1])})
+    else:
+        raise ValueError("exit_mode は 'characteristic' か 'lip'")
+    # 独立診断: 壁は流線でもあるはず (循環しない整合チェック)
+    m = wall[:, 0] > wall[0, 0] + 0.5
+    res = (np.gradient(wall[m, 1], wall[m, 0]) - np.tan(wall[m, 2])) if m.sum() > 5 \
+        else np.array([np.nan])
+    return {"wall": wall, "wall_full": wall_full, "pts": None, "x0": float(x0),
+            "start_line": start_line, "x_wall0": float(x_wall0),
+            "wall_mode": {"mode": "cplus", "n_wall": int(len(wall)),
+                          "streamline_residual_max": float(np.max(np.abs(res))),
+                          "streamline_residual_rms": float(np.sqrt(np.mean(res ** 2)))},
+            "levels": lev, "exit": exit_info,
+            "mdot_start": mdot_star, "mdot_exit": float("nan")}
+
+
 def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
                    n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02,
                    th_wall0: float | None = None, M_start: float = 1.05,
@@ -383,10 +468,10 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
     M_d 一定を伸ばすだけ)。
     戻り値 dict: wall (n,4 [x,r,θ,M]), pts, mdot_start, mdot_exit。
     """
-    # 注: _CPlusMarch (壁点=流束閉包の古典法) は WIP。現行は**旧実装の三角充填**
-    # + 壁流線 (向き非依存 fill への「修正」は出口指標を悪化させ撤回 — plan §9.1)。
-    # 既知の限界: 壁足の曲率が円弧 1/R でなく ~0 に寝る。**曲率ブレンドは撤回**し、
-    # C2 は B1 (中心線 C2 整合) / B2 (拘束付き B-spline) で保証する (plan §9.2)。
+    # wall_mode: 'cplus' = 壁点を C⁺ 線上の流束閉包で決める古典法 (A10, `_design_cplus`。
+    # Delaunay も流線 ODE も通らない) / 'streamline' = 三角充填 + 補間場の流線積分 (旧既定。
+    # 向き非依存 fill への「修正」は出口指標を悪化させ撤回 — plan §9.1)。
+    # streamline の既知の限界: 壁足の曲率が円弧 1/R でなく ~0 に寝る。
     inv = InverseMOC(gamma=gamma, delta=1.0)
     g = gamma
     if start_line == "throat_char":
@@ -410,6 +495,9 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
         # throat_char では壁足 = 幾何スロートで θ=0 が厳密に成り立つので不要。
         init[-1].th = float(th_wall0)
     mdot_star = float(_flux_along(init[len(ax):], g)[-1])
+    if wall_mode == "cplus":
+        return _design_cplus(inv, init, len(ax), ax, mdot_star, g, x0,
+                             float(x_line[-1]), exit_mode, x_E, M_d, start_line)
     pts = inv.fill(init)
     # Delaunay は充填ベクトル化後の支配コスト → 1 個だけ作って全診断で使い回す
     itp = field_interpolator(pts)

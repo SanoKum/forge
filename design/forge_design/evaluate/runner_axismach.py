@@ -165,7 +165,9 @@ def design_chain(p: Problem) -> dict:
             "anchor_source": ("cfd" if x_reach_cfd is not None else "hall"),
             "start_line": start_line, "wall_mode": res["wall_mode"],
             "Md": Md, "R": R, "gates": gates,
-            "mdot_ratio_moc": float(res["mdot_exit"] / res["mdot_start"]),
+            # cplus 閉包では構成的に 1 になる循環指標なので出さない (A9 の教訓)
+            "mdot_ratio_moc": (None if not np.isfinite(res["mdot_exit"])
+                               else float(res["mdot_exit"] / res["mdot_start"])),
             "cd_series": float(ht.cd_series())}
 
 
