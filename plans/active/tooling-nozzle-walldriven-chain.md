@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- Phase W1–W2 実装済み (2026-08-15)。W0 はユーザ判断待ち -->
+- **status**: `in_progress`  <!-- W0–W3 済・W4 は平面近似止まり。W5 以降は保留 (2026-08-15、主線は tooling-nozzle-axismach-chain.md へ) -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) (現在仕様。「wall-driven チェーン」節)
 - **related_plans**:
@@ -281,3 +281,8 @@ D 下流 wave-cancellation MOC → δ\* 補正 → 全域 B-spline → NS/RANS �
   実 CFD (run_0043, $J^-$ ギャップ ~20°) では march が発散するケースも確認。
   W4 を「完成」と扱わず、モデルの限界として明記。厳密化の 2 経路 (backward
   MOC matching / 実 CFD 反復調整) を記録し次段階へ引き継ぐ。
+- 2026-08-15 (**W5 以降を保留**): ユーザ判断により軸中心 Mach 分布指定を主線とする
+  方針に転換。後継は [`tooling-nozzle-axismach-chain.md`](tooling-nozzle-axismach-chain.md)
+  (Hall 遷音速 + 5次 Hermite 軸 Mach law + 逆 MOC + CFD-in-the-loop)。本計画は
+  W4 厳密化 2 経路の記録と W1–W3 成果物 (段階起動 runner・cone 検証・
+  `WallDrivenCFDWall`)・W0 計測手法の保管場所として active に残す。
