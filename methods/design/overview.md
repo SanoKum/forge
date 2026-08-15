@@ -177,16 +177,26 @@ dv は `theta_D` / `R_t` / `L_D_frac` (L_D = frac × 3R_t tanθ_D)。
 疎通実測: 軸うねり +0.0009 (円弧 R=5 の 1/11 — 接合こぶ実質消滅)、データ線
 P0 変動 0.196% (WARN 帯、非回転 MOC 可)。
 
-**W4 (特性抽出 + cancellation MOC, 一部完了・壁生成は未検証)**:
-`geometry/moc_cancel.py`。**検証済み**: `extract_dataline_cfd` (D 発 C⁻ + $P_0$
-診断を実 CFD run から抽出。`cminus_cfd.load_field` に `with_pressure` オプション
-追加)、`build_field` (interior()+軸反射での内点充填。放射源流厳密解と個々の点が
-機械精度近く一致、格子収束確認済み)。**未検証**: 壁点列を生成する専用単位過程
-(`_wall_cancel`/`march_wall_from_dataline`/`cancellation_contour`)。3 通りの
-march 構成を試したが放射源流厳密解照合でいずれも有意に乖離し、原因未特定
-(`moc_cancel.py` docstring の「状態」節に試行記録)。**production では壁生成
-関数を呼ばないこと** (`warnings.warn` で明示)。Phase W5 以降 (outer loop/BL/
-B-spline) は plan 参照 (W4 完了後に着手)。
+**W4 (特性抽出 + 壁生成、暫定近似が動作・軸対称厳密化は未完了)**:
+`geometry/moc_cancel.py`。**検証済み**: `extract_dataline_cfd` (D 発 C⁻ +
+$P_0$ 診断。線形補間で実測 WARN 0.18%)、`build_field` (内点充填。放射源流
+厳密解と個々の点が <0.1% 一致、格子収束確認済み)、`_wall_cancel`/
+`march_wall_from_dataline` (壁で $J^-_W=\nu(M_{\rm target})$ を課す方式。
+退化チェック機械精度・流線自己整合性 ~1e-8・格子収束 <0.5%)。
+
+**モデルとしての限界 (2026-08-15、外部レビューで確認)**: $J^-_W=\nu(M_{\rm
+target})$ を全壁点で一定と置く現行の閉じ方は、**軸対称からの真の逆 MOC では
+ない**。真に出口から逆走するなら局所 $M,\theta$ を更新しながら特性線を逐次
+追跡する必要があり、かつ軸対称では $J^-$ が源項 $S^-(M,\theta,r)$ を持つため
+保存量でない ($J^-_W=\nu(M_{\rm target})-\int_W^e S^-\,ds$ が必要、積分内
+未知で単純代入では閉じない)。現行は積分をゼロと置く**平面流近似**である。
+終端条件も壁点自身の状態のみを見ており、出口断面全体の一様性は未検証。
+実 CFD (D の $M\approx2.26$ vs $M_d=4$、大きな $J^-$ ギャップ) では march が
+発散するケースもある。**厳密化の 2 経路 (未実装)**: (a) 出口終端特性線から
+源項込み backward MOC + $D$ 側 forward MOC との matching (自由境界問題)、
+(b) 仮の壁で実 CFD を解き出口非一様性を目的関数に壁/$\theta_D$ を反復調整
+(W5 outer loop と統合)。詳細は `moc_cancel.py` docstring と plan §4 参照。
+Phase W5 以降は上記厳密化を経てから着手する。
 
 ## メッシュ (構造化・トポロジ固定)
 
