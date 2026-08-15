@@ -157,7 +157,18 @@ U→T→D 低自由度多項式壁 → CFD (遷音速+初期超音速を実場�
   $\lambda=2$ で 4 次に退化。①主経路では未使用の保存知見。
 
 テスト: `design/tests/run_walldriven_tests.py` (端点条件 1e-12・境界 ±0.1% 判別・違反ケース
-検出・解析 κ/dκds と数値微分の一致)。Phase W3 以降 (メッシュ/CFD/MOC/BL/B-spline) は plan 参照。
+検出・解析 κ/dκds と数値微分の一致・CFD 壁の C2 接続・不正入力拒否)。
+
+**W3 (メッシュ/CFD 接続, 実装済み)**: `WallDrivenCFDWall` = 直管 + U→T→D +
+θ_D 円錐 (D 発 C⁻ = W4 データ線を軸着地まで収める延長) + **戻しテーパ + 円筒**。
+終端を円錐のまま outlet で切ると node の既知問題 (傾斜壁∩超音速流出コーナー) で
+初手発散するため、壁角を 0 へ戻してから出口に当てる (テーパの圧縮波はデータ線より
+下流にしか届かない)。評価は `evaluate/runner_walldriven.py`
+(problem type `wind_tunnel_axisym_walldriven`、node Euler、**段階起動必須** —
+soft 1次+cfl0.5 3000 step → 本段)。dv は `theta_D` / `R_t` / `L_D_frac`
+(L_D = frac × 3R_t tanθ_D)。疎通実測 (run_0042): 軸うねり +0.0009 (円弧 R=5 の
+1/11 — 接合こぶ実質消滅)、データ線 P0 変動 0.196% (WARN 帯、非回転 MOC 可)。
+Phase W4 以降 (特性抽出/MOC/BL/B-spline) は plan 参照。
 
 ## メッシュ (構造化・トポロジ固定)
 

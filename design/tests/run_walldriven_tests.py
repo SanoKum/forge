@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from forge_design.geometry.wall_walldriven import (  # noqa: E402
     ContractionToConeQuintic, ThroatExpansionPoly, UpstreamThroatPoly,
-    WallDrivenThroatRegion)
+    WallDrivenCFDWall, WallDrivenThroatRegion)
 
 FAIL = 0
 
@@ -188,6 +188,38 @@ rejects("拒否 §10 theta_a≥π/2",
 rejects("拒否 合成壁 (成分へ伝播)",
         lambda: WallDrivenThroatRegion(r_U=2.5, R_t=np.nan, L_U=3.5,
                                        L_D=L_D, theta_D=theta_D))
+
+# --- 9. WallDrivenCFDWall (W3: 直管 + U→T→D + 円錐 + 戻しテーパ + 円筒) ----------
+cw = WallDrivenCFDWall(w, L_pipe=0.5, L_cone=5.0, L_turn=2.0, L_cyl=1.0)
+m_D = np.tan(theta_D)
+r_turn = w.dn.r_D + 5.0 * m_D
+r_cyl = r_turn + 0.5 * 2.0 * m_D
+check("CFD壁 x_in/x_turn/x_cyl/x_e",
+      abs(cw.x_in - (-L_U - 0.5)) < 1e-12 and abs(cw.x_turn - (L_D + 5.0)) < 1e-12
+      and abs(cw.x_cyl - (L_D + 7.0)) < 1e-12 and abs(cw.x_e - (L_D + 8.0)) < 1e-12)
+eps = 1e-9
+for xj, tag, want in ((-L_U, "直管↔U", (r_U, 0.0, 0.0)),
+                      (L_D, "D↔円錐", (w.dn.r_D, m_D, 0.0)),
+                      (cw.x_turn, "円錐↔テーパ", (r_turn, m_D, 0.0)),
+                      (cw.x_cyl, "テーパ↔円筒", (r_cyl, 0.0, 0.0))):
+    for d in range(3):
+        lo = float(cw.r(xj - eps, d))
+        hi = float(cw.r(xj + eps, d))
+        check(f"CFD壁 {tag} C2 (deriv {d})",
+              abs(lo - want[d]) < 1e-6 and abs(hi - want[d]) < 1e-6)
+check("CFD壁 円錐部 r = r_D + Δx tanθ_D",
+      abs(float(cw.r(np.array([L_D + 2.0]))[0]) - (w.dn.r_D + 2.0 * m_D)) < 1e-12)
+check("CFD壁 円筒部 r = r_cyl 一定",
+      abs(float(cw.r(np.array([cw.x_e]))[0]) - r_cyl) < 1e-12)
+check("CFD壁 テーパ部 r'' ≤ 0 (圧縮側のみ)",
+      bool(np.all(cw.r(np.linspace(cw.x_turn, cw.x_cyl, 501), 2) <= 1e-12)))
+check("CFD壁 直管部 r = r_U",
+      abs(float(cw.r(np.array([cw.x_in]))[0]) - r_U) < 1e-12)
+rejects("拒否 CFD壁 L_cone=0", lambda: WallDrivenCFDWall(w, L_pipe=0.5, L_cone=0.0))
+rejects("拒否 CFD壁 L_pipe=NaN",
+        lambda: WallDrivenCFDWall(w, L_pipe=np.nan, L_cone=5.0))
+rejects("拒否 CFD壁 L_turn<0",
+        lambda: WallDrivenCFDWall(w, L_pipe=0.5, L_cone=5.0, L_turn=-1.0))
 
 # --- 8. validate(dkds_max=...) -------------------------------------------------
 m_ref = w.diagnostics()["max_abs_dkappa_ds"]

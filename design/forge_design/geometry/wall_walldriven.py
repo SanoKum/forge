@@ -242,6 +242,86 @@ class WallDrivenThroatRegion:
         }
 
 
+class WallDrivenCFDWall:
+    """W3 の CFD ドメイン壁: 直管 + U→T→D + θ_D 円錐 (L_cone) + 戻しテーパ
+    (L_turn: 壁角 θ_D→0 の 3 次勾配 Hermite) + 円筒 (L_cyl)。
+
+    接続は全て構成上 C2: 直管↔U は (r_U,0,0)、D↔円錐は (r_D,tanθ_D,0)、
+    円錐↔テーパ・テーパ↔円筒は勾配 Hermite の端条件 (q'=0, r''=0) が両側一致。
+    円錐は D から出る C⁻ (W4 のデータ線) を軸着地まで場に収めるための延長。
+    **戻しテーパ+円筒は node の既知問題「傾斜壁∩超音速流出コーナーの発散」
+    (plans/active/boundary-node-nozzle-wall-outlet-stability.md) の回避**で、
+    動作実績のある構成 (出口で壁がほぼ軸平行) に揃える。テーパの圧縮波は
+    データ線より下流にしか届かない (超音速の依存域) ので W4 の抽出に影響しない。
+    `mesh2d.generate_axisym_mesh` / `paste_isentropic_ic` 互換
+    (`x_in` / `x_e` / `r(x, deriv)`)。L_turn=L_cyl=0 で旧来の円錐打ち切り。
+    """
+
+    def __init__(self, region: WallDrivenThroatRegion, L_pipe: float = 0.5,
+                 L_cone: float = 5.0, L_turn: float = 2.0,
+                 L_cyl: float = 1.0) -> None:
+        _check_inputs("WallDrivenCFDWall",
+                      positive={"L_pipe": L_pipe, "L_cone": L_cone},
+                      finite_only={"L_turn": L_turn, "L_cyl": L_cyl})
+        if L_turn < 0.0 or L_cyl < 0.0:
+            raise ValueError(f"WallDrivenCFDWall: L_turn={L_turn:.6g} / "
+                             f"L_cyl={L_cyl:.6g} は負にできない")
+        self.region = region
+        self.L_pipe, self.L_cone = float(L_pipe), float(L_cone)
+        self.L_turn, self.L_cyl = float(L_turn), float(L_cyl)
+        self.x_in = -region.up.L_U - self.L_pipe
+        self.x_D = region.dn.L_D
+        self.x_turn = self.x_D + self.L_cone           # テーパ開始
+        self.x_cyl = self.x_turn + self.L_turn         # 円筒開始
+        self.x_e = self.x_cyl + self.L_cyl
+        self._r_D = region.dn.r_D
+        self._m_D = region.dn.m_D
+        self._r_turn = self._r_D + self.L_cone * self._m_D
+        self._r_cyl = self._r_turn + 0.5 * self.L_turn * self._m_D
+
+    def _taper(self, x, deriv):
+        """壁角 tanθ_D→0 の 3 次勾配 Hermite (q(0)=m, q'(0)=0, q(1)=0, q'(1)=0)。"""
+        if self.L_turn == 0.0:
+            return np.zeros_like(x)
+        xi = np.clip((x - self.x_turn) / self.L_turn, 0.0, 1.0)
+        m, L = self._m_D, self.L_turn
+        if deriv == 0:
+            return self._r_turn + L * m * (xi - xi**3 + 0.5 * xi**4)
+        if deriv == 1:
+            return m * (1.0 - 3.0 * xi**2 + 2.0 * xi**3)
+        return -6.0 * m * xi * (1.0 - xi) / L
+
+    def r(self, x, deriv: int = 0):
+        x = np.asarray(x, dtype=float)
+        xU, xD = -self.region.up.L_U, self.x_D
+        mid = self.region.r(np.clip(x, xU, xD), deriv)
+        if deriv == 0:
+            pipe = np.full_like(x, self.region.up.r_U)
+            cone = self._r_D + (x - xD) * self._m_D
+            cyl = np.full_like(x, self._r_cyl)
+        elif deriv == 1:
+            pipe = np.zeros_like(x)
+            cone = np.full_like(x, self._m_D)
+            cyl = np.zeros_like(x)
+        else:
+            pipe = np.zeros_like(x)
+            cone = np.zeros_like(x)
+            cyl = np.zeros_like(x)
+        tap = self._taper(x, deriv)
+        aft = np.where(x <= self.x_turn, cone,
+                       np.where(x <= self.x_cyl, tap, cyl))
+        return np.where(x < xU, pipe, np.where(x > xD, aft, mid))
+
+    def theta(self, x):
+        return np.arctan(self.r(x, 1))
+
+    def kappa(self, x):
+        return _curvature(self.r(x, 1), self.r(x, 2))
+
+    def validate(self, n: int = 2001, dkds_max: float | None = None) -> list[str]:
+        return self.region.validate(n, dkds_max=dkds_max)
+
+
 @dataclass
 class ContractionToConeQuintic:
     """geometry option (原案 §10): 直管 (r_in, 0, 0) → 一定傾斜点 (r_in-Δr, -tanθ_a, 0)。
