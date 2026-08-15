@@ -176,7 +176,17 @@ dv は `theta_D` / `R_t` / `L_D_frac` (L_D = frac × 3R_t tanθ_D)。
 
 疎通実測: 軸うねり +0.0009 (円弧 R=5 の 1/11 — 接合こぶ実質消滅)、データ線
 P0 変動 0.196% (WARN 帯、非回転 MOC 可)。
-Phase W4 以降 (特性抽出/MOC/BL/B-spline) は plan 参照。
+
+**W4 (特性抽出 + cancellation MOC, 一部完了・壁生成は未検証)**:
+`geometry/moc_cancel.py`。**検証済み**: `extract_dataline_cfd` (D 発 C⁻ + $P_0$
+診断を実 CFD run から抽出。`cminus_cfd.load_field` に `with_pressure` オプション
+追加)、`build_field` (interior()+軸反射での内点充填。放射源流厳密解と個々の点が
+機械精度近く一致、格子収束確認済み)。**未検証**: 壁点列を生成する専用単位過程
+(`_wall_cancel`/`march_wall_from_dataline`/`cancellation_contour`)。3 通りの
+march 構成を試したが放射源流厳密解照合でいずれも有意に乖離し、原因未特定
+(`moc_cancel.py` docstring の「状態」節に試行記録)。**production では壁生成
+関数を呼ばないこと** (`warnings.warn` で明示)。Phase W5 以降 (outer loop/BL/
+B-spline) は plan 参照 (W4 完了後に着手)。
 
 ## メッシュ (構造化・トポロジ固定)
 

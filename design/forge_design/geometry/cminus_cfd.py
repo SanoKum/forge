@@ -28,12 +28,14 @@ def _steps_of(f: Path) -> int:
 
 
 def load_field(run_dir, n_last: int = 3, scale: float = 0.01,
-               discretization: str = "auto") -> dict:
+               discretization: str = "auto", with_pressure: bool = False) -> dict:
     """run から **末尾 n_last スナップ平均**の (x, r, M, θ) を返す (r* 単位)。
 
     末尾平均は中域リミットサイクル (片振幅 ~0.003) の位相ノイズ対策 — 軸 M 測定
     や CFD アンカー抽出と同じ規約。`discretization`: "cell" は CELLS/centCoords、
     "node" は MESH/COORD を座標に使う ("auto" は node を優先)。
+    `with_pressure=True` で `/VALUE/P` も末尾平均して "P" キーに追加する
+    (W4 の $P_0$ 診断用 — `moc_cancel.py`)。
     """
     rd = Path(run_dir)
     with h5py.File(rd / "nozzle.h5") as nz:
@@ -48,18 +50,23 @@ def load_field(run_dir, n_last: int = 3, scale: float = 0.01,
     res = [f for f in res if _steps_of(f) > 0][-n_last:]
     if not res:
         raise FileNotFoundError(f"{rd} に res_*.h5 (step>0) が無い")
-    Ms, ths = [], []
+    Ms, ths, Ps = [], [], []
     for f in res:
         with h5py.File(f) as h:
             Ux, Uy, son = h["/VALUE/Ux"][:], h["/VALUE/Uy"][:], h["/VALUE/sonic"][:]
+            if with_pressure:
+                Ps.append(h["/VALUE/P"][:])
         if len(Ux) != len(cc):
             raise ValueError(f"座標 {len(cc)} と値 {len(Ux)} の長さ不一致 "
                              f"(discretization 指定を確認)")
         Ms.append(np.hypot(Ux, Uy) / np.maximum(son, 1e-9))
         ths.append(np.arctan2(Uy, Ux))
-    return {"x": cc[:, 0] / scale, "r": cc[:, 1] / scale,
-            "M": np.mean(Ms, axis=0), "th": np.mean(ths, axis=0),
-            "snaps": [f.name for f in res], "n_snap": len(res)}
+    out = {"x": cc[:, 0] / scale, "r": cc[:, 1] / scale,
+           "M": np.mean(Ms, axis=0), "th": np.mean(ths, axis=0),
+           "snaps": [f.name for f in res], "n_snap": len(res)}
+    if with_pressure:
+        out["P"] = np.mean(Ps, axis=0)
+    return out
 
 
 def _interpolators(fld: dict, x_max: float = 30.0):

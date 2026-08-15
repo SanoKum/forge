@@ -169,7 +169,7 @@ D 下流 wave-cancellation MOC → δ\* 補正 → 全域 B-spline → NS/RANS �
 | **W1** | 幾何生成器: `wall_walldriven.py` (U→T / T→D / 合成 / validator / 解析 κ・dκ/ds / §10 option) | **済 (2026-08-15)** |
 | **W2** | 解析テスト + 可視化: 端点条件・境界すれすれ・違反ケースの検出、$r,\theta,\kappa,d\kappa/ds$ 図 | **済 (2026-08-15)** |
 | W3 | メッシュ/CFD 接続 | **済 (2026-08-15, `run_0042_walldriven_w3c` → `run_0043_conecheck_staged` で訂正確定)**。`WallDrivenCFDWall` (直管+U→T→D+θ_D円錐+任意の戻しテーパ/円筒) + `runner_walldriven` (新 type `wind_tunnel_axisym_walldriven`、**段階起動必須** — cold 単段 conv1+cfl4 は step~9 発散: run_0040/0041)。**訂正**: 当初「円錐のみだと node 既知問題 [傾斜壁∩超音速流出コーナー] で発散する」と誤診断し戻しテーパ+円筒を導入した (run_0042) が、円錐のみ+段階起動だけの切り分け (run_0043、ユーザ指示) で NaN なし完走・うねり指標も同水準と判明。**真因は cold 単段の CFL が高すぎただけ** (`procedures/divergence-and-startup.md` の標準的教訓どおり)。**生産既定を円錐のみ (`L_turn=L_cyl=0`) に簡素化**。品質 PASS / NaN なし / ALL STEADY / 設計+データ線域は maxΔM ~4.5e-6 に凍結。**軸うねり +0.0009 (テーパ有) / +0.00088 (円錐のみ) — 円弧 R=5 の 1/11 — §2.2 仮説を強く支持**。W4 のデータ抽出は run_0042/0043 どちらでも有効 (幾何は同一、下流のみ差) | 
-| W4 | 特性情報抽出 + cancellation MOC: D からの C⁻ データ線抽出 (`cminus_cfd` 拡張)、`moc_kernel` 単位プロセスで非反射壁マーチ、$P_0$ 診断 | 未着手 |
+| W4 | 特性情報抽出 + cancellation MOC | **一部完了 (2026-08-15)、壁生成は未検証で継続調査中**。`geometry/moc_cancel.py` を新設。**検証済み**: `extract_dataline_cfd` (`cminus_cfd` を `with_pressure` オプションで拡張し実装。D 発 C⁻ + $P_0$ 診断)、`build_field` (interior()+軸反射での内点充填。放射源流厳密解と個々の点が機械精度近く一致 [相対誤差 <1e-3]、格子収束確認済み)。**未検証 (既知の課題)**: 壁点列を生成する専用単位過程 `_wall_cancel`/`march_wall_from_dataline`/`cancellation_contour`。文献調査 (WebSearch) で古典 MLN 型の高位公式 ($J^-$ を直前壁点から継承、$J^+$ を隣接内点から取得、$\theta=(J^++J^-)/2$) を確認し実装したが、**3 通りの実装 (定長フロント全体縮約 / 場構築後の事後流線積分 / `_march_stations` 型はしご) すべてが放射源流厳密解照合で有意に乖離** (最良でも壁角の減衰速度が厳密解の約3倍)。原因未特定 — 軸対称源項の符号・隣接点の選び方・はしごの向きのいずれかに残存バグの疑い。詳細は `moc_cancel.py` モジュール docstring の「状態」節に試行ごとの記録あり。**production では壁生成関数を呼ばないこと** (呼び出すと動作はするが座標は信用できない、`warnings.warn` で明示)。テスト (`design/tests/run_moc_cancel_tests.py`) は検証済み部分のみを恒久化 (8 件 ALL PASS)。次セッション推奨: Anderson *Modern Compressible Flow* Ch.11.7 一次資料に当たるか、`_wall_cancel` を2点だけの孤立ケースで単体検証してから march へ組み込む |
 | W5 | outer loop: $M_e(\theta_D)$ root find (必要なら $R_t, L_D$ も)。$M_c(x)$ ・こぶ振幅を診断出力 | 未着手 |
 | W6 | δ\* 補正: `deltastar` 相関 + smoothing spline + 法線オフセット | 未着手 |
 | W7 | 全域 B-spline fitting: tolerance 制約 ($\max d\le\varepsilon_{geom}$) 下で $\int(d\kappa/ds)^2ds$ 最小化。throat 等の hard constraint | 未着手 |
@@ -227,3 +227,12 @@ D 下流 wave-cancellation MOC → δ\* 補正 → 全域 B-spline → NS/RANS �
   cold 単段の CFL (`procedures/divergence-and-startup.md` の標準的教訓どおり)。
   `WallDrivenCFDWall` の既定を `L_turn=L_cyl=0` に変更し生産構成を簡素化。
   W4 (特性抽出 + cancellation MOC) へ。
+- 2026-08-15 (W4 着手, ユーザ指示「自走してよい」): `geometry/moc_cancel.py` 新設。
+  `extract_dataline_cfd` (`cminus_cfd.load_field` に `with_pressure` オプション追加)
+  と `build_field` は放射源流厳密解照合・格子収束を確認し**検証済み**。壁生成
+  単位過程 `_wall_cancel` は WebSearch で古典 MLN 型公式 ($J^-$ 直前壁点継承 +
+  $J^+$ 隣接内点) を確認して実装したが、**3 通りの march 構成すべてが厳密解照合で
+  有意に乖離し未検証のまま** (詳細は §6 W4 行・`moc_cancel.py` docstring)。
+  正直な状態管理として: 壁生成関数に `warnings.warn` を追加、恒久テストは
+  検証済み部分のみに限定 (8 件 ALL PASS)、production では壁生成を使わない旨を
+  明記。W4 は完了させず、次セッションでの継続調査対象として引き継ぐ。
