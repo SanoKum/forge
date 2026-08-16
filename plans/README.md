@@ -25,6 +25,7 @@
 | --- | --- | --- |
 | [architecture-bndfirstorder-removal.md](active/architecture-bndfirstorder-removal.md) | `architecture / boundary` | **`mesh.bndFirstOrder` の廃止**。使用禁止をルール化済 (粘性応力を破壊 + 疑似 2D で全域に効く)、コード削除が残タスク |
 | [axisymmetric-freestream-hoop-gauge.md](active/axisymmetric-freestream-hoop-gauge.md) | `axisymmetric` | 軸対称 hoop ソースの自由流保持 (pRef ゲージ整合 + 離散閉性面積、倍精度不要) |
+| [architecture-node-option-consolidation.md](active/architecture-node-option-consolidation.md) | `architecture` | node の `node*` オプション削減 — 整合セットを既定化し旧規約系フラグを撤去する手順 |
 | [architecture-node-centroid-value-position.md](active/architecture-node-centroid-value-position.md) | `architecture` | node-centered の centCoords を「値の位置 (ノード座標)」に統一し、双対重心/軸半径を分離する |
 | [convection-freestream-preserving-flux.md](active/convection-freestream-preserving-flux.md) | `convection` | 対流流束の free-stream 保存 (基準静圧差分) |
 | [convection-keep-cb-pressure-correction.md](active/convection-keep-cb-pressure-correction.md) | `convection` | 高周波圧力欠陥 δp^HF 駆動の mass-flux 補正 (Rhie–Chow 型市松キラー, σ_min 独立で丘頂 spanwise 鋸歯を減衰) |

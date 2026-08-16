@@ -63,6 +63,8 @@ def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
     node は実証レシピに従う (plans/active/boundary-node-nozzle-wall-outlet-stability.md):
     **全域 2 次 (convMethod 1, bndFirstOrder なし) + 陰解法 (timeIntegration 11,
     blockDPLUR, cfl_pseudo 4)** + nodeWallDirichlet/nodeAxisDirichlet/axisCentroidShift +
+    [2026-08-16 更新: `nodeAxisDirichlet` は撤去。node 既定が「値=ノード座標 + 軸 u_r 三点セット + エッジ中点再構成 + LSQ」
+     になり (case/43)、軸ノードは通常 DOF として解く。]
     katoLaunder。**収束場からの warm start (--warm-from) が前提** (冷間 IC は発散)。
     壁第一セルは細かすぎ禁物 (wall_first_frac ≳ 5e-3)。かつての 2 次・陰解法発散は
     いずれも軸行真空化が種で、nodeAxisDirichlet で根治 (bndFirstOrder による境界 1 次化は
@@ -73,7 +75,7 @@ def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
     sst = p.evaluate.get("turbulence", "sst") == "sst"
     disc = p.mesh.get("discretization", "node")  # 既定 node — ユーザ方針 2026-08-03
     if disc == "node":
-        node_keys = ', isAxisymmetric: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1'
+        node_keys = ', isAxisymmetric: 1, axisCentroidShift: 1, nodeWallDirichlet: 1'
         tint, cfl, conv, dplur, kato = 11, 4.0, 1, 1, ", katoLaunder: 1"
     else:
         node_keys = ", isAxisymmetric: 1"
@@ -154,7 +156,7 @@ def prepare(problem_path, run_dir, nsteps=None, warm_from=None) -> dict:
         (run_dir / "solverConfig.yaml").write_text(
             (run_dir / "solverConfig.yaml").read_text().replace(
                 f'discretization: "{disc}"', 'discretization: "cell"').replace(
-                ", axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1", ""))
+                ", axisCentroidShift: 1, nodeWallDirichlet: 1", ""))
         subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
                        cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
         q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "nozzle_qc.h5"],

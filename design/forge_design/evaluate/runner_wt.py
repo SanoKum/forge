@@ -213,6 +213,8 @@ def _config_euler_node(p: Problem, nsteps: int, out_int: int, cfl: float,
       no-slip へ切り替えるときに初めて意味を持つ
       ([[node-wall-velocity-needs-dirichlet-flag]])。
     - 軸対称 node には `nodeAxisDirichlet` (軸行真空化の対症) と
+    [2026-08-16 更新: `nodeAxisDirichlet` は撤去。node 既定が「値=ノード座標 + 軸 u_r 三点セット + エッジ中点再構成 + LSQ」
+     になり (case/43)、軸ノードは通常 DOF として解く。]
       `axisCentroidShift` が要る ([[node-axisym-axis-dirichlet]])。
     - `bndFirstOrder` は**使用禁止** (AGENTS)。
     - メッシュは**この config で変換**すること — cell 用 h5 を流用すると黙って
@@ -221,7 +223,7 @@ def _config_euler_node(p: Problem, nsteps: int, out_int: int, cfl: float,
       ([[node-slip-spurious-flow]])。本ケースは slip 壁なので、同じ市松診断で
       cell と比較して確認すること。
     """
-    return f"""mesh: {{meshFormat: "hdf5", discretization: "node", isAxisymmetric: 1, axisCentroidShift: 1, nodeAxisDirichlet: 1, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
+    return f"""mesh: {{meshFormat: "hdf5", discretization: "node", isAxisymmetric: 1, axisCentroidShift: 1, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
 gpu: 1
 solver: "SLAU"
 physProp: {{isCompressible: 1, thermalMethod: 0, viscMethod: 0,
@@ -251,7 +253,7 @@ def _config_sst_node(p: Problem, nsteps: int, out_int: int, cfl: float) -> str:
     `axisCentroidShift` + 低 Re SST (`wallTreatmentSST: 0` — **壁関数は使わない**。
     node 壁関数経路には既知の Cf 欠損 [[node-wallfunction-pk-convention-deficit]]、
     ユーザ指示 2026-08-16)。粘性は Sutherland (viscMethod 1)。"""
-    return f"""mesh: {{meshFormat: "hdf5", discretization: "node", isAxisymmetric: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, nodeAxisDirichlet: 1, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
+    return f"""mesh: {{meshFormat: "hdf5", discretization: "node", isAxisymmetric: 1, axisCentroidShift: 1, nodeWallDirichlet: 1, meshFileName: "nozzle.h5", valueFileName: "nozzle.h5"}}
 gpu: 1
 solver: "SLAU"
 physProp: {{isCompressible: 1, thermalMethod: 0, viscMethod: 1,

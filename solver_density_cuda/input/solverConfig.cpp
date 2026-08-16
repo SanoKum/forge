@@ -221,6 +221,15 @@ void solverConfig::read(std::string fname)
             if (this->gradLSQ < 0 || this->gradLSQ > 2) {
                 throw std::runtime_error("'gradLSQ' in 'mesh' must be 0 (GG), 1 (LSQ per-step) or 2 (LSQ precomputed).");
             }
+        } else if (this->discretization == "node") {
+            this->gradLSQ = 2;   // node 既定 = LSQ (内部隣接ノードのみ・点値整合)。GG は壁行で市松 (case/43 §11)
+        }
+        // node の既定を「値=ノード座標の整合セット」にする (case/43, plan architecture-node-centroid-value-position):
+        //   nodeValueAtNode=1 / nodeReconEdgeMidpoint=1 / (軸対称) nodeAxisUrDirichlet=1 / nodeAxisDirichlet=0。
+        // 明示指定があればそれを優先 (旧挙動の再現・回帰用)。cell は無関係。
+        if (this->discretization == "node") {
+            if (!config["mesh"]["nodeValueAtNode"])       this->nodeValueAtNode = 1;
+            if (!config["mesh"]["nodeReconEdgeMidpoint"]) this->nodeReconEdgeMidpoint = 1;
         }
         if (config["mesh"]["gradLSQDegenThresh"]) {
             this->gradLSQDegenThresh = config["mesh"]["gradLSQDegenThresh"].as<double>();
@@ -546,6 +555,18 @@ void solverConfig::read(std::string fname)
         if (this->axisymMethod < 0 || this->axisymMethod > 1) {
             std::cerr << "axisymMethod must be 0 (r-weight) or 1 (SU2 source)" << std::endl;
             exit(EXIT_FAILURE);
+        }
+        // node × 軸対称の既定: 軸 u_r=0 の三点セット (isAxisymmetric 確定後に解決)。明示指定優先。
+        if (this->discretization == "node" && this->isAxisymmetric == 1 &&
+            !(config["mesh"] && config["mesh"]["nodeAxisUrDirichlet"]) && this->nodeAxisDirichlet == 0) {
+            this->nodeAxisUrDirichlet = 1;
+        }
+        if (this->discretization == "node") {
+            std::cout << "[config] node scheme: nodeValueAtNode=" << this->nodeValueAtNode
+                      << " nodeReconEdgeMidpoint=" << this->nodeReconEdgeMidpoint
+                      << " gradLSQ=" << this->gradLSQ
+                      << " nodeAxisDirichlet=" << this->nodeAxisDirichlet
+                      << " nodeAxisUrDirichlet=" << this->nodeAxisUrDirichlet << std::endl;
         }
         this->thermalMethod = getValidatedValue<int>(physProp, "thermalMethod", "physProp");
         this->viscMethod = getValidatedValue<int>(physProp, "viscMethod", "physProp");
