@@ -31,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..geometry.axis_law import QuinticHermiteAxisLaw
+from ..geometry.axis_law import QuinticHermiteAxisLaw, KnotQuinticAxisLaw
 from ..geometry.moc_inverse import inverse_design
 from ..geometry.transonic import HallThroat
 from ..geometry.wall_axismach import (AxisMachCFDWall, area_ratio_isentropic,
@@ -175,10 +175,25 @@ def design_chain(p: Problem) -> dict:
         x_A = x0
         M_A, Mp_A, Mpp_A = ht.axis_anchor(x0)
 
+    # --- 軸 M 則: 'quintic' = 単一 5 次 Hermite (DOF L_c) / 'knot' = 内部 knot 1 個の
+    # 区分 C² (A6, DOF L_c + M_knot)。高マッハ (M6) では単一 quintic の L_c 上限
+    # (単調性) が短すぎて壁角 θ_w > μ_w の fold を起こすので knot を使う。
+    axis_law = str(p.geometry.get("axis_law", "quintic"))
+    M_K = None
+    if axis_law == "quintic":
+        lo, hi = QuinticHermiteAxisLaw.admissible_Lc_range(x_A, M_A, Mp_A, Mpp_A, Md)
+    elif axis_law == "knot":
+        # 既定 knot Mach = 急膨張の終わり。M_A + 0.25ΔM (M4.2 で 1.9、M6 で 2.4)
+        M_K = float(p.geometry.get("M_knot", M_A + 0.25 * (Md - M_A)))
+        lo, hi = KnotQuinticAxisLaw.admissible_Lc_range(x_A, M_A, Mp_A, Mpp_A, Md, M_K)
+    else:
+        raise ValueError("geometry.axis_law は 'quintic' か 'knot'")
     # --- L_c: 許容窓を必ず計算し、explicit は窓内検査・max は窓上限×0.98 ---
-    lo, hi = QuinticHermiteAxisLaw.admissible_Lc_range(x_A, M_A, Mp_A, Mpp_A, Md)
     mode = str(p.geometry.get("Lc_mode", "explicit"))
     if mode == "max":
+        if axis_law == "knot" and hi >= 400.0:
+            raise ValueError("knot 則の L_c に上限はない (窓が開放) — Lc_mode: explicit で "
+                             "L_c を与えること")
         L_c = hi * 0.98
     elif mode == "explicit":
         L_c = float(dv_value(p, "L_c"))
@@ -187,7 +202,10 @@ def design_chain(p: Problem) -> dict:
                              "(M'≥0 単調ゲート)")
     else:
         raise ValueError("geometry.Lc_mode は 'explicit' か 'max'")
-    law = QuinticHermiteAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md)
+    if axis_law == "knot":
+        law = KnotQuinticAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md, M_K)
+    else:
+        law = QuinticHermiteAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md)
     gates = law.gates()
     if gates["violations"]:
         raise ValueError("軸 Mach law ゲート不合格: " + "; ".join(gates["violations"]))
@@ -212,7 +230,8 @@ def design_chain(p: Problem) -> dict:
                          exit_mode=str(p.geometry.get("exit_mode", "characteristic")),
                          x_E=law.x_E, M_d=Md, start_line=start_line,
                          wall_mode=str(p.geometry.get("wall_mode", "streamline")),
-                         blend_width=float(p.geometry.get("wall_blend_width", 1.0)))
+                         blend_width=float(p.geometry.get("wall_blend_width", 1.0)),
+                         axis_dx0=p.geometry.get("axis_dx0"))
     qa = wall_qa(res["wall"], Md, law.x_E, g, R=R)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
@@ -239,6 +258,8 @@ def design_chain(p: Problem) -> dict:
             "exit": {k: v for k, v in res["exit"].items() if k != "term_path"},
             "x0": float(x0), "x_A": float(x_A), "x_E": float(law.x_E),
             "L_c": float(L_c), "Lc_window": (float(lo), float(hi)),
+            "axis_law": axis_law, "M_knot": M_K,
+            "x_K": (float(law.x_K) if axis_law == "knot" else None),
             "anchor": (float(M_A), float(Mp_A), float(Mpp_A)),
             "anchor_source": ("cfd" if x_reach_cfd is not None else "hall"),
             "start_line": start_line, "wall_mode": res["wall_mode"],
@@ -315,6 +336,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
             "anchor_source": d["anchor_source"], "start_line": d["start_line"],
             "wall_mode": d["wall_mode"], "wall_repr": d["wall_repr"],
+            "axis_law": d["axis_law"], "M_knot": d["M_knot"], "x_K": d["x_K"],
+            "L_U": float(p.geometry.get("L_U", 3.5)),
             "gas": d["gas"], "gamma_hall": d["gamma_hall"],
             "wall_fit": d["wall_fit"],
             "Md": d["Md"], "R": d["R"],

@@ -1,0 +1,49 @@
+# M6 スタディ点 R3_Lc60_MK2.5 (基底 problem_ib_m6.yaml、差分: R=3, L_c=60, M_knot=2.5, L_U=12)
+name: isobutane_wt_m6_R3_Lc60_MK2.5_tp
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species:
+    CO2: 0.1677
+    H2O: 0.0858
+    O2: 0.022
+    N2: 0.7245
+  gamma: 1.2755
+  cp: 1394.0
+spec:
+  Pt: 5.0e6
+  Tt: 1550.0
+  p_ambient: 2070.0
+  r_throat: 0.05375
+  M_design: 6.0
+dv:
+  L_c:
+    value: 60.0
+    min: 20.0
+    max: 80.0
+geometry:
+  R: 3.0
+  r_inlet: 9.303
+  L_U: 12.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 1200
+  axis_dx0: 0.03
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  axis_law: knot
+  M_knot: 2.5
+  Lc_mode: explicit
+mesh:
+  discretization: node
+  ni: 1100
+  nj: 65
+  wall_first_frac: 0.005
+  throat_refine: 3.0
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0
+  mid_stage: true

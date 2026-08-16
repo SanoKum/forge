@@ -68,13 +68,34 @@ def _coef(name, T):
     return np.asarray(sp["low"] if T < T_MID else sp["high"], dtype=float)
 
 
-def _cp_R(a, T):
+# NASA-9 の下限 (200 K) 未満は係数外挿になり cp が 100 K 以下で非物理に増大する。
+# T_FLOOR 未満は cp を T_FLOOR の値で凍結し、h は T_FLOOR で連続に接続する (2026-08-17、
+# M6 設計で出口 137 K が下限を割るため導入。M4.2 [出口 247 K] では不変)。
+# forge 側の擬似種 (mixture_pseudo_species) も同じ凍結を 2 区間 DB で表現し、設計と CFD を揃える。
+T_FLOOR = 200.0
+
+
+def _cp_R_raw(a, T):
     return a[0] / T**2 + a[1] / T + a[2] + a[3] * T + a[4] * T**2 + a[5] * T**3 + a[6] * T**4
 
 
-def _h_RT(a, T):
+def _h_RT_raw(a, T):
     return (-a[0] / T**2 + a[1] * np.log(T) / T + a[2] + a[3] * T / 2 + a[4] * T**2 / 3
             + a[5] * T**3 / 4 + a[6] * T**4 / 5 + a[7] / T)
+
+
+def _cp_R(a, T):
+    T = np.asarray(T, dtype=float)
+    return np.where(T < T_FLOOR, _cp_R_raw(a, T_FLOOR), _cp_R_raw(a, T))
+
+
+def _h_RT(a, T):
+    T = np.asarray(T, dtype=float)
+    # T<T_FLOOR: h(T) = h(T_FLOOR) - cp_F (T_FLOOR - T)  →  h/(RT) = [h_F/R - cpF (T_FLOOR - T)]/T
+    hF_R = _h_RT_raw(a, T_FLOOR) * T_FLOOR
+    cpF = _cp_R_raw(a, T_FLOOR)
+    frozen = (hF_R - cpF * (T_FLOOR - T)) / np.maximum(T, 1e-30)
+    return np.where(T < T_FLOOR, frozen, _h_RT_raw(a, T))
 
 
 class GasCPG:
@@ -244,7 +265,7 @@ class GasSemiPerfect:
                 "AR_M4": float(self.area_ratio(4.0)) if self._M[-1] > 4 else None}
 
 
-def mixture_pseudo_species(Y: dict, name: str = "MIX") -> dict:
+def mixture_pseudo_species(Y: dict, name: str = "MIX", freeze_low_T: bool = False) -> dict:
     r"""frozen 組成の混合物を **単一の擬似種** (NASA-9) にまとめる (forge の
     `physProp.speciesDBFile` 用)。
 
@@ -271,6 +292,18 @@ def mixture_pseudo_species(Y: dict, name: str = "MIX") -> dict:
           "H2O": (2.605, 572.4), "AR": (3.330, 136.5)}
     sig = sum(y * LJ[k][0] for k, y in Y.items())
     eps = sum(y * LJ[k][1] for k, y in Y.items())
+    # forge DB は 2 区間しか持てない。freeze_low_T=True なら設計側の T_FLOOR 凍結と揃えて
+    #   Tmid = T_FLOOR: 下 = 定数 cp(T_FLOOR) (h を連続接続), 上 = 元 low 係数 (200–1000 K)
+    # とするが、これは元 high (>1000 K) を捨てるので **Tt ≤ 1000 K 専用**。既定 (False) は
+    # 元の 200–1000–6000 形式 (Tt=1550 K の案件で必要)。場が 200 K を割る設計 (Tt 1000 K で M6 等)
+    # のときだけ True にすること。
+    if freeze_low_T:
+        cF = float(_cp_R_raw(low, T_FLOOR))
+        a7F = float(T_FLOOR * (_h_RT_raw(low, T_FLOOR) - cF))
+        const = [0.0, 0.0, cF, 0.0, 0.0, 0.0, 0.0, a7F, float(low[8])]
+        return {name: {"MW": float(MW_mix), "LJ_sigma": float(sig), "LJ_eps_kB": float(eps),
+                       "Tlo": 50.0, "Tmid": float(T_FLOOR), "Thi": 6000.0,
+                       "nasa9_low": const, "nasa9_high": [float(v) for v in low]}}
     return {name: {"MW": float(MW_mix), "LJ_sigma": float(sig), "LJ_eps_kB": float(eps),
                    "Tlo": 200.0, "Tmid": 1000.0, "Thi": 6000.0,
                    "nasa9_low": [float(v) for v in low],

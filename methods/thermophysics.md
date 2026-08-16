@@ -302,6 +302,12 @@ Chapman-Enskog + Wilke/Mason-Saxena で per-cell に評価する (LJ パラメ�
 `roe`/`sonic`/`T` を整合させる。CPG 分岐は代数的に不変。
 
 - **M1 整合済**: `slip` / `wall`(断熱) / `inlet_Pressure` / `outflow`。
+  - **`inlet_Pressure` TP 分岐の閉包 (2026-08-16 修正)**: 旧実装は内部静圧から作る $M_b$ と内部速度から作る
+    $M_c$ を rf=0.5 で混ぜていたが、静圧参照は $P_{ic}\leftrightarrow M_b$ の帰還で**大径低速入口 (M≈0.01–0.03)
+    が振動する** (case/42 M4.2: 残差床 rms_ro 3e-2・入口 P/Pt 1.03 振動 / M6: 16k step 以降に指数成長し
+    P/Pt 6 で発散, run_0040)。CPG 分岐は速度参照のみで同条件を rms_ro 1e-9 まで収束させるので、TP 分岐も
+    **rf=0 (速度参照のみ)** に統一した。効果: M4.2 の残差床 3e-2 → 9e-7・入口 P/Pt 0.9986–0.9993 (run_0050)、
+    M6 は 36k step で軸 M 変動 3e-5 に凍結 (run_0051)。
 - **本節で追加**: `outlet_statPress`(順流 + backflow 等エントロピー), `wall_isothermal`(等温壁 ghost),
   `inlet_Pressure_dir`(全状態と外挿静圧から NASA 等エントロピー反転), `inlet_uniformVelocity`。
 - **新規 thermo**: `thermo_isentropic_from_total_Ps_single` (全温・全圧 + 静圧 Ps から

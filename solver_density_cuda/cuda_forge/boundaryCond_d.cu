@@ -1013,7 +1013,12 @@ void inlet_Pressure_d
         flow_float ro_new;
         flow_float sonic_new;
 
-        flow_float rf=0.5;   // TP 亜音速入口の mach ブレンド緩和係数 (静圧 mach_b と速度 mach_c)
+        // TP 亜音速入口の mach ブレンド係数 (静圧参照 mach_b と速度参照 mach_c)。
+        // [2026-08-16] rf=0.5 → 0.0 (速度参照のみ = CPG 分岐と同じ閉包)。静圧参照を混ぜると
+        // 大径低速入口 (M≈0.01–0.03) で P[ic]↔mach_b の帰還が振動し、case/42 M4.2 (M_in 0.03) では
+        // 残差床 rms_ro 3e-2・入口 P/Pt 1.03 振動、M6 (M_in 0.011) では 16k step 以降に指数成長して
+        // P/Pt 6 まで発散した (run_0040)。CPG 分岐 (速度参照のみ) は同条件で rms_ro 1e-9 まで収束する。
+        flow_float rf=0.0;
 
         geom_int  ip = bplane_plane[ib];
         geom_int  ic = bplane_cell[ib];

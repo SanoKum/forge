@@ -457,12 +457,55 @@ def _design_cplus(inv, init, n_ax, ax, mdot_star, g, x0, x_wall0,
             "mdot_start": mdot_star, "mdot_exit": float("nan")}
 
 
+def _axis_grid(x0: float, x_end: float, n: int, dx0: float | None,
+               q: float = 1.05) -> np.ndarray:
+    r"""軸点列。`dx0=None` は等間隔 (従来)。`dx0` を与えると**スロート側だけ**
+    初項 dx0・公比 q の等比で細分し、間隔が dx_max に達したら等間隔に切り替える
+    (dx_max は総長が x_end−x0 になるよう解く。全体を等比にすると下流が粗くなり
+    出口平坦部の壁に 1e-5 のジッタが出るので、細分はスロート側に限る)。
+
+    背景 (2026-08-16, M6): 初期値線 (スロート特性線) と壁の間の場は、初期値線点が
+    C⁻ 担体として退化する (線自体が C⁻) ため、**軸点から後退する C⁻ だけで**埋まる。
+    スロート直後の壁点は最初の数本の C⁻ でしか決まらないので、軸間隔が粗い
+    (M6 は場が x_end≈180 $r_t$ に伸び、n_axis=1200 でも dx=0.15) と壁の最初の
+    ~0.3 $r_t$ が ±2e-4 $r_t$・±0.2° でジッタし (円弧からの乖離)、壁 QA
+    (単調 / spline リンギング) を落とす。dx₀≈0.03 で M4.2 (dx 0.1) 相当の滑らかさ。"""
+    if dx0 is None or dx0 <= 0.0:
+        return np.linspace(x0, x_end, n)
+    L = float(x_end - x0)
+    if dx0 * (n - 1) >= L:                    # 等間隔でも dx0 より細かい
+        return np.linspace(x0, x_end, n)
+
+    def spacing(dx_max):
+        k = int(np.floor(np.log(dx_max / dx0) / np.log(q))) + 1   # 等比区間の点数
+        k = max(1, min(k, n - 1))
+        d = dx0 * q ** np.arange(k)
+        d = np.minimum(d, dx_max)
+        rest = n - 1 - k
+        return np.concatenate([d, np.full(rest, dx_max)])
+    a, b = dx0, L                             # 総長は dx_max について単調増加
+    for _ in range(200):
+        m = 0.5 * (a + b)
+        if spacing(m).sum() < L:
+            a = m
+        else:
+            b = m
+        if b - a < 1e-13 * L:
+            break
+    d = spacing(0.5 * (a + b))
+    x = np.concatenate([[x0], x0 + np.cumsum(d)])
+    x *= 1.0
+    x[-1] = x_end
+    return x
+
+
 def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
                    n_start: int = 41, gamma: float = 1.4, dx_wall: float = 0.02,
                    th_wall0: float | None = None, M_start: float = 1.05,
                    exit_mode: str = "lip", x_E: float | None = None,
                    M_d: float | None = None, start_line: str = "vertical",
-                   wall_mode: str = "streamline", blend_width: float = 1.0):
+                   wall_mode: str = "streamline", blend_width: float = 1.0,
+                   axis_dx0: float | None = None):
     """starting line (throat: SauerThroat) + 軸目標 target(x) から壁を逆設計する。
 
     target: 呼び出し可能 M(x) — starting line の軸点 x0 で場に C1 整合していること
@@ -489,7 +532,7 @@ def inverse_design(throat, target, x_axis_end: float, n_axis: int = 260,
         x_line = np.full(n_start, float(x0))
     else:
         raise ValueError("start_line は 'throat_char' か 'vertical'")
-    ax = np.linspace(x0, x_axis_end, n_axis)[1:][::-1]
+    ax = _axis_grid(x0, x_axis_end, n_axis, axis_dx0)[1:][::-1]
     init = [_Pt(float(x), 0.0, 0.0, float(pm_nu(float(target(x)), g)), g) for x in ax]
     init += [_Pt(float(x_line[i]), float(rr[i]), float(tt[i]),
                  float(pm_nu(float(MM[i]), g)), g) for i in range(n_start)]
