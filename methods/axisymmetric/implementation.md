@@ -355,8 +355,8 @@ cell モード・平面 2D・`nodeAxisDirichlet=0` はビット不変。species/
 
 ## node 軸ノードの値の位置と軸半 CV の整合 (`nodeValueAtNode`, 2026-08-16 試作)
 
-`nodeAxisDirichlet` が対症だった軸行欠陥の**離散的な正体**を case/42 の演算子テストで確定した
-([case/42.node_axis_dof](../../case/42.node_axis_dof/README.md), plan
+`nodeAxisDirichlet` が対症だった軸行欠陥の**離散的な正体**を case/43 の演算子テストで確定した
+([case/43.node_axis_dof](../../case/43.node_axis_dof/README.md), plan
 [architecture-node-centroid-value-position](../../plans/active/architecture-node-centroid-value-position.md))。
 
 **演算子テスト**: $\rho=$const, $u=U_0-2ax$, $v=ar$, $p=$const は $\partial_x u+\tfrac1r\partial_r(rv)=0$ を満たす
@@ -385,20 +385,20 @@ $(\rho v)_{\rm top}$ を過小評価する。fx=0.5 単独や LSQ 単独では +
 `cpdx` は全てノード基準になる。境界半割面ではノードと鏡映ゴーストが面上で退化するため
 `calcStructualVariables_d` の fx を `0/0 → 0.5` にガード (非退化面はビット不変)。
 
-**ノズル検証 (case/41 生産モデル Euler, case/42 run_0002〜0010)**: 軸 DOF を解く (`nodeAxisDirichlet: 0`) と
+**ノズル検証 (case/41 生産モデル Euler, case/43 run_0002〜0010)**: 軸 DOF を解く (`nodeAxisDirichlet: 0`) と
 真空崩壊は起きないが軸 M が −0.5〜−0.8% 欠損 (偶関数外挿との差 max 0.033)。`nodeValueAtNode: 1` で ≤0.007、
 近軸場の cell 参照との差 0.0067 (Dirichlet) → 0.0031、残差は 1.9 → **2.7 桁**。
 
 **境界ゴーストの回転体積潰れ (要修正点・対応済)**: 値位置=ノードでは境界ノードが境界面上に乗るため鏡映ゴースト
 (`cc_g = cc + 2((pc−cc)·n)n`) が**同位置に退化**する。軸∩境界 (r=0) ではゴーストの回転体積が r 床 (1e-20) まで
 潰れ、`setDT` の `dx = vol/|S|` が ~1e-20 → 局所 CFL 1e13〜1e14 → `dt_local` ~1e-22 となって
-**入口軸・出口軸の 2 ノードが初期値のまま完全凍結**する (case/42 run_0003 で ro がビット一致)。
+**入口軸・出口軸の 2 ノードが初期値のまま完全凍結**する (case/43 run_0003 で ro がビット一致)。
 対応: `variables.cpp` の r 重みで**ゴースト CV は所有 CV の r̄ を使う** (bcond の `iCells`/`iCells_ghst` から写像)。
 根治は ghost 撤廃 (plan §5 Step 1)。
 
 **r 重みメトリックの自由流閉性 (float32 由来・要注意)**: 一様圧の整合条件は
 $\sum_f r_f\mathbf S_f=(0,\;A_{\rm planar})$ (多角形では厳密) だが、**float32 メトリック
-(`geom_float = float`) では高 AR 壁 CV で桁落ちして崩れる**。実測 (case/42): 生産 NS メッシュ (y+1.5) の
+(`geom_float = float`) では高 AR 壁 CV で桁落ちして崩れる**。実測 (case/43): 生産 NS メッシュ (y+1.5) の
 壁 CV で最大 **59%** (1e-3 超が 3597/54417)、Euler メッシュで 0.34%。合成 AR スイープでは
 誤差 ≈ 5 ulp × 打ち消し比 (∝ AR)・壁テーパ非依存。**`nodeValueAtNode` とは無関係で生産 Dirichlet 経路も同じ**。
 一様圧で壁 CV に偽半径力が立つ。対策は metric の FP64 化か、hoop 面積の離散閉性置換 (`axisRFloor` 経路)。
@@ -406,7 +406,7 @@ $\sum_f r_f\mathbf S_f=(0,\;A_{\rm planar})$ (多角形では厳密) だが、**
 は $\int r\,dA$ に厳密一致するので `rEff` は近似ではない。保存を破るのは `nodeAxisDirichlet` (状態上書き+残差 0 化) の方。
 
 **粘性 (NS) は未対応 — 2 次再構成が壁スリバーで破綻**: case/41 NS 生産モデル (y+1.5, `wall_first_frac` 4.5e-5,
-SST) で `nodeValueAtNode: 1` は step 62–64 で発散する。切り分け (case/42 run_0009〜0017):
+SST) で `nodeValueAtNode: 1` は step 62–64 で発散する。切り分け (case/43 run_0009〜0017):
 `nodeAxisDirichlet: 1` 併用でも同 step 64 = **軸 DOF は無関係**、1 次 (`convMethod: 0`) × cfl 1.0 は完走、
 2 次 × cfl 0.2 は step 154 (**CFL は遅らせるだけ**)、**粗い壁格子 (5e-3) では 2 次でも完走**、
 発散起点は第一内点の P=1.11 MPa > 室圧 1.0 MPa のオーバーシュート。**機構は未特定**。幾何の事実として値位置が壁面に乗ると

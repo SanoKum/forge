@@ -634,14 +634,14 @@ void solverConfig::read(std::string fname)
         // 初期条件
         this->initial = getValidatedValue<std::string>(config, "initial");
 
-        // nodeValueAtNode は Euler 検証のみ (case/42): 値位置=ノードにすると壁ノードが壁面上に乗り、
+        // nodeValueAtNode は Euler 検証のみ (case/43): 値位置=ノードにすると壁ノードが壁面上に乗り、
         // 2 次再構成の外挿距離が第一セル厚の半分→全長に倍増する。y+≈1 の高 AR 壁スリバー
         // (wall_first_frac ~4.5e-5) では第一内点で圧力が室圧を超えて発散する (case/41 NS モデルで
         // step 62-154、CFL 低減・段階起動では回避不可・軸 DOF とは無関係と実測)。粗い壁格子
         // (wall_first_frac ~5e-3) では完走する。
         if (this->nodeValueAtNode == 1 && this->viscMethod != 0 && this->convMethod != 0) {
             std::cerr << "[warn] nodeValueAtNode=1 × 粘性 × 2次再構成は近壁スリバーで発散する実績があります "
-                      << "(case/42.node_axis_dof)。Euler か、粗い壁格子か、convMethod:0 で使ってください。"
+                      << "(case/43.node_axis_dof)。Euler か、粗い壁格子か、convMethod:0 で使ってください。"
                       << std::endl;
         }
 

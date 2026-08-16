@@ -1,4 +1,4 @@
-# case/42.node_axis_dof — node 軸対称の軸ノード離散化の検証 (case/41 解析モデル流用)
+# case/43.node_axis_dof — node 軸対称の軸ノード離散化の検証 (case/41 解析モデル流用)
 
 **目的**: node (median-dual) 軸対称で軸ノードをどう扱うべきかを、生産モデル (case/41 wind-tunnel
 Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演算子テストで切り分ける。

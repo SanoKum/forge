@@ -1,0 +1,4 @@
+inlet: {physID: 1, kind: slip, outputHDFflg: 0, ints: , floats: }
+outlet: {physID: 2, kind: slip, outputHDFflg: 0, ints: , floats: }
+wall: {physID: 3, kind: wall, outputHDFflg: 0, ints: , floats: }
+axis: {physID: 4, kind: axis, outputHDFflg: 0, ints: , floats: }

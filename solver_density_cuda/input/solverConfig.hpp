@@ -273,7 +273,7 @@ public:
     // 1 では solver 読込時に centCoords ← ノード座標 (再構成基点 cpdx・fx・LSQ・ゴースト鏡映がノード基準)、
     // 双対重心の半径 r̄ は別配列 (mesh::rEff) に退避して軸対称 r 重み (V = r̄·A_planar) だけが使う
     // (plan architecture-node-centroid-value-position §4「値の位置=ノード、軸半径は専用量」の試作)。
-    // 軸半 CV の質量残差 O(1) 不整合 (case/42 演算子テスト) の是正が目的。node && 非 cell 以外は no-op。
+    // 軸半 CV の質量残差 O(1) 不整合 (case/43 演算子テスト) の是正が目的。node && 非 cell 以外は no-op。
     int nodeValueAtNode = 0;
 
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ 毎ステップ solve,

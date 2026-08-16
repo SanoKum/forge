@@ -445,7 +445,7 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         // ゴースト CV も所有 CV の r̄ を使う。値位置=ノードでは境界ノードが境界面上に乗り鏡映距離が 0 =
         // ゴーストがノードと同位置になるため、軸∩境界コーナー (r=0) でゴーストの回転体積が r 床 (1e-20) に
         // 潰れ、setDT の dx=vol_ghost/|S| が ~1e-20 → 局所 CFL ~1e13 → dt_local ~1e-22 でその CV が
-        // 完全に凍結する (case/42 run_0003 の入口軸/出口軸ノードで実測)。
+        // 完全に凍結する (case/43 run_0003 の入口軸/出口軸ノードで実測)。
         std::vector<geom_float> rEffGhost;
         if (useREff) {
             rEffGhost.assign(msh.nCells_all, (geom_float)-1.0);
