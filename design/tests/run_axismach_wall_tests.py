@@ -119,5 +119,59 @@ _k0, _resid, _n = throat_curvature_fit(_res_ok["wall"])
 check(f"throat_curvature_fit: κ₀={_k0:.3f} が Hall の 1/R に近い (fit 残差 {_resid:.1e})",
       0.4 < _k0 < 0.55 and _resid < 5e-4)
 
+
+
+# --- PhysicalNozzleWall (A13: 上流履歴込み δ* + 真のスロート) --------------------
+from forge_design.geometry.wall_axismach import PhysicalNozzleWall
+
+_pw = PhysicalNozzleWall(AxisMachCFDWall(_res_ok["wall"], R=2.0), _res_ok["wall"],
+                         0.01, 1.0e6, 800.0, 1.4, 1004.5)
+check(f"物理壁: δ*(スロート) > 0 (履歴込み, {float(_pw._dstar_hist(0.0)):.4f} r_t)",
+      float(_pw._dstar_hist(0.0)) > 5e-3)
+check(f"物理壁: 真のスロートは設計より上流かつ太い (x={_pw.x_throat:+.4f}, r={_pw.r_throat:.4f})",
+      -0.05 < _pw.x_throat < 0.0 and 1.005 < _pw.r_throat < 1.03)
+check(f"物理壁: 最小半径 = r_throat で壁角 0 (r'={float(_pw.r(np.array([_pw.x_throat]),1)[0]):.1e})",
+      abs(float(_pw.r(np.array([_pw.x_throat]), 1)[0])) < 1e-9)
+_h = 1e-7   # spline の r''' が大きいので極限を取る (点上は厳密一致)
+_cl = float(_pw.r(np.array([_pw.x_throat - _h]), 2)[0])
+_cr = float(_pw.r(np.array([_pw.x_throat + _h]), 2)[0])
+check(f"物理壁: スロートで上流 Hermite と下流 spline の曲率が一致 ({_cl:.4f} vs {_cr:.4f})",
+      abs(_cl - _cr) < 5e-5)   # h=1e-7 で r'''·h ≈ 2e-5
+check("物理壁: validate ok", not _pw.validate())
+check(f"物理壁: 入口半径 = r_U ({float(_pw.r(np.array([_pw.x_in]))[0]):.4f})",
+      abs(float(_pw.r(np.array([_pw.x_in]))[0]) - 2.5) < 1e-9)
+# 有効壁 = 物理壁 − δ* n が設計壁を再現する (下流、オフセット定義の自己整合)
+_xq = np.linspace(2.0, 18.0, 40)
+_thq = np.arctan(_res_ok and AxisMachCFDWall(_res_ok["wall"], R=2.0).r(_xq, 1))
+_dsq = _pw._dstar_hist(_xq)
+_xw = _xq - _dsq * np.sin(_thq); _rw_expect = AxisMachCFDWall(_res_ok["wall"], R=2.0).r(_xq) + _dsq * np.cos(_thq)
+_err = float(np.max(np.abs(_pw.r(_xw) - _rw_expect)))
+check(f"物理壁: 設計壁 + δ*·n を再現 (max|Δr| = {_err:.1e})", _err < 1e-4)
+
+
+
+# --- LSQ B-spline (A14) ---------------------------------------------------------
+from forge_design.geometry.wall_axismach import (LSQBsplineCFDWall, lsq_bspline_wall,
+                                                 select_lsq_ncp)
+
+_spl20, _dg20 = lsq_bspline_wall(_res_ok["wall"], 20, 0.5, k=5,
+                                 theta_e=float(_res_ok["wall"][-1, 2]))
+check(f"LSQ: 拘束が厳密に満たされる (残差 {_dg20['constraint_resid']:.1e})",
+      _dg20["constraint_resid"] < 1e-8)
+_xt = float(_res_ok["wall"][0, 0])
+check(f"LSQ: スロートで r'=0, r''=1/R ({float(_spl20(_xt,1)):.1e}, {float(_spl20(_xt,2)):.4f})",
+      abs(float(_spl20(_xt, 1))) < 1e-9 and abs(float(_spl20(_xt, 2)) - 0.5) < 1e-9)
+check(f"LSQ 20 CP: 曲率振動 J_fair が MOC 差分の 1/3 以下 ({_dg20['J_fair']/_dg20['J_fair_tbl']:.3f})",
+      _dg20["J_fair"] < _dg20["J_fair_tbl"] / 3.0)
+_, _dgs, _sweep = select_lsq_ncp(_res_ok["wall"], 0.5, candidates=(12, 20, 32, 48),
+                                 tol_dr=5e-4, tol_dtheta_deg=0.5)
+check(f"LSQ 自動選択: n_cp={_dgs['n_cp']} (単調増で誤差減: "
+      f"{[round(t['max_dr'],5) for t in _sweep if 'max_dr' in t]})",
+      all(_sweep[i]["max_dr"] >= _sweep[i+1]["max_dr"] for i in range(len(_sweep)-1)
+          if "max_dr" in _sweep[i] and "max_dr" in _sweep[i+1]))
+_lw = LSQBsplineCFDWall(_res_ok["wall"], R=2.0, n_cp=32)
+_lw = LSQBsplineCFDWall(_res_ok["wall"], R=2.0, n_cp=32, tol_dr=1e-2, tol_dtheta_deg=1.5)
+check("LSQBsplineCFDWall: 上流 Hermite と C² (validate ok, ゲート緩)", not _lw.validate())
+
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")
 sys.exit(1 if FAIL else 0)

@@ -40,8 +40,11 @@ def paste_isentropic_ic(h5path, wall, scale, Pt, Tt, gamma, cp,
     with h5py.File(h5path, "r+") as f:
         cc = f["/CELLS/centCoords"][:].reshape(-1, 3)
         xn = cc[:, 0] / scale  # 無次元軸位置
-        AR = np.maximum(wall.r(xn), 1.0) ** 2
-        M = invert_area_ratio(AR, xn >= 0.0, g)
+        # 物理壁 (A13) はスロートが (x_throat, r_throat) ≠ (0, 1) に動く
+        x_thr = float(getattr(wall, "x_throat", 0.0))
+        r_thr = float(getattr(wall, "r_throat", 1.0))
+        AR = np.maximum(wall.r(xn) / r_thr, 1.0) ** 2
+        M = invert_area_ratio(AR, xn >= x_thr, g)
         fac = 1.0 + 0.5 * (g - 1.0) * M * M
         T = Tt / fac
         P = Pt / fac ** (g / (g - 1.0))

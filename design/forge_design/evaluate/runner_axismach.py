@@ -151,10 +151,22 @@ def design_chain(p: Problem) -> dict:
     qa = wall_qa(res["wall"], Md, law.x_E, g, R=R)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
-    wall = AxisMachCFDWall(res["wall"], R=R,
-                           r_U=float(p.geometry.get("r_inlet", 2.5)),
-                           L_U=float(p.geometry.get("L_U", 3.5)),
-                           L_pipe=float(p.geometry.get("L_pipe", 0.5)))
+    # 壁表現 (A14): 'interp' = 補間 5 次 B-spline (現行・比較基準) /
+    # 'lsq' = 制約付き最小二乗 B-spline (n_cp は誤差ゲートで自動、または wall_ncp)
+    wall_repr = str(p.geometry.get("wall_repr", "interp"))
+    wkw = dict(R=R, r_U=float(p.geometry.get("r_inlet", 2.5)),
+               L_U=float(p.geometry.get("L_U", 3.5)),
+               L_pipe=float(p.geometry.get("L_pipe", 0.5)))
+    if wall_repr == "lsq":
+        from ..geometry.wall_axismach import LSQBsplineCFDWall
+        wall = LSQBsplineCFDWall(res["wall"], n_cp=p.geometry.get("wall_ncp"),
+                                 tol_dr=float(p.geometry.get("wall_lsq_tol_dr", 5e-4)),
+                                 tol_dtheta_deg=float(p.geometry.get("wall_lsq_tol_dtheta", 0.05)),
+                                 **wkw)
+    elif wall_repr == "interp":
+        wall = AxisMachCFDWall(res["wall"], **wkw)
+    else:
+        raise ValueError("geometry.wall_repr は 'interp' か 'lsq'")
     msgs = wall.validate()
     if msgs:
         raise ValueError("axis-Mach 壁フィルタ不合格: " + "; ".join(msgs))
@@ -165,6 +177,8 @@ def design_chain(p: Problem) -> dict:
             "anchor": (float(M_A), float(Mp_A), float(Mpp_A)),
             "anchor_source": ("cfd" if x_reach_cfd is not None else "hall"),
             "start_line": start_line, "wall_mode": res["wall_mode"],
+            "wall_repr": wall_repr,
+            "wall_fit": getattr(wall, "fit_diag", None),
             "Md": Md, "R": R, "gates": gates,
             # cplus 閉包では構成的に 1 になる循環指標なので出さない (A9 の教訓)
             "mdot_ratio_moc": (None if not np.isfinite(res["mdot_exit"])
@@ -228,7 +242,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
             "anchor_source": d["anchor_source"], "start_line": d["start_line"],
-            "wall_mode": d["wall_mode"],
+            "wall_mode": d["wall_mode"], "wall_repr": d["wall_repr"],
+            "wall_fit": d["wall_fit"],
             "Md": d["Md"], "R": d["R"],
             "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
             "exit": d["exit"],
@@ -341,7 +356,8 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     - メッシュ/段階起動レシピは B8 系 NS v1 (run_0028-0030) で確立したものを流用。
       coarse 中継 (y+~50) は YAML の mesh/evaluate 設定だけの違いで同じ関数で作る
     """
-    from ..feedback.deltastar import _sutherland, deltastar_offset
+    from ..feedback.deltastar import _sutherland
+    from ..geometry.wall_axismach import PhysicalNozzleWall
     p = load_problem(problem_path)
     if p.type != "wind_tunnel_axisym_axismach":
         raise ValueError("runner_axismach は wind_tunnel_axisym_axismach 専用")
@@ -350,21 +366,23 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     d = design_chain(p)
     scale = float(p.spec["r_throat"])
     wall_inv = d["wall_inv"]                      # (n,4) [x,r,th,M] r_t 単位
-    if dstar_csv is None:
-        phys = deltastar_offset(wall_inv, scale, float(p.spec["Pt"]),
-                                float(p.spec["Tt"]), p.gamma, p.cp)
-        dstar_src = "correlation_v1"
-    else:
+    # 物理壁 (A13): 上流履歴込み δ* + 真のスロート探索 + 上流 Hermite 再生成。
+    # v2 (dstar_csv) は「下流は CFD 抽出、x<6 は履歴相関、[6,9] smoothstep」の合成。
+    dstar_x = None
+    if dstar_csv is not None:
         tbl = np.loadtxt(dstar_csv, delimiter=",", skiprows=1)
-        ds = np.interp(wall_inv[:, 0], tbl[:, 0], tbl[:, 1])
-        th = wall_inv[:, 2]
-        phys = np.c_[wall_inv[:, 0] - ds * np.sin(th),
-                     wall_inv[:, 1] + ds * np.cos(th)]
-        dstar_src = str(dstar_csv)
-    wall = AxisMachCFDWall(phys, R=float(d["R"]),
-                           r_U=float(p.geometry.get("r_inlet", 2.5)),
-                           L_U=float(p.geometry.get("L_U", 3.5)),
-                           L_pipe=float(p.geometry.get("L_pipe", 0.5)))
+        base = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
+                                  float(p.spec["Tt"]), p.gamma, p.cp)
+
+        def dstar_x(x, _tbl=tbl, _corr=base._dstar_hist):
+            x = np.asarray(x, dtype=float)
+            w = np.clip((x - 6.0) / 3.0, 0.0, 1.0)
+            w = w * w * (3.0 - 2.0 * w)
+            csv = np.interp(np.clip(x, _tbl[0, 0], _tbl[-1, 0]), _tbl[:, 0], _tbl[:, 1])
+            return (1.0 - w) * _corr(x) + w * csv
+    wall = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
+                              float(p.spec["Tt"]), p.gamma, p.cp, dstar_x=dstar_x)
+    dstar_src = "correlation_hist_v1" if dstar_csv is None else str(dstar_csv)
     msgs = wall.validate()
     if msgs:
         raise ValueError("物理壁フィルタ不合格: " + "; ".join(msgs))
@@ -382,7 +400,8 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     np.savetxt(run_dir / "wall_design.csv",
                np.c_[d["wall_inv"] * [scale, scale, 1.0, 1.0]], delimiter=",",
                header="x_m,r_m,theta_rad,M_wall", comments="")
-    np.savetxt(run_dir / "wall_physical.csv", np.c_[phys * scale],
+    xs_p = np.linspace(wall.x_throat, wall.x_e, 1500)
+    np.savetxt(run_dir / "wall_physical.csv", np.c_[xs_p * scale, wall.r(xs_p) * scale],
                delimiter=",", header="x_m,r_m", comments="")
     n = nsteps or int(p.evaluate.get("nStepOuter", 48000))
     out_int = int(p.evaluate.get("outStepInterval", max(n // 6, 1)))
@@ -437,6 +456,9 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
             f["/VALUE/roOmega"][:] = np.maximum(f["/VALUE/roOmega"][:], ro * om_floor)
     info = {"chain": "axismach_ns", "discretization": "node", "viscous": True,
             "dstar_source": dstar_src, "mdot_ratio_moc": None,
+            "throat_physical": {"x": wall.x_throat, "r": wall.r_throat,
+                                "kappa": wall.kappa_throat,
+                                "dstar_throat": float(wall._dstar_hist(0.0))},
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
             "anchor": list(d["anchor"]), "anchor_source": d["anchor_source"],
             "start_line": d["start_line"], "wall_mode": d["wall_mode"],

@@ -220,3 +220,284 @@ def wall_qa(wall, M_d: float, x_E: float, gamma: float = 1.4,
         "violations": v,
     }
     return out
+
+
+class PhysicalNozzleWall:
+    r"""**物理壁** (A13): 非粘性設計壁 $C_I$ + 上流履歴込み $\delta^*(s)$ の法線オフセット。
+
+    計画: plans/active/tooling-nozzle-axismach-physical-throat.md。
+
+    A12 との違い (外部レビュー採択 2026-08-17):
+
+    1. **δ\* の弧長は入口起点** (縁 Mach は上流 = $A/A^*$ の亜音速枝、下流 = MOC 壁の M)。
+       スロートで $\delta^*_t > 0$ となり、収縮部からの境界層発達履歴が入る。
+    2. **真の幾何スロートを探索**: オフセット後の輪郭は $d\delta^*/ds > 0$ のため
+       最小半径点が設計スロートの**やや上流**へ動き、そこでの壁角が 0 でなくなる。
+       $r_W' = 0$ の点 $(x_{t,W}, r_{t,W})$ を放物線フィットで求め、その曲率
+       $r''_{t,W}$ を下流スプラインの左端クランプと上流 Hermite の端条件に渡す
+       (**下流がマスター、上流は作り直し** — スロート C² はユーザ要求どおり両側一致)。
+    3. 遷音速の設計基準 (Hall・軸 law) は据え置き。物理壁で Hall を解き直すと
+       二重計上になる。実際の遷音速場の変化は CFD で測り、必要ならアンカー帰還。
+
+    インターフェースは `AxisMachCFDWall` 互換 (`x_in`/`x_e`/`r(x, deriv)`/`validate`)。
+    追加属性 `x_throat`/`r_throat` (IC の 1D 等エントロピーが参照)。
+    """
+
+    def __init__(self, design_wall, wall_tbl, rt_m: float, Pt: float, Tt: float,
+                 gamma: float = 1.4, cp: float = 1004.5, dstar_x=None,
+                 x_offset_lo: float = -0.8) -> None:
+        """design_wall: AxisMachCFDWall (非粘性)。wall_tbl: (n,4) MOC 壁 [x,r,θ,M]。
+        dstar_x: 任意の δ*(x) [r_t 単位] (None = 上流履歴込み相関)。"""
+        from ..evaluate.ic import invert_area_ratio
+        from ..feedback.deltastar import dstar_flatplate
+        self.design = design_wall
+        self.r_U = float(design_wall.up.r_U)
+        self.L_U = float(design_wall.up.L_U)
+        self.x_in = float(design_wall.x_in)
+        wall_tbl = np.asarray(wall_tbl, dtype=float)
+        x_F = float(wall_tbl[-1, 0])
+
+        # --- δ*(x): 入口からの弧長 + 区分縁 Mach ------------------------------
+        xg = np.linspace(self.x_in + 1e-6, x_F, 3000)
+        rg = design_wall.r(xg)
+        rpg = design_wall.r(xg, 1)
+        s_g = np.concatenate([[0.0], np.cumsum(
+            np.hypot(np.diff(xg), np.diff(rg)))]) * rt_m
+        M_g = np.empty_like(xg)
+        m_up = xg <= 0.0
+        AR_up = np.maximum(rg[m_up], 1.0 + 1e-12) ** 2
+        M_g[m_up] = invert_area_ratio(AR_up, np.zeros(int(m_up.sum()), bool), gamma)
+        M_g[~m_up] = np.interp(xg[~m_up], wall_tbl[:, 0], wall_tbl[:, 3])
+        ds_g = dstar_flatplate(s_g, M_g, Pt, Tt, gamma, cp) / rt_m
+        self._dstar_hist = lambda x: np.interp(x, xg, ds_g)
+        dstar = self._dstar_hist if dstar_x is None else dstar_x
+
+        # --- 法線オフセット (窓 [x_offset_lo, x_F] — 真のスロート探索を含む) ---
+        mw = xg >= x_offset_lo
+        th_w = np.arctan(rpg[mw])
+        dsv = np.asarray(dstar(xg[mw]), dtype=float)
+        xw = xg[mw] - dsv * np.sin(th_w)
+        rw = rg[mw] + dsv * np.cos(th_w)
+        o = np.argsort(xw)
+        xw, rw = xw[o], rw[o]
+
+        # --- 真の幾何スロート: 最小半径点まわりの放物線フィット ---------------
+        i0 = int(np.argmin(rw))
+        mfit = np.abs(xw - xw[i0]) < 0.15
+        if int(mfit.sum()) < 8:
+            raise RuntimeError("PhysicalNozzleWall: スロート近傍の点が不足")
+        cf = np.polyfit(xw[mfit], rw[mfit], 2)
+        self.x_throat = float(-cf[1] / (2.0 * cf[0]))
+        self.r_throat = float(np.polyval(cf, self.x_throat))
+        self.kappa_throat = float(2.0 * cf[0])
+        if not (-0.5 < self.x_throat < 0.2):
+            raise RuntimeError(f"PhysicalNozzleWall: 真のスロート x={self.x_throat:.3f} "
+                               "が想定窓 (-0.5, 0.2) の外")
+
+        # --- 下流: スロートクランプ付き補間 5 次 B-spline ----------------------
+        md = xw > self.x_throat + 0.02
+        xd = np.concatenate([[self.x_throat], xw[md]])
+        rd = np.concatenate([[self.r_throat], rw[md]])
+        _cs = CubicSpline(xd, rd)
+        self.x_e = float(xd[-1])
+        self._spl = make_interp_spline(
+            xd, rd, k=5,
+            bc_type=([(1, 0.0), (2, self.kappa_throat)],
+                     [(1, float(_cs(self.x_e, 1))), (2, float(_cs(self.x_e, 2)))]))
+
+        # --- 上流: 入口 → 新スロートの quintic Hermite (作り直し) -------------
+        from .wall import _hermite_quintic, _poly_eval
+        self._herm_x0 = -self.L_U
+        self._herm_c = _hermite_quintic(self._herm_x0, self.x_throat,
+                                        self.r_U, 0.0, 0.0,
+                                        self.r_throat, 0.0, self.kappa_throat)
+        self._poly_eval = _poly_eval
+
+    def r(self, x, deriv: int = 0):
+        x = np.asarray(x, dtype=float)
+        out = np.empty_like(x)
+        m_pipe = x < self._herm_x0
+        m_up = (x >= self._herm_x0) & (x < self.x_throat)
+        m_dn = x >= self.x_throat
+        out[m_pipe] = self.r_U if deriv == 0 else 0.0
+        if m_up.any():
+            out[m_up] = self._poly_eval(self._herm_c, self._herm_x0, self.x_throat,
+                                        x[m_up], deriv)
+        if m_dn.any():
+            xq = np.minimum(x[m_dn], self.x_e)
+            out[m_dn] = self._spl(xq, deriv) if deriv else self._spl(xq)
+        return out
+
+    def theta(self, x):
+        return np.arctan(self.r(x, 1))
+
+    def validate(self, n: int = 4000) -> list:
+        msgs = []
+        xs = np.linspace(self.x_in, self.x_e, n)
+        rv = self.r(xs)
+        if np.any(rv <= 0.0):
+            msgs.append("壁半径が非正")
+        if abs(float(rv.min()) - self.r_throat) > 5e-3:
+            msgs.append(f"最小半径 {float(rv.min()):.4f} != r_throat {self.r_throat:.4f}")
+        m_dn = xs >= self.x_throat
+        if np.any(np.diff(rv[m_dn]) < -1e-9):
+            msgs.append("スロート下流で半径が非単調")
+        m_up = (xs >= self._herm_x0) & (xs <= self.x_throat)
+        if np.any(np.diff(rv[m_up]) > 1e-9):
+            msgs.append("上流 Hermite が非単調収縮")
+        # C1/C2 接合 (構成的に成り立つはず — 実測で保証)
+        h = 1e-6
+        for name, xc in (("直管/Hermite", self._herm_x0),
+                         ("Hermite/下流 (物理スロート)", self.x_throat)):
+            dl = float(self.r(np.array([xc - h]), 1)[0])
+            dr_ = float(self.r(np.array([xc + h]), 1)[0])
+            if abs(dl - dr_) > 5e-3:
+                msgs.append(f"{name} の接線不連続 ({dl:.5f} vs {dr_:.5f})")
+            cl = float(self.r(np.array([xc - h]), 2)[0])
+            cr = float(self.r(np.array([xc + h]), 2)[0])
+            if abs(cl - cr) > 0.05 * max(abs(cl), abs(cr), 1.0):
+                msgs.append(f"{name} の曲率不連続 ({cl:.4f} vs {cr:.4f})")
+        return msgs
+
+
+# --- A14: 制約付き最小二乗 B-spline (本流の形状表現候補、補間壁と A/B) -----------
+def lsq_bspline_wall(wall_tbl, n_cp: int, kappa_t: float, k: int = 5,
+                     theta_e: float | None = None):
+    r"""MOC 壁テーブル (n,4)[x,r,θ,M] を **制約付き最小二乗 B-spline** $r(x)$ で近似する。
+
+    計画: plans/active/tooling-nozzle-axismach-physical-throat.md (A14)。
+
+    - 未知: 制御点 $c_i$ ($i=1..n_{cp}$)、ノットは弧長で等分配 (端は $k+1$ 重)。
+    - **ハード拘束** (等式): $r(x_t)=r_t$, $r'(x_t)=0$, $r''(x_t)=\kappa_t$ (上流 Hermite と
+      C² — ユーザ要求), $r(x_e)=r_e$, 任意で $r'(x_e)=\tan\theta_e$。
+    - **重み** $w_j \sim \Delta s_j$ (MOC の点密度が形状を支配しないよう弧長重み)。
+    - 解法: KKT 系 (正規方程式 + ラグランジュ乗数)。
+
+    戻り: `scipy.interpolate.BSpline` と診断 dict (max|Δr|・max|Δθ| [deg]・
+    曲率振動 $\int\kappa'^2 ds$・拘束残差)。raw MOC 点は呼び出し側で保持し、
+    診断を**別ゲート**として監視する (LSQ が不整合を隠さないため — Codex 指摘)。
+    """
+    from scipy.interpolate import BSpline
+    w = np.asarray(wall_tbl, dtype=float)
+    x, r, th = w[:, 0], w[:, 1], w[:, 2]
+    x_t, r_t, x_e, r_e = float(x[0]), float(r[0]), float(x[-1]), float(r[-1])
+    # 弧長重み
+    ds = np.hypot(np.diff(x), np.diff(r))
+    wt = np.concatenate([[ds[0]], 0.5 * (ds[1:] + ds[:-1]), [ds[-1]]])
+    wt = wt / wt.mean()
+    # 弧長等分配ノット (内部ノット n_cp - k - 1 個)
+    s_cum = np.concatenate([[0.0], np.cumsum(ds)])
+    n_int = n_cp - k - 1
+    if n_int < 0:
+        raise ValueError(f"n_cp={n_cp} は次数 k={k} に対して少なすぎる (最低 {k+1})")
+    s_int = np.linspace(0.0, s_cum[-1], n_int + 2)[1:-1]
+    x_int = np.interp(s_int, s_cum, x)
+    t = np.concatenate([[x_t] * (k + 1), x_int, [x_e] * (k + 1)])
+    # 設計行列
+    B = BSpline.design_matrix(x, t, k).toarray()            # (n, n_cp)
+    def _row(xq, d):
+        # 基底関数の d 階微分行 (design_matrix は nu 非対応 → 単位係数で評価)
+        n_cp_ = len(t) - k - 1
+        return np.array([BSpline(t, np.eye(n_cp_)[i], k)(xq, d) for i in range(n_cp_)])
+    C = [_row(x_t, 0), _row(x_t, 1), _row(x_t, 2), _row(x_e, 0)]
+    dvec = [r_t, 0.0, float(kappa_t), r_e]
+    if theta_e is not None:
+        C.append(_row(x_e, 1)); dvec.append(float(np.tan(theta_e)))
+    C = np.asarray(C); dvec = np.asarray(dvec)
+    # KKT
+    W = wt[:, None]
+    A = B.T @ (W * B)
+    b = B.T @ (wt * r)
+    m = len(dvec)
+    K = np.block([[A, C.T], [C, np.zeros((m, m))]])
+    rhs = np.concatenate([b, dvec])
+    sol = np.linalg.lstsq(K, rhs, rcond=None)[0]
+    c = sol[:n_cp]
+    spl = BSpline(t, c, k)
+    # 診断
+    r_fit = spl(x)
+    th_fit = np.arctan(spl(x, 1))
+    xs = np.linspace(x_t, x_e, 4000)
+    rp, rpp, rppp = spl(xs, 1), spl(xs, 2), spl(xs, 3)
+    kap = rpp / (1 + rp ** 2) ** 1.5
+    dk = np.gradient(kap, xs)
+    ds_x = np.sqrt(1 + rp ** 2)
+    J_fair = float(np.trapezoid(dk ** 2 * ds_x, xs))
+    # MOC 生テーブルの同じ指標 (比較基準): 差分曲率
+    rp_t = np.gradient(r, x); rpp_t = np.gradient(rp_t, x)
+    kap_t = rpp_t / (1 + rp_t ** 2) ** 1.5
+    dk_t = np.gradient(kap_t, x)
+    J_fair_tbl = float(np.trapezoid(dk_t ** 2 * np.sqrt(1 + rp_t ** 2), x))
+    diag = {"n_cp": int(n_cp), "k": int(k),
+            "max_dr": float(np.max(np.abs(r_fit - r))),
+            "rms_dr": float(np.sqrt(np.mean((r_fit - r) ** 2))),
+            "max_dtheta_deg": float(np.degrees(np.max(np.abs(th_fit - th)))),
+            "J_fair": J_fair, "J_fair_tbl": J_fair_tbl,
+            "constraint_resid": float(np.max(np.abs(C @ c - dvec))),
+            "monotone": bool(np.all(np.diff(spl(xs)) > -1e-9))}
+    return spl, diag
+
+
+def select_lsq_ncp(wall_tbl, kappa_t: float, candidates=(12, 16, 20, 24, 32),
+                   tol_dr: float = 5e-4, tol_dtheta_deg: float = 0.05, k: int = 5,
+                   theta_e: float | None = None) -> tuple:
+    """max|Δr|・max|Δθ| のゲートを満たす**最小の制御点数**を選ぶ (固定 20 にしない)。
+    戻り: (spline, diag, sweep_table)。どれも満たさなければ最大 n_cp を返し
+    diag["gate_ok"]=False。"""
+    table = []
+    best = None
+    for n in candidates:
+        try:
+            spl, dg = lsq_bspline_wall(wall_tbl, n, kappa_t, k=k, theta_e=theta_e)
+        except Exception as e:  # noqa: BLE001
+            table.append({"n_cp": n, "error": str(e)}); continue
+        dg["gate_ok"] = (dg["max_dr"] <= tol_dr and dg["max_dtheta_deg"] <= tol_dtheta_deg
+                         and dg["monotone"] and dg["constraint_resid"] < 1e-8)
+        table.append(dg)
+        best = (spl, dg)
+        if dg["gate_ok"]:
+            break
+    return best[0], best[1], table
+
+
+class LSQBsplineCFDWall(AxisMachCFDWall):
+    r"""**A14 の CFD 壁**: 設計区間を `lsq_bspline_wall` の近似 B-spline で表現する
+    `AxisMachCFDWall` 亜種。上流 (直管 + U→T Hermite) は同一、スロート端は同じ
+    $(r'=0,\ r''=1/R)$ ハード拘束で C² 接続。**メッシュ生成・CFD・CAD 出力が同じ
+    スプラインを使う** (Codex: エクスポート層のみは CAD≠CFD 形状になるため不採用)。
+    `fit_diag` に近似誤差ゲート (max|Δr|・max|Δθ|・J_fair) を保持し、raw MOC 点との
+    乖離は別ゲートとして監視する。"""
+
+    def __init__(self, wall_tbl, R: float, n_cp=None, r_U: float = 2.5,
+                 L_U: float = 3.5, L_pipe: float = 0.5, k: int = 5,
+                 tol_dr: float = 5e-4, tol_dtheta_deg: float = 0.05) -> None:
+        wall_tbl = np.asarray(wall_tbl, dtype=float)
+        # 親の検査 (throat_start・接合) を通してから設計区間の表現だけ差し替える
+        super().__init__(wall_tbl, R=R, r_U=r_U, L_U=L_U, L_pipe=L_pipe)
+        if n_cp is None:
+            spl, dg, sweep = select_lsq_ncp(wall_tbl, 1.0 / R, k=k, tol_dr=tol_dr,
+                                            tol_dtheta_deg=tol_dtheta_deg,
+                                            theta_e=float(wall_tbl[-1, 2]))
+            self.fit_sweep = sweep
+        else:
+            spl, dg = lsq_bspline_wall(wall_tbl, int(n_cp), 1.0 / R, k=k,
+                                       theta_e=float(wall_tbl[-1, 2]))
+            self.fit_sweep = [dg]
+        self._spl = spl
+        self.fit_diag = dg
+        self.n_cp = int(dg["n_cp"])
+        # 親の 0.2° リンギング検査は「補間スプラインの点間振動」用。LSQ 壁では
+        # テーブル点上の θ 乖離は意図した近似残差そのものなので、その基準は
+        # fit_diag (max_dtheta_deg / max_dr) 側で別ゲートとして扱う (Codex: 別々のゲート)。
+        self._th_tbl = None
+        self.tol_dtheta_deg = float(tol_dtheta_deg)
+        self.tol_dr = float(tol_dr)
+
+    def validate(self, n: int = 4000) -> list:
+        msgs = super().validate(n)
+        dg = self.fit_diag
+        if dg["max_dr"] > self.tol_dr:
+            msgs.append(f"LSQ 近似誤差 max|Δr|={dg['max_dr']:.2e} > {self.tol_dr:.1e}")
+        if dg["max_dtheta_deg"] > self.tol_dtheta_deg:
+            msgs.append(f"LSQ 近似誤差 max|Δθ|={dg['max_dtheta_deg']:.3f}° > {self.tol_dtheta_deg}°")
+        return msgs
