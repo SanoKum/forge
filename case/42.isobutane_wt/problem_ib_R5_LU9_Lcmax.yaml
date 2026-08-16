@@ -5,7 +5,7 @@
 #   C4H10 + 6.5/φ (O2 + 3.76 N2) → 4 CO2 + 5 H2O + 0.722 O2 + 27.16 N2
 # 熱力学: NASA-9 (forge 内蔵 CEA 係数と同一) を frozen 組成で。γ は 1.31 (スロート) →
 # 1.38 (M4) と変化するので一定 γ の CPG では出口径を 8% 誤る (semi-perfect が必須)。
-# 設計基準 r_t: A/A*(M4) = 13.105 (semi-perfect) → r_t = 0.5/√13.105 = 0.13812 m。
+# 設計基準 r_t: A/A*(M4.2) = 15.809 (semi-perfect) → r_t = 0.5/√15.809 = 0.12575 m。
 name: isobutane_wt_m4_R5_LU9_Lcmax
 type: wind_tunnel_axisym_axismach
 gas:
@@ -18,16 +18,16 @@ gas:
 spec:
   Pt: 5.0e6
   Tt: 1000.0
-  p_ambient: 28000.0    # M4 出口の整合静圧 (semi-perfect: P/Pt=0.0056 × 5 MPa)。1000 Pa だと本段 step ~980 で出口軸近傍が吸い出されて発散 (run_0001 初回)
-  r_throat: 0.13812     # [m] 出口径 1 m から (A/A* = 13.105)
-  M_design: 4.0
+  p_ambient: 20000.0    # M4.2 出口の整合静圧 (semi-perfect: P/Pt≈0.0040 × 5 MPa)。1000 Pa だと出口軸近傍が吸い出されて発散 (run_0001 初回)
+  r_throat: 0.12575     # [m] 出口径 1 m から (semi-perfect A/A*(M4.2) = 15.809)
+  M_design: 4.2       # ユーザ訂正 2026-08-17 (当初 4.0)
 
 dv:
   L_c: {value: 8.0, min: 1.0, max: 20.0}
 
 geometry:
   R: 5.0
-  r_inlet: 3.62         # 入口配管径 1 m / (2 r_t) = 3.62 r_t
+  r_inlet: 3.976        # 入口配管径 1 m / (2 r_t) = 3.976 r_t
   L_U: 9.0
   L_pipe: 0.5
   start_line: throat_char

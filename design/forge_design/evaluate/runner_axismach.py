@@ -77,7 +77,10 @@ def axis_curve_node(run_dir, scale: float, lam: float = 1e-5):
 
 
 def _gam_or_gas(p: Problem):
-    """MOC/幾何関数に渡す γ: cpg なら float、semiperfect ならガスモデル。"""
+    """MOC/幾何関数に渡す γ: cpg なら float、semiperfect ならガスモデル
+    (cfd_gas: cpg のときは設計も CPG に落とす — 熱力学の一致)。"""
+    if str(p.evaluate.get("cfd_gas", "same")) == "cpg":
+        return p.gamma
     return p.gas_model if p.is_semiperfect else p.gamma
 
 
@@ -124,7 +127,14 @@ def design_chain(p: Problem) -> dict:
     Hall 遷音速級数は定数 γ 前提なので**スロートの局所 γ* を渡す。MOC の ν↔M・
     質量流束・面積比はガスモデル経由 (`moc_kernel._is_gas` 規約)。"""
     gas = p.gas_model
-    g = gas if p.is_semiperfect else p.gamma          # MOC/面積比に渡す「γ or ガス」
+    # cfd_gas: cpg のときは**設計も** CPG(γ 参照値) で作る。設計だけ semi-perfect にすると
+    # 壁 (A/A*=13.1) と CFD (CPG γ=1.309 なら A/A*=15.3) の熱力学が食い違い、出口 M が
+    # 3.86 で止まる (case/42 run_0003–0011 で実測、破棄)。設計と CFD の熱力学は必ず一致。
+    if str(p.evaluate.get("cfd_gas", "same")) == "cpg":
+        from ..gas import GasCPG
+        gas = GasCPG(p.gamma, p.cp)
+    use_gas = getattr(gas, "kind", "cpg") == "semiperfect"
+    g = gas if use_gas else p.gamma                   # MOC/面積比に渡す「γ or ガス」
     g_hall = float(gas.gamma_throat(float(p.spec["Tt"])))
     Md = float(p.spec["M_design"])
     R = float(p.geometry.get("R", 2.0))
