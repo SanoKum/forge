@@ -1091,7 +1091,14 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             const flow_float q2 = vx*vx + vy*vy + vz*vz;
             const flow_float mu_total = laminar_visc + max(vis_turb[ic], static_cast<flow_float>(0.0));
             const flow_float hoop = static_cast<flow_float>(2.0) * mu_total / (density * r_eff);
-            D0[2][0] += -A_pl * (static_cast<flow_float>(0.5)*g1*q2 + hoop*vy);
+            // ∂P/∂Q の第 1 成分は一般 EOS で χ_eos + κ e_k (χ_eos = c² − κ h)。CPG では χ_eos=0 で
+            // 従来式 ½κq² にビット一致。TP (thermalMethod 2) では χ_eos≠0 で、これを落とすと
+            // 対流 Jacobian (rvec, 下記) と軸ソース Jacobian が不整合になり、ホップ項が支配する
+            // 軸近傍で block-DPLUR が発散する (case/42 run_0020: 一定 cp 種・陽解法では完走、
+            // 実 NASA-9 + 陰解法のみ発散 → 2026-08-17 に特定)。
+            const flow_float chi_hoop = local_sonic*local_sonic
+                                      - g1*(local_enthalpy - static_cast<flow_float>(0.5)*q2);
+            D0[2][0] += -A_pl * (chi_hoop + static_cast<flow_float>(0.5)*g1*q2 + hoop*vy);
             D0[2][1] +=  A_pl * (g1*vx);
             D0[2][2] +=  A_pl * (g1*vy + hoop);
             D0[2][3] +=  A_pl * (g1*vz);

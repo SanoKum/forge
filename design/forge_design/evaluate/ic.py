@@ -29,7 +29,8 @@ def invert_area_ratio(AR, supersonic, g):
 
 
 def paste_isentropic_ic(h5path, wall, scale, Pt, Tt, gamma, cp,
-                        k_init=1.0, omega_init=18000.0, gas=None) -> dict:
+                        k_init=1.0, omega_init=18000.0, gas=None,
+                        h_ref_T: float | None = None) -> dict:
     """wall: NozzleWall (無次元), scale: r* [m]。出口諸元 dict を返す。
 
     SST の roK/roOmega も貼る (既定 0 のままだと omega=0 で序盤 NaN →
@@ -61,6 +62,9 @@ def paste_isentropic_ic(h5path, wall, scale, Pt, Tt, gamma, cp,
             gam_loc = gas.gamma(T)
             u = M * np.sqrt(gam_loc * R_gas * T)
             e_int = gas.h_mass(T) - R_gas * T                 # TP 内部エネルギー
+            if h_ref_T is not None and h_ref_T > 0.0:
+                # forge の thermoHrefTemp と同じ sensible datum (h(T_ref)=0)。基準が食い違うと step 0 で T が跳ぶ
+                e_int = e_int - float(gas.h_mass(h_ref_T)[0])
             roe = ro * e_int + 0.5 * ro * u * u
         else:
             M = invert_area_ratio(AR, xn >= x_thr, g)

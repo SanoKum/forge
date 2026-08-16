@@ -114,9 +114,14 @@ def _apply_gas_to_config(cfg: str, p: Problem, run_dir) -> str:
     floor = float(p.evaluate.get("axis_r_floor", 0.0))
     if floor > 0:
         cfg = cfg.replace("isAxisymmetric: 1", f"isAxisymmetric: 1, axisRFloor: {floor}", 1)
+    # thermoHrefTemp (sensible-enthalpy datum): 絶対基準 (生成エンタルピー込み) のままだと
+    # 陰解法 Jacobian の χ_eos = c² − κh が桁違いになり block-DPLUR が軸近傍で発散する
+    # (case/42 run_0020–0025 で切り分け: 一定 cp 種/陽解法は完走、実 NASA-9 + 陰解法だけ発散、
+    #  thermoHrefTemp 298.15 で完走)。IC の roe も同じ datum で作る (paste_isentropic_ic の h_ref)。
+    href = float(p.evaluate.get("thermo_href_temp", 298.15))
     cfg = cfg.replace("cp: %s, gamma: %s}" % (p.cp, p.gamma),
-                      "cp: %s, gamma: %s,\n           species: [MIX], speciesDBFile: \"species_db.yaml\"}"
-                      % (p.cp, p.gamma), 1)
+                      "cp: %s, gamma: %s,\n           species: [MIX], speciesDBFile: \"species_db.yaml\", thermoHrefTemp: %s}"
+                      % (p.cp, p.gamma, href), 1)
     if "species: [MIX]" not in cfg:
         raise RuntimeError("_apply_gas_to_config: physProp の書き換えに失敗 (テンプレート変更?)")
     return cfg
@@ -297,7 +302,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                         float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp,
-                        gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model))
+                        gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model),
+                        h_ref_T=float(p.evaluate.get('thermo_href_temp', 298.15)))
     if ic_from is not None:
         src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
@@ -510,7 +516,8 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                         float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp,
-                        gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model))
+                        gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model),
+                        h_ref_T=float(p.evaluate.get('thermo_href_temp', 298.15)))
     if ic_from is not None:
         src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]

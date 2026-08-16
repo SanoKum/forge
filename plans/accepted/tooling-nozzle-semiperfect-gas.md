@@ -123,3 +123,13 @@ $r_t$=0.1258 m (スロート径 252 mm)。
   ソース項の TP 版) 固有**と確定。同一メッシュ・IC の CPG は新旧 binary とも完走。
   申し送りを更新: 「TP 単一種 (thermalMethod 2, species [MIX]) + node 軸対称 Euler が膨張部の
   軸で発散する。CPG は同条件で完走。case/42 run_0001 (旧) / run_0020 (新) が再現ケース」。
+- `2026-08-17` — **TP × node 軸対称の発散原因を特定・解消**。切り分け (run_0021–0025、soft 段設定で 1 要素ずつ):
+  一定 cp 種 ○ / 200 K 未満 cp 凍結 ✗ / 陽解法 ○ / 軸ホップ Jacobian の一般 EOS 化 ✗ /
+  **`thermoHrefTemp: 298.15` ○**。→ **原因 = 陰解法 Jacobian の $\chi_{\rm eos}=c^2-\kappa h$ に
+  絶対基準の $h$ (生成エンタルピー込み) が入り桁違いになること**。sensible datum で解消。
+  runner の TP 経路に `thermoHrefTemp` を既定化 (`evaluate.thermo_href_temp`, 既定 298.15) し
+  IC も同 datum。**フル TP CFD (run_0026, R3/L_U6/L_c=max): ‖ΔM‖∞ 0.116% $M_d$・ε_M 0.014%・
+  ε_θ 0.0036°・出口径 0.999 m** — 設計と CFD の熱力学が完全整合し CPG(γ\*) 検証 (0.256%) の
+  半分以下。継続 (run_0027, +24000) で軸 M の変動は 1.3e-3→1.0e-3→3.7e-4 と単調減少 (収束途上、
+  残差床 3e-2 は TP EOS 反転の float 床と推定)。軸ホップ Jacobian の一般 EOS 化はソルバに残置
+  (CPG は解不変、差 2e-5 = χ_eos の float 丸め分)。申し送りは「解消済み、thermoHrefTemp 必須」に更新。
