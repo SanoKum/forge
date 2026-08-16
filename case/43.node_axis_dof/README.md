@@ -75,6 +75,8 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
 | `run_0018_ns_van_closure` / `run_0019_ns_dir_closure` / `run_0020_ns_van_lsq` | NS 発散の切り分け続き: van + `axisRFloor 1e-12` (hoop 面積を離散閉性に) / 同 Dirichlet 対照 / van + `gradLSQ: 2` | 0018 **同 step 64 発散** (閉性は無関係)、0019 完走、0020 **step 1693 まで延命** (GG→LSQ で 26 倍) | active (**NS 切り分け**) |
 | `run_0021_euler_closure` / `run_0022_regress2` | 生産 Euler + `hoopAreaFromClosure: 1` / 既定 OFF 回帰 | 0021: 場の差 9e-5・残差 2.7 桁 (同等)。0022: 旧 build と 1.8e-6 (node 非決定性レベル) = 既定はビット不変 | active |
 | `run_0023_ns_van_pref` / `run_0024_ns_van_pref_closure` / `run_0025_ns_dir_pref` | NS van + `pRef 1e6` / + 閉性面積 / Dirichlet 対照 | **0023・0024 とも step 65 発散** (pRef でも閉性でも NS は直らない)、0025 完走 | active (**NS の原因から metric を除外**) |
+| `run_0026_ns_van_trace` | van NS の発散過渡を 8 step 毎に出力 (70 step) | **壁ノード↔第一〜第三内点で壁法線方向の奇偶 (P/Uy) モードが step ~24 から指数成長** (e-fold ~8 step): P が 9.954/9.961/9.954/9.960 → 9.84/1.004e6/9.94、Uy ∓3.7/+1.5。起点は室 (M~1e-3, P 1 MPa) の壁 | active (**NS 発散モードの同定**) |
+| `run_0027_ns_van_lmp2` / `run_0028_ns_van_lmp2_lsq` | van + `lowMachPrecond: 2` (/ + LSQ) — 低マッハ市松への常套手段 | **両方 step 54 で発散 (悪化)** = 低マッハ前処理では直らない | active (常套手段の除外) |
 | `optest/fs_*` | 自由流テスト (一様圧・静止, AR 0.5–1250) | 偽半径加速度 3.4e4 → 2.1e-3 (pRef) → 1.5e-4 (pRef+閉性) m/s² | active (**ゲージ整合の根拠**) |
 | `optest/closure_*` | r 重み閉性の AR スイープ (幾何のみ・solve 不要) | 誤差 ≈ 5 ulp × 打ち消し比、taper 非依存 → float32 丸め。AR 1250 で 2.5% | active |
 | `optest/h{0.02,0.01,0.005}_*` | 離散連続式演算子テスト (`optest/run_optest.py`, 直管 1×0.2 m 一様 quad, 1 step 陽解法, `limiter: 0` は線形場再構成のため意図的) | `optest/optest_results.json`。要約は上記 1. | active (**演算子テスト**) |
