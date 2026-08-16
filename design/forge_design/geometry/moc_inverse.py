@@ -39,7 +39,10 @@ def field_interpolator(pts):
 
 
 def _mass_flux_density(M, g):
-    """等エントロピー流の ρ|V|/(ρ0 a0) (よどみ量規格化)。"""
+    """等エントロピー流の ρ|V|/(ρ0 a0) (よどみ量規格化)。ガスモデルなら ρV/(ρ*a*)
+    (規格化定数が違うが、本モジュールでは**比**しか使わないので等価)。"""
+    if hasattr(g, "mass_flux_density"):
+        return np.asarray(g.mass_flux_density(M), dtype=float)
     M = np.asarray(M, dtype=float)
     t = 1.0 + 0.5 * (g - 1.0) * M * M
     return M * t ** (-0.5 * (g + 1.0) / (g - 1.0))

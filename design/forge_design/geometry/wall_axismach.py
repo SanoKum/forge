@@ -27,8 +27,11 @@ from scipy.interpolate import CubicSpline, make_interp_spline
 from .wall_walldriven import UpstreamThroatPoly
 
 
-def area_ratio_isentropic(M_d: float, gamma: float = 1.4) -> float:
-    """A_e/A_t (1D 等エントロピー・完全気体)。r_F/r_t = sqrt(この値)。"""
+def area_ratio_isentropic(M_d: float, gamma=1.4) -> float:
+    """A_e/A_t (1D 等エントロピー)。r_F/r_t = sqrt(この値)。
+    `gamma` にガスモデル (`GasSemiPerfect`) を渡せば thermally-perfect のテーブル値。"""
+    if hasattr(gamma, "area_ratio"):
+        return float(gamma.area_ratio(M_d))
     g = gamma
     return float((1.0 / M_d) * ((2.0 + (g - 1.0) * M_d * M_d) / (g + 1.0))
                  ** ((g + 1.0) / (2.0 * (g - 1.0))))
@@ -266,9 +269,16 @@ class PhysicalNozzleWall:
         M_g = np.empty_like(xg)
         m_up = xg <= 0.0
         AR_up = np.maximum(rg[m_up], 1.0 + 1e-12) ** 2
-        M_g[m_up] = invert_area_ratio(AR_up, np.zeros(int(m_up.sum()), bool), gamma)
+        gas_obj = gamma if hasattr(gamma, "area_ratio") else None
+        if gas_obj is not None:
+            from ..evaluate.ic import _invert_area_ratio_gas
+            M_g[m_up] = _invert_area_ratio_gas(AR_up, np.zeros(int(m_up.sum()), bool), gas_obj)
+            g_corr = float(gas_obj.gamma_throat(Tt))       # 相関 (Eckert) は代表 γ で十分
+        else:
+            M_g[m_up] = invert_area_ratio(AR_up, np.zeros(int(m_up.sum()), bool), gamma)
+            g_corr = float(gamma)
         M_g[~m_up] = np.interp(xg[~m_up], wall_tbl[:, 0], wall_tbl[:, 3])
-        ds_g = dstar_flatplate(s_g, M_g, Pt, Tt, gamma, cp) / rt_m
+        ds_g = dstar_flatplate(s_g, M_g, Pt, Tt, g_corr, cp) / rt_m
         self._dstar_hist = lambda x: np.interp(x, xg, ds_g)
         dstar = self._dstar_hist if dstar_x is None else dstar_x
 

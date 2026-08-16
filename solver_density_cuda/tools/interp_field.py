@@ -54,8 +54,15 @@ def main():
         if "P" in V and "Ux" in V:            # res (primitives)
             ro = np.array(V["ro"]); P = np.array(V["P"])
             Ux = np.array(V["Ux"]); Uy = np.array(V["Uy"]); Uz = np.array(V["Uz"])
-            fields = {"ro": ro, "roUx": ro*Ux, "roUy": ro*Uy, "roUz": ro*Uz,
-                      "roe": P/(g-1.0) + 0.5*ro*(Ux**2+Uy**2+Uz**2)}
+            # roe: res に保存量 /VALUE/roe があればそれを**そのまま**使う (2026-08-17)。
+            # CPG 再構成 P/(γ-1)+½ρu² は thermally-perfect (thermalMethod 2, NASA-9 の絶対
+            # 基準 e(T)) では別物になり、移植後に T が数千 K へ跳ぶ (case/42 で実測)。
+            # 保存量が無い旧 res のみ CPG 式へフォールバック。
+            if "roe" in V:
+                roe = np.array(V["roe"])
+            else:
+                roe = P/(g-1.0) + 0.5*ro*(Ux**2+Uy**2+Uz**2)
+            fields = {"ro": ro, "roUx": ro*Ux, "roUy": ro*Uy, "roUz": ro*Uz, "roe": roe}
             if "k" in V and "omega" in V:
                 fields["roK"] = ro*np.array(V["k"]); fields["roOmega"] = ro*np.array(V["omega"])
             for key in V:                      # scalar transport Y* -> roY*

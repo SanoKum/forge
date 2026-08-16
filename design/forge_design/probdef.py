@@ -32,6 +32,25 @@ class Problem:
     def R_gas(self) -> float:
         return self.cp * (self.gamma - 1.0) / self.gamma
 
+    # --- ガスモデル (2026-08-17): gas.model = cpg (既定) | semiperfect ---
+    # semiperfect: gas.species {名: 質量分率}、Tt は spec.Tt。NASA-9 (CEA) の
+    # thermally-perfect・frozen 組成。設計 (MOC) と CFD (forge TP 擬似種) で同一係数。
+    @property
+    def gas_model(self):
+        gs = self.raw.get("gas", {})
+        kind = str(gs.get("model", "cpg"))
+        if kind == "cpg":
+            from .gas import GasCPG
+            return GasCPG(self.gamma, self.cp)
+        if kind == "semiperfect":
+            from .gas import GasSemiPerfect
+            return GasSemiPerfect(dict(gs["species"]), Tt=float(self.spec["Tt"]))
+        raise ValueError(f"gas.model '{kind}' は未知 (cpg | semiperfect)")
+
+    @property
+    def is_semiperfect(self) -> bool:
+        return str(self.raw.get("gas", {}).get("model", "cpg")) == "semiperfect"
+
 
 def load_problem(path) -> Problem:
     with open(path) as f:

@@ -76,14 +76,61 @@ def axis_curve_node(run_dir, scale: float, lam: float = 1e-5):
     return spl, float(x.min()), float(x.max())
 
 
+def _gam_or_gas(p: Problem):
+    """MOC/幾何関数に渡す γ: cpg なら float、semiperfect ならガスモデル。"""
+    return p.gas_model if p.is_semiperfect else p.gamma
+
+
+def _apply_gas_to_config(cfg: str, p: Problem, run_dir) -> str:
+    """semi-perfect のとき forge config を **単一擬似種 TP** (thermalMethod 2) に書き換え、
+    NASA-9 混合擬似種を run_dir/species_db.yaml へ出す。cpg なら無変更。
+    設計 (MOC) と同一係数の熱力学で CFD が回る (forge 内蔵 DB と同じ CEA 値)。"""
+    # 切り分け用: evaluate.axisym_method で CPG でも SU2 流軸対称に切替可
+    if int(p.evaluate.get("axisym_method", 0)) == 1:
+        cfg = cfg.replace("nodeAxisDirichlet: 1", "nodeAxisDirichlet: 0, axisymMethod: 1", 1)
+    if not p.is_semiperfect or str(p.evaluate.get("cfd_gas", "same")) == "cpg":
+        # cfd_gas: cpg = 設計は semi-perfect のまま CFD だけ CPG(γ*, cp 参照値) で回す
+        # (TP × node 軸対称の forge 側発散 [case/42 run_0001] の回避。相対比較には十分)
+        return cfg
+    import yaml as _yaml
+    from ..gas.semiperfect import mixture_pseudo_species
+    Y = dict(p.raw["gas"]["species"])
+    db = mixture_pseudo_species(Y, "MIX")
+    (Path(run_dir) / "species_db.yaml").write_text(_yaml.safe_dump(db, sort_keys=False))
+    # thermalMethod 0 → 2、species/speciesDBFile を physProp に追加 (cp/gamma は参照値のまま
+    # 残すが TP では NASA-9 が優先される)
+    cfg = cfg.replace("thermalMethod: 0", "thermalMethod: 2", 1)
+    # nodeAxisDirichlet は単成分 CPG 専用 (forge の制約: 軸ミラーが TP スカラー未カバー)。
+    # 回避: TP では Dirichlet を切る。**axisymMethod:1 は CPG でも出口軸コーナーで発散**
+    # (case/41 run_0076 で切り分け済み、別セッションの軸対称高度化の対象) ので使わず、
+    # 従来 r 重み方式 (method 0) のまま axisRFloor で軸行真空化を抑える (値は
+    # evaluate.axis_r_floor、既定 0 = 無効。メッシュ依存: 軸行重心 < 床 < 第一内点行重心)。
+    floor = float(p.evaluate.get("axis_r_floor", 0.0))
+    rep = "nodeAxisDirichlet: 0" + (f", axisRFloor: {floor}" if floor > 0 else "")
+    cfg = cfg.replace("nodeAxisDirichlet: 1", rep, 1)
+    cfg = cfg.replace("cp: %s, gamma: %s}" % (p.cp, p.gamma),
+                      "cp: %s, gamma: %s,\n           species: [MIX], speciesDBFile: \"species_db.yaml\"}"
+                      % (p.cp, p.gamma), 1)
+    if "species: [MIX]" not in cfg:
+        raise RuntimeError("_apply_gas_to_config: physProp の書き換えに失敗 (テンプレート変更?)")
+    return cfg
+
+
+
 def design_chain(p: Problem) -> dict:
-    """Hall (+CFD アンカー) → Hermite law → 逆 MOC → 壁 QA → CFD 壁。決定的。"""
-    g = p.gamma
+    """Hall (+CFD アンカー) → Hermite law → 逆 MOC → 壁 QA → CFD 壁。決定的。
+
+    ガス: `p.gas_model` (cpg なら float γ と等価 / semiperfect なら NASA-9 テーブル)。
+    Hall 遷音速級数は定数 γ 前提なので**スロートの局所 γ* を渡す。MOC の ν↔M・
+    質量流束・面積比はガスモデル経由 (`moc_kernel._is_gas` 規約)。"""
+    gas = p.gas_model
+    g = gas if p.is_semiperfect else p.gamma          # MOC/面積比に渡す「γ or ガス」
+    g_hall = float(gas.gamma_throat(float(p.spec["Tt"])))
     Md = float(p.spec["M_design"])
     R = float(p.geometry.get("R", 2.0))
     M_start = float(p.geometry.get("M_start", 1.05))
     n_start = int(p.geometry.get("n_start", 41))
-    ht = HallThroat(R=R, gamma=g)
+    ht = HallThroat(R=R, gamma=g_hall)
     # 初期値線: 'throat_char' = スロート壁点発 C⁻ (CONTUR 流、壁が T から MOC 出力に
     # なる) / 'vertical' = M_start の縦線 (旧構成、回帰対照)。x0 = その軸着地点。
     start_line = str(p.geometry.get("start_line", "vertical"))
@@ -178,6 +225,9 @@ def design_chain(p: Problem) -> dict:
             "anchor_source": ("cfd" if x_reach_cfd is not None else "hall"),
             "start_line": start_line, "wall_mode": res["wall_mode"],
             "wall_repr": wall_repr,
+            "gas": (gas.summary() if hasattr(gas, "summary")
+                    else {"kind": "cpg", "gamma": p.gamma, "cp": p.cp}),
+            "gamma_hall": g_hall,
             "wall_fit": getattr(wall, "fit_diag", None),
             "Md": Md, "R": R, "gates": gates,
             # cplus 閉包では構成的に 1 になる循環指標なので出さない (A9 の教訓)
@@ -215,7 +265,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     (run_dir / "bcondConfig.yaml").write_text(_bcond(p, euler=True))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
     # 品質検査は cell 変換の一時コピー (品質ツールは node CONNE 非対応)
-    (run_dir / "solverConfig.yaml").write_text(_config_euler(p, n, out_int, 4.0, 1))
+    (run_dir / "solverConfig.yaml").write_text(
+        _apply_gas_to_config(_config_euler(p, n, out_int, 4.0, 1), p, run_dir))
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"),
@@ -227,11 +278,13 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     if q.returncode != 0:
         raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
     # node 変換 (node config を書いてから変換 — 必須) + 等エントロピー IC
-    (run_dir / "solverConfig.yaml").write_text(_config_euler_node(p, n, out_int, 4.0, 1))
+    (run_dir / "solverConfig.yaml").write_text(
+        _apply_gas_to_config(_config_euler_node(p, n, out_int, 4.0, 1), p, run_dir))
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
-                        float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
+                        float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp,
+                        gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model))
     if ic_from is not None:
         src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
@@ -243,6 +296,7 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
             "anchor_source": d["anchor_source"], "start_line": d["start_line"],
             "wall_mode": d["wall_mode"], "wall_repr": d["wall_repr"],
+            "gas": d["gas"], "gamma_hall": d["gamma_hall"],
             "wall_fit": d["wall_fit"],
             "Md": d["Md"], "R": d["R"],
             "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
@@ -254,26 +308,39 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     return info
 
 
-def run_staged(run_dir) -> int:
-    """soft 段 (1次+cfl0.5, 3000 step) → 本段 (walldriven W3 と同方式・段階起動必須)。"""
+def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False) -> int:
+    """soft 段 (1次+cfl0.5, 3000 step) → [mid 段 (2次+cfl1, 3000 step)] → 本段。
+    walldriven W3 と同方式・段階起動必須。`cfl_main` で本段 CFL を上書き
+    (semi-perfect TP は cfl4 で本段 step ~60 に爆発 — case/42 実測。TP は cfl≤2 が実績
+    [[cutler-cpg-vs-tp-dplur-sst]])。`mid_stage=True` で 2 次化と CFL 上げを分離する。"""
     import re
     run_dir = Path(run_dir)
     cfg_main = (run_dir / "solverConfig.yaml").read_text()
-    cfg_soft = cfg_main.replace("cfl: 4.0, cfl_pseudo: 4.0", "cfl: 0.5, cfl_pseudo: 0.5")
-    cfg_soft = cfg_soft.replace("convMethod: 1", "convMethod: 0")
-    cfg_soft = re.sub(r"nStepOuter: \d+", "nStepOuter: 3000", cfg_soft)
-    cfg_soft = re.sub(r"outStepInterval: \d+", "outStepInterval: 3000", cfg_soft)
-    (run_dir / "solverConfig.yaml").write_text(cfg_soft)
-    rc = run_forge(run_dir)
-    res = sorted(run_dir.glob("res_[0-9]*.h5"),
-                 key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
-    if rc != 0 or not res or int("".join(c for c in res[-1].stem if c.isdigit())) < 3000:
-        raise RuntimeError("soft 段が失敗 (発散切り分けは res_nan_*.h5 を見る)")
-    subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
-                    str(res[-1]), str(run_dir / "nozzle.h5")],
-                   env=_ENV, check=True, capture_output=True, text=True)
-    for f in run_dir.glob("res_*"):
-        f.unlink()
+    if cfl_main is not None:
+        cfg_main = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+",
+                          f"cfl: {cfl_main}, cfl_pseudo: {cfl_main}", cfg_main)
+
+    def _stage(cfg, nsteps, label):
+        cfg = re.sub(r"nStepOuter: \d+", f"nStepOuter: {nsteps}", cfg)
+        cfg = re.sub(r"outStepInterval: \d+", f"outStepInterval: {nsteps}", cfg)
+        (run_dir / "solverConfig.yaml").write_text(cfg)
+        rc = run_forge(run_dir)
+        res = sorted(run_dir.glob("res_[0-9]*.h5"),
+                     key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+        if rc != 0 or not res or int("".join(c for c in res[-1].stem if c.isdigit())) < nsteps:
+            raise RuntimeError(f"{label} 段が失敗 (発散切り分けは res_nan_*.h5 を見る)")
+        subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
+                        str(res[-1]), str(run_dir / "nozzle.h5")],
+                       env=_ENV, check=True, capture_output=True, text=True)
+        for f in run_dir.glob("res_*"):
+            f.unlink()
+
+    soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 0.5, cfl_pseudo: 0.5", cfg_main)
+    soft = soft.replace("convMethod: 1", "convMethod: 0")
+    _stage(soft, 3000, "soft")
+    if mid_stage:
+        mid = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 1.0, cfl_pseudo: 1.0", cfg_main)
+        _stage(mid, 3000, "mid")
     (run_dir / "solverConfig.yaml").write_text(cfg_main)
     return run_forge(run_dir)
 
@@ -333,7 +400,9 @@ def main(argv=None) -> int:
     print(json.dumps(info, indent=1))
     if a.prepare_only:
         return 0
-    rc = run_staged(a.run_dir)
+    pp = load_problem(a.problem)
+    rc = run_staged(a.run_dir, cfl_main=pp.evaluate.get("cfl_main"),
+                    mid_stage=bool(pp.evaluate.get("mid_stage", pp.is_semiperfect)))
     print(f"forge exit={rc}")
     print(json.dumps(collect(a.problem, a.run_dir), indent=1))
     return rc
@@ -372,7 +441,7 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     if dstar_csv is not None:
         tbl = np.loadtxt(dstar_csv, delimiter=",", skiprows=1)
         base = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
-                                  float(p.spec["Tt"]), p.gamma, p.cp)
+                                  float(p.spec["Tt"]), _gam_or_gas(p), p.cp)
 
         def dstar_x(x, _tbl=tbl, _corr=base._dstar_hist):
             x = np.asarray(x, dtype=float)
@@ -381,7 +450,7 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
             csv = np.interp(np.clip(x, _tbl[0, 0], _tbl[-1, 0]), _tbl[:, 0], _tbl[:, 1])
             return (1.0 - w) * _corr(x) + w * csv
     wall = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
-                              float(p.spec["Tt"]), p.gamma, p.cp, dstar_x=dstar_x)
+                              float(p.spec["Tt"]), _gam_or_gas(p), p.cp, dstar_x=dstar_x)
     dstar_src = "correlation_hist_v1" if dstar_csv is None else str(dstar_csv)
     msgs = wall.validate()
     if msgs:
@@ -409,7 +478,8 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     (run_dir / "bcondConfig.yaml").write_text(_bcond(p, euler=False))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
     # 品質は cell 変換コピーで検査 (品質ツールは node CONNE 非対応)
-    (run_dir / "solverConfig.yaml").write_text(_config_euler(p, n, out_int, 4.0, 1))
+    (run_dir / "solverConfig.yaml").write_text(
+        _apply_gas_to_config(_config_euler(p, n, out_int, 4.0, 1), p, run_dir))
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle_qc.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"),
@@ -421,11 +491,13 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     if q.returncode != 0:
         raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
     # node/SST 変換 (config を先に書く — wall_dist は no-slip 壁で作られる)
-    (run_dir / "solverConfig.yaml").write_text(_config_sst_node(p, n, out_int, cfl_main))
+    (run_dir / "solverConfig.yaml").write_text(
+        _apply_gas_to_config(_config_sst_node(p, n, out_int, cfl_main), p, run_dir))
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
-                        float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp)
+                        float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp,
+                        gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model))
     if ic_from is not None:
         src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]

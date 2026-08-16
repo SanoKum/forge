@@ -1,0 +1,54 @@
+# ② イソブタン風洞 — R/L スタディ点 (R=3.0, L_U=9.0, L_c=8.0)
+# 案件 (ユーザ 2026-08-17): Pt 5 MPa, Tt 1000 K, C4H10/空気 φ=0.9 生成物, 出口径 1 m,
+# 入口配管径 1 m, Md=4。R と L (入口側 L_U・出口側 L_c) をスタディする。
+# 生成物組成 (質量分率, 完全燃焼 + 過剰 O2, 解離なし = 1000 K では妥当):
+#   C4H10 + 6.5/φ (O2 + 3.76 N2) → 4 CO2 + 5 H2O + 0.722 O2 + 27.16 N2
+# 熱力学: NASA-9 (forge 内蔵 CEA 係数と同一) を frozen 組成で。γ は 1.31 (スロート) →
+# 1.38 (M4) と変化するので一定 γ の CPG では出口径を 8% 誤る (semi-perfect が必須)。
+# 設計基準 r_t: A/A*(M4) = 13.105 (semi-perfect) → r_t = 0.5/√13.105 = 0.13812 m。
+name: isobutane_wt_m4_R3_LU9_Lc8
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species: {CO2: 0.1677, H2O: 0.0858, O2: 0.0220, N2: 0.7245}
+  # 参照値 (semi-perfect では NASA-9 が優先。IC 用の初期推定と CPG フォールバック):
+  gamma: 1.309
+  cp: 1237.0
+
+spec:
+  Pt: 5.0e6
+  Tt: 1000.0
+  p_ambient: 28000.0    # M4 出口の整合静圧 (semi-perfect: P/Pt=0.0056 × 5 MPa)。1000 Pa だと本段 step ~980 で出口軸近傍が吸い出されて発散 (run_0001 初回)
+  r_throat: 0.13812     # [m] 出口径 1 m から (A/A* = 13.105)
+  M_design: 4.0
+
+dv:
+  L_c: {value: 8.0, min: 1.0, max: 20.0}
+
+geometry:
+  R: 3.0
+  r_inlet: 3.62         # 入口配管径 1 m / (2 r_t) = 3.62 r_t
+  L_U: 9.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+
+mesh:
+  discretization: node
+  ni: 365
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0       # TP は cfl4 で本段爆発 (run_0001 初回)。mid 段 (2次 cfl1) を経て cfl2
+  mid_stage: true
+  cfd_gas: cpg          # CFD 側だけ CPG(γ*) — TP×node 軸対称の forge 側発散 (run_0001) を回避、設計は semi-perfect のまま
+  axis_r_floor: 2.8e-3   # [m] axisRFloor (軸行 0 < 床 < 第一内点行 min 0.044 r_t=6 mm)。TP は nodeAxisDirichlet 不可 → 軸行真空化を床で抑える (run_0001 4 回目)

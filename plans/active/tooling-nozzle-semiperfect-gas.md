@@ -1,0 +1,87 @@
+# axis-Mach チェーンの semi-perfect gas 化 (NASA-9/CEA, frozen 組成) と イソブタン風洞スタディ
+
+## メタ
+
+- **area**: `tooling / optimization`
+- **status**: `in_progress`  <!-- 2026-08-17 起票 (自走) -->
+- **related_docs**:
+  - [`methods/design/overview.md`](../../methods/design/overview.md)
+  - [`methods/thermophysics.md`](../../methods/thermophysics.md) (forge 側 TP・NASA-9 の正本)
+- **related_plans**:
+  - 親: [`../accepted/tooling-nozzle-axismach-chain.md`](../accepted/tooling-nozzle-axismach-chain.md)
+  - 上位: [`tooling-nozzle-design-tool.md`](tooling-nozzle-design-tool.md) (多目的最適化への接続)
+- **created**: `2026-08-17`
+- **owner**: `sano` (実装: Claude 自走)
+
+## 1. 目的 (ユーザ指示 2026-08-17)
+
+MOC に NASA-CEA の物性を **semi-perfect (thermally perfect, frozen 組成)** として載せ、
+入口全圧・全温・組成をインプットに設計できるようにする。案件: **イソブタン燃焼ガス風洞**
+($P_t$=5 MPa, $T_t$=1000 K, C₄H₁₀/空気 φ=0.9 生成物, 出口径 1 m, 入口配管径 1 m, $M_d$=4)
+で **R (スロート曲率) と L (入口側 $L_U$・出口側 $L_c$) をスタディ**する。
+その先は多目的最適化 (軸 M 目標や長さを振る手段としての形状生成)。
+
+## 2. 設計
+
+- **`forge_design/gas/semiperfect.py`**: forge 内蔵 DB (`thermo_d.cu::builtinDB`, CEA
+  McBride–Gordon 2002) と**同一の NASA-9 係数**を Python 側に持ち、$\nu(M)$・$A/A^*$・
+  $\rho V$・$T(M)$・$\gamma(T)$ を等エントロピー膨張の $T$ パラメトライズで数値積分して
+  テーブル化。**MOC は $\nu\leftrightarrow M$ 変換と流束密度だけ差し替えれば thermally
+  perfect でも成立** (適合条件 $\theta\pm\nu$ 一定は不変)。
+- **MOC カーネル規約**: `pm_nu`/`pm_mach`/`pm_mach_vec`/`_mass_flux_density`/
+  `area_ratio_isentropic` は「γ (float) の位置にガスモデルを渡せる」(`_is_gas`)。
+  Hall 遷音速級数は定数 γ 前提なので**スロート局所 γ\*** を渡す。
+- **forge 側**: frozen 組成を `mixture_pseudo_species` で**単一擬似種 (NASA-9 の質量分率
+  加重、厳密)** にまとめ `speciesDBFile` で渡し `thermalMethod: 2` の 1 種 TP で回す
+  (多成分 implicit の既知不安定性 [[wys-tp-divergence-is-cold-not-multispecies]] を回避)。
+  IC は TP の $e(T)=h(T)-RT$ (絶対基準) で `roe` を構成。
+- **probdef**: `gas.model: semiperfect` + `gas.species {名: 質量分率}`。
+
+## 3. 実測・知見 (2026-08-17)
+
+**(a) 物性**: N2 のみで CPG(1.4) に $\nu$ 2e-4 (M=2)〜4e-3 (M=3) — 差は NASA-9 の 200 K
+未満外挿 (forge 本体も同じ) で真の差。一定 cp 擬似種では 1e-7 で機械精度退化 (実装は正しい)。
+イソブタン φ=0.9 生成物 (CO₂ 16.8 / H₂O 8.6 / O₂ 2.2 / N₂ 72.4 wt%): $R$=292 J/kgK、
+**γ は 1.31 (スロート, T\*=868 K) → 1.38 (M4, 266 K)** と変化。$A/A^*(M4)$=13.105。
+**一定 γ=γ\* の CPG は出口半径を +8% 誤る** (15.29 vs 13.11) — semi-perfect が必須。
+
+**(b) 設計チェーン**: 同じ Hall アンカー・law で semi-perfect MOC は 0.2 s、$r_F$ が
+1D 理論と −0.19% (CPG 系列と同精度)、$\kappa_0 R$=0.996。$r_t$=0.138 m で出口径 0.998 m。
+
+**(c) 設計スイープ (36 点, 0.4 s/点)**: R∈{1.5,2,3,5}×L_U∈{4,6,9}×L_c∈{max,8,6}:
+- **R=5 は全滅** (壁非単調/リンギング — $M''_A$ 過大で単一 quintic では壁にならない)
+- **R=1.5–3 は L_c=max/8 が有効、L_c=6 は R=1.5 のみ** (R=2,3 はリンギングゲート =
+  MOC 壁の要求曲率が急、内部衝撃の前兆)
+- **L_U=9 は R=1.5 で μ>20 (非単調収縮)**。R≥2 なら可
+- 全長 3.4–4.8 m。$\theta_{max}$ 19.0°(R3) → 19.8°(R1.5)
+
+**(d) CFD 投入で踏んだ罠 (3 つ、全て解決)**:
+1. `interp_field.py` が res の primitives から `roe=P/(γ−1)+½ρu²` (CPG) で再構成 → TP では
+   $T$ が 3000 K に跳ぶ。**res に保存量 `roe` があればそのまま使う**よう修正 (CPG は不変)。
+2. `nodeAxisDirichlet=1` は forge が TP で弾く → `axisymMethod: 1` に逃げたら本段 step ~1000
+   で**出口軸コーナーから発散**。**CPG でも method 1 は同じ発散** (case/41 run_0076 で切り分け、
+   TP は無罪) → 軸対称高度化 (別セッション) の対象。回避 = method 0 + Dirichlet 0
+   (+ 必要なら `axisRFloor`)。
+3. 出口背圧: 1000 Pa は 5 MPa 系では出口静圧 28 kPa と桁違い → 整合圧に。
+4. TP は本段 cfl4 で爆発 → mid 段 (2次 cfl1) を挟み cfl2 (`evaluate.cfl_main`/`mid_stage`)。
+5. **TP × node 軸対称 (method 0, Dirichlet 0, axisRFloor 2.8 mm) でも soft 段 step 271 で
+   膨張部中域 (x≈5–6) の軸近傍から発散**。**同一壁・同一メッシュ・同一段階起動を CPG(γ\*) で
+   回すと完走・良好** (run_0002: ‖ΔM‖∞ 0.284% $M_d$、出口 ε_M 0.013%/ε_θ 0.0096°、
+   品質 PASS、軸 M は 4000 step 間 8.8e-6 で凍結)。→ **TP × node 軸対称は forge 側の穴**
+   (`nodeAxisDirichlet` が TP で使えず、代替 [`axisymMethod:1` は CPG でも出口軸コーナーで
+   発散 / `axisRFloor` は真空化は抑えるが中域軸で破綻] が無い)。**別セッションの軸対称
+   高度化への申し送り事項**。本計画では **設計 = semi-perfect、CFD 検証 = CPG(γ\*)** で
+   進める (`evaluate.cfd_gas: cpg`)。設計点間の相対比較 (衝撃・一様性の傾向) には十分。
+   TP CFD はソルバ対応後の再検証項目。
+
+## 4. 完了条件
+
+- [x] ガスモデル + MOC 配線 + 単体テスト (`run_gas_tests.py` 18 項目 ALL PASS)
+- [x] forge TP 用擬似種 + IC + config 注入
+- [x] イソブタン基準 run の CFD 完走 (CPG(γ*) 経路, run_0002)・TP は forge 側穴として申し送り
+- [ ] R/L スタディの CFD (有効点) + 結果ページ
+- [ ] methods 更新・README・commit
+
+## 5. 変更ログ
+
+- `2026-08-17` — 起票・実装・設計スイープ完了。CFD は罠 4 つを潰して再投入中。

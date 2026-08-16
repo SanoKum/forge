@@ -19,7 +19,16 @@ import numpy as np
 
 
 # --- Prandtl-Meyer -----------------------------------------------------------
+def _is_gas(g) -> bool:
+    """`g` が γ (float) でなくガスモデル (`forge_design.gas.GasSemiPerfect` 等) か。
+    MOC カーネル全体で「γ を渡す場所にガスモデルも渡せる」規約 (semi-perfect 対応、
+    2026-08-17)。float なら従来どおり完全気体の閉形式。"""
+    return hasattr(g, "nu") and hasattr(g, "mach_of_nu")
+
+
 def pm_nu(M, g=1.4):
+    if _is_gas(g):
+        return g.nu(M)
     M = np.asarray(M, dtype=float)
     a = np.sqrt((g + 1.0) / (g - 1.0))
     b = np.sqrt(np.maximum(M * M - 1.0, 0.0))
@@ -28,6 +37,8 @@ def pm_nu(M, g=1.4):
 
 def pm_mach(nu, g=1.4, tol=1e-12):
     """ν → M (Newton)。"""
+    if _is_gas(g):
+        return float(g.mach_of_nu(float(nu)))
     nu = float(nu)
     M = 1.0 + max(nu, 1e-6)  # 初期値
     for _ in range(60):
@@ -338,6 +349,8 @@ class KernelMOC:
 # --- ベクトル化ユーティリティ (fill の O(n²) スカラーループ解消, 2026-08-15) -----
 def pm_mach_vec(nu, g=1.4, tol=1e-13, iters=60):
     """ν → M の配列版 Newton (`pm_mach` と同じ反復・同じ初期値)。"""
+    if _is_gas(g):
+        return np.asarray(g.mach_of_nu(np.asarray(nu, dtype=float)), dtype=float)
     nu = np.asarray(nu, dtype=float)
     M = 1.0 + np.maximum(nu, 1e-6)
     for _ in range(iters):
