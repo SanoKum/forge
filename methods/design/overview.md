@@ -350,6 +350,9 @@ $\min(\mu-\theta)=1.00095^\circ$、最小sin角0.04177、内部flip/交差0。$r
 対する**設計上の最短境界**であり、生産既定変更にはCFD確認を別途要する。成果物:
 `case/42.isobutane_wt/optimize_axislaw_A_shortest.{json,py}` / `_summary.csv`。
 可視化結果ページは `case/42.isobutane_wt/report_axislaw_A_shortest.html`（生成器は同名 `.py`）。
+最良候補の軸中心Mach図と逆MOC Machコンターは
+`best_axislaw_A_shortest_{axis_mach,mach_contour}.png`、図示用場は
+`best_axislaw_A_shortest_moc_field.npz`（生成器 `plot_axislaw_A_shortest.py`）。
 
 **軸点列のスロート側細分 (`geometry.axis_dx0`, `moc_inverse._axis_grid`)**: 初期値線 (スロート特性線)
 は自身が C⁻ なので担体として退化し、初期値線と壁の間の場は**軸点から後退する C⁻ だけで**埋まる。

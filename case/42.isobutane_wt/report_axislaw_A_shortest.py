@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import base64
 import html
 import json
 from collections import Counter
@@ -19,6 +20,8 @@ from pathlib import Path
 CASE = Path(__file__).resolve().parent
 INPUT = CASE / "optimize_axislaw_A_shortest.json"
 OUTPUT = CASE / "report_axislaw_A_shortest.html"
+AXIS_PNG = CASE / "best_axislaw_A_shortest_axis_mach.png"
+CONTOUR_PNG = CASE / "best_axislaw_A_shortest_mach_contour.png"
 R_T_M = 0.05375
 
 
@@ -90,6 +93,11 @@ def _fmt(value: float, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
+def _image_uri(path: Path) -> str:
+    """PNGをHTMLへ埋め込み、結果ページ単体で閲覧可能にする。"""
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+
+
 def main() -> None:
     data = json.loads(INPUT.read_text())
     records = [r for r in data["records"] if "error" not in r]
@@ -110,6 +118,8 @@ def main() -> None:
         key=lambda r: r["M_K"],
     )
     stage_counts = Counter(r.get("search_stage") for r in records)
+    axis_uri = _image_uri(AXIS_PNG)
+    contour_uri = _image_uri(CONTOUR_PNG)
 
     micro_best = []
     for lc in sorted({r["L_c"] for r in micro}):
@@ -190,6 +200,8 @@ h1{{font-size:clamp(30px,5vw,53px);line-height:1.18;margin:10px 0 14px}} .lead{{
 .grid2{{display:grid;grid-template-columns:1fr 1fr;gap:16px}} .grid3{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}}
 .mini{{padding:18px;border:1px solid var(--line);border-radius:12px;background:#fbfcfe}} .mini b{{display:block;font-size:18px;color:var(--navy)}}
 .formula{{background:#112638;color:#e8f0f4;border-radius:12px;padding:19px 22px;font-family:"SFMono-Regular",Consolas,monospace;overflow:auto}}
+.pathbox{{background:#eef3f7;border:1px solid #d5dde6;border-radius:10px;padding:12px 14px;font-family:"SFMono-Regular",Consolas,monospace;font-size:13px;overflow-wrap:anywhere}}
+.plot-img{{display:block;width:100%;height:auto;border-radius:10px;border:1px solid var(--line)}} .caption{{font-size:12px;color:var(--muted);margin:8px 2px 0}}
 .flow{{display:flex;align-items:stretch;gap:9px;overflow:auto}} .step{{min-width:150px;flex:1;background:#eef3f7;border-radius:11px;padding:14px;text-align:center}}
 .step b{{font-size:22px;color:var(--navy);display:block}} .arrow{{display:flex;align-items:center;color:#91a0af;font-size:22px}}
 figure{{margin:0}} svg{{width:100%;height:auto;background:#fff;border-radius:12px}} .chart-title{{font:700 15px sans-serif;fill:#19344d}} .grid{{stroke:#e6ebf1;stroke-width:1}} .tick,.legend,.axis-label{{font:11px sans-serif;fill:#687385}} .threshold{{stroke:#c74343;stroke-width:1.5;stroke-dasharray:6 5}} .threshold-label{{font:700 11px sans-serif;fill:#c74343}}
@@ -217,7 +229,15 @@ table{{width:100%;border-collapse:collapse;font-size:13px}} th{{text-align:left;
 <section><div class="card decision">
 <h2>結論</h2><div class="callout">設計上の最短境界は L<sub>c</sub>=39.05, M<sub>K</sub>=2.76。</div>
 <p>1200点で hard gate、単峰条件、μ−θ余裕、特性線トポロジ余裕をすべて満たす最短候補である。入口上流長を含む概算端間長は <b>{full_m:.3f} m</b>。ただし余裕制約が能動で、CFD未実施のため、生産既定変更ではなく「設計境界」として採択する。</p>
+<h3>ベスト結果の一次パス</h3><div class="pathbox">case/42.isobutane_wt/optimize_axislaw_A_shortest.json → winner</div>
 </div></section>
+
+<section><h2>最良候補のMach分布</h2>
+<div class="card"><img class="plot-img" src="{axis_uri}" alt="最良候補の軸中心Mach分布">
+<p class="caption">軸中心の指定Mach。AからKを経てEでM=6へ到達し、物理出口Fまで一様域を保持する。</p></div>
+<div class="card" style="margin-top:16px"><img class="plot-img" src="{contour_uri}" alt="最良候補の逆MOC Machコンター">
+<p class="caption">n_axis=1200の逆MOC設計場。壁内のMOC点を1/4抽出して描画したMachコンターであり、CFD結果ではない。</p></div>
+</section>
 
 <section><h2>1. 何をもって「最良」としたか</h2>
 <div class="grid2"><div class="card"><h3>必須制約</h3><ul>
@@ -276,6 +296,10 @@ DOF = (L_c, M_K), &nbsp; x_E = x_A + L_c</div>
 <li>探索: <code>optimize_axislaw_A_shortest.py</code></li>
 <li>全記録: <code>optimize_axislaw_A_shortest.json</code></li>
 <li>表: <code>optimize_axislaw_A_shortest_summary.csv</code></li>
+<li>図生成: <code>plot_axislaw_A_shortest.py</code></li>
+<li>軸Mach図: <code>best_axislaw_A_shortest_axis_mach.png</code></li>
+<li>Machコンター: <code>best_axislaw_A_shortest_mach_contour.png</code></li>
+<li>図示用MOC場: <code>best_axislaw_A_shortest_moc_field.npz</code></li>
 <li>解像度: 探索600、最終1200、2400未使用</li>
 <li>回帰: moc_diagnostics / axislaw / onepoint / bspline / inverse / axismach_wall — ALL PASS</li>
 </ul></div></section>
