@@ -209,6 +209,9 @@ void solverConfig::read(std::string fname)
         }
         if (config["mesh"]["nodeValueAtNode"]) {
             this->nodeValueAtNode = config["mesh"]["nodeValueAtNode"].as<int>();
+            if (this->nodeValueAtNode != 0 && this->nodeValueAtNode != 1) {
+                std::cerr << "mesh.nodeValueAtNode must be 0 or 1" << std::endl; std::exit(1);
+            }
         }
         if (config["mesh"]["nodeAxisDirichlet"]) {
             this->nodeAxisDirichlet = config["mesh"]["nodeAxisDirichlet"].as<int>();

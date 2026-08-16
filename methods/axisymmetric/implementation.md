@@ -437,8 +437,8 @@ KE 除去) (ii) res_roUy=0 (iii) block-DPLUR で軸ノードの roUy 行のみ�
 
 **NS (粘性) — 発散の真因は「2 次再構成の目標点 = 双対面重心」(解決, `nodeReconEdgeMidpoint: 1`)**: y+1.5 (壁 AR ~250) では
 `nodeValueAtNode: 1` が step ~64 で壁法線の奇偶 P/Uy モードで発散したが、切り分け (case/43 run_0030〜0045) の結果、
-laminar でも **Euler+slip 壁でも**同じ step で落ち、explicit・Barth・無制限・SLAU2・Roe・LSQ・境界ノードを従来規約に戻す
-(内部行だけスワップ) のいずれでも落ちる = **種は伸縮した内部行の再構成**。値位置=ノードでは双対面の重心がエッジ中点から
+laminar でも **Euler+slip 壁でも**同じ step で落ち、explicit・Barth・無制限・SLAU2・Roe・LSQ・境界ノードだけ旧規約に戻す診断
+(内部行だけノード化。診断後に削除) のいずれでも落ちる = **種は伸縮した内部行の再構成**。値位置=ノードでは双対面の重心がエッジ中点から
 法線方向に $(q-1)\delta/4$ ずれており、そこへ `cpdx = pc − cc` で再構成すると壁法線の巨大勾配 $\partial\phi/\partial r\cdot\Delta$ が
 接線面 (法線 $x$) の面値に混入する。従来規約は値点自体が同じだけずれていて偶然打ち消していた (masking)。SU2 と同じく
 **再構成目標をエッジ中点 $\tfrac12(x_A+x_B)$** にすると (`g_reconEdgeMid`, 内部双対面のみ) Euler fine・laminar・

@@ -352,27 +352,12 @@ void mesh::readMesh(string fname)
 
     // nodeValueAtNode: 値の位置をノード座標に統一 (node モード, CV ic == ノード ic)。双対重心の半径は rEff へ。
     // ゴースト生成 (下) より前に行い、ゴースト鏡映もノード基準にする。
-    // 診断用サブモード: 2 = 境界ノード (全 bcond の iCells) は従来の重心規約のまま、内部ノードだけスワップ /
-    // 3 = 壁 (wall/wall_isothermal) ノードだけ従来のまま (軸・入出口はスワップ)。切り分け専用。
-    if (this->nodeValueAtNode >= 1 && (geom_int)this->nodes.size() >= this->nCells) {
-        std::vector<char> keep(this->nCells, 0);
-        if (this->nodeValueAtNode >= 2) {
-            Group g = file.getGroup("/BCONDS");
-            for (const std::string& oname : g.listObjectNames()) {
-                Group gb = file.getGroup("/BCONDS/" + oname);
-                std::string kind = gb.getAttribute("bcondKind").read<std::string>();
-                const bool isWall = (kind == "wall" || kind == "wall_isothermal");
-                if (this->nodeValueAtNode == 3 && !isWall) continue;
-                std::vector<geom_int> ics; gb.getDataSet("iCells").read(ics);
-                for (geom_int ic : ics) if (ic >= 0 && ic < this->nCells) keep[ic] = 1;
-            }
-        }
+    if (this->nodeValueAtNode == 1 && (geom_int)this->nodes.size() >= this->nCells) {
         this->rEff.assign(this->nCells, (geom_float)0.0);
         geom_int nswap = 0; geom_float maxShift = 0.0;
         for (geom_int ic = 0; ic < this->nCells; ic++) {
             if (this->nodes[ic].coords.size() < 3) continue;
-            this->rEff[ic] = this->cells[ic].centCoords[1];   // keep でも rEff は双対重心 (r 重みは不変)
-            if (keep[ic]) continue;
+            this->rEff[ic] = this->cells[ic].centCoords[1];
             const geom_float dx = this->cells[ic].centCoords[0] - this->nodes[ic].coords[0];
             const geom_float dy = this->cells[ic].centCoords[1] - this->nodes[ic].coords[1];
             const geom_float dz = this->cells[ic].centCoords[2] - this->nodes[ic].coords[2];
