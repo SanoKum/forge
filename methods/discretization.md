@@ -675,7 +675,7 @@ $M$ そのものではない ([gmshReader.hpp](../solver_density_cuda/mesh/gmshR
 面重心を法線方向に射影した距離比) は対称メッシュでは 0.5 だが**歪み面では 0.5 からずれ**、ノード間の中点で
 値を取らない。
 
-**修正 (2026-06-14)**: フラグ `nodeMidpointFx` (既定 0=OFF) を追加。`discretization=="node"` かつ
+**修正 (2026-06-14, フラグは 2026-08-16 に撤去 — 値=ノード座標では幾何 fx が中点相当)**: フラグ `nodeMidpointFx` (既定 0=OFF) を追加。`discretization=="node"` かつ
 `nodeMidpointFx==1` のとき**内部双対面** (`ip < nNormalPlanes`) を `fx[ip]=0.5` に固定し
 $\phi_f=\tfrac12(\phi_A+\phi_B)$ の中点補間にする ([calcStructualVariables_d.cu](../solver_density_cuda/cuda_forge/calcStructualVariables_d.cu))。
 cell モード・境界半割面 (`ip>=nNormalPlanes`) は対象外。`fx` は対流・粘性の全面補間で使われる

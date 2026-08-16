@@ -48,8 +48,8 @@ def axis_curve_node(run_dir, scale: float, lam: float = 1e-5, mode: str = "evenf
     r"""node run の軸列から平滑化スプライン M(x) を作る (§15 の実装)。
 
     mode="evenfit" (既定): 軸ノードを除外し r>0 の 4 点で M=a₀+a₂r² を最小二乗した a₀ を軸値に
-    使う (`axis_extract.axis_curve_evenfit`)。生産設定 `nodeAxisDirichlet: 1` の軸ノードは第一内点の
-    コピー (真の DOF ではない) で ½M_rr r₁² のバイアス (case/41 で ~0.08% M_d) を持つため。
+    使う (`axis_extract.axis_curve_evenfit`)。旧生産設定 (`nodeAxisDirichlet: 1`, 撤去済) の軸ノードは第一内点の
+    コピーで ½M_rr r₁² のバイアス (case/41 で ~0.08% M_d) を持っていたため。現行 (軸 DOF) でも外挿の方が精度が良い。
     mode="node": 従来の軸ノード直読。末尾 3 スナップ平均 → `make_smoothing_spline`。
     M, M', M'' は**同一スプライン**から評価する (生の 2 階差分禁止)。
     戻り値: (spline, x_min, x_max) — x は r_t 単位。"""
@@ -96,7 +96,7 @@ def _apply_gas_to_config(cfg: str, p: Problem, run_dir) -> str:
     設計 (MOC) と同一係数の熱力学で CFD が回る (forge 内蔵 DB と同じ CEA 値)。"""
     # 切り分け用: evaluate.axisym_method で CPG でも SU2 流軸対称に切替可
     if int(p.evaluate.get("axisym_method", 0)) == 1:
-        cfg = cfg.replace("nodeAxisDirichlet: 1", "nodeAxisDirichlet: 0, axisymMethod: 1", 1)
+        cfg = cfg.replace("isAxisymmetric: 1", "isAxisymmetric: 1, axisymMethod: 1", 1)
     if not p.is_semiperfect or str(p.evaluate.get("cfd_gas", "same")) == "cpg":
         # cfd_gas: cpg = 設計は semi-perfect のまま CFD だけ CPG(γ*, cp 参照値) で回す
         # (TP × node 軸対称の forge 側発散 [case/42 run_0001] の回避。相対比較には十分)
@@ -109,14 +109,11 @@ def _apply_gas_to_config(cfg: str, p: Problem, run_dir) -> str:
     # thermalMethod 0 → 2、species/speciesDBFile を physProp に追加 (cp/gamma は参照値のまま
     # 残すが TP では NASA-9 が優先される)
     cfg = cfg.replace("thermalMethod: 0", "thermalMethod: 2", 1)
-    # nodeAxisDirichlet は単成分 CPG 専用 (forge の制約: 軸ミラーが TP スカラー未カバー)。
-    # 回避: TP では Dirichlet を切る。**axisymMethod:1 は CPG でも出口軸コーナーで発散**
-    # (case/41 run_0076 で切り分け済み、別セッションの軸対称高度化の対象) ので使わず、
-    # 従来 r 重み方式 (method 0) のまま axisRFloor で軸行真空化を抑える (値は
-    # evaluate.axis_r_floor、既定 0 = 無効。メッシュ依存: 軸行重心 < 床 < 第一内点行重心)。
+    # [2026-08-16] nodeAxisDirichlet は撤去済み (node は軸ノードを DOF として解く整合セットが常時 ON、
+    # TP スカラーの軸ピン問題は消滅)。axisRFloor は evaluate.axis_r_floor 指定時のみ従来どおり付ける。
     floor = float(p.evaluate.get("axis_r_floor", 0.0))
-    rep = "nodeAxisDirichlet: 0" + (f", axisRFloor: {floor}" if floor > 0 else "")
-    cfg = cfg.replace("nodeAxisDirichlet: 1", rep, 1)
+    if floor > 0:
+        cfg = cfg.replace("isAxisymmetric: 1", f"isAxisymmetric: 1, axisRFloor: {floor}", 1)
     cfg = cfg.replace("cp: %s, gamma: %s}" % (p.cp, p.gamma),
                       "cp: %s, gamma: %s,\n           species: [MIX], speciesDBFile: \"species_db.yaml\"}"
                       % (p.cp, p.gamma), 1)

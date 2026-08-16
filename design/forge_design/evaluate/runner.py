@@ -62,12 +62,12 @@ def _solver_config(p: Problem, nsteps: int, out_interval: int) -> str:
 
     node は実証レシピに従う (plans/active/boundary-node-nozzle-wall-outlet-stability.md):
     **全域 2 次 (convMethod 1, bndFirstOrder なし) + 陰解法 (timeIntegration 11,
-    blockDPLUR, cfl_pseudo 4)** + nodeWallDirichlet/nodeAxisDirichlet/axisCentroidShift +
+    blockDPLUR, cfl_pseudo 4)** + nodeWallDirichlet/axisCentroidShift (nodeAxisDirichlet は 2026-08-16 撤去) +
     [2026-08-16 更新: `nodeAxisDirichlet` は撤去。node 既定が「値=ノード座標 + 軸 u_r 三点セット + エッジ中点再構成 + LSQ」
      になり (case/43)、軸ノードは通常 DOF として解く。]
     katoLaunder。**収束場からの warm start (--warm-from) が前提** (冷間 IC は発散)。
     壁第一セルは細かすぎ禁物 (wall_first_frac ≳ 5e-3)。かつての 2 次・陰解法発散は
-    いずれも軸行真空化が種で、nodeAxisDirichlet で根治 (bndFirstOrder による境界 1 次化は
+    いずれも軸行真空化が種で、旧 nodeAxisDirichlet で対症 (現在は値=ノード整合セットで根治) (bndFirstOrder による境界 1 次化は
     軸病変のマスキングだったため撤去。同 plan §2.6–2.7, case/40 run_0009–0022)。
     残差は入口/収縮部の微小リミットサイクルで ~1e-7 プラトー (cell 全域 2 次と同格)、
     計量は quasisteady STEADY を確認して使う。

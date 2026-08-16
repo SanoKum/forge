@@ -201,41 +201,29 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["hoopAreaFromClosure"]) {
             this->hoopAreaFromClosure = config["mesh"]["hoopAreaFromClosure"].as<int>();
         }
-        if (config["mesh"]["nodeReconEdgeMidpoint"]) {
-            this->nodeReconEdgeMidpoint = config["mesh"]["nodeReconEdgeMidpoint"].as<int>();
-        }
-        if (config["mesh"]["nodeAxisUrDirichlet"]) {
-            this->nodeAxisUrDirichlet = config["mesh"]["nodeAxisUrDirichlet"].as<int>();
-        }
-        if (config["mesh"]["nodeValueAtNode"]) {
-            this->nodeValueAtNode = config["mesh"]["nodeValueAtNode"].as<int>();
-            if (this->nodeValueAtNode != 0 && this->nodeValueAtNode != 1) {
-                std::cerr << "mesh.nodeValueAtNode must be 0 or 1" << std::endl; std::exit(1);
+        for (const char* k : {"nodeAxisDirichlet", "nodeMidpointFx", "nodeValueAtNode", "nodeReconEdgeMidpoint", "nodeAxisUrDirichlet"}) {
+            if (config["mesh"][k]) {
+                std::cerr << "[config] mesh." << k << " は撤去されました (node の整合セットは常時 ON, "
+                          << "plan architecture-node-option-consolidation)。キーを削除してください。" << std::endl;
+                std::exit(1);
             }
-        }
-        if (config["mesh"]["nodeAxisDirichlet"]) {
-            this->nodeAxisDirichlet = config["mesh"]["nodeAxisDirichlet"].as<int>();
         }
         if (config["mesh"]["gradLSQ"]) {
             this->gradLSQ = config["mesh"]["gradLSQ"].as<int>();
             if (this->gradLSQ < 0 || this->gradLSQ > 2) {
                 throw std::runtime_error("'gradLSQ' in 'mesh' must be 0 (GG), 1 (LSQ per-step) or 2 (LSQ precomputed).");
             }
-        } else if (this->discretization == "node") {
-            this->gradLSQ = 2;   // node 既定 = LSQ (内部隣接ノードのみ・点値整合)。GG は壁行で市松 (case/43 §11)
         }
-        // node の既定を「値=ノード座標の整合セット」にする (case/43, plan architecture-node-centroid-value-position):
-        //   nodeValueAtNode=1 / nodeReconEdgeMidpoint=1 / (軸対称) nodeAxisUrDirichlet=1 / nodeAxisDirichlet=0。
-        // 明示指定があればそれを優先 (旧挙動の再現・回帰用)。cell は無関係。
         if (this->discretization == "node") {
-            if (!config["mesh"]["nodeValueAtNode"])       this->nodeValueAtNode = 1;
-            if (!config["mesh"]["nodeReconEdgeMidpoint"]) this->nodeReconEdgeMidpoint = 1;
+            // node は LSQ 固定 (内部隣接ノードのみ・点値整合)。GG は伸縮した壁行で市松を作る (case/43)。
+            if (config["mesh"]["gradLSQ"] && this->gradLSQ != 2) {
+                std::cerr << "[config] node では mesh.gradLSQ は 2 (LSQ 事前計算) 固定です (GG は壁行市松の原因, case/43)。" << std::endl;
+                std::exit(1);
+            }
+            this->gradLSQ = 2;
         }
         if (config["mesh"]["gradLSQDegenThresh"]) {
             this->gradLSQDegenThresh = config["mesh"]["gradLSQDegenThresh"].as<double>();
-        }
-        if (config["mesh"]["nodeMidpointFx"]) {
-            this->nodeMidpointFx = config["mesh"]["nodeMidpointFx"].as<int>();
         }
         if (config["mesh"]["nodeWallStressEdgeKernel"]) {
             this->nodeWallStressEdgeKernel = config["mesh"]["nodeWallStressEdgeKernel"].as<int>();
@@ -556,17 +544,9 @@ void solverConfig::read(std::string fname)
             std::cerr << "axisymMethod must be 0 (r-weight) or 1 (SU2 source)" << std::endl;
             exit(EXIT_FAILURE);
         }
-        // node × 軸対称の既定: 軸 u_r=0 の三点セット (isAxisymmetric 確定後に解決)。明示指定優先。
-        if (this->discretization == "node" && this->isAxisymmetric == 1 &&
-            !(config["mesh"] && config["mesh"]["nodeAxisUrDirichlet"]) && this->nodeAxisDirichlet == 0) {
-            this->nodeAxisUrDirichlet = 1;
-        }
         if (this->discretization == "node") {
-            std::cout << "[config] node scheme: nodeValueAtNode=" << this->nodeValueAtNode
-                      << " nodeReconEdgeMidpoint=" << this->nodeReconEdgeMidpoint
-                      << " gradLSQ=" << this->gradLSQ
-                      << " nodeAxisDirichlet=" << this->nodeAxisDirichlet
-                      << " nodeAxisUrDirichlet=" << this->nodeAxisUrDirichlet << std::endl;
+            std::cout << "[config] node scheme: values at nodes, edge-midpoint reconstruction, LSQ gradient"
+                      << (this->isAxisymmetric == 1 ? ", axis u_r Dirichlet triple" : "") << std::endl;
         }
         this->thermalMethod = getValidatedValue<int>(physProp, "thermalMethod", "physProp");
         this->viscMethod = getValidatedValue<int>(physProp, "viscMethod", "physProp");
@@ -667,27 +647,7 @@ void solverConfig::read(std::string fname)
         // 初期条件
         this->initial = getValidatedValue<std::string>(config, "initial");
 
-        // nodeValueAtNode は Euler 検証のみ (case/43): 値位置=ノードにすると壁ノードが壁面上に乗り、
-        // 2 次再構成の外挿距離が第一セル厚の半分→全長に倍増する。y+≈1 の高 AR 壁スリバー
-        // (wall_first_frac ~4.5e-5) では第一内点で圧力が室圧を超えて発散する (case/41 NS モデルで
-        // step 62-154、CFL 低減・段階起動では回避不可・軸 DOF とは無関係と実測)。粗い壁格子
-        // (wall_first_frac ~5e-3) では完走する。
-        if (this->nodeValueAtNode == 1 && this->viscMethod != 0 && this->convMethod != 0) {
-            std::cerr << "[warn] nodeValueAtNode=1 × 粘性 × 2次再構成は近壁スリバーで発散する実績があります "
-                      << "(case/43.node_axis_dof)。Euler か、粗い壁格子か、convMethod:0 で使ってください。"
-                      << std::endl;
-        }
 
-        // nodeAxisDirichlet の軸ミラーは平均流 5 変数 + SST (roK/roOmega) のみ対応で、
-        // 多成分 (roY*)・凝縮スカラー・TP は未対応 (ρ だけピンされ ΣρY_s≠ρ になり得る)。
-        // 対応するまで単成分 CPG に限定する (Codex レビュー 2026-08-05 Critical)。
-        if (this->nodeAxisDirichlet == 1 && this->isAxisymmetric == 1 &&
-            (this->thermalMethod != 0 || this->nSpecies > 1)) {
-            std::cerr << "nodeAxisDirichlet=1 は単成分 CPG (thermalMethod:0) のみ対応です "
-                      << "(軸ミラーが species/TP スカラーを未カバー)。axisymMethod:1 か "
-                      << "axisRFloor を使うか、nodeAxisDirichlet:0 にしてください。" << std::endl;
-            exit(EXIT_FAILURE);
-        }
 
         // デバッグ用出力
         std::cout << "Mesh Format: " << meshFormat << '\n';

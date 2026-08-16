@@ -236,7 +236,7 @@ public:
 
     // 軸対称の定式化: 0 = r 重み幾何 (B 流儀, 従来・既定・ビット不変) / 1 = SU2 流
     // (planar 幾何 + 1/y ソース項。軸ノードは通常 DOF として解く。plan
-    // axisymmetric-su2-source-formulation)。1 は node 軸行真空化の根治で、nodeAxisDirichlet 不要。
+    // axisymmetric-su2-source-formulation)。
     int axisymMethod = 0;
 
     // 軸対称 r 床 (axisymMethod==0, SU2 の y<EPS ガードの r 重み版): r < axisRFloor の面・セルは
@@ -272,32 +272,19 @@ public:
     // 非 node (cell) / explicit では no-op。0 で旧挙動 (弱形式半割面のみ)。
     int nodeWallDirichlet = 1;
 
-    // node-centered 軸対称: 軸上ノード CV を解かず radial 隣接ノードからの対称 Dirichlet に置換
-    // (∂q/∂r=0, u_r=0 の 1 次離散化)。軸半 CV が強膨張ノズルで真空まで過膨張し SST k シート経由で
-    // 陰解法を遅発性発散させる欠陥への対策 (plan boundary-node-nozzle-wall-outlet-stability §2.6,
-    // methods/axisymmetric/implementation.md)。node && isAxisymmetric 以外では no-op。既定 0 = 従来。
-    int nodeAxisDirichlet = 0;
+    // (撤去 2026-08-16) nodeAxisDirichlet: 軸ノードを第一内点コピーで置換する対症。保存を破り軸を 1 次化するため
+    // 削除。軸ノードは通常 DOF として解き、u_r=0 は壁 no-slip と同じ三点セット (状態ピン+残差 0+Jacobian 行) で課す
+    // (node × 軸対称で常時 ON)。plan architecture-node-option-consolidation。
 
-    // node-centered: 値の位置をノード座標に統一する (1) / 従来 = 双対 CV 重心 (0, 既定・ビット不変)。
-    // 1 では solver 読込時に centCoords ← ノード座標 (再構成基点 cpdx・fx・LSQ・ゴースト鏡映がノード基準)、
-    // 双対重心の半径 r̄ は別配列 (mesh::rEff) に退避して軸対称 r 重み (V = r̄·A_planar) だけが使う
-    // (plan architecture-node-centroid-value-position §4「値の位置=ノード、軸半径は専用量」の試作)。
-    // 軸半 CV の質量残差 O(1) 不整合 (case/43 演算子テスト) の是正が目的。node && 非 cell 以外は no-op。
-    int nodeValueAtNode = 0;
+    // node-centered の値の位置は**常にノード座標** (2026-08-16 に旧「双対 CV 重心」規約を撤去)。solver 読込時に
+    // centCoords ← ノード座標、双対重心の半径 r̄ は mesh::rEff に退避して軸対称の回転体積 V=r̄·A_planar だけが使う。
+    // 根拠 = case/43 (軸半 CV と伸縮メッシュ壁行の O(1) 不整合が消える)。converter 側の書式変更は plan Step 3。
 
-    // node 軸対称: 軸ノードの半径運動量 u_r=0 を「壁 no-slip と同じ Dirichlet 三点セット」で課す (1) /
-    // 従来 = 残差 res_roUy の 0 化のみ (0, 既定・ビット不変)。従来は block-DPLUR の連成 solve が dq_roUy≠0 を
-    // 返し軸 u_r が漏れる (case/43 run_0010: |u_r| 0.4 m/s = Ux の 4e-4)。1 では
-    //   (i) 毎ステージ状態ピン roUy=0 (roe から半径 KE を除く, enforceAxisSymmetry_d)、
-    //   (ii) res_roUy=0 (従来どおり)、(iii) block-DPLUR で軸ノードの roUy 行のみ単位行 (rhs=0)。
-    // nodeAxisDirichlet=1 (全 5 行ピン) とは排他 (そちらが優先)。SU2 BC_Sym_Plane の状態+残差+Jacobian 一体射影の
-    // 「軸 (法線=r) 専用」版。
-    int nodeAxisUrDirichlet = 0;
+    // node × 軸対称: 軸ノードの u_r=0 は常に三点セット (毎ステージ状態ピン roUy=0 / res_roUy=0 / block-DPLUR の
+    // roUy 行単位化) で課す (2026-08-16 に常時 ON 化。残差 0 化だけでは連成 solve で u_r が漏れる, case/43)。
 
-    // node-centered: 対流 2 次再構成の目標点を双対面重心でなくエッジ中点 ½(x_A+x_B) にする (SU2 流)。
-    // 既定 0 = 双対面重心 (従来・ビット不変)。nodeValueAtNode と併用する想定 (値位置=ノードのとき、
-    // 伸縮メッシュで双対面重心がエッジ中点から法線にずれる分の高勾配混入を除く)。内部双対面のみ。
-    int nodeReconEdgeMidpoint = 0;
+    // node-centered の対流 2 次再構成の目標点は**常にエッジ中点** ½(x_A+x_B) (SU2 と同じ; 2026-08-16 常時 ON 化)。
+    // 双対面重心を目標にすると伸縮メッシュで壁法線勾配が接線面に混入し高 AR で発散する (case/43)。
 
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ 毎ステップ solve,
     // 2:LSQ 係数事前計算 = setup 1回 double 固有分解→擬似逆→float32 係数 gather。推奨は 2)。
@@ -309,11 +296,7 @@ public:
     // 擬似逆行列にする (退化方向の勾配 1 次化)。近傍方向が共線/共面なノードの LSQ 発散対策。
     double gradLSQDegenThresh = 1.0e-2;
 
-    // node-centered の内部双対面で面補間係数を中点 fx=0.5 (φ_f=½(φ_A+φ_B)) に固定する
-    // (0:既定 幾何 fx=dualFaceCent 射影比, 1:中点)。標準的な median-dual エッジ補間で近壁 checkerboard を
-    // 低減するが、出口リップ近傍 near-wall の解を変えるため SU2 検証まで既定 OFF。cell モードは無関係。
-    // methods/discretization.md §7.4。
-    int nodeMidpointFx = 0;
+    // (撤去 2026-08-16) nodeMidpointFx: 値=ノード座標では幾何 fx が自動的に中点相当になるため不要。
 
     // node-centered 壁摩擦応力 (twall) を「壁ノードに接続する内部双対面 (壁ノード↔内部ノード) の粘性力
     // 集約」で算出する (1:既定, 0:旧=壁ノード勾配 ∇U[W]·S・退化ミラーゴースト dcc ベース)。node の壁ノードは

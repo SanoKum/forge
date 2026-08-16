@@ -790,7 +790,7 @@ cudaConfig initializeSimulation(
 
     cout << "Read Mesh \n";
     if (cfg.meshFormat == "hdf5") {
-        msh.nodeValueAtNode = (cfg.discretization == "node") ? cfg.nodeValueAtNode : 0;
+        msh.nodeValueAtNode = (cfg.discretization == "node") ? 1 : 0;   // node は常に値=ノード座標
         msh.readMesh(cfg.meshFileName);
     } else {
         cerr << "Error unknown mesh format: " << cfg.meshFormat << endl;
@@ -934,11 +934,7 @@ void assembleResidual(StepContext& s, int stage_index)
     // u=ρu/ρ がドリフトするため状態再設定が必須。マルチマーカー emit (コーナー出口流出) と併用。
     // nodeWallDirichlet=0 / cell / 非 node では no-op。
     enforceWallNoSlip_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
-    // node-centered 軸対称の軸ノード対称 Dirichlet (nodeAxisDirichlet=1): 軸ノード状態を radial 代表点
-    // から毎ステージ写す (∂q/∂r=0, u_r=0)。dependentVariables より前に置き、派生量・境界・勾配・
-    // フラックスが全てピン後状態を見るようにする。OFF/cell/非軸対称では no-op。
-    enforceAxisMirror_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
-    // nodeAxisUrDirichlet=1: 軸ノード u_r=0 の状態ピン (roUy=0, roe から半径 KE 除去)。壁 no-slip と同相。
+    // node × 軸対称: 軸ノード u_r=0 の状態ピン (roUy=0, roe から半径 KE 除去)。壁 no-slip と同相で、
     // 残差 0 化 (zeroAxisRadialResidual) と block-DPLUR の roUy 行 decouple (axis_ur_flag) と三点セット。
     enforceAxisSymmetry_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
@@ -1017,9 +1013,6 @@ void assembleResidual(StepContext& s, int stage_index)
     // explicit では ΔroUy=0 になり直接効く (implicit/block-DPLUR では連成 solve が補正を漏らすため Jacobian
     // 整合が別途必要・open issue, docs §7.1)。cell/非軸対称/平面では no-op。
     zeroAxisRadialResidual_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
-    // nodeAxisDirichlet=1: 軸ノードは対称 Dirichlet (enforceAxisMirror) でピンするため全残差を 0 化
-    // (rms 汚染防止 + explicit 経路の状態固定)。OFF では no-op (従来 = roUy のみ 0 化)。
-    zeroAxisAllResiduals_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     // node-centered 壁 Dirichlet: 壁ノードの運動量残差を 0 に射影し u=0 を保つ (壁ゴースト撤廃の代替)。
     // 軸射影の後に置き、コーナー (壁∩軸はまれだが) でも壁 no-slip を最終確定する。cell/非 node では no-op。
     zeroWallDirichletResiduals_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);

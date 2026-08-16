@@ -169,11 +169,8 @@ public:
     // 特異点になり半径方向運動量が偽駆動されるのを防ぐため、軸上で roUy=0 (対称条件) を課すのに使う。
     geom_int* axis_flag_d = nullptr;
 
-    // 軸上 CV の radial 代表点 [nCells] (非軸ノードは -1)。nodeAxisDirichlet=1 で軸ノード状態を
-    // この隣接ノードからの対称 Dirichlet (∂q/∂r=0, u_r=0) で置換する (SU2 Normal_Neighbor と同型)。
-    geom_int* axis_rep_d = nullptr;
 
-    // nodeValueAtNode=1 (main.cpp が readMesh 前にセット): readMesh で cells[ic].centCoords ← nodes[ic].coords
+    // nodeValueAtNode (main.cpp が readMesh 前に node なら 1 をセット): readMesh で cells[ic].centCoords ← nodes[ic].coords
     // (ic<nCells) に置換し、置換前の双対 CV 重心 y (=面積加重半径 r̄) を rEff[ic] に退避する。
     // 軸対称 r 重み (variables.cpp) は rEff を使う (centCoords.y=0 の軸ノードで回転体積が消えないように)。
     int nodeValueAtNode = 0;

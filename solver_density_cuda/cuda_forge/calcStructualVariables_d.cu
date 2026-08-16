@@ -62,8 +62,8 @@ void calcStructualVariables_d
 
 void calcStructualVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh,  variables& v)
 {
-    // node-centered かつ nodeMidpointFx=1 のときのみ内部双対面を fx=0.5 に固定 (SU2 検証まで既定 OFF)。
-    const int nodeMode = (cfg.discretization == "node" && cfg.nodeMidpointFx == 1) ? 1 : 0;
+    // (nodeMidpointFx 撤去 2026-08-16) 値=ノード座標では幾何 fx が中点相当になるため常に幾何 fx。
+    const int nodeMode = 0;
     calcStructualVariables_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>>(
         msh.nPlanes, msh.nNormalPlanes,
         msh.map_plane_cells_d,

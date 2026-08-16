@@ -154,3 +154,16 @@ mesh:
   discretization: "node"   # cell | node
   # bndFirstOrder: 使用禁止 (書かないこと)
 ```
+
+## node の離散化スキーム (固定・2026-08-16)
+
+`discretization: node` では次が**常時 ON** で、config で切れない (旧キー `nodeAxisDirichlet` /
+`nodeMidpointFx` / `nodeValueAtNode` / `nodeReconEdgeMidpoint` / `nodeAxisUrDirichlet` を書くと**起動時にエラー**):
+
+- 値の位置 = ノード座標 (双対 CV 重心は軸対称の回転体積 $V=\bar r A$ にのみ使う)
+- 対流 2 次再構成の目標点 = エッジ中点 (SU2 と同じ)
+- 勾配 = LSQ (`gradLSQ: 2` 固定。GG は伸縮した壁行で市松を作るため node では禁止)
+- 軸対称の軸ノード: 通常 DOF として解き、u_r=0 を状態ピン+残差 0+block-DPLUR 行の三点セットで課す
+
+根拠と検証は [case/43.node_axis_dof](../case/43.node_axis_dof/README.md) と
+[plans/active/architecture-node-option-consolidation.md](../plans/active/architecture-node-option-consolidation.md)。

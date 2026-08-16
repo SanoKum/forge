@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `draft` (ユーザ指示 2026-08-16「node なんちゃらオプションが多すぎる、追って削減」)
+- **status**: `in-progress` (ユーザ指示 2026-08-16「node なんちゃらオプションが多すぎる、追って削減」)
 - **related_docs**: [`methods/discretization.md`](../../methods/discretization.md), [`methods/axisymmetric/implementation.md`](../../methods/axisymmetric/implementation.md)
 - **related_plans**: [`architecture-node-centroid-value-position.md`](architecture-node-centroid-value-position.md) (整合セットの根拠 = case/43)
 - **created**: `2026-08-16`
@@ -37,3 +37,9 @@
 ## 3. 変更ログ
 
 - `2026-08-16` — 起案。node 既定を整合セット (値=ノード / エッジ中点 / 軸 u_r 三点 / LSQ) に切替 (`61e09a3b`〜)。
+- `2026-08-16` (夜) — **手順 4 の第 1 弾を実装**: `nodeAxisDirichlet` (enforceAxisMirror / zeroAxisAllResiduals / axis_rep /
+  5 行 decouple ごと)・`nodeMidpointFx` を削除、`nodeValueAtNode` / `nodeReconEdgeMidpoint` / `nodeAxisUrDirichlet` を
+  常時 ON にしてキー撤去、node の `gradLSQ` は 2 固定 (他値はエラー)。旧キーを書いた config は起動時に明示エラー。
+  runner から旧キー参照を除去。残: `axisCentroidShift` (converter 書式変更 = 手順 3)、`axisRFloor`、`hoopAreaFromClosure`
+  の既定化、`nodeWallDirichlet` の固定化。
+
