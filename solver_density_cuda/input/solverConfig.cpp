@@ -198,6 +198,9 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["nodeWallDirichlet"]) {
             this->nodeWallDirichlet = config["mesh"]["nodeWallDirichlet"].as<int>();
         }
+        if (config["mesh"]["hoopAreaFromClosure"]) {
+            this->hoopAreaFromClosure = config["mesh"]["hoopAreaFromClosure"].as<int>();
+        }
         if (config["mesh"]["nodeValueAtNode"]) {
             this->nodeValueAtNode = config["mesh"]["nodeValueAtNode"].as<int>();
         }

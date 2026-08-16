@@ -405,6 +405,30 @@ $\sum_f r_f\mathbf S_f=(0,\;A_{\rm planar})$ (多角形では厳密) だが、**
 なお**保存則は崩れない** (内部面は 1 本の $r_f\mathbf S_f$ を符号反転で共有 → telescoping)。体積 $V=\bar r A_{\rm planar}$
 は $\int r\,dA$ に厳密一致するので `rEff` は近似ではない。保存を破るのは `nodeAxisDirichlet` (状態上書き+残差 0 化) の方。
 
+**自由流の回復 (倍精度不要, 2026-08-16)** — plan [axisymmetric-freestream-hoop-gauge](../../plans/active/axisymmetric-freestream-hoop-gauge.md):
+
+1. **`space.pRef` の整合 (バグ修正)**: 対流流束は $(p-p_{\rm ref})S$ で組まれるのに **hoop ソースは絶対 $p$** の
+   ままだったため、軸対称 × `pRef>0` では一様圧 $p=p_{\rm ref}$ で source だけが残り**偽半径力 $p_{\rm ref}A$**
+   が立っていた (case/43 自由流テストで 1.25e6 m/s²)。ソースを $(p-p_{\rm ref})A$ に修正。
+   これで**大きな $p$ が悪条件な metric 和に掛からなくなる**のが要点で、誤差は $|p-p_{\rm ref}|$ に比例する。
+2. **`mesh.hoopAreaFromClosure: 1`** (既定 0 = ビット不変): $A$ を解析 `A_planar` でなく**同じ面ベクトルの和**
+   $\sum_f r_f S_{f,y}$ (`A_closure_y`) にする。`axisRFloor>0` の既存経路を床なしでも使えるようにしたもの。
+
+壁 CV の偽半径加速度 [m/s²] (一様圧・静止, 直管):
+
+| AR(壁) | 解析 A | 離散閉性 A | 解析 A + pRef | 離散閉性 A + pRef |
+|---|---|---|---|---|
+| 2.5 | 1.33e+02 | 1.73e+01 | 8.0e−06 | 5.9e−07 |
+| 62.5 | 1.57e+03 | 1.11e+02 | 1.0e−04 | 7.3e−06 |
+| 1250 | 3.44e+04 | 2.14e+03 | 2.1e−03 | **1.5e−04** |
+
+生産 Euler で `hoopAreaFromClosure: 1` は場を 9e−5 しか動かさず収束も同等。**NS の `nodeValueAtNode` 発散は
+どちらでも直らない** (step 64→65) ので、あれは metric ノイズが原因ではない。
+
+**軸上のソース 0 (SU2 流儀) は既に踏襲済み**: r 重み方式でも `axisymmetricSource_d` は node モードで
+`axis_flag` の CV に hoop ソースを課さない (SU2 の `Coord_i[1]>EPS` ガード相当)。ただしこれは軸の 1/y
+特異性への対処であって、**壁 CV の metric 桁落ちとは別物**である。
+
 **粘性 (NS) は未対応 — 2 次再構成が壁スリバーで破綻**: case/41 NS 生産モデル (y+1.5, `wall_first_frac` 4.5e-5,
 SST) で `nodeValueAtNode: 1` は step 62–64 で発散する。切り分け (case/43 run_0009〜0017):
 `nodeAxisDirichlet: 1` 併用でも同 step 64 = **軸 DOF は無関係**、1 次 (`convMethod: 0`) × cfl 1.0 は完走、

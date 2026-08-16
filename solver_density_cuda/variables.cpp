@@ -468,7 +468,7 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         // A_planar を y 成分 (=一般化 hoop 面積)、A_closure_x を x 成分に置換する。
         // 床なし領域では y 成分は解析 A_planar に一致し x 成分は 0 (厳密幾何)。
         // 全面が床の CV では両成分とも 0 → ソース・Jacobian が自然に消える。
-        if (cfg.axisRFloor > (flow_float)0.0) {
+        if (cfg.axisRFloor > (flow_float)0.0 || cfg.hoopAreaFromClosure == 1) {
             // 面の向き規約: planes[ip].iCells[0] にとって外向き (+S)、iCells[1] にとって内向き (-S)。
             // (solver 側 mesh は iPlanesDir を持たないため plane 走査で集計する。)
             std::vector<geom_float> aclx(msh.nCells_all, 0.0), acly(msh.nCells_all, 0.0);

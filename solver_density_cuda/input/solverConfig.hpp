@@ -245,6 +245,15 @@ public:
     // (床 1e-20 = 実質ゼロ面積)。値はメッシュ依存: 軸行重心 < axisRFloor < 第一内点行重心。
     flow_float axisRFloor = 0.0;
 
+    // 軸対称 hoop ソース面積を「解析 A_planar」でなく「離散閉性 Σ_f r_f S_f (床適用後の面ベクトル和)」に
+    // する (0:既定 従来・ビット不変 / 1:離散閉性)。一様圧の半径運動量は
+    //   res_roUy = −Σ_f p r_f S_f,y + p·A
+    // なので A=Σ_f r_f S_f,y なら**丸め誤差に依らず厳密に打ち消す** (自由流保持 / GCL 相当)。
+    // float32 メトリック (geom_float=float) では高 AR 壁 CV で Σ r_f S_f,y と A_planar が最大数十 % ずれ
+    // (case/43: 生産 NS y+1.5 で 59%、実害は壁 P で ~3 Pa = 4e-5)、その偽半径力を根本から消す。
+    // axisRFloor>0 のときは従来どおり (床の閉性補正が同じ配列を使うため) 常に有効。
+    int hoopAreaFromClosure = 0;
+
     // 離散化レイアウト。"cell": cell-centered FVM (既定・従来)、"node": node-centered
     // (中点双対 median-dual) FVM。methods/discretization/ 参照。
     std::string discretization = "cell";

@@ -28,7 +28,11 @@ __global__ void axisymmetricSource_d
     flow_float* res_roUy,
     geom_int* axis_flag,   // node-centered で軸上 CV を示す (nullptr 可)。軸上は半径方向ソースを課さない。
     flow_float* ccy, flow_float axisRFloor,   // r 床 (axisRFloor>0): A_planar は離散閉性 y 面積に置換済
-    flow_float* res_roUx, flow_float* A_closure_x   // 床の x 閉性欠損補正 (床なしでは 0)
+    flow_float* res_roUx, flow_float* A_closure_x,  // 床の x 閉性欠損補正 (床なしでは 0)
+    // free-stream 保存の基準静圧 (space.pRef)。対流流束は (p_tilde − pRef)·S で組まれるので、
+    // hoop ソースも同じゲージ (P − pRef)·A にしないと一様圧 p=pRef で source だけが残り、
+    // 偽の半径力 pRef·A が立つ (case/43 自由流テストで 1.25e6 m/s² を実測)。既定 pRef=0 で従来どおり。
+    flow_float pRef
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -42,9 +46,9 @@ __global__ void axisymmetricSource_d
             - (flow_float)(2.0 / 3.0) * mu_total * axisym_divU[ic];
         // axisRFloor>0: A_planar = 床適用後の Σ_f S_f,y (全面床の CV で 0)。τθθ は床帯で
         // uy_over_r=0 のため発散項のみだが面積も ~0 で実質不活性。x は圧力の閉性欠損補正のみ。
-        res_roUy[ic] += (P[ic] - tau_theta_theta) * A_planar[ic];
+        res_roUy[ic] += (P[ic] - pRef - tau_theta_theta) * A_planar[ic];
         if (axisRFloor > (flow_float)0.0) {
-            res_roUx[ic] += P[ic] * A_closure_x[ic];
+            res_roUx[ic] += (P[ic] - pRef) * A_closure_x[ic];
         }
     }
 }
@@ -102,15 +106,18 @@ void axisymmetricSource_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     axisymmetricSource_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells,
         var.c_d["P"],
-        (cfg.axisRFloor > (flow_float)0.0) ? var.c_d["A_closure_y"] : var.c_d["A_planar"],
+        (cfg.axisRFloor > (flow_float)0.0 || cfg.hoopAreaFromClosure == 1)
+            ? var.c_d["A_closure_y"] : var.c_d["A_planar"],
         var.c_d["vis_lam"],
         var.c_d["vis_turb"],
         var.c_d["axisym_divU"],
         var.c_d["axisym_uy_over_r"],
         var.c_d["res_roUy"],
         axis_flag,
-        var.c_d["ccy"], cfg.axisRFloor,
-        var.c_d["res_roUx"], var.c_d["A_closure_x"]
+        var.c_d["ccy"],
+        (cfg.hoopAreaFromClosure == 1 && cfg.axisRFloor <= (flow_float)0.0) ? (flow_float)1.0e-30 : cfg.axisRFloor,
+        var.c_d["res_roUx"], var.c_d["A_closure_x"],
+        cfg.pRef
     );
 
     gpuErrchk( cudaPeekAtLastError() );

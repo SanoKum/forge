@@ -47,6 +47,14 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
    `rEff` は近似ではない。実際に保存を破っているのは `nodeAxisDirichlet` (状態上書き + 残差 0 化) と修正前の
    凍結コーナー CV の方で、軸 DOF 化は保存を回復する。
 
+7. **自由流の回復は「圧力ゲージ」で足りる (倍精度不要)**: 6. の桁落ちは $p$ を悪条件な metric 和に掛けるから起きる。
+   対流流束は既に `space.pRef` で $(p-p_{\rm ref})S$ を使うのに **hoop ソースだけ絶対 $p$ のまま**だったので、
+   軸対称 × `pRef>0` は**偽半径力 $p_{\rm ref}A$ (1.25e6 m/s²)** を出すバグ状態だった。ソースを同じゲージに直すと、
+   壁 CV の偽半径加速度は AR 1250 で **3.4e4 → 2.1e-3 m/s²**、`hoopAreaFromClosure: 1` 併用で **1.5e-4**
+   ([optest/freestream_test.py](optest/freestream_test.py))。生産 Euler では場が 9e-5 動くだけ・収束同等 (run_0021)、
+   既定 OFF はビット不変 (run_0022)。**ただし NS の `nodeValueAtNode` 発散はこれでも直らない** (step 64→65, run_0023/0024)
+   = 5. の未解決は metric ノイズが原因ではない。plan [axisymmetric-freestream-hoop-gauge](../../plans/active/axisymmetric-freestream-hoop-gauge.md)。
+
 ## 計算 run 一覧
 
 | run | 目的・主要設定差分 | 主要結果・成果物 | 状態 |
@@ -65,6 +73,9 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
 | `run_0005_cell_ref` | 同 nozzle.msh を cell 変換 (品質 PASS AR 9.9/skew 0.41)、`interp_field` で 0057 場から段階起動 (soft 1次 cfl0.5 3000 → 本段) | NaN 0・STEADY・plateau 0.8 桁 (cell の既知床)。セル中心列の偶関数外挿 ‖ΔM‖∞ 0.151% Md — node 外挿の独立参照 | active (**参照**) |
 | `run_0006_regress_dirichlet` | 0001 と同一入力 (生産 `nodeAxisDirichlet: 1`) を**パッチ後バイナリ**で再実行 (既定経路のビット不変確認) | 最終場は 0001 と最大相対差 4e-6 (ro/roUx/roe/P; node の run 間非決定性レベル) = 既定経路は不変 | active (回帰) |
 | `run_0018_ns_van_closure` / `run_0019_ns_dir_closure` / `run_0020_ns_van_lsq` | NS 発散の切り分け続き: van + `axisRFloor 1e-12` (hoop 面積を離散閉性に) / 同 Dirichlet 対照 / van + `gradLSQ: 2` | 0018 **同 step 64 発散** (閉性は無関係)、0019 完走、0020 **step 1693 まで延命** (GG→LSQ で 26 倍) | active (**NS 切り分け**) |
+| `run_0021_euler_closure` / `run_0022_regress2` | 生産 Euler + `hoopAreaFromClosure: 1` / 既定 OFF 回帰 | 0021: 場の差 9e-5・残差 2.7 桁 (同等)。0022: 旧 build と 1.8e-6 (node 非決定性レベル) = 既定はビット不変 | active |
+| `run_0023_ns_van_pref` / `run_0024_ns_van_pref_closure` / `run_0025_ns_dir_pref` | NS van + `pRef 1e6` / + 閉性面積 / Dirichlet 対照 | **0023・0024 とも step 65 発散** (pRef でも閉性でも NS は直らない)、0025 完走 | active (**NS の原因から metric を除外**) |
+| `optest/fs_*` | 自由流テスト (一様圧・静止, AR 0.5–1250) | 偽半径加速度 3.4e4 → 2.1e-3 (pRef) → 1.5e-4 (pRef+閉性) m/s² | active (**ゲージ整合の根拠**) |
 | `optest/closure_*` | r 重み閉性の AR スイープ (幾何のみ・solve 不要) | 誤差 ≈ 5 ulp × 打ち消し比、taper 非依存 → float32 丸め。AR 1250 で 2.5% | active |
 | `optest/h{0.02,0.01,0.005}_*` | 離散連続式演算子テスト (`optest/run_optest.py`, 直管 1×0.2 m 一様 quad, 1 step 陽解法, `limiter: 0` は線形場再構成のため意図的) | `optest/optest_results.json`。要約は上記 1. | active (**演算子テスト**) |
 
