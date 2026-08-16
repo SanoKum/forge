@@ -1,4 +1,4 @@
-# ② イソブタン風洞 M4.2 — R/L スタディ TP 版 (R3_LU6_Lcmax): 設計・CFD とも semi-perfect (thermoHrefTemp 298.15)
+# ② イソブタン風洞 M4.2 — R/L スタディ TP 版 (R2_LU9_Lcmax): 設計・CFD とも semi-perfect (thermoHrefTemp 298.15)
 # 案件 (ユーザ 2026-08-17): Pt 5 MPa, Tt 1000 K, C4H10/空気 φ=0.9 生成物, 出口径 1 m,
 # 入口配管径 1 m, Md=4。R と L (入口側 L_U・出口側 L_c) をスタディする。
 # 生成物組成 (質量分率, 完全燃焼 + 過剰 O2, 解離なし = 1000 K では妥当):
@@ -6,7 +6,7 @@
 # 熱力学: NASA-9 (forge 内蔵 CEA 係数と同一) を frozen 組成で。γ は 1.31 (スロート) →
 # 1.38 (M4) と変化するので一定 γ の CPG では出口径を 8% 誤る (semi-perfect が必須)。
 # 設計基準 r_t: A/A*(M4.2) = 15.809 (semi-perfect) → r_t = 0.5/√15.809 = 0.12575 m。
-name: isobutane_wt_m42_R3_LU6_Lcmax_tp
+name: isobutane_wt_m42_R2_LU9_Lcmax_tp
 type: wind_tunnel_axisym_axismach
 gas:
   model: semiperfect
@@ -26,9 +26,9 @@ dv:
   L_c: {value: 8.0, min: 1.0, max: 20.0}
 
 geometry:
-  R: 3.0
+  R: 2.0
   r_inlet: 3.976        # 入口配管径 1 m / (2 r_t) = 3.976 r_t
-  L_U: 6.0
+  L_U: 9.0
   L_pipe: 0.5
   start_line: throat_char
   n_start: 41
