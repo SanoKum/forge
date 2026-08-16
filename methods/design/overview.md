@@ -384,6 +384,49 @@ $\min(\mu_w-\theta_w)$ 1.78°→0.09° と壁側は悪化し、CFD 誤差も A �
 [結果ページ](https://claude.ai/code/artifact/cf8a4c74-8d1f-44f4-a256-652cc122d00d)、
 [比較計画](../../plans/accepted/tooling-nozzle-axislaw-smoothness.md)。
 
+#### D: 端点アンカー + 内部補間点 1 点の C⁴ 区分 5 次則 (`OnePointC4AxisLaw`, `geometry.axis_law: onepoint`)
+
+計画: [tooling-nozzle-axislaw-onepoint.md](../../plans/accepted/tooling-nozzle-axislaw-onepoint.md)。
+A/B/C 比較の教訓「軸 $M(x)$ の数学的滑らかさを最小化しても、MOC 後の壁 fairness や
+特性線網トポロジは改善しない」を受け、**自由度を増やさず、上下流アンカーを完全固定したまま、
+内部補間点 1 点だけで膨張配分を変える**案。
+
+**無次元設計変数**: 全長 $L_c=x_E-x_A$ を外側の設計変数とし、内部点 $P=(x_P,M_P)$ を
+$$\xi_P=\frac{x_P-x_A}{L_c},\qquad \eta_P=\frac{M_P-M_A}{M_d-M_A}$$
+で与える ($x_P=x_A+\xi_P L_c$、$M_P=M_A+\eta_P(M_d-M_A)$)。$x_P$ は**その候補自身の $L_c$**
+で無次元化する ($L_{\max}$ ではない)。結果には $L_c,\xi_P,\eta_P,\ell_P=x_P-x_A,\ell_P/R$ を
+すべて保存し、最適点が全長比・$r_t$ 基準・$R$ 基準のどれに支配されるかを事後に判断する。
+
+**曲線構成**: $[x_A,x_P]$ (長さ $L_1$) と $[x_P,x_E]$ (長さ $L_2$) の 2 区間、各区間を局所座標
+$t\in[0,1]$ の **5 次 Bernstein (Bezier) 基底**で表す (物理座標のべき乗基底で 12×12 系を
+直接解かない — 条件数のため)。条件は A 側 3 ($M,M',M''$)、E 側 3 ($M_d,0,0$)、P での
+$C^4$ 連続 5 ($M,\dots,M''''$)、$M(x_P)=M_P$ 1 の計 12 で、5 次式 2 本の 12 係数が一意に決まる。
+Bernstein 係数では A 側 3 条件で $b_0,b_1,b_2$、E 側 3 条件で $c_3,c_4,c_5$、$M_P$ で $b_5=c_0$
+が直接決まり、残る $(b_3,b_4,c_1,c_2)$ を P の $C^1$〜$C^4$ の 4 本の線形式で解く (4×4、
+区間長 $L_1,L_2$ のスケールを微分階数分含める)。**P は Bezier 制御点ではなく曲線が
+実際に通る内部補間点**。$x>x_E$ は $M=M_d$、$M'=M''=M'''=0$。
+
+**なぜ $M_P$ を指定するか**: $M_P$ は「$x_P$ までに全膨張量の何割を消化したか」を直接決める。
+$M'_P$ だけではそれ以前の膨張の前倒し/後ろ倒しを拘束できない。$M_P$ と $\nu(M_P)$ は一対一。
+
+**単一 6 次式にしない**: 端点 6 条件 + 内部点 1 条件の単一 6 次式は、M6/R3/$L_c$=45 で
+内部振幅をどう選んでも全域 $M'\ge0$ を満たせない (事前確認)。利用者が指定する形状情報は
+1 点だが、数学表現は $C^4$ の区分 5 次式とする。
+
+**ゲート**: 端点残差・P での 0〜4 階 jump・$\min M'$ (hard: $M'\ge0$ を MOC 前に課す)・
+$M''$ 符号反転数・$\max|M'''|$・$\int(M''')^2dx$。**評価は軸則の見た目ではなく逆 MOC 後の
+特性線網と壁で行う**。
+
+**比較結果 (2026-08-16, M6 R=3, $L_c$ 60→30 continuation, n_axis 600/1200/2400)**: 単調可能領域は
+$(\xi_P,\eta_P)$ 平面上の細い尾根 (η 幅 0.01–0.07、$L_c$=60 でほぼ消滅)。$\mu_w-\theta_w$ 余裕で
+A を上回る候補は全て $M''$ 符号反転 3 = **内部プラトー** ($L_c$45 で x≈12–16 に $M'\approx0.007$)
+由来で、A と同じ単峰条件 ($M''$ 反転 ≤1) を課すと**全 $L_c$ で A に劣る** ($\mu-\theta<0$、
+$\theta_{\max}$ 21–27° = 前倒れ)。特性線網の最小 sin 角 (signed Jacobian 相当) も A の約半分。
+1 点補間 + C⁴ では前倒れかプラトーの二択になり、knot 則の「序盤急・後段緩の単峰」を超えられない。
+**D は不採用 (CFD なし)、生産は A を維持**。詳細:
+[結果ページ](https://claude.ai/code/artifact/b3142a8a-0c48-47d5-b7bc-f4653cc939c0)、
+[計画](../../plans/accepted/tooling-nozzle-axislaw-onepoint.md)。
+
 ### Hall 遷音速解 (`geometry/transonic.py::HallThroat`)
 
 Hall (1962) の軸対称遷音速級数を CONTUR (Sivells AEDC-TR-78-63, `papers/nozzle_design/`

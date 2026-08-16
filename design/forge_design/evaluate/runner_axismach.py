@@ -188,14 +188,14 @@ def design_chain(p: Problem) -> dict:
         # 既定 knot Mach = 急膨張の終わり。M_A + 0.25ΔM (M4.2 で 1.9、M6 で 2.4)
         M_K = float(p.geometry.get("M_knot", M_A + 0.25 * (Md - M_A)))
         lo, hi = KnotQuinticAxisLaw.admissible_Lc_range(x_A, M_A, Mp_A, Mpp_A, Md, M_K)
-    elif axis_law in ("bspline_M", "bspline_dnu"):
+    elif axis_law in ("bspline_M", "bspline_dnu", "onepoint"):
         lo, hi = 1e-2, float("inf")
     else:
-        raise ValueError("geometry.axis_law は 'quintic'/'knot'/'bspline_M'/'bspline_dnu'")
+        raise ValueError("geometry.axis_law は 'quintic'/'knot'/'bspline_M'/'bspline_dnu'/'onepoint'")
     # --- L_c: 許容窓を必ず計算し、explicit は窓内検査・max は窓上限×0.98 ---
     mode = str(p.geometry.get("Lc_mode", "explicit"))
     if mode == "max":
-        if axis_law in ("knot", "bspline_M", "bspline_dnu") and hi >= 400.0:
+        if axis_law in ("knot", "bspline_M", "bspline_dnu", "onepoint") and hi >= 400.0:
             raise ValueError(f"{axis_law} 則の L_c に上限はない (窓が開放) — "
                              "Lc_mode: explicit で L_c を与えること")
         L_c = hi * 0.98
@@ -224,6 +224,13 @@ def design_chain(p: Problem) -> dict:
             exit_slope=str(p.geometry.get("bspline_exit_curvature", "hard")),
             spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
             spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
+    elif axis_law == "onepoint":
+        # D 案 (plans/accepted/tooling-nozzle-axislaw-onepoint.md): 端点アンカー固定 +
+        # 内部補間点 1 点 (ξ_P, η_P) の C⁴ 区分 5 次。実験用選択肢。
+        from ..geometry.axis_law_onepoint import OnePointC4AxisLaw
+        law = OnePointC4AxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md,
+                                float(p.geometry["onepoint_xi_P"]),
+                                float(p.geometry["onepoint_eta_P"]))
     else:
         law = QuinticHermiteAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md)
     gates = law.gates()
