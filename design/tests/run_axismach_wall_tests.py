@@ -132,11 +132,12 @@ check(f"物理壁: 真のスロートは設計より上流かつ太い (x={_pw.x
       -0.05 < _pw.x_throat < 0.0 and 1.005 < _pw.r_throat < 1.03)
 check(f"物理壁: 最小半径 = r_throat で壁角 0 (r'={float(_pw.r(np.array([_pw.x_throat]),1)[0]):.1e})",
       abs(float(_pw.r(np.array([_pw.x_throat]), 1)[0])) < 1e-9)
-_h = 1e-7   # spline の r''' が大きいので極限を取る (点上は厳密一致)
-_cl = float(_pw.r(np.array([_pw.x_throat - _h]), 2)[0])
-_cr = float(_pw.r(np.array([_pw.x_throat + _h]), 2)[0])
-check(f"物理壁: スロートで上流 Hermite と下流 spline の曲率が一致 ({_cl:.4f} vs {_cr:.4f})",
-      abs(_cl - _cr) < 5e-5)   # h=1e-7 で r'''·h ≈ 2e-5
+# 接合曲率: 上流 Hermite の端 (x_throat から左極限) と下流 spline の x_throat 上の値。
+# 両者は構成的に kappa_throat に一致するはず (spline の r''' が大きいので右極限でなく点上で見る)
+_cl = float(_pw._poly_eval(_pw._herm_c, _pw._herm_x0, _pw.x_throat, np.array([_pw.x_throat]), 2)[0])
+_cr = float(_pw._spl(_pw.x_throat, 2))
+check(f"物理壁: スロートで上流 Hermite と下流 spline の曲率が一致 ({_cl:.6f} vs {_cr:.6f})",
+      abs(_cl - _cr) < 1e-9 and abs(_cl - _pw.kappa_throat) < 1e-9)
 check("物理壁: validate ok", not _pw.validate())
 check(f"物理壁: 入口半径 = r_U ({float(_pw.r(np.array([_pw.x_in]))[0]):.4f})",
       abs(float(_pw.r(np.array([_pw.x_in]))[0]) - 2.5) < 1e-9)

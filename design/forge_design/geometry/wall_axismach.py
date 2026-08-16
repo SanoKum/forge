@@ -280,16 +280,13 @@ class PhysicalNozzleWall:
         rw = rg[mw] + dsv * np.cos(th_w)
         o = np.argsort(xw)
         xw, rw = xw[o], rw[o]
+        self._xw_dbg, self._rw_dbg = xw.copy(), rw.copy()   # 感度診断用に保持
 
-        # --- 真の幾何スロート: 最小半径点まわりの放物線フィット ---------------
-        i0 = int(np.argmin(rw))
-        mfit = np.abs(xw - xw[i0]) < 0.15
-        if int(mfit.sum()) < 8:
-            raise RuntimeError("PhysicalNozzleWall: スロート近傍の点が不足")
-        cf = np.polyfit(xw[mfit], rw[mfit], 2)
-        self.x_throat = float(-cf[1] / (2.0 * cf[0]))
-        self.r_throat = float(np.polyval(cf, self.x_throat))
-        self.kappa_throat = float(2.0 * cf[0])
+        # --- 真の幾何スロート: オフセット点群を spline 化 → r'(x)=0 を root solve ---
+        # (Codex 指摘 2026-08-17: 放物線フィットは近似探索。spline の導関数の零点を
+        #  直接解き、その点で r, r'' を評価する。感度は sensitivity_report() で別途)
+        self.x_throat, self.r_throat, self.kappa_throat, self._throat_diag = \
+            self._locate_throat(xw, rw)
         if not (-0.5 < self.x_throat < 0.2):
             raise RuntimeError(f"PhysicalNozzleWall: 真のスロート x={self.x_throat:.3f} "
                                "が想定窓 (-0.5, 0.2) の外")
@@ -312,6 +309,65 @@ class PhysicalNozzleWall:
                                         self.r_U, 0.0, 0.0,
                                         self.r_throat, 0.0, self.kappa_throat)
         self._poly_eval = _poly_eval
+
+    @staticmethod
+    def _locate_throat(xw, rw, window: float = 0.6, smooth_lam: float = 1e-9,
+                       kappa_window: float = 0.15):
+        r"""オフセット点群から真の幾何スロート $(x_t, r_t, r''_t)$ を求める。
+
+        **位置と曲率で推定器を分ける** (2026-08-17 感度測定に基づく):
+
+        - **位置 $x_t, r_t$**: 点群を微小 λ の平滑化スプラインにし $r'(x)=0$ を Brent 法で
+          root solve。λ を 1e-9〜1e-3 で振っても $x_t$ は ±0.004、$r_t$ は 5 桁不変。
+          放物線フィットは窓 0.08〜0.40 で $x_t$ が −0.013〜+0.006 と動くので位置には使わない。
+        - **曲率 $r''_t$**: 法線オフセットした点群は $x$ 間隔が非一様で $r''$ に ±10% の
+          ジッタを持つ (生 2 階差分の IQR [0.46, 0.61])。スプラインの $r''$ は λ に
+          4.36→0.53 と極端に依存し信頼できない。$r'(x_t)=0$ を既知として
+          $r - r_t = \frac{\kappa}{2}(x-x_t)^2$ の 1 パラメータ LSQ (窓 ±kappa_window) で
+          robust 推定する — 窓 0.08〜0.40 で 0.526〜0.552 と安定、オフセット理論値
+          $\kappa_I/(1-\kappa_I\delta^*)=0.503$ + $\delta^{*\prime\prime}$ 項と整合。
+
+        戻り: (x_t, r_t, r''_t, diag)。diag に両推定器の感度を含める。"""
+        from scipy.interpolate import make_smoothing_spline
+        from scipy.optimize import brentq
+        i0 = int(np.argmin(rw))
+        m = np.abs(xw - xw[i0]) < window
+        if int(m.sum()) < 12:
+            raise RuntimeError("PhysicalNozzleWall: スロート近傍の点が不足")
+        spl = make_smoothing_spline(xw[m], rw[m], lam=smooth_lam)
+        d1 = spl.derivative(1)
+        xl, xr = float(xw[max(i0 - 3, 0)]), float(xw[min(i0 + 3, len(xw) - 1)])
+        for _ in range(6):
+            if d1(xl) < 0.0 < d1(xr):
+                break
+            xl -= 0.02; xr += 0.02
+        else:
+            raise RuntimeError("PhysicalNozzleWall: r'=0 の囲い込みに失敗")
+        x_t = float(brentq(lambda x: float(d1(x)), xl, xr, xtol=1e-12))
+        r_t = float(spl(x_t))
+        # 曲率: r'(x_t)=0 拘束の 1 パラメータ LSQ
+        mk = np.abs(xw - x_t) < kappa_window
+        A = (0.5 * (xw[mk] - x_t) ** 2)[:, None]
+        k_t = float(np.linalg.lstsq(A, rw[mk] - r_t, rcond=None)[0][0])
+        # 感度診断
+        ks = {}
+        for kw in (0.08, 0.15, 0.30):
+            mm = np.abs(xw - x_t) < kw
+            AA = (0.5 * (xw[mm] - x_t) ** 2)[:, None]
+            ks[kw] = float(np.linalg.lstsq(AA, rw[mm] - r_t, rcond=None)[0][0])
+        xs_ = {}
+        for lam in (1e-9, 1e-5, 1e-3):
+            sp2 = make_smoothing_spline(xw[m], rw[m], lam=lam)
+            try:
+                xs_[lam] = float(brentq(lambda x: float(sp2.derivative(1)(x)), xl, xr))
+            except ValueError:
+                xs_[lam] = float("nan")
+        diag = {"kappa_by_window": ks, "x_throat_by_lambda": xs_,
+                "kappa_spread": float(max(ks.values()) - min(ks.values())),
+                "x_throat_spread": float(np.nanmax(list(xs_.values()))
+                                         - np.nanmin(list(xs_.values()))),
+                "n_pts": int(m.sum()), "kappa_window": kappa_window}
+        return x_t, r_t, k_t, diag
 
     def r(self, x, deriv: int = 0):
         x = np.asarray(x, dtype=float)
