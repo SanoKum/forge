@@ -285,16 +285,112 @@ def _sample_characteristic_crossings(levels: np.ndarray, n_ax: int, n_sample: in
             xb0, xb1, rb0, rb1 = boxes[b]
             if xa1 < xb0 or xb1 < xa0 or ra1 < rb0 or rb1 < ra0:
                 continue                            # バウンディングボックス非重複
-            if _polylines_cross_vec(lines[a], lines[b]):
+            if _polylines_cross_aabb(lines[a], lines[b]):
                 count += 1
     return count
 
 
+def _polylines_cross_aabb(p: np.ndarray, q: np.ndarray, chunk_size: int = 256) -> bool:
+    """折れ線 p, q の交差判定。AABB で候補線分対を絞ってから従来と同じ外積を評価する。
+
+    どちらか一方が x 単調なら、その線分 x 区間が順序付けられることを使い、もう一方の各線分と
+    x 区間が重なる添字範囲を `searchsorted` で求める。両方が x 非単調なら、AABB 行列だけを
+    チャンク生成する汎用経路へ落とす。`_polylines_cross_vec` と交差の定義は同一。"""
+    p = np.asarray(p, dtype=float)
+    q = np.asarray(q, dtype=float)
+    if len(p) < 2 or len(q) < 2:
+        return False
+
+    def monotone_x(v: np.ndarray) -> bool:
+        dx = np.diff(v[:, 0])
+        return bool(np.all(dx >= 0.0) or np.all(dx <= 0.0))
+
+    p_mono = monotone_x(p)
+    q_mono = monotone_x(q)
+    if p_mono or q_mono:
+        # q を x 単調側にする。両方単調なら p を短い側にして searchsorted の照会数を減らす。
+        if (not q_mono) or (p_mono and len(p) > len(q)):
+            p, q = q, p
+        if q[-1, 0] < q[0, 0]:
+            q = q[::-1]
+        return _polylines_cross_monotone_q(p, q, chunk_size)
+    return _polylines_cross_aabb_chunks(p, q, chunk_size)
+
+
+def _polylines_cross_monotone_q(p: np.ndarray, q: np.ndarray, chunk_size: int) -> bool:
+    """q の x 座標が非減少である場合の AABB sweep。"""
+    p1, p2 = p[:-1], p[1:]
+    q1, q2 = q[:-1], q[1:]
+    qx_lo = np.minimum(q1[:, 0], q2[:, 0])
+    qx_hi = np.maximum(q1[:, 0], q2[:, 0])
+    qr_lo = np.minimum(q1[:, 1], q2[:, 1])
+    qr_hi = np.maximum(q1[:, 1], q2[:, 1])
+
+    for i0 in range(0, len(p1), chunk_size):
+        i1 = min(i0 + chunk_size, len(p1))
+        pa, pb = p1[i0:i1], p2[i0:i1]
+        px_lo = np.minimum(pa[:, 0], pb[:, 0])
+        px_hi = np.maximum(pa[:, 0], pb[:, 0])
+        # qx_hi >= px_lo かつ qx_lo <= px_hi となる閉区間の範囲。
+        j0 = np.searchsorted(qx_hi, px_lo, side="left")
+        j1 = np.searchsorted(qx_lo, px_hi, side="right")
+        counts = np.maximum(j1 - j0, 0)
+        n_pairs = int(np.sum(counts))
+        if n_pairs == 0:
+            continue
+        ip = np.repeat(np.arange(len(pa), dtype=np.intp), counts)
+        group_start = np.repeat(np.cumsum(counts) - counts, counts)
+        jq = np.repeat(j0, counts) + np.arange(n_pairs, dtype=np.intp) - group_start
+        pr_lo = np.minimum(pa[ip, 1], pb[ip, 1])
+        pr_hi = np.maximum(pa[ip, 1], pb[ip, 1])
+        keep = (pr_hi >= qr_lo[jq]) & (qr_hi[jq] >= pr_lo)
+        if np.any(keep) and np.any(_segments_cross_pairs(
+                pa[ip[keep]], pb[ip[keep]], q1[jq[keep]], q2[jq[keep]])):
+            return True
+    return False
+
+
+def _polylines_cross_aabb_chunks(p: np.ndarray, q: np.ndarray, chunk_size: int) -> bool:
+    """両折れ線が x 非単調な場合の汎用 AABB チャンク判定。"""
+    p1, p2 = p[:-1], p[1:]
+    q1, q2 = q[:-1], q[1:]
+    qx_lo = np.minimum(q1[:, 0], q2[:, 0])
+    qx_hi = np.maximum(q1[:, 0], q2[:, 0])
+    qr_lo = np.minimum(q1[:, 1], q2[:, 1])
+    qr_hi = np.maximum(q1[:, 1], q2[:, 1])
+    for i0 in range(0, len(p1), chunk_size):
+        i1 = min(i0 + chunk_size, len(p1))
+        pa, pb = p1[i0:i1], p2[i0:i1]
+        px_lo = np.minimum(pa[:, 0], pb[:, 0])[:, None]
+        px_hi = np.maximum(pa[:, 0], pb[:, 0])[:, None]
+        pr_lo = np.minimum(pa[:, 1], pb[:, 1])[:, None]
+        pr_hi = np.maximum(pa[:, 1], pb[:, 1])[:, None]
+        overlap = (px_hi >= qx_lo[None, :]) & (qx_hi[None, :] >= px_lo) \
+            & (pr_hi >= qr_lo[None, :]) & (qr_hi[None, :] >= pr_lo)
+        ip, jq = np.nonzero(overlap)
+        if len(ip) and np.any(_segments_cross_pairs(pa[ip], pb[ip], q1[jq], q2[jq])):
+            return True
+    return False
+
+
 def _polylines_cross_vec(p: np.ndarray, q: np.ndarray) -> bool:
-    """折れ線 p, q の全 segment 対を一括 (numpy ブロードキャスト) で交差判定。"""
+    """参照実装: 折れ線 p, q の全 segment 対を一括して交差判定。"""
     p1, p2 = p[:-1], p[1:]
     q1, q2 = q[:-1], q[1:]
     return bool(_segments_cross_matrix(p1, p2, q1, q2).any())
+
+
+def _segments_cross_pairs(p1: np.ndarray, p2: np.ndarray, q1: np.ndarray,
+                          q2: np.ndarray) -> np.ndarray:
+    """同じ長さの線分配列について要素ごとの交差判定を返す。"""
+    def cross2(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        return a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
+
+    d1 = cross2(q2 - q1, p1 - q1)
+    d2 = cross2(q2 - q1, p2 - q1)
+    d3 = cross2(p2 - p1, q1 - p1)
+    d4 = cross2(p2 - p1, q2 - p1)
+    return ((d1 > 0) != (d2 > 0)) & ((d3 > 0) != (d4 > 0))
 
 
 def _segments_cross_matrix(p1: np.ndarray, p2: np.ndarray, q1: np.ndarray,
