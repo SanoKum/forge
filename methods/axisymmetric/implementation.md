@@ -443,7 +443,12 @@ laminar でも **Euler+slip 壁でも**同じ step で落ち、explicit・Barth�
 接線面 (法線 $x$) の面値に混入する。従来規約は値点自体が同じだけずれていて偶然打ち消していた (masking)。SU2 と同じく
 **再構成目標をエッジ中点 $\tfrac12(x_A+x_B)$** にすると (`g_reconEdgeMid`, 内部双対面のみ) Euler fine・laminar・
 **SST 生産 y+1.5 (run_0046, 8000 step) すべて完走・NaN 0・STEADY**。線形場の整合性は不変 (`optest/stretched_optest.py`)。
-**残課題と現時点の処方**: run_0046 の残差床は Dirichlet 生産より ~100 倍高く、室壁 (x∈[−0.033,−0.027], M~1e-3) に
+**解決 (2026-08-16 夜)**: 上の市松の真因は node の GG 勾配 (境界は owner 状態で閉じるが伸縮・近停滞の壁行で甘い) で、
+**`gradLSQ: 2` (内部隣接ノードのみ) にすると κ=0 のまま市松が消え残差床が Dirichlet 生産と同一** (case/43 run_0052)。
+これを受け **node の既定を LSQ + 整合セット (`nodeValueAtNode`/`nodeReconEdgeMidpoint`/`nodeAxisUrDirichlet`=1) に変更**
+(`solverConfig.cpp`; 明示 0 で旧規約)。生産 config での確認 = run_0053 (Euler)・0054 (NS)。以下は経緯として残す。
+
+**残課題と現時点の処方 (LSQ 既定化前の記録)**: run_0046 の残差床は Dirichlet 生産より ~100 倍高く、室壁 (x∈[−0.033,−0.027], M~1e-3) に
 有界の 2 次元市松 (P ±1〜2.5 kPa/1 MPa) が減衰せず定在する (+16000 step でも同振幅)。`lowMachPrecond: 2` と SLAU2 は
 この構成で**発散**する (低マッハ散逸の常套手段は不可)。**κ=1/3 MUSCL (`convMethod: 2`) で市松が 25 倍減・残差 10 倍改善**
 (rms_ro 4e-9, roUy 5e-6; Dirichlet は 5e-10/2.5e-7) → node NS の当面の推奨は `convMethod: 2`。場は生産と近い
