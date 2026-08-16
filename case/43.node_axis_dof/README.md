@@ -63,9 +63,12 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
    接線面 (法線 x) の面値に混入する。従来規約は値点自体が同じだけずれていて偶然打ち消していた (masking)。
    **`nodeReconEdgeMidpoint: 1`** (再構成目標 = エッジ中点 ½(x_A+x_B), SU2 と同じ) で **Euler fine (0044)・laminar (0045)・
    SST 生産 y+1.5 (0046, 8000 step) すべて完走・NaN 0・STEADY**。線形場の整合性は不変 ([optest/stretched_optest.py](optest/stretched_optest.py))。
-   残: 0046 の残差床は Dirichlet より ~100 倍高く (rms_ro 4e-8 vs 5e-10)、室壁 x≈−0.032 に有界の壁法線振動 (P ±1 kPa/1 MPa, Uy 0.7 m/s)
-   が残る (成長はしない)。壁 CV の点値整合 (壁半割面の再構成目標・ghost 同位置) が次の課題。場は生産と近い (壁 Ps 0.14%、
-   壁 Ts 平均 2.4 K、軸 M 0.0135)。
+   0046 の残差床は Dirichlet より ~100 倍高く、室壁 x∈[−0.033,−0.027] (M~1e-3, 第一〜8 行) に**有界の 2 次元市松** (壁法線・接線とも
+   奇偶, P ±1〜2.5 kPa/1 MPa) が**減衰せず定在** (0047: +16000 step でも 2.5 kPa)。`lowMachPrecond: 2` と SLAU2 は**発散**
+   (0048: 58, 0049: 314) = 低マッハ散逸の常套手段は使えない。**κ=1/3 MUSCL (`convMethod: 2`) で市松 2536 → 100 Pa (25 倍減)、
+   残差 10 倍改善** (0050: rms_ro 4e-9, roUy 5e-6; Dirichlet 5e-10/2.5e-7)。0051 で継続中。場は生産と近い (壁 Ps 0.14%、
+   壁 Ts 平均 2.4 K、軸 M 0.0135)。**現時点の NS 推奨は `convMethod: 2`** (solver-settings の「高精度 (安定解から)」)。
+   壁半割面の点値整合 (同位置 ghost) は引き続き次段。
 9. **軸 u_r は「残差 0 化」だけでは漏れていた** (`nodeAxisDirichlet: 0`: |u_r| 0.4〜4.5 m/s = Ux の 4e-4〜4e-3)。
    **`nodeAxisUrDirichlet: 1`** = 状態ピン (roUy=0, roN も) + 残差 0 + block-DPLUR の roUy 行単位化 (壁 no-slip と同じ三点セット) で
    |u_r| ビット 0、軸−偶関数外挿 0.0069 → **0.0008** (run_0029)。残っていた ±0.007 の起伏は漏れた u_r が原因だった。
@@ -98,6 +101,8 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
 | `run_0029_van_urdir` | 0010 + `nodeAxisUrDirichlet: 1` (軸 u_r の状態ピン+残差0+Jacobian 行) | 軸 \|u_r\| = 0 (0010 は 0.41)、軸−外挿 0.0069→**0.0008**、場差 8e-4 | active (**軸の最終形**) |
 | `run_0030`〜`0031` (laminar) / `0032`,`0034` (explicit) / `0033` (Barth) / `0035`,`0036` (境界ノードのみ旧規約の診断・削除済み) / `0037` (SLAU2) / `0038` (Roe) / `0039`〜`0041` (無制限/LSQ) / `0042`,`0043` (Euler slip 壁 fine mesh) | NS van 発散の切り分け (全て y+1.5 メッシュ) | van 側は全て発散 (23〜1132 step)、Dirichlet 対照は完走。**Euler+slip でも同 step 64、内部行だけスワップでも 72** = 種は伸縮内部行の再構成 | active (**真因の切り分け**) |
 | `run_0044_eul_van_edgemid` / `run_0045_lam_van_edgemid` / `run_0046_ns_sst_van_edgemid` | + `nodeReconEdgeMidpoint: 1` (再構成目標 = エッジ中点): Euler / laminar / **SST 生産 y+1.5 8000 step** | **全て完走・NaN 0・STEADY**。0046: 場は生産に近い (壁 Ps 0.14%, Ts 2.4 K, 軸 M 0.0135) が残差床 ~100 倍高・室壁に有界振動 | active (**NS 復活の根拠**) |
+| `run_0047_ns_van_em_cont` / `run_0048_ns_van_em_lmp2` / `run_0049_ns_van_em_slau2` | 0046 の続き (+16000) / + `lowMachPrecond: 2` / + SLAU2 | 0047: 室壁の 2D 市松が定在 (ΔP 2.5 kPa, 減衰せず)。**0048 step 58・0049 step 314 で発散** | active (**常套手段の除外**) |
+| `run_0050_ns_van_em_kappa` / `run_0051_ns_van_em_kappa_cont` | 0047 末尾から `convMethod: 2` (κ=1/3 MUSCL) 6000 / +16000 step | 0050: 市松 2536 → **100 Pa**、rms_ro 4.1e-9・roUy 5.1e-6 (10 倍改善)。0051 継続 | active (**NS 推奨設定の根拠**) |
 | `optest/st_*` | 伸縮メッシュ (AR 125) 線形場の演算子テスト: 値位置×勾配×リミッタ×em | 生産規約 wall-1 6–10%・軸 25–44% の O(1)、node 規約 ≤8e-4 | active |
 | `optest/fs_*` | 自由流テスト (一様圧・静止, AR 0.5–1250) | 偽半径加速度 3.4e4 → 2.1e-3 (pRef) → 1.5e-4 (pRef+閉性) m/s² | active (**ゲージ整合の根拠**) |
 | `optest/closure_*` | r 重み閉性の AR スイープ (幾何のみ・solve 不要) | 誤差 ≈ 5 ulp × 打ち消し比、taper 非依存 → float32 丸め。AR 1250 で 2.5% | active |
