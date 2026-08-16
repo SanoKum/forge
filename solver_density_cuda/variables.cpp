@@ -442,8 +442,24 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
         }
         // nodeValueAtNode: 実 CV (ic<nCells) の回転半径は双対重心 r̄ (mesh::rEff)。ccy はノード座標 (軸で 0)。
         const bool useREff = (msh.nodeValueAtNode == 1 && (geom_int)msh.rEff.size() == msh.nCells);
+        // ゴースト CV も所有 CV の r̄ を使う。値位置=ノードでは境界ノードが境界面上に乗り鏡映距離が 0 =
+        // ゴーストがノードと同位置になるため、軸∩境界コーナー (r=0) でゴーストの回転体積が r 床 (1e-20) に
+        // 潰れ、setDT の dx=vol_ghost/|S| が ~1e-20 → 局所 CFL ~1e13 → dt_local ~1e-22 でその CV が
+        // 完全に凍結する (case/42 run_0003 の入口軸/出口軸ノードで実測)。
+        std::vector<geom_float> rEffGhost;
+        if (useREff) {
+            rEffGhost.assign(msh.nCells_all, (geom_float)-1.0);
+            for (const bcond& bc : msh.bconds)
+                for (size_t k = 0; k < bc.iCells_ghst.size() && k < bc.iCells.size(); ++k) {
+                    const geom_int ig = bc.iCells_ghst[k], io = bc.iCells[k];
+                    if (ig >= msh.nCells && ig < msh.nCells_all && io >= 0 && io < msh.nCells)
+                        rEffGhost[ig] = msh.rEff[io];
+                }
+        }
         for (geom_int ic=0; ic<msh.nCells_all; ic++) {
-            const geom_float r_src = (useREff && ic < msh.nCells) ? msh.rEff[ic] : ccy[ic];
+            const geom_float r_src = useREff ? ((ic < msh.nCells) ? msh.rEff[ic]
+                                                : (rEffGhost[ic] >= (geom_float)0.0 ? rEffGhost[ic] : ccy[ic]))
+                                             : ccy[ic];
             const geom_float r_cell = (r_src > r_floor) ? r_src : r_floor;
             A_planar_h[ic] = volume[ic];
             volume[ic]     = volume[ic] * r_cell;

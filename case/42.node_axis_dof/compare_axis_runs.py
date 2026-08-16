@@ -44,6 +44,7 @@ runs = [("run_0001_ref41_0057_dirichlet", "node", "Dirichlet (production, =case/
         ("run_0002_axisdof_euler", "node", "axis DOF, centroid値位置 (nodeAxisDirichlet 0)"),
         ("run_0003_axisdof_van_euler", "node", "axis DOF + nodeValueAtNode 1 (GG)"),
         ("run_0004_axisdof_van_lsq", "node", "axis DOF + nodeValueAtNode 1 + gradLSQ 2"),
+        ("run_0010_van_ghostfix", "node", "axis DOF + nodeValueAtNode 1 + ghost r 修正"),
         ("run_0005_cell_ref", "cell", "cell 参照 (同メッシュ)")]
 P = {}
 for rd, kind, label in runs:

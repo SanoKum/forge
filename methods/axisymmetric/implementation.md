@@ -385,10 +385,26 @@ $(\rho v)_{\rm top}$ を過小評価する。fx=0.5 単独や LSQ 単独では +
 `cpdx` は全てノード基準になる。境界半割面ではノードと鏡映ゴーストが面上で退化するため
 `calcStructualVariables_d` の fx を `0/0 → 0.5` にガード (非退化面はビット不変)。
 
-**ノズル検証 (case/41 生産モデル Euler, case/42 run_0002〜0005)**: 軸 DOF を解く (`nodeAxisDirichlet: 0`) と
+**ノズル検証 (case/41 生産モデル Euler, case/42 run_0002〜0010)**: 軸 DOF を解く (`nodeAxisDirichlet: 0`) と
 真空崩壊は起きないが軸 M が −0.5〜−0.8% 欠損 (偶関数外挿との差 max 0.033)。`nodeValueAtNode: 1` で ≤0.007、
-近軸場の cell 参照との差 0.0067 (Dirichlet) → 0.0031。**未解決**: 出口∩軸コーナー 1 ノード (M −0.11, P +4.5%,
-GG/LSQ 同一)、粘性 (境界半割面 dcc 退化 → ghostless 化 [plan §5 Step 1] が前提。NS では使わないこと)。
+近軸場の cell 参照との差 0.0067 (Dirichlet) → 0.0031、残差は 1.9 → **2.7 桁**。
+
+**境界ゴーストの回転体積潰れ (要修正点・対応済)**: 値位置=ノードでは境界ノードが境界面上に乗るため鏡映ゴースト
+(`cc_g = cc + 2((pc−cc)·n)n`) が**同位置に退化**する。軸∩境界 (r=0) ではゴーストの回転体積が r 床 (1e-20) まで
+潰れ、`setDT` の `dx = vol/|S|` が ~1e-20 → 局所 CFL 1e13〜1e14 → `dt_local` ~1e-22 となって
+**入口軸・出口軸の 2 ノードが初期値のまま完全凍結**する (case/42 run_0003 で ro がビット一致)。
+対応: `variables.cpp` の r 重みで**ゴースト CV は所有 CV の r̄ を使う** (bcond の `iCells`/`iCells_ghst` から写像)。
+根治は ghost 撤廃 (plan §5 Step 1)。
+
+**粘性 (NS) は未対応 — 2 次再構成が壁スリバーで破綻**: case/41 NS 生産モデル (y+1.5, `wall_first_frac` 4.5e-5,
+SST) で `nodeValueAtNode: 1` は step 62–64 で発散する。切り分け (case/42 run_0009〜0017):
+`nodeAxisDirichlet: 1` 併用でも同 step 64 = **軸 DOF は無関係**、1 次 (`convMethod: 0`) × cfl 1.0 は完走、
+2 次 × cfl 0.2 は step 154 (**CFL は遅らせるだけ**)、**粗い壁格子 (5e-3) では 2 次でも完走**、
+発散起点は第一内点の P=1.11 MPa > 室圧 1.0 MPa のオーバーシュート。機構は、値位置が壁面上に来ることで
+W→内部面の外挿距離が第一セル厚の半分→全長に倍増し、CV 平均勾配+リミッタの外挿が高 AR スリバーで過大に
+なること (CV 平均量を点値として扱う不整合。SU2 は点値ベースで LSQ・リミッタも点値)。NS 対応には
+(a) 再構成の点値整合 (勾配・リミッタを含む)、(b) `wall_dist` の node 基準再計算 (変換器は双対重心基準)、
+(c) ghost 撤廃、が要る。**段階起動では回避できない**ため config に警告を出す。
 
 **軸量の抽出**: 生産 (`nodeAxisDirichlet: 1`) の軸ノードは第一内点コピーで $\tfrac12 q_{rr}r_1^2$ のバイアスを持つ
 (case/41 で ~0.07% $M_d$)。設計チェーンは軸直読でなく `forge_design/evaluate/axis_extract.py` の偶関数外挿

@@ -30,6 +30,13 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
 | `run_0002_axisdof_euler` | 0001 と同一入力で `nodeAxisDirichlet: 0` (軸ノードを DOF として解く、値位置=双対重心) | NaN 0・STEADY・plateau (生産と同型)。真空崩壊なし (ρ_axis/ρ_row1 0.989–1.018)。軸 M 欠損 max 0.033 (0.5–0.8%)、‖ΔM‖∞ 直読 0.888% | active (**軸 DOF 対照**) |
 | `run_0003_axisdof_van_euler` | 0002 + `nodeValueAtNode: 1` (試作: 値位置=ノード座標, r̄→rEff) | 軸−外挿 ≤0.0069 (出口コーナー除く)、cell 参照との差 0.0031、‖ΔM‖∞ 直読 0.257% / 外挿 0.165%。出口∩軸コーナー 1 ノード M 3.892 | active (**恒久策試作の根拠**) |
 | `run_0004_axisdof_van_lsq` | 0003 + `gradLSQ: 2` | 0003 と 3 桁一致 (コーナー含む) = 勾配法は無関係 | active |
+| `run_0010_van_ghostfix` | 0003 + **ゴースト r 重み修正** (境界ゴーストの回転半径を所有 CV の r̄ に) | 凍結ノード 0・`dt_local` 正常 (cfl max 4.0)・残差 2.7 桁 (0003 の 2.4 / Dirichlet 1.9 より良い)。軸−外挿 ≤0.0069、bulk は 0003 と同じ | active (**Euler 生産候補**) |
+| `run_0007_van_1st` | 0003 + `convMethod: 0` (コーナー仮説の A/B。結果的にコーナーは凍結由来と判明) | 1 次解に収束。コーナー診断の副産物 | active |
+| `run_0008_ns_dirichlet` / `run_0009_ns_van` | **NS スモーク** (case/41 `run_0071_ns_v2` の mesh/config/収束場, 4000 step): 生産 Dirichlet vs van | 0008 完走 (NaN 0)、**0009 は step 64 発散** (`res_nan_64.h5`) | active (**NS 未対応の根拠**) |
+| `run_0011_ns_van_axisdir` | van + `nodeAxisDirichlet: 1` (軸 DOF を切り離す) | **同じ step 64 で発散** = 軸 DOF は無関係 | active (切り分け) |
+| `run_0012_ns_van_soft` / `run_0013_ns_van_staged` | van soft 起動 (1 次 cfl 0.2, 3000 step) → その場から 2 次 cfl 1.0 | 0012 完走・場は Dirichlet と同等 (P/T/μt 一致水準)、**0013 は step 62 発散** = 段階起動では回避不可 | active (切り分け) |
+| `run_0014_ns_van_1st_cfl1` / `run_0015_ns_van_2nd_cfl02` | 1 次 × cfl 1.0 / 2 次 × cfl 0.2 | **0014 完走・0015 step 154 発散** = 原因は 2 次再構成 (CFL は遅らせるだけ) | active (**NS 原因特定**) |
+| `run_0016_ns_coarse_van` / `run_0017_ns_coarse_dirichlet` | 粗い壁格子 NS (`run_0069_ns_v1_coarse`, y+~50, 2 次 cfl 1.0, 3000 step) | **両者とも完走・NaN 0** = 破綻は y+≈1 の高 AR 壁スリバー固有 | active (**境界条件の切り分け**) |
 | `run_0005_cell_ref` | 同 nozzle.msh を cell 変換 (品質 PASS AR 9.9/skew 0.41)、`interp_field` で 0057 場から段階起動 (soft 1次 cfl0.5 3000 → 本段) | NaN 0・STEADY・plateau 0.8 桁 (cell の既知床)。セル中心列の偶関数外挿 ‖ΔM‖∞ 0.151% Md — node 外挿の独立参照 | active (**参照**) |
 | `run_0006_regress_dirichlet` | 0001 と同一入力 (生産 `nodeAxisDirichlet: 1`) を**パッチ後バイナリ**で再実行 (既定経路のビット不変確認) | 最終場は 0001 と最大相対差 4e-6 (ro/roUx/roe/P; node の run 間非決定性レベル) = 既定経路は不変 | active (回帰) |
 | `optest/h{0.02,0.01,0.005}_*` | 離散連続式演算子テスト (`optest/run_optest.py`, 直管 1×0.2 m 一様 quad, 1 step 陽解法, `limiter: 0` は線形場再構成のため意図的) | `optest/optest_results.json`。要約は上記 1. | active (**演算子テスト**) |
