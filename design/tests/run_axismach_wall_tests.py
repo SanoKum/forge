@@ -78,5 +78,46 @@ i_min = int(np.argmin(rv))
 check(f"最小半径 {float(rv[i_min]):.5f} ≈ 1 at x={float(xs[i_min]):.3f} ≈ 0",
       abs(float(rv[i_min]) - 1.0) < 5e-3 and abs(float(xs[i_min])) < 0.2)
 
+
+
+# --- スロート整合ゲート + spline リンギング検査 (2026-08-16) ----------------------
+from forge_design.geometry.axis_law import QuinticHermiteAxisLaw
+from forge_design.geometry.moc_inverse import inverse_design
+from forge_design.geometry.transonic import HallThroat
+from forge_design.geometry.wall_axismach import throat_curvature_fit
+
+_ht = HallThroat(R=2.0, gamma=1.4)
+_xA = float(_ht.throat_characteristic(n=41)[0][0])
+_MA, _Mp, _Mpp = _ht.axis_anchor(_xA)
+
+
+def _design(L_c):
+    law = QuinticHermiteAxisLaw(_xA, L_c, _MA, _Mp, _Mpp, 4.0)
+    x_end = law.x_E + 2.3 * 3.274 * np.sqrt(15.0)
+    return inverse_design(_ht, lambda x: float(law(max(x, _xA))), x_axis_end=x_end,
+                          n_axis=500, n_start=41, gamma=1.4, M_start=1.05,
+                          exit_mode="characteristic", x_E=law.x_E, M_d=4.0,
+                          start_line="throat_char", wall_mode="cplus"), law
+
+
+_res_ok, _law_ok = _design(9.715)
+_qa_ok = wall_qa(_res_ok["wall"], 4.0, _law_ok.x_E, 1.4, R=2.0)
+check(f"曲率整合: 生産 L_c で κ₀R = {_qa_ok['kappa0_R_ratio']:.3f} ∈ [0.85,1.15]",
+      abs(_qa_ok["kappa0_R_ratio"] - 1.0) <= 0.15 and not _qa_ok["violations"])
+_w_ok = AxisMachCFDWall(_res_ok["wall"], R=2.0)
+check("リンギング: 生産 L_c の壁 spline はテーブル θ と 0.2° 以内",
+      not [m for m in _w_ok.validate() if "リンギング" in m])
+
+_res_ng, _law_ng = _design(4.0)
+_qa_ng = wall_qa(_res_ng["wall"], 4.0, _law_ng.x_E, 1.4, R=2.0)
+check(f"曲率整合: L_c=4 (設計不整合) を REJECT (κ₀R = {_qa_ng['kappa0_R_ratio']:.2f})",
+      any("スロート曲率不整合" in v for v in _qa_ng["violations"]))
+_w_ng = AxisMachCFDWall(_res_ng["wall"], R=2.0)
+check("リンギング: L_c=4 の壁 spline 振動を検出",
+      any("リンギング" in m for m in _w_ng.validate()))
+_k0, _resid, _n = throat_curvature_fit(_res_ok["wall"])
+check(f"throat_curvature_fit: κ₀={_k0:.3f} が Hall の 1/R に近い (fit 残差 {_resid:.1e})",
+      0.4 < _k0 < 0.55 and _resid < 5e-4)
+
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")
 sys.exit(1 if FAIL else 0)

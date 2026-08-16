@@ -148,10 +148,10 @@ def design_chain(p: Problem) -> dict:
                          x_E=law.x_E, M_d=Md, start_line=start_line,
                          wall_mode=str(p.geometry.get("wall_mode", "streamline")),
                          blend_width=float(p.geometry.get("wall_blend_width", 1.0)))
-    qa = wall_qa(res["wall"], Md, law.x_E, g)
+    qa = wall_qa(res["wall"], Md, law.x_E, g, R=R)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
-    wall = AxisMachCFDWall(res["wall"][:, :2], R=R,
+    wall = AxisMachCFDWall(res["wall"], R=R,
                            r_U=float(p.geometry.get("r_inlet", 2.5)),
                            L_U=float(p.geometry.get("L_U", 3.5)),
                            L_pipe=float(p.geometry.get("L_pipe", 0.5)))

@@ -49,6 +49,9 @@ class AxisMachCFDWall:
         wall_pts = np.asarray(wall_pts, dtype=float)
         if wall_pts.ndim != 2 or len(wall_pts) < 10:
             raise ValueError("wall_pts は (n>=10, >=2) のテーブル")
+        # θ 列があれば保持 (validate のリンギング検査に使う)。壁の構築自体は (x,r) のみ
+        self._th_tbl = wall_pts[:, 2].copy() if wall_pts.shape[1] >= 3 else None
+        self._x_tbl = wall_pts[:, 0].copy()
         self.R = float(R)
         self.up = UpstreamThroatPoly(r_U=float(r_U), R_t=self.R, L_U=float(L_U))
         self.L_pipe = float(L_pipe)
@@ -120,6 +123,15 @@ class AxisMachCFDWall:
         m_dsg = xs >= self.x0
         if np.any(np.diff(rv[m_dsg]) < -1e-9):
             msgs.append("設計壁区間で半径が非単調")
+        # spline リンギング検査 (2026-08-16 追加): 補間スプラインはテーブル点を通るが、
+        # 端点クランプとデータが矛盾すると**点の間**で振動する。テーブル点上の
+        # θ = arctan(spline') とテーブル θ (MOC 出力) の乖離を上限 0.2° で検査
+        # (実測: 健全な設計は ≤0.05°、破綻した L_c=4 は 12.7°)。
+        if self._th_tbl is not None:
+            th_spl = np.arctan(self._spl(self._x_tbl, 1))
+            dev = float(np.max(np.abs(np.degrees(th_spl - self._th_tbl))))
+            if dev > 0.2:
+                msgs.append(f"壁 spline リンギング (テーブル点上の θ 乖離 {dev:.2f}° > 0.2°)")
         # 接合の C1/C2 (構成的に成り立つはずだが実測で保証 — ModeFWall と同じ流儀)
         h = 1e-6
         joints = [("直管/U→T", -self.up.L_U)]
@@ -137,13 +149,39 @@ class AxisMachCFDWall:
         return msgs
 
 
-def wall_qa(wall, M_d: float, x_E: float, gamma: float = 1.4) -> dict:
+def throat_curvature_fit(wall, x_max: float = 0.25) -> tuple:
+    r"""MOC 壁テーブル自身が**スロートで要求する曲率** $\kappa_0$ のロバスト推定。
+
+    $r'(0)=0$ を使い $r-1=\frac{\kappa_0}{2}x^2$ を $0<x<x_{max}$ で最小二乗
+    (1 パラメータ。生の 2 階差分は非一様間隔で雑音支配になるため使わない)。
+    戻り: (κ₀, フィット最大残差, 使用点数)。点不足なら (nan, nan, n)。
+    """
+    w = np.asarray(wall, dtype=float)
+    m = (w[:, 0] > 0.0) & (w[:, 0] < x_max)
+    if int(m.sum()) < 5:
+        return float("nan"), float("nan"), int(m.sum())
+    x, r = w[m, 0], w[m, 1]
+    A = (x ** 2 / 2.0)[:, None]
+    k0, *_ = np.linalg.lstsq(A, r - 1.0, rcond=None)
+    resid = float(np.max(np.abs(A @ k0 - (r - 1.0))))
+    return float(k0[0]), resid, int(m.sum())
+
+
+def wall_qa(wall, M_d: float, x_E: float, gamma: float = 1.4,
+            R: float | None = None) -> dict:
     r"""逆 MOC 壁テーブル (n,4)[x,r,θ,M] の品質指標 (原方針 §8.3, §28)。
 
     - 単調性 / 最大壁角 / 出口壁角 (リップで θ→0 に戻っているか)
     - $x_F, r_F$ と理論予測 ($r_F=\sqrt{A_e/A_t}$、$x_F-x_E\approx r_F\sqrt{M_d^2-1}$)
       の比較 — terminal Mach line 近似は一様域でのみ厳密なので比率は情報値
     - 壁 M の終端値 (設計 $M_d$ との差)
+    - **スロート曲率の整合** (`R` を渡した時のみ、2026-08-16 追加): MOC 壁が要求する
+      $\kappa_0$ (`throat_curvature_fit`) が遷音速モデルの $1/R$ と ±15% で一致し、
+      2 次フィット残差が小さいこと。破れは「壁の問題」ではなく**設計の自己不整合**
+      (遷音速場の仮定と超音速壁の要求が矛盾 — $L_c$ が短すぎる兆候。実測で
+      $L_c\le5$ を設計段階で検出し、CFD の内部衝撃波の崖 [$L_c\le5.5$] とほぼ一致)。
+      壁表現は補間スプライン + スロート端の上流クランプを維持する (ユーザ判断
+      2026-08-16: 近似スプライン化は矛盾を壁の変形に隠すだけなので不採用)。
     violations が空なら合格。
     """
     w = np.asarray(wall, dtype=float)
@@ -159,6 +197,17 @@ def wall_qa(wall, M_d: float, x_E: float, gamma: float = 1.4) -> dict:
         v.append(f"出口壁角 {th_exit_deg:.3f}° (|θ|>0.2° — F 未到達)")
     if abs(r_F / r_F_pred - 1.0) > 0.03:
         v.append(f"r_F = {r_F:.4f} が 1D 理論 {r_F_pred:.4f} から 3% 超乖離")
+    k0 = k0_resid = k0_ratio = None
+    if R is not None:
+        k0, k0_resid, _n = throat_curvature_fit(w)
+        if np.isfinite(k0):
+            k0_ratio = k0 * float(R)
+            if abs(k0_ratio - 1.0) > 0.15:
+                v.append(f"スロート曲率不整合: MOC 壁の要求 κ₀={k0:.3f} が 1/R={1/R:.3f} "
+                         f"から {100*abs(k0_ratio-1):.0f}% 乖離 (設計の自己不整合 — "
+                         "L_c が短すぎる兆候)")
+            if k0_resid > 2e-3:
+                v.append(f"スロート近傍が放物線から逸脱 (fit 残差 {k0_resid:.1e} > 2e-3)")
     out = {
         "x_F": x_F, "r_F": r_F, "r_F_pred_1d": r_F_pred,
         "r_F_err_rel": float(r_F / r_F_pred - 1.0),
@@ -167,6 +216,7 @@ def wall_qa(wall, M_d: float, x_E: float, gamma: float = 1.4) -> dict:
         "theta_max_deg": float(np.rad2deg(th.max())),
         "theta_exit_deg": th_exit_deg,
         "M_wall_exit": float(w[-1, 3]),
+        "kappa0_fit": k0, "kappa0_R_ratio": k0_ratio, "kappa0_fit_resid": k0_resid,
         "violations": v,
     }
     return out
