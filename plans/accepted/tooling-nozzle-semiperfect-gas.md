@@ -117,3 +117,9 @@ $r_t$=0.1258 m (スロート径 252 mm)。
 
 - `2026-08-17` — 起票・実装・設計スイープ完了。CFD は罠を潰して再投入。
 - `2026-08-17` — M_d を 4.0→4.2 に訂正 (ユーザ)、M4.2 で設計スイープ・CFD 8 点完了、推奨ベースライン確定。**完了**。
+- `2026-08-17` — **新 binary (`ea08bcbe`, nodeAxisDirichlet 撤去) で TP CFD を再挑戦 → 再び発散**
+  (run_0020: soft 段 step 190、x≈7 の軸上で P が床へ)。旧 binary の症状 (step 271, x≈5–6) と同性質で、
+  **TP × node 軸対称の発散は nodeAxisDirichlet と無関係、forge の TP 経路 (EOS 温度反転か軸
+  ソース項の TP 版) 固有**と確定。同一メッシュ・IC の CPG は新旧 binary とも完走。
+  申し送りを更新: 「TP 単一種 (thermalMethod 2, species [MIX]) + node 軸対称 Euler が膨張部の
+  軸で発散する。CPG は同条件で完走。case/42 run_0001 (旧) / run_0020 (新) が再現ケース」。
