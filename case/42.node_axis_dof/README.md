@@ -39,6 +39,8 @@ Md=4 Euler, `run_0057` の nozzle.msh/config をそのまま複製) と離散演
 | `run_0016_ns_coarse_van` / `run_0017_ns_coarse_dirichlet` | 粗い壁格子 NS (`run_0069_ns_v1_coarse`, y+~50, 2 次 cfl 1.0, 3000 step) | **両者とも完走・NaN 0** = 破綻は y+≈1 の高 AR 壁スリバー固有 | active (**境界条件の切り分け**) |
 | `run_0005_cell_ref` | 同 nozzle.msh を cell 変換 (品質 PASS AR 9.9/skew 0.41)、`interp_field` で 0057 場から段階起動 (soft 1次 cfl0.5 3000 → 本段) | NaN 0・STEADY・plateau 0.8 桁 (cell の既知床)。セル中心列の偶関数外挿 ‖ΔM‖∞ 0.151% Md — node 外挿の独立参照 | active (**参照**) |
 | `run_0006_regress_dirichlet` | 0001 と同一入力 (生産 `nodeAxisDirichlet: 1`) を**パッチ後バイナリ**で再実行 (既定経路のビット不変確認) | 最終場は 0001 と最大相対差 4e-6 (ro/roUx/roe/P; node の run 間非決定性レベル) = 既定経路は不変 | active (回帰) |
+| `run_0018_ns_van_closure` / `run_0019_ns_dir_closure` / `run_0020_ns_van_lsq` | NS 発散の切り分け続き: van + `axisRFloor 1e-12` (hoop 面積を離散閉性に) / 同 Dirichlet 対照 / van + `gradLSQ: 2` | 0018 **同 step 64 発散** (閉性は無関係)、0019 完走、0020 **step 1693 まで延命** (GG→LSQ で 26 倍) | active (**NS 切り分け**) |
+| `optest/closure_*` | r 重み閉性の AR スイープ (幾何のみ・solve 不要) | 誤差 ≈ 5 ulp × 打ち消し比、taper 非依存 → float32 丸め。AR 1250 で 2.5% | active |
 | `optest/h{0.02,0.01,0.005}_*` | 離散連続式演算子テスト (`optest/run_optest.py`, 直管 1×0.2 m 一様 quad, 1 step 陽解法, `limiter: 0` は線形場再構成のため意図的) | `optest/optest_results.json`。要約は上記 1. | active (**演算子テスト**) |
 
 解析スクリプト: `analyze_axis_row.py` (軸行 vs 第一内点), `compare_axis_runs.py` (→ `axis_runs_compare.png`)。
