@@ -14,6 +14,46 @@ R/L スタディ (run_0012–0019) は特定前に CPG(γ\*) で実施した相�
 単一 quintic 軸 M 則は M6 で全点 REJECT (θ_w>μ_w の逆 MOC fold) → **knot 則 (A6)** で成立。全長 ≥ $L_c$+55 $r_t$ (≈5–7 m) は
 終端特性線 ($\mu_d$=9.6°) の物理的必然。計画: [tooling-nozzle-axismach-knot-law.md](../../plans/accepted/tooling-nozzle-axismach-knot-law.md)。
 
+## M4.2 ベスト結果の参照・引き継ぎ (他マシン向け, 2026-08-17)
+
+**ベスト = `run_0035_ib_R2_LU6_Lc8_tp` (R2 / L_U6 / L_c8, ‖ΔM‖∞ 0.084 % $M_d$)**、次点
+`run_0036_ib_R3_LU6_Lc8_tp` (R3, 0.091 %, ε_M 0.009 % で出口一様性は最良)。差は入口 BC 床と
+同程度で **R2/R3 は同等**と読む。CFD 成果物 (`res_*.h5`, メッシュ h5/msh, log) は git 対象外だが、
+この 2 run だけ**入力・設計成果物をリファレンスとして git に残してある**:
+
+| ファイル | 内容 |
+| --- | --- |
+| `problem_ib_R2_LU6_Lc8_tp.yaml` / `problem_ib_R3_LU6_Lc8_tp.yaml` | 問題定義 (設計変数・ガス・評価設定)。**これだけで全て再生成できる** |
+| `run_0035_…/wall_design.csv` | 逆 MOC 壁テーブル [x_m, r_m, θ_rad, M_wall] (m 単位)。CAD/別ソルバへ渡す形状はこれ |
+| `run_0035_…/target_axis_M.csv` | 軸 Mach 目標 M(x) |
+| `run_0035_…/solverConfig.yaml` / `bcondConfig.yaml` / `probe.yaml` / `species_db.yaml` | forge 入力 (単一擬似種 TP, `thermoHrefTemp: 298.15`, 本段 cfl2) |
+| `run_0035_…/prepare_info.json` / `metrics.json` / `achieved_vs_target.csv` | 設計メタ (x_A, x_E, アンカー, メッシュ ni/nj) と CFD 結果指標 |
+| `run_0035_…/MESH_QUALITY.txt` / `CONVERGENCE_VERDICT.txt` | 品質・収束の記録 |
+| `study_cfd_m42_tp.json`, `run_study_m42_tp.py` | 8 点スタディの表と投入ドライバ |
+
+**再生成 (別 PC)**: forge をビルド (`solver_density_cuda/`, [procedures/development-environment.md](../../procedures/development-environment.md)) し、
+`design/` に venv を作ってから
+```
+cd design && ./.venv-opt/bin/python -m forge_design.evaluate.runner_axismach \
+    ../case/42.isobutane_wt/problem_ib_R2_LU6_Lc8_tp.yaml ../case/42.isobutane_wt/run_00NN_ib_R2_LU6_Lc8_tp [--prepare-only]
+```
+`--prepare-only` で設計 + メッシュ (`nozzle.msh`/`nozzle.h5`) + config だけ作れる (メッシュは TFI 構造化を
+`design` 側で直接書くので Gmsh 不要、変換に forge の `convertGmshToForge` を使う)。CFD は 12000 step ≈ 20 s
+(RTX 3060)。**現行 binary は TP 入口 BC 修正済み** (`run_0050` で残差床 3e-2→9e-7)。run_0031–0038 は修正前の
+binary の結果なので、再実行すると残差は深く落ちるが軸 M/出口指標は ~0.01 % 以内で同等 (run_0033 vs run_0050 実測)。
+
+**凝縮計算へ引き継ぐときの注意**:
+- 現行の TP CFD は組成を**単一擬似種 `MIX`** (`species_db.yaml`, NASA-9 を質量分率で混合) に畳んでいる。
+  H₂O 凝縮 (`condensation: 1`, `condGasSpecies` = 凝縮する気相種 index, [methods/condensation/](../../methods/condensation/),
+  参照 run: [case/16.nozzle_wys](../16.nozzle_wys/README.md) `run_0010_h2o_sst_cond` の `solverConfig.yaml`) には
+  **H₂O を独立種として持つ多成分 TP** (`species: [N2, CO2, O2, H2O]` 等) が必要で、擬似種のままでは凝縮種を指せない。
+  多成分 TP × 陰解法は既知の結合不安定 (`thermoHrefTemp` で部分緩和、cfl 上限 ~2、[case/16 README](../16.nozzle_wys/README.md)
+  と `plans/accepted/tooling-nozzle-semiperfect-gas.md`) があるので、まず dry の多成分 TP で run_0035 と同じ軸 M が
+  出ることを確認してから凝縮を入れるのが安全。
+- 形状・メッシュ・IC は `problem_ib_R2_LU6_Lc8_tp.yaml` から `--prepare-only` で再生成し、`solverConfig.yaml` の
+  `physProp`/`condensation` ブロックだけ差し替える。IC は `paste_isentropic_ic` (設計 1D 等エントロピー) が既定。
+- 出口静温 ~247 K・静圧 ~20–28 kPa (M4.2, Tt 1000 K) — H₂O 分圧はここから。
+
 ## 計算 run 一覧
 
 | run | 目的・設定差分 | 主要結果・成果物 | 状態 |
