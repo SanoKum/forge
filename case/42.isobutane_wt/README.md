@@ -44,7 +44,7 @@ binary の結果なので、再実行すると残差は深く落ちるが軸 M/�
 
 **凝縮計算へ引き継ぐときの注意**:
 - 現行の TP CFD は組成を**単一擬似種 `MIX`** (`species_db.yaml`, NASA-9 を質量分率で混合) に畳んでいる。
-  H₂O 凝縮 (`condensation: 1`, `condGasSpecies` = 凝縮する気相種 index, [methods/condensation/](../../methods/condensation/),
+  H₂O 凝縮 (`condensation: 1`, `condGasSpecies` = 凝縮する気相種 index, [methods/condensation.md](../../methods/condensation.md),
   参照 run: [case/16.nozzle_wys](../16.nozzle_wys/README.md) `run_0010_h2o_sst_cond` の `solverConfig.yaml`) には
   **H₂O を独立種として持つ多成分 TP** (`species: [N2, CO2, O2, H2O]` 等) が必要で、擬似種のままでは凝縮種を指せない。
   多成分 TP × 陰解法は既知の結合不安定 (`thermoHrefTemp` で部分緩和、cfl 上限 ~2、[case/16 README](../16.nozzle_wys/README.md)
