@@ -178,6 +178,8 @@ def design_chain(p: Problem) -> dict:
     # --- 軸 M 則: 'quintic' = 単一 5 次 Hermite (DOF L_c) / 'knot' = 内部 knot 1 個の
     # 区分 C² (A6, DOF L_c + M_knot)。高マッハ (M6) では単一 quintic の L_c 上限
     # (単調性) が短すぎて壁角 θ_w > μ_w の fold を起こすので knot を使う。
+    # 'bspline_M' (B) / 'bspline_dnu' (C): axislaw-smoothness 比較 (plans/accepted/
+    # tooling-nozzle-axislaw-smoothness.md)。$L_c$ に上限はなく常に Lc_mode: explicit。
     axis_law = str(p.geometry.get("axis_law", "quintic"))
     M_K = None
     if axis_law == "quintic":
@@ -186,14 +188,16 @@ def design_chain(p: Problem) -> dict:
         # 既定 knot Mach = 急膨張の終わり。M_A + 0.25ΔM (M4.2 で 1.9、M6 で 2.4)
         M_K = float(p.geometry.get("M_knot", M_A + 0.25 * (Md - M_A)))
         lo, hi = KnotQuinticAxisLaw.admissible_Lc_range(x_A, M_A, Mp_A, Mpp_A, Md, M_K)
+    elif axis_law in ("bspline_M", "bspline_dnu"):
+        lo, hi = 1e-2, float("inf")
     else:
-        raise ValueError("geometry.axis_law は 'quintic' か 'knot'")
+        raise ValueError("geometry.axis_law は 'quintic'/'knot'/'bspline_M'/'bspline_dnu'")
     # --- L_c: 許容窓を必ず計算し、explicit は窓内検査・max は窓上限×0.98 ---
     mode = str(p.geometry.get("Lc_mode", "explicit"))
     if mode == "max":
-        if axis_law == "knot" and hi >= 400.0:
-            raise ValueError("knot 則の L_c に上限はない (窓が開放) — Lc_mode: explicit で "
-                             "L_c を与えること")
+        if axis_law in ("knot", "bspline_M", "bspline_dnu") and hi >= 400.0:
+            raise ValueError(f"{axis_law} 則の L_c に上限はない (窓が開放) — "
+                             "Lc_mode: explicit で L_c を与えること")
         L_c = hi * 0.98
     elif mode == "explicit":
         L_c = float(dv_value(p, "L_c"))
@@ -204,6 +208,22 @@ def design_chain(p: Problem) -> dict:
         raise ValueError("geometry.Lc_mode は 'explicit' か 'max'")
     if axis_law == "knot":
         law = KnotQuinticAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md, M_K)
+    elif axis_law == "bspline_M":
+        from ..geometry.axis_law_bspline import MonotoneBSplineAxisLaw
+        law = MonotoneBSplineAxisLaw(
+            x_A, x_A + L_c, M_A, Mp_A, Mpp_A, Md,
+            n_interior=int(p.geometry.get("bspline_n_interior", 15)),
+            exit_curvature=str(p.geometry.get("bspline_exit_curvature", "hard")),
+            spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
+            spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
+    elif axis_law == "bspline_dnu":
+        from ..geometry.axis_law_bspline import NonnegDnuBSplineAxisLaw
+        law = NonnegDnuBSplineAxisLaw(
+            x_A, x_A + L_c, M_A, Mp_A, Mpp_A, Md, gas,
+            n_interior=int(p.geometry.get("bspline_n_interior", 20)),
+            exit_slope=str(p.geometry.get("bspline_exit_curvature", "hard")),
+            spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
+            spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
     else:
         law = QuinticHermiteAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md)
     gates = law.gates()

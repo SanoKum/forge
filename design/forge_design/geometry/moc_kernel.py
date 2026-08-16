@@ -53,6 +53,41 @@ def pm_mach(nu, g=1.4, tol=1e-12):
     return M
 
 
+def dnu_dM(M, g=1.4, order: int = 1):
+    r"""Prandtl–Meyer 関数の $M$ 微分 ($d\nu/dM$ または $d^2\nu/dM^2$)。
+
+    計画: plans/active/tooling-nozzle-axislaw-smoothness.md (軸則 C: 非負 $d\nu/dx$
+    B-spline が Hall アンカー $M'_A, M''_A$ を $q(x_A)=\nu_M M'_A$,
+    $q'(x_A)=\nu_{MM}(M'_A)^2+\nu_M M''_A$ に chain rule 変換するのに使う)。
+
+    - CPG (`g` が float、または `GasCPG` — テーブルを持たず定数 γ のみのガスモデル):
+      閉形式 $d\nu/dM=\sqrt{M^2-1}/[M(1+\frac{\gamma-1}2M^2)]$ (`pm_mach` の Newton
+      反復が使う式と同一、既に検証済み)。$d^2\nu/dM^2$ は $h(M)=M(1+\frac{\gamma-1}2M^2)$,
+      $b=\sqrt{M^2-1}$ として $[Mh-(M^2-1)h']/(bh^2)$ (h' = 1+\frac32(\gamma-1)M^2)。
+    - semi-perfect (`g` が内部 $(M,\nu)$ テーブル `_M`/`_nu` を持つガスモデル):
+      そのテーブルを 3 次スプラインにしてその導関数を返す (数値差分でなく spline 微分。
+      テーブルにキャッシュを 1 個だけ持たせる)。
+    """
+    if hasattr(g, "_M") and hasattr(g, "_nu"):
+        spl = getattr(g, "_dnu_dM_spline", None)
+        if spl is None:
+            from scipy.interpolate import CubicSpline
+            spl = CubicSpline(g._M, g._nu)
+            g._dnu_dM_spline = spl
+        return spl(np.asarray(M, dtype=float), order)
+    gamma = float(getattr(g, "gamma_ref", g))    # GasCPG (テーブルなし) or 素の float
+    M = np.asarray(M, dtype=float)
+    b = np.sqrt(np.maximum(M * M - 1.0, 0.0))
+    h = M * (1.0 + 0.5 * (gamma - 1.0) * M * M)
+    if order == 1:
+        return np.where(b > 1e-12, b / np.maximum(h, 1e-300), 0.0)
+    if order == 2:
+        hp = 1.0 + 1.5 * (gamma - 1.0) * M * M
+        num = M * h - (M * M - 1.0) * hp
+        return np.where(b > 1e-9, num / np.maximum(b * h * h, 1e-300), 0.0)
+    raise ValueError("dnu_dM: order は 1 か 2")
+
+
 def _mu(M):
     return np.arcsin(1.0 / max(M, 1.0 + 1e-12))
 

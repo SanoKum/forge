@@ -324,6 +324,66 @@ M6/R3 では $L_c$ 25 でまだ fold (Δθ 3.9°)、35 で θ_max 17.5° < μ_w 
 QA を落とす。初項 dx₀=0.03・公比 1.05 の等比で等間隔値まで細分する (全域等比は下流の出口平坦部に
 1e-5 ジッタ → 不可)。M4.2 生産 (等間隔) は無変更、指定すれば κ₀R 1.034→1.016 と改善。
 
+#### 軸則の滑らかさ比較: A (knot) vs B (monotone B-spline) vs C (非負 $d\nu/dx$ B-spline)
+
+計画: [tooling-nozzle-axislaw-smoothness.md](../../plans/accepted/tooling-nozzle-axislaw-smoothness.md)。
+A (knot 則) は knot で $M,M',M''$ が C² 連続だが $M'''$ が跳ぶ (基準条件 R=3, $L_c$=45,
+$M_d$=6 で $M'''(K^-)\approx0.118$, $M'''(K^+)\approx-0.00060$)。この跳びが壁 fairness や
+特性線網の質に実害を与えるかを、同一逆 MOC・同一条件で B・C と比較する。
+
+**B: $M(x)$ 直接表現の C³/C⁴ monotone B-spline (`geometry.axis_law: bspline_M`)**
+
+次数 $k=5$ (quintic) の clamped B-spline、単純内部ノットで構成的に C⁴。制御点
+$c_0,\dots,c_{n-1}$ が未知数。端点条件は基底関数の値・1階・2階微分行 (`BSpline` を
+one-hot 制御ベクトルで評価) を通じた線形等式:
+$$M(x_A)=M_A,\ M'(x_A)=M'_A,\ M''(x_A)=M''_A,\ M(x_E)=M_d,\ M'(x_E)=0,\ [M''(x_E)=0]$$
+最後の $M''(x_E)=0$ は既定ハード、過拘束の疑いがあるため soft (2 次ペナルティ) 版も比較する。
+**単調性は制御多角形の非減少 ($c_{i+1}\ge c_i$) で構成的に保証** (variation-diminishing 性質。
+密サンプル上の $M'\ge0$ チェックに頼らない)。平滑化目的は
+$J_{\rm axis}=\int(M''')^2dx=c^\top Hc$ ($H$ は 3 階微分基底の Gram 行列、6 点
+Gauss–Legendre で各ノット区間を厳密積分) を最小化する凸 QP (SLSQP, フォールバック
+trust-constr)。内部ノット本数は「単調解が実行可能になる最小本数」と「$J_{\rm axis}$ が
+頭打ちする本数」の両方を確認して選ぶ。
+
+**C: 非負 $d\nu/dx$ B-spline (`geometry.axis_law: bspline_dnu`)**
+
+Prandtl–Meyer 角 $\nu(x)=\nu(M(x))$ の勾配 $q(x)=d\nu/dx$ を次数 $k_q=4$ (quartic, C³) の
+B-spline で表現する。**非負性は制御係数 $c_i\ge0$ で構成的に保証** (B-spline は非負基底の
+凸結合 = partition of unity なので $c_i\ge0 \Rightarrow q(x)\ge0$ が全域で厳密)。
+Hall アンカー $(M_A,M'_A,M''_A)$ は chain rule で $(q(x_A), q'(x_A))$ に変換する
+($d\nu/dM$, $d^2\nu/dM^2$ は `moc_kernel.dnu_dM(M,gas,order)` — CPG は閉形式
+$d\nu/dM=\sqrt{M^2-1}/[M(1+\frac{\gamma-1}2M^2)]$、semi-perfect は内部 $(M,\nu)$ テーブルの
+3 次スプライン微分):
+$$q(x_A)=\nu_M(M_A)\,M'_A,\qquad q'(x_A)=\nu_{MM}(M_A)(M'_A)^2+\nu_M(M_A)\,M''_A$$
+端点条件: $\nu(x_A)=\nu(M_A)$、$q(x_A),q'(x_A)$ (上式)、$q(x_E)=0$、$[q'(x_E)=0]$ (既定ハード)。
+**独立な等式拘束** $\int_{x_A}^{x_E}q\,dx=\nu(M_d)-\nu(M_A)$ も明示的に課す (端点条件だけでは
+自動的に成り立たない)。平滑化目的は $J_\nu=\int(q'')^2dx$ (B と同じ Gram 行列パターン)。
+$\nu(x)$ は $q$ の B-spline 反導関数 (`BSpline.antiderivative()`, quad との差 <1e-9 で検証済み)
+から $\nu(x)=\nu(M_A)+F(x)-F(x_A)$、$M(x)=\nu^{-1}(\nu(x))=$ `gas.mach_of_nu(nu(x))`。
+$M(x)$ の高階微分診断は一様格子上の $M(x)$ サンプルに 5 次補間 B-spline を当てて評価する
+(生の非一様点への数値差分を避ける、壁曲率診断と同じ流儀)。
+
+**E 側 $M''=0$ の単純削除案は主案にしない**: A 側 3 条件 + E 側 $M,M'=0$ の単一 4 次式は
+M6/R3 の単調性上限 $L_c\approx14.18$、$M''(E)$ 自由の単一 5 次でも上限 $\approx24.1$
+(いずれも $L_c=45$ を解決しない)。knot 後段を 4 次→3 次に落としても knot の $M'''$ ジャンプは
+ほぼ不変で E に $M''$ ジャンプが増えるだけ (問題を下流へ移すのみ)。
+
+**特性線網の位相条件について**: $\theta_w<\mu_w$ は一般的な物理法則の壁角上限ではなく、
+本チェーンの逆 MOC (軸から C⁻ を後退させて壁に届かせる構成) で C⁻ が軸と上壁を単調・
+一対一に結ぶための**位相条件**。`min(μ_w-θ_w)` はこの位相への余裕を測る補助指標として報告し、
+健全性の一次判定は特性線網の signed area・orientation flip・退化セル・点堆積の直接検査
+(`moc_diagnostics.py`) で行う。
+
+**比較結果 (2026-08-16, M6 R=3/$L_c$=45)**: A (knot) と B は hard gate 合格、C は前倒れ対策
+(spread 拘束) を入れても解像度を上げるほど内部反転が増える恒常的な fold で不合格
+(`case/42.isobutane_wt/compare_axislaw_ABC.py` の 3 解像度比較)。B は $M'''$ ジャンプを
+5 倍改善する ($M'''_{\max}$ 0.30→0.06) が、その代償で $\theta_{\max}$ 14.1°→23.5°・
+$\min(\mu_w-\theta_w)$ 1.78°→0.09° と壁側は悪化し、CFD 誤差も A の 12k 相当比で
+約 4.4 倍 (0.04%→0.18%)。**軸則の見た目の滑らかさ ($M'''$ 連続性) は壁 fairness や CFD 精度の
+改善に直結しない** — 生産は A (knot, $M_K$=2.5) を維持する。詳細:
+[結果ページ](https://claude.ai/code/artifact/cf8a4c74-8d1f-44f4-a256-652cc122d00d)、
+[比較計画](../../plans/accepted/tooling-nozzle-axislaw-smoothness.md)。
+
 ### Hall 遷音速解 (`geometry/transonic.py::HallThroat`)
 
 Hall (1962) の軸対称遷音速級数を CONTUR (Sivells AEDC-TR-78-63, `papers/nozzle_design/`

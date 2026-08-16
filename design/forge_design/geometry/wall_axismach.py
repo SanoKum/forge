@@ -99,8 +99,13 @@ class AxisMachCFDWall:
         elif deriv == 2:
             out[m_pipe] = 0.0
             out[m_par] = 1.0 / self.R
+        elif deriv == 3:
+            # 直管・骨接放物線は deriv>=3 で恒等的に 0 (壁曲率診断用、2026-08-16 追加。
+            # 設計壁区間 [x0, x_F] は throat_char 構成で x0=0 なので m_par は通常空)。
+            out[m_pipe] = 0.0
+            out[m_par] = 0.0
         else:
-            raise ValueError("deriv は 0..2")
+            raise ValueError("deriv は 0..3")
         if m_up.any():
             out[m_up] = self.up.r(x[m_up], deriv)
         if m_dsg.any():
