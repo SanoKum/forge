@@ -350,6 +350,27 @@ void mesh::readMesh(string fname)
         this->cells[ic].regionId = regionIds.empty() ? 0 : regionIds[ic];
     }
 
+    // nodeValueAtNode: 値の位置をノード座標に統一 (node モード, CV ic == ノード ic)。双対重心の半径は rEff へ。
+    // ゴースト生成 (下) より前に行い、ゴースト鏡映もノード基準にする。
+    if (this->nodeValueAtNode == 1 && (geom_int)this->nodes.size() >= this->nCells) {
+        this->rEff.assign(this->nCells, (geom_float)0.0);
+        geom_int nswap = 0; geom_float maxShift = 0.0;
+        for (geom_int ic = 0; ic < this->nCells; ic++) {
+            if (this->nodes[ic].coords.size() < 3) continue;
+            this->rEff[ic] = this->cells[ic].centCoords[1];
+            const geom_float dx = this->cells[ic].centCoords[0] - this->nodes[ic].coords[0];
+            const geom_float dy = this->cells[ic].centCoords[1] - this->nodes[ic].coords[1];
+            const geom_float dz = this->cells[ic].centCoords[2] - this->nodes[ic].coords[2];
+            maxShift = std::max(maxShift, std::sqrt(dx*dx + dy*dy + dz*dz));
+            this->cells[ic].centCoords[0] = this->nodes[ic].coords[0];
+            this->cells[ic].centCoords[1] = this->nodes[ic].coords[1];
+            this->cells[ic].centCoords[2] = this->nodes[ic].coords[2];
+            ++nswap;
+        }
+        cout << "[mesh] nodeValueAtNode: centCoords <- node coords for " << nswap
+             << " CVs (max centroid shift " << maxShift << "), dual-centroid r kept in rEff" << endl;
+    }
+
     // boundary conditions
     Group grp = file.getGroup("/BCONDS");
     geom_int nb = grp.getNumberObjects();

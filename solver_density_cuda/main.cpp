@@ -790,6 +790,7 @@ cudaConfig initializeSimulation(
 
     cout << "Read Mesh \n";
     if (cfg.meshFormat == "hdf5") {
+        msh.nodeValueAtNode = (cfg.discretization == "node") ? cfg.nodeValueAtNode : 0;
         msh.readMesh(cfg.meshFileName);
     } else {
         cerr << "Error unknown mesh format: " << cfg.meshFormat << endl;

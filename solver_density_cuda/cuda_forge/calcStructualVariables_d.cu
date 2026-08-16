@@ -46,7 +46,9 @@ void calcStructualVariables_d
         geom_float dc1pz = sz[ip]*(pcz[ip] - ccz1)/ss[ip];
         geom_float dc1p  = sqrt( pow(dc1px, 2.0) + pow(dc1py, 2.0) + pow(dc1pz, 2.0));
 
-        fx [ip] = dc1p/(dc0p + dc1p);
+        // 退化ガード: 面上に両セル中心が乗る (node 値位置=ノード座標の境界半割面: ノードとその鏡映ゴースト)
+        // と 0/0 になるため中点 fx=0.5 にする。非退化面は従来どおり (ビット不変)。
+        fx [ip] = ((dc0p + dc1p) > (geom_float)0.0) ? dc1p/(dc0p + dc1p) : (geom_float)0.5;
         dcc[ip] = dc;
 
         // node-centered: 内部双対面はノード–ノード中点で値を取る (φ_f=½(φ0+φ1)) のが標準的な

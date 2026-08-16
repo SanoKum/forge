@@ -353,6 +353,47 @@ SU2 の軸が壊れないのは軸対称の定式が **planar 幾何 + 1/y ソ�
 cell モード・平面 2D・`nodeAxisDirichlet=0` はビット不変。species/凝縮スカラーの軸ピンは
 未対応 (必要時に拡張)。
 
+## node 軸ノードの値の位置と軸半 CV の整合 (`nodeValueAtNode`, 2026-08-16 試作)
+
+`nodeAxisDirichlet` が対症だった軸行欠陥の**離散的な正体**を case/42 の演算子テストで確定した
+([case/42.node_axis_dof](../../case/42.node_axis_dof/README.md), plan
+[architecture-node-centroid-value-position](../../plans/active/architecture-node-centroid-value-position.md))。
+
+**演算子テスト**: $\rho=$const, $u=U_0-2ax$, $v=ar$, $p=$const は $\partial_x u+\tfrac1r\partial_r(rv)=0$ を満たす
+(連続式残差 ≡ 0)。直管の一様 quad (h=0.02/0.01/0.005) で陽解法 1 step の $(\rho^1-\rho^0)/\Delta t$ から
+無次元残差 $e=\mathrm{res}_\rho/(V\rho a)$ を測る (`limiter: 0` は線形場を厳密再構成するため意図的)。
+
+| 変種 | 軸 CV | 第一内点行 | 第二内点行 | 内部 |
+|---|---|---|---|---|
+| 現行 (`axisCentroidShift: 1`, GG, 幾何 fx, MUSCL) | **+0.833** | −0.167 | +0.031 | 0 |
+| 〃 + `nodeMidpointFx: 1` | +0.500 | −0.063 | 0 | 0 |
+| 〃 + `gradLSQ: 2` | +0.500 | −0.125 | +0.031 | 0 |
+| 1 次風上 (`convMethod: 0`) | 0 | 0 | 0 | 0 |
+| **`nodeValueAtNode: 1`** (GG or LSQ, MUSCL) | 0 (≤2e-3) | 0 | 0 | 0 |
+
+いずれも **h に依らない定数** = 軸半 CV の O(1) 不整合。原因は「状態はノード値 (u_r=0 のピン・出力・BC) だが
+再構成基点 `cpdx`・fx・勾配は双対重心 $\bar r=\Delta r/4$」という**値の位置の混在**。軸半 CV の質量式は
+
+$$\dot\rho_A=-\Big[\tfrac{4}{\Delta r}(\rho v)_{\rm top}+\partial_x(\rho u)\Big],\qquad (\rho v)_{\rm top}=\tfrac12(\rho v)_I\ \Rightarrow\ 2\partial_r(\rho v)$$
+
+でノード基準なら L'Hôpital 極限に厳密一致する (1 次風上が exact な理由) が、重心基準の再構成は
+$(\rho v)_{\rm top}$ を過小評価する。fx=0.5 単独や LSQ 単独では +0.5 が残る。
+
+**`mesh.nodeValueAtNode: 1`** (node 限定、既定 0 = ビット不変): solver 読込時 (`mesh.cpp readMesh`, ゴースト生成前)
+に `cells[ic].centCoords ← nodes[ic].coords`、置換前の双対重心 y を `mesh::rEff` に退避し、r 重み
+(`variables.cpp` の `r_cell`) だけが `rEff` を使う (軸ノードで回転体積が消えない)。ゴースト鏡映・fx・LSQ・
+`cpdx` は全てノード基準になる。境界半割面ではノードと鏡映ゴーストが面上で退化するため
+`calcStructualVariables_d` の fx を `0/0 → 0.5` にガード (非退化面はビット不変)。
+
+**ノズル検証 (case/41 生産モデル Euler, case/42 run_0002〜0005)**: 軸 DOF を解く (`nodeAxisDirichlet: 0`) と
+真空崩壊は起きないが軸 M が −0.5〜−0.8% 欠損 (偶関数外挿との差 max 0.033)。`nodeValueAtNode: 1` で ≤0.007、
+近軸場の cell 参照との差 0.0067 (Dirichlet) → 0.0031。**未解決**: 出口∩軸コーナー 1 ノード (M −0.11, P +4.5%,
+GG/LSQ 同一)、粘性 (境界半割面 dcc 退化 → ghostless 化 [plan §5 Step 1] が前提。NS では使わないこと)。
+
+**軸量の抽出**: 生産 (`nodeAxisDirichlet: 1`) の軸ノードは第一内点コピーで $\tfrac12 q_{rr}r_1^2$ のバイアスを持つ
+(case/41 で ~0.07% $M_d$)。設計チェーンは軸直読でなく `forge_design/evaluate/axis_extract.py` の偶関数外挿
+($q=a_0+a_2r^2$, r>0 の 4 点, 軸ノード除外) を既定にした (`axis_curve_node(mode="evenfit")`)。
+
 ## Roe スキームの取扱い
 
 軸対称固有の固有分解 ([theory.md](theory.md) §"Roe フラックスヤコビアン") は

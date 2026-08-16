@@ -269,6 +269,13 @@ public:
     // methods/axisymmetric/implementation.md)。node && isAxisymmetric 以外では no-op。既定 0 = 従来。
     int nodeAxisDirichlet = 0;
 
+    // node-centered: 値の位置をノード座標に統一する (1) / 従来 = 双対 CV 重心 (0, 既定・ビット不変)。
+    // 1 では solver 読込時に centCoords ← ノード座標 (再構成基点 cpdx・fx・LSQ・ゴースト鏡映がノード基準)、
+    // 双対重心の半径 r̄ は別配列 (mesh::rEff) に退避して軸対称 r 重み (V = r̄·A_planar) だけが使う
+    // (plan architecture-node-centroid-value-position §4「値の位置=ノード、軸半径は専用量」の試作)。
+    // 軸半 CV の質量残差 O(1) 不整合 (case/42 演算子テスト) の是正が目的。node && 非 cell 以外は no-op。
+    int nodeValueAtNode = 0;
+
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ 毎ステップ solve,
     // 2:LSQ 係数事前計算 = setup 1回 double 固有分解→擬似逆→float32 係数 gather。推奨は 2)。
     // node-centered の median-dual で GG 面勾配が非一様メッシュの線形場を再現できない (近壁で O(1) 誤差)

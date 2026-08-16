@@ -44,12 +44,18 @@ from .runner_wt import (_bcond, _config_euler, _config_euler_node,
                         _config_sst_node)
 
 
-def axis_curve_node(run_dir, scale: float, lam: float = 1e-5):
-    r"""node run の軸ノード列から平滑化スプライン M(x) を作る (§15 の実装)。
+def axis_curve_node(run_dir, scale: float, lam: float = 1e-5, mode: str = "evenfit"):
+    r"""node run の軸列から平滑化スプライン M(x) を作る (§15 の実装)。
 
-    node は軸上に真の DOF を持つ (帯平均不要)。末尾 3 スナップ平均 → r=0 ノード
-    抽出 → `make_smoothing_spline`。M, M', M'' は**同一スプライン**から評価する
-    (生の 2 階差分禁止)。戻り値: (spline, x_min, x_max) — x は r_t 単位。"""
+    mode="evenfit" (既定): 軸ノードを除外し r>0 の 4 点で M=a₀+a₂r² を最小二乗した a₀ を軸値に
+    使う (`axis_extract.axis_curve_evenfit`)。生産設定 `nodeAxisDirichlet: 1` の軸ノードは第一内点の
+    コピー (真の DOF ではない) で ½M_rr r₁² のバイアス (case/41 で ~0.08% M_d) を持つため。
+    mode="node": 従来の軸ノード直読。末尾 3 スナップ平均 → `make_smoothing_spline`。
+    M, M', M'' は**同一スプライン**から評価する (生の 2 階差分禁止)。
+    戻り値: (spline, x_min, x_max) — x は r_t 単位。"""
+    if mode == "evenfit":
+        from .axis_extract import axis_curve_evenfit
+        return axis_curve_evenfit(run_dir, scale, lam=lam)
     import h5py
     from scipy.interpolate import make_smoothing_spline
     rd = Path(run_dir)

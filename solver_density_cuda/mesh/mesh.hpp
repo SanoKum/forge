@@ -173,6 +173,12 @@ public:
     // この隣接ノードからの対称 Dirichlet (∂q/∂r=0, u_r=0) で置換する (SU2 Normal_Neighbor と同型)。
     geom_int* axis_rep_d = nullptr;
 
+    // nodeValueAtNode=1 (main.cpp が readMesh 前にセット): readMesh で cells[ic].centCoords ← nodes[ic].coords
+    // (ic<nCells) に置換し、置換前の双対 CV 重心 y (=面積加重半径 r̄) を rEff[ic] に退避する。
+    // 軸対称 r 重み (variables.cpp) は rEff を使う (centCoords.y=0 の軸ノードで回転体積が消えないように)。
+    int nodeValueAtNode = 0;
+    std::vector<geom_float> rEff;
+
     // 壁 CV フラグ [nCells] (wall 種別 bcond の CV=1)。node-centered 壁 Dirichlet で、壁ノード速度を
     // 厳密に 0 に固定する (state 初期化 + 運動量残差射影) のに使う。壁ゴーストを撤廃する代替。
     geom_int* wall_flag_d = nullptr;

@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `architecture`
-- **status**: `draft`
+- **status**: `in-progress`
 - **related_docs**:
   - `methods/discretization.md`
   - `methods/diffusion.md`
@@ -115,3 +115,16 @@ node-centered で未知量の位置は**ノード**だが、現状 `CELLS/centCo
 - `2026-07-19` — **omega BC 方針をユーザー承認で確定** (§4.1 追加): ghostless plan 実証済みの
   「wall_y_eff MIN + omega 直接ピン + point-implicit decouple」を踏襲。これで未解決 3 項目のうち
   設計判断待ちは解消し、残りは実装のみ (§5 の Step 1 ghostless 完遂 → Step 2–5)。
+- `2026-08-16` — **試作 `mesh.nodeValueAtNode: 1` を実装 (solver 側スワップ, worktree ブランチ `feature/node-axis-dof`)**。
+  変換器は触らず `mesh.cpp readMesh` で (ゴースト生成前に) `centCoords ← node 座標`、双対重心 y を `mesh::rEff`
+  に退避し `variables.cpp` の r 重み `r_cell` だけが `rEff` を使う (= §4 の「値の位置=ノード、軸半径は専用量」)。
+  境界半割面の退化 (ノードと鏡映ゴーストが面上) は `calcStructualVariables_d` の fx を `0/0→0.5` にガード。
+  **粘性 dcc 退化は未対応** (Step 1 ghostless が前提) なので Euler 限定・既定 0。
+  根拠 = [case/42.node_axis_dof](../../case/42.node_axis_dof/README.md): 離散連続式の演算子テストで
+  軸半 CV の質量残差 e=+0.83 (GG)/+0.5 (fx=0.5 or LSQ) が h 不変の O(1) 不整合であること、
+  `nodeValueAtNode: 1` で丸め床に落ちることを確認 (`optest/`)。ノズル Euler (case/41 生産モデル) で軸 M 欠損
+  0.033→≤0.007、cell 参照との近軸差 0.0067→0.0031。**残課題**: 出口∩軸コーナー 1 ノード (M −0.11)、
+  粘性 (Step 1)、implicit の軸 roUy 行 (SU2 型の状態・RHS・Jacobian 一体射影, discretization.md §7.1 の
+  過去失敗を踏まえ corner を独立検証)。設計チェーンは並行して軸直読→偶関数外挿に切替
+  (`forge_design/evaluate/axis_extract.py`)。
+

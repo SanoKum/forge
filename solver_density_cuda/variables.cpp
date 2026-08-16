@@ -440,8 +440,11 @@ void variables::setStructuralVariables_d(solverConfig& cfg , cudaConfig& cuda_cf
             sz[ip] *= r_face;
             ss[ip] *= r_face;
         }
+        // nodeValueAtNode: 実 CV (ic<nCells) の回転半径は双対重心 r̄ (mesh::rEff)。ccy はノード座標 (軸で 0)。
+        const bool useREff = (msh.nodeValueAtNode == 1 && (geom_int)msh.rEff.size() == msh.nCells);
         for (geom_int ic=0; ic<msh.nCells_all; ic++) {
-            const geom_float r_cell = (ccy[ic] > r_floor) ? ccy[ic] : r_floor;
+            const geom_float r_src = (useREff && ic < msh.nCells) ? msh.rEff[ic] : ccy[ic];
+            const geom_float r_cell = (r_src > r_floor) ? r_src : r_floor;
             A_planar_h[ic] = volume[ic];
             volume[ic]     = volume[ic] * r_cell;
         }
