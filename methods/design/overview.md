@@ -349,6 +349,7 @@ $\min(\mu-\theta)=1.00095^\circ$、最小sin角0.04177、内部flip/交差0。$r
 軸Mach指定長 $L_c=2.099$ m、閉包後端はスロート基準で5.071 m。これは0.01格子と1°工学余裕に
 対する**設計上の最短境界**であり、生産既定変更にはCFD確認を別途要する。成果物:
 `case/42.isobutane_wt/optimize_axislaw_A_shortest.{json,py}` / `_summary.csv`。
+可視化結果ページは `case/42.isobutane_wt/report_axislaw_A_shortest.html`（生成器は同名 `.py`）。
 
 **軸点列のスロート側細分 (`geometry.axis_dx0`, `moc_inverse._axis_grid`)**: 初期値線 (スロート特性線)
 は自身が C⁻ なので担体として退化し、初期値線と壁の間の場は**軸点から後退する C⁻ だけで**埋まる。
