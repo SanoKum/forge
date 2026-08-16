@@ -294,7 +294,9 @@ void axisymmetricSourceSU2_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , 
 __global__ void enforceAxisSymmetry_d
 (
     geom_int nCells, geom_int* axis_flag,
-    flow_float* ro, flow_float* roUy, flow_float* roe, flow_float* Uy
+    flow_float* ro, flow_float* roUy, flow_float* roe, flow_float* Uy,
+    // 擬似時間ステップ開始値も同時にピン (implicit commit ro=roN+dq が stale roUyN を巻き戻さないため)。nullptr 可。
+    flow_float* roUyN, flow_float* roeN, flow_float* roN
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -305,6 +307,11 @@ __global__ void enforceAxisSymmetry_d
         }
         roUy[ic] = (flow_float)0.0;
         Uy[ic]   = (flow_float)0.0;
+        if (roUyN != nullptr) {
+            const flow_float rN = roN[ic];
+            if (rN > (flow_float)0.0) roeN[ic] -= (flow_float)0.5 * roUyN[ic] * roUyN[ic] / rN;
+            roUyN[ic] = (flow_float)0.0;
+        }
     }
 }
 
@@ -423,12 +430,19 @@ void zeroAxisAllResiduals_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , m
 
 void enforceAxisSymmetry_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
-    // node-centered 軸対称でのみ作用 (軸上ノードが CV 中心になるのは node モード)。
+    // node-centered 軸対称 × nodeAxisUrDirichlet=1 でのみ作用 (nodeAxisDirichlet=1 は enforceAxisMirror が担う)。
+    // 呼び出し位置は assembleResidual 冒頭 (壁 no-slip の enforceWallNoSlip と同相): 更新後状態を毎ステージ
+    // u_r=0 へ射影し、以降の派生量・勾配・flux が全てピン後状態を見る。commit 後の外部手術ではない
+    // (旧 open issue の発散は commit 後強制 + Jacobian 非整合の組合せ。今回は roUy 行 decouple と対)。
     if (cfg.isAxisymmetric != 1 || cfg.discretization != "node" || msh.axis_flag_d == nullptr) return;
+    if (cfg.nodeAxisUrDirichlet != 1 || cfg.nodeAxisDirichlet == 1) return;
 
     enforceAxisSymmetry_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
         msh.nCells, msh.axis_flag_d,
-        var.c_d["ro"], var.c_d["roUy"], var.c_d["roe"], var.c_d["Uy"]
+        var.c_d["ro"], var.c_d["roUy"], var.c_d["roe"], var.c_d["Uy"],
+        var.c_d.count("roUyN") ? var.c_d["roUyN"] : nullptr,
+        var.c_d.count("roeN") ? var.c_d["roeN"] : nullptr,
+        var.c_d.count("roN") ? var.c_d["roN"] : nullptr
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

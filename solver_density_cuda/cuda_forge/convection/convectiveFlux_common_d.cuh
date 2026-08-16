@@ -36,6 +36,11 @@ __device__ flow_float g_contactBlend = 0.0f;
 // R_mix/T/h を **face 補間組成** Y_face=f·Y_ic0+(1-f)·Y_ic1 (正規化) で評価し、ρ_L,P_L (2次再構成) と
 // 同じ face 位置の組成に整合させる (現行は owner セル組成=1次 → ΔT_f^MO~30K)。species 流束は不変。
 __device__ int g_faceThermoY = 0;
+// node-centered: 2 次再構成の目標点を双対面重心 (pcx) でなく **エッジ中点 ½(x_A+x_B)** にする (SU2 流)。
+// 値位置=ノードでは双対面重心が伸縮メッシュでエッジ中点から法線方向にずれ (Δ=(q−1)δ/4)、その分の
+// 壁法線勾配 (∂φ/∂r Δ) が接線面の面値に混入する。高 AR (y+1) で不安定 (case/43 run_0042 等)。
+// 1 で dc0p = ½(cc1−cc0), dc1p = −½(cc1−cc0)。cell/既定 0 でビット不変。内部面のみ (境界半割面は従来)。
+__device__ int g_reconEdgeMid = 0;
 // speciesFaceReconstruction==1: Y_s を ρ/Y 勾配 + min(ψ_ρ,ψ_Y) で face へ再構成し thermo/species 流束で
 // 同一 face 組成を使う (proper S2/S3)。wrapper で cfg.speciesFaceReconstruction を設定。
 __device__ int g_speciesFaceRecon = 0;

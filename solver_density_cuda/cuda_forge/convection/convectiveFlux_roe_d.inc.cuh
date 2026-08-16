@@ -117,6 +117,10 @@ __global__ void ROE_d
         flow_float dc1p_x = pcx[ip] - ccx_1;
         flow_float dc1p_y = pcy[ip] - ccy_1;
         flow_float dc1p_z = pcz[ip] - ccz_1;
+        if (g_reconEdgeMid == 1 && ip < nNormalPlanes) {   // node: 目標点 = エッジ中点 (SU2 流)
+            dc0p_x = 0.5*dcc_x; dc0p_y = 0.5*dcc_y; dc0p_z = 0.5*dcc_z;
+            dc1p_x = -0.5*dcc_x; dc1p_y = -0.5*dcc_y; dc1p_z = -0.5*dcc_z;
+        }
 
         flow_float small_rho = 1.0e-4f;
         flow_float small_p   = 1.0f;

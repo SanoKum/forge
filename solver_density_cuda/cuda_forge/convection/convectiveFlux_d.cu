@@ -58,6 +58,8 @@ void convectiveFlux_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& m
             int fthy = 0;
             if (const char* e = getenv("FORGE_FACE_THERMOY"))      fthy = atoi(e);
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_faceThermoY,      &fthy, sizeof(int)));
+            const int rem = (cfg.discretization == "node") ? cfg.nodeReconEdgeMidpoint : 0;   // config 由来
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_reconEdgeMid,     &rem,  sizeof(int)));
             const int sfr = cfg.speciesFaceReconstruction;   // config 由来 (env でない)
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_speciesFaceRecon, &sfr,  sizeof(int)));
             const int rycl = cfg.multispeciesRhoYCommonLimiter;   // config 由来 (opt-in 診断)

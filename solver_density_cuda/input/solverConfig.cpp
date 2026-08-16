@@ -201,6 +201,12 @@ void solverConfig::read(std::string fname)
         if (config["mesh"]["hoopAreaFromClosure"]) {
             this->hoopAreaFromClosure = config["mesh"]["hoopAreaFromClosure"].as<int>();
         }
+        if (config["mesh"]["nodeReconEdgeMidpoint"]) {
+            this->nodeReconEdgeMidpoint = config["mesh"]["nodeReconEdgeMidpoint"].as<int>();
+        }
+        if (config["mesh"]["nodeAxisUrDirichlet"]) {
+            this->nodeAxisUrDirichlet = config["mesh"]["nodeAxisUrDirichlet"].as<int>();
+        }
         if (config["mesh"]["nodeValueAtNode"]) {
             this->nodeValueAtNode = config["mesh"]["nodeValueAtNode"].as<int>();
         }

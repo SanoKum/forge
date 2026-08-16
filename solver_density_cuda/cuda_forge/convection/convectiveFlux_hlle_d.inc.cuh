@@ -96,6 +96,10 @@ __global__ void HLLE_d
         flow_float dc1p_x = pcx[ip] - ccx_1;
         flow_float dc1p_y = pcy[ip] - ccy_1;
         flow_float dc1p_z = pcz[ip] - ccz_1;
+        if (g_reconEdgeMid == 1 && ip < nNormalPlanes) {   // node: 目標点 = エッジ中点 (SU2 流)
+            dc0p_x = 0.5*dcc_x; dc0p_y = 0.5*dcc_y; dc0p_z = 0.5*dcc_z;
+            dc1p_x = -0.5*dcc_x; dc1p_y = -0.5*dcc_y; dc1p_z = -0.5*dcc_z;
+        }
 
         flow_float ro_L = interp_dispatch(conv_scheme, limit_scheme, ro[ic0] , ro[ic1], drodx[ic0], drody[ic0], drodz[ic0], drodx[ic1], drody[ic1], drodz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_ro[ic0]);
         flow_float Ux_L = interp_dispatch(conv_scheme, limit_scheme, Ux[ic0] , Ux[ic1], dUxdx[ic0], dUxdy[ic0], dUxdz[ic0], dUxdx[ic1], dUxdy[ic1], dUxdz[ic1], dcc_x, dcc_y, dcc_z, dc0p_x, dc0p_y, dc0p_z, f, limiter_Ux[ic0]);

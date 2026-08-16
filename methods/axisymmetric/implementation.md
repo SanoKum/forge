@@ -429,19 +429,28 @@ $\sum_f r_f\mathbf S_f=(0,\;A_{\rm planar})$ (多角形では厳密) だが、**
 `axis_flag` の CV に hoop ソースを課さない (SU2 の `Coord_i[1]>EPS` ガード相当)。ただしこれは軸の 1/y
 特異性への対処であって、**壁 CV の metric 桁落ちとは別物**である。
 
-**粘性 (NS) は未対応 — 2 次再構成が壁スリバーで破綻**: case/41 NS 生産モデル (y+1.5, `wall_first_frac` 4.5e-5,
-SST) で `nodeValueAtNode: 1` は step 62–64 で発散する。切り分け (case/43 run_0009〜0017):
-`nodeAxisDirichlet: 1` 併用でも同 step 64 = **軸 DOF は無関係**、1 次 (`convMethod: 0`) × cfl 1.0 は完走、
-2 次 × cfl 0.2 は step 154 (**CFL は遅らせるだけ**)、**粗い壁格子 (5e-3) では 2 次でも完走**、
-発散起点は第一内点の P=1.11 MPa > 室圧 1.0 MPa のオーバーシュート。**機構は未特定**。幾何の事実として値位置が壁面に乗ると
-「値の位置→面重心」距離は 1.98 倍 (壁法線成分は第一セル厚の 1.1→2.3 倍) に伸びるが、A/B では
-**GG → `gradLSQ: 2` で発散が step 64 → 1693 (26 倍延命)** となり、主因は距離より**勾配の整合**側にある
-(LSQ でも最終的に落ちるため未解決)。閉性 (A_closure 置換)・`pRef` ゲージ・`lowMachPrecond: 2` (悪化, step 54)
-は無関係と確認済み。過渡 (run_0026) は**壁ノード↔第一内点の壁法線方向 奇偶 P/Uy モードの指数成長** (e-fold ~8 step,
-室の壁 M~1e-3 が起点)。**従来 NS が通っていたのは、`axisCentroidShift: 1` で壁ノードの値点が壁面から流体側へ
-1.33 δ₁ 入っており、壁の退化を幾何のずれで隠していたため** (plan §9 の masking の実例)。NS 対応には
-(a) 再構成の点値整合 (勾配・リミッタを含む)、(b) `wall_dist` の node 基準再計算 (変換器は双対重心基準)、
-(c) ghost 撤廃、が要る。**段階起動では回避できない**ため config に警告を出す。
+**軸 u_r=0 の三点セット (`nodeAxisUrDirichlet: 1`)**: 軸ノードを DOF として解くとき、従来の「残差 res_roUy の 0 化」だけでは
+block-DPLUR の連成 solve が dq_roUy≠0 を返し u_r が漏れる (case/43: |u_r| 0.4〜4.5 m/s = Ux の 4e-4〜4e-3、軸−偶関数外挿の
+±0.007 の起伏はこれが原因)。壁 no-slip (`nodeWallDirichlet`) と同じく **(i) 毎ステージ状態ピン roUy=0 (roN も、roe から半径
+KE 除去) (ii) res_roUy=0 (iii) block-DPLUR で軸ノードの roUy 行のみ単位行 (rhs=0)** の三点で |u_r| がビット 0 になり、
+軸−外挿 0.0008 (run_0029)。「Jacobian 側と一体射影」とはこの (iii) のこと: (ii) だけでは他行との連成で dq_roUy が戻る。
+
+**NS (粘性) — 発散の真因は「2 次再構成の目標点 = 双対面重心」(解決, `nodeReconEdgeMidpoint: 1`)**: y+1.5 (壁 AR ~250) では
+`nodeValueAtNode: 1` が step ~64 で壁法線の奇偶 P/Uy モードで発散したが、切り分け (case/43 run_0030〜0045) の結果、
+laminar でも **Euler+slip 壁でも**同じ step で落ち、explicit・Barth・無制限・SLAU2・Roe・LSQ・境界ノードを従来規約に戻す
+(内部行だけスワップ) のいずれでも落ちる = **種は伸縮した内部行の再構成**。値位置=ノードでは双対面の重心がエッジ中点から
+法線方向に $(q-1)\delta/4$ ずれており、そこへ `cpdx = pc − cc` で再構成すると壁法線の巨大勾配 $\partial\phi/\partial r\cdot\Delta$ が
+接線面 (法線 $x$) の面値に混入する。従来規約は値点自体が同じだけずれていて偶然打ち消していた (masking)。SU2 と同じく
+**再構成目標をエッジ中点 $\tfrac12(x_A+x_B)$** にすると (`g_reconEdgeMid`, 内部双対面のみ) Euler fine・laminar・
+**SST 生産 y+1.5 (run_0046, 8000 step) すべて完走・NaN 0・STEADY**。線形場の整合性は不変 (`optest/stretched_optest.py`)。
+**残課題**: run_0046 の残差床は Dirichlet 生産より ~100 倍高く、室壁 (x≈−0.032, M~1e-3) に有界の壁法線振動
+(P ±1 kPa/1 MPa, Uy 0.7 m/s) が残る = 壁 CV の点値整合 (壁半割面の再構成目標・同位置ゴースト) が次。場は生産と近い
+(壁 Ps 0.14%、壁 Ts 平均 2.4 K、軸 M 0.0135)。
+
+**伸縮メッシュ上の整合性 (生産規約への警告)**: 同テストで **生産規約 (値=双対重心) は線形場でも wall-1 行 6〜10%・軸 25〜44%
+の O(1) 質量残差**を持つ (2 次+Venkat では wall-2 行にも 1.8%)。値位置=ノードは全行 ≤8e-4。すなわち現行生産の node 離散化には
+壁 1〜2 行・軸行に O(1) の局所誤差があり、`axisCentroidShift` は軸だけでなく**全ノード** (伸縮部の内部ノードは median 1.6e-6 m,
+p90 1.6e-5 m; 壁ノードは法線 δ₁/4) の値位置をずらしている。
 
 **軸量の抽出**: 生産 (`nodeAxisDirichlet: 1`) の軸ノードは第一内点コピーで $\tfrac12 q_{rr}r_1^2$ のバイアスを持つ
 (case/41 で ~0.07% $M_d$)。設計チェーンは軸直読でなく `forge_design/evaluate/axis_extract.py` の偶関数外挿

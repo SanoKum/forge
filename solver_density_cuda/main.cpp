@@ -938,6 +938,9 @@ void assembleResidual(StepContext& s, int stage_index)
     // から毎ステージ写す (∂q/∂r=0, u_r=0)。dependentVariables より前に置き、派生量・境界・勾配・
     // フラックスが全てピン後状態を見るようにする。OFF/cell/非軸対称では no-op。
     enforceAxisMirror_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    // nodeAxisUrDirichlet=1: 軸ノード u_r=0 の状態ピン (roUy=0, roe から半径 KE 除去)。壁 no-slip と同相。
+    // 残差 0 化 (zeroAxisRadialResidual) と block-DPLUR の roUy 行 decouple (axis_ur_flag) と三点セット。
+    enforceAxisSymmetry_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // Y_s = ρY_s/ρ (混合則 thermo の前)
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // φ = ρφ/ρ (スカラ移流の上流値)

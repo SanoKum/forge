@@ -285,6 +285,20 @@ public:
     // 軸半 CV の質量残差 O(1) 不整合 (case/43 演算子テスト) の是正が目的。node && 非 cell 以外は no-op。
     int nodeValueAtNode = 0;
 
+    // node 軸対称: 軸ノードの半径運動量 u_r=0 を「壁 no-slip と同じ Dirichlet 三点セット」で課す (1) /
+    // 従来 = 残差 res_roUy の 0 化のみ (0, 既定・ビット不変)。従来は block-DPLUR の連成 solve が dq_roUy≠0 を
+    // 返し軸 u_r が漏れる (case/43 run_0010: |u_r| 0.4 m/s = Ux の 4e-4)。1 では
+    //   (i) 毎ステージ状態ピン roUy=0 (roe から半径 KE を除く, enforceAxisSymmetry_d)、
+    //   (ii) res_roUy=0 (従来どおり)、(iii) block-DPLUR で軸ノードの roUy 行のみ単位行 (rhs=0)。
+    // nodeAxisDirichlet=1 (全 5 行ピン) とは排他 (そちらが優先)。SU2 BC_Sym_Plane の状態+残差+Jacobian 一体射影の
+    // 「軸 (法線=r) 専用」版。
+    int nodeAxisUrDirichlet = 0;
+
+    // node-centered: 対流 2 次再構成の目標点を双対面重心でなくエッジ中点 ½(x_A+x_B) にする (SU2 流)。
+    // 既定 0 = 双対面重心 (従来・ビット不変)。nodeValueAtNode と併用する想定 (値位置=ノードのとき、
+    // 伸縮メッシュで双対面重心がエッジ中点から法線にずれる分の高勾配混入を除く)。内部双対面のみ。
+    int nodeReconEdgeMidpoint = 0;
+
     // 勾配を最小二乗 (LSQ) で計算する (0:既定 Green-Gauss, 1:LSQ 毎ステップ solve,
     // 2:LSQ 係数事前計算 = setup 1回 double 固有分解→擬似逆→float32 係数 gather。推奨は 2)。
     // node-centered の median-dual で GG 面勾配が非一様メッシュの線形場を再現できない (近壁で O(1) 誤差)

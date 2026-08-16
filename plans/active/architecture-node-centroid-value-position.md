@@ -135,4 +135,11 @@ node-centered で未知量の位置は**ノード**だが、現状 `CELLS/centCo
   (2) NS は本フラグ未対応。原因は**壁近傍 2 次再構成**で、軸 DOF・CFL・段階起動のいずれとも独立
   (case/43 run_0009〜0017)。y+≈1 スリバーでのみ破綻し粗い壁格子では完走する。→ Step 1 (ghostless) に加え
   **「値=点値」への統一 (勾配・リミッタの点値評価)** を明示的な作業項目として §4 に追加する必要がある。
+- `2026-08-16` (追補 2) — **NS 到達**。(1) `nodeAxisUrDirichlet` (軸 u_r の状態+残差+Jacobian 行の三点セット) で軸 |u_r| ビット 0。
+  (2) NS 発散の真因は壁規約でなく**「再構成目標 = 双対面重心」**: 値=ノードでは伸縮メッシュで双対面重心がエッジ中点から
+  法線にずれ、壁法線勾配が接線面に混入。`nodeReconEdgeMidpoint: 1` (SU2 と同じエッジ中点) で Euler fine / laminar /
+  **SST 生産 y+1.5 (run_0046) 完走**。(3) 伸縮メッシュ演算子テストで**生産規約は wall-1 行 6–10%・軸 25–44% の O(1)
+  残差**、node 規約は ≤8e-4 — 本 plan の動機を定量化。**残**: run_0046 の残差床 (~100 倍高) と室壁の有界振動 →
+  壁半割面の再構成目標・同位置ゴースト (Step 1 ghostless) が次段。推奨セット (Euler/NS 共通):
+  `nodeAxisDirichlet: 0, nodeValueAtNode: 1, nodeAxisUrDirichlet: 1, nodeReconEdgeMidpoint: 1` (+ `hoopAreaFromClosure: 1`, `pRef`)。
 

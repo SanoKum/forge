@@ -731,6 +731,8 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  // node-centered 軸対称: 軸上 CV で半径方向運動量 (roUy, index2) 行を decouple する (nullptr 可)。
  // SU2 流の対称面を Jacobian 内で課す = solve の外で状態を手術せず一貫して dq_roUy=0 を得る。
  geom_int* axis_flag,
+ // nodeAxisUrDirichlet: 軸ノードで roUy 行 (index 2) のみ単位行化 (nullptr で無効)。
+ geom_int* axis_ur_flag,
 
  // axisymMethod==1 (isAxisymmetric enc==2) の軸ソース Jacobian ガード: 軸上ノード (==1) はソース 0 なので
  // Jacobian も加えない。decouple 用 axis_flag (nodeAxisDirichlet ゲート) とは独立に渡す (nullptr 可)。
@@ -907,6 +909,13 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
                 diag_block[row][row] = static_cast<ST>(1.0);
                 rhs[row] = static_cast<ST>(0.0);
             }
+        }
+
+        // nodeAxisUrDirichlet: 軸ノードの半径運動量行のみ decouple (dq_roUy=0)。状態は enforceAxisSymmetry がピン。
+        if (axis_ur_flag != nullptr && axis_ur_flag[ic] == 1) {
+            for (int jj = 0; jj < 5; ++jj) diag_block[2][jj] = static_cast<ST>(0.0);
+            diag_block[2][2] = static_cast<ST>(1.0);
+            rhs[2] = static_cast<ST>(0.0);
         }
 
         // SU2 `DeleteValsRowi` 相当の壁 no-slip Dirichlet: 壁ノードで運動量3行 (index 1,2,3) を単位行に
@@ -1321,6 +1330,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 var.c_d["diag_block_40"], var.c_d["diag_block_41"], var.c_d["diag_block_42"], var.c_d["diag_block_43"], var.c_d["diag_block_44"], \
                 axisymEnc, (cfg.isAxisymmetric == 1) ? ((cfg.axisRFloor > (flow_float)0.0 || cfg.hoopAreaFromClosure == 1) ? var.c_d["A_closure_y"] : var.c_d["A_planar"]) : var.c_d["volume"], cfg.axisRFloor, cfg.unsteadyDiagCoef, \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1 && cfg.nodeAxisDirichlet == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag: nodeAxisDirichlet で全 5 行 decouple (状態は enforceAxisMirror がピン)。OFF は従来どおり nullptr */ \
+                ((cfg.discretization == "node" && cfg.isAxisymmetric == 1 && cfg.nodeAxisDirichlet == 0 && cfg.nodeAxisUrDirichlet == 1) ? msh.axis_flag_d : nullptr),  /* axis_ur_flag: roUy 行のみ decouple */ \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag_src: SU2 流 (enc==2) の軸ソース Jacobian ガード (軸ノードはソース 0) */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag: 壁運動量3行 decouple */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.iso_wall_flag_d : nullptr),  /* iso_wall_flag: 等温壁 roe 行 decouple (T ピンと対) */ \
