@@ -35,6 +35,7 @@ CFD 実測 (Euler): 出口軸 M 4.1898、コア M 4.1893、ε_M 0.009 %、ε_θ 
 
 `study_cfd_va.json` / `study_design_va.json` (設計のみ 21 点: $L_c$∈{7..11}×R∈{1.5,2,3} + $L_U$∈{4,9}; **R2/$L_c$11 のみ単調窓外で REJECT**、他 20 点全合格)。
 図: `study_cfd_va.png` (指標 vs $L_c$)、`study_axisM_va.png` (軸 M 誤差分布)。生成: `plot_study_va.py`。
+**軸 M (目標 vs CFD) と Mach コンタ**: `figs/` (`plot_mach_va.py` で生成: `axis_mach_all.png` 15 パネル、`axis_mach_overlay.png`、`mach_contour_all.png` 全 run 一覧、`mach_contour_run_0005_*.png` / `_run_0013_*.png` 推奨点)、[閲覧ページ](https://claude.ai/code/artifact/b4158f43-0a74-4115-a3fb-282e22ec5d10)。
 
 | run | R | L_U | L_c | θ_max° | κ₀R | x_F [r_t] | 全長 [m] | ‖ΔM‖∞/M_d | ε_M | ε_θ° | over | M_exit |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
