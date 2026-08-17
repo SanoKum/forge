@@ -1,0 +1,63 @@
+# 凝縮の M_d 感度 (同 Pt/Tt/組成/出口径 φ1600、M_d だけ変更 → r_t・p_ambient を等エントロピーで再計算)。R2/L_U6、L_c は設計可能な最小級。tp_species: split_h2o = [MIXDRY, H2O] の 2 種 TP
+# (case/42 run_0063–0065 と同じ経路, plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)。dry (対照) / cond (Kw+HK, condGasSpecies 自動)。
+# 現行 binary は蒸発込み (condEvaporation 既定 1, commit 967597a3)。
+# ③ 加熱空気 (vitiated air) 風洞 M4.19 — 別セッション引き継ぎ用 (2026-08-18 起票)
+# 案件: Pt 1.14 MPa, Tt 1060 K, 出口径 1600 mm (半径 0.800 m), M_d 4.19。入口配管も φ1600 mm。
+# 組成 (モル分率, ユーザ指定): H2O 0.0462711 / N2 0.6989119 / O2 0.2091779 / Ar 0.008340143 / CO2 0.03729886
+#   → 質量分率 (MW_mix 29.0806 g/mol, R 285.911 J/kgK):
+#      H2O 0.0286647 / N2 0.6732631 / O2 0.2301686 / AR 0.0114568 / CO2 0.0564467
+# semi-perfect (NASA-9/CEA frozen): γ* = 1.32752 (T*=912.6 K), γ(Tt)=1.31616, γ(出口 253.0 K)=1.39279
+#   A/A*(4.19) = 14.4430 → r_t = 0.800/√(A/A*) = 0.210505 m (スロート φ421.01 mm)
+#   出口 T 253.0 K (NASA-9 下限 200 K の上、cp 凍結不要) / P 5235 Pa
+# **軸 M 則は単一 quintic** (ユーザ判断 2026-08-18): 単調窓上限は R2 で L_c≤10.88、R3 で ≤11.65 と広く knot 不要。
+#   ただし L_c 下限は壁 QA (spline リンギング = 内部衝撃波の兆候) が縛る: R1.5→6.44 / R2→6.50 / R3→6.72 (解像度非依存)。
+#   R=4,5 は壁非単調/リンギングで設計不能 (case/42 M4.2 と同じ傾向)。
+# 引き継ぎ文書: notes/sessions/vitiated-air-m419-nozzle-session-prompt.md
+name: vitair_wt_m4.3_R2_LU6_Lc8_split_cond
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species:
+    H2O: 0.0286647
+    N2: 0.6732631
+    O2: 0.2301686
+    AR: 0.0114568
+    CO2: 0.0564467
+  gamma: 1.32752
+  cp: 1190.2
+spec:
+  Pt: 1140000.0
+  Tt: 1060.0
+  p_ambient: 4532.1
+  r_throat: 0.200463
+  M_design: 4.3
+dv:
+  L_c:
+    value: 8.0
+    min: 6.5
+    max: 14.0
+geometry:
+  R: 2.0
+  r_inlet: 3.8
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+mesh:
+  discretization: node
+  ni: 365
+  nj: 65
+  wall_first_frac: 0.005
+  throat_refine: 3.0
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0
+  mid_stage: true
+  tp_species: split_h2o
+  condensation: {condensation: 1, nCondSpecies: 1, condModel: 1, condKantrowitz: 1, condGrowthModel: 0}   # Kw+HK; condGasSpecies は runner が H2O の index を自動付与

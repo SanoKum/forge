@@ -168,7 +168,24 @@ condKantrowitz 1, condGrowthModel 0}`, `condGasSpecies` 自動、**現行 binary
 結論: **出口 253 K / H₂O 分圧 242 Pa は過冷却液の飽和線を 2 倍超えるだけで、均質核生成の Wilson 点には遠く届かない**。dry の Euler/NS 結果がそのまま有効。
 CEA 平衡 (上節) の「H₂O(cr) 8 % 析出」は平衡限界であり、実際には起きない (S_ice 2.5)。NS 版 (境界層はさらに高温で S<1) の凝縮 run は
 不要と判断し未実施 (`problem_va_R2_LU6_Lc8_ns_split_cond.yaml` は用意済み、必要なら `run_ns_va.py` に `--problem` を足して投入)。
-凝縮が問題になるのは全温を下げる/H₂O を増やす/M_d を上げる場合で、目安は軸 T ≲ 235 K。
+凝縮が問題になるのは全温を下げる/H₂O を増やす/M_d を上げる場合 (下の $M_d$ 感度: 閾値 T≈210 K)。
+
+### 凝縮する M_d はどこか — **M_d ≈ 4.7 (出口 T ≈ 210 K) が閾値、4.3–4.4 は凝縮しない**
+
+同 $P_t$/$T_t$/組成/出口 φ1600 で $M_d$ だけ変えたノズル (R2/$L_U$6、$L_c$ は設計可能な最小級、`problem_va_M*_R2_LU6_Lc*_split_cond.yaml`) を
+Euler + 凝縮 ON で 12000 step (`run_0025`–`run_0029`、全 run 品質 PASS・NaN 0):
+
+| $M_d$ | run | 軸 T min [K] | 軸 S max | 液相 g max (H₂O 比) | onset (軸 g>1e-4) | 出口軸 M | ‖ΔM‖∞ | ε_M |
+|---|---|---|---|---|---|---|---|---|
+| 4.19 | `run_0024` | 252 | 2.0 | 0 | — | 4.190 | 0.06 % | 0.01 % |
+| 4.3 | `run_0028_va_M4.3_R2_LU6_Lc8_split_cond` | 242 | 4.4 | 0 | — | 4.300 | 0.07 % | 0.01 % |
+| 4.4 | `run_0029_va_M4.4_R2_LU6_Lc8_split_cond` | 234 | 9.2 | 0 | — | 4.400 | 0.14 % | 0.02 % |
+| 4.5 | `run_0025_va_M4.5_R2_LU6_Lc9_split_cond` | 225 | 20 | 1e-4 (0.4 %) | — (微量) | 4.499 | 0.07 % | 0.02 % |
+| **4.75** | `run_0026_va_M4.75_R2_LU6_Lc10_split_cond` | 210 | 104 | **0.012 (43 %)** | **x=8.9 r_t, T 210 K, M 4.71** | 4.658 (−2 %) | 1.63 % | 8.3 % |
+| 5.0 | `run_0027_va_M5.0_R2_LU6_Lc11_split_cond` | 200 | 305 | 0.016 (54 %) | x=8.0 r_t, T 204 K, M 4.79 | 4.792 (−4 %) | 3.86 % | 11 % |
+
+Wilson 点は **T ≈ 205–210 K (S ≈ 100)** で、$M_d$ 4.5 までは核生成率が足りず (g ≤ 1e-4)、4.75 以上で膨張部末端から凝縮が立ち上がって出口 M・一様性を壊す。
+**狙いの 4.3–4.4 なら凝縮の心配はない** (S 4–9、g=0)。凝縮なしで使える上限は $M_d$ ≈ 4.5–4.6 (出口 T ≳ 220 K)。
 
 ## 問題定義
 
@@ -193,6 +210,7 @@ CEA 平衡 (上節) の「H₂O(cr) 8 % 析出」は平衡限界であり、実�
 | **`run_0001`〜`run_0015_va_R*_LU*_Lc*`** | **R/L_U/L_c スタディ (semi-perfect 設計 + node Euler TP CFD, `thermoHrefTemp` 298.15, soft→mid→本段 cfl2 12000 step; `problem_va_*.yaml`, ドライバ `run_study_va.py`)**: R∈{1.5,2,3}×L_c∈{7,8,9,10} @L_U6 (0001–0009, 0012–0014)、R3/L_c11 (0015)、L_U∈{4,9} @R2/L_c8 (0010/0011) | 上表。**全点 0.5 % ゲート内、推奨 R2/L_U6/L_c8 (`run_0005`, 0.061 %) ≒ L_c9 (`run_0013`, 0.047 %)**。L_c7 は崖の縁 (R3 0.315 %)、L_U4 不可 (0.213 %)。全 run 品質 PASS・NaN 0・軸 M 凍結 ~1e-5、`check_convergence` は warm 床 plateau で NOT CONVERGED (収束とは書かない)。`study_cfd_va.json`、`study_cfd_va.png`、`study_axisM_va.png`。run_0005/0013 の入力・設計成果物 (config, `wall_design.csv`, `metrics.json` 等) は git にリファレンス保存 | active (**スタディの正本・推奨の根拠**) |
 | **`run_0016_va_R2_LU6_Lc8_ns_coarse`** / **`run_0017_…_ns_v1`** / `run_0020_…_ns_v2` / `run_0021_…_ns_v3` / **`run_0022_…_ns_v4`** | **推奨点の NS (A12/A13: 物理壁 = inviscid + δ\*, node y+~1 低 Re SST, TP)** と δ\* 反復 (`problem_va_R2_LU6_Lc8_ns{_coarse,}.yaml`, `run_ns_va.py`)。0016 = coarse 中継 (IC 供給)、0017 = v1 相関 δ\*、0020 = v2 (case/41 規約ブレンド)、0021 = v3 (CFD δ\* x≥3 全域)、0022 = **v4 (末端勾配修正、固定点)** | 上の NS 節の表。**v4 が到達点: ‖ΔM‖∞ 0.309 %、出口コア M 4.183 ±0.002、overshoot +0.004 %、δ\* 固定点 1.001**。相関 δ\* は上流で 30–50 % 過大 (v1 出口 M −0.5 %)。残差 (x≈1–3, 7 の −0.2〜−0.3 %) は δ\* 非表現 (law 側 RANS 帰還が要る、未実装)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。0022 の入力・`wall_physical.csv`・δ\* CSV は git 保存 | active (**NS 到達点の正本**) |
 | `run_0023_va_R2_LU6_Lc8_split` / **`run_0024_va_R2_LU6_Lc8_split_cond`** | **凝縮** (2 種 TP split_h2o; 0023 = dry 対照、0024 = Kw+HK 凝縮 ON, 蒸発込み binary) node Euler 12000 step | 0023 は `run_0005` と同一 (0.0614 %)。**0024: g≡0 — 最大 S 2.03 (液基準, x≈12 r_t, 252.6 K) で核生成せず、dry と同一**。品質 PASS・NaN 0。凝縮節参照 | active (**凝縮なしの根拠**) |
+| `run_0025`〜`run_0029_va_M{4.5,4.75,5.0,4.3,4.4}_*_split_cond` | **凝縮の M_d 感度** (同 Pt/Tt/組成/φ1600, M_d のみ変更, Euler+凝縮 ON 12000 step) | 4.19–4.4: g=0 / 4.5: 1e-4 / **4.75: 43 % 凝縮 (onset T 210 K)** / 5.0: 54 %。閾値 M_d≈4.7 (T≈210 K)。凝縮節の表 | active (**M_d 上限の根拠**) |
 | `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可。**NASA CEA2 凍結流照合の対象** (上の CEA 節: T/ρ/u/a が CEA と 0.04 % 以内, $C_d$ 0.9967) → `cea/`, `cea_check_va.py` | active (CEA 照合の根拠; 場は `run_0005` と同一) |
 | `run_0018_va_R2_LU6_Lc8_ns_v2` | v2 初回 — 本段開始時に binary 再ビルド中で rc 127 | 結果なし、削除済 (`run_0020` で再投入) | 削除済 |
 | — | 設計のみスイープ 21 点 → `study_design_va.json` (`study_design_va.py`; R2/L_c11 のみ単調窓外、他全合格) | | ref |
