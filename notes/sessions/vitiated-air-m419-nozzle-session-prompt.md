@@ -2,6 +2,8 @@
 
 - **起票**: 2026-08-18 (別セッションへの引き継ぎ用。ユーザ指示「別セッションで設計・パラスタ」)
 - **case**: `case/44.vitiated_air_wt/` (問題定義 YAML 11 点を用意済み。run はまだ 0 個)
+- **状態 (2026-08-18)**: **完了**。設計 21 点 + CFD 15 点を実施、推奨 R2/L_U6/L_c8 (`run_0005`, 0.061 % M_d, 全長 6.40 m) ≒ L_c9 (`run_0013`, 0.047 %)。
+  結果・run 表・形状エクスポートは [`case/44.vitiated_air_wt/README.md`](../../case/44.vitiated_air_wt/README.md) を正本とする。
 - **チェーン**: axis-Mach (Hall 遷音速 → 軸 M 則 → 逆 MOC → node Euler CFD)。
   仕様は [`methods/design/overview.md`](../../methods/design/overview.md)、
   直近の同型案件は [`case/42.isobutane_wt/README.md`](../../case/42.isobutane_wt/README.md) (M4.2 イソブタン)。
