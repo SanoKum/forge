@@ -692,6 +692,18 @@ $\partial\theta/\partial r|_{r=0}=-\frac12 d\ln F/dx$・適合式の Simpson 化
 $\varepsilon_\theta$ 0.012°。軸うねり (deg3 窓 0.55–2.5) **0.0019 = 円弧 R=2 の
 1/11** (接合こぶ実質消滅)。B8 比較は計画 §10 の表を参照。
 
+**凝縮計算向けの species 分割 (`evaluate.tp_species: split_h2o`, 2026-08-17)**:
+計画 [tooling-nozzle-tp-split-h2o-condensation.md](../../plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)。
+既定 (`pseudo`) は全組成を単一擬似種 `MIX` に畳むため、H₂O 凝縮 (`condensation: 1`, `condGasSpecies`)
+の凝縮種を指せない。`split_h2o` は**H₂O 以外を 1 つの擬似種 `MIXDRY`** (`mixture_pseudo_species_split`,
+NASA-9 の質量分率線形混合 — 厳密)、**H₂O を独立種**とする 2 種 TP (`species: [MIXDRY, H2O]`,
+`condGasSpecies: 1`) で CFD を回す。設計 (MOC) は従来どおり**全組成の frozen semi-perfect** で行うので、
+dry では `pseudo` と `split_h2o` は熱力学的に同一 (混合則が線形、同じ datum `thermoHrefTemp`) —
+CFD 側の差は多成分輸送の離散化誤差だけ (検証: M4.2 で軸 M 差 ≤1e-4)。液相 (H₂O(l)) は凝縮モデルの
+モーメント方程式 ($g$=液相質量分率 [$\beta$]、$Q_0..Q_2$) で解く ([methods/condensation.md](../condensation.md))。
+IC は `paste_isentropic_ic(species_Y=)` が `roY{s}` を書き、入口 BC は `Y0/Y1` を bcond に書く。
+低温側は forge の `Tlo`=200 K クランプ (cp 凍結・h 線形接続) と設計側 `T_FLOOR` が一致する。
+
 ## メッシュ (構造化・トポロジ固定)
 
 構造化 (i,j) quad メッシュを壁曲線から代数生成し (x: スロート細分の間隔関数逆積分 /

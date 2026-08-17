@@ -102,9 +102,15 @@ def _apply_gas_to_config(cfg: str, p: Problem, run_dir) -> str:
         # (TP × node 軸対称の forge 側発散 [case/42 run_0001] の回避。相対比較には十分)
         return cfg
     import yaml as _yaml
-    from ..gas.semiperfect import mixture_pseudo_species
+    from ..gas.semiperfect import mixture_pseudo_species, mixture_pseudo_species_split
     Y = dict(p.raw["gas"]["species"])
-    db = mixture_pseudo_species(Y, "MIX")
+    species_list = _tp_species_list(p)
+    if species_list == ["MIX"]:
+        db = mixture_pseudo_species(Y, "MIX")
+    else:
+        # split_h2o (plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md): H₂O 以外を擬似種
+        # MIXDRY、H₂O を独立種にした 2 種 TP。凝縮 (condGasSpecies=1) が指せる。
+        db, _, _ = mixture_pseudo_species_split(Y, keep=(str(p.evaluate.get("tp_keep_species", "H2O")),))
     (Path(run_dir) / "species_db.yaml").write_text(_yaml.safe_dump(db, sort_keys=False))
     # thermalMethod 0 → 2、species/speciesDBFile を physProp に追加 (cp/gamma は参照値のまま
     # 残すが TP では NASA-9 が優先される)
@@ -119,12 +125,50 @@ def _apply_gas_to_config(cfg: str, p: Problem, run_dir) -> str:
     # (case/42 run_0020–0025 で切り分け: 一定 cp 種/陽解法は完走、実 NASA-9 + 陰解法だけ発散、
     #  thermoHrefTemp 298.15 で完走)。IC の roe も同じ datum で作る (paste_isentropic_ic の h_ref)。
     href = float(p.evaluate.get("thermo_href_temp", 298.15))
+    sp_txt = "[" + ", ".join(species_list) + "]"
     cfg = cfg.replace("cp: %s, gamma: %s}" % (p.cp, p.gamma),
-                      "cp: %s, gamma: %s,\n           species: [MIX], speciesDBFile: \"species_db.yaml\", thermoHrefTemp: %s}"
-                      % (p.cp, p.gamma, href), 1)
-    if "species: [MIX]" not in cfg:
+                      "cp: %s, gamma: %s,\n           species: %s, speciesDBFile: \"species_db.yaml\", thermoHrefTemp: %s}"
+                      % (p.cp, p.gamma, sp_txt, href), 1)
+    if f"species: {sp_txt}" not in cfg:
         raise RuntimeError("_apply_gas_to_config: physProp の書き換えに失敗 (テンプレート変更?)")
+    # 凝縮 (evaluate.condensation: dict) — forge の condensation ブロックをそのまま通す
+    cond = p.evaluate.get("condensation")
+    if cond:
+        cond = dict(cond)
+        if len(species_list) >= 2 and "condGasSpecies" not in cond:
+            cond["condGasSpecies"] = species_list.index(str(p.evaluate.get("tp_keep_species", "H2O")).upper())
+        cfg = cfg.rstrip("\n") + "\ncondensation: {" + ", ".join(f"{k}: {v}" for k, v in cond.items()) + "}\n"
     return cfg
+
+
+def _tp_species_list(p: Problem) -> list:
+    """TP の species リスト。`evaluate.tp_species`: 'pseudo' (既定, [MIX]) / 'split_h2o'
+    ([MIXDRY, H2O]; `tp_keep_species` で残す種を変えられる)。"""
+    mode = str(p.evaluate.get("tp_species", "pseudo"))
+    if mode == "pseudo":
+        return ["MIX"]
+    if mode == "split_h2o":
+        return ["MIXDRY", str(p.evaluate.get("tp_keep_species", "H2O")).upper()]
+    raise ValueError("evaluate.tp_species は 'pseudo' か 'split_h2o'")
+
+
+def _tp_species_Y(p: Problem):
+    """IC/BC 用の組成 [Y_s] (species リスト順)。pseudo なら None (roY 不要)。"""
+    if _tp_species_list(p) == ["MIX"] or not p.is_semiperfect \
+            or str(p.evaluate.get("cfd_gas", "same")) == "cpg":
+        return None
+    from ..gas.semiperfect import mixture_pseudo_species_split
+    _, Ys, order = mixture_pseudo_species_split(dict(p.raw["gas"]["species"]),
+                                                keep=(str(p.evaluate.get("tp_keep_species", "H2O")),))
+    return [Ys[k] for k in order]
+
+
+def _bcond_with_species(txt: str, Ys) -> str:
+    """bcond の inlet floats に Y0.. を追記 (多成分 TP の入口組成)。"""
+    if Ys is None:
+        return txt
+    ins = ", ".join(f"Y{i}: {y:.8f}" for i, y in enumerate(Ys))
+    return txt.replace("floats: {Pt:", "floats: {" + ins + ", Pt:", 1)
 
 
 
@@ -328,7 +372,7 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
                header="x_m,r_m,theta_rad,M_wall", comments="")
     n = nsteps or int(p.evaluate.get("nStepOuter", 12000))
     out_int = int(p.evaluate.get("outStepInterval", max(n // 3, 1)))
-    (run_dir / "bcondConfig.yaml").write_text(_bcond(p, euler=True))
+    (run_dir / "bcondConfig.yaml").write_text(_bcond_with_species(_bcond(p, euler=True), _tp_species_Y(p)))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
     # 品質検査は cell 変換の一時コピー (品質ツールは node CONNE 非対応)
     (run_dir / "solverConfig.yaml").write_text(
@@ -351,7 +395,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                         float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp,
                         gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model),
-                        h_ref_T=float(p.evaluate.get('thermo_href_temp', 298.15)))
+                        h_ref_T=float(p.evaluate.get('thermo_href_temp', 298.15)),
+                        species_Y=_tp_species_Y(p))
     if ic_from is not None:
         src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
@@ -377,7 +422,8 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     return info
 
 
-def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False) -> int:
+def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False,
+               mesh_h5: str = "nozzle.h5") -> int:
     """soft 段 (1次+cfl0.5, 3000 step) → [mid 段 (2次+cfl1, 3000 step)] → 本段。
     walldriven W3 と同方式・段階起動必須。`cfl_main` で本段 CFL を上書き
     (semi-perfect TP は cfl4 で本段 step ~60 に爆発 — case/42 実測。TP は cfl≤2 が実績
@@ -399,7 +445,7 @@ def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False) 
         if rc != 0 or not res or int("".join(c for c in res[-1].stem if c.isdigit())) < nsteps:
             raise RuntimeError(f"{label} 段が失敗 (発散切り分けは res_nan_*.h5 を見る)")
         subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
-                        str(res[-1]), str(run_dir / "nozzle.h5")],
+                        str(res[-1]), str(run_dir / mesh_h5)],
                        env=_ENV, check=True, capture_output=True, text=True)
         for f in run_dir.glob("res_*"):
             f.unlink()
@@ -544,7 +590,7 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     n = nsteps or int(p.evaluate.get("nStepOuter", 48000))
     out_int = int(p.evaluate.get("outStepInterval", max(n // 6, 1)))
     cfl_main = float(p.evaluate.get("cfl_main", 1.0))
-    (run_dir / "bcondConfig.yaml").write_text(_bcond(p, euler=False))
+    (run_dir / "bcondConfig.yaml").write_text(_bcond_with_species(_bcond(p, euler=False), _tp_species_Y(p)))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
     # 品質は cell 変換コピーで検査 (品質ツールは node CONNE 非対応)
     (run_dir / "solverConfig.yaml").write_text(
@@ -567,7 +613,8 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
                         float(p.spec["Pt"]), float(p.spec["Tt"]), p.gamma, p.cp,
                         gas=(None if str(p.evaluate.get('cfd_gas', 'same')) == 'cpg' else p.gas_model),
-                        h_ref_T=float(p.evaluate.get('thermo_href_temp', 298.15)))
+                        h_ref_T=float(p.evaluate.get('thermo_href_temp', 298.15)),
+                        species_Y=_tp_species_Y(p))
     if ic_from is not None:
         src = sorted(Path(ic_from).glob("res_[0-9]*.h5"),
                      key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]

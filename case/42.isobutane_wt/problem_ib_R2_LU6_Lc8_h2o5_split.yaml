@@ -1,0 +1,52 @@
+# ② イソブタン風洞 M4.2 ベスト (R2_LU6_Lc8) の **H₂O 5 % 版** — 凝縮引き継ぎ用 (2026-08-17)
+# 組成: H₂O を質量分率 5 % に固定し、残り 95 % を元の dry 比 (N2:CO2:O2 = 0.7245:0.1677:0.0220) で配分。
+# 計画: plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md
+#   *_pseudo : 全組成を単一擬似種 MIX に畳む (従来)         evaluate.tp_species: pseudo
+#   *_split  : MIXDRY (H₂O 以外) + H2O 独立種の 2 種 TP、dry  evaluate.tp_species: split_h2o
+#   *_split_cond : 上に H₂O 凝縮 (Kantrowitz+Hertz-Knudsen, condGasSpecies=1)
+name: isobutane_wt_m42_R2_LU6_Lc8_h2o5_split
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species: {N2: 0.75277, CO2: 0.17426, O2: 0.02286, H2O: 0.05011}   # 和 1.0000, H2O ≈ 5 %
+  # 参照値 (semi-perfect では NASA-9 が優先。IC 用の初期推定と CPG フォールバック):
+  gamma: 1.309
+  cp: 1237.0
+
+spec:
+  Pt: 5.0e6
+  Tt: 1000.0
+  p_ambient: 20000.0    # M4.2 出口の整合静圧 (semi-perfect: P/Pt≈0.0040 × 5 MPa)。1000 Pa だと出口軸近傍が吸い出されて発散 (run_0001 初回)
+  r_throat: 0.12575     # [m] 出口径 1 m から (semi-perfect A/A*(M4.2) = 15.809)
+  M_design: 4.2       # ユーザ訂正 2026-08-17 (当初 4.0)
+
+dv:
+  L_c: {value: 8.0, min: 1.0, max: 20.0}
+
+geometry:
+  R: 2.0
+  r_inlet: 3.976        # 入口配管径 1 m / (2 r_t) = 3.976 r_t
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+
+mesh:
+  discretization: node
+  ni: 365
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0       # TP は cfl4 で本段爆発 (run_0001 初回)。mid 段 (2次 cfl1) を経て cfl2
+  mid_stage: true
+  tp_species: split_h2o    # [MIXDRY, H2O]
+  # axis_r_floor: (不要)   # [m] axisRFloor (軸行 0 < 床 < 第一内点行 min 0.044 r_t=6 mm)。TP は nodeAxisDirichlet 不可 → 軸行真空化を床で抑える (run_0001 4 回目)

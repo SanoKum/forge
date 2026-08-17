@@ -308,3 +308,35 @@ def mixture_pseudo_species(Y: dict, name: str = "MIX", freeze_low_T: bool = Fals
                    "Tlo": 200.0, "Tmid": 1000.0, "Thi": 6000.0,
                    "nasa9_low": [float(v) for v in low],
                    "nasa9_high": [float(v) for v in high]}}
+
+
+def mixture_pseudo_species_split(Y: dict, keep=("H2O",), name_dry: str = "MIXDRY") -> tuple:
+    r"""**凝縮向け分割**: `keep` の種 (既定 H₂O) を独立種のまま残し、**それ以外を 1 つの擬似種**
+    `name_dry` に畳む (計画 plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)。
+
+    戻り: (db, Y_split, order)。`db` は forge `speciesDBFile` 用 dict (擬似種 + 残した種を
+    **内蔵と同じ係数で明示的に書き出す** = 自己完結)、`Y_split` は `{name_dry: 1-ΣY_keep, keep...}`、
+    `order` は `species:` に書く順序 (`[name_dry, *keep]`; 凝縮種 index は `order.index("H2O")`)。
+    混合則は `mixture_pseudo_species` と同じ質量分率線形混合 (dry 部は全種独立と厳密に同じ熱力学)。
+    """
+    Y = {k.upper(): float(v) for k, v in Y.items()}
+    tot = sum(Y.values()); Y = {k: v / tot for k, v in Y.items()}
+    keep = tuple(k.upper() for k in keep)
+    for k in keep:
+        if k not in Y:
+            raise KeyError(f"mixture_pseudo_species_split: {k} が組成に無い ({list(Y)})")
+    Y_dry = {k: v for k, v in Y.items() if k not in keep}
+    y_dry_tot = sum(Y_dry.values())
+    if y_dry_tot <= 0.0:
+        raise ValueError("mixture_pseudo_species_split: 乾き成分が無い")
+    db = mixture_pseudo_species({k: v / y_dry_tot for k, v in Y_dry.items()}, name_dry)
+    LJ = {"N2": (3.621, 97.53), "O2": (3.458, 107.4), "CO2": (3.763, 244.0),
+          "H2O": (2.605, 572.4), "AR": (3.330, 136.5)}
+    for k in keep:
+        sp = SPECIES_NASA9[k]
+        db[k] = {"MW": float(sp["MW"]), "LJ_sigma": float(LJ[k][0]), "LJ_eps_kB": float(LJ[k][1]),
+                 "Tlo": 200.0, "Tmid": 1000.0, "Thi": 6000.0,
+                 "nasa9_low": [float(v) for v in sp["low"]],
+                 "nasa9_high": [float(v) for v in sp["high"]]}
+    Y_split = {name_dry: y_dry_tot, **{k: Y[k] for k in keep}}
+    return db, Y_split, [name_dry, *keep]

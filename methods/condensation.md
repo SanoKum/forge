@@ -552,6 +552,18 @@ Phase 2 の二相 EOS による気相逆結合 ($p$ が $g$ 依存) は密結合
 
 ---
 
+### 7b. 多成分燃焼ガス中の H₂O 凝縮 — carrier を擬似種に畳む運用 (2026-08-17)
+
+燃焼ガス (N₂/CO₂/O₂/H₂O) の H₂O 凝縮では、carrier 全種を独立種にする必要はない (多成分 TP × 陰解法の
+結合不安定・種数分の輸送コスト)。**H₂O 以外を NASA-9 の質量分率線形混合で 1 つの擬似種 `MIXDRY` に
+畳み、H₂O だけ独立種**とする 2 種 TP (`thermalMethod 2`, `species: [MIXDRY, H2O]`, `condModel 1`,
+`condGasSpecies 1`) で解く。混合則が線形なので dry の熱力学は全種独立と厳密に同じ。設計ツール側の
+実装は [methods/design/overview.md](design/overview.md#ガスモデル-semi-perfect-nasa-9cea-frozen-組成--forge_designgas)
+(`evaluate.tp_species: split_h2o`)、検証は
+[plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md](../plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)
+(Wyslouzil fig3 で N₂ 擬似種 + H₂O が既存 `[N2, H2O]` CPG 結果を再現、イソブタン M4.2 H₂O 5 %)。
+気相 thermo の低温側は forge の `Tlo` クランプ (cp 凍結) が効く。
+
 ### 8. 精度・無次元化 (Phase 2)
 
 Phase 1 は source=0 ゆえモーメントは常時 0 で精度無関係。Phase 2 で

@@ -8,7 +8,7 @@
 - SRC: res_*.h5 (primitives P,T,Ux,Uy,Uz,ro[,k,omega]) でも input h5 (conserved) でも可。
 - DST: convertGmshToForge 直後の新メッシュ input h5。
 - 各 DST セル重心に最も近い SRC セル重心の値を採用 (scipy cKDTree, 最近傍)。
-- 移植する /VALUE/: 保存量 ro,roUx,roUy,roUz,roe・乱流 roK,roOmega・スカラー輸送 roY* (あれば)。
+- 移植する /VALUE/: 保存量 ro,roUx,roUy,roUz,roe・乱流 roK,roOmega・スカラー輸送 roY*・凝縮モーメント rog_*/roQ*_* (あれば)。
 - **wall_dist は移植しない** (新メッシュで convert 時に計算済みの値を使う)。
 
 usage: interp_field.py SRC.h5 DST_input.h5 [--gamma 1.4]
@@ -68,11 +68,16 @@ def main():
             for key in V:                      # scalar transport Y* -> roY*
                 if key.startswith("Y") and key[1:].isdigit():
                     fields["ro"+key] = ro*np.array(V[key])
+                # 凝縮モーメント (原始 g_<s>,Q0_<s>.. → 保存 rog_<s>,roQ0_<s>..)。2026-08-17
+                if key.startswith(("g_", "Q0_", "Q1_", "Q2_")):
+                    fields["ro"+key] = ro*np.array(V[key])
         else:                                  # input (conserved)
             fields = {n: np.array(V[n]) for n in
                       ["ro","roUx","roUy","roUz","roe","roK","roOmega"] if n in V}
             for key in V:
                 if key.startswith("roY") and key[3:].isdigit():
+                    fields[key] = np.array(V[key])
+                if key.startswith(("rog_", "roQ0_", "roQ1_", "roQ2_")):
                     fields[key] = np.array(V[key])
 
     tree = cKDTree(cs)

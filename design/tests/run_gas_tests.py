@@ -75,5 +75,22 @@ check("semi-perfect の A/A* は γ* と γ_M4 の CPG の間にある (単一 �
 check(f"CPG(γ*) は出口半径を >5% 誤る ({100*(np.sqrt(ar_star/ar_sp)-1):+.1f}%)",
       abs(np.sqrt(ar_star / ar_sp) - 1) > 0.05)
 
+
+# --- split 擬似種 (MIXDRY + H2O) の等価性 (2026-08-17, tp-split-h2o plan) ---
+from forge_design.gas.semiperfect import RU, SPECIES_NASA9, mixture_pseudo_species_split, _cp_R, _h_RT
+Ysp = {"N2": 0.75277, "CO2": 0.17426, "O2": 0.02286, "H2O": 0.05011}
+dbs, Ysplit, order = mixture_pseudo_species_split(Ysp)
+gfull = GasSemiPerfect(Ysp, Tt=1000.0)
+def _cp_db(e, T):
+    a = np.asarray(e["nasa9_low"] if T < e["Tmid"] else e["nasa9_high"]); return float(_cp_R(a, T)) * RU / e["MW"]
+def _h_db(e, T):
+    a = np.asarray(e["nasa9_low"] if T < e["Tmid"] else e["nasa9_high"]); return float(_h_RT(a, T)) * RU * T / e["MW"]
+errcp = max(abs(sum(Ysplit[k] * _cp_db(dbs[k], T) for k in order) - float(gfull.cp_mass(T)[0])) for T in (250., 400., 800., 1200.))
+errh = max(abs(sum(Ysplit[k] * _h_db(dbs[k], T) for k in order) - float(gfull.h_mass(T)[0])) for T in (250., 400., 800., 1200.))
+check(f"split: order={order}, Σ Y={sum(Ysplit.values()):.6f}", order == ["MIXDRY", "H2O"] and abs(sum(Ysplit.values()) - 1) < 1e-12)
+check(f"split: 混合 cp が全種混合と一致 (max|Δ| {errcp:.1e})", errcp < 1e-9)
+check(f"split: 混合 h が全種混合と一致 (max|Δ| {errh:.1e})", errh < 1e-6)
+check("split: H2O エントリは内蔵 NASA-9 と同係数", dbs["H2O"]["nasa9_low"] == [float(v) for v in SPECIES_NASA9["H2O"]["low"]])
+
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAILURES'}")
 sys.exit(1 if FAIL else 0)

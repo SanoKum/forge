@@ -238,6 +238,21 @@ SLAU 陰解法 (timeIntegration:11, blockDPLUR, **nStepInner:5, cfl_pseudo:4**)�
 下流 (x≳4cm) は全モデル実験 ±数%。**onset 域は Kantrowitz 有り (Kw+HK/Kw+Gyar) が overshoot を抑え実験に最良**。
 残課題: x≈3cm のピークが実験よりやや高い (onset レート微調整)、3D 壁解像 (`make_nozzle_3d_wallres.py`) は未実施。
 
+## TP split (MIXDRY 擬似種 + H₂O 独立種) と node 検証 — run_0170 以降 (2026-08-17)
+
+計画 [tooling-nozzle-tp-split-h2o-condensation.md](../../plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)。
+イソブタン燃焼ガス (case/42) の H₂O 凝縮に向け、「H₂O 以外を NASA-9 擬似種 `MIXDRY` に畳み、H₂O だけ独立種」
+とする 2 種 TP を、既存 Fig.3 (2D SST, Kw+HK, `run_0050`) で検証した。組成は既存どおり **H₂O 1.095 %**。
+投入: `run_tp_split_wys.py` (cell, 同メッシュ) / `run_tp_split_wys_node.py` (node, 平面メッシュ)、比較: `compare_tpsplit_wys.py` → `compare_tpsplit_wys.png`。
+
+| run | 離散化 / メッシュ | 熱力学 | 物理 | 主要結果 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| `run_0170_fig3_2d_sst_kwhk_tpsplit` | cell / 既存 `nozzle_fig3_2d` (押し出し擬似2D) | **TP `[MIXDRY(=N2),H2O]`** thermoHrefTemp 298.15 (IC は run_0048 dry SST 場を `cpg_field_to_tp` で TP 化) | SST 粘性, Kw+HK | **run_0050 (CPG) を再現**: g_max 0.0106 vs 0.0107, onset 2.45 vs 2.35 cm, 中心線 p/p0 差 ≤3.1 % (TP の H₂O cp 差)。NaN 0、rms_ro 1.2e-9 (2.2 桁, still falling) | active (**TP split 検証の正本**) |
+| `run_0184_wysinv_cell_cpg_cond` / `run_0185_wysinv_node_cpg_cond` / `run_0186_wysinv_node_tpsplit_cond` | cell / **node** / node、平面 2D 一様メッシュ `mesh/nozzle_fig3_2d_planar_inv` (301×120, 壁クラスタなし) | CPG / CPG / TP split | **非粘性 slip**, Kw+HK, 2 次 (段階起動 soft→mid→本段 12000) | **node = cell**: g 0.0109 = 0.0109, onset 1.75 cm 同一, p/p0 差 2 %; **node TP split** g 0.0108, onset 1.85 cm, p/p0 差 1.7 %。node rms_ro 3.4e-9 (3.3 桁)。非粘性なので onset は SST 基準 (2.35 cm) より上流 | active (**node の検証**) |
+| `run_0171_fig3_2d_sst_kwhk_tpsplit_node` / `run_0179`, `run_0181`〜`0183_wysnode_*` | node / 平面 `nozzle_fig3_2d_planar` (Bump 0.004, y₁≈0.5–5 µm, AR 728) | CPG or TP | SST or laminar no-slip (0182 のみ slip) | **node × 平面壁クラスタ no-slip は不成立**: 壁ノード T が Tt を超え (出口コーナーから 326→400+ K)、衝撃列が遡上して 6000–9000 step で unstart (2 次・1 次・SST・laminar・nodeWallDirichlet 0/1・出口 Pt=Ps いずれも)。slip (0182) だけ健全 (T ≤ Tt)。cross-mesh IC の壁ジグザグは 1D 等エントロピー IC で除いたが本質でない → **node 粘性壁 (平面, 極薄壁セル) の申し送り** | 破棄予定 (**申し送りの根拠**) |
+
+診断 run (0172–0178, 0180, 0187) は削除済 (上記と同じ結論の切り分け)。
+
 ## 多成分 TP 発散の再検証 run 一覧 — run_0069 以降 (2026-06-18)
 
 「多成分 thermally perfect gas (thermalMethod:2) が収束しない」件の原因切り分け。**結論 (0acca05 の
