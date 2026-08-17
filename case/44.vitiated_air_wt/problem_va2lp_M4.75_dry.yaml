@@ -1,0 +1,49 @@
+# 新条件 (2026-08-18 ユーザ指定): Pt 1,137,000 Pa / Tt 1058 K、組成・出口 φ1600 は同じ。M_d だけ変えた形状 (R2/L_U6, L_c は設計可能な最小級)。
+# 背圧 0.3×dry 出口静圧 (va2 の再計算, run_0049–0066)。3 変種: dry (2 種 TP, 凝縮 off) / noneq (Kw+HK 非平衡, 蒸発込み) / eq (平衡凝縮 condEquilibrium 1)。node Euler 段階起動 12000 step。
+name: va2lp_M4.75_R2_LU6_Lc10_dry
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species:
+    H2O: 0.0286647
+    N2: 0.6732631
+    O2: 0.2301686
+    AR: 0.0114568
+    CO2: 0.0564467
+  gamma: 1.32752
+  cp: 1190.2
+spec:
+  Pt: 1137000.0
+  Tt: 1058.0
+  p_ambient: 769.5   # dry 等エントロピー出口静圧 2565 Pa の 0.3 倍 (超音速流出を保証、出口 BC artefact 回避; 2026-08-18 ユーザ指示)
+  r_throat: 0.165252
+  M_design: 4.75
+dv:
+  L_c:
+    value: 10.0
+    min: 6.5
+    max: 14.0
+geometry:
+  R: 2.0
+  r_inlet: 3.8
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+mesh:
+  discretization: node
+  ni: 365
+  nj: 65
+  wall_first_frac: 0.005
+  throat_refine: 3.0
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0
+  mid_stage: true
+  tp_species: split_h2o

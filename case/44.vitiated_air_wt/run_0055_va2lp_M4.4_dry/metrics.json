@@ -1,0 +1,22 @@
+{
+ "res_file": "res_12000.h5",
+ "dM_max": 0.006301909172962805,
+ "dM_max_rel_Md": 0.0014322520847642737,
+ "dM_rms": 0.002715054755411336,
+ "M_axis_exit": 4.399801209367879,
+ "M_axis_max_downstream": 4.407578945159912,
+ "overshoot_rel": 0.0017224875363435804,
+ "exit_uniformity": {
+  "x_plane": 5.0325469970703125,
+  "r_core": 0.7928394980279134,
+  "core_def": "rhombus_traced",
+  "r_wall": 0.7984513640403748,
+  "eps_M_rms": 0.00017780503549147397,
+  "eps_M_max": 0.0003543767088558525,
+  "eps_theta_max_deg": 0.017075853422284126,
+  "M_core_massflux_avg": 4.4003682136535645,
+  "n_core_faces": 63,
+  "n_exit_faces": 65
+ },
+ "mdot_ratio_moc": null
+}

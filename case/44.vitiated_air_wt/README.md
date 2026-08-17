@@ -256,7 +256,7 @@ Wilson 点は **T ≈ 205–210 K (S ≈ 100)** で、$M_d$ 4.5 までは核生�
 | 5.0 | noneq | `run_0047_va2_M5.0_noneq` | 35.6 | 4.412 | 242.0 | 2176 | 1.07 | 0.53 | **4.380** | 244.2 | 0.49 | 1.0 % |
 | 5.0 | eq | `run_0048_va2_M5.0_eq` | 35.6 | 4.329 | 248.2 | 2812 | 0.89 | 0.46 | **4.399** | 243.3 | 0.54 | 1.8 % |
 
-(`study_va2_exit.json`。コア M 幅 = r<0.85 r_w の (max−min)/M。M5.0 eq は x>33 r_t で出口 BC の影響 [g 減少・S<1] が軸に及んでおり軸値は参考。)
+(`study_va2_exit.json` = `study_va2lp_exit.json` [背圧 0.3 倍の再計算, 数値同一]。コア M 幅 = r<0.85 r_w の (max−min)/M。M5.0 eq の軸値は x≳33 r_t の集束圧縮波 [下記] の中なので参考、質量平均を使う。)
 
 読み方:
 - **非平衡 (実際に起きること)**: 閾値は前節と同じ **M_d≈4.7 (T≈210 K)**。4.19–4.4 は g=0 のまま (過冷却 9–25 K で凍結)、4.5 は微量 (1 %)、
@@ -267,7 +267,9 @@ Wilson 点は **T ≈ 205–210 K (S ≈ 100)** で、$M_d$ 4.5 までは核生�
   出口 T は 243–260 K (飽和線)、**出口質量平均 M は 4.12 / 4.16 / 4.19 / 4.23 / 4.31 / 4.40** (設計 4.19–5.0)。
   M_d 4.19–4.4 では非平衡なら無害だが**平衡なら 7–21 % 凝縮して M が 1.6–4.7 % 落ちる** — 実際は核生成障壁 (S≲10) で起きない (非平衡が正)。
 - 図 `figs/va2_condensation_axis.png` (軸 T と Tsat / S / g の 3 段 × 6 M_d)。
-- 注: eq M5.0 の出口直前 (x>33 r_t) で g が 0.57→0.42 に減る (S 上昇) — 出口境界近傍の artefact (背圧 1902 Pa は dry の等エントロピー値、eq の出口は 2902 Pa)。出口面 2 r_t 上流までの値を使う。
+- 注: eq M5.0 の出口直前 (x≳33 r_t) で軸 P が 2240→2965 Pa (+32 %) に上がり g が 0.57→0.44 に減る (S<1 で蒸発)。当初「出口 BC (背圧 = dry の等エントロピー値) の artefact」と書いたが、
+  **背圧を 0.3 倍にした再計算 (`run_0049`–`0066`, `problem_va2lp_*.yaml`) が全 18 run で va2 とビット同一** (超音速流出では背圧は読まれない) なので BC ではなく、
+  **平衡凝縮流れ自身の圧縮波** (壁側 P 2330 Pa > 軸 2240 Pa の非一様な熱付加が軸に集束) である。dry 設計の菱形一様域は凝縮すると成立しないことの表れ。
 
 ## 問題定義
 
@@ -277,6 +279,7 @@ Wilson 点は **T ≈ 205–210 K (S ≈ 100)** で、$M_d$ 4.5 までは核生�
 | `problem_va_R3_LU6_Lc11.yaml` | 3 | 6 | 11 | 単調窓上限側 (R2 は 10.88 で L_c11 不可) |
 | `problem_va_R2_LU{4,9}_Lc8.yaml` | 2 | 4/9 | 8 | L_U 感度 (基準 R2/L_c8) |
 | `problem_va2_M{4.19,4.3,4.4,4.5,4.75,5.0}_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 新条件 Pt 1.137 MPa / Tt 1058 K、M_d 別形状 × dry/非平衡/平衡 |
+| `problem_va2lp_M*_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 同上、背圧 0.3×dry 出口静圧 (結果は va2 と同一) |
 | `problem_va_R2_LU6_Lc8_split.yaml` / `_split_cond.yaml` / `_ns_split_cond.yaml` | 2 | 6 | 8 | 2 種 TP [MIXDRY,H2O] dry / +凝縮 (Euler) / NS v4 壁 + 凝縮 (未投入) |
 | `problem_va_R2_LU6_Lc8_ns_coarse.yaml` / `problem_va_R2_LU6_Lc8_ns.yaml` | 2 | 6 | 8 | NS: coarse 中継 (365×65, frac 5e-4, cfl1) / 本計算 (601×97, frac 3.5e-5, cfl1, 48000 step) |
 
@@ -295,6 +298,7 @@ Wilson 点は **T ≈ 205–210 K (S ≈ 100)** で、$M_d$ 4.5 までは核生�
 | `run_0023_va_R2_LU6_Lc8_split` / **`run_0024_va_R2_LU6_Lc8_split_cond`** | **凝縮** (2 種 TP split_h2o; 0023 = dry 対照、0024 = Kw+HK 凝縮 ON, 蒸発込み binary) node Euler 12000 step | 0023 は `run_0005` と同一 (0.0614 %)。**0024: g≡0 — 最大 S 2.03 (液基準, x≈12 r_t, 252.6 K) で核生成せず、dry と同一**。品質 PASS・NaN 0。凝縮節参照 | active (**凝縮なしの根拠**) |
 | `run_0025`〜`run_0029_va_M{4.5,4.75,5.0,4.3,4.4}_*_split_cond` | **凝縮の M_d 感度** (同 Pt/Tt/組成/φ1600, M_d のみ変更, Euler+凝縮 ON 12000 step) | 4.19–4.4: g=0 / 4.5: 1e-4 / **4.75: 43 % 凝縮 (onset T 210 K)** / 5.0: 54 %。閾値 M_d≈4.7 (T≈210 K)。凝縮節の表 | active (**M_d 上限の根拠**) |
 | **`run_0031`〜`run_0048_va2_M*_{dry,noneq,eq}`** | **新条件 (Pt 1.137 MPa/Tt 1058 K) × M_d 6 点 × dry/非平衡/平衡凝縮** (`problem_va2_*.yaml`, `run_va2_batch.py`; eq は `condEqDTmax 10` の binary で再実行) | 上の表 (`study_va2_condensation.json`, `figs/va2_condensation_axis.png`)。非平衡閾値 M_d≈4.7 は不変、平衡なら M4.19 でも 9 % 凝縮・M −1.5 %。全 run 品質 PASS・NaN 0。各 run に `axis_values.csv` | active (**新条件・平衡凝縮の正本**) |
+| `run_0049`〜`run_0066_va2lp_M*_{dry,noneq,eq}` | **va2 の背圧 0.3 倍再計算** (`problem_va2lp_*.yaml`, 超音速流出保証の確認; ユーザ指示) | **全 18 run が va2 (`run_0031`–`0048`) と数値同一** → 出口 BC は無関係と確定。`study_va2lp_exit.json`、各 run に `axis_values.csv` | active (va2 と同値の再現; どちらを参照してもよい) |
 | `run_0030_va_R2_LU6_Lc8_split_cond_eqbin` | 平衡凝縮実装後 binary の回帰 (`run_0024` 再実行) | P 差 ≤2.4 Pa (2e-6)、`condTsat_0` 出力確認 (S 2.03 で過冷却 8.5 K) | 破棄予定 (記録) |
 | `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可。**NASA CEA2 凍結流照合の対象** (上の CEA 節: T/ρ/u/a が CEA と 0.04 % 以内, $C_d$ 0.9967) → `cea/`, `cea_check_va.py` | active (CEA 照合の根拠; 場は `run_0005` と同一) |
 | `run_0018_va_R2_LU6_Lc8_ns_v2` | v2 初回 — 本段開始時に binary 再ビルド中で rc 127 | 結果なし、削除済 (`run_0020` で再投入) | 削除済 |
