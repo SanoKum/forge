@@ -293,6 +293,19 @@ Jacobian で per-cell $\kappa=\gamma[ic]-1$ を実装済み ([thermophysics plan
 
 ---
 
+#### 対流流束の面温度と二相圧力の整合 (2026-08-18 修正)
+
+TP (`thermalMethod 2`) の SLAU 流束は面エンタルピー $h=h_{mix}(T_f)+\tfrac12|u|^2-gL$ を、MUSCL 面値 $(P_f,\rho_f)$ から
+$T_f=P_f/(\rho_f R)$ で再構成する。ここで $R$ に**全水分を気相と数えた** $R_{mix}$ を使うと、状態側の圧力が蒸気のみ
+$P=\rho T(R_{mix}-gR_w)$ (§5) なので $T_f$ が $gR_w/R_{mix}$ (~2 %) 低く出て、面エンタルピーが状態より $c_p\Delta T\approx6$ kJ/kg
+小さくなる。定常解はこの流束で $h_0$ が一定になるよう調整されるため、**凝縮帯で全エンタルピー $(\rho e+P)/\rho$ が +0.6 %
+(潜熱の ~16 %) 増え、$T$ が 4–5 K 高い**非保存解になっていた (case/44 va2 M4.75: 軸 $h_0$ 836→841 kJ/kg。出口ノードだけ
+境界流束が `Ht` を直読して整合し、$T$ が 5 K 低く $g$ が跳ねる「出口の跳ね」として顕在化)。修正: 面温度の再構成に
+$R_{gas}=R_{mix}-gR_w$ (pure-condensible は $(1-g)R$) を使う (`convectiveFlux_slau_d.inc.cuh`)。修正後は軸 $h_0$ が
+836.2±0.1 kJ/kg で保存、出口ノードの跳ねは消える。同型の不整合は `outlet_statPress` の TP ghost ($T=P/(\rho R_{mix})$) にも
+あり、超音速流出では `roe/T/sonic` を内部値で全量外挿するよう変更 (亜音速流出 × 凝縮は近似のまま、要フォロー)。
+ROE 流束の TP 分岐は単成分のみで二相補正未実装 (凝縮 TP は SLAU を使うこと)。
+
 ### 6. 数値解法 — fractional-step
 
 支配方程式を「ソース無しの均質部 (対流)」と「凝縮ソース部」に**演算子分割** (fractional-step) する。

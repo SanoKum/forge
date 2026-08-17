@@ -301,14 +301,29 @@ __global__ void SLAU_d
                     RgL = (double)Rmix_cell[ic0];
                     RgR = (double)Rmix_cell[ic1];
                 }
+                // 二相 (凝縮 g>0): 状態の圧力は蒸気のみ P=ρT(R_mix−gR_w) (dependentVariables) なので、
+                // 面温度の再構成も同じ気体定数で行う。全水分を気相と数えた R_mix で T=P/(ρR_mix) と
+                // すると T が g R_w/R_mix (~2 %) 低く出て面エンタルピーが状態より cp·ΔT (~6 kJ/kg) 小さく
+                // なり、凝縮帯で全エンタルピーが +0.6 % 増える非保存が出た (case/44 va2 M4.75: 軸 h0
+                // 836→841 kJ/kg、出口ノードだけ境界流束 [Ht 直読] で整合し T が 5 K 低い「跳ね」)。
+                if (g_total != nullptr) {
+                    const CondSpeciesProps cprR = (condModel == 1) ? condProps_H2O() : condProps_N2();
+                    RgL -= (double)g_total[ic0]*cprR.R; if (RgL < 1.0) RgL = 1.0;
+                    RgR -= (double)g_total[ic1]*cprR.R; if (RgR < 1.0) RgR = 1.0;
+                }
                 const double Tl = (double)P_L/((double)ro_L*RgL);
                 const double Tr = (double)P_R/((double)ro_R*RgR);
                 h_p = (flow_float)(thermo_h_mix(sp, nSpecies, YL, Tl) + 0.5*(double)velocity2_L);
                 h_m = (flow_float)(thermo_h_mix(sp, nSpecies, YR, Tr) + 0.5*(double)velocity2_R);
             } else {
-                const double Rg = thermo_R_species(sp[0]);
-                const double Tl = (double)P_L/((double)ro_L*Rg);
-                const double Tr = (double)P_R/((double)ro_R*Rg);
+                double Rg = thermo_R_species(sp[0]);
+                double RgL1 = Rg, RgR1 = Rg;
+                if (g_total != nullptr) {   // pure-condensible TP: P=ρ(1−g)RT
+                    RgL1 = Rg*(1.0 - (double)g_total[ic0]); if (RgL1 < 1.0) RgL1 = 1.0;
+                    RgR1 = Rg*(1.0 - (double)g_total[ic1]); if (RgR1 < 1.0) RgR1 = 1.0;
+                }
+                const double Tl = (double)P_L/((double)ro_L*RgL1);
+                const double Tr = (double)P_R/((double)ro_R*RgR1);
                 h_p = (flow_float)(thermo_h_mass(sp[0], Tl) + 0.5*(double)velocity2_L);
                 h_m = (flow_float)(thermo_h_mass(sp[0], Tr) + 0.5*(double)velocity2_R);
             }

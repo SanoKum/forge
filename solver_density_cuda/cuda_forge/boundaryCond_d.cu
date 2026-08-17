@@ -603,7 +603,8 @@ flow_float* Psb
         // ばたつきと相まって不整合ゴーストを生んでいた。逆流出口でも静圧のみ規定するのが整合的。
         // 注: thermalMethod==2 (TP) では γ/cp が温度依存のため本構築は近似 (CPG 同型)。TP の厳密化は別途。
         const flow_float c_int = max(sonic[ic], (flow_float)1.0e-20);
-        if (Un > (flow_float)0.0 && Umagc/c_int >= (flow_float)1.0) {
+        const bool supersonic_out = (Un > (flow_float)0.0 && Umagc/c_int >= (flow_float)1.0);
+        if (supersonic_out) {
             // 超音速流出: P_back を課さず全量外挿 (SU2: Mach>=1 で V_outlet=V_domain)。
             Pnew = P[ic]; ronew = ro[ic];   // Uxnew/Uynew/Uznew は既に内部値
         } else {
@@ -637,9 +638,19 @@ flow_float* Psb
         roUy[ig]  = ronew*Uynew*uscale;
         roUz[ig]  = ronew*Uznew*uscale;
 
-        if (thermalMethod == 2) {
+        if (supersonic_out) {
+            // 超音速流出は roe/T/sonic も内部値をそのまま外挿する (ρ,P,U と同じ「全量外挿」)。
+            // T=P/(ρR_mix) から e を再構築すると二相 (凝縮 g>0) の内部状態と不整合になる
+            // (R_mix は全水分を気相として数え、e に液相項 g(R_wT−L) が無い) → 出口ノードだけ T が
+            // 5 K 低下し S 上昇・g 跳ね上がりが出た (case/44 va2 平衡凝縮 run, 2026-08-18)。
+            // 内部値コピーなら EOS の種類 (CPG/TP/二相) に依らず整合。
+            roe[ig]   = roe[ic];
+            sonic[ig] = sonic[ic];
+            T[ig]     = T[ic];
+        } else if (thermalMethod == 2) {
             // TP: ghost を (ρ=ronew, P=Pnew) と整合させる。T=P/(ρ R_mix)、以降の e/γ は共通 helper。
             //     定数 ga/cp は使わない。
+            //     注: 凝縮 (g>0) の亜音速流出では R_mix/e が液相を無視するため近似 (要フォロー)。
             const flow_float ekg = 0.5f*(Ux[ig]*Ux[ig] + Uy[ig]*Uy[ig] + Uz[ig]*Uz[ig]);
             const double R   = mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]);
             const flow_float Tg = (flow_float)((double)Pnew/((double)ronew*R));
@@ -665,7 +676,9 @@ flow_float* Psb
         roeb[ib]   = roe[ig];
         // Tsb は境界面の動的圧力 Pnew と整合させる (旧: 常に規定背圧から計算しており、
         // 超音速流出で ro=内部・P=背圧 の不整合な温度が勾配境界閉包 dT を汚染していた)。
-        if (thermalMethod == 2) {
+        if (supersonic_out) {
+            Tsb[ib] = T[ic];    // 全量外挿 (二相でも整合)
+        } else if (thermalMethod == 2) {
             const double R = mix ? thermo_R_mix(sp, nSpecies, Yc) : thermo_R_species(sp[0]);
             Tsb[ib] = (flow_float)((double)Pnew/((double)rob[ib]*R));
         } else {

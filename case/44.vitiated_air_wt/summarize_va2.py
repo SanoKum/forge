@@ -11,7 +11,12 @@ def load(r):
     t=(r/"axis_values.csv").read_text().splitlines(); h=t[1].split(","); d=np.loadtxt(t[2:],delimiter=","); q={k:d[:,i] for i,k in enumerate(h)}
     q["M"]=np.hypot(q["Ux"],q["Uy"])/np.sqrt(np.maximum(q["sonic"]**2 if "sonic" in q else 1,1e-30)) if "sonic" in q else None
     return q
-runs=sorted(p for p in CASE.glob("run_00[3-4][0-9]_va2_*") if p.is_dir())
+import sys
+TAG=sys.argv[1] if len(sys.argv)>1 else "va2"     # va2 | va2fx (va2fx は dry を va2lp から取る)
+if TAG=="va2fx":
+    runs=sorted(p for p in list(CASE.glob("run_00[6-7][0-9]_va2fx_*"))+list(CASE.glob("run_00[4-6][0-9]_va2lp_*_dry")) if p.is_dir())
+else:
+    runs=sorted(p for p in CASE.glob("run_00[3-4][0-9]_va2_*") if p.is_dir())
 rows=[]; data={}
 for r in runs:
     Md=float(r.name.split("_M")[1].split("_")[0]); kind=r.name.split("_")[-1]
@@ -29,7 +34,7 @@ print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 for w in sorted(rows,key=lambda w:(w["Md"],{"dry":0,"noneq":1,"eq":2}[w["kind"]])):
     on = "—" if np.isnan(w["onset_x"]) else f"{w['onset_x']:.1f} ({w['onset_T']:.0f} K)"
     print(f"| {w['Md']} | {w['kind']} | `{w['run']}` | {w['T_min']:.1f} | {w['T_exit']:.1f} | {w['P_exit']:.0f} | {w['S_max']:.2f} | {w['subcool_max']:.1f} | {w['g_exit']:.4f} ({100*w['g_frac']:.0f} %) | {on} | {w['M_exit']:.3f} | {100*w['dM']:.2f} % | {100*w['epsM']:.2f} % |")
-json.dump(rows,open("study_va2_condensation.json","w"),indent=1)
+json.dump(rows,open(f"study_{TAG}_condensation.json","w"),indent=1)
 Mds=sorted({w["Md"] for w in rows}); fig,axs=plt.subplots(3,len(Mds),figsize=(3.3*len(Mds),9),sharex="col")
 for j,Md in enumerate(Mds):
     for kind,c in (("dry","k"),("noneq","C0"),("eq","C3")):
@@ -44,5 +49,5 @@ for j,Md in enumerate(Mds):
     for a in axs[:,j]: a.grid(alpha=.3)
 axs[0,0].set_ylabel("axis T [K] (dotted: T_sat(p_v))"); axs[1,0].set_ylabel("S = p_v/p_sat"); axs[2,0].set_ylabel("g / Y_H2O (凝縮率)")
 axs[0,0].legend(fontsize=7); axs[1,0].legend(fontsize=7)
-fig.suptitle("case/44 va2 (Pt 1.137 MPa, Tt 1058 K): dry / 非平衡 (Kw+HK) / 平衡凝縮 — 軸上分布")
-fig.tight_layout(); fig.savefig("figs/va2_condensation_axis.png",dpi=120); print("wrote figs/va2_condensation_axis.png")
+fig.suptitle(f"case/44 {TAG} (Pt 1.137 MPa, Tt 1058 K): dry / 非平衡 (Kw+HK) / 平衡凝縮 — 軸上分布")
+fig.tight_layout(); fig.savefig(f"figs/{TAG}_condensation_axis.png",dpi=120); print(f"wrote figs/{TAG}_condensation_axis.png")
