@@ -1,0 +1,55 @@
+{
+ "chain": "axismach_ns",
+ "discretization": "node",
+ "viscous": true,
+ "dstar_source": "correlation_hist_v1",
+ "mdot_ratio_moc": null,
+ "throat_physical": {
+  "x": -0.004595225034725593,
+  "r": 1.0103324703789534,
+  "kappa": 0.5347073097764425,
+  "dstar_throat": 0.010375130734614003
+ },
+ "x0": 0.5272606178869914,
+ "x_A": 0.5272606178869914,
+ "x_E": 8.527260617886991,
+ "L_c": 8.0,
+ "anchor": [
+  1.2288814672471593,
+  0.6442241458685899,
+  0.026550457307718267
+ ],
+ "anchor_source": "hall",
+ "start_line": "throat_char",
+ "wall_mode": {
+  "mode": "cplus",
+  "n_wall": 132,
+  "streamline_residual_max": 0.009274122264944451,
+  "streamline_residual_rms": 0.0008740021471183686
+ },
+ "Md": 4.19,
+ "R": 2.0,
+ "qa": {
+  "x_F": 23.90569740461424,
+  "r_F": 3.793031633675132,
+  "r_F_pred_1d": 3.8003897924231964,
+  "r_F_err_rel": -0.001936158959992551,
+  "xF_minus_xE": 15.37843678672725,
+  "xF_minus_xE_pred": 15.463477379854423,
+  "theta_max_deg": 20.5451528568283,
+  "theta_exit_deg": 8.121041502264585e-07,
+  "M_wall_exit": 4.189999935421635,
+  "kappa0_fit": 0.5001257302072992,
+  "kappa0_R_ratio": 1.0002514604145984,
+  "kappa0_fit_resid": 0.00011318998376452089
+ },
+ "nStepOuter": 48000,
+ "cfl_main": 1.0,
+ "scale_m": 0.210505,
+ "ic_from": "../case/44.vitiated_air_wt/run_0016_va_R2_LU6_Lc8_ns_coarse",
+ "mesh": {
+  "ni": 601,
+  "nj": 97,
+  "wall_first_frac": 3.5e-05
+ }
+}

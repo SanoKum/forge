@@ -529,14 +529,16 @@ if __name__ == "__main__":
 
 # --- A12: 粘性 δ* 補正 (RANS 経路) ------------------------------------------------
 def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
-               dstar_csv=None) -> dict:
+               dstar_csv=None, dstar_blend=(6.0, 9.0)) -> dict:
     r"""**物理壁 (inviscid + δ*) の RANS run** を準備する (A12)。
 
     plan: plans/active/tooling-nozzle-axismach-viscous-deltastar.md。
 
     - `dstar_csv` なし → v1: `feedback.deltastar.deltastar_offset` (相関) で法線オフセット
     - `dstar_csv` あり → v2: CSV (x_rt, dstar_rt) を補間して法線オフセット
-      (CFD 抽出 δ* の固定点反復)
+      (CFD 抽出 δ* の固定点反復)。`dstar_blend=(x_lo, x_hi)` [r_t] で相関→CSV の
+      smoothstep 区間を指定 (既定 (6, 9) = case/41 の規約。CSV が全域を覆うなら
+      (-1, -0.5) 等で CSV を全域採用 [case/44 v3])
     - メッシュ/段階起動レシピは B8 系 NS v1 (run_0028-0030) で確立したものを流用。
       coarse 中継 (y+~50) は YAML の mesh/evaluate 設定だけの違いで同じ関数で作る
     """
@@ -558,15 +560,17 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
         base = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
                                   float(p.spec["Tt"]), _gam_or_gas(p), p.cp)
 
+        b_lo, b_hi = float(dstar_blend[0]), float(dstar_blend[1])
+
         def dstar_x(x, _tbl=tbl, _corr=base._dstar_hist):
             x = np.asarray(x, dtype=float)
-            w = np.clip((x - 6.0) / 3.0, 0.0, 1.0)
+            w = np.clip((x - b_lo) / max(b_hi - b_lo, 1e-9), 0.0, 1.0)
             w = w * w * (3.0 - 2.0 * w)
             csv = np.interp(np.clip(x, _tbl[0, 0], _tbl[-1, 0]), _tbl[:, 0], _tbl[:, 1])
             return (1.0 - w) * _corr(x) + w * csv
     wall = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
                               float(p.spec["Tt"]), _gam_or_gas(p), p.cp, dstar_x=dstar_x)
-    dstar_src = "correlation_hist_v1" if dstar_csv is None else str(dstar_csv)
+    dstar_src = "correlation_hist_v1" if dstar_csv is None else f"{dstar_csv} (blend {dstar_blend})"
     msgs = wall.validate()
     if msgs:
         raise ValueError("物理壁フィルタ不合格: " + "; ".join(msgs))

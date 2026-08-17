@@ -1,0 +1,48 @@
+# 加熱空気 M4.19 — 推奨点 R2/L_U6/L_c8 の NS 本計算 (node 壁解像 y+~1, 低 Re SST, wallTreatmentSST 0)。
+# 壁 = inviscid + δ* (v1 = 相関 / v2 = CFD 抽出 --dstar-csv)。IC = coarse 中継の cross-mesh (ω 底層フロア付き)。
+# 手順: plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md, methods/design/overview.md「粘性 δ* 補正」「物理スロート (A13)」
+name: vitair_wt_m419_R2_LU6_Lc8_ns
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species:
+    H2O: 0.0286647
+    N2: 0.6732631
+    O2: 0.2301686
+    AR: 0.0114568
+    CO2: 0.0564467
+  gamma: 1.32752
+  cp: 1190.2
+spec:
+  Pt: 1140000.0
+  Tt: 1060.0
+  p_ambient: 5235.0
+  r_throat: 0.210505
+  M_design: 4.19
+dv:
+  L_c:
+    value: 8.0
+    min: 6.5
+    max: 11.0
+geometry:
+  R: 2.0
+  r_inlet: 3.8
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+mesh:
+  discretization: node
+  ni: 601
+  nj: 97
+  wall_first_frac: 3.5e-5   # y+ ≈ 0.8–6 (相関見積; スロート側が高い)。AR は check_mesh_quality で確認
+  throat_refine: 3.0
+evaluate:
+  nStepOuter: 48000
+  outStepInterval: 8000
+  cfl_main: 1.0             # A12 レシピ (y+1.5 本段は cfl1)

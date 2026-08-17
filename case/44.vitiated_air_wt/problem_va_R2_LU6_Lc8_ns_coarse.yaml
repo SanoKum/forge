@@ -1,0 +1,49 @@
+# 加熱空気 M4.19 — 推奨点 R2/L_U6/L_c8 の NS: A12/A13 coarse SST 中継 (y+ 数十)。
+# 壁 = inviscid (run_0005) + δ* 相関オフセット (PhysicalNozzleWall, 真スロート再探索)。IC = run_0005 Euler TP 場の cross-mesh。
+# 目的は y+~1 本計算の「構造の正しい k/ω/BL 場」の供給 (Euler+一様 k/ω 直入りは出口コーナー ω NaN — case/41 A12)。
+# 手順: plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md, methods/design/overview.md「粘性 δ* 補正」
+name: vitair_wt_m419_R2_LU6_Lc8_ns_coarse
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species:
+    H2O: 0.0286647
+    N2: 0.6732631
+    O2: 0.2301686
+    AR: 0.0114568
+    CO2: 0.0564467
+  gamma: 1.32752
+  cp: 1190.2
+spec:
+  Pt: 1140000.0
+  Tt: 1060.0
+  p_ambient: 5235.0
+  r_throat: 0.210505
+  M_design: 4.19
+dv:
+  L_c:
+    value: 8.0
+    min: 6.5
+    max: 11.0
+geometry:
+  R: 2.0
+  r_inlet: 3.8
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+mesh:
+  discretization: node
+  ni: 365
+  nj: 65
+  wall_first_frac: 5.0e-4   # y+ ~10–90 (相関見積: 出口 y1+=1 → 37 μm, スロート 1.2 μm)。中継の役割は k/ω/BL 構造の IC 供給
+  throat_refine: 3.0
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 1.0             # TP × SST は cfl≤1 を安全側に (CPG 中継は cfl4 実績)

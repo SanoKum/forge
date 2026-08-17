@@ -92,6 +92,40 @@ $r_t$=0.210505 m、$R$=2 $r_t$=0.42101 m、$L_U$=6 $r_t$=1.26303 m、$L_c$=8 $r_
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | r | 0.79992 | 0.78509 | 0.56442 | 0.26188 | 0.21050 | 0.22414 | 0.26028 | 0.33793 | 0.46975 | 0.64198 | 0.73527 | 0.78068 | 0.79669 | 0.79845 |
 
+
+## NS 版 (物理壁 = inviscid + δ\*, node y+~1 SST, TP) と δ\* 反復 (2026-08-18)
+
+推奨点 R2/$L_U$6/$L_c$8 を A12/A13 の NS チェーン ([plan](../../plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md),
+`runner_axismach.prepare_ns`/`run_staged_ns`) で回した。設定: node 低 Re SST (`wallTreatmentSST 0`, 断熱 no-slip)、TP semi-perfect
+(`thermoHrefTemp 298.15`)、陰解法 block-DPLUR、soft cfl0.5 → mid cfl1 → 本段 **cfl 1** 48000 step、メッシュ 601×97
+`wall_first_frac 3.5e-5` (AR 895 PASS; forge 実測 y+: 膨張部 x>3 で ≤1.5・x>8 で <0.4、**スロート近傍 x∈[−1,0.5] は 11–14**
+[y+~1 は AR ゲートと両立しない — 相関見積 y1+=1 → スロート 1.2 μm])。**TP×SST×node は本 case が初適用**で、cfl 1 で素直に回った
+(coarse 中継 `run_0016` → 本計算)。IC は Euler `run_0005` → coarse → 各 v の順に cross-mesh。ドライバ `run_ns_va.py`、
+δ\* 抽出 `analyze_ns_deltastar_va.py` (case/41 規約: x≥8) / `build_dstar_v3_va.py` (x≥3 抽出 + x<3 は測定端の比で相関をスケール、
+`--x-hi-trust` で末端の外挿勾配をトレンド化)。
+
+| v | run | 壁の δ\* | ‖ΔM‖∞/M_d (設計区間) | 出口軸 M | 出口コア M (r<3.4 r_t) | overshoot | δ\* 固定点 (抽出/入力) |
+|---|---|---|---|---|---|---|---|
+| Euler | `run_0005` | — (非粘性壁) | 0.061 % | 4.1900 | 4.1903 ±0.0005 | +0.14 % | — |
+| v1 | `run_0017_va_R2_LU6_Lc8_ns_v1` | 相関 (Eckert+乱流平板, 入口履歴) | **0.524 %** | 4.2149 | 4.168 (−0.5 %) | +0.62 % | 0.68 (x=8) → 1.0 (x=22): **相関が上流で最大 30–50 % 過大** (case/41 の 10 % 過小と逆) |
+| v2 | `run_0020_va_R2_LU6_Lc8_ns_v2` | CFD (x>9) + 相関 (x<6) ブレンド (case/41 規約) | 0.525 % | 4.2149 | — | +1.9 % | 設計区間は v1 と同一 (x<9 が相関のまま); ブレンドのこぶで出口 ε_θ 0.12→0.61° 悪化 → **本 case では不適** |
+| v3 | `run_0021_va_R2_LU6_Lc8_ns_v3` | CFD x≥3 全域 + x<3 相関×0.51 | 0.289 % | 4.1899 | 4.183 | +0.39 % (x≈22 のこぶ = 末端外挿勾配 0.63° の artefact) | 0.998 [0.98, 1.03] |
+| **v4** | **`run_0022_va_R2_LU6_Lc8_ns_v4`** | v3 + 末端 (x>21.5) をトレンド勾配 0.006 で外挿 | **0.309 %** | 4.1876 | **4.183 ±0.002 (−0.17 %)** | **+0.004 %** | **1.001 [0.995, 1.004] = 収束** |
+
+- **結論: v4 の物理壁が NS の到達点** (δ\* は固定点、0.5 % ゲート内、出口コア M 4.183 で ±0.05 % 一様、コア内 |θ|≤0.07°)。形状は
+  `points_va_best_v4_ns.csv` / `nozzle_va_best_v4_ns.geo` (`export_wall_va.py --kind ns --dstar-csv run_0021…/dstar_v4.csv`;
+  スロート φ423.3 mm @x=−0.7 mm、出口 φ1649.8 mm、δ\* 出口 26 mm)。相関 δ\* 版 (`points_va_best_ns.csv`) は **使わない**
+  (上流で δ\* 過大 → 出口 M −0.5 %)。
+- **残差は δ\* で表現できない**: x≈1–3 の −0.2 % と x≈7 の −0.3 % (v1/v3/v4 で共通、Euler には無い) はスロート近傍の粘性/遷音速効果で、
+  δ\* を変えても動かない。消すには law 側の RANS 帰還 (A5 の RANS 版、**未実装・未確立** — case/41 plan の残件) が要るので本作業では行っていない。
+  スロート近傍 y+ 11–14 の解像も一因の可能性 (未切り分け)。
+- 収束: `check_convergence` は全 NS run **NOT CONVERGED** (warm 床 plateau: rms_ro 4e-7, roK 3.2–3.6 桁降下)、`check_quasisteady`
+  machmax/pmax **STEADY**、軸 M 16k 以降 |ΔM|≤5e-5 で凍結、NaN 0、P∈[5.2 k, 1.139 M] Pa・T∈[253, 1060] K。
+- 図: `figs/ns_dstar_iteration.png` (軸 M 誤差 / 下流軸 M / 出口断面 M — Euler・v1・v3・v4)、`figs/ns_v1_dstar_extracted.png`
+  (v1 の δ\* 抽出 vs 相関)、`figs/ns_v4_dstar_fixedpoint.png` (v4 の固定点)。
+- 注: `run_0018` は v2 の初回投入で **別セッションの forge 再ビルド中に binary が消え本段が rc 127** で失敗 → 削除し `run_0020` で再投入。
+  新 binary の dry 経路は `run_0019` (Euler 基準の再実行) で `run_0005` と軸 M 8e-6 一致を確認済み。
+
 ## 問題定義
 
 | ファイル | R | L_U | L_c | 備考 |
@@ -99,6 +133,7 @@ $r_t$=0.210505 m、$R$=2 $r_t$=0.42101 m、$L_U$=6 $r_t$=1.26303 m、$L_c$=8 $r_
 | `problem_va_R{1.5,2,3}_LU6_Lc{7,8,9,10}.yaml` | 1.5/2/3 | 6 | 7/8/9/10 | R × L_c の 12 点 |
 | `problem_va_R3_LU6_Lc11.yaml` | 3 | 6 | 11 | 単調窓上限側 (R2 は 10.88 で L_c11 不可) |
 | `problem_va_R2_LU{4,9}_Lc8.yaml` | 2 | 4/9 | 8 | L_U 感度 (基準 R2/L_c8) |
+| `problem_va_R2_LU6_Lc8_ns_coarse.yaml` / `problem_va_R2_LU6_Lc8_ns.yaml` | 2 | 6 | 8 | NS: coarse 中継 (365×65, frac 5e-4, cfl1) / 本計算 (601×97, frac 3.5e-5, cfl1, 48000 step) |
 
 再生成: `cd design && ./.venv-opt/bin/python -m forge_design.evaluate.runner_axismach ../case/44.vitiated_air_wt/problem_va_R2_LU6_Lc8.yaml ../case/44.vitiated_air_wt/run_00NN_va_R2_LU6_Lc8 [--prepare-only]`
 (スタディ一括は `run_study_va.py`)。CFD は 12000 step ≈ 1 分/点 (RTX 3060、段階起動込み)。
@@ -111,5 +146,8 @@ $r_t$=0.210505 m、$R$=2 $r_t$=0.42101 m、$L_U$=6 $r_t$=1.26303 m、$L_c$=8 $r_
 | run | 目的・設定差分 | 主要結果・成果物 | 状態 |
 | --- | --- | --- | --- |
 | **`run_0001`〜`run_0015_va_R*_LU*_Lc*`** | **R/L_U/L_c スタディ (semi-perfect 設計 + node Euler TP CFD, `thermoHrefTemp` 298.15, soft→mid→本段 cfl2 12000 step; `problem_va_*.yaml`, ドライバ `run_study_va.py`)**: R∈{1.5,2,3}×L_c∈{7,8,9,10} @L_U6 (0001–0009, 0012–0014)、R3/L_c11 (0015)、L_U∈{4,9} @R2/L_c8 (0010/0011) | 上表。**全点 0.5 % ゲート内、推奨 R2/L_U6/L_c8 (`run_0005`, 0.061 %) ≒ L_c9 (`run_0013`, 0.047 %)**。L_c7 は崖の縁 (R3 0.315 %)、L_U4 不可 (0.213 %)。全 run 品質 PASS・NaN 0・軸 M 凍結 ~1e-5、`check_convergence` は warm 床 plateau で NOT CONVERGED (収束とは書かない)。`study_cfd_va.json`、`study_cfd_va.png`、`study_axisM_va.png`。run_0005/0013 の入力・設計成果物 (config, `wall_design.csv`, `metrics.json` 等) は git にリファレンス保存 | active (**スタディの正本・推奨の根拠**) |
+| **`run_0016_va_R2_LU6_Lc8_ns_coarse`** / **`run_0017_…_ns_v1`** / `run_0020_…_ns_v2` / `run_0021_…_ns_v3` / **`run_0022_…_ns_v4`** | **推奨点の NS (A12/A13: 物理壁 = inviscid + δ\*, node y+~1 低 Re SST, TP)** と δ\* 反復 (`problem_va_R2_LU6_Lc8_ns{_coarse,}.yaml`, `run_ns_va.py`)。0016 = coarse 中継 (IC 供給)、0017 = v1 相関 δ\*、0020 = v2 (case/41 規約ブレンド)、0021 = v3 (CFD δ\* x≥3 全域)、0022 = **v4 (末端勾配修正、固定点)** | 上の NS 節の表。**v4 が到達点: ‖ΔM‖∞ 0.309 %、出口コア M 4.183 ±0.002、overshoot +0.004 %、δ\* 固定点 1.001**。相関 δ\* は上流で 30–50 % 過大 (v1 出口 M −0.5 %)。残差 (x≈1–3, 7 の −0.2〜−0.3 %) は δ\* 非表現 (law 側 RANS 帰還が要る、未実装)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。0022 の入力・`wall_physical.csv`・δ\* CSV は git 保存 | active (**NS 到達点の正本**) |
+| `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可 | 破棄予定 (記録) |
+| `run_0018_va_R2_LU6_Lc8_ns_v2` | v2 初回 — 本段開始時に binary 再ビルド中で rc 127 | 結果なし、削除済 (`run_0020` で再投入) | 削除済 |
 | — | 設計のみスイープ 21 点 → `study_design_va.json` (`study_design_va.py`; R2/L_c11 のみ単調窓外、他全合格) | | ref |
 | — | 推奨形状エクスポート `export_wall_va.py` → `points_va_best_{euler,ns}.csv` / `nozzle_va_best_{euler,ns}.geo` (+ L_c9 版) | | ref |
