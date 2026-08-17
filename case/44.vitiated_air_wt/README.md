@@ -307,6 +307,38 @@ $L=3.1485\times10^6-2370\,T$ [J/kg] の線形フィット (250 K で 2.556 MJ/kg
 液相エンタルピーは $h_l=h_v^{NASA9}(T)-L(T)$ として EOS・流束の両方で同じ式を使っている (整合)。NASA-9 の $h_v$ と IAPWS 液の差で
 $L$ を作る置換は可能だが上記の差の説明にはならない。
 
+## 成果物の所在 (別 PC 参照用, 2026-08-18 最終) — 新条件 Pt 1,137,000 Pa / Tt 1058 K, M_d 4.19–5.0
+
+**正本 run**: dry = `run_0049/0052/0055/0058/0061/0064_va2lp_M*_dry`、非平衡 = `run_0079/0081/0083/0085/0087/0089_va2c_M*_noneq`、
+平衡 = `run_0080/0082/0084/0086/0088/0090_va2c_M*_eq` (最終 binary: SLAU 二相面温度修正 + CEA 由来潜熱 $L=h_v-h_l$; va2fx との差 T 0.002 K, g 1e-4)。
+全 run 品質 PASS・NaN 0・軸 $h_0$ 保存 ≤0.19 %。
+
+| 内容 | 場所 |
+|---|---|
+| **軸中心分布 CSV** (h5 の VALUE 全列 + `pH2O_post/Tsat_post/subcool_post/S_post`; 凝縮 run は `condTsat_0`/`condS_0`/`g_0` も) | 各 `run_00NN_*/axis_values.csv` (再生成 `axis_csv_va.py`) |
+| **ノズル点列 .dat (mm, `x r` 2 列, `#` ヘッダ)** | `geometry/nozzle_va2_M{4.19,4.3,4.4,4.5,4.75,5.0}_euler_mm.dat` (1028 点; スロート x=0、入口直管端 −969〜−1369 mm、出口 5029〜5613 mm) |
+| 点列 CSV [m + 無次元] / **gmsh .geo** | `geometry/points_va2_M*_euler.csv` / `geometry/nozzle_va2_M*_euler.geo` (軸対称半平面、構造化 365×64、physID inlet 1/outlet 2/wall 3/axis 4/fluid 5; `gmsh -2 <geo> -format msh41`) |
+| **dry vs NASA-CEA 凍結流の照合 (新条件)** | `cea/va2_cea.inp` → `cea/va2_cea.out` (FCEA2)、比較 `cea/cea_vs_forge_run_0049_va2lp_M4.19_dry.{csv,png}`、CEA 表 `cea/cea_frozen_table_v2_fz.csv`、forge 軸 `cea/forge_axis_run_0049_va2lp_M4.19_dry.csv`、ログ `cea/cea_check_va2_run_0049.log` (`cea_check_va2.py`)。**超音速 26 点で T/ρ/u/a/M ≤0.04 % 一致**、$C_d$ 0.9967 vs Hall 0.9963、出口 M 4.190 / T 252.5 K / P 5223–5229 Pa 一致 |
+| 出口断面表 / 図 | `study_va2c_exit.json`、`study_va2c_condensation.json`、`figs/va2c_axisM_dry_noneq_eq.png`、`figs/va2c_condensation_axis.png` |
+
+物理出口 (2 r_t 上流) の表 (va2c 正本):
+
+| M_d | 種別 | run | 評価断面 x/r_t | 軸 M | 軸 T [K] | 軸 P [Pa] | 軸 S | 軸 g/Y_H2O | **質量平均 M** | 質量平均 T | 質量平均 g/Y | コア M 幅 | 軸 S max | onset x (T) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 4.19 | noneq | `run_0079_va2c_M4.19_noneq` | 21.9 | 4.191 | 252.4 | 5223 | 2.05 | 0.00 | **4.190** | 252.5 | 0.00 | 0.0 % | 2.1 | — |
+| 4.19 | eq | `run_0080_va2c_M4.19_eq` | 21.9 | 4.128 | 260.0 | 5285 | 1.00 | 0.09 | **4.122** | 260.3 | 0.08 | 0.3 % | 1.1 | 6.6 (262 K) |
+| 4.3 | noneq | `run_0081_va2c_M4.3_noneq` | 23.1 | 4.301 | 242.3 | 4521 | 4.44 | 0.00 | **4.300** | 242.4 | 0.00 | 0.0 % | 4.6 | — |
+| 4.3 | eq | `run_0082_va2c_M4.3_eq` | 23.1 | 4.173 | 257.2 | 4641 | 1.00 | 0.19 | **4.162** | 257.8 | 0.16 | 0.4 % | 1.2 | 6.1 (261 K) |
+| 4.4 | noneq | `run_0083_va2c_M4.4_noneq` | 24.2 | 4.401 | 233.6 | 3972 | 9.23 | 0.00 | **4.400** | 233.8 | 0.00 | 0.0 % | 9.7 | — |
+| 4.4 | eq | `run_0084_va2c_M4.4_eq` | 24.2 | 4.212 | 254.7 | 4139 | 1.00 | 0.26 | **4.198** | 255.5 | 0.24 | 0.5 % | 1.3 | 5.7 (262 K) |
+| 4.5 | noneq | `run_0085_va2c_M4.5_noneq` | 26.5 | 4.497 | 225.8 | 3503 | 18.84 | 0.00 | **4.500** | 225.5 | 0.00 | 0.1 % | 21.1 | 25.2 (226 K) |
+| 4.5 | eq | `run_0086_va2c_M4.5_eq` | 26.5 | 4.251 | 252.2 | 3707 | 1.00 | 0.34 | **4.234** | 253.3 | 0.31 | 0.5 % | 1.3 | 5.9 (261 K) |
+| 4.75 | noneq | `run_0087_va2c_M4.75_noneq` | 30.9 | 4.343 | 246.1 | 2773 | 1.02 | 0.48 | **4.318** | 247.5 | 0.42 | 1.5 % | 108.0 | 8.8 (210 K) |
+| 4.75 | eq | `run_0088_va2c_M4.75_eq` | 30.9 | 4.345 | 246.2 | 2843 | 1.00 | 0.50 | **4.324** | 247.5 | 0.47 | 0.8 % | 1.5 | 5.7 (261 K) |
+| 5.0 | noneq | `run_0089_va2c_M5.0_noneq` | 35.6 | 4.428 | 240.3 | 2162 | 1.07 | 0.59 | **4.394** | 242.7 | 0.56 | 1.1 % | 343.9 | 7.9 (205 K) |
+| 5.0 | eq | `run_0090_va2c_M5.0_eq` | 35.6 | 4.344 | 246.8 | 2770 | 0.88 | 0.52 | **4.416** | 241.6 | 0.61 | 1.9 % | 1.6 | 5.7 (258 K) |
+
+
 ## 問題定義
 
 | ファイル | R | L_U | L_c | 備考 |
@@ -334,7 +366,9 @@ $L$ を作る置換は可能だが上記の差の説明にはならない。
 | `run_0023_va_R2_LU6_Lc8_split` / **`run_0024_va_R2_LU6_Lc8_split_cond`** | **凝縮** (2 種 TP split_h2o; 0023 = dry 対照、0024 = Kw+HK 凝縮 ON, 蒸発込み binary) node Euler 12000 step | 0023 は `run_0005` と同一 (0.0614 %)。**0024: g≡0 — 最大 S 2.03 (液基準, x≈12 r_t, 252.6 K) で核生成せず、dry と同一**。品質 PASS・NaN 0。凝縮節参照 | active (**凝縮なしの根拠**) |
 | `run_0025`〜`run_0029_va_M{4.5,4.75,5.0,4.3,4.4}_*_split_cond` | **凝縮の M_d 感度** (同 Pt/Tt/組成/φ1600, M_d のみ変更, Euler+凝縮 ON 12000 step) | 4.19–4.4: g=0 / 4.5: 1e-4 / **4.75: 43 % 凝縮 (onset T 210 K)** / 5.0: 54 %。閾値 M_d≈4.7 (T≈210 K)。凝縮節の表 | active (**M_d 上限の根拠**) |
 | **`run_0031`〜`run_0048_va2_M*_{dry,noneq,eq}`** | **新条件 (Pt 1.137 MPa/Tt 1058 K) × M_d 6 点 × dry/非平衡/平衡凝縮** (`problem_va2_*.yaml`, `run_va2_batch.py`; eq は `condEqDTmax 10` の binary で再実行) | 上の表 (`study_va2_condensation.json`, `figs/va2_condensation_axis.png`)。非平衡閾値 M_d≈4.7 は不変、平衡なら M4.19 でも 9 % 凝縮・M −1.5 %。全 run 品質 PASS・NaN 0。各 run に `axis_values.csv` | active (**新条件・平衡凝縮の正本**) |
-| **`run_0067`〜`run_0078_va2fx_M*_{noneq,eq}`** | **二相エネルギー非保存 (SLAU 面温度) 修正後の凝縮 12 run 再計算** (dry は va2lp `run_0049`… を流用) | 軸 h0 保存 ±0.1 %、出口跳ね消滅。M4.75/5.0 で非平衡→平衡に収束 (出口 M 4.34/4.39 vs 4.35/4.42)。**凝縮 run の正本**、`study_va2fx_exit.json`、`figs/va2fx_*.png` | active (**正本**) |
+| **`run_0079`〜`run_0090_va2c_M*_{noneq,eq}`** | **最終正本** (SLAU 二相修正 + CEA 潜熱 binary; va2fx と実質同値) | 上「成果物の所在」の表。各 run `axis_values.csv` | active (**正本**) |
+| `run_0067`–`0078` (va2fx) | SLAU 二相修正のみ (旧 L フィット) | va2c と T 0.002 K/g 1e-4 差 | superseded (記録) |
+| `run_0067`〜`run_0078_va2fx_M*_{noneq,eq}` (旧行) | **二相エネルギー非保存 (SLAU 面温度) 修正後の凝縮 12 run 再計算** (dry は va2lp `run_0049`… を流用) | 軸 h0 保存 ±0.1 %、出口跳ね消滅。M4.75/5.0 で非平衡→平衡に収束 (出口 M 4.34/4.39 vs 4.35/4.42)。**凝縮 run の正本**、`study_va2fx_exit.json`、`figs/va2fx_*.png` | active (**正本**) |
 | `run_0031`–`0048` (va2) / `run_0049`–`0066` (va2lp) の noneq/eq | 修正前 binary (h0 +0.6 % 非保存、T +4–5 K) | 傾向は同じだが数値は superseded。dry (`run_0031/34/37/40/43/46`, `0049/52/55/58/61/64`) は影響なし | superseded (記録) |
 | `run_0049`〜`run_0066_va2lp_M*_{dry,noneq,eq}` | **va2 の背圧 0.3 倍再計算** (`problem_va2lp_*.yaml`, 超音速流出保証の確認; ユーザ指示) | **全 18 run が va2 (`run_0031`–`0048`) と数値同一** → 出口 BC は無関係と確定。`study_va2lp_exit.json`、各 run に `axis_values.csv` | active (va2 と同値の再現; どちらを参照してもよい) |
 | `run_0030_va_R2_LU6_Lc8_split_cond_eqbin` | 平衡凝縮実装後 binary の回帰 (`run_0024` 再実行) | P 差 ≤2.4 Pa (2e-6)、`condTsat_0` 出力確認 (S 2.03 で過冷却 8.5 K) | 破棄予定 (記録) |

@@ -1,0 +1,47 @@
+# case/44 vitiated air Pt=11.37 bar Tt=1058 K (va2 新条件) (mole fractions H2O/N2/O2/Ar/CO2)
+problem case=v2_fz1 rocket frozen nfz=1 p,bar=11.37
+   pi/p=1.05,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.85,2.0,2.25,2.5,3,3.5,4,5
+reac
+  name=H2O moles=0.0462711  t,k=1058
+  name=N2  moles=0.6989119  t,k=1058
+  name=O2  moles=0.2091779  t,k=1058
+  name=Ar  moles=0.008340143 t,k=1058
+  name=CO2 moles=0.03729886 t,k=1058
+only H2O N2 O2 Ar CO2
+output siunits
+end
+
+problem case=v2_fz2 rocket frozen nfz=1 p,bar=11.37
+   pi/p=6,7,8,10,12,15,20,25,30,40,50,60,80,100,130,160
+reac
+  name=H2O moles=0.0462711  t,k=1058
+  name=N2  moles=0.6989119  t,k=1058
+  name=O2  moles=0.2091779  t,k=1058
+  name=Ar  moles=0.008340143 t,k=1058
+  name=CO2 moles=0.03729886 t,k=1058
+only H2O N2 O2 Ar CO2
+output siunits
+end
+
+problem case=v2_fz3 rocket frozen nfz=1 p,bar=11.37
+   pi/p=190,217.765,250 supar=14.436
+reac
+  name=H2O moles=0.0462711  t,k=1058
+  name=N2  moles=0.6989119  t,k=1058
+  name=O2  moles=0.2091779  t,k=1058
+  name=Ar  moles=0.008340143 t,k=1058
+  name=CO2 moles=0.03729886 t,k=1058
+only H2O N2 O2 Ar CO2
+output siunits
+end
+
+problem case=v2_eq rocket equilibrium frozen nfz=1 p,bar=11.37
+   pi/p=1.85,2.5,5,10,20,50,100,217.765 supar=14.436
+reac
+  name=H2O moles=0.0462711  t,k=1058
+  name=N2  moles=0.6989119  t,k=1058
+  name=O2  moles=0.2091779  t,k=1058
+  name=Ar  moles=0.008340143 t,k=1058
+  name=CO2 moles=0.03729886 t,k=1058
+output siunits
+end

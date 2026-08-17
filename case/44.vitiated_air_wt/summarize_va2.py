@@ -15,6 +15,8 @@ import sys
 TAG=sys.argv[1] if len(sys.argv)>1 else "va2"     # va2 | va2fx (va2fx は dry を va2lp から取る)
 if TAG=="va2fx":
     runs=sorted(p for p in list(CASE.glob("run_00[6-7][0-9]_va2fx_*"))+list(CASE.glob("run_00[4-6][0-9]_va2lp_*_dry")) if p.is_dir())
+elif TAG=="va2c":
+    runs=sorted(p for p in list(CASE.glob("run_00[7-9][0-9]_va2c_*"))+list(CASE.glob("run_00[4-6][0-9]_va2lp_*_dry")) if p.is_dir())
 else:
     runs=sorted(p for p in CASE.glob("run_00[3-4][0-9]_va2_*") if p.is_dir())
 rows=[]; data={}
