@@ -1,0 +1,6 @@
+# cell 変換コピーで検査 (品質は primal の性質)
+mode: 2D (x-y projection)
+cells: 23296
+aspect ratio : max=11.6  p99=9.5  mean=3.1  >1000: 0 (0.00%)
+skewness     : max=0.433  p99=0.394  mean=0.079  >0.90: 0 (0.00%)
+VERDICT: PASS (AR<= 1000, skew<= 0.90)

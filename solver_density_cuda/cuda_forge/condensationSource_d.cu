@@ -28,6 +28,36 @@ __host__ __device__ inline void cond_vapor_state(
     }
 }
 
+// 平衡凝縮 (condEquilibrium=1): 現セル状態から e 一定で液相を Δ だけ変えたときの
+//   T(Δ) = T + Δ (L - R_w T)/(c_vg + g R_w)  (二相 EOS の線形化), p_v(Δ) = ρ (y_v0 - Δ) R_w T(Δ)
+// が p_sat(T(Δ)) と釣り合う Δ ∈ [-g, y_v0] を二分法で解く (F は Δ について単調減少)。
+// 戻り値 Δ (>0 凝縮, <0 蒸発)。plans/accepted/condensation-equilibrium.md。
+__host__ __device__ inline double cond_equilibrium_delta(
+    const CondSpeciesProps& cprops, double rod, double Td, double g, double yv0, double Rw, double cvg)
+{
+    const double L = cond_latent(cprops, Td);
+    const double slope = (L - Rw*Td)/(cvg + g*Rw);          // dT/dΔ
+    auto F = [&](double D) {
+        double Tn = Td + D*slope; if (Tn < 50.0) Tn = 50.0;
+        double yv = yv0 - D; if (yv < 0.0) yv = 0.0;
+        return rod*yv*Rw*Tn - cond_psat(cprops, Tn);
+    };
+    double lo = -g, hi = yv0;
+    if (hi <= 0.0) return (g > 0.0 ? -g : 0.0);
+    const double F0 = F(0.0);
+    if (F0 <= 0.0 && g <= 0.0) return 0.0;                 // 未飽和・液なし
+    if (F(lo) < 0.0) return lo;                             // 全蒸発しても未飽和
+    if (F(hi) > 0.0) return hi;                             // (理論上起きない) 全凝縮
+    if (F0 > 0.0) lo = 0.0; else hi = 0.0;
+    #pragma unroll 1
+    for (int it = 0; it < 48; ++it) {
+        const double mid = 0.5*(lo + hi);
+        if (F(mid) > 0.0) lo = mid; else hi = mid;
+        if (hi - lo < 1.0e-9*(fabs(yv0) + 1.0e-12)) break;
+    }
+    return 0.5*(lo + hi);
+}
+
 // 相変化ソース kernel。pure (N2/CPG) と carrier (H2O/TP) の両対応。一温度 T_v=T_d=T。
 // J,r*,dr/dt は現在セル状態から freeze。安定化: J 上限、dr/dt<0→0、r̄≤r* 成長停止、g≤g_max、
 //   1 step の Δg・潜熱 ΔT・蒸気枯渇を θ で律速 (全モーメント同 θ)。src_jac=潜熱自己抑制 (g)。
@@ -36,6 +66,7 @@ __global__ void condensation_source_d(
     int condModel, int carrier, double Rw, double M,
     int kantrowitz, int growthModel, double gyarC, int twoTemp,
     int evap, double evapRmin, int evapKelvin, double evapLamMin,
+    int eq, double eqRelax, double eqDgMax, double eqDTmax,
     flow_float cp_cpg, flow_float gamma_cpg,
     double Jmax, double dg_max, double dT_max,
     geom_float* vol, flow_float* dt_local,
@@ -44,12 +75,12 @@ __global__ void condensation_source_d(
     flow_float* rog, flow_float* roQ0, flow_float* roQ1, flow_float* roQ2,
     flow_float* res_rog, flow_float* res_roQ0, flow_float* res_roQ1, flow_float* res_roQ2,
     flow_float* sj_g, flow_float* sj_Q0, flow_float* sj_Q1, flow_float* sj_Q2,
-    flow_float* diagS, flow_float* diagDrdt, flow_float* diagR30)
+    flow_float* diagS, flow_float* diagDrdt, flow_float* diagR30, flow_float* diagTsat)
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
     sj_Q0[ic] = 0.0; sj_Q1[ic] = 0.0; sj_Q2[ic] = 0.0; sj_g[ic] = 0.0;
-    diagS[ic] = 0.0; diagDrdt[ic] = 0.0; diagR30[ic] = 0.0;
+    diagS[ic] = 0.0; diagDrdt[ic] = 0.0; diagR30[ic] = 0.0; diagTsat[ic] = 0.0;
 
     const double rod = (double)ro[ic];
     if (rod <= 1.0e-20) return;
@@ -82,6 +113,29 @@ __global__ void condensation_source_d(
     // 診断: 過飽和 S=p_v/p_sat(T)
     const double psat_T = cond_psat(cprops, Td);
     diagS[ic] = (flow_float)(pv/(psat_T > 1.0e-300 ? psat_T : 1.0e-300));
+    diagTsat[ic] = (flow_float)cond_Tsat(cprops, pv, Td);
+
+    // ---- 平衡凝縮分岐 (condEquilibrium=1): g_eq への緩和。モーメント Q0-Q2 はソース 0 (輸送のみ) ----
+    if (eq) {
+        const double yv0 = carrier ? (Yw - g) : (1.0 - g);
+        const double D = cond_equilibrium_delta(cprops, rod, Td, g, (yv0 > 0.0 ? yv0 : 0.0), Rw, cvg);
+        const double dt = (double)dt_local[ic];
+        if (dt <= 0.0 || D == 0.0) return;
+        double Sg = eqRelax*rod*D/dt;
+        // θ 律速 (非平衡と共通の規約): |Δg|<=dg_max, 潜熱 |ΔT|<=dT_max, 蒸気/液の枯渇
+        const double L  = cond_latent(cprops, Td);
+        double theta = 1.0;
+        {
+            const double dg  = fabs(Sg)*dt/rod;
+            const double dTl = dg*L/cvg;
+            if (dg  > eqDgMax) theta = fmin(theta, eqDgMax/dg);
+            if (dTl > eqDTmax) theta = fmin(theta, eqDTmax/dTl);
+        }
+        Sg *= theta;
+        sj_g[ic] = (flow_float)(eqRelax*theta/dt);       // ∂S_g/∂(ρg) = -αθ/dt (負帰還)
+        res_rog[ic] += (flow_float)(Sg*(double)vol[ic]);
+        return;
+    }
 
     // ---- 蒸発分岐 (condEvaporation=1, S<=1, 液相あり): 負成長 λ スケール + 液滴消滅 ----
     // plans/accepted/condensation-evaporation.md §4-5。核生成は S<=1 で 0 なので本分岐では評価しない。
@@ -221,6 +275,7 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
             cfg.condModel, carrier, Rw, M,
             cfg.condKantrowitz, cfg.condGrowthModel, cfg.condGyarmathyC, cfg.condTwoTemp,
             cfg.condEvaporation, cfg.condEvapRmin, cfg.condEvapKelvin, evapLamMin,
+            cfg.condEquilibrium, cfg.condEqRelax, cfg.condEqDgMax, cfg.condEqDTmax,
             cfg.cp, cfg.gamma,
             Jmax, dg_max, dT_max,
             var.c_d["volume"], var.c_d["dt_local"],
@@ -229,7 +284,7 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
             var.c_d["rog_"+i], var.c_d["roQ0_"+i], var.c_d["roQ1_"+i], var.c_d["roQ2_"+i],
             var.c_d["res_rog_"+i], var.c_d["res_roQ0_"+i], var.c_d["res_roQ1_"+i], var.c_d["res_roQ2_"+i],
             var.c_d["src_jac_g_"+i], var.c_d["src_jac_Q0_"+i], var.c_d["src_jac_Q1_"+i], var.c_d["src_jac_Q2_"+i],
-            var.c_d["condS_"+i], var.c_d["condDrdt_"+i], var.c_d["condR30_"+i]);
+            var.c_d["condS_"+i], var.c_d["condDrdt_"+i], var.c_d["condR30_"+i], var.c_d["condTsat_"+i]);
     }
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

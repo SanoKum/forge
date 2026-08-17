@@ -354,6 +354,11 @@ public:
     int    condEvaporation = 1;   // 1: S<=1 で蒸発 (既定, 2026-08-18 検証後に既定化), 0: 蒸発なし (旧挙動, dr/dt<0 を 0 クランプ)
     double condEvapRmin    = 1.0e-9; // 完全蒸発 (4 モーメント 0 化) とみなす体積平均半径 r30 [m]。r30<2*rmin で消滅
     int    condEvapKelvin  = 0;   // 蒸発駆動力に Kelvin 項 p_d=p_sat exp(K_e/r) を含める (0: 平面 p_sat, 既定; 正帰還回避)
+    // 平衡凝縮 (plans/accepted/condensation-equilibrium.md): 核生成・成長を経ず各セルで p_v=p_sat(T) の g_eq へ緩和。
+    int    condEquilibrium = 0;   // 1: 平衡凝縮 (モーメント Q0-Q2 ソース 0)、0: 非平衡 (既定)
+    double condEqRelax     = 1.0; // 平衡緩和係数 α: S_g = α ρ (g_eq - g)/dt_loc
+    double condEqDTmax     = 10.0; // 平衡分岐の 1 step 潜熱 ΔT 上限 [K] (非平衡の 1 K では急膨張で平衡に追いつかない: case/44 va2 M5 で S 67 残留)
+    double condEqDgMax     = 0.05; // 平衡分岐の 1 step Δg 上限
       //          int isCompressible = physProp["isCompressible"].as<int>();
       //          if (isCompressible == 0) flow_float ro = physProp["isCompressible"]["ro"].as<flow_float>();
       //          flow_float visc = physProp["visc"].as<flow_float>();

@@ -219,6 +219,31 @@ __host__ __device__ inline double cond_sigma(const CondSpeciesProps& s, double T
     return (s.model == COND_MODEL_H2O) ? h2o_sigma(T) : n2_sigma(T);
 }
 
+// 飽和温度 T_sat(p_v): ln p_sat(T) = ln p_v を Clausius-Clapeyron 勾配 d ln p/dT = L/(R T^2) の Newton で反転。
+// 過冷却度 T_sat - T の診断用 (plans/accepted/condensation-equilibrium.md)。p_v <= 1e-6 Pa は 0 を返す。
+__host__ __device__ inline double cond_Tsat(const CondSpeciesProps& s, double pv, double T_guess)
+{
+    if (!(pv > 1.0e-6)) return 0.0;
+    const double lnpv = log(pv);
+    double T = (T_guess > 50.0 && T_guess < 1000.0) ? T_guess : 250.0;
+    #pragma unroll 1
+    for (int it = 0; it < 25; ++it) {
+        const double ps = cond_psat(s, T);
+        if (!(ps > 1.0e-300)) { T *= 1.2; continue; }
+        const double f  = log(ps) - lnpv;
+        double dfdT = cond_latent(s, T)/(s.R*T*T);
+        if (dfdT < 1.0e-6) dfdT = 1.0e-6;
+        double dT = f/dfdT;
+        if (dT >  0.3*T) dT =  0.3*T;
+        if (dT < -0.3*T) dT = -0.3*T;
+        T -= dT;
+        if (T < 50.0) T = 50.0;
+        if (T > 1000.0) T = 1000.0;
+        if (fabs(dT) < 1.0e-4) break;
+    }
+    return T;
+}
+
 // H2O 既定パラメータ (キャリア+凝縮種)。R_H2O=461.5, M=0.0180153。
 __host__ __device__ inline CondSpeciesProps condProps_H2O()
 {

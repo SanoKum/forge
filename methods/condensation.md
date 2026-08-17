@@ -97,6 +97,30 @@ $k$: 熱伝導率、$L$: 潜熱、$Kn=\lambda/2r$ (核生成の nm から成長�
 
 質量フラックスベースの成長則。H2O 検証 (Wyslouzil) 用に同じ枠組みで切替可能とする。
 
+#### 平衡凝縮 (`condEquilibrium=1`, 2026-08-18)
+
+非平衡モデルの上限 (熱力学的限界) として、核生成・成長を経ず**各セルで局所瞬時平衡**を仮定するモデル。
+セル状態 $(\rho, e, Y_w, g)$ で、液相分率を $g\to g+\Delta$ だけ変えたときの温度は二相 EOS
+($e=e_{gas}(Y,T)+g(R_wT-L)$、$e$ 一定) の線形化から
+
+$$
+T(\Delta)=T+\Delta\,\frac{L-R_wT}{c_{v,g}+gR_w},\qquad
+p_v(\Delta)=\rho\,(Y_w-g-\Delta)\,R_w\,T(\Delta)
+$$
+
+であり ($Y_w$ は蒸気+液の総水分率、pure-condensible では $Y_w\to1$)、平衡条件
+$F(\Delta)\equiv p_v(\Delta)-p_{sat}\!\big(T(\Delta)\big)=0$ を $\Delta\in[-g,\;Y_w-g]$ で二分法+Newton で解いて
+$g_{eq}=g+\Delta$ を得る。$F(0)\le0$ かつ $g=0$ (未飽和・液なし) なら $\Delta=0$、$F(-g)<0$ (全蒸発しても未飽和) なら $\Delta=-g$。
+ソースは緩和形 $S_g=\alpha\,\rho\,\Delta/\Delta t_{loc}$ (`condEqRelax` $\alpha$、非平衡と同じ θ 律速) で、
+陰的ヤコビアンは $\partial S_g/\partial(\rho g)=-\alpha\theta/\Delta t$ (負帰還)。定常では $\Delta\to0$ で線形化誤差も消え、
+場は厳密に $S=1$ (飽和線上) か $g=0$ (未飽和) のどちらかになる。蒸発は $\Delta<0$ として同式に含まれる。
+モーメント $Q_0$–$Q_2$ は輸送するだけ (ソース 0、液滴径の情報なし)。飽和線は非平衡と同じ **過冷却液** $p_{sat}$
+(Murphy–Koop) を使う (氷ではない — CEA 平衡の H₂O(cr) とは基準が違うので比較時に注意)。
+
+**用途**: 非平衡 (Wilson 点で遅れて一気に凝縮) に対し「凝縮し得る最大量と、それによる $T$・$p$・$M$ の変化」の上限評価。
+実装は `condensation_source_d` の `eq` 分岐 (`cond_equilibrium_delta`)。診断 `condTsat_<s>` = $T_{sat}(p_v)$
+(過冷却度 $T_{sat}-T$ の評価用、非平衡でも出力) を併せて追加した ($p_{sat}$ の Newton 反転、$p_v\to0$ では 0)。
+
 #### 統一駆動力と蒸発 (負成長, `condEvaporation=1`)
 
 上の成長則はいずれも「周囲蒸気圧 $p_v$ と、半径 $r$ の液滴が平衡になる Kelvin 蒸気圧
@@ -500,6 +524,9 @@ $r_{\rm nuc}$ を使う** (ヤコビアンだけガード無しだと亜臨界�
 | `condEvaporation` | **1** | 1 (既定, 2026-08-18 検証後に既定化) で **蒸発** ($S\le1$ のセルで負成長 λ スケール更新 + 液滴消滅)。理論節「統一駆動力と蒸発」参照。0 は旧挙動 $dr/dt<0\to0$ (液相が過熱域で凍結)。|
 | `condEvapRmin` | 1e-9 | 完全蒸発とみなす $r_{30}$ [m]。$r_{30}<2r_{\min}$ で 4 モーメントを一括 0。|
 | `condEvapKelvin` | 0 | 1 で蒸発駆動力に Kelvin 項 $p_d=p_{sat}e^{K_e/r_{30}}$ を含める (既定は平面 $p_{sat}$; 正帰還回避)。|
+
+| `condEquilibrium` | 0 | 1 で **平衡凝縮** (局所瞬時平衡: 各セルで $p_v=p_{sat}(T)$ となる液相分率 $g_{eq}$ へ緩和)。核生成・成長・モーメントは使わない (Q0–Q2 ソース 0)。理論節「平衡凝縮」参照。|
+| `condEqRelax` | 1.0 | 平衡緩和の 1 step あたり係数 $\alpha$: $S_g=\alpha\rho(g_{eq}-g)/\Delta t_{loc}$ (θ 律速 $\Delta g\le$5e-3, $\Delta T\le$1 K は共通)。|
 
 蒸発の実装は `cond_evap_rate` / `cond_evap_source` ([condensationSource_d.cuh](../solver_density_cuda/cuda_forge/condensationSource_d.cuh))
 と本体 kernel の蒸発分岐 (`condensation_source_d`)、消滅硬クランプは `cond_realizability_clamp_d`
