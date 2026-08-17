@@ -181,12 +181,47 @@ __host__ __device__ inline double h2o_rho_cond(double T)
     return r;
 }
 
-// 水 蒸発潜熱 L(T) [J/kg] — 線形フィット (0°C で 2.50e6, 過冷却で増)。
+// 水 蒸発潜熱 L(T) [J/kg] = h_v(T) − h_l(T) を **CEA (NASA-9) の気相 H2O と液相 H2O(L) の全エンタルピー差**で作る
+// (2026-08-18, ユーザ指示「CEA 式で L を逆算」)。
+//   h_v: forge 種 DB と同じ CEA McBride–Gordon 2002 の H2O 200–1000 K 係数 (thermo_d.cu)。
+//   h_l: CEA thermo.inp の H2O(L) 273.15–373.15 K 係数 (Cox 1989 / Haar 1984)。**273.15 K 未満は CEA に液相フィットが無く
+//        (CEA は氷 H2O(cr))、多項式外挿は 250 K 以下で発散 (cp_l 230 K で 10 kJ/kgK, 200 K で 50 kJ/kgK) するので、
+//        h_l を 273.15 K の値と勾配 cp_l(273.15)=4228 J/kgK で線形外挿**する (過冷却水の標準的な扱い、cp_l 一定)。
+//   旧線形フィット 3.1485e6−2370 T は本構成と 250 K で 0.3 %、273 K で 0.05 % 一致していた (等価だったことの確認)。
+//   L(250 K)=2.563 MJ/kg, L(273.15)=2.501 MJ/kg。氷 (昇華熱 2.835 MJ/kg) は使わない (飽和線も過冷却液 Murphy–Koop で統一)。
+__host__ __device__ inline double h2o_nasa9_h_mass(const double* a, double T)
+{
+    // NASA-9: h/(RT) = -a1/T² + a2 lnT/T + a3 + a4 T/2 + a5 T²/3 + a6 T³/4 + a7 T⁴/5 + b1/T ; R_w = 8.314462618/0.0180153
+    const double Rw = 8.314462618/0.0180153;
+    const double hRT = -a[0]/(T*T) + a[1]*log(T)/T + a[2] + a[3]*T/2.0 + a[4]*T*T/3.0
+                     + a[5]*T*T*T/4.0 + a[6]*T*T*T*T/5.0 + a[7]/T;
+    return hRT*Rw*T;
+}
 __host__ __device__ inline double h2o_latent(double T)
 {
-    double L = 3.1485e6 - 2370.0*T;
-    if (L < 2.0e6) L = 2.0e6;
-    if (L > 3.0e6) L = 3.0e6;
+    // 気相 H2O (CEA, 200–1000 K 区間; 1000 K 超は本用途で不要だが単調に外挿される)
+    const double ag[8] = {-3.947960830e+04, 5.755731020e+02, 9.317826530e-01, 7.222712860e-03,
+                          -7.342557370e-06, 4.955043490e-09,-1.336933246e-12,-3.303974310e+04};
+    // 液相 H2O(L) (CEA, 273.15–373.15 K 区間)
+    const double al[8] = { 1.326371304e+09,-2.448295388e+07, 1.879428776e+05,-7.678995050e+02,
+                           1.761556813e+00,-2.151167128e-03, 1.092570813e-06, 1.101760476e+08};
+    const double Tf = 273.15;
+    double Tg = (T > COND_T_PROP_FLOOR) ? T : COND_T_PROP_FLOOR;
+    if (Tg > 1000.0) Tg = 1000.0;
+    const double hv = h2o_nasa9_h_mass(ag, Tg);
+    double hl;
+    if (Tg >= Tf) {
+        const double Tl = (Tg < 373.15) ? Tg : 373.15;
+        hl = h2o_nasa9_h_mass(al, Tl);
+    } else {
+        // 273.15 K 未満: cp_l(273.15) 一定で線形外挿 (過冷却水)
+        const double h0  = h2o_nasa9_h_mass(al, Tf);
+        const double cpl = (h2o_nasa9_h_mass(al, Tf + 0.5) - h2o_nasa9_h_mass(al, Tf - 0.5 + 1.0e-9))/1.0;  // ≈4228 J/kgK
+        hl = h0 - cpl*(Tf - Tg);
+    }
+    double L = hv - hl;
+    if (L < 1.5e6) L = 1.5e6;
+    if (L > 3.5e6) L = 3.5e6;
     return L;
 }
 
