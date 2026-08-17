@@ -350,6 +350,10 @@ public:
     int condGrowthModel = 0; // 成長則。0: 既定 (H2O=Hertz-Knudsen, N2=Goodheart), 1: Gyarmathy(熱伝導律速)
     double condGyarmathyC = 3.18; // Gyarmathy の Knudsen 補正係数 1/(1+C·Kn)。標準 3.18 (感度評価用に可変)
     int condTwoTemp = 0;     // 液滴温度 T_d 考慮 (Hertz-Knudsen 経路, 準定常 Hill バランス)。0: 一温度(既定), 1: 二温度
+    // 蒸発 (plans/accepted/condensation-evaporation.md)。S=p_v/p_sat<=1 のセルで負成長 (蒸発) と液滴消滅を許可する。
+    int    condEvaporation = 1;   // 1: S<=1 で蒸発 (既定, 2026-08-18 検証後に既定化), 0: 蒸発なし (旧挙動, dr/dt<0 を 0 クランプ)
+    double condEvapRmin    = 1.0e-9; // 完全蒸発 (4 モーメント 0 化) とみなす体積平均半径 r30 [m]。r30<2*rmin で消滅
+    int    condEvapKelvin  = 0;   // 蒸発駆動力に Kelvin 項 p_d=p_sat exp(K_e/r) を含める (0: 平面 p_sat, 既定; 正帰還回避)
       //          int isCompressible = physProp["isCompressible"].as<int>();
       //          if (isCompressible == 0) flow_float ro = physProp["isCompressible"]["ro"].as<flow_float>();
       //          flow_float visc = physProp["visc"].as<flow_float>();

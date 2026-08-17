@@ -162,3 +162,98 @@ __host__ __device__ inline void cond_source_vector(
     *SQ2 = J*r_nuc*r_nuc + 2.0*roQ1*drdt;
     *Sg  = (4.0/3.0)*COND_PI*rho_l*(J*r_nuc*r_nuc*r_nuc + 3.0*roQ2*drdt);
 }
+
+// =====================================================================================
+// 蒸発 (plans/accepted/condensation-evaporation.md)。S=p_v/p_sat<=1 のセルで負成長・液滴消滅。
+//   統一駆動力: 成長則の (1-r*/r) ln S ≡ ln S - K_e/r = ln(p_v/p_d(r)),  p_d=p_sat exp(K_e/r),
+//   K_e=2σ/(ρ_l R T)。S<=1 では r* が定義されないので r* を経由せず p_d(r) で駆動力を評価する。
+//   既定 (kelvin=0) は Kelvin 項を落とし平面 p_sat で駆動 (小半径ほど速く蒸発する正帰還を断つ。
+//   質量収支には効かない: r0 から r まで縮んだ残量は (r/r0)^3)。
+// =====================================================================================
+
+// 蒸発率 dr/dt <= 0 [m/s] (半径 r で評価; 呼び出し側は体積平均半径 r30 を渡す)。p_v >= p_d なら 0。
+__host__ __device__ inline double cond_evap_rate(
+    const CondSpeciesProps& cp, double T, double p_v, double r,
+    int growthModel, double p_gas, double gyarC, int kelvin)
+{
+    if (r <= 0.0) return 0.0;
+    const double R     = cp.R;
+    const double psat  = cond_psat(cp, T);
+    const double rho_l = cond_rho_cond(cp, T);
+    double Ke_r = 0.0;                                   // Kelvin 指数 K_e/r (kelvin=0 で 0)
+    if (kelvin) {
+        const double sigma = cond_sigma(cp, T);
+        Ke_r = 2.0*sigma/(rho_l*R*T*r);
+        if (Ke_r > 5.0) Ke_r = 5.0;                      // exp 発散ガード (r が極小のとき)
+    }
+    const double pd = psat*exp(Ke_r);
+    if (p_v >= pd) return 0.0;
+    if (growthModel == 0 && cp.model == COND_MODEL_H2O) {
+        // Hertz-Knudsen 質量律速 (一温度)。
+        const double alpha = 1.0;
+        return (alpha/rho_l)*(p_v - pd)/sqrt(2.0*COND_PI*R*T);
+    }
+    // Goodheart (N2 既定) / Gyarmathy: 前因子 kRT²/(ρ_l L²) × 駆動力 ln(p_v/p_d) × Kn 補正。
+    const double driving = log(p_v/(pd > 1.0e-300 ? pd : 1.0e-300));   // < 0
+    const double L   = cond_latent(cp, T);
+    const double k   = n2_kgas(T);
+    const double pK  = (p_gas > 0.0) ? p_gas : p_v;
+    const double lam = cond_mean_free_path(T, pK, R);
+    const double Kn  = lam/(2.0*r);
+    double fac;
+    if (growthModel == 1) fac = 1.0/(r*(1.0 + gyarC*Kn));
+    else                  fac = (1.0+2.0*Kn)/(r*(1.0+3.42*Kn+5.32*Kn*Kn));
+    return (1.0/rho_l)*fac*(k*R*T*T/(L*L))*driving;
+}
+
+// 蒸発の 1 step 更新を「縮小比 λ=r_new/r30」で表し、monodisperse 整合ソース S_φ=(φ_new-φ)/dt を返す。
+//   Q1→λQ1, Q2→λ²Q2, g→λ³g (Q0 は不変)。λ は次で下から律速:
+//     λ >= lam_min (半径半減/step), g(1-λ³) <= dg_max, 潜熱冷却 g(1-λ³)L/c_v <= dT_max
+//   r30 < 2 rmin (= λ_min r30 < rmin) なら中間状態を作らず λ=0 (全モーメント消滅、Q0 も 0)。
+//   戻り値: λ。*r30_out に体積平均半径。S<=1 でないセル・液相なしセルは λ=1, S=0。
+//   注意: q0,q1,q2 は保存量 ρQn、g は質量分率。S_g は ρg 単位。
+__host__ __device__ inline double cond_evap_source(
+    const CondSpeciesProps& cp, double T, double p_v, double rod, double g,
+    double q0, double q1, double q2, double dt,
+    double rmin, double lam_min, double dg_max, double dT_max, double cvg,
+    int growthModel, double p_gas, double gyarC, int kelvin,
+    double* SQ0, double* SQ1, double* SQ2, double* Sg, double* r30_out, double* drdt_out)
+{
+    *SQ0 = 0.0; *SQ1 = 0.0; *SQ2 = 0.0; *Sg = 0.0; *r30_out = 0.0; *drdt_out = 0.0;
+    if (g <= 0.0 || dt <= 0.0) return 1.0;
+    const double psat = cond_psat(cp, T);
+    if (p_v > psat) return 1.0;                          // 過飽和: 蒸発分岐ではない
+    const double rho_l = cond_rho_cond(cp, T);
+    double lam;
+    if (q0 <= 1.0e-30) {
+        lam = 0.0;                                       // 液相はあるが液滴数 0 (不整合) → 消滅
+    } else {
+        const double r30 = cbrt(g/((4.0/3.0)*COND_PI*rho_l*q0/rod));  // q0/rod = Q0 [1/kg]
+        *r30_out = r30;
+        if (r30 < 2.0*rmin) {
+            lam = 0.0;                                   // 次の半減で rmin を割る → 一括消滅
+        } else {
+            const double drdt = cond_evap_rate(cp, T, p_v, r30, growthModel, p_gas, gyarC, kelvin);
+            *drdt_out = drdt;
+            lam = 1.0 + drdt*dt/r30;
+            if (lam < lam_min) lam = lam_min;
+        }
+    }
+    // Δg 律速 (質量分率) と潜熱冷却律速: g(1-λ³) <= dg_max, g(1-λ³)L/c_v <= dT_max (λ=0 消滅にも適用)
+    {
+        double lam3_min = 1.0 - dg_max/g;
+        const double lam3_T = 1.0 - dT_max*cvg/(g*cond_latent(cp, T));
+        if (lam3_T > lam3_min) lam3_min = lam3_T;
+        if (lam3_min > 0.0) {
+            const double lam_T = cbrt(lam3_min);
+            if (lam < lam_T) lam = lam_T;
+        }
+        if (lam > 1.0) lam = 1.0;
+    }
+    const double lam2 = lam*lam, lam3 = lam2*lam;
+    *SQ0 = (lam <= 0.0) ? (-q0/dt) : 0.0;
+    *SQ1 = (lam - 1.0)*q1/dt;
+    *SQ2 = (lam2 - 1.0)*q2/dt;
+    *Sg  = (lam3 - 1.0)*rod*g/dt;
+    return lam;
+}

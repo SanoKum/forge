@@ -633,6 +633,9 @@ void solverConfig::read(std::string fname)
             this->condGrowthModel = getOptionalValidatedValue<int>(cond, "condGrowthModel", 0, "condensation");
             this->condGyarmathyC = getOptionalValidatedValue<double>(cond, "condGyarmathyC", 3.18, "condensation");
             this->condTwoTemp = getOptionalValidatedValue<int>(cond, "condTwoTemp", 0, "condensation");
+            this->condEvaporation = getOptionalValidatedValue<int>(cond, "condEvaporation", 1, "condensation");
+            this->condEvapRmin    = getOptionalValidatedValue<double>(cond, "condEvapRmin", 1.0e-9, "condensation");
+            this->condEvapKelvin  = getOptionalValidatedValue<int>(cond, "condEvapKelvin", 0, "condensation");
         }
         if (this->condensation != 0 && this->condensation != 1) {
             throw std::runtime_error("Key 'condensation' in 'condensation' must be 0 or 1.");

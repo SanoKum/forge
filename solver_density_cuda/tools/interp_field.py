@@ -89,6 +89,10 @@ def main():
             ds = "VALUE/"+name
             if ds in d and name != "wall_dist":
                 d[ds][...] = arr[idx].astype(d[ds].dtype); moved.append(name)
+            elif name.startswith(("rog_", "roQ0_", "roQ1_", "roQ2_")):
+                # 凝縮モーメントは convert 直後の入力 h5 に無い (dry) ので新規作成する。
+                # forge は VALUE/<consName> が存在すれば読む (無ければ 0 = dry restart)。2026-08-18
+                d.create_dataset(ds, data=arr[idx].astype(d["VALUE/ro"].dtype)); moved.append(name+"(new)")
         print(f"interp {a.src} -> {a.dst}: {len(cd)} dst cells, moved {moved} (wall_dist kept)")
 
 

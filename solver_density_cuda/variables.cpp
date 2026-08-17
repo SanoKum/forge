@@ -123,6 +123,15 @@ void variables::registerCondensation(int nCondSpecies)
             this->output_cellValNames.push_back(consName);
             this->output_cellValNames.push_back(consName.substr(2));
         }
+        // 診断 (source kernel が毎ステップ書く): 過飽和 S=p_v/p_sat, 成長率 dr/dt [m/s] (負=蒸発),
+        // 体積平均半径 r30 [m] (蒸発分岐で評価; 0=未評価)。確保時に 0 初期化 (prefix "cond")。
+        for (const auto& d : {std::string("condS_"), std::string("condDrdt_"), std::string("condR30_")}) {
+            const std::string name = d + std::to_string(s);
+            this->cellValNames.push_back(name);
+            this->c.emplace(name, std::vector<flow_float>{});
+            this->c_d.emplace(name, nullptr);
+            this->output_cellValNames.push_back(name);
+        }
     }
 
     std::cout << "registerCondensation: nCondSpecies=" << nCondSpecies
@@ -213,7 +222,7 @@ void variables::allocVariables(const int &useGPU , mesh& msh)
             // 診断配列は毎ステップ書かれるとは限らないので確保直後に 0 初期化する
             // (未初期化 device メモリを出力しないため)。
             if (cellValName.rfind("wi_", 0) == 0 || cellValName.rfind("omg_", 0) == 0
-                || cellValName.rfind("rep_", 0) == 0
+                || cellValName.rfind("rep_", 0) == 0 || cellValName.rfind("cond", 0) == 0
                 || cellValName == "wf_irep_flag" || cellValName == "wf_sprod"
                 || cellValName == "wf_g") {
                 gpuErrchk( cudaMemset(this->c_d.at(cellValName), 0, (msh.nCells_all)*sizeof(flow_float)) );

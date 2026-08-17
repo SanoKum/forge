@@ -97,6 +97,54 @@ $k$: 熱伝導率、$L$: 潜熱、$Kn=\lambda/2r$ (核生成の nm から成長�
 
 質量フラックスベースの成長則。H2O 検証 (Wyslouzil) 用に同じ枠組みで切替可能とする。
 
+#### 統一駆動力と蒸発 (負成長, `condEvaporation=1`)
+
+上の成長則はいずれも「周囲蒸気圧 $p_v$ と、半径 $r$ の液滴が平衡になる Kelvin 蒸気圧
+$p_d(r)=p_{sat}(T)\exp(K_e/r)$, $K_e\equiv 2\sigma/(\rho_l R T)$ の差」を駆動力にしている。
+臨界半径は $p_v=p_d(r_*)$ の解 $r_*=K_e/\ln S$ なので
+
+$$
+\ln S\left(1-\frac{r_*}{r}\right)=\ln S-\frac{K_e}{r}=\ln\frac{p_v}{p_d(r)},\qquad
+p_v-p_d(r)\ (\text{Hertz–Knudsen})
+$$
+
+と、Goodheart / Gyarmathy の $(1-r_*/r)\ln S$ も Hertz–Knudsen の $p_v-p_d$ も**同じ量**である。
+過飽和 $S\le1$ では $r_*$ が定義されない ($\ln S\le0$) が右辺は定義され常に負、すなわち**蒸発**
+(液滴は縮み、潜熱を吸収して蒸気に戻る)。forge の初期実装は $dr/dt<0$ を 0 にクランプし
+(凝縮のみ)、過熱域 (圧縮波・衝撃波・高温境界層) で液相が受動スカラーとして凍結していた。
+`condEvaporation=1` (既定) で $S\le1$ のセルに次の蒸発モデルを適用する
+([計画](../plans/accepted/condensation-evaporation.md)):
+
+- **駆動力**: 既定 (`condEvapKelvin=0`) は Kelvin 項を落とし平面飽和圧で評価する — HK は
+  $\frac{\alpha}{\rho_l}\frac{p_v-p_{sat}}{\sqrt{2\pi RT}}$、Goodheart/Gyarmathy は前因子 $\times\ln S\times$ Kn 補正。
+  Kelvin 項 ($e^{K_e/r}$, 水 290 K で $K_e\approx1.1$ nm: 100 nm で 1 %, 10 nm で 12 %) は
+  「小さいほど速く蒸発する」正帰還で離散的に $Q_1\to0$ 崩壊 ($1/r$, $e^{K_e/r}$ 発散) を招くうえ、
+  **質量収支には効かない** ($r_0$ から $r$ まで縮んだ残量は $(r/r_0)^3$; $r_0$≈300 nm なら
+  $r<10$ nm 段階の残量は $4\times10^{-5}$)。`condEvapKelvin=1` で Kelvin 込みにできる。
+- **評価半径**: 体積平均半径 $r_{30}=\big(g/(\tfrac43\pi\rho_lQ_0)\big)^{1/3}$ を使う
+  ($Q_1$ に敏感な $r_{10}=Q_1/Q_0$ でなく、θ 律速される $g$ を通す)。
+- **λ スケール更新** (monodisperse 整合): 1 step の縮小比 $\lambda=r_{new}/r_{30}=1+\dot r\,\Delta t/r_{30}$
+  で $Q_1\to\lambda Q_1,\ Q_2\to\lambda^2Q_2,\ g\to\lambda^3 g$ ($Q_0$ 不変)、ソースは
+  $S_\phi=(\phi_{new}-\phi)/\Delta t$。$Q_1^2\le Q_0Q_2$ 等の実現可能性が自動で保たれる。
+  $\lambda\ge\lambda_{\min}=\tfrac12$ (半径半減/step)、$g(1-\lambda^3)\le$ `dg_max`、
+  潜熱冷却 $g(1-\lambda^3)L/c_v\le$ `dT_max` (1 K/step) で下から律速。
+- **液滴消滅**: $\lambda_{\min}r_{30}<r_{\min}$ すなわち $r_{30}<2r_{\min}$ (`condEvapRmin`=1 nm) なら
+  中間状態を作らず $\lambda=0$ (全モーメント消滅、$Q_0$ も 0)。実現可能性クランプ kernel でも
+  「$S\le1$ かつ ($Q_0=0$ または $r_{30}<2r_{\min}$) かつ $g\le5\times10^{-7}$」で 4 モーメントを硬 0 化する
+  (陰的緩和では厳密 0 に届かないため)。$g=0$ で $Q_n$ だけ残る float アンダーフローの「モーメント塵」も
+  $S\le1$ では同時に掃除する。$Y_w$ (総水) は不変なので質量は自動保存、エネルギーは
+  二相 EOS $e=e_v-gL$ が $g\to0$ で潜熱吸収を自動処理する。
+- **点陰的ヤコビアン**: $g$ 行に蒸気復帰 $\partial S_g/\partial(\rho g)$ (carrier では
+  $\partial p_v/\partial(\rho g)=-R_wT$) と潜熱冷却 $\partial S_g/\partial T\cdot\partial T/\partial(\rho g)$ を
+  数値微分で入れる (どちらも負帰還 → `sj_g`$\ge0$)。$Q_1$ 行の $\partial S/\partial Q_1$ は
+  Kelvin 正帰還側なので入れない。
+- **適用範囲**: $S\le1$ のみ。$S>1$ の亜臨界 ($\bar r<r_*$) 蒸発は核生成域で $\bar r$ が $r_*$ に
+  張り付く既知の罠 (`COND_RNUC_FAC`) を再燃させるため従来どおり成長 0 (クランプ) のまま。
+  核生成 $J$ は $S\le1$ で元々 0。二温度 (`condTwoTemp`) の $T_d\le T$ 側は未対応 (一温度のみ)。
+
+蒸発は負帰還 (蒸発→冷却→$p_{sat}$↓・蒸気復帰→$S\to1$) なので、圧縮帯では**平衡蒸発**
+($S\to1$ に漸近、$g$ は僅かに減) になり、高温境界層 (回復温度 $\gg T_{sat}$) では液相が消える。
+
 ---
 
 ### 4. 液滴温度 $T_d$ — Hill のエネルギーバランス (純蒸気簡約)
@@ -415,7 +463,7 @@ $r_{\rm nuc}$ を使う** (ヤコビアンだけガード無しだと亜臨界�
 - **$p_{sat}$ の Clausius–Clapeyron 外挿**: 液フィットは ~40K 以下で破綻するため $T<50$K は
   $p_{sat}(T)=p_{sat}(50)\exp(-(L/R)(1/T-1/50))$ で物理外挿 (低温で単調減少)。**45K クランプのまま psat を
   凍結すると過飽和 $S=p/p_{sat}$ が潰れ核生成が起きない**ため psat だけ C-C 外挿 (σ,ρ_l,L はクランプ)。
-- **clamp/limiter**: $J$ 上限、$dr/dt<0$ は 0 (蒸発なし)、$\bar r\le r_*$ で成長停止、モーメント非負 (floor)、
+- **clamp/limiter**: $J$ 上限、$dr/dt<0$ は 0 (蒸発なし — `condEvaporation=1` では $S\le1$ で蒸発分岐に置換、理論節参照)、$\bar r\le r_*$ で成長停止、モーメント非負 (floor)、
   $g\le1$。**1 step の $\Delta g$・潜熱 $\Delta T$・蒸気枯渇を $\theta$ で律速**し全モーメントを同 $\theta$ で
   縮小 ($g{=}Q_3$ 整合保持)。
 - **src_jac**: 初期実装はソース由来 0。時間項 $V/\Delta\tau$ + 移流 `transport_diag` の対角のみで安定化。
@@ -449,6 +497,16 @@ $r_{\rm nuc}$ を使う** (ヤコビアンだけガード無しだと亜臨界�
 | `condGrowthModel` | 0 | 0=既定 (H2O: Hertz–Knudsen 質量律速 / N2: Goodheart)、1=**Gyarmathy** 熱伝導律速 $\frac{dr}{dt}=\frac{kRT^2}{\rho_lL^2}\ln S\frac{1-r_*/r}{r(1+3.18Kn)}$ (極超音速ノズル凝縮で標準)。|
 | `condGyarmathyC` | 3.18 | Gyarmathy の Knudsen 補正係数 $1/(1+C\,Kn)$。小さいほど成長速く onset 早、大きいほど遅。標準 3.18。|
 | `condTwoTemp` | 0 | 1 で **液滴温度 $T_d$** を準定常 Hill バランスで解き Hertz–Knudsen 成長の駆動力 $p_v-p_d(T_d)$ に反映 (自己加熱で成長↓)。theory.md §4 参照。Gyarmathy 経路には非適用。|
+| `condEvaporation` | **1** | 1 (既定, 2026-08-18 検証後に既定化) で **蒸発** ($S\le1$ のセルで負成長 λ スケール更新 + 液滴消滅)。理論節「統一駆動力と蒸発」参照。0 は旧挙動 $dr/dt<0\to0$ (液相が過熱域で凍結)。|
+| `condEvapRmin` | 1e-9 | 完全蒸発とみなす $r_{30}$ [m]。$r_{30}<2r_{\min}$ で 4 モーメントを一括 0。|
+| `condEvapKelvin` | 0 | 1 で蒸発駆動力に Kelvin 項 $p_d=p_{sat}e^{K_e/r_{30}}$ を含める (既定は平面 $p_{sat}$; 正帰還回避)。|
+
+蒸発の実装は `cond_evap_rate` / `cond_evap_source` ([condensationSource_d.cuh](../solver_density_cuda/cuda_forge/condensationSource_d.cuh))
+と本体 kernel の蒸発分岐 (`condensation_source_d`)、消滅硬クランプは `cond_realizability_clamp_d`
+([condensationTransport_d.cu](../solver_density_cuda/cuda_forge/condensationTransport_d.cu))。診断出力
+`condS_<s>` (過飽和 $S$)・`condDrdt_<s>` (成長率, 負=蒸発)・`condR30_<s>` ($r_{30}$, 蒸発分岐のみ) を
+`res_*.h5` に書く。0-D 単体テスト `tests/unit/test_cond_evaporation.cpp` (HK 解析解・実現可能性・消滅・
+律速・Kelvin 質量収支・S>1 不発火・N2 経路) を持つ。
 
 実装は [`condensationSource_d.cuh`](../solver_density_cuda/cuda_forge/condensationSource_d.cuh) の
 `cond_nucleation` (Kantrowitz) と `cond_growth` (Gyarmathy 分岐)。Gyarmathy は N2 Goodheart と前因子

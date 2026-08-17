@@ -35,6 +35,7 @@ __global__ void condensation_source_d(
     geom_int nCells,
     int condModel, int carrier, double Rw, double M,
     int kantrowitz, int growthModel, double gyarC, int twoTemp,
+    int evap, double evapRmin, int evapKelvin, double evapLamMin,
     flow_float cp_cpg, flow_float gamma_cpg,
     double Jmax, double dg_max, double dT_max,
     geom_float* vol, flow_float* dt_local,
@@ -42,11 +43,13 @@ __global__ void condensation_source_d(
     flow_float* roY_w,   // carrier: 凝縮気相種の保存量 ρY_w (pure では nullptr)
     flow_float* rog, flow_float* roQ0, flow_float* roQ1, flow_float* roQ2,
     flow_float* res_rog, flow_float* res_roQ0, flow_float* res_roQ1, flow_float* res_roQ2,
-    flow_float* sj_g, flow_float* sj_Q0, flow_float* sj_Q1, flow_float* sj_Q2)
+    flow_float* sj_g, flow_float* sj_Q0, flow_float* sj_Q1, flow_float* sj_Q2,
+    flow_float* diagS, flow_float* diagDrdt, flow_float* diagR30)
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
     sj_Q0[ic] = 0.0; sj_Q1[ic] = 0.0; sj_Q2[ic] = 0.0; sj_g[ic] = 0.0;
+    diagS[ic] = 0.0; diagDrdt[ic] = 0.0; diagR30[ic] = 0.0;
 
     const double rod = (double)ro[ic];
     if (rod <= 1.0e-20) return;
@@ -76,6 +79,53 @@ __global__ void condensation_source_d(
     const double gamma_gas = cpg/cvg;
     const double p_gas = carrier ? Pd : pv;
 
+    // 診断: 過飽和 S=p_v/p_sat(T)
+    const double psat_T = cond_psat(cprops, Td);
+    diagS[ic] = (flow_float)(pv/(psat_T > 1.0e-300 ? psat_T : 1.0e-300));
+
+    // ---- 蒸発分岐 (condEvaporation=1, S<=1, 液相あり): 負成長 λ スケール + 液滴消滅 ----
+    // plans/accepted/condensation-evaporation.md §4-5。核生成は S<=1 で 0 なので本分岐では評価しない。
+    if (evap && g > 0.0 && pv <= psat_T) {
+        const double dt = (double)dt_local[ic];
+        double SQ0, SQ1, SQ2, Sg, r30, drdt;
+        cond_evap_source(cprops, Td, pv, rod, g, q0, q1, q2, dt,
+                         evapRmin, evapLamMin, dg_max, dT_max, cvg,
+                         growthModel, p_gas, gyarC, evapKelvin,
+                         &SQ0, &SQ1, &SQ2, &Sg, &r30, &drdt);
+        diagDrdt[ic] = (flow_float)drdt; diagR30[ic] = (flow_float)r30;
+        // src_jac (g 行のみ): 蒸気復帰 ∂S_g/∂(ρg) (carrier: p_v=ρ(Y_w-g)R_wT) と潜熱冷却
+        // ∂S_g/∂T·∂T/∂(ρg) を数値微分で。どちらも負帰還 (S_g<0 が g↓/T↓で 0 に近づく) → sj_g>=0。
+        // Q1 行の ∂S/∂Q1 は Kelvin 正帰還側なので陰的に入れない (sj_Q1=0)。
+        if (Sg < 0.0) {
+            const double L  = cond_latent(cprops, Td);
+            double a0,a1,a2,ag,rr,dd;
+            // (a) g 摂動 (蒸気状態も更新)
+            const double dg = 1.0e-3*g;
+            double pvg, rvg; cond_vapor_state(carrier, rod, Pd, Td, g - dg, Yw, Rw, &pvg, &rvg);
+            cond_evap_source(cprops, Td, pvg, rod, g - dg, q0, q1, q2, dt,
+                             evapRmin, evapLamMin, dg_max, dT_max, cvg,
+                             growthModel, p_gas, gyarC, evapKelvin, &a0,&a1,&a2,&ag,&rr,&dd);
+            const double dSgdrog = (Sg - ag)/(rod*dg);        // ∂S_g/∂(ρg)
+            // (b) T 摂動
+            const double dTp = 0.1;
+            double pvT, rvT; cond_vapor_state(carrier, rod, Pd, Td+dTp, g, Yw, Rw, &pvT, &rvT);
+            cond_evap_source(cprops, Td+dTp, pvT, rod, g, q0, q1, q2, dt,
+                             evapRmin, evapLamMin, dg_max, dT_max, cvg,
+                             growthModel, p_gas, gyarC, evapKelvin, &a0,&a1,&a2,&ag,&rr,&dd);
+            const double dSgdT  = (ag - Sg)/dTp;
+            const double dTdrog = (L - (carrier?Rw:Rg)*Td)/(rod*cvg);
+            double sjg = -(dSgdrog + dSgdT*dTdrog);
+            if (sjg < 0.0) sjg = 0.0;
+            sj_g[ic] = (flow_float)sjg;
+        }
+        const double v = (double)vol[ic];
+        res_roQ0[ic] += (flow_float)(SQ0*v);
+        res_roQ1[ic] += (flow_float)(SQ1*v);
+        res_roQ2[ic] += (flow_float)(SQ2*v);
+        res_rog[ic]  += (flow_float)(Sg *v);
+        return;
+    }
+
     // 核生成・成長 (freeze, 亜臨界停止・蒸発 clamp)
     double J, rstar;
     cond_nucleation(cprops, Td, pv, rho_v, &J, &rstar, kantrowitz, gamma_gas);
@@ -87,6 +137,7 @@ __global__ void condensation_source_d(
         drdt = cond_growth(cprops, Td, pv, r_bar, rstar, growthModel, p_gas, gyarC, twoTemp);
         if (drdt < 0.0) drdt = 0.0;
     }
+    diagDrdt[ic] = (flow_float)drdt;
     const double rho_l = cond_rho_cond(cprops, Td);
     const double r_nuc = COND_RNUC_FAC*rstar;   // わずかに超臨界で生み成長を起動 (r*ちょうどだと(1-r*/r)=0で停止)
     double SQ0 = J;
@@ -155,6 +206,7 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
     const double Jmax   = 1.0e35;
     const double dg_max = 5.0e-3;
     const double dT_max = 1.0;
+    const double evapLamMin = 0.5;   // 蒸発: 1 step の半径縮小比の下限 (半減)。§5.1-3
 
     for (int s = 0; s < var.nCondSpeciesRegistered; ++s) {
         const std::string i = std::to_string(s);
@@ -168,6 +220,7 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
             msh.nCells,
             cfg.condModel, carrier, Rw, M,
             cfg.condKantrowitz, cfg.condGrowthModel, cfg.condGyarmathyC, cfg.condTwoTemp,
+            cfg.condEvaporation, cfg.condEvapRmin, cfg.condEvapKelvin, evapLamMin,
             cfg.cp, cfg.gamma,
             Jmax, dg_max, dT_max,
             var.c_d["volume"], var.c_d["dt_local"],
@@ -175,7 +228,8 @@ void condensationSource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh&
             roY_w,
             var.c_d["rog_"+i], var.c_d["roQ0_"+i], var.c_d["roQ1_"+i], var.c_d["roQ2_"+i],
             var.c_d["res_rog_"+i], var.c_d["res_roQ0_"+i], var.c_d["res_roQ1_"+i], var.c_d["res_roQ2_"+i],
-            var.c_d["src_jac_g_"+i], var.c_d["src_jac_Q0_"+i], var.c_d["src_jac_Q1_"+i], var.c_d["src_jac_Q2_"+i]);
+            var.c_d["src_jac_g_"+i], var.c_d["src_jac_Q0_"+i], var.c_d["src_jac_Q1_"+i], var.c_d["src_jac_Q2_"+i],
+            var.c_d["condS_"+i], var.c_d["condDrdt_"+i], var.c_d["condR30_"+i]);
     }
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
