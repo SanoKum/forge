@@ -126,6 +126,34 @@ $r_t$=0.210505 m、$R$=2 $r_t$=0.42101 m、$L_U$=6 $r_t$=1.26303 m、$L_c$=8 $r_
 - 注: `run_0018` は v2 の初回投入で **別セッションの forge 再ビルド中に binary が消え本段が rc 127** で失敗 → 削除し `run_0020` で再投入。
   新 binary の dry 経路は `run_0019` (Euler 基準の再実行) で `run_0005` と軸 M 8e-6 一致を確認済み。
 
+## NASA CEA2 との照合 (2026-08-18): forge TP semi-perfect は CEA 凍結流と 0.04 % 以内で一致
+
+forge の TP 単一擬似種 (NASA-9 係数 `species_db.yaml` `MIX`, `thermoHrefTemp` 298.15) が本当に NASA-CEA の物性を再現しているかを、
+**NASA CEA2 本体 (`cea2.f`, 2004-05-21 版) を gfortran でビルド**して直接照合した (`.venv-cea/nasa_cea/FCEA2`; ソースは rocketcea sdist 同梱の
+`NASA_CEA_Fortran/`、NASA 配布サンプル `cea2.out` と数値一致を確認済)。入力: `cea/va_cea.inp` (rocket 問題、反応物 H2O/N2/O2/Ar/CO2 をモル分率で
+1060 K 指定、$P_c$=11.4 bar、`frozen nfz=1` + `only` 5 種 = forge モデルと同じ固定組成、`pi/p` 35 点 + `supar=14.443`)、出力 `cea/va_cea.out`。
+比較スクリプト `cea_check_va.py` (forge 軸ノード値を $P_t/P$ で CEA 各点に補間) → `cea/cea_vs_forge_run_0019_*.{csv,png}`, `cea/cea_check_va_run_0019.log`。
+対象 run: `run_0019_va_R2_LU6_Lc8_newbin` (= 推奨点 `run_0005` と同一設定を現行 binary で再計算、場は run_0005 と max|ΔP|/P 8e-6 で同一)。
+[閲覧ページ (図・全ステーション表)](https://claude.ai/code/artifact/1eb919a8-2080-4f54-9a6e-240721b7ea62)。
+
+| 項目 | NASA CEA2 (frozen) | forge run_0019 | 差 |
+| --- | --- | --- | --- |
+| 混合気 MW / R | 29.081 / 285.907 J/kgK | $P/(\rho T)$ = 285.911 ± 0.000 | +0.001 % |
+| チャンバ $c_p$, γ @1060 K | 1.1903 kJ/kgK, 1.3162 | config cp 1190.2 (γ 1.32752 は γ\*) | — |
+| スロート $T^*$ / $\rho^*$ / $a^*$ / γ\* | 912.60 K / 2.3619 / 588.5 m/s / 1.3275 | 912.59 / 2.3621 / 588.5 / (M=1 点) | −0.001 / +0.006 / +0.006 % |
+| 出口 $A/A^*$=14.443 (1D) | M 4.190, T 253.02 K, P 5235 Pa, u 1330.0 m/s | 出口面質量平均 M 4.1902, T 253.00, P 5237, u 1330.0 (軸 M 4.1900, P 5240) | ≤0.05 % |
+| 超音速 26 点 ($P_t/P$ 一致で比較) | — | T max 0.028 %, ρ 0.042 %, u 0.011 %, a 0.014 %, M 0.030 % | 系統差なし (平均 ≤0.02 %) |
+| 亜音速 8 点 | — | T/ρ/a ≤0.01 %, M ≤0.13 % (低 M で M は P の桁落ちに敏感) | |
+| 質量流量 | 1D $\rho^* a^* A^*$ = 193.50 kg/s | 192.87 kg/s (入口=出口) → $C_d$ 0.9967 | Hall 級数 $C_d$ 0.9963 (+0.04 %) |
+| 軸全エンタルピー $h_0$ | 一定 | (max−min)/|mean| 1.2e-4 (float32) | |
+
+**結論: 熱力学 (h(T)・cp(T)・R・音速) は CEA と同一と見なせ、forge Euler 解は CEA 凍結等エントロピー膨張に載っている。**
+出口 $A/A^*$ が 1D の 14.443 でなくメッシュ 14.387 なのに M=4.19 になるのは $C_d$=0.9967 の分 (14.387/0.9967=14.43) で整合。
+CEA **平衡** (全生成物、`case=va_eq`, `cea/va_eq_onset.inp`) も併記: チャンバは NO 50 ppm のみ (T 1059.85 K)、気相化学は無視でき、
+**H₂O(cr) が $P_c/P$≈185 (T≈265 K, 凍結 M≈4.05, 設計区間末端付近) から析出**し、出口 (14.443) では H₂O の 8 % が氷、T 261.8 K, P 5402 Pa (+3.2 %)、
+u 1328.4 m/s (−0.1 %)。これは平衡限界であり、forge Euler (凝縮なし) との差はここだけ。実際の核生成は S≈2.4 (出口, 氷基準) では起きにくいが、
+「凝縮の引き継ぎ」(上) の定量評価は `evaluate.condensation` で別途行うこと。CEA の再実行: `cd cea && ln -s ../../../.venv-cea/nasa_cea/{thermo,trans}.lib . && echo va_cea | ../../../.venv-cea/nasa_cea/FCEA2`。
+
 ## 問題定義
 
 | ファイル | R | L_U | L_c | 備考 |
@@ -147,7 +175,7 @@ $r_t$=0.210505 m、$R$=2 $r_t$=0.42101 m、$L_U$=6 $r_t$=1.26303 m、$L_c$=8 $r_
 | --- | --- | --- | --- |
 | **`run_0001`〜`run_0015_va_R*_LU*_Lc*`** | **R/L_U/L_c スタディ (semi-perfect 設計 + node Euler TP CFD, `thermoHrefTemp` 298.15, soft→mid→本段 cfl2 12000 step; `problem_va_*.yaml`, ドライバ `run_study_va.py`)**: R∈{1.5,2,3}×L_c∈{7,8,9,10} @L_U6 (0001–0009, 0012–0014)、R3/L_c11 (0015)、L_U∈{4,9} @R2/L_c8 (0010/0011) | 上表。**全点 0.5 % ゲート内、推奨 R2/L_U6/L_c8 (`run_0005`, 0.061 %) ≒ L_c9 (`run_0013`, 0.047 %)**。L_c7 は崖の縁 (R3 0.315 %)、L_U4 不可 (0.213 %)。全 run 品質 PASS・NaN 0・軸 M 凍結 ~1e-5、`check_convergence` は warm 床 plateau で NOT CONVERGED (収束とは書かない)。`study_cfd_va.json`、`study_cfd_va.png`、`study_axisM_va.png`。run_0005/0013 の入力・設計成果物 (config, `wall_design.csv`, `metrics.json` 等) は git にリファレンス保存 | active (**スタディの正本・推奨の根拠**) |
 | **`run_0016_va_R2_LU6_Lc8_ns_coarse`** / **`run_0017_…_ns_v1`** / `run_0020_…_ns_v2` / `run_0021_…_ns_v3` / **`run_0022_…_ns_v4`** | **推奨点の NS (A12/A13: 物理壁 = inviscid + δ\*, node y+~1 低 Re SST, TP)** と δ\* 反復 (`problem_va_R2_LU6_Lc8_ns{_coarse,}.yaml`, `run_ns_va.py`)。0016 = coarse 中継 (IC 供給)、0017 = v1 相関 δ\*、0020 = v2 (case/41 規約ブレンド)、0021 = v3 (CFD δ\* x≥3 全域)、0022 = **v4 (末端勾配修正、固定点)** | 上の NS 節の表。**v4 が到達点: ‖ΔM‖∞ 0.309 %、出口コア M 4.183 ±0.002、overshoot +0.004 %、δ\* 固定点 1.001**。相関 δ\* は上流で 30–50 % 過大 (v1 出口 M −0.5 %)。残差 (x≈1–3, 7 の −0.2〜−0.3 %) は δ\* 非表現 (law 側 RANS 帰還が要る、未実装)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。0022 の入力・`wall_physical.csv`・δ\* CSV は git 保存 | active (**NS 到達点の正本**) |
-| `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可 | 破棄予定 (記録) |
+| `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可。**NASA CEA2 凍結流照合の対象** (上の CEA 節: T/ρ/u/a が CEA と 0.04 % 以内, $C_d$ 0.9967) → `cea/`, `cea_check_va.py` | active (CEA 照合の根拠; 場は `run_0005` と同一) |
 | `run_0018_va_R2_LU6_Lc8_ns_v2` | v2 初回 — 本段開始時に binary 再ビルド中で rc 127 | 結果なし、削除済 (`run_0020` で再投入) | 削除済 |
 | — | 設計のみスイープ 21 点 → `study_design_va.json` (`study_design_va.py`; R2/L_c11 のみ単調窓外、他全合格) | | ref |
 | — | 推奨形状エクスポート `export_wall_va.py` → `points_va_best_{euler,ns}.csv` / `nozzle_va_best_{euler,ns}.geo` (+ L_c9 版) | | ref |

@@ -1,0 +1,11 @@
+# equilibrium expansion: locate H2O(cr) onset between Pc/P=100 and 217.765
+problem case=va_eq_onset rocket equilibrium p,bar=11.4
+   pi/p=120,130,140,150,160,170,180,190,200,210,217.765,240,270,300
+reac
+  name=H2O moles=0.0462711  t,k=1060
+  name=N2  moles=0.6989119  t,k=1060
+  name=O2  moles=0.2091779  t,k=1060
+  name=Ar  moles=0.008340143 t,k=1060
+  name=CO2 moles=0.03729886 t,k=1060
+output siunits
+end
