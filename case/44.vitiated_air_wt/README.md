@@ -154,6 +154,22 @@ CEA **平衡** (全生成物、`case=va_eq`, `cea/va_eq_onset.inp`) も併記: �
 u 1328.4 m/s (−0.1 %)。これは平衡限界であり、forge Euler (凝縮なし) との差はここだけ。実際の核生成は S≈2.4 (出口, 氷基準) では起きにくいが、
 「凝縮の引き継ぎ」(上) の定量評価は `evaluate.condensation` で別途行うこと。CEA の再実行: `cd cea && ln -s ../../../.venv-cea/nasa_cea/{thermo,trans}.lib . && echo va_cea | ../../../.venv-cea/nasa_cea/FCEA2`。
 
+## 凝縮計算 (2026-08-18): **この条件では凝縮しない** (最大過飽和 S=2.03、核生成ゼロ)
+
+推奨点 R2/$L_U$6/$L_c$8 を 2 種 TP (`tp_species: split_h2o` = [MIXDRY, H2O]) + 非平衡凝縮 (Kw+HK, `condensation: {condModel 1,
+condKantrowitz 1, condGrowthModel 0}`, `condGasSpecies` 自動、**現行 binary は蒸発込み** `condEvaporation` 既定 1) で node Euler 段階起動
+12000 step (`problem_va_R2_LU6_Lc8_split{,_cond}.yaml`)。case/42 run_0063–0065 と同じ経路。
+
+| run | 内容 | 結果 |
+|---|---|---|
+| `run_0023_va_R2_LU6_Lc8_split` | 2 種 TP dry (対照) | ‖ΔM‖∞ 0.0614 % / ε_M 0.0089 % — 単一擬似種 `run_0005` と同一 (0.0613 %) |
+| **`run_0024_va_R2_LU6_Lc8_split_cond`** | 同 + 凝縮 ON | **液相質量分率 g ≡ 0 (全域)、モーメント全て 0**。dry と軸 M 差 1.1e-5。軸上の過飽和度 (液基準 `condS_0`) は x≈6.4 r_t で S=1 を超え **最大 2.03** (x≈12, T 252.6 K, p_H2O 242 Pa; 氷基準なら 2.5) で頭打ち — 古典核生成の障壁 ΔG\*/kT ≈ 336 (r\* 1.9 nm) で **J は実質 0** (核生成には S≳6–8 = 同分圧で T≲235 K が要る)。図 `figs/condensation_axis_S.png` |
+
+結論: **出口 253 K / H₂O 分圧 242 Pa は過冷却液の飽和線を 2 倍超えるだけで、均質核生成の Wilson 点には遠く届かない**。dry の Euler/NS 結果がそのまま有効。
+CEA 平衡 (上節) の「H₂O(cr) 8 % 析出」は平衡限界であり、実際には起きない (S_ice 2.5)。NS 版 (境界層はさらに高温で S<1) の凝縮 run は
+不要と判断し未実施 (`problem_va_R2_LU6_Lc8_ns_split_cond.yaml` は用意済み、必要なら `run_ns_va.py` に `--problem` を足して投入)。
+凝縮が問題になるのは全温を下げる/H₂O を増やす/M_d を上げる場合で、目安は軸 T ≲ 235 K。
+
 ## 問題定義
 
 | ファイル | R | L_U | L_c | 備考 |
@@ -161,13 +177,14 @@ u 1328.4 m/s (−0.1 %)。これは平衡限界であり、forge Euler (凝縮�
 | `problem_va_R{1.5,2,3}_LU6_Lc{7,8,9,10}.yaml` | 1.5/2/3 | 6 | 7/8/9/10 | R × L_c の 12 点 |
 | `problem_va_R3_LU6_Lc11.yaml` | 3 | 6 | 11 | 単調窓上限側 (R2 は 10.88 で L_c11 不可) |
 | `problem_va_R2_LU{4,9}_Lc8.yaml` | 2 | 4/9 | 8 | L_U 感度 (基準 R2/L_c8) |
+| `problem_va_R2_LU6_Lc8_split.yaml` / `_split_cond.yaml` / `_ns_split_cond.yaml` | 2 | 6 | 8 | 2 種 TP [MIXDRY,H2O] dry / +凝縮 (Euler) / NS v4 壁 + 凝縮 (未投入) |
 | `problem_va_R2_LU6_Lc8_ns_coarse.yaml` / `problem_va_R2_LU6_Lc8_ns.yaml` | 2 | 6 | 8 | NS: coarse 中継 (365×65, frac 5e-4, cfl1) / 本計算 (601×97, frac 3.5e-5, cfl1, 48000 step) |
 
 再生成: `cd design && ./.venv-opt/bin/python -m forge_design.evaluate.runner_axismach ../case/44.vitiated_air_wt/problem_va_R2_LU6_Lc8.yaml ../case/44.vitiated_air_wt/run_00NN_va_R2_LU6_Lc8 [--prepare-only]`
 (スタディ一括は `run_study_va.py`)。CFD は 12000 step ≈ 1 分/点 (RTX 3060、段階起動込み)。
 
 **凝縮の引き継ぎ**: H₂O 2.87 wt% (モル 4.6 %)・出口 253 K/5.2 kPa なので凝縮の可能性はある。`evaluate.tp_species: split_h2o` +
-`evaluate.condensation` で回せる ([plan](../../plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)、実例 case/42 run_0063–0065)。未実施。
+`evaluate.condensation` で回せる ([plan](../../plans/accepted/tooling-nozzle-tp-split-h2o-condensation.md)、実例 case/42 run_0063–0065)。**実施済 → 凝縮しない (下の凝縮節、run_0024)**。
 
 ## 計算 run 一覧
 
@@ -175,6 +192,7 @@ u 1328.4 m/s (−0.1 %)。これは平衡限界であり、forge Euler (凝縮�
 | --- | --- | --- | --- |
 | **`run_0001`〜`run_0015_va_R*_LU*_Lc*`** | **R/L_U/L_c スタディ (semi-perfect 設計 + node Euler TP CFD, `thermoHrefTemp` 298.15, soft→mid→本段 cfl2 12000 step; `problem_va_*.yaml`, ドライバ `run_study_va.py`)**: R∈{1.5,2,3}×L_c∈{7,8,9,10} @L_U6 (0001–0009, 0012–0014)、R3/L_c11 (0015)、L_U∈{4,9} @R2/L_c8 (0010/0011) | 上表。**全点 0.5 % ゲート内、推奨 R2/L_U6/L_c8 (`run_0005`, 0.061 %) ≒ L_c9 (`run_0013`, 0.047 %)**。L_c7 は崖の縁 (R3 0.315 %)、L_U4 不可 (0.213 %)。全 run 品質 PASS・NaN 0・軸 M 凍結 ~1e-5、`check_convergence` は warm 床 plateau で NOT CONVERGED (収束とは書かない)。`study_cfd_va.json`、`study_cfd_va.png`、`study_axisM_va.png`。run_0005/0013 の入力・設計成果物 (config, `wall_design.csv`, `metrics.json` 等) は git にリファレンス保存 | active (**スタディの正本・推奨の根拠**) |
 | **`run_0016_va_R2_LU6_Lc8_ns_coarse`** / **`run_0017_…_ns_v1`** / `run_0020_…_ns_v2` / `run_0021_…_ns_v3` / **`run_0022_…_ns_v4`** | **推奨点の NS (A12/A13: 物理壁 = inviscid + δ\*, node y+~1 低 Re SST, TP)** と δ\* 反復 (`problem_va_R2_LU6_Lc8_ns{_coarse,}.yaml`, `run_ns_va.py`)。0016 = coarse 中継 (IC 供給)、0017 = v1 相関 δ\*、0020 = v2 (case/41 規約ブレンド)、0021 = v3 (CFD δ\* x≥3 全域)、0022 = **v4 (末端勾配修正、固定点)** | 上の NS 節の表。**v4 が到達点: ‖ΔM‖∞ 0.309 %、出口コア M 4.183 ±0.002、overshoot +0.004 %、δ\* 固定点 1.001**。相関 δ\* は上流で 30–50 % 過大 (v1 出口 M −0.5 %)。残差 (x≈1–3, 7 の −0.2〜−0.3 %) は δ\* 非表現 (law 側 RANS 帰還が要る、未実装)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。0022 の入力・`wall_physical.csv`・δ\* CSV は git 保存 | active (**NS 到達点の正本**) |
+| `run_0023_va_R2_LU6_Lc8_split` / **`run_0024_va_R2_LU6_Lc8_split_cond`** | **凝縮** (2 種 TP split_h2o; 0023 = dry 対照、0024 = Kw+HK 凝縮 ON, 蒸発込み binary) node Euler 12000 step | 0023 は `run_0005` と同一 (0.0614 %)。**0024: g≡0 — 最大 S 2.03 (液基準, x≈12 r_t, 252.6 K) で核生成せず、dry と同一**。品質 PASS・NaN 0。凝縮節参照 | active (**凝縮なしの根拠**) |
 | `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可。**NASA CEA2 凍結流照合の対象** (上の CEA 節: T/ρ/u/a が CEA と 0.04 % 以内, $C_d$ 0.9967) → `cea/`, `cea_check_va.py` | active (CEA 照合の根拠; 場は `run_0005` と同一) |
 | `run_0018_va_R2_LU6_Lc8_ns_v2` | v2 初回 — 本段開始時に binary 再ビルド中で rc 127 | 結果なし、削除済 (`run_0020` で再投入) | 削除済 |
 | — | 設計のみスイープ 21 点 → `study_design_va.json` (`study_design_va.py`; R2/L_c11 のみ単調窓外、他全合格) | | ref |
