@@ -23,6 +23,9 @@ Wyslouzil et al., *J. Chem. Phys.* **113**, 7317 (2000)
 > 壁間 1.8°・A/A\*≈1.58** で `mesh/make_nozzle_fig3.py` が生成する (`nozzle_fig3_2d/3d`)。
 > **凝縮検証は run_0047 以降 (修正形状) を使うこと**。run_0001〜0046 (nozzle_H) は旧形状で、
 > dry が実験より過膨張・凝縮も相殺で「合って見えていた」だけ。詳細は下記「## 修正形状 (Fig.3) run」。
+> **さらに 2026-08-19: `make_nozzle_fig3.py` の Fig.3 形状 (smoothstep 収縮 + throat から直線膨張) もユーザ提示の壁式と
+> 不一致** (収縮部 |Δy| 最大 1.56 mm、throat 直後の 3 次ブレンド無し、A/A\* 1.597 vs 1.580)。**今後は `mesh/make_nozzle_user.py`
+> (`nozzle_user_profile.py` の式) を正とし、run_0189 以降を使うこと** (下記「## ユーザ指定形状 (2026-08-19)」)。
 
 ## 条件
 
@@ -254,6 +257,48 @@ SLAU 陰解法 (timeIntegration:11, blockDPLUR, **nStepInner:5, cfl_pseudo:4**)�
 | `run_0171_fig3_2d_sst_kwhk_tpsplit_node` / `run_0179`, `run_0181`〜`0183_wysnode_*` | node / 平面 `nozzle_fig3_2d_planar` (Bump 0.004, y₁≈0.5–5 µm, AR 728) | CPG or TP | SST or laminar no-slip (0182 のみ slip) | **node × 平面壁クラスタ no-slip は不成立**: 壁ノード T が Tt を超え (出口コーナーから 326→400+ K)、衝撃列が遡上して 6000–9000 step で unstart (2 次・1 次・SST・laminar・nodeWallDirichlet 0/1・出口 Pt=Ps いずれも)。slip (0182) だけ健全 (T ≤ Tt)。cross-mesh IC の壁ジグザグは 1D 等エントロピー IC で除いたが本質でない → **node 粘性壁 (平面, 極薄壁セル) の申し送り** | 破棄予定 (**申し送りの根拠**) |
 
 診断 run (0172–0178, 0180, 0187) は削除済 (上記と同じ結論の切り分け)。
+
+## ユーザ指定形状 (2026-08-19) — 形状の確認と Euler/NS × 凝縮 off/on (TP split) — run_0189 以降
+
+ユーザ提示の上壁式 (半高 y [mm], throat x=0; `mesh/nozzle_user_profile.py`):
+12.7 (−60≤x≤−38) / 0.16−0.33x (−38<x<−21.27) / 2.5+0.015512821x²+0.000243078x³ (−21.27<x<0) /
+2.5+0.00194105x²−7.99459e−5x³ (0<x<8.093) / 2.457620744+0.015709255x (8.093<x<95)。
+**現行 `make_nozzle_fig3.py` 形状 (smoothstep 収縮 + 直線膨張) とは一致していなかった** (`check_geometry_user.py` → `geometry_user_vs_current.png`):
+
+| 量 | ユーザ式 | 現行 mesh (`nozzle_fig3_2d*`) |
+| --- | --- | --- |
+| 入口直管 (x −60〜−38 mm, 半高 12.7) | あり | **無し** (x=−38 から開始) |
+| 収縮部 (−38〜0) | 直線 (勾配 −0.33) + 3 次 (曲率半径 32 mm@throat) | smoothstep (曲率半径 24 mm@throat)。**最大 |Δy| 1.56 mm @x=−27** |
+| 膨張部 (0〜95) | 3 次ブレンド (0〜8.09 mm, R=258 mm) → 直線 (切片 2.4576, 勾配 0.015709=0.9°) | throat から直線 (切片 2.5, 同勾配)。**|Δy| ≤0.042 mm** (出口で最大) |
+| 出口半高 / A/A\* | **3.950 mm / 1.580** | 3.992 mm / 1.597 |
+| 1D 等エントロピー p/p0 差 (γ=1.4) | — | 現行が x=5 mm で −8 %、x=20 mm −4 %、出口 −2 % (ユーザ形状の方が膨張が緩い) |
+
+→ 収縮部と throat 直後のブレンドが違い、膨張側の p/p0 に 2〜8 % 効く。以下はユーザ式でメッシュを作り直して再計算した。
+
+**メッシュ** `mesh/make_nozzle_user.py` (5 区間を別カーブ + Transfinite 複合辺、単位 mm): `nozzle_user_2d.geo` (cell 用 1 層押し出し, front/back slip)、
+`nozzle_user_2d_planar.geo` (node 粘性用, 壁クラスタ)、`nozzle_user_2d_planar_inv.geo` (node 非粘性用, 一様)。
+streamwise 347 節点 (Δx≈0.42 mm; 直管 0.63 mm) × 壁法線 120 (Bump 0.004, y₁≈0.5–5 µm)、41174 cells。品質 **PASS** (AR max 724, skew 0.47)。
+**投入** `run_user_profile.py RUN --disc cell|node --phys euler|sst [--cond]`: TP split `[MIXDRY(=N2), H2O]` (Y_H2O 0.01095, `thermoHrefTemp` 298.15)、
+Pt 59070 Pa / Tt 286.65 K、出口 Ps=Pt=2000 Pa、Euler = slip + `visc 0` `thermCond 0`、NS = SST 低 Re (`wallTreatmentSST 0`) no-slip 断熱壁 + Sutherland + const-Pr 0.72 (Prt 0.9)、
+凝縮 = Kw+HK (`condModel 1, condKantrowitz 1, condGrowthModel 0`)、IC = 1D 等エントロピー (TP semi-perfect)、
+起動 soft (1 次 cfl0.5, 3000) → mid (1 次 cfl1, 3000) → 本段 **全域 2 次 (convMethod 1/limiter 2) cfl_pseudo 2**, 12000 step (NS は `continue_run.py` で +24000 継続)。
+比較 `compare_user_profile.py` → `compare_user_profile.png` / `compare_user_profile_centerline.csv` (中心線 x, M, P, T, g を 0.5 mm 刻みで保存)。
+
+| run | 離散化 | 物理 | 凝縮 | 主要結果 (中心線, x≈94 mm 出口) | 収束/定常 | 状態 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `run_0189_user_cell_euler_dry` | cell | Euler | off | M 1.912, p/p0 0.1465, T 165.8 K (1D 等エントロピー M 1.918 / p/p0 0.1448) | rms_ro 5.4e-10 (1.6 桁, still falling), `check_quasisteady` machmax/pmax **STEADY** | active |
+| `run_0190_user_cell_euler_cond` | cell | Euler | **on** | onset (g>1e-3) **x=20.2 mm**, g_exit 0.0109 (全量凝縮), M 1.704, p/p0 0.1771, T 199.3 K | rms_ro 1.6e-9 plateau, 全 snapshot で onset/p/p0 4 桁不変, STEADY | active |
+| `run_0191_user_cell_sst_dry` → **`run_0196_user_cell_sst_dry_cont`** (+24000) | cell | NS (SST) | off | M 1.792, p/p0 0.1762, T 174.8 K。**exp isentrope と x≥11 mm で +0.9〜+1.9 %** (throat 直後 x=0.9 mm は +4.6 %) | rms_ro 4e-8 plateau (2 次リミッタ), 継続 24000 step で p/p0 変化 ≤1e-4, **STEADY** | active (0191 は中継) |
+| `run_0192_user_cell_sst_cond` → **`run_0197_user_cell_sst_cond_cont`** (+24000) | cell | NS (SST) | **on** | onset **x=23.2 mm**, g_exit 0.0108, M 1.600, p/p0 0.2090, T 208.0 K。exp cond 1 kPa と −5〜−3 % (x 21–32 mm, onset 帯) / +4〜+5 % (x 42–72 mm) | rms_ro 4e-8 plateau, 継続で不変, **STEADY** | active (0192 は中継) |
+| `run_0193_user_node_euler_dry` / `run_0194_user_node_euler_cond` | **node** (平面一様) | Euler | off / on | **cell と一致**: p/p0 0.1460/0.1767 (cell 0.1465/0.1771), onset 20.2 mm 同一, g 0.0109 同一 | rms_ro 4.3e-9 (2.7 桁), STEADY | active (node 対照) |
+| `run_0195_user_node_sst_dry` | node (平面壁クラスタ) | NS (SST) | off | **不成立** (既知の申し送りと同じ指紋: 壁ノード T 504 K > Tt, P 126 kPa > Pt が x=−40 mm から、本段 6000 step で出口側 unstart)。途中で停止 | — | 破棄予定 |
+
+**結果 (`compare_user_profile.png`)**:
+- **NS dry が実験 isentrope に乗る** (x≥11 mm で +1〜2 %; 旧形状 run_0048 は 1 次精度で ±1.5 %)。Euler dry は排除厚がないので −4〜−13 % 下 (下流ほど乖離)。
+- **凝縮の効果**: onset は Euler 20.2 mm → NS 23.2 mm (境界層で膨張が緩み過冷却到達が遅れる)。潜熱で中心線 M は出口で 1.91→1.70 (Euler) / 1.79→1.60 (NS)、静圧は +21 % (Euler) / +19 % (NS)、静温 +33 K。液滴質量分率は両者とも x≈50 mm で 0.010 に達しほぼ全量 (Y_H2O 0.01095) が凝縮。
+- **実験 cond 1 kPa との比較 (NS)**: onset 帯 (21–32 mm) で −3〜−5 % (forge の bump 立ち上がりが遅く低い)、下流 42–72 mm で +4〜+5 % (旧形状 run_0170 は +5.6〜+7.4 %。形状修正で下流の過大が 2 pt 縮んだ)。onset 域の差は凝縮モデル (Kantrowitz 抑制量) 側の残課題。
+- NS 凝縮 run の壁温は凝縮域下流で 291–297 K > Tt=286.65 K (壁 g≈0、コアの潜熱が乱流熱伝導で壁へ届く: 上限 g·L/cp≈26 K の一部)。dry は全域 T≤Tt。
+- 軸 h0=(ρe+P)/ρ (Euler cond) は入口/出口で一致 (差 2 J/kg)、onset 帯で最大 −263 J/kg (cp·Tt の 0.09 %)。
 
 ## 多成分 TP 発散の再検証 run 一覧 — run_0069 以降 (2026-06-18)
 
