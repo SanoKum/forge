@@ -1,0 +1,52 @@
+# 一個前の入口条件 (va2: Pt 1,137,000 Pa / Tt 1058 K / 旧組成 モル H2O 4.62711e-2, N2 6.989119e-1, O2 2.091779e-1, Ar 8.340143e-3, CO2 3.729886e-2)
+# を **va3 (Pt 1.139 MPa / Tt 1161 K 新組成) 用に設計した L_c8 ノズル形状にそのまま流す** off-design 評価用。
+# 形状は run_0091 と同一 (r_t 0.205711, A/A*_exit 15.066) で、ガス・BC・IC だけこの yaml から取る (ドライバ run_va3old_batch.py)。
+# 旧ガスは γ が高い (γ* 1.3275) ので同じ面積比で M が上がる: 1D 予測 M 4.238 / T 248.0 K / P 4904 Pa。
+name: va3old_M4.19_Lc8_noneq
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species:
+    H2O: 0.0286647
+    N2: 0.6732631
+    O2: 0.2301686
+    AR: 0.0114568
+    CO2: 0.0564467
+  gamma: 1.32752
+  cp: 1190.2
+spec:
+  Pt: 1137000.0
+  Tt: 1058.0
+  p_ambient: 4904.3
+  r_throat: 0.205711
+  M_design: 4.19
+dv:
+  L_c:
+    value: 8.0
+    min: 6.5
+    max: 14.0
+geometry:
+  R: 2.0
+  r_inlet: 3.889
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 500
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  Lc_mode: explicit
+mesh:
+  discretization: node
+  ni: 365
+  nj: 65
+  wall_first_frac: 0.005
+  throat_refine: 3.0
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0
+  mid_stage: true
+  tp_species: split_h2o
+  condensation: {condensation: 1, nCondSpecies: 1, condModel: 1, condKantrowitz: 1, condGrowthModel: 0}   # Kw+HK 非平衡 (蒸発込み)

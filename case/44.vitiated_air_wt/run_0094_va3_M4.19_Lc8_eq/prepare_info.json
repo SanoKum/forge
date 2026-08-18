@@ -1,0 +1,100 @@
+{
+ "chain": "axismach",
+ "discretization": "node",
+ "x0": 0.5256227581703821,
+ "x_A": 0.5256227581703821,
+ "x_E": 8.525622758170382,
+ "L_c": 8.0,
+ "Lc_window": [
+  0.01,
+  10.943326571590607
+ ],
+ "anchor": [
+  1.2274542727596807,
+  0.6420383736563762,
+  0.02544958042191947
+ ],
+ "anchor_source": "hall",
+ "start_line": "throat_char",
+ "wall_mode": {
+  "mode": "cplus",
+  "n_wall": 130,
+  "streamline_residual_max": 0.009085414844752004,
+  "streamline_residual_rms": 0.0008642094245125588
+ },
+ "wall_repr": "interp",
+ "axis_law": "quintic",
+ "M_knot": null,
+ "x_K": null,
+ "L_U": 6.0,
+ "gas": {
+  "kind": "semiperfect",
+  "Y": {
+   "H2O": 0.0376954,
+   "N2": 0.639778,
+   "O2": 0.237501,
+   "AR": 0.0109448,
+   "CO2": 0.0740808
+  },
+  "Tt": 1161.0,
+  "R": 285.27043243711665,
+  "T_star": 1004.7034659049073,
+  "gamma_star": 1.3152552021284212,
+  "gamma_Tt": 1.304964364961615,
+  "gamma_M4": 1.3869805906017565,
+  "T_M4": 303.8010351305783,
+  "AR_M4": 12.708094817536502
+ },
+ "gamma_hall": 1.3152552021284212,
+ "wall_fit": null,
+ "Md": 4.19,
+ "R": 2.0,
+ "qa": {
+  "x_F": 24.237118205314562,
+  "r_F": 3.881471931332872,
+  "r_F_pred_1d": 3.8889502506051636,
+  "r_F_err_rel": -0.0019229660423472072,
+  "xF_minus_xE": 15.71149544714418,
+  "xF_minus_xE_pred": 15.823822690900322,
+  "theta_max_deg": 20.939175151077595,
+  "theta_exit_deg": 2.724918497215885e-06,
+  "M_wall_exit": 4.1899997859118425,
+  "kappa0_fit": 0.502485980740548,
+  "kappa0_R_ratio": 1.004971961481096,
+  "kappa0_fit_resid": 0.00010852064184930783
+ },
+ "exit": {
+  "mode": "characteristic",
+  "x_F": 24.326093524963525,
+  "r_F": 3.881471931848343,
+  "x_E_index": 409,
+  "n_frozen": 0
+ },
+ "mdot_ratio_moc": null,
+ "cd_series": 0.9963013862450486,
+ "nStepOuter": 12000,
+ "scale_m": 0.205711,
+ "ic_from": null,
+ "mesh": {
+  "ni": 365,
+  "nj": 65,
+  "wall_first_frac": 0.005
+ },
+ "bc_problem": "/home/sano/work/forge/case/44.vitiated_air_wt/problem_va3_M4.19_Lc8_eq.yaml",
+ "bc_gas": {
+  "Pt": 1139000.0,
+  "Tt": 1161.0,
+  "Y": {
+   "H2O": 0.0376954,
+   "N2": 0.639778,
+   "O2": 0.237501,
+   "AR": 0.0109448,
+   "CO2": 0.0740808
+  }
+ },
+ "ic_exit": {
+  "M_exit_1d": 4.18574922083947,
+  "P_exit_1d": 5066.064667300258,
+  "T_exit_1d": 283.212505297141
+ }
+}
