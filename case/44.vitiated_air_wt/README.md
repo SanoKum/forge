@@ -339,6 +339,58 @@ $L$ を作る置換は可能だが上記の差の説明にはならない。
 | 5.0 | eq | `run_0090_va2c_M5.0_eq` | 35.6 | 4.344 | 246.8 | 2770 | 0.88 | 0.52 | **4.416** | 241.6 | 0.61 | 1.9 % | 1.6 | 5.7 (258 K) |
 
 
+## 新条件 v3 (2026-08-19): $P_t$ 1,139,000 Pa / $T_t$ 1161 K / 新組成 — M_d 4.19 ノズル再設計 (`run_0091`–`0093`, va3)
+
+ユーザ指定 (2026-08-19): $P_t$=1.139 MPa、$T_t$=**1161 K**、モル分率 H₂O 6.09135e-2 / N₂ 6.64860e-1 / O₂ 2.16072e-1 / Ar 7.97588e-3 / CO₂ 4.90034e-2
+(**Σ=0.998825 なので正規化**して使用; 欠けの 0.12 % は微量種の省略と解釈)。出口 φ1600 mm・入口配管 φ1600 mm・$M_d$=4.19 は同じ。
+`problem_va3_M4.19_Lc{8,9}_dry.yaml` / `problem_va3_M4.19_Lc8_noneq.yaml` (R2/$L_U$6、`r_inlet: 3.889` = 0.800/$r_t$; va/va2 の 3.8 は $r_t$ 0.2106 用の値なので付け替え)。
+
+**導出量** (semi-perfect NASA-9 frozen、`forge_design.gas.semiperfect`):
+
+| 量 | va2 (Pt 1.137 / Tt 1058) | **va3 (Pt 1.139 / Tt 1161)** |
+| --- | --- | --- |
+| 質量分率 H2O / N2 / O2 / AR / CO2 | 0.02866 / 0.67326 / 0.23017 / 0.01146 / 0.05645 | **0.0376954 / 0.6397780 / 0.2375010 / 0.0109448 / 0.0740808** |
+| $MW_{\rm mix}$ / $R$ | 29.081 g/mol / 285.911 J/kgK | **29.146 g/mol / 285.270 J/kgK** |
+| $\gamma^*$ ($T^*$) / $\gamma(T_t)$ / $c_p(T_t)$ | 1.3275 (912.6 K) / 1.3162 / 1190.2 | **1.31526 (1004.7 K) / 1.30496 / 1220.7** |
+| $A/A^*(4.19)$ | 14.436 | **15.124** |
+| $r_t$ (スロート径) | 0.210556 m (φ421.1) | **0.205711 m (φ411.42 mm)** |
+| 出口 $T$ / $P$ / $\gamma_e$ | 252.5 K / 5223 Pa / 1.393 | **282.8 K / 5037 Pa / 1.388** |
+| $P^*$ / $\rho^*$ / $a^*$ / 質量流量 | — | 618.2 kPa / 2.157 kg/m³ / 614.0 m/s / **176 kg/s** |
+
+$T_t$ が 100 K 高く γ が下がるので同じ $M_d$ でも $A/A^*$ が 4.8 % 増え、**スロートは φ411.4 mm へ 2.3 % 縮む** (出口固定)。出口 T は 283 K で
+va2 より 30 K 高い → **凝縮は起きない** (S max 0.27、全域で過冷却なし; noneq run で g≡0)。
+
+**CFD (node Euler TP semi-perfect, 段階起動 12000 step, 全 run メッシュ PASS・NaN 0)**:
+
+| run | L_c | θ_max° | κ₀R | x_F [r_t] | 全長 / 拡大部 [m] | ‖ΔM‖∞/M_d | 出口軸 M | コア M (質量平均) | ε_M | ε_θ° | over | 軸 T min / 出口 T,P | S max / g |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **`run_0091_va3_M4.19_Lc8_dry`** | 8 | 20.94 | 1.005 | 24.24 | **6.323 / 4.986** | **0.061 %** | 4.1899 | 4.1903 | 0.011 % | 0.019 | +0.16 % | 282.1 K / 282.8 K, 5042 Pa | 0.27 / — |
+| `run_0092_va3_M4.19_Lc8_noneq` | 8 | 同上 | 同上 | 同上 | 同上 | 0.061 % | 4.1899 | 4.1903 | 0.011 % | 0.019 | +0.16 % | 同上 | 0.27 / **0** |
+| `run_0093_va3_M4.19_Lc9_dry` | 9 | 20.61 | 1.000 | 25.23 | 6.528 / 5.191 | 0.050 % | 4.1903 | 4.1903 | 0.009 % | 0.017 | +0.15 % | 282.1 K / 282.7 K, 5042 Pa | 0.27 / — |
+
+- 傾向は va (旧条件) と同じ: **R2/$L_U$6/$L_c$8 で 0.061 %** ($L_c$9 は 0.050 % で同等、0.2 m 長い)。無次元設計は Tt/組成にほとんど依存せず
+  (γ\* 1.3275→1.3153 で θ_max +0.4°、x_F +0.33 $r_t$)、寸法は $r_t$ の縮小分だけ短くなる (全長 6.40→**6.32 m**)。**生産基準は $L_c$=8 (`run_0091`)**。
+- 収束・定常: `check_convergence.py` は 3 run とも **NOT CONVERGED** (warm 床 plateau: rms_ro 5.5e-7 / rms_roUx 2.9e-4 / rms_roUy 4.4e-4 / rms_roe 0.54 [絶対値];
+  「収束した」とは書かない)、`check_quasisteady.py --quantity machmax,pmax` **STEADY**、設計区間の軸 M は 8k→12k で |ΔM|≤9e-6 で凍結、
+  `res_12000.h5` は P∈[4.999 k, 1.1383 M] Pa・T∈[282.1, 1160.8] K・NaN 0、`residual_history.csv` 全列 NaN 0。
+- 図: `figs/va3_axis_mach.png` (軸 M 目標 vs CFD + 誤差, 3 run)、`figs/va3_mach_contour_run_0091.png`、`figs/va3_vs_va2_wall.png` (va2 M4.19 壁との差)。
+- 補足: 最初に `r_inlet 3.8` のまま回した 3 run (入口 φ1563 mm) は破棄し、同じ run 番号で 3.889 版に差し替えた (壁・指標とも差は入口直管径のみ、‖ΔM‖∞ 0.061 % 同一)。
+
+**推奨形状の実寸 (va3, R2/$L_U$6/$L_c$8, Euler 版 = 非粘性設計壁)**: $r_t$=0.205711 m、$R$=2 $r_t$=0.41142 m、$L_U$=6 $r_t$=1.23427 m。
+入口直管 x=−1.3371 m (φ1600、長さ 0.5 $r_t$)、収縮開始 x=−1.2343 m、スロート φ411.42 mm @x=0、**出口 x=+4.9858 m (φ1596.9 mm; 1D 理論比 −0.19 %)**、
+**全長 6.323 m**、最大壁角 20.94° @x=0.250 m。収縮 Hermite は va と同式 ($\xi=(\hat x+6)/6$) で $\hat r(\xi)=3.889-19.89\xi^3+25.335\xi^4-8.334\xi^5$
+($\hat r$=3.889 → 1、$\hat r'(0)=\hat r''(0)=\hat r'(1)=0$、$d^2\hat r/d\hat x^2(1)=1/R$; 一般形 $\hat r=r_i-(10\Delta-\tfrac{L_U^2}{2R})\xi^3+(15\Delta-\tfrac{L_U^2}{R})\xi^4-(6\Delta-\tfrac{L_U^2}{2R})\xi^5$, $\Delta=r_i-1$)。
+スロート下流は `run_0091_va3_M4.19_Lc8_dry/wall_design.csv` (逆 MOC 壁点列) の 5 次 B-spline。
+
+| x [m] | −1.3371 | −1.0525 | −0.6315 | −0.2105 | 0 | 0.1053 | 0.2105 | 0.4210 | 0.8420 | 1.6840 | 2.5261 | 3.3681 | 4.2101 | 4.9858 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| r [m] | 0.80001 | 0.78927 | 0.57227 | 0.25890 | 0.20571 | 0.22007 | 0.25750 | 0.33660 | 0.46995 | 0.64314 | 0.73637 | 0.78136 | 0.79690 | 0.79846 |
+
+**成果物**: `geometry/points_va3_M4.19_Lc{8,9}_euler.csv` (1028 点 [m + 無次元])、`geometry/nozzle_va3_M4.19_Lc{8,9}_euler.geo` (gmsh 軸対称半平面、
+構造化 365×64、physID inlet 1/outlet 2/wall 3/axis 4/fluid 5)、**`geometry/nozzle_va3_M4.19_Lc{8,9}_euler_mm.dat`** (mm, `x r` 2 列)。
+再生成: `design/.venv-opt/bin/python case/44.vitiated_air_wt/export_wall_va.py --problem case/44.vitiated_air_wt/problem_va3_M4.19_Lc8_dry.yaml --kind euler --tag va3_M4.19_Lc8`。
+NS 版 (物理壁 = +δ\*) は未実施 — 必要なら va の v4 手順 (`run_ns_va.py`, δ\* 反復) を va3 条件で再実行する (Re が変わるので δ\* は再抽出が要る)。
+
 ## 問題定義
 
 | ファイル | R | L_U | L_c | 備考 |
@@ -348,6 +400,7 @@ $L$ を作る置換は可能だが上記の差の説明にはならない。
 | `problem_va_R2_LU{4,9}_Lc8.yaml` | 2 | 4/9 | 8 | L_U 感度 (基準 R2/L_c8) |
 | `problem_va2_M{4.19,4.3,4.4,4.5,4.75,5.0}_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 新条件 Pt 1.137 MPa / Tt 1058 K、M_d 別形状 × dry/非平衡/平衡 |
 | `problem_va2lp_M*_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 同上、背圧 0.3×dry 出口静圧 (結果は va2 と同一) |
+| `problem_va3_M4.19_Lc{8,9}_dry.yaml` / `problem_va3_M4.19_Lc8_noneq.yaml` | 2 | 6 | 8/9 | **新条件 v3 (Pt 1.139 MPa / Tt 1161 K / 新組成, r_inlet 3.889)** M_d 4.19 dry / 非平衡凝縮 |
 | `problem_va_R2_LU6_Lc8_split.yaml` / `_split_cond.yaml` / `_ns_split_cond.yaml` | 2 | 6 | 8 | 2 種 TP [MIXDRY,H2O] dry / +凝縮 (Euler) / NS v4 壁 + 凝縮 (未投入) |
 | `problem_va_R2_LU6_Lc8_ns_coarse.yaml` / `problem_va_R2_LU6_Lc8_ns.yaml` | 2 | 6 | 8 | NS: coarse 中継 (365×65, frac 5e-4, cfl1) / 本計算 (601×97, frac 3.5e-5, cfl1, 48000 step) |
 
@@ -367,6 +420,7 @@ $L$ を作る置換は可能だが上記の差の説明にはならない。
 | `run_0025`〜`run_0029_va_M{4.5,4.75,5.0,4.3,4.4}_*_split_cond` | **凝縮の M_d 感度** (同 Pt/Tt/組成/φ1600, M_d のみ変更, Euler+凝縮 ON 12000 step) | 4.19–4.4: g=0 / 4.5: 1e-4 / **4.75: 43 % 凝縮 (onset T 210 K)** / 5.0: 54 %。閾値 M_d≈4.7 (T≈210 K)。凝縮節の表 | active (**M_d 上限の根拠**) |
 | **`run_0031`〜`run_0048_va2_M*_{dry,noneq,eq}`** | **新条件 (Pt 1.137 MPa/Tt 1058 K) × M_d 6 点 × dry/非平衡/平衡凝縮** (`problem_va2_*.yaml`, `run_va2_batch.py`; eq は `condEqDTmax 10` の binary で再実行) | 上の表 (`study_va2_condensation.json`, `figs/va2_condensation_axis.png`)。非平衡閾値 M_d≈4.7 は不変、平衡なら M4.19 でも 9 % 凝縮・M −1.5 %。全 run 品質 PASS・NaN 0。各 run に `axis_values.csv` | active (**新条件・平衡凝縮の正本**) |
 | **`run_0079`〜`run_0090_va2c_M*_{noneq,eq}`** | **最終正本** (SLAU 二相修正 + CEA 潜熱 binary; va2fx と実質同値) | 上「成果物の所在」の表。各 run `axis_values.csv` | active (**正本**) |
+| **`run_0091_va3_M4.19_Lc8_dry`** / `run_0092_va3_M4.19_Lc8_noneq` / `run_0093_va3_M4.19_Lc9_dry` | **新条件 v3 (Pt 1.139 MPa / Tt 1161 K / 新組成 H2O 6.1 mol%) M_d 4.19 再設計** (`problem_va3_*.yaml`, R2/L_U6, r_inlet 3.889, node Euler TP 12000 step; 0092 は Kw+HK 非平衡凝縮 ON) | 上の v3 節。**L_c8 0.061 % (生産基準, 全長 6.32 m, スロート φ411.4)** / L_c9 0.050 % / 凝縮 g≡0 (S max 0.27, 出口 283 K)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。形状 `geometry/*va3*`、図 `figs/va3_*.png` | active (**v3 条件の正本**) |
 | `run_0067`–`0078` (va2fx) | SLAU 二相修正のみ (旧 L フィット) | va2c と T 0.002 K/g 1e-4 差 | superseded (記録) |
 | `run_0067`〜`run_0078_va2fx_M*_{noneq,eq}` (旧行) | **二相エネルギー非保存 (SLAU 面温度) 修正後の凝縮 12 run 再計算** (dry は va2lp `run_0049`… を流用) | 軸 h0 保存 ±0.1 %、出口跳ね消滅。M4.75/5.0 で非平衡→平衡に収束 (出口 M 4.34/4.39 vs 4.35/4.42)。**凝縮 run の正本**、`study_va2fx_exit.json`、`figs/va2fx_*.png` | active (**正本**) |
 | `run_0031`–`0048` (va2) / `run_0049`–`0066` (va2lp) の noneq/eq | 修正前 binary (h0 +0.6 % 非保存、T +4–5 K) | 傾向は同じだが数値は superseded。dry (`run_0031/34/37/40/43/46`, `0049/52/55/58/61/64`) は影響なし | superseded (記録) |
