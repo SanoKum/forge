@@ -647,6 +647,12 @@ void solverConfig::read(std::string fname)
         if (this->condensation == 1 && this->nCondSpecies < 1) {
             throw std::runtime_error("Key 'nCondSpecies' in 'condensation' must be >= 1 when condensation == 1.");
         }
+        if (this->condEquilibrium < 0 || this->condEquilibrium > 2) {
+            throw std::runtime_error("Key 'condEquilibrium' in 'condensation' must be 0, 1 or 2.");
+        }
+        if (this->condensation == 1 && this->condEquilibrium == 2 && this->nCondSpecies != 1) {
+            throw std::runtime_error("condEquilibrium == 2 (EOS-constrained equilibrium) supports nCondSpecies == 1 only.");
+        }
         if (this->condensation == 0) {
             this->nCondSpecies = 0; // off のときは登録しない
         }

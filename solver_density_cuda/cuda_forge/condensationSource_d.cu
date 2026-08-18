@@ -1,5 +1,6 @@
 #include "condensationTransport_d.cuh"  // wrapper 宣言 + 必要なクラス
 #include "condensationSource_d.cuh"
+#include "condensationEOS_d.cuh"       // cond_equilibrium_delta (緩和形平衡)
 
 #include <string>
 
@@ -28,35 +29,7 @@ __host__ __device__ inline void cond_vapor_state(
     }
 }
 
-// 平衡凝縮 (condEquilibrium=1): 現セル状態から e 一定で液相を Δ だけ変えたときの
-//   T(Δ) = T + Δ (L - R_w T)/(c_vg + g R_w)  (二相 EOS の線形化), p_v(Δ) = ρ (y_v0 - Δ) R_w T(Δ)
-// が p_sat(T(Δ)) と釣り合う Δ ∈ [-g, y_v0] を二分法で解く (F は Δ について単調減少)。
-// 戻り値 Δ (>0 凝縮, <0 蒸発)。plans/accepted/condensation-equilibrium.md。
-__host__ __device__ inline double cond_equilibrium_delta(
-    const CondSpeciesProps& cprops, double rod, double Td, double g, double yv0, double Rw, double cvg)
-{
-    const double L = cond_latent(cprops, Td);
-    const double slope = (L - Rw*Td)/(cvg + g*Rw);          // dT/dΔ
-    auto F = [&](double D) {
-        double Tn = Td + D*slope; if (Tn < 50.0) Tn = 50.0;
-        double yv = yv0 - D; if (yv < 0.0) yv = 0.0;
-        return rod*yv*Rw*Tn - cond_psat(cprops, Tn);
-    };
-    double lo = -g, hi = yv0;
-    if (hi <= 0.0) return (g > 0.0 ? -g : 0.0);
-    const double F0 = F(0.0);
-    if (F0 <= 0.0 && g <= 0.0) return 0.0;                 // 未飽和・液なし
-    if (F(lo) < 0.0) return lo;                             // 全蒸発しても未飽和
-    if (F(hi) > 0.0) return hi;                             // (理論上起きない) 全凝縮
-    if (F0 > 0.0) lo = 0.0; else hi = 0.0;
-    #pragma unroll 1
-    for (int it = 0; it < 48; ++it) {
-        const double mid = 0.5*(lo + hi);
-        if (F(mid) > 0.0) lo = mid; else hi = mid;
-        if (hi - lo < 1.0e-9*(fabs(yv0) + 1.0e-12)) break;
-    }
-    return 0.5*(lo + hi);
-}
+// cond_equilibrium_delta (緩和形平衡の Δ) は condensationEOS_d.cuh へ移動 (EOS 拘束形と単体テストで共用)。
 
 // 相変化ソース kernel。pure (N2/CPG) と carrier (H2O/TP) の両対応。一温度 T_v=T_d=T。
 // J,r*,dr/dt は現在セル状態から freeze。安定化: J 上限、dr/dt<0→0、r̄≤r* 成長停止、g≤g_max、
@@ -115,8 +88,17 @@ __global__ void condensation_source_d(
     diagS[ic] = (flow_float)(pv/(psat_T > 1.0e-300 ? psat_T : 1.0e-300));
     diagTsat[ic] = (flow_float)cond_Tsat(cprops, pv, Td);
 
+    // ---- 平衡凝縮・EOS 拘束形 (condEquilibrium=2): g は dependentVariables が (T,g) 同時反転で決めて rog に
+    //      射影済み (plans/accepted/condensation-equilibrium-eos.md)。ここでは診断 (上の S, Tsat) だけ書き、rog の輸送残差を
+    //      0 に凍結して point-implicit 更新 δ=0 にする (rms_rog 恒等 0)。Q0-Q2 は緩和形と同じく輸送のみ。
+    if (eq == 2) {
+        res_rog[ic] = (flow_float)0.0;
+        sj_g[ic]    = (flow_float)0.0;
+        return;
+    }
+
     // ---- 平衡凝縮分岐 (condEquilibrium=1): g_eq への緩和。モーメント Q0-Q2 はソース 0 (輸送のみ) ----
-    if (eq) {
+    if (eq == 1) {
         const double yv0 = carrier ? (Yw - g) : (1.0 - g);
         const double D = cond_equilibrium_delta(cprops, rod, Td, g, (yv0 > 0.0 ? yv0 : 0.0), Rw, cvg);
         const double dt = (double)dt_local[ic];

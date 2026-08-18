@@ -125,3 +125,142 @@ __host__ __device__ inline double cond_T_from_e_onetemp(
     }
     return T;
 }
+
+// 平衡凝縮 (condEquilibrium=1): 現セル状態から e 一定で液相を Δ だけ変えたときの
+//   T(Δ) = T + Δ (L - R_w T)/(c_vg + g R_w)  (二相 EOS の線形化), p_v(Δ) = ρ (y_v0 - Δ) R_w T(Δ)
+// が p_sat(T(Δ)) と釣り合う Δ ∈ [-g, y_v0] を二分法で解く (F は Δ について単調減少)。
+// 戻り値 Δ (>0 凝縮, <0 蒸発)。plans/accepted/condensation-equilibrium.md。
+__host__ __device__ inline double cond_equilibrium_delta(
+    const CondSpeciesProps& cprops, double rod, double Td, double g, double yv0, double Rw, double cvg)
+{
+    const double L = cond_latent(cprops, Td);
+    const double slope = (L - Rw*Td)/(cvg + g*Rw);          // dT/dΔ
+    auto F = [&](double D) {
+        double Tn = Td + D*slope; if (Tn < 50.0) Tn = 50.0;
+        double yv = yv0 - D; if (yv < 0.0) yv = 0.0;
+        return rod*yv*Rw*Tn - cond_psat(cprops, Tn);
+    };
+    double lo = -g, hi = yv0;
+    if (hi <= 0.0) return (g > 0.0 ? -g : 0.0);
+    const double F0 = F(0.0);
+    if (F0 <= 0.0 && g <= 0.0) return 0.0;                 // 未飽和・液なし
+    if (F(lo) < 0.0) return lo;                             // 全蒸発しても未飽和
+    if (F(hi) > 0.0) return hi;                             // (理論上起きない) 全凝縮
+    if (F0 > 0.0) lo = 0.0; else hi = 0.0;
+    #pragma unroll 1
+    for (int it = 0; it < 48; ++it) {
+        const double mid = 0.5*(lo + hi);
+        if (F(mid) > 0.0) lo = mid; else hi = mid;
+        if (hi - lo < 1.0e-9*(fabs(yv0) + 1.0e-12)) break;
+    }
+    return 0.5*(lo + hi);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 平衡凝縮・EOS 拘束形 (condEquilibrium=2, plans/accepted/condensation-equilibrium-eos.md)
+//   液相分率 g を輸送量ではなく状態量として、保存量 (ρ, e_in, Y_w) から (T, g) を同時反転する。
+//     未飽和: g=0, e_gas(T)=e_in, p_v=ρ Y_w R_w T <= p_sat(T)
+//     飽和  : e_gas(T)+g(R_w T-L)=e_in かつ ρ (Y_w-g) R_w T = p_sat(T),  0<g<=Y_w
+//   G(g) = ρ(Y_w-g)R_w T(g) - p_sat(T(g)) は g について単調減少 (g↑: 蒸気↓, 潜熱で T↑→p_sat↑) で
+//   G(0)>0, G(Y_w)=-p_sat<0 なので解は唯一。括弧付き Newton (解析 dG/dg) + 二分法退避。
+//   T(g) の内側反転は呼び出し側が渡す関数 (carrier: cond_T_from_e_carrier / pure: onetemp, cpg)。
+// ---------------------------------------------------------------------------------------------
+
+// 共通反復器。tfun(g, T_guess) が T(g) を返す。pv_coef*(Yw-g)*T = 蒸気分圧 (pv_coef=ρR_w、pure は Yw=1)。
+// dTdg(g,T) は dT/dg (Newton 用、粗くてよい: 括弧で保護)。戻り値 g、*T_out に T。
+template <class TFun, class DTFun>
+__host__ __device__ inline double cond_eq_solve_g(
+    TFun tfun, DTFun dTdg, const CondSpeciesProps& cprops,
+    double pv_coef, double Yw, double g_guess, double T_guess, double* T_out)
+{
+    // 1) 乾き判定
+    double T0 = tfun(0.0, T_guess);
+    const double G0 = pv_coef*Yw*T0 - cond_psat(cprops, T0);
+    if (!(Yw > 0.0) || G0 <= 0.0) { *T_out = T0; return 0.0; }
+    // 2) 括弧 [lo,hi] = [0, Yw] (G(lo)>0, G(hi)<0)。初期 g は前ステップ値をクランプ。
+    double lo = 0.0, hi = Yw;
+    double g = g_guess;
+    if (!(g > 0.0)) g = 0.5*Yw;
+    if (g >= Yw) g = 0.999*Yw;
+    double T = T0;
+    #pragma unroll 1
+    for (int it = 0; it < 40; ++it) {
+        T = tfun(g, T);
+        const double ps = cond_psat(cprops, T);
+        const double G  = pv_coef*(Yw - g)*T - ps;
+        if (fabs(G) <= 1.0e-8*ps) break;
+        if (G > 0.0) lo = g; else hi = g;
+        if (hi - lo <= 1.0e-10*Yw) { g = 0.5*(lo + hi); break; }
+        // Newton: dG/dg = -pv_coef*T + [pv_coef*(Yw-g) - dpsat/dT] * dT/dg
+        const double dps = (cond_psat(cprops, T + 0.05) - cond_psat(cprops, T - 0.05))/0.1;
+        const double dGdg = -pv_coef*T + (pv_coef*(Yw - g) - dps)*dTdg(g, T);
+        double gn = (dGdg < 0.0) ? g - G/dGdg : -1.0;
+        if (!(gn > lo && gn < hi)) gn = 0.5*(lo + hi);   // 括弧外 → 二分法
+        g = gn;
+    }
+    T = tfun(g, T);
+    *T_out = T;
+    return g;
+}
+
+// carrier + condensible (TP): Y は総質量分率 (蒸気+液の総水を含む)、Yw = Y[condGasSpecies]。
+__host__ __device__ inline double cond_equilibrium_Tg_carrier(
+    const SpeciesThermo* sp, int nSp, const double* Y,
+    double e_in, double rho, double Yw, double Rw, const CondSpeciesProps& cprops,
+    double T_guess, double g_guess, double T_min, double T_max, double* T_out)
+{
+    const double Rmix = thermo_R_mix(sp, nSp, Y);
+    auto tfun = [&](double g, double Tg) -> double {
+        if (g > 1.0e-14) return cond_T_from_e_carrier(sp, nSp, Y, e_in, g, Rw, cprops, Tg, T_min, T_max);
+        return thermo_T_from_e(sp, nSp, Y, e_in, Tg, T_min, T_max);
+    };
+    auto dTdg = [&](double g, double T) -> double {
+        double cp_T, h_T; thermo_cph_mix(sp, nSp, Y, T, &cp_T, &h_T);
+        const double cv = cp_T - Rmix;
+        const double L  = cond_latent(cprops, T);
+        const double dL = (cond_latent(cprops, T + 0.1) - cond_latent(cprops, T - 0.1))/0.2;
+        double den = cv + g*(Rw - dL); if (den < 1.0e-2*cv) den = 1.0e-2*cv;
+        return (L - Rw*T)/den;
+    };
+    return cond_eq_solve_g(tfun, dTdg, cprops, rho*Rw, Yw, g_guess, T_guess, T_out);
+}
+
+// pure-condensible (TP; 気相=凝縮種、p_v=ρ(1-g)R T)。
+__host__ __device__ inline double cond_equilibrium_Tg_pure_tp(
+    const SpeciesThermo* sp, int nSp, const double* Y,
+    double e_in, double rho, const CondSpeciesProps& cprops,
+    double T_guess, double g_guess, double T_min, double T_max, double* T_out)
+{
+    const double R = thermo_R_mix(sp, nSp, Y);
+    auto tfun = [&](double g, double Tg) -> double {
+        if (g > 1.0e-14) return cond_T_from_e_onetemp(sp, nSp, Y, e_in, g, Tg, T_min, T_max);
+        return thermo_T_from_e(sp, nSp, Y, e_in, Tg, T_min, T_max);
+    };
+    auto dTdg = [&](double g, double T) -> double {
+        double cp_T, h_T; thermo_cph_mix(sp, nSp, Y, T, &cp_T, &h_T);
+        const double cv = cp_T - R;
+        const double L  = cond_latent(cprops, T);
+        const double dL = (cond_latent(cprops, T + 0.1) - cond_latent(cprops, T - 0.1))/0.2;
+        double den = cv + g*(R - dL); if (den < 1.0e-2*cv) den = 1.0e-2*cv;
+        return (L - R*T)/den;
+    };
+    return cond_eq_solve_g(tfun, dTdg, cprops, rho*R, 1.0, g_guess, T_guess, T_out);
+}
+
+// pure-condensible (CPG)。cv, R は定数。
+__host__ __device__ inline double cond_equilibrium_Tg_pure_cpg(
+    double e_in, double rho, double cv, double R, const CondSpeciesProps& cprops,
+    double T_guess, double g_guess, double* T_out)
+{
+    auto tfun = [&](double g, double Tg) -> double {
+        if (g > 1.0e-14) return cond_T_from_e_cpg(e_in, g, cv, R, Tg, cprops);
+        double T = e_in/cv; return (T > 1.0) ? T : 1.0;
+    };
+    auto dTdg = [&](double g, double T) -> double {
+        const double L  = cond_latent(cprops, T);
+        const double dL = (cond_latent(cprops, T + 0.1) - cond_latent(cprops, T - 0.1))/0.2;
+        double den = cv + g*(R - dL); if (den < 1.0e-2*cv) den = 1.0e-2*cv;
+        return (L - R*T)/den;
+    };
+    return cond_eq_solve_g(tfun, dTdg, cprops, rho*R, 1.0, g_guess, T_guess, T_out);
+}

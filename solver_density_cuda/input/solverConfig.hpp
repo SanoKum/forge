@@ -355,7 +355,9 @@ public:
     double condEvapRmin    = 1.0e-9; // 完全蒸発 (4 モーメント 0 化) とみなす体積平均半径 r30 [m]。r30<2*rmin で消滅
     int    condEvapKelvin  = 0;   // 蒸発駆動力に Kelvin 項 p_d=p_sat exp(K_e/r) を含める (0: 平面 p_sat, 既定; 正帰還回避)
     // 平衡凝縮 (plans/accepted/condensation-equilibrium.md): 核生成・成長を経ず各セルで p_v=p_sat(T) の g_eq へ緩和。
-    int    condEquilibrium = 0;   // 1: 平衡凝縮 (モーメント Q0-Q2 ソース 0)、0: 非平衡 (既定)
+    int    condEquilibrium = 0;   // 0: 非平衡 (既定) / 1: 平衡凝縮・緩和形 (ソース S_g=αρΔ/dt, モーメント Q0-Q2 ソース 0)
+                                  // / 2: 平衡凝縮・EOS 拘束形 (dependentVariables で (T,g) 同時反転し rog へ射影、rog 輸送は凍結;
+                                  //      plans/accepted/condensation-equilibrium-eos.md)
     double condEqRelax     = 1.0; // 平衡緩和係数 α: S_g = α ρ (g_eq - g)/dt_loc
     double condEqDTmax     = 10.0; // 平衡分岐の 1 step 潜熱 ΔT 上限 [K] (非平衡の 1 K では急膨張で平衡に追いつかない: case/44 va2 M5 で S 67 残留)
     double condEqDgMax     = 0.05; // 平衡分岐の 1 step Δg 上限

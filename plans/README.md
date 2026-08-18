@@ -49,6 +49,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [condensation-equilibrium-eos.md](accepted/condensation-equilibrium-eos.md) | `condensation` | **平衡凝縮の EOS 拘束形** (`condEquilibrium: 2`, 2026-08-19 実装・検証済): 湿り度 g を dependentVariables で $(T,g)$ 同時反転 (括弧付き Newton) して `rog` に射影、輸送凍結。飽和セルで厳密 S=1・過冷却 0 (緩和形は onset 帯 ~2 r_t で S≤1.18)。下流は緩和形と固定点一致 (case/44 run_0098 vs 0097: |ΔM|≤1e-3) |
 | [condensation-equilibrium.md](accepted/condensation-equilibrium.md) | `condensation` | **平衡凝縮** (2026-08-18 実装・検証済): 各セルで $p_v=p_{sat}(T)$ の $g_{eq}$ へ緩和 (`condEquilibrium`, 平衡専用 ΔT/Δg 律速)、モーメントはソース 0。診断 `condTsat_<s>` ($T_{sat}(p_v)$)。case/44 新条件 6 点で S→1 (onset 後 ~1 r_t)、出口凝縮率 9–45 %、M4.19 は CEA 平衡 8 % と整合 |
 | [condensation-evaporation.md](accepted/condensation-evaporation.md) | `condensation` | 非平衡凝縮に**蒸発** (2026-08-18 実装・検証済, 既定 ON): S≤1 で統一駆動力 (Kelvin 項は正帰還回避で既定 off, 質量収支不変) の負成長を $r_{30}$・λ スケール (半減/step 律速) で適用し $r_{30}<2$ nm で一括消滅。0-D HK 解析解一致、Euler 圧縮帯で S 0.67→0.87/−4.4 K、Wyslouzil 回帰同一、NS 高温壁 (920 K) で T>400 K の液相 0。残: 二温度・亜臨界・液滴乱流拡散 |
 | [tooling-nozzle-semiperfect-gas.md](accepted/tooling-nozzle-semiperfect-gas.md) | `tooling / optimization` | **semi-perfect gas (NASA-9/CEA, frozen) を MOC に実装** (2026-08-17): forge 内蔵 DB と同一係数、ν/A/A*/ρV をテーブル化、MOC カーネルは γ の位置にガスモデルを受ける。燃焼ガスは γ 1.31→1.38 で一定 γ の CPG は出口径 8% 誤る。**イソブタン風洞 (5 MPa/1000 K/M4.2/出口 1 m) の R/L スタディ**: 推奨 R=3, L_U=6, L_c=max (全長 4.35 m, 誤差 0.26%)、R=5 設計不能、L_c=8 は R≥2 でゲート外、L_U は出口一様性に効く。**申し送り: TP×node 軸対称は forge 側で発散** (axisymMethod:1 は CPG でも出口軸コーナーで発散 [case/41 run_0076])。run case/42 0001–0019 |

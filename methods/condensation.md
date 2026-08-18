@@ -118,8 +118,40 @@ $g_{eq}=g+\Delta$ を得る。$F(0)\le0$ かつ $g=0$ (未飽和・液なし) �
 (Murphy–Koop) を使う (氷ではない — CEA 平衡の H₂O(cr) とは基準が違うので比較時に注意)。
 
 **用途**: 非平衡 (Wilson 点で遅れて一気に凝縮) に対し「凝縮し得る最大量と、それによる $T$・$p$・$M$ の変化」の上限評価。
+(θ 遅れの無い代数拘束版は次節の `condEquilibrium=2`。)
 実装は `condensation_source_d` の `eq` 分岐 (`cond_equilibrium_delta`)。診断 `condTsat_<s>` = $T_{sat}(p_v)$
 (過冷却度 $T_{sat}-T$ の評価用、非平衡でも出力) を併せて追加した ($p_{sat}$ の Newton 反転、$p_v\to0$ では 0)。
+
+#### 平衡凝縮 — EOS 拘束形 (`condEquilibrium=2`, 2026-08-19)
+
+上の緩和形 (`condEquilibrium=1`) は「各セルで過冷却ゼロになる $g_{eq}$」をソース項で擬似時間緩和させるため、
+定常では飽和線に乗るが、θ 律速 (`condEqDTmax`/`condEqDgMax`) の分だけ **onset 直後 ~2 $r_t$ で $S$ が 1.2 程度残る**
+(case/44 `run_0097`)。EOS 拘束形は $g$ を輸送量ではなく**状態量**として扱い、従属変数計算 (`dependentVariables_d`) の中で
+$(T, g)$ を保存量 $(\rho, e, Y_w)$ から代数的に決める (湿り度 β の内部反復に相当):
+
+$$
+\text{未飽和: } g=0,\ e_{gas}(Y,T)=e_{in},\ p_v=\rho Y_wR_wT\le p_{sat}(T)
+\qquad
+\text{飽和: } \begin{cases} e_{gas}(Y,T)+g\,(R_wT-L(T))=e_{in}\\ \rho\,(Y_w-g)\,R_w\,T=p_{sat}(T)\end{cases}\quad 0<g\le Y_w
+$$
+
+解法: まず $g=0$ で $T_0$ を反転し $p_v(T_0)\le p_{sat}(T_0)$ なら乾き。飽和なら $G(g)\equiv\rho(Y_w-g)R_wT(g)-p_{sat}(T(g))$
+($T(g)$ は内側 Newton `cond_T_from_e_carrier`) を $g\in[0,Y_w]$ で解く。$G(0)>0$, $G(Y_w)=-p_{sat}<0$ で $G$ は単調減少
+($g$↑ で蒸気↓・潜熱で $T$↑・$p_{sat}$↑) なので**唯一解**。前ステップの $g$ を初期値に括弧付き Newton
+($dG/dg=-\rho R_wT+[\rho(Y_w-g)R_w-p_{sat}']\,dT/dg$, $dT/dg=(L-R_wT)/(c_v+g(R_w-L'))$) を回し、括弧外に出れば二分法へ退避する。
+pure-condensible では $p_v=\rho(1-g)R_vT$、$Y_w\to1$。
+
+得られた $g_{eq}$ を **`rog` に書き戻す (射影)** ので、SLAU 面温度・潜熱補正・出力 `g_<s>` は全て $g_{eq}$ を見る。
+`rog` の輸送方程式は残差 0・ソース 0 にして凍結 (`rms_rog` は恒等 0)、モーメント $Q_0$–$Q_2$ は緩和形と同じく輸送のみ (意味なし)。
+診断 `condS_<s>`/`condTsat_<s>` は緩和形と同じく source kernel が書く (飽和セルでは厳密に $S=1$、$T_{sat}=T$)。
+
+緩和形との関係: 定常解の固定点は同一 (どちらも「飽和線上か乾き」)。差は (i) onset 直後の θ 遅れが無い、
+(ii) 過渡・非定常でも各ステップで厳密平衡、(iii) $g$ が対流でなく熱力学で決まるので流線に沿った履歴を持たない
+(平衡なので本来そうあるべき)。飽和線は緩和形と同じ過冷却液 (Murphy–Koop)。陰解法との結合は従来どおり loose
+(NS ブロックの $\kappa$ は気相 frozen のまま。平衡音速への置換は未実装 — 収束不良時の候補)。
+`nCondSpecies>=2` では未対応 (エラー)。実装は `cond_eq_solve_g` / `cond_equilibrium_Tg_{carrier,pure_tp,pure_cpg}` (`condensationEOS_d.cuh`)、
+単体テスト `tests/unit/test_cond_equilibrium_eos.cpp`。case/44 `run_0098` (旧条件×va3 形状) で onset 以降 S=1.0000・過冷却 0.000 K、下流は緩和形と一致。設定・検証は
+[plans/accepted/condensation-equilibrium-eos.md](../plans/accepted/condensation-equilibrium-eos.md)。
 
 #### 統一駆動力と蒸発 (負成長, `condEvaporation=1`)
 

@@ -419,6 +419,12 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
   `check_convergence` は warm 床 plateau で **NOT CONVERGED** (「収束した」とは書かない)。旧条件 run は P∈[4.64 k, 1.136 M] Pa・T∈[244, 1058] K。
 - 平衡凝縮モデルの性格 (緩和形・過冷却液飽和線・onset 帯 ~2 r_t の遅れ) は [`plans/accepted/condensation-equilibrium.md`](../../plans/accepted/condensation-equilibrium.md)。
   `run_0097` の軸では onset+2 r_t 以降 |Tsat−T|≤0.35 K・S∈[0.992, 1.030] で飽和線上、onset 直後 1.7 r_t だけ S≤1.18 (θ 律速の遅れ)。
+- **平衡凝縮 EOS 拘束形 (`condEquilibrium: 2`, 2026-08-19 実装)**: `run_0098_va3old_Lc8_eq2` (= `run_0097` の設定で 1→2)。湿り度 g を
+  従属変数計算で $(T,g)$ 同時反転して決めるので **onset (x=6.21) 以降 全軸で S=1.0000・過冷却 0.000 K** (緩和形の θ 遅れ帯が消える)。
+  下流 x>8.5 は緩和形と |ΔM|≤1e-3・|ΔT|≤0.14 K・|Δg|≤1e-4 で一致 (出口 g/Y 12.8 %、T 259.0 K、質量平均 M 4.144 同値)、差は onset 帯
+  (5<x<8.5) の ΔM −0.015・ΔT +1.8 K だけ。段階起動そのまま完走、PASS・NaN 0・STEADY・`rms_rog` 恒等 0・軸 h0 保存 5.7e-4。
+  回帰: 新 binary の dry `run_0099` / 緩和形 `run_0100` は旧 binary と相対 ≤2e-6 (node の run 間ノイズ床)。
+  図 `figs/va3_eq2_vs_eq1_axis.png`。設計判断 [`plans/accepted/condensation-equilibrium-eos.md`](../../plans/accepted/condensation-equilibrium-eos.md)。
 
 ## 問題定義
 
@@ -430,7 +436,7 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
 | `problem_va2_M{4.19,4.3,4.4,4.5,4.75,5.0}_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 新条件 Pt 1.137 MPa / Tt 1058 K、M_d 別形状 × dry/非平衡/平衡 |
 | `problem_va2lp_M*_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 同上、背圧 0.3×dry 出口静圧 (結果は va2 と同一) |
 | `problem_va3_M4.19_Lc{8,9}_dry.yaml` / `problem_va3_M4.19_Lc8_{noneq,eq}.yaml` | 2 | 6 | 8/9 | **新条件 v3 (Pt 1.139 MPa / Tt 1161 K / 新組成, r_inlet 3.889)** M_d 4.19 dry / 非平衡 / 平衡凝縮 |
-| `problem_va3old_Lc8_{dry,noneq,eq}.yaml` | 2 | 6 | 8 | **va3 L_c8 形状に旧条件 (Pt 1.137 MPa / Tt 1058 K / 旧組成) を流す off-design 用** (形状は `problem_va3_M4.19_Lc8_dry.yaml` から; `run_va3old_batch.py`) |
+| `problem_va3old_Lc8_{dry,noneq,eq,eq2}.yaml` | 2 | 6 | 8 | **va3 L_c8 形状に旧条件 (Pt 1.137 MPa / Tt 1058 K / 旧組成) を流す off-design 用** (形状は `problem_va3_M4.19_Lc8_dry.yaml` から; `run_va3old_batch.py`) |
 | `problem_va_R2_LU6_Lc8_split.yaml` / `_split_cond.yaml` / `_ns_split_cond.yaml` | 2 | 6 | 8 | 2 種 TP [MIXDRY,H2O] dry / +凝縮 (Euler) / NS v4 壁 + 凝縮 (未投入) |
 | `problem_va_R2_LU6_Lc8_ns_coarse.yaml` / `problem_va_R2_LU6_Lc8_ns.yaml` | 2 | 6 | 8 | NS: coarse 中継 (365×65, frac 5e-4, cfl1) / 本計算 (601×97, frac 3.5e-5, cfl1, 48000 step) |
 
@@ -452,6 +458,7 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
 | **`run_0079`〜`run_0090_va2c_M*_{noneq,eq}`** | **最終正本** (SLAU 二相修正 + CEA 潜熱 binary; va2fx と実質同値) | 上「成果物の所在」の表。各 run `axis_values.csv` | active (**正本**) |
 | **`run_0091_va3_M4.19_Lc8_dry`** / `run_0092_va3_M4.19_Lc8_noneq` / `run_0093_va3_M4.19_Lc9_dry` | **新条件 v3 (Pt 1.139 MPa / Tt 1161 K / 新組成 H2O 6.1 mol%) M_d 4.19 再設計** (`problem_va3_*.yaml`, R2/L_U6, r_inlet 3.889, node Euler TP 12000 step; 0092 は Kw+HK 非平衡凝縮 ON) | 上の v3 節。**L_c8 0.061 % (生産基準, 全長 6.32 m, スロート φ411.4)** / L_c9 0.050 % / 凝縮 g≡0 (S max 0.27, 出口 283 K)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。形状 `geometry/*va3*`、図 `figs/va3_*.png` | active (**v3 条件の正本**) |
 | `run_0094_va3_M4.19_Lc8_eq` / **`run_0095_va3old_Lc8_dry`** / `run_0096_va3old_Lc8_noneq` / **`run_0097_va3old_Lc8_eq`** | **va3 L_c8 形状 (run_0091 と同一) × 入口条件 新 (0094 平衡) / 旧 (0095 dry, 0096 非平衡, 0097 平衡)** の軸中心比較 (`run_va3old_batch.py`, `compare_va3_conditions.py`) | 上の比較表。新条件は 3 変種同一 (未飽和)。旧条件 off-design: dry=noneq 出口 M 4.242 / 248 K (核生成せず)、平衡は 12 % 凝縮で M 4.141 / 259 K。全 run PASS・NaN 0・STEADY、NOT CONVERGED (warm 床)。`axis_compare_va3_vs_va3old.csv`、`figs/va3_cond_*.png` | active (**条件比較の正本**) |
+| **`run_0098_va3old_Lc8_eq2`** / `run_0099_va3old_Lc8_dry_eqbin` / `run_0100_va3old_Lc8_eq_eqbin` | **平衡凝縮 EOS 拘束形 `condEquilibrium: 2`** (0098; `problem_va3old_Lc8_eq2.yaml`) と、同 binary での回帰 dry (0099 = 0095 再実行) / 緩和形 (0100 = 0097 再実行) | 0098: onset 以降 S=1.0000・過冷却 0、下流は 0097 と一致 (|ΔM|≤1e-3)、出口 g/Y 12.8 %。回帰は旧 binary と ≤2e-6。`figs/va3_eq2_vs_eq1_axis.png` | active (**EOS 拘束形の検証正本**; 0099/0100 は回帰記録) |
 | `run_0067`–`0078` (va2fx) | SLAU 二相修正のみ (旧 L フィット) | va2c と T 0.002 K/g 1e-4 差 | superseded (記録) |
 | `run_0067`〜`run_0078_va2fx_M*_{noneq,eq}` (旧行) | **二相エネルギー非保存 (SLAU 面温度) 修正後の凝縮 12 run 再計算** (dry は va2lp `run_0049`… を流用) | 軸 h0 保存 ±0.1 %、出口跳ね消滅。M4.75/5.0 で非平衡→平衡に収束 (出口 M 4.34/4.39 vs 4.35/4.42)。**凝縮 run の正本**、`study_va2fx_exit.json`、`figs/va2fx_*.png` | active (**正本**) |
 | `run_0031`–`0048` (va2) / `run_0049`–`0066` (va2lp) の noneq/eq | 修正前 binary (h0 +0.6 % 非保存、T +4–5 K) | 傾向は同じだが数値は superseded。dry (`run_0031/34/37/40/43/46`, `0049/52/55/58/61/64`) は影響なし | superseded (記録) |

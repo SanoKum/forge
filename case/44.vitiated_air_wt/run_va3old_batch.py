@@ -60,6 +60,10 @@ JOBS = [
     ("run_0095_va3old_Lc8_dry",    CASE / "problem_va3old_Lc8_dry.yaml",   GEO_PROB),
     ("run_0096_va3old_Lc8_noneq",  CASE / "problem_va3old_Lc8_noneq.yaml", GEO_PROB),
     ("run_0097_va3old_Lc8_eq",     CASE / "problem_va3old_Lc8_eq.yaml",    GEO_PROB),
+    # --- 平衡凝縮 EOS 拘束形 (condEquilibrium 2) の binary で: 回帰 (dry / 緩和形 eq) + 本命 eq2 ---
+    ("run_0098_va3old_Lc8_eq2",    CASE / "problem_va3old_Lc8_eq2.yaml",   GEO_PROB),
+    ("run_0099_va3old_Lc8_dry_eqbin", CASE / "problem_va3old_Lc8_dry.yaml", GEO_PROB),   # 回帰: run_0095 とビット同一のはず
+    ("run_0100_va3old_Lc8_eq_eqbin",  CASE / "problem_va3old_Lc8_eq.yaml",  GEO_PROB),   # 回帰: run_0097 と同一のはず
 ]
 
 if __name__ == "__main__":

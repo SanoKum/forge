@@ -23,6 +23,7 @@ __global__ void dependentVariables_d
  // 非平衡凝縮 (一温度 二相 EOS)。condensation==0 のとき従来経路 (ビット不変)。
  int condensation , int nCondSpecies , flow_float** rog ,
  int condGasSpecies , int condModel ,   // carrier+condensible: 凝縮気相種 index / モデル(0:N2,1:H2O)
+ int condEquilibrium ,                  // 2: EOS 拘束形平衡 ((T,g) 同時反転 → rog 射影)。0/1 は従来経路
 
  // mesh structure
  geom_int nCells_all , geom_int nCells,
@@ -115,7 +116,21 @@ __global__ void dependentVariables_d
 
             // 温度反転。g≈0 は従来 thermo_T_from_e で厳密縮約。
             double Tnew;
-            if (g_liq > 1.0e-12 && carrier) {
+            if (condensation == 1 && condEquilibrium == 2 && rog != nullptr) {
+                // EOS 拘束形平衡: g を状態量として (T,g) を同時反転し、rog[0] に射影する
+                // (plans/accepted/condensation-equilibrium-eos.md)。輸送値 g_liq は初期値にだけ使う。
+                double g_eq;
+                if (carrier) {
+                    const double Yw = (roY != nullptr) ? (double)roY[condGasSpecies][ic]/(double)ro_temp : 0.0;
+                    g_eq = cond_equilibrium_Tg_carrier(sp, nSpecies, Y, e_in, (double)ro_temp, (Yw > 0.0 ? Yw : 0.0),
+                                                       Rw, cprops, Tg, g_liq, DEPVAR_TMIN, DEPVAR_TMAX, &Tnew);
+                } else {
+                    g_eq = cond_equilibrium_Tg_pure_tp(sp, nSpecies, Y, e_in, (double)ro_temp, cprops,
+                                                       Tg, g_liq, DEPVAR_TMIN, DEPVAR_TMAX, &Tnew);
+                }
+                g_liq = g_eq;
+                rog[0][ic] = (flow_float)((double)ro_temp*g_eq);
+            } else if (g_liq > 1.0e-12 && carrier) {
                 Tnew = cond_T_from_e_carrier(sp, nSpecies, Y, e_in, g_liq, Rw, cprops, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
             } else if (g_liq > 1.0e-12) {
                 Tnew = cond_T_from_e_onetemp(sp, nSpecies, Y, e_in, g_liq, Tg, DEPVAR_TMIN, DEPVAR_TMAX);
@@ -172,12 +187,22 @@ __global__ void dependentVariables_d
             const double cv = (double)cp/(double)gamma;            // cv = cp/γ
             const double Rgas = ((double)gamma - 1.0)*cv;          // R = cp - cv = (γ-1)cv
 
+            // EOS 拘束形平衡 (pure CPG): (T,g) 同時反転 → rog[0] 射影。g_eq>0 なら下の二相分岐へ流す。
+            double Tn_eq = 0.0;
+            const bool eq2 = (condensation == 1 && condEquilibrium == 2 && rog != nullptr);
+            if (eq2) {
+                const CondSpeciesProps cpropsEq = (condModel == 1) ? condProps_H2O() : condProps_N2();
+                const double Tguess = ((double)T[ic] > 1.0) ? (double)T[ic] : (double)max(intE/(cp/gamma), tMin);
+                g_liq = cond_equilibrium_Tg_pure_cpg((double)intE, (double)ro_temp, cv, Rgas, cpropsEq, Tguess, g_liq, &Tn_eq);
+                rog[0][ic] = (flow_float)((double)ro_temp*g_liq);
+            }
+
             if (g_liq > 1.0e-12) {
                 // 二相: e = cv T - g L(T) = intE を Newton で反転、p=(1-g)ρRT。
                 const double e_in = (double)intE;
                 const double Tguess = (double)max(intE/(cp/gamma), tMin);
                 const CondSpeciesProps cpropsCpg = (condModel == 1) ? condProps_H2O() : condProps_N2();
-                const double Tn = cond_T_from_e_cpg(e_in, g_liq, cv, Rgas, Tguess, cpropsCpg);
+                const double Tn = eq2 ? Tn_eq : cond_T_from_e_cpg(e_in, g_liq, cv, Rgas, Tguess, cpropsCpg);
                 const double L = cond_latent(cpropsCpg, Tn);
                 const double e_mix = (cv + g_liq*Rgas)*Tn - g_liq*L;   // = e_in
                 const double oneMg = 1.0 - g_liq;
@@ -233,6 +258,7 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
         // 非平衡凝縮 (二相 EOS)。condensation==0 で rog=nullptr/g=0 → 従来経路ビット不変。
         cfg.condensation , var.nCondSpeciesRegistered , cond_rog_device_ptr() ,
         cfg.condGasSpecies , cfg.condModel ,
+        cfg.condEquilibrium ,
 
         // mesh structure
         msh.nCells_all , msh.nCells ,
@@ -247,4 +273,9 @@ void dependentVariables_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mes
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
+    // EOS 拘束形平衡 (condEquilibrium==2): kernel が rog[0] を g_eq に射影したので、SLAU 面温度・潜熱補正・出力が
+    // 読む原始量 g_<s>=rog/ρ を同期する (realizability クランプも通る)。他モードでは呼ばない (従来経路不変)。
+    if (cfg.condensation == 1 && cfg.condEquilibrium == 2 && var.nCondSpeciesRegistered >= 1) {
+        condensationPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);
+    }
 }
