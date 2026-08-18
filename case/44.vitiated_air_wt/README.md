@@ -426,6 +426,54 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
   回帰: 新 binary の dry `run_0099` / 緩和形 `run_0100` は旧 binary と相対 ≤2e-6 (node の run 間ノイズ床)。
   図 `figs/va3_eq2_vs_eq1_axis.png`。設計判断 [`plans/accepted/condensation-equilibrium-eos.md`](../../plans/accepted/condensation-equilibrium-eos.md)。
 
+### M_d 4.19–5.0 の平衡凝縮を EOS 拘束形でやり直し (2026-08-19, `run_0101`–`0106`, va2eq2) — 旧入口条件 × 各 M_d のベストノズル
+
+**ノズル形状は作り直していない**: `problem_va2eq2_M*_eq2.yaml` は `problem_va2_M*_eq.yaml` の `condEquilibrium` 1→2 だけの差で、
+設計チェーンが再生成する壁 (`wall_design.csv`) とメッシュ座標は va2 の dry/eq run (`run_0049`… / `run_0080`…) と**バイト同一**
+(cmp で確認)。入口条件は旧 (Pt 1.137 MPa / Tt 1058 K / 旧組成)。M4.19 は参照 (`run_0106`; 新ノズル va3 での旧条件 eq2 は `run_0098`)。
+ドライバ `run_va2eq2_batch.py`、表 `exit_table_va.py "run_010[1-6]_va2eq2_*"` → `study_va2eq2_exit.json`、図 `figs/va2eq2_axis_all.png`
+(軸 M / T+Tsat / S / g の M_d 6 列: eq2 vs 緩和形 vs dry)。**各 run の `axis_values.csv` が軸中心の全物理量** (VALUE 全列 + `condS_0`/`condTsat_0`/`g_0`
++ 後処理 `pH2O_post`/`Tsat_post`/`subcool_post`/`S_post`; 89 列、va2c と同一フォーマット)。
+形状点列は既出の `geometry/points_va2_M*_euler.csv` / `nozzle_va2_M*_euler.geo` / `nozzle_va2_M*_euler_mm.dat` をそのまま使う。
+
+物理出口 (2 r_t 上流) の表 (`exit_table_va.py` 形式):
+
+| M_d | run (eq2) | 評価断面 x/r_t | 軸 M | 軸 T [K] | 軸 P [Pa] | 軸 S | 軸 g/Y_H₂O | **質量平均 M** | 質量平均 T | 質量平均 g/Y | コア M 幅 | 軸 S max | onset x (T) | 緩和形 (va2c) の質量平均 M / T |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 4.19 | `run_0106_va2eq2_M4.19_eq2` | 21.9 | 4.128 | 260.0 | 5285 | 1.00 | 0.10 | **4.122** | 260.4 | 0.08 | 0.3 % | **1.0** | 6.5 (263 K) | 4.122 / 260.3 (`run_0080`) |
+| 4.3 | `run_0101_va2eq2_M4.3_eq2` | 23.1 | 4.173 | 257.2 | 4641 | 1.00 | 0.19 | **4.162** | 257.8 | 0.16 | 0.4 % | 1.0 | 6.0 (263 K) | 4.162 / 257.8 (`run_0082`) |
+| 4.4 | `run_0102_va2eq2_M4.4_eq2` | 24.2 | 4.213 | 254.6 | 4139 | 1.00 | 0.26 | **4.198** | 255.5 | 0.24 | 0.5 % | 1.0 | 5.7 (262 K) | 4.198 / 255.5 (`run_0084`) |
+| 4.5 | `run_0103_va2eq2_M4.5_eq2` | 26.5 | 4.251 | 252.2 | 3707 | 1.00 | 0.34 | **4.235** | 253.3 | 0.31 | 0.6 % | 1.0 | 5.9 (262 K) | 4.234 / 253.3 (`run_0086`) |
+| 4.75 | `run_0104_va2eq2_M4.75_eq2` | 30.9 | 4.347 | 246.1 | 2844 | 1.00 | 0.50 | **4.325** | 247.5 | 0.47 | 0.8 % | 1.0 | 5.7 (262 K) | 4.324 / 247.5 (`run_0088`) |
+| 5.0 | `run_0105_va2eq2_M5.0_eq2` | 35.6 | 4.341 | 246.6 | 2885 | 1.00 | 0.49 | **4.417** | 241.6 | 0.61 | 2.0 % | 1.0 | 5.6 (263 K) | 4.416 / 241.6 (`run_0090`) |
+
+- 出口諸量は緩和形と **表示桁で同一** (固定点同一の確認)。違いは onset 直後の帯だけ: 緩和形の軸 S max 1.1–1.6 が eq2 では **全 M_d で
+  onset 以降 S=1.0000・|Tsat−T|=0.000 K**。M5.0 の緩和形は x≳33 の集束圧縮波の中で S 0.88 (再蒸発の遅れ) だったが eq2 は S=1 を保つ。
+- 全 6 run: メッシュ PASS、`check_quasisteady` machmax/pmax **ALL STEADY**、NaN 0 (残差・h5)、`rms_rog` 恒等 0、軸 h0 保存 4e-4〜2.3e-3
+  (M5.0 の 2.3e-3 は緩和形と同程度; 集束圧縮波域)。`check_convergence` は warm 床 plateau で NOT CONVERGED (収束とは書かない)。
+- **入口配管径の注意** (既往からの引き継ぎ): va2 の M4.3–5.0 ノズルは `r_inlet: 3.8` $r_t$ のままなので入口直管径は φ1524 / 1458 / 1397 /
+  1256 / 1133 mm (M4.19 のみ φ1600)。φ1600 に揃えるには `r_inlet=0.8/r_t` (3.99–5.37) にして収縮部 (L_U) を再設計する必要がある
+  (超音速部・凝縮結果には影響しない)。要否はユーザ判断。
+
+### NASA CEA2 との照合 — va3 新条件 (Pt 1.139 MPa / Tt 1161 K / 新組成) M4.19 dry `run_0091` (2026-08-19)
+
+`cea/va3_cea.inp` (rocket, frozen nfz=1, `only` 5 種、Pc 11.39 bar、反応物 1161 K、`pi/p` 35 点 + `supar=15.066` [CFD 実出口 A/A\*] と 15.124 [設計]、
+おまけに equilibrium 1 problem) → `cea/va3_cea.out` (FCEA2)。比較 `cea_check_va3.py` (`cea_check_va2.py` の va3 版) →
+`cea/cea_vs_forge_run_0091_va3_M4.19_Lc8_dry.{csv,png}`、CEA 表 `cea/cea_frozen_table_v3_fz.csv`、forge 軸 `cea/forge_axis_run_0091_va3_M4.19_Lc8_dry.csv`、
+ログ `cea/cea_check_va3_run_0091.log`。**CEA 関連の入出力は全て `cea/` に集約**。
+
+| 項目 | NASA CEA2 (frozen) | forge `run_0091` | 差 |
+| --- | --- | --- | --- |
+| $R$ (MW 29.146) | 285.269 J/kgK | $P/(\rho T)$ = 285.270 ± 0.000 | +0.000 % |
+| チャンバ $c_p$ / γ @1161 K | 1.2207 kJ/kgK / 1.3050 | (config cp 1220.7 / γ\* 1.31526) | — |
+| スロート $T^*$ / $\rho^*$ / $a^*$ / γ\* | 1004.70 K / 2.1570 / 614.0 / 1.3153 | 1004.68 / 2.1571 / 614.0 | −0.002 / +0.005 / +0.002 % |
+| 超音速 28 ステーション ($P_t/P$ 1.85–226) | — | — | **T ≤0.029 %、ρ ≤0.047 %、u ≤0.008 %、a ≤0.026 %、M ≤0.033 %** |
+| 出口 (A/A\* 15.066) | M 4.186 / T 283.21 K / P 5066 Pa / u 1401.9 | 質量平均 M 4.1903 / T 282.73 / P 5039 / u 1402.2 (軸 4.1900 / 282.76 / 5042) | 軸 M 則の設計で出口軸 M は 4.19 (1D 15.066 は 4.186、設計 A/A\* 15.124 で 4.190) |
+| 質量流量 / $C_d$ | 1D $\rho^*a^*A^*$ 176.07 kg/s | 175.48 kg/s (入口=出口) → $C_d$ 0.9967 | Hall 級数 0.9963 |
+| 軸 $h_0$ 保存 | — | spread 1.3e-4 | |
+
+結論: **新条件でも forge TP semi-perfect (NASA-9 単一擬似種) は CEA 凍結流と ≤0.05 % で一致** (va2 での 0.04 % と同水準)。
+
 ## 問題定義
 
 | ファイル | R | L_U | L_c | 備考 |
@@ -437,6 +485,7 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
 | `problem_va2lp_M*_{dry,noneq,eq}.yaml` | 2 | 6 | 8–11 | 同上、背圧 0.3×dry 出口静圧 (結果は va2 と同一) |
 | `problem_va3_M4.19_Lc{8,9}_dry.yaml` / `problem_va3_M4.19_Lc8_{noneq,eq}.yaml` | 2 | 6 | 8/9 | **新条件 v3 (Pt 1.139 MPa / Tt 1161 K / 新組成, r_inlet 3.889)** M_d 4.19 dry / 非平衡 / 平衡凝縮 |
 | `problem_va3old_Lc8_{dry,noneq,eq,eq2}.yaml` | 2 | 6 | 8 | **va3 L_c8 形状に旧条件 (Pt 1.137 MPa / Tt 1058 K / 旧組成) を流す off-design 用** (形状は `problem_va3_M4.19_Lc8_dry.yaml` から; `run_va3old_batch.py`) |
+| `problem_va2eq2_M{4.19,4.3,4.4,4.5,4.75,5.0}_eq2.yaml` | 2 | 6 | 8–11 | va2 ベストノズル (形状同一) × 旧条件 × **平衡凝縮 EOS 拘束形 `condEquilibrium 2`** (`run_va2eq2_batch.py`) |
 | `problem_va_R2_LU6_Lc8_split.yaml` / `_split_cond.yaml` / `_ns_split_cond.yaml` | 2 | 6 | 8 | 2 種 TP [MIXDRY,H2O] dry / +凝縮 (Euler) / NS v4 壁 + 凝縮 (未投入) |
 | `problem_va_R2_LU6_Lc8_ns_coarse.yaml` / `problem_va_R2_LU6_Lc8_ns.yaml` | 2 | 6 | 8 | NS: coarse 中継 (365×65, frac 5e-4, cfl1) / 本計算 (601×97, frac 3.5e-5, cfl1, 48000 step) |
 
@@ -459,6 +508,7 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
 | **`run_0091_va3_M4.19_Lc8_dry`** / `run_0092_va3_M4.19_Lc8_noneq` / `run_0093_va3_M4.19_Lc9_dry` | **新条件 v3 (Pt 1.139 MPa / Tt 1161 K / 新組成 H2O 6.1 mol%) M_d 4.19 再設計** (`problem_va3_*.yaml`, R2/L_U6, r_inlet 3.889, node Euler TP 12000 step; 0092 は Kw+HK 非平衡凝縮 ON) | 上の v3 節。**L_c8 0.061 % (生産基準, 全長 6.32 m, スロート φ411.4)** / L_c9 0.050 % / 凝縮 g≡0 (S max 0.27, 出口 283 K)。全 run 品質 PASS・NaN 0・STEADY、`check_convergence` NOT CONVERGED (warm 床)。形状 `geometry/*va3*`、図 `figs/va3_*.png` | active (**v3 条件の正本**) |
 | `run_0094_va3_M4.19_Lc8_eq` / **`run_0095_va3old_Lc8_dry`** / `run_0096_va3old_Lc8_noneq` / **`run_0097_va3old_Lc8_eq`** | **va3 L_c8 形状 (run_0091 と同一) × 入口条件 新 (0094 平衡) / 旧 (0095 dry, 0096 非平衡, 0097 平衡)** の軸中心比較 (`run_va3old_batch.py`, `compare_va3_conditions.py`) | 上の比較表。新条件は 3 変種同一 (未飽和)。旧条件 off-design: dry=noneq 出口 M 4.242 / 248 K (核生成せず)、平衡は 12 % 凝縮で M 4.141 / 259 K。全 run PASS・NaN 0・STEADY、NOT CONVERGED (warm 床)。`axis_compare_va3_vs_va3old.csv`、`figs/va3_cond_*.png` | active (**条件比較の正本**) |
 | **`run_0098_va3old_Lc8_eq2`** / `run_0099_va3old_Lc8_dry_eqbin` / `run_0100_va3old_Lc8_eq_eqbin` | **平衡凝縮 EOS 拘束形 `condEquilibrium: 2`** (0098; `problem_va3old_Lc8_eq2.yaml`) と、同 binary での回帰 dry (0099 = 0095 再実行) / 緩和形 (0100 = 0097 再実行) | 0098: onset 以降 S=1.0000・過冷却 0、下流は 0097 と一致 (|ΔM|≤1e-3)、出口 g/Y 12.8 %。回帰は旧 binary と ≤2e-6。`figs/va3_eq2_vs_eq1_axis.png` | active (**EOS 拘束形の検証正本**; 0099/0100 は回帰記録) |
+| **`run_0101`〜`run_0105_va2eq2_M{4.3,4.4,4.5,4.75,5.0}_eq2`** / `run_0106_va2eq2_M4.19_eq2` | **旧条件 × va2 M_d 別ベストノズル (形状バイト同一) × 平衡凝縮 EOS 拘束形** (`problem_va2eq2_*.yaml`, `run_va2eq2_batch.py`; 0106 は M4.19 参照) | 上の va2eq2 表 (`study_va2eq2_exit.json`)。出口諸量は緩和形 va2c と表示桁で同一、onset 以降 S=1.0000。全 run PASS・NaN 0・STEADY・rms_rog≡0。各 run `axis_values.csv` (89 列)。`figs/va2eq2_axis_all.png` | active (**旧条件 M_d 系列 平衡凝縮の正本 [EOS 拘束形]**; va2c eq は緩和形の記録) |
 | `run_0067`–`0078` (va2fx) | SLAU 二相修正のみ (旧 L フィット) | va2c と T 0.002 K/g 1e-4 差 | superseded (記録) |
 | `run_0067`〜`run_0078_va2fx_M*_{noneq,eq}` (旧行) | **二相エネルギー非保存 (SLAU 面温度) 修正後の凝縮 12 run 再計算** (dry は va2lp `run_0049`… を流用) | 軸 h0 保存 ±0.1 %、出口跳ね消滅。M4.75/5.0 で非平衡→平衡に収束 (出口 M 4.34/4.39 vs 4.35/4.42)。**凝縮 run の正本**、`study_va2fx_exit.json`、`figs/va2fx_*.png` | active (**正本**) |
 | `run_0031`–`0048` (va2) / `run_0049`–`0066` (va2lp) の noneq/eq | 修正前 binary (h0 +0.6 % 非保存、T +4–5 K) | 傾向は同じだが数値は superseded。dry (`run_0031/34/37/40/43/46`, `0049/52/55/58/61/64`) は影響なし | superseded (記録) |

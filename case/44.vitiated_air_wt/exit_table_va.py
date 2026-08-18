@@ -21,7 +21,7 @@ for r in sorted(p for p in Path(".").glob(a.glob) if p.is_dir()):
     rows.append({k:(float(v) if not isinstance(v,str) else v) for k,v in dict(Md=Md,kind=kind,run=r.name,x=xc/S,M_axis=M[0],T_axis=T[0],P_axis=P[0],S_axis=Sx[0],g_axis=g[0]/Yw,M_avg=Ma,T_avg=Ta,g_avg=ga/Yw,eps=eps,S_max=Sa[xa>0].max(),onset_x=onset[0],onset_T=onset[1],T_min=Tax[xa>0].min()).items()})
 print("| M_d | 種別 | run | 評価断面 x/r_t | 軸 M | 軸 T [K] | 軸 P [Pa] | 軸 S | 軸 g/Y_H2O | **質量平均 M** | 質量平均 T | 質量平均 g/Y | コア M 幅 | 軸 S max | onset x (T) |")
 print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-for w in sorted(rows,key=lambda w:(w["Md"],{"dry":0,"noneq":1,"eq":2}[w["kind"]])):
+for w in sorted(rows,key=lambda w:(w["Md"],{"dry":0,"noneq":1,"eq":2,"eq2":3}[w["kind"]])):
     on="—" if np.isnan(w["onset_x"]) else f"{w['onset_x']:.1f} ({w['onset_T']:.0f} K)"
     print(f"| {w['Md']} | {w['kind']} | `{w['run']}` | {w['x']:.1f} | {w['M_axis']:.3f} | {w['T_axis']:.1f} | {w['P_axis']:.0f} | {w['S_axis']:.2f} | {w['g_axis']:.2f} | **{w['M_avg']:.3f}** | {w['T_avg']:.1f} | {w['g_avg']:.2f} | {w['eps']:.1f} % | {w['S_max']:.1f} | {on} |")
 if a.out: json.dump(rows,open(a.out,"w"),indent=1)
