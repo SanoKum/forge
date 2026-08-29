@@ -1,0 +1,6 @@
+xlo: {physID: 1, kind: slip, outputHDFflg: 0, ints: , floats: }
+xhi: {physID: 2, kind: slip, outputHDFflg: 0, ints: , floats: }
+ylo: {physID: 3, kind: periodic, outputHDFflg: 0, ints: {type: 0, partnerBCID: 4}, floats: {dx: 0.0, dy: 0.1, dz: 0.0}}
+yhi: {physID: 4, kind: periodic, outputHDFflg: 0, ints: {type: 0, partnerBCID: 3}, floats: {dx: 0.0, dy: -0.1, dz: 0.0}}
+zlo: {physID: 5, kind: periodic, outputHDFflg: 0, ints: {type: 0, partnerBCID: 6}, floats: {dx: 0.0, dy: 0.0, dz: 0.1}}
+zhi: {physID: 6, kind: periodic, outputHDFflg: 0, ints: {type: 0, partnerBCID: 5}, floats: {dx: 0.0, dy: 0.0, dz: -0.1}}
