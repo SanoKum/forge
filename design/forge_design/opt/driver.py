@@ -128,7 +128,7 @@ class Campaign:
         run_dir = self.dir / tag
         prob = self._write_problem(x, self.dir / f"{tag}.yaml")
         row = {"tag": tag, "x": x, "run_dir": str(run_dir), "status": "FAIL",
-               "warm_from": "", "note": ""}
+               "fail_class": None, "warm_from": "", "note": ""}
         try:
             warm = self._warm_for(x)
             row["warm_from"] = str(warm)
@@ -176,13 +176,50 @@ class Campaign:
                   and 0.5 < eta < 1.02                      # 物理ゲート (η)
                   and mrel is not None and 0.94 < mrel < 1.005)  # 物理ゲート (Cd)
             row["status"] = "PASS" if ok else "FAIL"
-        except Exception as e:  # メッシュ FAIL・幾何 NG・forge 異常終了
-            row["note"] += f"{type(e).__name__}: {e}"[:300]
+            if not ok:
+                # ゲート落ちの分類 (例外なし経路)。RETRYABLE=条件を変えた再投入で
+                # 回復し得る / INFEASIBLE=偽アトラクタ (不始動流) 系で再投入無意味
+                # / SUSPECT=メトリクス欠損 (原因不明・要人間)。
+                if row["conv"] == "DIVERGED":
+                    row["fail_class"] = "RETRYABLE"      # 本段発散 → recipe 弱めて再投入
+                    row["note"] = "gate: main-stage DIVERGED"
+                elif qs != "ALL STEADY" or res_step < n_main:
+                    row["fail_class"] = "RETRYABLE"      # 未定常/未到達 → 延長で回復見込み
+                    row["note"] = f"gate: qs={qs} res_step={res_step}/{n_main}"
+                elif eta is None or mrel is None or not np.isfinite(eta):
+                    row["fail_class"] = "SUSPECT"        # 完走したのにメトリクス欠損
+                    row["note"] = f"gate: metrics missing (eta={eta} mrel={mrel})"
+                elif mrel > 1.005:
+                    # Cd 上限超えは物理的にあり得ない (チョーク流量は超えられない)
+                    # → 設計点でなく計測 (積分面/メッシュ) が怪しい。要人間確認
+                    row["fail_class"] = "SUSPECT"
+                    row["note"] = f"gate: Cd>1 unphysical (mdot_ratio={mrel:.4f} eta={eta:.4f})"
+                else:
+                    row["fail_class"] = "INFEASIBLE"     # 不始動流等の偽解 (Cd 下限/η 逸脱)
+                    row["note"] = f"gate: physics eta={eta:.4f} mdot_ratio={mrel:.4f}"
+        except ValueError as e:
+            # 幾何構築失敗 (fold, 無効パラメータ等) — 設計空間外 (再投入不可)
+            row["fail_class"] = "INFEASIBLE"
+            row["note"] = f"geometry: {str(e)[:250]}"
+        except RuntimeError as e:
+            # 段階起動失敗 (soft 段 NaN/未出力) — 再投入で回復可能性あり
+            err_msg = str(e)
+            if "soft 段" in err_msg:
+                row["fail_class"] = "RETRYABLE"
+                row["note"] = f"soft_stage: {err_msg[:200]}"
+            else:
+                row["fail_class"] = "SUSPECT"
+                row["note"] = f"runtime: {err_msg[:250]}"
+        except Exception as e:
+            # I/O・OOM・その他予期不測 — 一律 SUSPECT (人間が見る)
+            row["fail_class"] = "SUSPECT"
+            row["note"] = f"{type(e).__name__}: {str(e)[:250]}"
         row["wall_s"] = round(time.time() - t0, 1)
         self.rows.append(row)
         with open(self.ledger, "a") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        print(f"[{tag}] {row['status']} x={np.round(x,3)} eta={row.get('eta_cf')}"
+        fail_marker = f" [{row['fail_class']}]" if row['fail_class'] else ""
+        print(f"[{tag}] {row['status']}{fail_marker} x={np.round(x,3)} eta={row.get('eta_cf')}"
               f" ({row['wall_s']}s) {row['note']}", flush=True)
         return row
 
