@@ -1,0 +1,28 @@
+# Cloud image (CUDA) for forge/solver_density_cuda on cloud instances.
+# Dockerfile.cuda.dev から ParaView GUI / Qt / X サーバ系を除いた軽量版。
+# gmsh はヘッドレス (python API / -nopopup バッチ) で同梱し、メッシュ生成もクラウドで完結する。
+# 可視化は pvserver (ホスト側) or 後処理 PNG (matplotlib) で行う → procedures/cloud-aws-gpu.md
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG GMSH_VERSION=4.15.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build git pkg-config \
+    curl python3 python3-pip python-is-python3 \
+    python3-h5py python3-numpy python3-matplotlib \
+    libhdf5-dev libyaml-cpp-dev libmetis-dev \
+    libgl1 libglu1-mesa libxcursor1 libxft2 libxinerama1 \
+    ca-certificates \
+ && curl -fsSL "https://gmsh.info/bin/Linux/gmsh-${GMSH_VERSION}-Linux64.tgz" -o /tmp/gmsh.tgz \
+ && tar -xzf /tmp/gmsh.tgz -C /opt \
+ && python3 -m pip install --no-cache-dir --upgrade "gmsh==${GMSH_VERSION}" \
+ && ln -sf "/opt/gmsh-${GMSH_VERSION}-Linux64/bin/gmsh" /usr/local/bin/gmsh \
+ && rm -f /tmp/gmsh.tgz \
+ && rm -rf /var/lib/apt/lists/*
+
+# Ubuntu の HDF5 (serial) の典型パス (tools/build.sh が CMake へ渡す)
+ENV HDF5_INC=/usr/include/hdf5/serial \
+    HDF5_LIBDIR=/usr/lib/x86_64-linux-gnu/hdf5/serial
+
+WORKDIR /workspace
