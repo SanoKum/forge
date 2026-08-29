@@ -9,10 +9,11 @@ sys.path.insert(0, "/home/sano/work/forge/design")
 from forge_design.evaluate.runner_axismach import prepare_ns, run_staged_ns, collect
 CASE = Path("/home/sano/work/forge/case/42.isobutane_wt")
 ap = argparse.ArgumentParser(); ap.add_argument("stage", choices=("coarse", "main")); ap.add_argument("run_dir")
-ap.add_argument("--ic-from"); ap.add_argument("--dstar-csv"); ap.add_argument("--dstar-blend", default="-1,-0.5", help="CSV 全域採用が既定 (抽出 CSV は内部で相関とブレンド済み)")
+ap.add_argument("--problem", help="main 用 problem YAML (既定 = M5 R3/LU9/Lc14)"); ap.add_argument("--problem-coarse", help="coarse 用 problem YAML"); ap.add_argument("--ic-from"); ap.add_argument("--dstar-csv"); ap.add_argument("--dstar-blend", default="-1,-0.5", help="CSV 全域採用が既定 (抽出 CSV は内部で相関とブレンド済み)")
 ap.add_argument("--prepare-only", action="store_true")
 a = ap.parse_args()
-prob = CASE / ("problem_ib_m5_R3_LU9_Lc14_ns_coarse.yaml" if a.stage == "coarse"
+prob = Path(a.problem_coarse if a.stage == "coarse" and a.problem_coarse else a.problem) if (a.problem or a.problem_coarse) else \
+       CASE / ("problem_ib_m5_R3_LU9_Lc14_ns_coarse.yaml" if a.stage == "coarse"
                else "problem_ib_m5_R3_LU9_Lc14_ns.yaml")
 blend = tuple(float(v) for v in a.dstar_blend.split(","))
 info = prepare_ns(prob, a.run_dir, ic_from=a.ic_from, dstar_csv=a.dstar_csv, dstar_blend=blend)

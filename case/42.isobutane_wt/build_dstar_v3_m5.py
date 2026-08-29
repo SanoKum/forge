@@ -17,7 +17,7 @@ from scipy.interpolate import make_smoothing_spline
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--x-lo", type=float, default=3.0)
 ap.add_argument("--dx", type=float, default=0.25); ap.add_argument("--lam", type=float, default=1e-2)
 ap.add_argument("--x-hi-trust", type=float, default=None, help="この x より下流は使わず、[x_hi_trust-6, x_hi_trust] の線形フィット勾配で外挿 (出口 BC の影響で末端の δ* が急増するのを避ける)")
-ap.add_argument("--out", default="dstar_v3.csv")
+ap.add_argument("--out", default="dstar_v3.csv"); ap.add_argument("--problem", default="/home/sano/work/forge/case/42.isobutane_wt/problem_ib_m5_R3_LU9_Lc14_ns.yaml")
 a = ap.parse_args(); rd = Path(a.run_dir)
 info = json.loads((rd / "prepare_info.json").read_text()); S = float(info["scale_m"])
 res = sorted(rd.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]
@@ -33,7 +33,7 @@ ds_prev_tbl = (np.interp(wi[:, 0], wp[:, 0], wp[:, 1]) - wi[:, 1]) * np.cos(wi[:
 from forge_design.evaluate.runner_axismach import design_chain, _gam_or_gas
 from forge_design.probdef import load_problem
 from forge_design.geometry.wall_axismach import PhysicalNozzleWall
-prob = load_problem(Path("/home/sano/work/forge/case/42.isobutane_wt/problem_ib_m5_R3_LU9_Lc14_ns.yaml"))
+prob = load_problem(Path(a.problem))
 dc = design_chain(prob)
 base = PhysicalNozzleWall(dc["wall"], dc["wall_inv"], S, float(prob.spec["Pt"]), float(prob.spec["Tt"]), _gam_or_gas(prob), prob.cp)
 corr = base._dstar_hist(x_full)
