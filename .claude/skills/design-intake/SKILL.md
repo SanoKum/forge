@@ -44,7 +44,17 @@ ledger) であり、ループの中に対話を持ち込まない。
     (例: `case/44.vitiated_air_wt/problem_va3_M4.19_Lc8_dry.yaml` のヘッダコメント形式)。
   - 条件 (Pt/Tt/組成) を変えたら **r_inlet を付け替える** (固定値の使い回しは罠)。
 - 凝縮の可能性 (H₂O/炭化水素を含み膨張で低温になる) があるかをここで確認。
-  あるなら `tp_species: split_h2o` + `condensation` (condEquilibrium: 2 推奨) を提案。
+  あるなら**扱い方をユーザに問う** (既定は a):
+  - **a. 後段確認 (既定・推奨)**: キャンペーン本体は dry で回し、パレート勝者に
+    対してのみ凝縮評価を行う (dry run の後処理 `Tsat_post` で飽和線接近を診断 →
+    必要なら凝縮 ON CFD で再評価)。ループが軽いまま。
+  - **b. 制約化**: 「飽和線を越えない (S<1、余裕温度 ΔT を指定)」を評価ゲートに
+    追加する。dry CFD + `Tsat_post` 後処理で判定できるため 1 評価のコストは
+    ほぼ増えない。凝縮回避が要求仕様のときはこちら。
+  - **c. ループ内凝縮 CFD**: 全評価点で凝縮 ON (`tp_species: split_h2o` +
+    `condensation`, condEquilibrium: 2 推奨, axismach のみ)。凝縮量・潜熱の影響
+    そのものが目的量に効く場合に限る。コスト増を明示して承認を取る。
+  - 注意: `condTsat` 診断は凝縮 ON run のみ出力。dry run は後処理 `Tsat_post` を使う。
 
 ### 4. 設計変数 (dv) と範囲
 
