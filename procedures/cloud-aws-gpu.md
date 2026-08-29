@@ -153,13 +153,30 @@ docker run --rm --gpus all --user "$(id -u):$(id -g)" \
 速度評価は Docker でなく **native ビルド**で行う (ローカルと同じルール。EC2 の Linux native では WSL と違い `nsys` の解析まで完結する):
 
 ```bash
+# 依存 (初回のみ)。apt の python3-h5py は numpy と ABI 不整合で壊れるので pip で入れる
+sudo apt-get install -y cmake ninja-build libyaml-cpp-dev libhdf5-dev libmetis-dev \
+  libboost-dev python3-numpy python3-matplotlib
+sudo python3 -m pip install --break-system-packages h5py
+
 cd ~/forge/solver_density_cuda
+# ホスト CUDA が 13.x の場合、g++ 単体コンパイルに Thrust (CCCL) の include が要る
+CXXFLAGS="-I/usr/local/cuda/include/cccl" \
 FORGE_CUDA_ARCHITECTURES=86 ./tools/build_native_wsl.sh   # A10G=86, L4=89, T4=75
 ```
 
 - 粗い計時: `FORGE_PROFILE=1` (詳細 `FORGE_PROFILE_VERBOSE=1`) で実行し Runtime Profile Summary を読む。
 - `ncu`: `ERR_NVGPUCTRPERM` が出たら `sudo` で実行するか、`/etc/modprobe.d/` に `options nvidia NVreg_RestrictProfilingToAdminUsers=0` を書いて再起動。
-- `nsys`: DLAMI はフルパッケージなので `nsys profile` → `nsys stats` までインスタンス内で完結する。
+- `nsys`: Base DLAMI には入っていない (CUDA 同梱の `/usr/local/cuda/bin/nsys` はスタブでエラーになる)。スタンドアロン版を入れて直接叩く:
+
+  ```bash
+  sudo apt-get install -y nsight-systems-2026.1.3   # apt-cache search ^nsight-systems で最新を確認
+  sudo chmod 755 /opt/nvidia/nsight-systems         # パッケージが 0700 で入る場合がある
+  mkdir -p ~/tmp                                    # /tmp/nvidia が root 専有のことがある
+  TMPDIR=$HOME/tmp /opt/nvidia/nsight-systems/2026.1.3/bin/nsys profile -o rep ./forge
+  TMPDIR=$HOME/tmp /opt/nvidia/nsight-systems/2026.1.3/bin/nsys stats rep.nsys-rep --report cuda_gpu_kern_sum
+  ```
+
+  `nsys profile` → `nsys stats` までインスタンス内で完結する (WSL では不可能だった部分)。
 - 計測はインスタンスタイプ (= GPU) をローカルの記録と併記し、同一 run 3 回でばらつきを確認してから比較に使う。
 
 ## 結果回収と停止
