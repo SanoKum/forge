@@ -20,7 +20,10 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi -L
 
 echo "== [2/5] リポジトリ取得 =="
 if [[ ! -d "$repo_dir/.git" ]]; then
-  if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+  # 注意: GitHub は認証成功でも exit 1 を返す (shell 不許可) ため、pipefail 下で
+  #       ssh|grep を直接 if にかけると常に失敗する。出力を受けてから判定する。
+  auth_msg="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)"
+  if ! grep -q "successfully authenticated" <<<"$auth_msg"; then
     echo "ERROR: GitHub への SSH 認証に失敗。deploy key を ~/.ssh/ に配置し、" >&2
     echo "       ~/.ssh/config で Host github.com に IdentityFile を指定してから再実行する。" >&2
     exit 1
