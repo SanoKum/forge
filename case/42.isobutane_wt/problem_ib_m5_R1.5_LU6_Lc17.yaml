@@ -1,0 +1,62 @@
+# ③ イソブタン風洞 M5 スタディ (2026-08-30 design-intake): R×L_U×L_c 27 点マトリクスのセンター点。
+# 案件: M4.2 系 (①) と同ガス・同固定仕様 (Pt 5 MPa, C4H10/空気 φ=0.9 生成物, 出口径 1 m,
+#   入口配管径 1 m) で M_d=5。目的 = ε_M (軸 M 一様性) vs 全長のトレードオフ (パラメータスイープ)。
+# Tt=1550 K の選定根拠: M5 出口静温 T_e (semi-perfect) と H2O 飽和線 (Murphy-Koop, x_H2O=0.1356) の余裕
+#   Tt 1000 K → T_e 186 K, Tsat 281 K (余裕 -94 K, 大幅凝縮域) / 1400 K → -5 K / 1550 K → +30 K。
+#   → M6 系列 (②) と同じ Tt 1550 K を採用。凝縮は後段確認 (dry 本体 + 勝者のみ Tsat_post 診断)。
+# 設計基準 r_t: A/A*(M5, Tt1550 semi-perfect) = 38.574 → r_t = 0.5/√38.574 = 0.080505 m。
+#   r_inlet = 0.5/r_t = 6.2108 r_t (条件変更時は必ず付け替え)。
+# p_ambient: M5 出口整合静圧 (semi-perfect P/Pt≈1.31e-3 × 5 MPa ≈ 6.54 kPa)。
+# 軸 M 則: M5 は単一 quintic が全点不成立 (壁 spline リンギング / L_c 許容窓 <14.7)。M6 と同じ
+#   knot 則 (M_knot 2.5) + axis_dx0 を採用。成立域は L_c≥14 (MK2.5 固定時。L_c≤10 は MK 2.0-3.5 でも
+#   不成立: スロート曲率不整合/リンギング)。スイープ水準 L_c {14, 17, 20} = 全長 3.60/3.85/4.08 m (超音速部)。
+# マトリクス: R {1.5, 2, 3} × L_U {4, 6, 9} × L_c {14, 17, 20}。四隅+中心の設計成立を prepare-only で確認済み。
+name: isobutane_wt_m5_R1.5_LU6_Lc17_tp
+type: wind_tunnel_axisym_axismach
+gas:
+  model: semiperfect
+  species: {CO2: 0.1677, H2O: 0.0858, O2: 0.022, N2: 0.7245}
+  # 参照値 (Tt 1550 K, ② M6 系列と同一組成・同一 Tt):
+  gamma: 1.2755
+  cp: 1394.0
+
+spec:
+  Pt: 5.0e6
+  Tt: 1550.0
+  p_ambient: 6540.0
+  r_throat: 0.080505
+  M_design: 5.0
+
+dv:
+  L_c: {value: 17.0, min: 14.0, max: 20.0}   # 下限 14 = knot(MK2.5) 幾何成立限界 (プローブ 2026-08-30)
+
+geometry:
+  R: 1.5
+  r_inlet: 6.2108       # 入口配管径 1 m / (2 r_t)
+  L_U: 6.0
+  L_pipe: 0.5
+  start_line: throat_char
+  n_start: 41
+  n_axis_inv: 800
+  axis_dx0: 0.03
+  x_end_margin: 2.3
+  wall_mode: cplus
+  exit_mode: characteristic
+  axis_law: knot
+  M_knot: 2.5
+  Lc_mode: explicit
+
+mesh:
+  discretization: node
+  ni: 650
+  nj: 65
+  wall_first_frac: 5.0e-3
+  throat_refine: 3.0
+
+evaluate:
+  nStepOuter: 12000
+  outStepInterval: 4000
+  cfl_main: 2.0         # 多成分 TP × 陰解法は cfl≤2 (①の知見)
+  mid_stage: true
+  tp_species: split_h2o # dry でも 2 種 TP (MIXDRY+H2O) で回し、凝縮 ON 再評価に形状・IC を流用可能にする
+  # thermo_href_temp: 298.15 は runner 既定 (semi-perfect 必須条項)
