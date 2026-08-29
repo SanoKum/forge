@@ -38,7 +38,12 @@ docker build -f "$repo_dir/solver_density_cuda/Dockerfile.cuda.cloud" \
   -t forge-solver:cuda-cloud "$repo_dir/solver_density_cuda"
 
 echo "== [4/5] コンテナ内ビルド (Release) =="
+# CMAKE_CUDA_ARCHITECTURES はコンパイラ検出時に 52 で「定義済み」になり
+# CMakeLists の既定ガードが効かないため、ホスト GPU の CC を CUDAARCHS で明示する。
+cuda_arch="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '. ')"
+echo "CUDAARCHS=${cuda_arch}"
 docker run --rm --gpus all --user "$(id -u):$(id -g)" \
+  -e CUDAARCHS="$cuda_arch" \
   -v "$repo_dir/solver_density_cuda":/workspace -w /workspace \
   forge-solver:cuda-cloud ./tools/build.sh
 
