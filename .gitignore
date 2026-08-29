@@ -28,7 +28,8 @@ solver_density_cuda/build-warn/
 solver_density_cuda/build-warn-cxx/
 solver_density_cuda/build-dual/
 # ローカル作業用 (エージェントメモリ / 一時 / 外部依存)
-.claude/
+.claude/*
+!.claude/skills/
 .tmp/
 .external/
 # run 出力データ (再生成可能。commit 対象外)
