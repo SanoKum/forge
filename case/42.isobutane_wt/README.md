@@ -100,6 +100,9 @@ NS 版は 3. の壁を δ\*(s) だけ法線オフセットし、真の幾何ス�
 
 ## M5 推奨形状 (R3/L_U9/L_c14) の点列・gmsh (2026-08-30)
 
+設計経緯 8 フェーズの総括と NS 軸 M 診断 (δ* 面積誤差 / 抽出信頼域 / 軸集束 / law 側帰還欠如):
+[M5 設計報告ページ](https://claude.ai/code/artifact/22b65472-545e-4a05-aa7c-ac064af2e424)。
+
 M5 スタディ (③) のパレートエルボ **R3/L_U9/L_c14** (`run_0096`, dM 0.043 %$M_d$) の壁輪郭を
 `export_wall_m42.py --problem problem_ib_m5_R3_LU9_Lc14.yaml --tag m5_best` で出力
 (スクリプトは `--problem` で任意の axismach 点に使える汎用形。ヘッダの M 表記も M_d 連動に修正済)。
