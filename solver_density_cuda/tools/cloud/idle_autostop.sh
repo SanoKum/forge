@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # GPU アイドルが続いたらインスタンスを自動 stop する消し忘れ保険。
 # root の cron から 5 分おきに呼ばれる想定 (setup_instance.sh が /etc/cron.d に登録)。
-# 「GPU 使用率 0 かつ forge プロセス無し かつ ログインセッション無し」が
+# 「GPU 使用率 0 かつ forge プロセス無し かつ ログインセッション無し かつ CPU アイドル」が
 # IDLE_LIMIT 回 (既定 6 回 = 30 分) 連続したら shutdown する。
+# 注意: CPU 条件が無いと nohup の native ビルド中 (GPU 0%・ログイン無し) に
+#       shutdown してしまう (2026-08-30 に実際にビルドを殺した実績があるため追加)。
 set -u
 
 IDLE_LIMIT="${FORGE_IDLE_LIMIT:-6}"
@@ -11,13 +13,15 @@ state_file="/var/run/forge-idle-count"
 gpu_util="$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | sort -rn | head -1)"
 forge_running="$(pgrep -c -x forge || true)"
 sessions="$(who | wc -l)"
+# 1 分 load average の整数部。ビルド等の CPU 仕事中 (>=1) は idle 扱いしない
+loadavg="$(awk '{printf "%d", $1}' /proc/loadavg)"
 
 if [[ -z "$gpu_util" ]]; then
   # nvidia-smi 失敗時は判定不能として何もしない
   exit 0
 fi
 
-if [[ "$gpu_util" -eq 0 && "$forge_running" -eq 0 && "$sessions" -eq 0 ]]; then
+if [[ "$gpu_util" -eq 0 && "$forge_running" -eq 0 && "$sessions" -eq 0 && "$loadavg" -lt 1 ]]; then
   count=$(( $(cat "$state_file" 2>/dev/null || echo 0) + 1 ))
 else
   count=0
