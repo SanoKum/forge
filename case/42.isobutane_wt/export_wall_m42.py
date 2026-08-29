@@ -30,6 +30,7 @@ ap.add_argument("--ni", type=int, default=365, help="gmsh 軸方向分割 (生�
 ap.add_argument("--nj", type=int, default=65, help="gmsh 半径方向分割")
 ap.add_argument("--wall-first-frac", type=float, default=5.0e-3, help="壁第一層の相対厚 (Bump 用)")
 ap.add_argument("--kind", choices=("euler", "ns", "both"), default="both")
+ap.add_argument("--dstar-csv", help="CFD 抽出 δ* CSV (x_rt,dstar_rt)。指定時は ns 壁を v3 (CSV 全域採用) で作る")
 ap.add_argument("--tag", default="m42_best")
 a = ap.parse_args()
 
@@ -43,12 +44,18 @@ def build(kind):
         return d["wall"], "inviscid design wall (AxisMachCFDWall)"
     from forge_design.evaluate.runner_axismach import _gam_or_gas
     from forge_design.geometry.wall_axismach import PhysicalNozzleWall
+    dstar_x = None
+    dtag = "delta* correlation v1"
+    if a.dstar_csv:
+        tbl = np.loadtxt(a.dstar_csv, delimiter=",", skiprows=1)
+        dstar_x = lambda x, _t=tbl: np.interp(np.clip(np.asarray(x, dtype=float), _t[0, 0], _t[-1, 0]), _t[:, 0], _t[:, 1])
+        dtag = f"delta* CFD-extracted v3 ({Path(a.dstar_csv).parent.name})"
     pw = PhysicalNozzleWall(d["wall"], d["wall_inv"], s, float(p.spec["Pt"]),
-                            float(p.spec["Tt"]), _gam_or_gas(p), p.cp)
+                            float(p.spec["Tt"]), _gam_or_gas(p), p.cp, dstar_x=dstar_x)
     msgs = pw.validate()
     if msgs:
         raise RuntimeError("PhysicalNozzleWall validate: " + "; ".join(msgs))
-    return pw, "physical wall = inviscid + delta* normal offset (PhysicalNozzleWall)"
+    return pw, f"physical wall = inviscid + {dtag} normal offset (PhysicalNozzleWall)"
 
 
 def export(w, desc, kind, out_csv, out_geo):
