@@ -1197,18 +1197,27 @@ public:
         else
         {
             // --- 2D: 従来の CW(shoelace) ベース判定 ---
+            // 桁落ち対策 (§2.5.6, plan discretization-median-dual-2d-facevect-precision):
+            // 絶対座標 float の shoelace は積 ~O(xy) の丸め (ulp ~2e-7) がスリバーセルの
+            // 符号付き面積 (~1e-9 m², 第一セル数 μm 級) を 8 桁上回り、CW 判定がほぼランダムに
+            // なる → 境界 surfVect の誤反転 (壁面積 3 % 欠損・閉性 0.099 の実害, M6 NS 2.4 μm)。
+            // 先頭ノード相対 + double で評価する (厳密演算では同値)。
             std::vector<bool> isCW(cells.size(), false);
             for (geom_int ic = 0; ic < (geom_int)cells.size(); ++ic)
             {
                 const auto& cel = cells[ic];
                 geom_int nn = (geom_int)cel.iNodes.size();
                 if (nn < 3) continue; // 辺要素はスキップ
-                geom_float signedArea = 0.0;
+                const double ox = nodes[cel.iNodes[0]].coords[0];
+                const double oy = nodes[cel.iNodes[0]].coords[1];
+                double signedArea = 0.0;
                 for (geom_int k = 0; k < nn; ++k)
                 {
                     const auto& n0 = nodes[cel.iNodes[k]].coords;
                     const auto& n1 = nodes[cel.iNodes[(k+1)%nn]].coords;
-                    signedArea += n0[0]*n1[1] - n1[0]*n0[1];
+                    const double x0 = (double)n0[0] - ox, y0 = (double)n0[1] - oy;
+                    const double x1 = (double)n1[0] - ox, y1 = (double)n1[1] - oy;
+                    signedArea += x0*y1 - x1*y0;
                 }
                 isCW[ic] = (signedArea < 0.0);
             }
@@ -1331,45 +1340,52 @@ public:
             dualFaceCells[2*ip + 0] = A;
             dualFaceCells[2*ip + 1] = B;
 
-            const geom_float Mx = 0.5*(nodes[A].coords[0] + nodes[B].coords[0]);
-            const geom_float My = 0.5*(nodes[A].coords[1] + nodes[B].coords[1]);
+            // 桁落ち対策 (§2.5.6 の 2D 適用, plan discretization-median-dual-2d-facevect-precision):
+            // 絶対座標 float32 のまま G−M や向き整合内積 n·e_AB を評価すると、スリバー面
+            // (第一セル数 μm 級) では丸めが領域寸法で増幅され**内積の符号が誤反転**して
+            // 面 1 枚が逆向きに入り閉性が壊れる (M6 NS 2.4 μm で normalized 0.099 の実害)。
+            // エッジ中点 M 相対 + double で評価する (平行移動不変なので厳密演算では同値)。
+            const double Axd = nodes[A].coords[0], Ayd = nodes[A].coords[1];
+            const double Bxd = nodes[B].coords[0], Byd = nodes[B].coords[1];
+            const double Mx = 0.5*(Axd + Bxd);
+            const double My = 0.5*(Ayd + Byd);
 
-            const geom_float eABx = nodes[B].coords[0] - nodes[A].coords[0];
-            const geom_float eABy = nodes[B].coords[1] - nodes[A].coords[1];
+            const double eABx = Bxd - Axd;
+            const double eABy = Byd - Ayd;
 
-            geom_float vx = 0.0, vy = 0.0;       // 集約面ベクトル
-            geom_float cx = 0.0, cy = 0.0, wsum = 0.0; // 面積加重重心
+            double vx = 0.0, vy = 0.0;       // 集約面ベクトル
+            double cx = 0.0, cy = 0.0, wsum = 0.0; // 面積加重重心 (M 相対)
 
             for (const geom_int ic : this->planes[ip].iCells)
             {
-                const geom_float Gx = cells[ic].centCoords[0];
-                const geom_float Gy = cells[ic].centCoords[1];
+                const double Gx = cells[ic].centCoords[0];
+                const double Gy = cells[ic].centCoords[1];
 
                 // 区間 midpoint(M) -> centroid(G)。単位厚みの面ベクトルは rotate(-90)。
-                const geom_float sx = Gx - Mx;
-                const geom_float sy = Gy - My;
-                geom_float nx = sy;     // rotate(-90): (sx,sy) -> (sy,-sx)
-                geom_float ny = -sx;
+                const double sx = Gx - Mx;
+                const double sy = Gy - My;
+                double nx = sy;     // rotate(-90): (sx,sy) -> (sy,-sx)
+                double ny = -sx;
                 // n0->n1 (A->B) 向きにそろえる
                 if (nx*eABx + ny*eABy < 0.0) { nx = -nx; ny = -ny; }
 
                 vx += nx; vy += ny;
-                const geom_float seglen = std::sqrt(nx*nx + ny*ny);
-                cx += 0.5*(Mx + Gx) * seglen;
-                cy += 0.5*(My + Gy) * seglen;
+                const double seglen = std::sqrt(nx*nx + ny*ny);
+                cx += 0.5*(Gx - Mx) * seglen;   // 重心も M 相対で蓄積し最後に M を足す
+                cy += 0.5*(Gy - My) * seglen;
                 wsum += seglen;
             }
 
-            dualFaceVect[3*ip + 0] = vx;
-            dualFaceVect[3*ip + 1] = vy;
+            dualFaceVect[3*ip + 0] = static_cast<geom_float>(vx);
+            dualFaceVect[3*ip + 1] = static_cast<geom_float>(vy);
             dualFaceVect[3*ip + 2] = 0.0;
-            dualFaceArea[ip] = std::sqrt(vx*vx + vy*vy);
+            dualFaceArea[ip] = static_cast<geom_float>(std::sqrt(vx*vx + vy*vy));
             if (wsum > 0.0) {
-                dualFaceCent[3*ip + 0] = cx / wsum;
-                dualFaceCent[3*ip + 1] = cy / wsum;
+                dualFaceCent[3*ip + 0] = static_cast<geom_float>(Mx + cx / wsum);
+                dualFaceCent[3*ip + 1] = static_cast<geom_float>(My + cy / wsum);
             } else {
-                dualFaceCent[3*ip + 0] = Mx;
-                dualFaceCent[3*ip + 1] = My;
+                dualFaceCent[3*ip + 0] = static_cast<geom_float>(Mx);
+                dualFaceCent[3*ip + 1] = static_cast<geom_float>(My);
             }
             dualFaceCent[3*ip + 2] = 0.0;
         }
@@ -1459,24 +1475,32 @@ public:
         dualBcondOffset.assign(nBc + 1, 0);
         dualBcondPhysID.assign(nBc, 0);
         dualBcondNodes.assign(nBc, {});
-        std::vector<geom_float> bnodeAccum(nN * 3, 0.0); // 全体集計 (閉性チェック用、所有非依存)
+        std::vector<double> bnodeAccum(nN * 3, 0.0); // 全体集計 (閉性チェック用、所有非依存)
 
         // 所有 bcond ごとに半割面ベクトル+面積加重重心を集計。
-        std::vector<std::map<geom_int, std::array<geom_float,3>>> halfByOwner(nBc);
-        std::vector<std::map<geom_int, std::array<geom_float,4>>> hcentByOwner(nBc);
+        // 桁落ち対策 (§2.5.6 の 2D 適用): makeMesh の surfVect (float 絶対座標差) を読む代わりに
+        // エッジ座標から double で法線を再構成し、外向き符号だけ整向済み surfVect に合わせる。
+        // 蓄積も double で行い、格納時に geom_float へ cast する。
+        std::vector<std::map<geom_int, std::array<double,3>>> halfByOwner(nBc);
+        std::vector<std::map<geom_int, std::array<double,4>>> hcentByOwner(nBc);
         for (geom_int ib = 0; ib < nBc; ++ib)
         {
             for (const geom_int ip : this->bconds[ib].iPlanes)
             {
                 const geom_int A = this->planes[ip].iNodes[0];
                 const geom_int B = this->planes[ip].iNodes[1];
-                const geom_float sv0 = this->planes[ip].surfVect[0];
-                const geom_float sv1 = this->planes[ip].surfVect[1];
-                const geom_float sv2 = this->planes[ip].surfVect[2];
-                const geom_float hx = 0.5*sv0; // 外向き (makeMesh で整向済)
-                const geom_float hy = 0.5*sv1;
-                const geom_float hz = 0.5*sv2;
-                const geom_float w = 0.5*std::sqrt(sv0*sv0 + sv1*sv1 + sv2*sv2); // 各ノードの半割面積
+                const double ex = (double)nodes[B].coords[0] - (double)nodes[A].coords[0];
+                const double ey = (double)nodes[B].coords[1] - (double)nodes[A].coords[1];
+                double sv0 = ey;    // rotate(-90): エッジ (A->B) の法線 (単位厚み 2D)
+                double sv1 = -ex;
+                const double sv2 = 0.0;
+                // 外向き (makeMesh で整向済の surfVect と同符号に合わせる)
+                if (sv0*(double)this->planes[ip].surfVect[0]
+                  + sv1*(double)this->planes[ip].surfVect[1] < 0.0) { sv0 = -sv0; sv1 = -sv1; }
+                const double hx = 0.5*sv0;
+                const double hy = 0.5*sv1;
+                const double hz = 0.5*sv2;
+                const double w = 0.5*std::sqrt(sv0*sv0 + sv1*sv1 + sv2*sv2); // 各ノードの半割面積
                 for (const geom_int N : {A, B}) {
                     const geom_int O = (N == A) ? B : A;
                     // 閉性は全半割面を集計 (幾何、所有に依らない)
@@ -1505,14 +1529,14 @@ public:
                 const geom_int nd = kv.first;
                 dualBcondNodes[ib].push_back(nd);
                 dualBnodeId.push_back(nd);
-                dualBnodeVect.push_back(kv.second[0]);
-                dualBnodeVect.push_back(kv.second[1]);
-                dualBnodeVect.push_back(kv.second[2]);
+                dualBnodeVect.push_back(static_cast<geom_float>(kv.second[0]));
+                dualBnodeVect.push_back(static_cast<geom_float>(kv.second[1]));
+                dualBnodeVect.push_back(static_cast<geom_float>(kv.second[2]));
                 const auto& c = hcentByOwner[ib].at(nd);
-                const geom_float invw = (c[3] > 0.0) ? 1.0/c[3] : 0.0;
-                dualBnodeCent.push_back(c[0]*invw);
-                dualBnodeCent.push_back(c[1]*invw);
-                dualBnodeCent.push_back(c[2]*invw);
+                const double invw = (c[3] > 0.0) ? 1.0/c[3] : 0.0;
+                dualBnodeCent.push_back(static_cast<geom_float>(c[0]*invw));
+                dualBnodeCent.push_back(static_cast<geom_float>(c[1]*invw));
+                dualBnodeCent.push_back(static_cast<geom_float>(c[2]*invw));
             }
             dualBcondOffset[ib + 1] = (geom_int)dualBnodeId.size();
         }

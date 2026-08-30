@@ -49,6 +49,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [discretization-median-dual-2d-facevect-precision.md](accepted/discretization-median-dual-2d-facevect-precision.md) | `discretization` | **2D 双対幾何+CW 判定の桁落ち除去** (ローカル原点+double, 2026-08-31): 真犯人は makeMesh の float shoelace CW 判定 (スリバーで境界 surfVect 誤反転)。閉性 1e-7・第一セル 2.4 μm (y+1 真値) 変換可能に |
 | [design-isobutane-wt-m5-sweep.md](accepted/design-isobutane-wt-m5-sweep.md) | `design campaign` | イソブタン風洞 **M5** R×L_U×L_c 27 点スイープ完了 (2026-08-30): quintic 不成立→knot MK2.5・L_c≥14、パレート 9 点、**推奨 R3/L_U9/L_c14** (4.37 m, dM 0.043 %M_d)。凝縮後段確認 +29 K で dry 確定 |
 | [condensation-equilibrium-eos.md](accepted/condensation-equilibrium-eos.md) | `condensation` | **平衡凝縮の EOS 拘束形** (`condEquilibrium: 2`, 2026-08-19 実装・検証済): 湿り度 g を dependentVariables で $(T,g)$ 同時反転 (括弧付き Newton) して `rog` に射影、輸送凍結。飽和セルで厳密 S=1・過冷却 0 (緩和形は onset 帯 ~2 r_t で S≤1.18)。下流は緩和形と固定点一致 (case/44 run_0098 vs 0097: |ΔM|≤1e-3) |
 | [condensation-equilibrium.md](accepted/condensation-equilibrium.md) | `condensation` | **平衡凝縮** (2026-08-18 実装・検証済): 各セルで $p_v=p_{sat}(T)$ の $g_{eq}$ へ緩和 (`condEquilibrium`, 平衡専用 ΔT/Δg 律速)、モーメントはソース 0。診断 `condTsat_<s>` ($T_{sat}(p_v)$)。case/44 新条件 6 点で S→1 (onset 後 ~1 r_t)、出口凝縮率 9–45 %、M4.19 は CEA 平衡 8 % と整合 |

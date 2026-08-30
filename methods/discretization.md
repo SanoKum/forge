@@ -333,7 +333,17 @@ $(a-b)(a+b)$ 形で**差分 (パッチ寸法) に絶対座標の和 (領域寸�
 ローカル原点で Newell を評価**し (平行移動不変なので厳密演算では同値)、境界半割面の蓄積
 (`bnodeAccum`/`halfByOwner`/`hcentByOwner`) も double で行って最後に `geom_float` へ cast する。
 `tetVol`・双対重心 (正重み加重和) は元から局所差分 double で桁落ちしない。
-計画: [`architecture-median-dual-3d-double-geometry.md`](../plans/active/architecture-median-dual-3d-double-geometry.md)。
+計画: [`architecture-median-dual-3d-double-geometry.md`](../plans/accepted/architecture-median-dual-3d-double-geometry.md)。
+
+**本規約は 2D 側の全幾何量にも適用する** (2026-08-31 完了)。2D で先行修正されたのは
+sub-CV shoelace (体積・重心) のみで、**2D 双対面ベクトル** (`Mx`/`sx=G−M`/rotate/向き整合内積) と
+**2D 境界半割面** (`planes[].surfVect` 半分の float 蓄積) が絶対座標 float32 のまま残っていた。
+実害: 第一セル ~2.4 μm (M6 NS y+1 級, 全長 6.3 m) で**向き整合の内積 $\vec n\cdot\vec e_{AB}$ が
+float で誤反転**し面 1 枚が逆符号で入り、閉性 normalized 0.099・壁 bcond 面積 3 % 欠損で
+変換拒否 (`dual faces not closed`)。修正 = 面ベクトルをエッジ中点 $M$ 相対 + double で評価
+(向き内積も double)、境界半割面は節点座標から double で再構成 (向きは makeMesh 整向済み
+`surfVect` の符号に合わせる) し、蓄積も double。
+計画: [`discretization-median-dual-2d-facevect-precision.md`](../plans/accepted/discretization-median-dual-2d-facevect-precision.md)。
 
 #### 2.5.5 periodic 双対面対応
 周期境界面上のエッジは partner 面側に同形のエッジが存在する。`setPeriodicPartner` のノード対応 (Cartesian
