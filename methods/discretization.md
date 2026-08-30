@@ -340,9 +340,13 @@ sub-CV shoelace (体積・重心) のみで、**2D 双対面ベクトル** (`Mx`
 **2D 境界半割面** (`planes[].surfVect` 半分の float 蓄積) が絶対座標 float32 のまま残っていた。
 実害: 第一セル ~2.4 μm (M6 NS y+1 級, 全長 6.3 m) で**向き整合の内積 $\vec n\cdot\vec e_{AB}$ が
 float で誤反転**し面 1 枚が逆符号で入り、閉性 normalized 0.099・壁 bcond 面積 3 % 欠損で
-変換拒否 (`dual faces not closed`)。修正 = 面ベクトルをエッジ中点 $M$ 相対 + double で評価
-(向き内積も double)、境界半割面は節点座標から double で再構成 (向きは makeMesh 整向済み
-`surfVect` の符号に合わせる) し、蓄積も double。
+変換拒否 (`dual faces not closed`)。修正 = ① makeMesh の CW 判定を先頭ノード相対 + double 化 (真犯人)、② 面ベクトルを
+エッジ中点 $M$ 相対 + double で評価 (向き内積も double)、③ 境界半割面は節点座標から
+double で再構成 (向きは整向済み `surfVect` の符号に合わせる) し蓄積も double。
+さらに **makeMesh の整向判定も同規約**: 2D CW 判定 (shoelace) は先頭ノード相対 + double
+(float 絶対座標では積の丸めがスリバー符号付き面積を 8 桁上回り境界 surfVect が誤反転する —
+これが閉性破綻の真犯人だった)、3D の整向内積 `Db`/`D` も面先頭ノード相対 + double で
+面重心・セル重心を再構成して評価する (2026-08-31、健全メッシュではビット同一)。
 計画: [`discretization-median-dual-2d-facevect-precision.md`](../plans/accepted/discretization-median-dual-2d-facevect-precision.md)。
 
 #### 2.5.5 periodic 双対面対応

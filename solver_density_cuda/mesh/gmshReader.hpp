@@ -1145,29 +1145,47 @@ public:
         // 2D メッシュは従来どおり CW(shoelace) ベースの判定を維持する (回帰防止)。
         if (is3D)
         {
+            // 桁落ち対策 (§2.5.6, plan discretization-median-dual-2d-facevect-precision 残件消化):
+            // 整向内積 Db/D を float 絶対座標 (格納 centCoords) で評価すると、薄セルでは
+            // 面重心−セル重心 (~セル半厚) が座標丸めに埋まり符号が誤反転し得る (2D CW 判定と同根)。
+            // 面の先頭ノードをローカル原点に取り、面重心・セル重心 (=ノード算術平均、makeMesh の
+            // centCoords と同定義) を double で再構成して評価する。
+            auto cellCentRel = [&](geom_int ic, const double o[3], double out[3]) {
+                out[0] = out[1] = out[2] = 0.0;
+                for (geom_int nn : cells[ic].iNodes) {
+                    out[0] += (double)nodes[nn].coords[0] - o[0];
+                    out[1] += (double)nodes[nn].coords[1] - o[1];
+                    out[2] += (double)nodes[nn].coords[2] - o[2];
+                }
+                const double inv = 1.0 / (double)cells[ic].iNodes.size();
+                out[0] *= inv; out[1] *= inv; out[2] *= inv;
+            };
             int nFixed = 0;
             int nFixedBnd = 0;
             for (geom_int i = 0; i < (geom_int)planes.size(); ++i)
             {
                 auto& pln = planes[i];
                 geom_int ic0 = pln.iCells[0];
-                const auto& cc0 = cells[ic0].centCoords;
+                const double o[3] = { nodes[pln.iNodes[0]].coords[0],
+                                      nodes[pln.iNodes[0]].coords[1],
+                                      nodes[pln.iNodes[0]].coords[2] };
+                double c0[3]; cellCentRel(ic0, o, c0);
 
                 if (pln.iCells.size() == 1)
                 {
                     // 境界面: 面重心がセル重心の外側に来る向きにそろえる
-                    geom_float fx = 0.0, fy = 0.0, fz = 0.0;
+                    double fx = 0.0, fy = 0.0, fz = 0.0;
                     for (geom_int nn : pln.iNodes)
                     {
-                        fx += nodes[nn].coords[0];
-                        fy += nodes[nn].coords[1];
-                        fz += nodes[nn].coords[2];
+                        fx += (double)nodes[nn].coords[0] - o[0];
+                        fy += (double)nodes[nn].coords[1] - o[1];
+                        fz += (double)nodes[nn].coords[2] - o[2];
                     }
-                    const geom_float inv = 1.0 / (geom_float)pln.iNodes.size();
+                    const double inv = 1.0 / (double)pln.iNodes.size();
                     fx *= inv; fy *= inv; fz *= inv;
-                    const geom_float Db = (fx - cc0[0])*pln.surfVect[0]
-                                        + (fy - cc0[1])*pln.surfVect[1]
-                                        + (fz - cc0[2])*pln.surfVect[2];
+                    const double Db = (fx - c0[0])*(double)pln.surfVect[0]
+                                    + (fy - c0[1])*(double)pln.surfVect[1]
+                                    + (fz - c0[2])*(double)pln.surfVect[2];
                     if (Db < 0.0)
                     {
                         pln.surfVect[0] = -pln.surfVect[0];
@@ -1179,10 +1197,10 @@ public:
                 }
 
                 // 内部面: ic0 -> ic1 方向にそろえる
-                const auto& cc1 = cells[pln.iCells[1]].centCoords;
-                const geom_float D = (cc1[0]-cc0[0])*pln.surfVect[0]
-                                   + (cc1[1]-cc0[1])*pln.surfVect[1]
-                                   + (cc1[2]-cc0[2])*pln.surfVect[2];
+                double c1[3]; cellCentRel(pln.iCells[1], o, c1);
+                const double D = (c1[0]-c0[0])*(double)pln.surfVect[0]
+                               + (c1[1]-c0[1])*(double)pln.surfVect[1]
+                               + (c1[2]-c0[2])*(double)pln.surfVect[2];
                 if (D < 0.0)
                 {
                     pln.surfVect[0] = -pln.surfVect[0];
