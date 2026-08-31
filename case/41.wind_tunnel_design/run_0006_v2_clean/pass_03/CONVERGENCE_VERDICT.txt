@@ -1,9 +1,0 @@
-
-=== .  [last step 11999]  -> NOT CONVERGED ===
-  rms_ro      : init=1.32e-06 fin=1.01e-07 drop= 1.1dec rising   <-- RISING (divergent)
-  rms_roUx    : init=1.33e-03 fin=1.04e-04 drop= 1.1dec rising   <-- RISING (divergent)
-  rms_roUy    : init=2.81e-04 fin=3.45e-05 drop= 0.9dec rising   <-- RISING (divergent)
-  rms_roUz    : all-zero (inactive, skip)
-  rms_roe     : init=1.06e+00 fin=8.58e-02 drop= 1.1dec rising   <-- RISING (divergent)
-
-OVERALL: CHECK FAILURES ABOVE

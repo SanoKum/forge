@@ -253,8 +253,8 @@ SLAU 陰解法 (timeIntegration:11, blockDPLUR, **nStepInner:5, cfl_pseudo:4**)�
 | `run_0170_fig3_2d_sst_kwhk_tpsplit` | cell / 既存 `nozzle_fig3_2d` (押し出し擬似2D) | **TP `[MIXDRY(=N2),H2O]`** thermoHrefTemp 298.15 (IC は run_0048 dry SST 場を `cpg_field_to_tp` で TP 化) | SST 粘性, Kw+HK | **run_0050 (CPG) を再現**: g_max 0.0106 vs 0.0107, onset 2.45 vs 2.35 cm, 中心線 p/p0 差 ≤3.1 % (TP の H₂O cp 差)。NaN 0、rms_ro 1.2e-9 (2.2 桁, still falling) | active (**TP split 検証の正本**) |
 | `run_0184_wysinv_cell_cpg_cond` / `run_0185_wysinv_node_cpg_cond` / `run_0186_wysinv_node_tpsplit_cond` | cell / **node** / node、平面 2D 一様メッシュ `mesh/nozzle_fig3_2d_planar_inv` (301×120, 壁クラスタなし) | CPG / CPG / TP split | **非粘性 slip**, Kw+HK, 2 次 (段階起動 soft→mid→本段 12000) | **node = cell**: g 0.0109 = 0.0109, onset 1.75 cm 同一, p/p0 差 2 %; **node TP split** g 0.0108, onset 1.85 cm, p/p0 差 1.7 %。node rms_ro 3.4e-9 (3.3 桁)。非粘性なので onset は SST 基準 (2.35 cm) より上流 | active (**node の検証**) |
 | `run_0187_wysinv_node_tpsplit_cond_regress_noevap` / `run_0188_wysinv_node_tpsplit_cond_evap` | run_0186 と同一入力 (node, 非粘性, TP split, Kw+HK) | TP split | 蒸発実装後バイナリの回帰 (0187 = `condEvaporation: 0` [当時の既定]; 現在の既定は 1) と蒸発 ON (0188 = 1) | **回帰同一**: 0187 vs 0186 max|ΔT| 3.8e-3 K・|ΔP/P| 2.4e-5・|Δg| 1.2e-7 (run 間ノイズ)。**蒸発 ON も同一** (0188 vs 0187 |ΔT| 7.8e-3 K): Wyslouzil は液相域が全域 S≥2.03 で蒸発分岐が発火しない。残差 3.1 桁 (0186 と同じプラトー) | active ([蒸発 plan](../../plans/accepted/condensation-evaporation.md) 回帰) |
-| `run_0172_fig3_2d_sst_kwhk_tpsplit_restart_ctrl` / `run_0173_fig3_2d_sst_kwhk_tpsplit_evap` | run_0170 (cell, SST no-slip 断熱壁, TP split, Kw+HK) の res_15000 から restart 9000 step | TP split | 蒸発 OFF (対照) / ON | 壁近傍 (wall_dist<80 µm) に S 0.4–0.99 の液相 (g 中央値 1.7e-5, max 1.6e-3) が両者に残る = HK 有限速度 (dr/dt −1e-4 m/s) と上流からの移流供給の釣り合い (Tt=287 K の壁は熱くなく蒸発が遅い、λ 律速は非発火)。evap vs ctrl: max|ΔT| 0.22 K, |Δg| 2.6e-4。**restart 後に両 run とも壁 T が 290 K>Tt へドリフト** ([[forge-sst-restart-nonfidelity]] 既知)。高温壁デモは case/42 NS で実施 | 破棄予定 (蒸発 plan §6-3 の低温壁 対照) |
-| `run_0171_fig3_2d_sst_kwhk_tpsplit_node` / `run_0179`, `run_0181`〜`0183_wysnode_*` | node / 平面 `nozzle_fig3_2d_planar` (Bump 0.004, y₁≈0.5–5 µm, AR 728) | CPG or TP | SST or laminar no-slip (0182 のみ slip) | **node × 平面壁クラスタ no-slip は不成立**: 壁ノード T が Tt を超え (出口コーナーから 326→400+ K)、衝撃列が遡上して 6000–9000 step で unstart (2 次・1 次・SST・laminar・nodeWallDirichlet 0/1・出口 Pt=Ps いずれも)。slip (0182) だけ健全 (T ≤ Tt)。cross-mesh IC の壁ジグザグは 1D 等エントロピー IC で除いたが本質でない → **node 粘性壁 (平面, 極薄壁セル) の申し送り** | 破棄予定 (**申し送りの根拠**) |
+| `run_0172_fig3_2d_sst_kwhk_tpsplit_restart_ctrl` / `run_0173_fig3_2d_sst_kwhk_tpsplit_evap` | run_0170 (cell, SST no-slip 断熱壁, TP split, Kw+HK) の res_15000 から restart 9000 step | TP split | 蒸発 OFF (対照) / ON | 壁近傍 (wall_dist<80 µm) に S 0.4–0.99 の液相 (g 中央値 1.7e-5, max 1.6e-3) が両者に残る = HK 有限速度 (dr/dt −1e-4 m/s) と上流からの移流供給の釣り合い (Tt=287 K の壁は熱くなく蒸発が遅い、λ 律速は非発火)。evap vs ctrl: max|ΔT| 0.22 K, |Δg| 2.6e-4。**restart 後に両 run とも壁 T が 290 K>Tt へドリフト** ([[forge-sst-restart-nonfidelity]] 既知)。高温壁デモは case/42 NS で実施 | 削除済み(2026-08-31) (蒸発 plan §6-3 の低温壁 対照) |
+| `run_0171_fig3_2d_sst_kwhk_tpsplit_node` / `run_0179`, `run_0181`〜`0183_wysnode_*` | node / 平面 `nozzle_fig3_2d_planar` (Bump 0.004, y₁≈0.5–5 µm, AR 728) | CPG or TP | SST or laminar no-slip (0182 のみ slip) | **node × 平面壁クラスタ no-slip は不成立**: 壁ノード T が Tt を超え (出口コーナーから 326→400+ K)、衝撃列が遡上して 6000–9000 step で unstart (2 次・1 次・SST・laminar・nodeWallDirichlet 0/1・出口 Pt=Ps いずれも)。slip (0182) だけ健全 (T ≤ Tt)。cross-mesh IC の壁ジグザグは 1D 等エントロピー IC で除いたが本質でない → **node 粘性壁 (平面, 極薄壁セル) の申し送り** | 削除済み(2026-08-31) (**申し送りの根拠**) |
 
 診断 run (0172–0178, 0180, 0187) は削除済 (上記と同じ結論の切り分け)。
 
@@ -291,7 +291,7 @@ Pt 59070 Pa / Tt 286.65 K、出口 Ps=Pt=2000 Pa、Euler = slip + `visc 0` `ther
 | `run_0191_user_cell_sst_dry` → **`run_0196_user_cell_sst_dry_cont`** (+24000) | cell | NS (SST) | off | M 1.792, p/p0 0.1762, T 174.8 K。**exp isentrope と x≥11 mm で +0.9〜+1.9 %** (throat 直後 x=0.9 mm は +4.6 %) | rms_ro 4e-8 plateau (2 次リミッタ), 継続 24000 step で p/p0 変化 ≤1e-4, **STEADY** | active (0191 は中継) |
 | `run_0192_user_cell_sst_cond` → **`run_0197_user_cell_sst_cond_cont`** (+24000) | cell | NS (SST) | **on** | onset **x=23.2 mm**, g_exit 0.0108, M 1.600, p/p0 0.2090, T 208.0 K。exp cond 1 kPa と −5〜−3 % (x 21–32 mm, onset 帯) / +4〜+5 % (x 42–72 mm) | rms_ro 4e-8 plateau, 継続で不変, **STEADY** | active (0192 は中継) |
 | `run_0193_user_node_euler_dry` / `run_0194_user_node_euler_cond` | **node** (平面一様) | Euler | off / on | **cell と一致**: p/p0 0.1460/0.1767 (cell 0.1465/0.1771), onset 20.2 mm 同一, g 0.0109 同一 | rms_ro 4.3e-9 (2.7 桁), STEADY | active (node 対照) |
-| `run_0195_user_node_sst_dry` | node (平面壁クラスタ) | NS (SST) | off | **不成立** (既知の申し送りと同じ指紋: 壁ノード T 504 K > Tt, P 126 kPa > Pt が x=−40 mm から、本段 6000 step で出口側 unstart)。途中で停止 | — | 破棄予定 |
+| `run_0195_user_node_sst_dry` | node (平面壁クラスタ) | NS (SST) | off | **不成立** (既知の申し送りと同じ指紋: 壁ノード T 504 K > Tt, P 126 kPa > Pt が x=−40 mm から、本段 6000 step で出口側 unstart)。途中で停止 | — | 削除済み(2026-08-31) |
 
 **結果 (`compare_user_profile.png`)**:
 - **NS dry が実験 isentrope に乗る** (x≥11 mm で +1〜2 %; 旧形状 run_0048 は 1 次精度で ±1.5 %)。Euler dry は排除厚がないので −4〜−13 % 下 (下流ほど乖離)。
@@ -421,13 +421,13 @@ docs `thermophysics/{theory §3.1, implementation §4b}`。全 native full rebui
 | --- | --- | --- | --- | --- |
 | `run_0110_match_cflp1`  | 緩和整合 (=1) | 1 | **400step 完走** (NaN無・T[288,504]・ΣY=1) | active (keeper) |
 | `run_0111_match_cflp2`  | 緩和整合 (=1) | 2 | **400step 完走** | active (keeper) |
-| `run_0112_match_cflp4`  | 緩和整合 (=1) | 4 | step7 発散 | 破棄予定 |
-| `run_0113_match_cflp5`  | 緩和整合 (=1) | 5 | step4 発散 | 破棄予定 |
-| `run_0114_match_cflp8`  | 緩和整合 (=1) | 8 | step3 発散 | 破棄予定 |
-| `run_0115_match_cflp10` | 緩和整合 (=1) | 10 | step3 発散 | 破棄予定 |
-| `run_0116_off_cflp1_regr` | 従来 (=0) | 1 | 400step 完走 (default-path 回帰) | 破棄予定 |
-| `run_0119_match_cflp3`  | 緩和整合 (=1) | 3 | step20 発散 | 破棄予定 |
-| `run_0120_off_cflp3`    | 従来 (=0) | 3 | step20 発散 | 破棄予定 |
+| `run_0112_match_cflp4`  | 緩和整合 (=1) | 4 | step7 発散 | 削除済み(2026-08-31) |
+| `run_0113_match_cflp5`  | 緩和整合 (=1) | 5 | step4 発散 | 削除済み(2026-08-31) |
+| `run_0114_match_cflp8`  | 緩和整合 (=1) | 8 | step3 発散 | 削除済み(2026-08-31) |
+| `run_0115_match_cflp10` | 緩和整合 (=1) | 10 | step3 発散 | 削除済み(2026-08-31) |
+| `run_0116_off_cflp1_regr` | 従来 (=0) | 1 | 400step 完走 (default-path 回帰) | 削除済み(2026-08-31) |
+| `run_0119_match_cflp3`  | 緩和整合 (=1) | 3 | step20 発散 | 削除済み(2026-08-31) |
+| `run_0120_off_cflp3`    | 従来 (=0) | 3 | step20 発散 | 削除済み(2026-08-31) |
 
 **単成分 N2 対照 (H2O 無・案B は構造的に no-op)**:
 

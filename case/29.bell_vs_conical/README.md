@@ -248,14 +248,14 @@ laminar・axisym・conical**、参照と同一 IC/BC。**結論: 真因は粘性
 | run_* | 目的・設定差分 | 主要結果 | 状態 |
 | --- | --- | --- | --- |
 | `run_0020_visc_node_wallghost_ab` | 旧 mirror-ghost (基準, `nodeWallViscGradFlux=0`) | 安定。twall_x TV/range=14.8・符号反転 172・スパイク −1.77e4。中心線 Mach=Euler/cell。**基準** | active |
-| `run_0019_visc_node_wallgradflux` | 純勾配 ∇u·S 法線項 | 発散 (~13k, 断熱熱漏れ) | 破棄予定 |
-| `run_0021_visc_node_wallgradflux_adiabfix` | 純勾配 + 断熱熱流束=0 | 壁せん断 0.37Pa (cell の 1e4 倍過小=no-slip 喪失) | 破棄予定 |
-| `run_0022_visc_node_wallsmoothdist` | 滑らか距離 2·vol/sss | 発散 (~9.8k, ドラッグ弱) | 破棄予定 |
-| `run_0024_visc_node_normdrag_only` | 滑らか距離+転置項除去 | 発散 (~9.8k, 転置無関係) | 破棄予定 |
-| `run_0025_visc_node_floor005` | dcc floor `max(dcc,0.05·vol/sss)` | 安定だが twall ノイズ残存 (TV/range=15.8) | 破棄予定 |
-| `run_0023_visc_node_walldirichlet` | nodeWallDirichlet (残差射影) | 発散 (~22.6k, roe 先頭) | 破棄予定 |
-| `run_0026_visc_node_cleandirichlet` | クリーン Dirichlet (毎ステージ KE 除去射影) | 全域崩壊 | 破棄予定 |
-| `run_0027_visc_node_dirichlet_freeze` | クリーン Dirichlet+壁ノード全保存量凍結 | 発散 **3 倍遅延** (~68.5k)→**コーナー積算が主因と確認** | 破棄予定 (診断証拠) |
+| `run_0019_visc_node_wallgradflux` | 純勾配 ∇u·S 法線項 | 発散 (~13k, 断熱熱漏れ) | 削除済み(2026-08-31) |
+| `run_0021_visc_node_wallgradflux_adiabfix` | 純勾配 + 断熱熱流束=0 | 壁せん断 0.37Pa (cell の 1e4 倍過小=no-slip 喪失) | 削除済み(2026-08-31) |
+| `run_0022_visc_node_wallsmoothdist` | 滑らか距離 2·vol/sss | 発散 (~9.8k, ドラッグ弱) | 削除済み(2026-08-31) |
+| `run_0024_visc_node_normdrag_only` | 滑らか距離+転置項除去 | 発散 (~9.8k, 転置無関係) | 削除済み(2026-08-31) |
+| `run_0025_visc_node_floor005` | dcc floor `max(dcc,0.05·vol/sss)` | 安定だが twall ノイズ残存 (TV/range=15.8) | 削除済み(2026-08-31) |
+| `run_0023_visc_node_walldirichlet` | nodeWallDirichlet (残差射影) | 発散 (~22.6k, roe 先頭) | 削除済み(2026-08-31) |
+| `run_0026_visc_node_cleandirichlet` | クリーン Dirichlet (毎ステージ KE 除去射影) | 全域崩壊 | 削除済み(2026-08-31) |
+| `run_0027_visc_node_dirichlet_freeze` | クリーン Dirichlet+壁ノード全保存量凍結 | 発散 **3 倍遅延** (~68.5k)→**コーナー積算が主因と確認** | 削除済み(2026-08-31) (診断証拠) |
 
 > 診断: `FORGE_VISC_WALL_DIAG=1` で壁半割面の `dn`/`dcc`/接線オフセットを集計 (退化 `|dn|∈[1e-8,3e-4]` 4〜5 桁変動を実証)。
 > 正攻法は plan [discretization-node-boundary-ghostless.md](../../plans/active/discretization-node-boundary-ghostless.md) Phase 2 のコーナー面ごと BC。

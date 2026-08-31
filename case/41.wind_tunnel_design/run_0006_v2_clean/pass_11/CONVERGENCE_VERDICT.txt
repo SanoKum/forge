@@ -1,9 +1,0 @@
-
-=== .  [last step 11999]  -> NOT CONVERGED (stalled/plateau — needs scheme change, not more steps) ===
-  rms_ro      : init=2.16e-07 fin=1.20e-07 drop= 0.3dec flat     <-- STALLED (plateau)
-  rms_roUx    : init=2.16e-04 fin=1.23e-04 drop= 0.2dec flat     <-- STALLED (plateau)
-  rms_roUy    : init=5.36e-05 fin=3.96e-05 drop= 0.1dec flat     <-- STALLED (plateau)
-  rms_roUz    : all-zero (inactive, skip)
-  rms_roe     : init=1.76e-01 fin=1.03e-01 drop= 0.2dec flat     <-- STALLED (plateau)
-
-OVERALL: CHECK FAILURES ABOVE
