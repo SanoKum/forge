@@ -2,10 +2,16 @@ r"""RANS 場からの排除厚 $\delta^*(x)$ 抽出 (A12 = axis-Mach 粘性補�
 
 計画: plans/active/tooling-nozzle-axismach-viscous-deltastar.md §4。
 
-定義 (圧縮性・軸対称の平面近似 — $\delta^* \ll r_w$ なので曲率補正は省く):
+定義 (圧縮性・**軸対称の質量収支** — 2026-09-01 に平面近似から置換):
 
-$$\delta^*(x) = \int_0^{y_e} \left(1 - \frac{\rho u}{(\rho u)_e}\right) dy,
-  \qquad y = \text{壁からの法線距離 (鉛直近似)}$$
+$$\delta^*\left(1-\frac{\delta^*}{2r_w}\right) = \int_0^{y_e}
+  \left(1 - \frac{\rho u}{(\rho u)_e}\right)\left(1-\frac{y}{r_w}\right) dy
+  \;\Rightarrow\; \delta^* = r_w\left(1-\sqrt{1-2I/r_w}\right)$$
+
+壁から $y$ 入った欠損は半径 $r_w-y$ の円環を流れるため $(1-y/r_w)$ の重みが付く。
+旧・平面近似 ($\delta^*=\int(1-\rho u/(\rho u)_e)dy$) は欠損重心が壁近くに集中する
+ため過大評価は小さい (M6 出口 $\delta/r_w\approx0.14$ で **+1.4 %**、出口 M 換算
++0.05 % — case/45 run_0007 実測)。帳簿の正確さのため軸対称形を正とする。
 
 **教訓 (run_0030 で実測、繰り返し禁止)**:
 - 探索窓はフリーストリームに届くまで取る (窓 0.35 r* は下流で BL 縁の手前で切れ、
@@ -54,7 +60,11 @@ def deltastar_from_run(mesh_h5, res_h5, wall_xy, scale: float,
         idx = np.argmax(q >= edge_frac * qe)
         y_e = float(y[idx])
         m = y <= y_e
-        integ = float(np.trapezoid(1.0 - q[m] / max(qe, 1e-30), y[m]))
+        # 軸対称の質量収支: 欠損に円環重み (1 - y/r_w) を掛け、
+        # δ*(1 - δ*/(2 r_w)) = I を δ* について解く (docstring 参照)
+        d = 1.0 - q[m] / max(qe, 1e-30)
+        I = float(np.trapezoid(d * (1.0 - y[m] / rw), y[m]))
+        integ = float(rw * (1.0 - np.sqrt(max(1.0 - 2.0 * I / rw, 0.0))))
         out["x"].append(float(xs)); out["dstar"].append(integ)
         out["y_edge"].append(y_e); out["ok"].append(bool(idx > 3))
     return {k: np.asarray(v) for k, v in out.items()}
