@@ -2,6 +2,12 @@
 #include "lowMachPrecond_d.cuh"   // Phase 4: β (lowMachBeta)・c' (lowMachCprime) device ヘルパ
 #include "cuda_forge/eos_jacobian_d.cuh"  // 一般EOS固有系 (eos_split_jacobian_general_closed)。precond 経路で使用
 #include "cuda_forge/block_dplur_jacobian_d.cuh"  // block_dplur::accumulate_split_jacobian_cf (共有ヘッダ)
+#include <cstdlib>
+
+// 診断 (env FORGE_AXIS_DIAG_ALPHA, 既定 0=不変): 近軸 (r→0) の半径方向音響モード安定化。
+// roUy 対角に α·A_planar·c を加える。revolved 軸面積 (r_f·S→0) が落とす半径音響スペクトル半径を
+// planar 面積 A_pl で補うもの。near-axis radial-momentum 不安定 (case/28 TP) の最小修正診断。
+__device__ float g_axisDiagAlpha = 0.0f;
 
 namespace block_dplur {
 
@@ -821,6 +827,8 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
             diag_block[2][2] += A_pl * (g1 * velocity_y + hoop);
             diag_block[2][3] += A_pl * (g1 * velocity_z);
             diag_block[2][4] += -A_pl * g1;
+            // 診断: 近軸半径音響スペクトル半径 α·A_pl·c を roUy 対角に補う (FORGE_AXIS_DIAG_ALPHA>0 のみ)。
+            diag_block[2][2] += static_cast<ST>(g_axisDiagAlpha) * A_pl * local_sonic;
         }
 
         // SU2 流の軸対称対称面 (MARKER_SYM) を Jacobian 内で課す: 軸上 CV で roUy 行 (index 2) を単位行に
@@ -1117,6 +1125,14 @@ void swapScalarImplicitCorrectionBuffers(variables& var)
 
 void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var)
 {
+    // 診断 near-axis 安定化係数を env から 1 度だけ device へ設定 (既定 0 = 不変)。
+    static bool s_axisAlphaInit = false;
+    if (!s_axisAlphaInit) {
+        float a = 0.0f;
+        if (const char* e = getenv("FORGE_AXIS_DIAG_ALPHA")) a = static_cast<float>(atof(e));
+        cudaMemcpyToSymbol(g_axisDiagAlpha, &a, sizeof(float));
+        s_axisAlphaInit = true;
+    }
     if (cfg.timeIntegration == 4) { // 4th order runge kutta
         runge_kutta_exp_4th_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> ( 
             loop, 

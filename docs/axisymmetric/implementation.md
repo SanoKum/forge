@@ -238,6 +238,43 @@ Phase 1 の対応: **まずは無対策で走らせ、軸近傍セルの dt が�
 
 の二択。$\varepsilon \approx 10^{-3}$ を初期値とする。
 
+### `axisTimestepBeta`: 近軸半径音響 additive 安定化 (2026-06)
+
+理論は [theory.md](theory.md) §"近軸半径音響モードの不足"。config
+`time.deltaT.axisTimestepBeta` (既定 `0` = ビット不変・従来挙動)。
+[`setDT_d.cu`](../../solver_density_cuda/cuda_forge/setDT_d.cu) の `setCFL_cell_d` で
+軸対称セル (`isAxisymmetric==1`) かつ `axisTimestepBeta>0` のとき face スペクトル半径に
+半径音響項を加算する:
+
+```cpp
+// face 項と同じ無次元化 (dt·λ/V)。V=r·A_planar (per-radian) なので A_planar/V=1/r。
+cfl[ic] += dt * axisBeta * (fabsf(Uy[ic]) + sonic[ic]) * A_planar[ic] / vol[ic];
+```
+
+設計上の要点:
+
+- **additive (face+axis の和) であり min クランプではない**。min は最内セルしか触れず
+  CFL≳4 で不足した (検証で確認)。additive は広い near-axis 域を滑らかに減衰し頑健。
+- `dt_local` が短くなると DPLUR 時間項 $V/\Delta\tau\,I$ ([`timeIntegration_d.cu`](../../solver_density_cuda/cuda_forge/timeIntegration_d.cu)
+  `block_dplur`) を通じ**全保存式の LHS 対角が整合的に強まる** (単一式への人工対角でない)。
+- `axisTimestepBeta` は**数値スペクトル半径の重みであり物理 CFL 上限ではない**。
+  $\Theta_{\text{axis}}=\Delta\tau(|u_r|+c)/\bar r \approx \mathrm{CFL}/\beta$ は face 項にも依存し厳密保証でない。
+  `axisAcousticCFLMax` 等の「Θ 直接指定」名称は設定値と実効 Θ が一対一でないため**採らない**。
+
+検証 (`case/28` 多成分 TP, 発達場から継続):
+
+- $\beta_{\text{axis}}=2$ で **CFL 4 安定** (無対策は near-axis で step 1〜50 発散)。$\beta\approx\mathrm{CFL}/2$ は
+  `case/28` の経験則 (メッシュ・流れ場依存、一般式でない)。
+- **CFL 4→1 down-test で残差が再低下** (rms_ro $4.5\times10^{-6}\to5\times10^{-7}$) し、近軸の
+  $u_r$・軸上 $p$ が baseline 低 CFL 解に一致 → 高 CFL の残差床は擬似時間 limit cycle で、
+  **定常解は不変**。質量流量・組成場も baseline と一致。
+- **高 CFL 残差床 ($\sim4\times10^{-6}$) は軸でなく He/空気 contact 混合層モード**が主因。別 issue。
+  なお化学種移流は既に 1 次風上 (`scalarTransport_d.cu` `scalar_advection_first_order_d`) なので
+  混合層振動は species 高次再構成ではない (flow 2 次再構成 or 物理せん断層を切り分け中)。
+
+診断用に `FORGE_AXIS_DIAG_ALPHA` (env, 既定 0) があり、roUy 対角へ $\alpha\,A_{\text{planar}}c$ を
+直接足す per-equation 版。機構特定の診断専用で **production では使わない** (additive setDT 版を使う)。
+
 ## Roe スキームの取扱い
 
 軸対称固有の固有分解 ([theory.md](theory.md) §"Roe フラックスヤコビアン") は

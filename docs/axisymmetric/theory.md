@@ -173,6 +173,50 @@ $$
 B 流儀の幾何重みと圧力ソースの組み合わせから自然に成立する性質であり、
 明示的なクランプは Phase 1 では入れない。
 
+### 近軸半径音響モードの不足と additive 安定化 (2026-06)
+
+上のフロアは「軸上で $\Delta t$ が病的に小さくなる」懸念への対策だが、`case/28`
+(多成分 TP, 超音速同軸 He/空気ジェット) の検証で**逆向きの不足**が判明した。
+
+face スペクトル半径 $\sum_f(|U_n|+c)S_f$ は $r$ 重みで比が保たれるが、**軸面の
+revolved 面積 $S_f \propto r_f \to 0$ が半径音響モードを face スペクトル半径から
+落とす**。さらに軸対称圧力ソース $\,R_{\rho u_r} \mathrel{+}= (p-\tau_{\theta\theta})A_{\text{planar}}\,$
+が半径方向運動量を駆動し、その実効加速度は
+
+$$
+\frac{\partial u_r}{\partial t}\Big|_{\text{src}} \sim \frac{p}{\rho\,\bar r} \xrightarrow{\ \bar r\to 0\ } \infty
+$$
+
+で、これも face スペクトル半径に**含まれない**。半径音響時間
+$\tau_r \sim \bar r/(|u_r|+c)$ を局所 $\Delta\tau$ が超えると、近軸セルで $u_r$ が
+振動・増大し密度崩壊に至る。
+
+`case/28` では物理的に正しい**冷 He コアの低密度** ($\rho\approx0.42$) が
+$p/(\rho\bar r)$ を増幅し (CPG 誤熱化 $\rho\approx0.68$ の ~1.6 倍)、安定 CFL を ~1 に
+制限した。**TP が CPG より不安定なのは音速の高さではなく密度**である (音速上昇は
+$\Delta t$ を縮めるので単独では不安定化要因にならない)。
+
+**対策**: 半径音響スペクトル半径 $\lambda_{\text{axis}}=\beta_{\text{axis}}(|u_r|+c)A_{\text{planar}}$ を
+face スペクトル半径に**加算** (min クランプでなく additive — face+axis の和の方が広い
+near-axis 域を滑らかに減衰し頑健) する。近軸支配下で
+
+$$
+\Delta\tau \;\sim\; \mathrm{CFL}\cdot \frac{\bar r}{\beta_{\text{axis}}(|u_r|+c)}, \qquad
+\Theta_{\text{axis}} \equiv \frac{\Delta\tau(|u_r|+c)}{\bar r} \;\approx\; \frac{\mathrm{CFL}}{\beta_{\text{axis}}}
+$$
+
+となる。ただし $\Theta_{\text{axis}}$ は face 項にも依存するため $\mathrm{CFL}/\beta$ を厳密には
+保証しない。よって $\beta_{\text{axis}}$ は**物理的 CFL 上限ではなく、近軸半径音響モードへ
+追加する数値スペクトル半径の重み**である。`case/28` で得た $\beta_{\text{axis}}\approx\mathrm{CFL}/2$
+は推奨例だがメッシュ・流れ場依存の経験則であり一般保証ではない。実装は
+[implementation.md](implementation.md) の `axisTimestepBeta` を参照。
+
+> **近軸の発散と contact の残差床は別機構**: 上の additive 安定化で catastrophic
+> divergence は CFL 4 程度まで解消するが、高 CFL で残る残差床 ($\sim4\times10^{-6}$) は
+> 軸でなく He/空気の **contact 混合層モード**が主因 (スナップショット差分で contact 域の
+> $|\Delta u_r|,|\Delta Y_{\text{He}}|,|\Delta p|$ が軸近傍より大きい)。混合層モードは別 issue
+> として species-only 1 次風上などで切り分ける。CFL 8 は現時点の production 要件としない。
+
 ## Roe フラックスヤコビアン (軸対称 4 波)
 
 軸対称ではフラックス Jacobian の固有値が 4 個になる ($u_n - c$, $u_n$ (entropy),

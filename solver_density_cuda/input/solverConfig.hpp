@@ -39,6 +39,9 @@ public:
     flow_float cfl_pseudo;
     flow_float implicitRelax = 1.0;
     flow_float implicitRelaxSST = -1.0; // -1: implicitRelax に倒置 (既定動作不変)
+    // 軸対称 near-axis 安定化: 擬似時間スペクトル半径に軸項 λ_axis=β·(|u_r|+c)·A_planar を加える。
+    // 近軸 (r→0) で Δτ∝CFL·r/(|u_r|+c) を自然に与え半径運動量不安定を抑える。0=不変 (既定)。
+    flow_float axisTimestepBeta = 0.0;
     int blockDPLUR = 0;
     int speciesImplicitCoupling = 0; // 多成分 TP 陰解法 (timeIntegration==11, nSpecies>=2) の化学種更新方式。
                                      // 0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。

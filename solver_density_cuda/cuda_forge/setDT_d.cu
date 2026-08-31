@@ -115,9 +115,13 @@ __global__ void setCFL_cell_d
  flow_float* Uz  ,
 
  //plane variables
- flow_float* cfl_pln
+ flow_float* cfl_pln,
  //flow_float* cfl_pseudo_pln
 
+ // 軸対称 near-axis 安定化 (isAxisymmetric==1 かつ axisBeta>0 のときのみ作用)
+ int isAxisymmetric,
+ flow_float* A_planar,
+ flow_float axisBeta
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -133,8 +137,18 @@ __global__ void setCFL_cell_d
 
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             geom_int ip = cell_planes[ilp];
-            
+
             cfl[ic] = max(cfl[ic], cfl_pln[ip]);
+        }
+
+        // 軸対称 near-axis 半径音響スペクトル半径を加える: λ_axis = β·(|u_r|+c)·A_planar。
+        // revolved 軸面積 (r_f·S→0) が落とす半径音響モードを planar 面積で補う。face 項と同じ
+        // 無次元化 (dt·λ/V) で cfl へ加算 → 近軸で Δτ=cfl_pseudo·dt/cfl ∝ cfl_pseudo·r/(|u_r|+c)。
+        // V=r·A_planar (per-radian) なので A_planar/V=1/r。LHS 時間項 v/Δτ が全保存式で自動的に強まる。
+        if (isAxisymmetric == 1 && axisBeta > (flow_float)0.0) {
+            const flow_float u_r      = fabsf(Uy[ic]);                                 // 半径方向速度 (axisym: y=radial)
+            const flow_float lam_axis = axisBeta * (u_r + sonic[ic]) * A_planar[ic];   // [V/time]
+            cfl[ic] += dt * lam_axis / max(vol[ic], (flow_float)1.0e-30);
         }
 
         //if (dualTime == 1 or unsteady == 0) {
@@ -267,14 +281,19 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         var.c_d["roUz"] ,
         var.c_d["roe"] ,
         var.c_d["cfl"]  , 
-        var.c_d["dt_local"] , 
-        var.c_d["sonic"]  , 
-        var.c_d["Ux"]  , 
-        var.c_d["Uy"]  , 
+        var.c_d["dt_local"] ,
+        var.c_d["sonic"]  ,
+        var.c_d["Ux"]  ,
+        var.c_d["Uy"]  ,
         var.c_d["Uz"]  ,
 
-        var.p_d["cfl_pln"] 
-        //var.p_d["cfl_pseudo_pln"]  
+        var.p_d["cfl_pln"] ,
+        //var.p_d["cfl_pseudo_pln"]
+
+        // 軸対称 near-axis 安定化
+        cfg.isAxisymmetric,
+        (cfg.isAxisymmetric == 1) ? var.c_d["A_planar"] : var.c_d["volume"],
+        cfg.axisTimestepBeta
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
