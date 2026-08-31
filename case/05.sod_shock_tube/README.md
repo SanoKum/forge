@@ -8,8 +8,8 @@
 | --- | --- | --- | --- |
 | `run_node3d_periodic_sod` | **node + y,z periodic**, run_0002 同一 config (cpg 物理単位 PL1e6/TL2000・PR1e5/TR400, cfl0.2, SLAU, RK3) | **完走 (200 step NaN なし)・物理 sod 構造 (ro 0.84..1.92, P 1e5..1e6, 衝撃右伝播)・spanwise std=0〜1e-6 完全均一** = node periodic が transient 衝撃で機能。node は cell より前面がクリーン (決定的) | **検証完結** |
 | `run_sod3d_cell_ref` | cell + y,z periodic (同 config, 参照) | 完走・物理 sod。滑らか域 spanwise std=2e-7 均一、衝撃前面のみ std=0.5 波打ち (cell atomicAdd ノイズ、periodic とは別) | ref |
-| `run_node3d_periodic_regr3dgeo` | 3D median-dual 幾何堅牢化 (plan architecture-median-dual-3d-double-geometry) の新 converter で sod3d.msh を再変換し再実行 | 変換診断は健全 (体積 relErr 1.2e-7・閉性 3.6e-6)・1000 step NaN なし。ただし copy した config が非次元 sod IC (下記 IC バグ) で場は非物理 — **幾何検証の本体は thinwall 旧新比較 (plan 参照) であり本 run は補助** | 破棄予定 |
-| `run_node3d_slip_lowcfl` | **IC バグ調査の記録**: 当初 `initial:"sod"` (非次元 P=1) は forge CPG thermo (cp1038.8,R296.8) と非互換で T≈0.003K→roe 破壊→**P 均一の異常状態**。これに node checkerboard が乗り発散していた | 破棄予定 (IC バグ記録) |
+| `run_node3d_periodic_regr3dgeo` | 3D median-dual 幾何堅牢化 (plan architecture-median-dual-3d-double-geometry) の新 converter で sod3d.msh を再変換し再実行 | 変換診断は健全 (体積 relErr 1.2e-7・閉性 3.6e-6)・1000 step NaN なし。ただし copy した config が非次元 sod IC (下記 IC バグ) で場は非物理 — **幾何検証の本体は thinwall 旧新比較 (plan 参照) であり本 run は補助** | 削除済み(2026-08-31) |
+| `run_node3d_slip_lowcfl` | **IC バグ調査の記録**: 当初 `initial:"sod"` (非次元 P=1) は forge CPG thermo (cp1038.8,R296.8) と非互換で T≈0.003K→roe 破壊→**P 均一の異常状態**。これに node checkerboard が乗り発散していた | 削除済み(2026-08-31) (IC バグ記録) |
 | `run_0009_aws_node_smoke` (EC2) | **AWS P1 スモーク** ([plans/active/tooling-cloud-gpu-env.md](../../plans/active/tooling-cloud-gpu-env.md)): g5.xlarge (A10G) コンテナで gmsh 生成→convert→node 実行。IC は `gen_sod3d_ic.py` で物理単位 cpg を焼き込み (組み込み `initial:"sod"` は現行も非次元で使用不可) | 完走・NaN なし・mesh 品質 PASS。**run_0011 (同一コード・同一入力のローカル RTX3060) と最大相対差 1.6e-6 / L2 1e-7 で一致** = AWS 環境妥当 | ref (EC2 上) |
 | `run_0010_aws_cell_smoke` (EC2) | 同上の cell 版 | 完走・NaN なし。run_0012 と最大相対差 2.2e-6 / L2 1.2e-7 で一致 | ref (EC2 上) |
 | `run_0011_aws_repro_node` | run_0009 の**ローカル再現** (EC2 生成の sod3d.h5 を bit 同一入力に使用、現行 HEAD native ビルド) | AWS↔ローカル一致の判定根拠 (上記) | ref |

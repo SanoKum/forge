@@ -513,7 +513,7 @@ Tt 1058 K / 旧組成 H₂O 4.63 mol%)** を流し、それぞれ dry / 非平�
 | `run_0067`〜`run_0078_va2fx_M*_{noneq,eq}` (旧行) | **二相エネルギー非保存 (SLAU 面温度) 修正後の凝縮 12 run 再計算** (dry は va2lp `run_0049`… を流用) | 軸 h0 保存 ±0.1 %、出口跳ね消滅。M4.75/5.0 で非平衡→平衡に収束 (出口 M 4.34/4.39 vs 4.35/4.42)。**凝縮 run の正本**、`study_va2fx_exit.json`、`figs/va2fx_*.png` | active (**正本**) |
 | `run_0031`–`0048` (va2) / `run_0049`–`0066` (va2lp) の noneq/eq | 修正前 binary (h0 +0.6 % 非保存、T +4–5 K) | 傾向は同じだが数値は superseded。dry (`run_0031/34/37/40/43/46`, `0049/52/55/58/61/64`) は影響なし | superseded (記録) |
 | `run_0049`〜`run_0066_va2lp_M*_{dry,noneq,eq}` | **va2 の背圧 0.3 倍再計算** (`problem_va2lp_*.yaml`, 超音速流出保証の確認; ユーザ指示) | **全 18 run が va2 (`run_0031`–`0048`) と数値同一** → 出口 BC は無関係と確定。`study_va2lp_exit.json`、各 run に `axis_values.csv` | active (va2 と同値の再現; どちらを参照してもよい) |
-| `run_0030_va_R2_LU6_Lc8_split_cond_eqbin` | 平衡凝縮実装後 binary の回帰 (`run_0024` 再実行) | P 差 ≤2.4 Pa (2e-6)、`condTsat_0` 出力確認 (S 2.03 で過冷却 8.5 K) | 破棄予定 (記録) |
+| `run_0030_va_R2_LU6_Lc8_split_cond_eqbin` | 平衡凝縮実装後 binary の回帰 (`run_0024` 再実行) | P 差 ≤2.4 Pa (2e-6)、`condTsat_0` 出力確認 (S 2.03 で過冷却 8.5 K) | 削除済み(2026-08-31) (記録) |
 | `run_0019_va_R2_LU6_Lc8_newbin` | 別セッションで再ビルドされた forge binary (2026-08-18 02:52, 凝縮改修中) の dry 経路回帰確認 (`run_0005` と同条件) | 軸 M 差 8e-6、‖ΔM‖∞ 0.061 % 同一 → 新 binary で継続可。**NASA CEA2 凍結流照合の対象** (上の CEA 節: T/ρ/u/a が CEA と 0.04 % 以内, $C_d$ 0.9967) → `cea/`, `cea_check_va.py` | active (CEA 照合の根拠; 場は `run_0005` と同一) |
 | `run_0018_va_R2_LU6_Lc8_ns_v2` | v2 初回 — 本段開始時に binary 再ビルド中で rc 127 | 結果なし、削除済 (`run_0020` で再投入) | 削除済 |
 | — | 設計のみスイープ 21 点 → `study_design_va.json` (`study_design_va.py`; R2/L_c11 のみ単調窓外、他全合格) | | ref |

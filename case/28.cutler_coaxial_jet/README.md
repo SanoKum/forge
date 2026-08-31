@@ -11,15 +11,15 @@ thermally-perfect gas + 組成依存入口 BC + 乱流化学種拡散の検証�
 | --- | --- | --- | --- |
 | `run_0033_he_o2_n2_cpg_dplur` | CPG 層流 block-DPLUR 2次, cfl=0.5 (cfl=5 は初手発散) | 残差プラトー (限界周期, NOT CONVERGED)。`res_20000.h5` を SST のリスタート元に使用 | ref |
 | `run_0034_he_o2_n2_tp_dplur`  | TP 層流 block-DPLUR 2次, cfl=0.5 (cfl=5 は step67 発散) | 残差プラトー (NOT CONVERGED)。SST リスタート元 | ref |
-| `run_0035_he_o2_n2_cpg_dplur_cfl2` | CPG 層流 cfl=2 継続 (0033 から) | cfl=2 で安定 (NaN なし)。SST 要請で中断 | 破棄予定 |
-| `run_0036_he_o2_n2_tp_dplur_cfl2`  | TP 層流 cfl=2 継続 (0034 から) | **cfl=2 で発散** (TP は cfl≤0.5 必須)。SST 要請で中断 | 破棄予定 |
+| `run_0035_he_o2_n2_cpg_dplur_cfl2` | CPG 層流 cfl=2 継続 (0033 から) | cfl=2 で安定 (NaN なし)。SST 要請で中断 | 削除済み(2026-08-31) |
+| `run_0036_he_o2_n2_tp_dplur_cfl2`  | TP 層流 cfl=2 継続 (0034 から) | **cfl=2 で発散** (TP は cfl≤0.5 必須)。SST 要請で中断 | 削除済み(2026-08-31) |
 | `run_0037_he_o2_n2_cpg_sst` | **CPG + RANS-SST**, 2次, block-DPLUR, cfl=2 (0033 から k/ω seed) | 安定・残差 2.5 桁低下 (`residual_history.png`)。但し **He コア T≈1007K (非物理)**。`cutler_profiles.png` 核長 x/D≈17 | active |
 | `run_0038_he_o2_n2_tp_sst`  | **TP + RANS-SST**, 2次, block-DPLUR, cfl=0.5 (cfl=2 は step1 発散) | 安定・残差 2.6〜3.3 桁低下 (まだ降下中)。**He コア T≈300K (物理的)**。核長 x/D≈21 | active |
 
 | `run_0039_tp_sst_cfl1` | TP-SST 継続 (0038 から) cfl=1.0 | **安定** (8000步 NaN なし)。残差は 0038 のフロア(rms_ro~3e-7)に張り付き横ばい | active |
-| `run_0040..0044_tp_sst_cfl{2,4,8,1p5,1p2}` | TP-SST 継続 CFL 上限探索 (0038 から) | **全て発散** (cfl2=step50, 4=step1, 8=step9, 1.5=step116, 1.2=step247)。res 出力なし | 破棄予定 |
-| `run_0049..0057_rycl_{A,B,C}_{cfl1,2,4}` | **rho-Y 共通リミタ診断** (`multispeciesRhoYCommonLimiter`)。A=S2 / B=S3 / C=S3+共通 min を同一 restart で比較。解析 `analyze_limitcycle.py` | cfl2 settled: A 最良(A_P=382), C は B 改善(2473→1585)も S2 に届かず, B 最悪。cfl4: B step433/C step550 発散, A 安定。**S2 維持・S3 棚上げ** ([plan §14](../../plans/active/convection-multispecies-contact-pressure.md)) | 破棄予定 |
-| `run_0058..0063_thermoY_{S0,S2c,S2}_{cfl2,cfl4}` | **「界面Yは中心補間で十分か」検証**。S0(cell R_mix)/S2c(中心 face Y=`FORGE_FACE_THERMOY`)/S2(MUSCL) 比較 | cfl2: S2c が S0→S2 改善の 73-76% を回収=「界面Yで評価」が主因(高次でない)。但し cfl4 で **S2c 発散(step638)**・S2 安定 → ρ-Y 同一リミタが安定の鍵。**S2 が最小の正しい形** ([plan §15](../../plans/active/convection-multispecies-contact-pressure.md)) | 破棄予定 |
+| `run_0040..0044_tp_sst_cfl{2,4,8,1p5,1p2}` | TP-SST 継続 CFL 上限探索 (0038 から) | **全て発散** (cfl2=step50, 4=step1, 8=step9, 1.5=step116, 1.2=step247)。res 出力なし | 削除済み(2026-08-31) |
+| `run_0049..0057_rycl_{A,B,C}_{cfl1,2,4}` | **rho-Y 共通リミタ診断** (`multispeciesRhoYCommonLimiter`)。A=S2 / B=S3 / C=S3+共通 min を同一 restart で比較。解析 `analyze_limitcycle.py` | cfl2 settled: A 最良(A_P=382), C は B 改善(2473→1585)も S2 に届かず, B 最悪。cfl4: B step433/C step550 発散, A 安定。**S2 維持・S3 棚上げ** ([plan §14](../../plans/active/convection-multispecies-contact-pressure.md)) | 削除済み(2026-08-31) |
+| `run_0058..0063_thermoY_{S0,S2c,S2}_{cfl2,cfl4}` | **「界面Yは中心補間で十分か」検証**。S0(cell R_mix)/S2c(中心 face Y=`FORGE_FACE_THERMOY`)/S2(MUSCL) 比較 | cfl2: S2c が S0→S2 改善の 73-76% を回収=「界面Yで評価」が主因(高次でない)。但し cfl4 で **S2c 発散(step638)**・S2 安定 → ρ-Y 同一リミタが安定の鍵。**S2 が最小の正しい形** ([plan §15](../../plans/active/convection-multispecies-contact-pressure.md)) | 削除済み(2026-08-31) |
 
 **TP-SST 継続の CFL 上限 (run_0039〜0044, 発達場 0038 から)**: **cfl=1.0 が安定上限** (1.2 以上は発散)。ただし場は cfl=0.5/20000步 で既に残差フロア(限界周期)に達しており、cfl を上げても収束は速くならない (律速はステップ数でなく**安定性**)。冷流 TP ジェットは剛性が高く、層流時の cfl≤0.5 に対し発達 SST 場でも継続上限は ~1.0。
 

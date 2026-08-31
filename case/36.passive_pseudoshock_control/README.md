@@ -91,8 +91,8 @@ wall=2274, 最小辺 ~0.087mm。`med_to_gmsh.py` の変換ロジックは合成�
 | `run_0018_sst_wt1_porous_bp2p06` | SST wall-res・**多孔壁**・Ps=Pt=2.06 (seed) | **NOT CONVERGED** (roUx/roUy/roK 上昇・他プラトー)。衝撃波 x~165mm だが非収束スナップショット値 | 非収束 |
 | `run_0019_sst_wt1_solid_bp2p06` | SST wall-res・**固体壁**・Ps=2.06 (比較) | **NOT CONVERGED** (roUx 上昇)。衝撃波 x~129mm (ドリフト中) | 非収束 |
 | `run_0020_sst_wt1_porous_bp2p08` | SST wall-res・多孔壁・Ps=2.08 (x_f≈0狙い) | **NOT CONVERGED** (roOmega 上昇・他低下中)。衝撃波 x~141mm | 非収束 |
-| `run_0021_sst_wt1_porous_prof` | **計算時間ボトルネック分析用** (run_0020 入力複製, nStepOuter 縮小)。ncu でカーネル別 GPU 時間を取得 | 単独実行 **~5.35ms/step** (run_0020 基準, 98k cell)。GPU busy ~3.7ms/step・残りは launch/host。**上位: implicit_defect_correction_block 24.6% / SLAU 22.4% / limiter_r1 17.4% / viscousFlux 7.3%**。`residual_history.png` | 破棄予定 (プロファイル) |
-| `run_0050_solid_prof` | **run_0048 (solid 構造) の計算時間ボトルネック分析 + 残差モニタ device 常駐化の検証** (入力複製)。ncu + detectNaN on/off 比較、旧/新バイナリ比較 | solid 79.4k cell。分析: GPU busy **2.87ms/step (~50%)・残り host/launch (110 launch/step)**、`detectNaN=1` が +1.45ms/step。**最適化結果** ([plan](../../plans/accepted/architecture-residual-monitor-async.md)): 残差 RMS/detectNaN を fused device 縮約+間引き flush 化し 2000 step **13.38s→9.58s (−28%)**、残差 CSV は不変 (差は solver 非決定性ノイズ床内)。`residual_history.png`/`CONVERGENCE_VERDICT.txt` | 破棄予定 (プロファイル/検証) |
+| `run_0021_sst_wt1_porous_prof` | **計算時間ボトルネック分析用** (run_0020 入力複製, nStepOuter 縮小)。ncu でカーネル別 GPU 時間を取得 | 単独実行 **~5.35ms/step** (run_0020 基準, 98k cell)。GPU busy ~3.7ms/step・残りは launch/host。**上位: implicit_defect_correction_block 24.6% / SLAU 22.4% / limiter_r1 17.4% / viscousFlux 7.3%**。`residual_history.png` | 削除済み(2026-08-31) (プロファイル) |
+| `run_0050_solid_prof` | **run_0048 (solid 構造) の計算時間ボトルネック分析 + 残差モニタ device 常駐化の検証** (入力複製)。ncu + detectNaN on/off 比較、旧/新バイナリ比較 | solid 79.4k cell。分析: GPU busy **2.87ms/step (~50%)・残り host/launch (110 launch/step)**、`detectNaN=1` が +1.45ms/step。**最適化結果** ([plan](../../plans/accepted/architecture-residual-monitor-async.md)): 残差 RMS/detectNaN を fused device 縮約+間引き flush 化し 2000 step **13.38s→9.58s (−28%)**、残差 CSV は不変 (差は solver 非決定性ノイズ床内)。`residual_history.png`/`CONVERGENCE_VERDICT.txt` | 削除済み(2026-08-31) (プロファイル/検証) |
 
 ### node-centered (median-dual) SST 試行 (2026-06-23)
 
@@ -182,7 +182,7 @@ forge cell(衝撃 147mm)と node-MUSCL(127mm)の差の妥当性を、独立ソ�
 否定**。**真因=壁∩出口コーナーでの outlet_statPress (Ps 規定) の数値不安定** (slip/no-slip 不問)。multi-marker emit
 は効いている (コーナー2ノードが両属) が**§9.1 検証は実コーナー無しメッシュだったため症状再発**。高 CFL で振動成長、
 **cfl_pseudo≤0.3 で安定**。根治=出口静圧 BC の数値安定化 (弱形式+緩和 等)。詳細 [`plans/diffusion-node-wall-viscous-distance.md`](../../plans/accepted/diffusion-node-wall-viscous-distance.md) §9.8。図 `cmp_laminar_3way.png`/`corner_divergence_buildup.png`。
-| `run_node_wallstress_{off,on,off2}` | bb90036 twall カーネル A/B (30step) | 場は不変(非決定性床内)、新 twall 物理値・**utau/ypls の nonzero frac=0 実測**(壁関数退化の実証) | 破棄予定(診断) |
+| `run_node_wallstress_{off,on,off2}` | bb90036 twall カーネル A/B (30step) | 場は不変(非決定性床内)、新 twall 物理値・**utau/ypls の nonzero frac=0 実測**(壁関数退化の実証) | 削除済み(2026-08-31)(診断) |
 
 **確定した連鎖** (`run_0049`(cell) vs `run_node_sst_muscl`/`run_node_sst_bp1p90_matched`(node) vs SU2 中立132mm):
 1. node/cell とも `convMethod=2` (移流1次化ではない)。x<40mm のコア・BL は node≡cell。
