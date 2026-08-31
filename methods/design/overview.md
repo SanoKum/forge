@@ -239,6 +239,28 @@ $x_F$ は `x_end_margin` を 2.3→3.0 と変えても 0.08% しか動かない 
 が、margin が不足すると場が $F$ に届かず追跡が失敗するため**明示エラー**にする
 (旧方式はここで黙って「計算した壁の終端」を返していた)。
 
+#### 全長を設計変数にする (`Lc_mode: from_length`, dv `L_total` — 2026-08-31)
+
+計画: [tooling-nozzle-axismach-length-dv.md](../../plans/accepted/tooling-nozzle-axismach-length-dv.md)。
+従来は加速区間長 $L_c$ (軸 M が極大 $M_d$ に達する $x_E$ までの長さ) を直接 dv に
+していたが、設備・機体に効くのは**スロート→物理出口の全長** $x_F$ の方で、
+$x_F-x_E$ (終端特性線の一様化区間) は $\approx r_F\sqrt{M_d^2-1}$ で $L_c$ に
+ほぼ依存しない物理量である。`Lc_mode: from_length` は dv を
+**`L_total`** ($=x_F$。スロート $x=0$ 起点・$r_t$ 単位) とし、$x_E$ (= $L_c$) を
+**終端特性線込みの設計パスから逆算する**:
+解析初期推定 $L_c^{(0)}=L_{\rm total}-x_A-r_F\sqrt{M_d^2-1}$ → ステップ $=-$残差の
+固定点反復 (写像 $x_F(L_c)$ は傾き $\approx1$ の単調なので縮小率 ~0.05)。
+離散 MOC の $x_F$ には解像度依存の**ノイズ床** (n_axis 500 で ~0.05 $r_t$ の階段) が
+あり secant の局所勾配推定は壊れるため使わない。収束判定は `L_total_tol` (既定 0.05
+$r_t$ = n500 ノイズ床相当。詰めるなら `n_axis_inv` を上げて tol を下げる)。
+窓外の `L_total` は到達可能な $x_F$ を添えて**明示エラー**。全 `axis_law`
+(quintic / knot / …) に共通で、knot の第 2 dv $M_K$ は独立のまま。実測では初期推定が
+既に tol 内 (M4/R2, $L_{\rm total}$=20 で残差 0.036・設計パス 1 回; M6/R3 knot
+$L_{\rm total}$=100 で 2 回)。診断は返り値 / `prepare_info.json` の `Lc_solve`
+(`L_total_target` / `xF_residual` / `n_design_evals`)。従来の `explicit`/`max` は
+回帰対照として不変。テスト: `design/tests/run_axismach_length_tests.py`
+(往復一致 = 逆算した $L_c$ を `explicit` に渡すと bit 同一の $x_F$)。
+
 ### 逆 MOC の初期値線: スロート特性線 (`geometry/transonic.py::throat_characteristic`)
 
 計画: [`plans/accepted/tooling-nozzle-axismach-throat-characteristic.md`](../../plans/accepted/tooling-nozzle-axismach-throat-characteristic.md) (A8)。
@@ -602,6 +624,9 @@ n=4000 で 1.32e-3 と素直に減る)。採否の最終判定は CFD の軸 M /
 $x_F$ 22.85→19.11 (−16%) が上限 — **$x_F - x_E \approx 12.6\,r_t$ (終端特性線の一様化
 区間) は $L_c$ に依らない物理の床**。詳細 =
 [notes/investigations/nozzle-axismach-lc-sweep.md](../../notes/investigations/nozzle-axismach-lc-sweep.md)。
+全長 ($x_F$) を直接指定して $L_c$ を従属させる場合は `Lc_mode: from_length` (上記
+「全長を設計変数にする」節) を使う — このスイープの知見 (内部衝撃波の下限・一様化区間の床)
+は $L_c$ と $x_F$ のどちらを dv にしても同じ制約として効く。
 
 ### 粘性 δ\* 補正 (A12, `runner_axismach.prepare_ns` / `metrics/deltastar.py`)
 

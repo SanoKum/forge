@@ -236,73 +236,149 @@ def design_chain(p: Problem) -> dict:
         lo, hi = 1e-2, float("inf")
     else:
         raise ValueError("geometry.axis_law は 'quintic'/'knot'/'bspline_M'/'bspline_dnu'/'onepoint'")
-    # --- L_c: 許容窓を必ず計算し、explicit は窓内検査・max は窓上限×0.98 ---
+    # --- L_c の決め方 (Lc_mode): 許容窓は常に計算する ---
+    #   'explicit'    = dv.L_c を直接与える (窓内検査)
+    #   'max'         = 窓上限×0.98
+    #   'from_length' = dv.L_total (スロート x=0 → 物理出口 x_F の長さ, r_t 単位) を
+    #                   設計変数とし、軸 M 極大点 x_E (= x_A + L_c) は終端特性線込みの
+    #                   設計パスから逆算する (E→F 一様化区間は物理で決まるため)。
+    #                   plans/accepted/tooling-nozzle-axismach-length-dv.md
+
+    def _make_law(L_c: float):
+        if axis_law == "knot":
+            return KnotQuinticAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md, M_K)
+        if axis_law == "bspline_M":
+            from ..geometry.axis_law_bspline import MonotoneBSplineAxisLaw
+            return MonotoneBSplineAxisLaw(
+                x_A, x_A + L_c, M_A, Mp_A, Mpp_A, Md,
+                n_interior=int(p.geometry.get("bspline_n_interior", 15)),
+                exit_curvature=str(p.geometry.get("bspline_exit_curvature", "hard")),
+                spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
+                spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
+        if axis_law == "bspline_dnu":
+            from ..geometry.axis_law_bspline import NonnegDnuBSplineAxisLaw
+            return NonnegDnuBSplineAxisLaw(
+                x_A, x_A + L_c, M_A, Mp_A, Mpp_A, Md, gas,
+                n_interior=int(p.geometry.get("bspline_n_interior", 20)),
+                exit_slope=str(p.geometry.get("bspline_exit_curvature", "hard")),
+                spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
+                spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
+        if axis_law == "onepoint":
+            # D 案 (plans/accepted/tooling-nozzle-axislaw-onepoint.md): 端点アンカー固定 +
+            # 内部補間点 1 点 (ξ_P, η_P) の C⁴ 区分 5 次。実験用選択肢。
+            from ..geometry.axis_law_onepoint import OnePointC4AxisLaw
+            return OnePointC4AxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md,
+                                     float(p.geometry["onepoint_xi_P"]),
+                                     float(p.geometry["onepoint_eta_P"]))
+        return QuinticHermiteAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md)
+
+    def _checked_law(L_c: float):
+        law = _make_law(L_c)
+        v = law.gates()["violations"]
+        if v:
+            raise ValueError("軸 Mach law ゲート不合格: " + "; ".join(v))
+        return law
+
+    rF_pred = float(np.sqrt(area_ratio_isentropic(Md, g)))
+
+    def _run_inverse(law):
+        # target: [x0, x_A) は実測 (反復時) / [x_A, x_E] law / 以降 M_d
+        def target_moc(x: float) -> float:
+            x = float(x)
+            if x < x_A:
+                if seg is not None:
+                    return float(seg(np.float64(x)))
+                return float(ht.mach(x, 0.0)) if x_reach_cfd is None else float(law(x_A))
+            return float(law(x))
+        x_end = law.x_E + float(p.geometry.get("x_end_margin", 2.3)) \
+            * rF_pred * float(np.sqrt(Md * Md - 1.0))
+        return inverse_design(ht, target_moc, x_axis_end=float(x_end),
+                              n_axis=int(p.geometry.get("n_axis_inv", 500)),
+                              n_start=n_start, gamma=g,
+                              dx_wall=float(p.geometry.get("dx_wall", 0.02)),
+                              th_wall0=float(np.arctan(x0 / R)), M_start=M_start,
+                              exit_mode=str(p.geometry.get("exit_mode", "characteristic")),
+                              x_E=law.x_E, M_d=Md, start_line=start_line,
+                              wall_mode=str(p.geometry.get("wall_mode", "streamline")),
+                              blend_width=float(p.geometry.get("wall_blend_width", 1.0)),
+                              axis_dx0=p.geometry.get("axis_dx0"))
+
     mode = str(p.geometry.get("Lc_mode", "explicit"))
+    solve_diag = None
     if mode == "max":
         if axis_law in ("knot", "bspline_M", "bspline_dnu", "onepoint") and hi >= 400.0:
             raise ValueError(f"{axis_law} 則の L_c に上限はない (窓が開放) — "
                              "Lc_mode: explicit で L_c を与えること")
         L_c = hi * 0.98
+        law = _checked_law(L_c)
+        res = _run_inverse(law)
     elif mode == "explicit":
         L_c = float(dv_value(p, "L_c"))
         if not (lo <= L_c <= hi):
             raise ValueError(f"L_c = {L_c:.4g} が許容窓 ({lo:.4g}, {hi:.4g}) 外 "
                              "(M'≥0 単調ゲート)")
+        law = _checked_law(L_c)
+        res = _run_inverse(law)
+    elif mode == "from_length":
+        # 逆問題: x_F(L_c) = L_total を L_c について解く。x_F − x_E ≈ r_F√(Md²−1)
+        # (終端 Mach line 近似, 実測 0.04% 一致) なので写像はほぼ**傾き 1** の単調。
+        # ただし離散 MOC の x_F には解像度依存のノイズ床がある (n_axis 500 で
+        # ~0.05 r_t — 隣接 L_c 間で階段状。secant の局所勾配推定は壊れる) ため、
+        # ステップ = −残差 の固定点反復 (縮小率 |1 − dx_F/dL_c| ≈ 0.05) を使い、
+        # 最良反復点を採用する。既定 tol 0.05 はこのノイズ床相当 — より詰めるなら
+        # n_axis_inv を上げて L_total_tol を下げる。
+        L_target = float(dv_value(p, "L_total"))
+        tol = float(p.geometry.get("L_total_tol", 0.05))
+        n_iter_max = int(p.geometry.get("L_total_maxiter", 8))
+        # 窓端は数値マージンを取ってクランプ (単調ゲート境界での law 破綻を避ける)
+        lo_c = lo * 1.001
+        hi_c = hi * 0.999 if np.isfinite(hi) else hi
+
+        def _clamp(v: float) -> float:
+            return float(min(max(v, lo_c), hi_c))
+
+        n_eval = 0
+
+        def _eval(L_c: float):
+            nonlocal n_eval
+            law = _checked_law(L_c)
+            res = _run_inverse(law)
+            xF = float(res["exit"].get("x_F", float("nan")))
+            if not np.isfinite(xF):
+                raise ValueError("Lc_mode: from_length — 終端特性線の x_F 追跡に失敗 "
+                                 "(場が短い: geometry.x_end_margin を増やす)")
+            n_eval += 1
+            return xF - L_target, law, res
+
+        L_c = _clamp(L_target - x_A - rF_pred * float(np.sqrt(Md * Md - 1.0)))
+        f0, law, res = _eval(L_c)
+        best = (abs(f0), L_c, f0, law, res)
+        for _ in range(n_iter_max):
+            if abs(f0) <= tol:
+                break
+            L_new = _clamp(L_c - f0)
+            if L_new == L_c:               # 窓端に張り付いた — 窓内で到達不能
+                raise ValueError(
+                    f"dv.L_total = {L_target:.4g} は L_c 許容窓 ({lo:.4g}, {hi:.4g}) "
+                    f"内で実現不能 (窓端 L_c = {L_c:.4g} で x_F = {L_target + f0:.4g})")
+            f0, law, res = _eval(L_new)
+            L_c = L_new
+            if abs(f0) < best[0]:
+                best = (abs(f0), L_c, f0, law, res)
+            else:                          # 改善停止 = ノイズ床に到達
+                break
+        _, L_c, f0, law, res = best
+        if abs(f0) > tol:
+            raise ValueError(
+                f"Lc_mode: from_length 未収束 (|x_F − L_total| = {abs(f0):.3g} > "
+                f"tol {tol:.3g}) — 逆 MOC の離散化ノイズ床の可能性: "
+                "geometry.n_axis_inv を上げるか L_total_tol を緩める")
+        solve_diag = {"L_total_target": float(L_target),
+                      "xF_residual": float(f0), "n_design_evals": int(n_eval),
+                      "tol": float(tol)}
     else:
-        raise ValueError("geometry.Lc_mode は 'explicit' か 'max'")
-    if axis_law == "knot":
-        law = KnotQuinticAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md, M_K)
-    elif axis_law == "bspline_M":
-        from ..geometry.axis_law_bspline import MonotoneBSplineAxisLaw
-        law = MonotoneBSplineAxisLaw(
-            x_A, x_A + L_c, M_A, Mp_A, Mpp_A, Md,
-            n_interior=int(p.geometry.get("bspline_n_interior", 15)),
-            exit_curvature=str(p.geometry.get("bspline_exit_curvature", "hard")),
-            spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
-            spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
-    elif axis_law == "bspline_dnu":
-        from ..geometry.axis_law_bspline import NonnegDnuBSplineAxisLaw
-        law = NonnegDnuBSplineAxisLaw(
-            x_A, x_A + L_c, M_A, Mp_A, Mpp_A, Md, gas,
-            n_interior=int(p.geometry.get("bspline_n_interior", 20)),
-            exit_slope=str(p.geometry.get("bspline_exit_curvature", "hard")),
-            spread_x_frac=float(p.geometry.get("bspline_spread_x_frac", 0.5)),
-            spread_M_frac=p.geometry.get("bspline_spread_M_frac", 0.75))
-    elif axis_law == "onepoint":
-        # D 案 (plans/accepted/tooling-nozzle-axislaw-onepoint.md): 端点アンカー固定 +
-        # 内部補間点 1 点 (ξ_P, η_P) の C⁴ 区分 5 次。実験用選択肢。
-        from ..geometry.axis_law_onepoint import OnePointC4AxisLaw
-        law = OnePointC4AxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md,
-                                float(p.geometry["onepoint_xi_P"]),
-                                float(p.geometry["onepoint_eta_P"]))
-    else:
-        law = QuinticHermiteAxisLaw(x_A, L_c, M_A, Mp_A, Mpp_A, Md)
+        raise ValueError("geometry.Lc_mode は 'explicit' / 'max' / 'from_length'")
     gates = law.gates()
-    if gates["violations"]:
-        raise ValueError("軸 Mach law ゲート不合格: " + "; ".join(gates["violations"]))
-
-    # --- target: [x0, x_A) は実測 (反復時) / [x_A, x_E] law / 以降 M_d ---
-    def target_moc(x: float) -> float:
-        x = float(x)
-        if x < x_A:
-            if seg is not None:
-                return float(seg(np.float64(x)))
-            return float(ht.mach(x, 0.0)) if x_reach_cfd is None else float(law(x_A))
-        return float(law(x))
-
-    rF_pred = float(np.sqrt(area_ratio_isentropic(Md, g)))
-    x_end = law.x_E + float(p.geometry.get("x_end_margin", 2.3)) \
-        * rF_pred * float(np.sqrt(Md * Md - 1.0))
-    res = inverse_design(ht, target_moc, x_axis_end=float(x_end),
-                         n_axis=int(p.geometry.get("n_axis_inv", 500)),
-                         n_start=n_start, gamma=g,
-                         dx_wall=float(p.geometry.get("dx_wall", 0.02)),
-                         th_wall0=float(np.arctan(x0 / R)), M_start=M_start,
-                         exit_mode=str(p.geometry.get("exit_mode", "characteristic")),
-                         x_E=law.x_E, M_d=Md, start_line=start_line,
-                         wall_mode=str(p.geometry.get("wall_mode", "streamline")),
-                         blend_width=float(p.geometry.get("wall_blend_width", 1.0)),
-                         axis_dx0=p.geometry.get("axis_dx0"))
     qa = wall_qa(res["wall"], Md, law.x_E, g, R=R)
     if qa["violations"]:
         raise ValueError("壁 QA 不合格: " + "; ".join(qa["violations"]))
@@ -329,6 +405,7 @@ def design_chain(p: Problem) -> dict:
             "exit": {k: v for k, v in res["exit"].items() if k != "term_path"},
             "x0": float(x0), "x_A": float(x_A), "x_E": float(law.x_E),
             "L_c": float(L_c), "Lc_window": (float(lo), float(hi)),
+            "Lc_mode": mode, "Lc_solve": solve_diag,
             "axis_law": axis_law, "M_knot": M_K,
             "x_K": (float(law.x_K) if axis_law == "knot" else None),
             "anchor": (float(M_A), float(Mp_A), float(Mpp_A)),
@@ -406,6 +483,7 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     info = {"chain": "axismach", "discretization": "node",
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
             "Lc_window": list(d["Lc_window"]), "anchor": list(d["anchor"]),
+            "Lc_mode": d["Lc_mode"], "Lc_solve": d["Lc_solve"],
             "anchor_source": d["anchor_source"], "start_line": d["start_line"],
             "wall_mode": d["wall_mode"], "wall_repr": d["wall_repr"],
             "axis_law": d["axis_law"], "M_knot": d["M_knot"], "x_K": d["x_K"],
@@ -653,6 +731,7 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                                 "kappa": wall.kappa_throat,
                                 "dstar_throat": float(wall._dstar_hist(0.0))},
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
+            "Lc_mode": d["Lc_mode"], "Lc_solve": d["Lc_solve"],
             "anchor": list(d["anchor"]), "anchor_source": d["anchor_source"],
             "start_line": d["start_line"], "wall_mode": d["wall_mode"],
             "Md": d["Md"], "R": d["R"],
