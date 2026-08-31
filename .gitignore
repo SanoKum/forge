@@ -58,3 +58,5 @@ case/**/run_*/
 # Office 系バイナリは追跡しない (2026-08-31 持ち込み整理: 中身を diff レビューできないため)
 *.pptx
 *.pptm
+*.swp
+case/02.airfoil/run_cuda/identity_system.mtx*
