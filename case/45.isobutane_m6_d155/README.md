@@ -26,6 +26,26 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 | `run_0007_ns_trim_v3` | トリム版 NS v3 (CFD 抽出 δ\*, IC=run_0006) | 完走・NaN 0・凍結 1.2e-4・**δ\* 固定点 (2巡目比 median 0.999)**。**出口面軸 M = 6.00079 (+0.013 % M_d)** — トリム狙い通り。quasisteady machmax/pmax STEADY (shock 指標は無衝撃のため対象外)。出口壁半径 0.77591 m → 最終 r_t 補正 −0.12 % で 0.775 m 合わせ | active (**dry 最終形の正本**) |
 | `run_0008_ns_trim_cond` | 凝縮 ON restart (`problem_d155_trim_ns_cond.yaml`: Kw+HK condModel1+Kantrowitz, 蒸発 ON, IC=run_0007, 12000 step) | 完走・NaN 0・**STEADY** (4k/8k/12k で M_exit 差 5e-4)。軸 onset x≈69 r_t、出口 g 0.20 % (H₂O の 2 %)、**出口軸 M 5.9273 (−1.2 %)**・試験区間に M 低下勾配 (x60→96 で 6.00→5.93)。dry の軸は x≈24 r_t (M5.5) で飽和線越え S≈14 (`axis_values.csv` の Tsat_post) | active (**凝縮評価の正本**) |
 
+## SU2 クロスチェック (境界層厚さ, 2026-09-01)
+
+δ\* 抽出の軸対称化 (円環重み) と合わせて、**同一メッシュ・同一 BC・同一ガス (CPG γ\*=1.27354)** で forge node SST と SU2 v8.5 axisym SST の境界層厚さを比較する ([procedures/su2-cross-check.md](../../procedures/su2-cross-check.md) 準拠)。
+
+| run | 内容 | 結果 | 状態 |
+| --- | --- | --- | --- |
+| `run_0009_cpg_euler` | CPG 版 Euler (`problem_d155_cpg_euler.yaml`) | 完走・NaN 0。CPG は A/A*=159 (semi-perfect 88.2) でノズルが伸びる (出口壁半径 1.03 m) — 比較チェーン専用で製品形状ではない | active (比較チェーン) |
+| `run_0010_cpg_ns_coarse` | CPG NS 中継 (y+~50) | 完走・NaN 0 | active (中継) |
+| `run_0011_cpg_ns` | **CPG NS 本計算** (wall_first 6.5e-5=y+~2 [4.5e-5 は CPG 長尺で AR1403 FAIL→緩和], 相関 δ\* 物理壁, 24000 step) — 比較の forge 側 | 完走・NaN 0・品質 PASS。残差 2 桁 warm 床 (既知パターン) | active (**比較 forge 側**) |
+| `run_0012_su2_sst` | **SU2 v8.5 RANS-SST** (同一メッシュ msh→su2 変換, axisym, ROE+MUSCL, SST V2003m, Sutherland/Pr0.72/Prt0.9, 40k+20k iter) | 収束: rms[Rho] −6.5・rms[RhoE] −2.3・出口 massflux/Mach ドリフト 0.003 %/5k (手順書合格実績以上)。`history.csv` は継続分のみ | active (**比較 SU2 側**) |
+| `run_0013_cpg_ns_plainsst` | forge 素 SST 化 A/B (`dilatationCorrection: 0, katoLaunder: 0` — prepare 後に solverConfig 直接編集。YAML への独自キー追記は黙って無視されるため不可), IC=run_0011, 12000 step | 完走・NaN 0。**素 SST にすると SU2 と一致: δ99 ≤3 %・θ ≤0.4 %・δ* ≤1.3 %** | active (**帰属 A/B の正本**) |
+| `run_0014_cpg_ns_dilat0_kl1` | 帰属分離 (dilatation OFF / KL ON) | run_0013 と ≤0.7 % 差 → **Kato-Launder は無関係、差は dilatationCorrection 単独** | active (帰属分離) |
+
+### SU2 クロスチェックの結論 (2026-09-01)
+
+- **forge 生産設定 SST は SU2 比で境界層が薄い**: δ99 −17〜21 %・θ −16 %・δ* −5 % (4 ステーション一貫)。
+- **帰属は `dilatationCorrection: 2` (圧縮性生産項の正確形: deviatoric trace 除去 + 等方項 −⅔ρk∇·u) 単独**。素 SST 化した forge は SU2 と δ99 ≤3 %/θ ≤0.4 %/δ* ≤1.3 % で一致 = **ソルバ・離散化は無罪、意図した乱流モデル差**。Kato-Launder の寄与 ≤0.7 %。
+- ノズルは全域 ∇·u>0 (強膨張) のため等方項が k のシンクとして常時働く。急膨張の乱流抑制は物理的に実在する効果で forge 形は正当だが、**SST のモデル形式差として境界層厚に ±16 % 級の不確かさ**があると認識すること。δ* への影響は ±5 % (出口 M ±0.1〜0.15 %) に留まり、Md トリムは forge 自身の NS で較正しているため製品性能の結論は不変。
+- 比較図・数値: `compare_bl_su2.{png,json}` (3 者重ね描き)、40k 時点の記録 `compare_bl_su2_iter40k.json`。
+
 ## 結論 (2026-08-31)
 
 - **最短全長: スロート→物理出口 7.337 m** (x_F 96.00 r_t, r_t 76.42 mm)、入口配管端→出口 8.292 m。うち E→F 一様化区間 ≈4.36 m は物理の床。
