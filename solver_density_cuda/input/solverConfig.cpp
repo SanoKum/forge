@@ -316,6 +316,7 @@ void solverConfig::read(std::string fname)
         this->cfl = getValidatedValue<double>(deltaT, "cfl", "time.deltaT");
         this->cfl_pseudo = getValidatedValue<double>(deltaT, "cfl_pseudo", "time.deltaT");
         this->implicitRelax = getOptionalValidatedValue<double>(deltaT, "implicitRelax", 1.0, "time.deltaT");
+        this->updateGuardAlpha = getOptionalValidatedValue<double>(deltaT, "updateGuardAlpha", 0.0, "time.deltaT");
         {
             double raw = getOptionalValidatedValue<double>(deltaT, "implicitRelaxSST", -1.0, "time.deltaT");
             this->implicitRelaxSST = (raw < 0.0) ? this->implicitRelax : (flow_float)raw;

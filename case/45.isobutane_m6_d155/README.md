@@ -57,6 +57,7 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 - **緩和込みの上限**: relax0.7 → cfl 8 (12 で発散)、relax0.5 → cfl 16+。積 cfl×relax ≈ 6-8 で飽和。
 - **収束レース**: 実効速度も cfl×relax でスケールし **cfl8+relax0.7 が最速** (4000 step で rms_roUx 現行 cfl1 比 1/3、rms_roOmega 1/4)。cfl16+relax0.5 は頭打ち。図 `run_0015_cflsweep/race_residuals.png`。
 - **生産推奨**: CPG `cfl 8 + implicitRelax 0.7` / TP `cfl 4-6 + implicitRelax 0.7` (warm 検証済上限 6 に対しマージン)。現行 cfl1 比で 3〜4 倍速の見込み。
+- **追試 (2026-09-02, probes5/6)**: commit 時の正値性ガード (`updateGuardAlpha`, 新実装 opt-in) は**上限を上げない** (発散遅延のみ。α=0.5 は毎 step 半減を許すため床への歩行が続く)。**lowMachPrecond=2+ガード併用も不成立** — P が床に触れないまま SST チャネル (ω 2.8e22) で爆発。⇒ 真因は「defect-correction 反復 (近似 Jacobian + SST 隔離更新) の不安定」で、床 NaN は終端症状。`implicitRelax` が効くのは反復スペクトル半径を縮めるから。詳細 [plan](../../plans/accepted/time_integration-update-positivity-guard.md)
 
 ## 結論 (2026-08-31)
 
