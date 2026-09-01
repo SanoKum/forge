@@ -46,6 +46,18 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 - ノズルは全域 ∇·u>0 (強膨張) のため等方項が k のシンクとして常時働く。急膨張の乱流抑制は物理的に実在する効果で forge 形は正当だが、**SST のモデル形式差として境界層厚に ±16 % 級の不確かさ**があると認識すること。δ* への影響は ±5 % (出口 M ±0.1〜0.15 %) に留まり、Md トリムは forge 自身の NS で較正しているため製品性能の結論は不変。
 - 比較図・数値: `compare_bl_su2.{png,json}` (3 者重ね描き)、40k 時点の記録 `compare_bl_su2_iter40k.json`。
 
+## 陰解法 cfl_pseudo 上限スイープ (2026-09-02)
+
+`run_0015_cflsweep/` (probe 22 本, `sweep_cfl_implicit.py` + `summary.json`。中間 res は削除済み・各 probe の config/residual/NaN ダンプは保持)。warm 場 (run_0007 TP / run_0011 CPG) restart 2000 step + coarse IC 収束レース 4000 step。
+
+- **素の上限 (implicitRelax=1): TP は cfl 2 (3 で発散)、CPG は 3 (4 で発散)**。既定挙動としては単桁前半で頭打ち。
+- **原因は低マッハ調整ではない** (仮説棄却): ① 現行 config は `lowMachPrecond: 0` で低マッハ処理は不活性、② 発散箇所は亜音速チェンバでなく**下流端の超音速壁 BL 内** (壁から ~0.003 r_t の対数層)、③ `lowMachPrecond: 2` を入れると逆に悪化 (step 97→13)。
+- **真のメカニズム = 陰的更新の P アンダーシュート → EOS 床 (pMin=1 Pa) 洗浄 → NaN**。NaN ダンプで P=1.000 Pa 張り付き・T→0・ro<0 の指紋。最厚 BL・最低圧 (P~1.4 kPa) の下流端は床までの絶対マージンが最小で最初に破れる。ω 残差の先行爆発は症状 (ω~1e10 の増幅表示)。
+- **切り分け**: `nStepInner` 10/20 無効 (DPLUR 内部収束でない)・`implicitRelaxSST` 0.5 無効 (SST 方程式でない) — **`implicitRelax` (流れ方程式の緩和) だけが効く**。
+- **緩和込みの上限**: relax0.7 → cfl 8 (12 で発散)、relax0.5 → cfl 16+。積 cfl×relax ≈ 6-8 で飽和。
+- **収束レース**: 実効速度も cfl×relax でスケールし **cfl8+relax0.7 が最速** (4000 step で rms_roUx 現行 cfl1 比 1/3、rms_roOmega 1/4)。cfl16+relax0.5 は頭打ち。図 `run_0015_cflsweep/race_residuals.png`。
+- **生産推奨**: CPG `cfl 8 + implicitRelax 0.7` / TP `cfl 4-6 + implicitRelax 0.7` (warm 検証済上限 6 に対しマージン)。現行 cfl1 比で 3〜4 倍速の見込み。
+
 ## 結論 (2026-08-31)
 
 - **最短全長: スロート→物理出口 7.337 m** (x_F 96.00 r_t, r_t 76.42 mm)、入口配管端→出口 8.292 m。うち E→F 一様化区間 ≈4.36 m は物理の床。
