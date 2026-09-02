@@ -1045,7 +1045,7 @@ void logResidualSnapshot(StepContext& s, int inner_index)
 
 // 古典 DPLUR 線形ソルバ。固定残差 res_* に対し Q を更新せず dq_block を nStepInner 回 Jacobi 緩和する。
 // 各 sweep 後にバッファを swap し、最終補正は dq_block_old に残る（commit は呼び出し側）。
-void blockDPLURSolve(StepContext& s)
+void blockDPLURSolve(StepContext& s, int subiter = 0)
 {
     // 古典 DPLUR は dq=0 から開始する。前ステップの残留値による近傍参照を避けるため明示ゼロ化。
     // blockDPLUR==1: 5×5 block 版 (dq_block_*)、blockDPLUR==0: scalar 対角版 (dq_ro_* 等)。
@@ -1065,14 +1065,22 @@ void blockDPLURSolve(StepContext& s)
         cudaMemset(s.var.c_d["dq_roe_old"],  0, bytes);
     }
 
+    // line-implicit v2: lineKFreeze==1 の dual-time では K/diag 抽出と LU 分解をサブ反復 0 に
+    // 限定し、以後のサブ反復は保存因子での solve だけにする (LHS 凍結 = defect-correction の
+    // 近似強化。収束経路のみ変わり収束解は不変)。定常経路は subiter=0 固定で従来どおり毎回構築。
+    const int lineStoreK =
+        (s.cfg.lineKFreeze == 1) ? ((subiter == 0) ? 1 : 0) : 1;
     const int nSweep = std::max(1, s.cfg.nStepInner);
     for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
         s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
-            timeIntegration_d_wrapper(iSweep, s.cfg , s.cuda_cfg , s.msh , s.var);
+            timeIntegration_d_wrapper(iSweep, s.cfg , s.cuda_cfg , s.msh , s.var, lineStoreK);
         });
         // line-implicit: ライン CV の dq_new を block-Thomas で上書き (swap 前)
         if (useBlock && s.cfg.lineImplicit == 1) {
             s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
+                if (iSweep == 0 && lineStoreK == 1) {
+                    lineThomasFactor_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+                }
                 lineThomas_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
             });
         }
@@ -1300,7 +1308,7 @@ void advanceImplicitDualTime(StepContext& s)
         s.profiler.measureCuda(ProfileSection::SetDt, [&]() {
             setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, /*adaptDt=*/true, /*printCfl=*/printCflDt);
         });
-        blockDPLURSolve(s);
+        blockDPLURSolve(s, m);
         // dual-time の commit は in-place（roN=Q^n は BDF 基準で固定のため roN+dq は使えない）。
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             applyBlockImplicitCorrectionInPlace_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -1456,6 +1464,10 @@ int main(void) {
             exit(1);
         }
         msh.buildImplicitLines(var.c.at("ccx").data(), var.c.at("ccy").data(), var.c.at("ccz").data());
+    } else if (cfg.lineKFreeze != 0 || cfg.lineViscCoupling != 0 ||
+               cfg.lineViscousDtRelief != (flow_float)0.0) {
+        fprintf(stderr, "[lineImplicit] lineKFreeze/lineViscCoupling/lineViscousDtRelief require lineImplicit=1\n");
+        exit(1);
     }
     ResidualCsvLogger residual_logger("residual_history.csv", cfg, msh, var);
 
