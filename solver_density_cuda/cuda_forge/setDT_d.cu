@@ -223,6 +223,16 @@ __global__ void setDTlocal_precond_scale_d
 }
 
 
+// 診断: 出口近傍の局所 dt キャップ (壁∩出口コーナー不安定の切り分け用, env ゲート)。
+//   FORGE_DT_OUTLET_SCALE (0<s<1) と FORGE_DT_OUTLET_XMIN [m] の両方を与えると、
+//   x > XMIN のセルの dt_local を s 倍に縮める。既定 (未設定) は完全に不変。
+__global__ void scaleOutletDt_d(geom_int nCells, const flow_float* ccx,
+                                flow_float xmin, flow_float scale, flow_float* dt_local)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic < nCells && ccx[ic] > xmin) dt_local[ic] *= scale;
+}
+
 void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var , bool adaptDt , bool printCfl)
 {
     setCFL_pln_d<<<cuda_cfg.dimGrid_plane , cuda_cfg.dimBlock>>> ( 
@@ -338,6 +348,17 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
     //    device-resident dt 化は explicit/dual-time の毎ステップ適応 (dtControl==1) で per-step 同期を消せるが、
     //    定常 implicit は dt_local=cfl_pseudo·dx/λ で cfg.dt が打ち消され不影響なので利得なし (別 plan 候補)。
     // 両条件とも false なら host 同期は一切発生しない (後続カーネルは同一 default stream で順序保証)。
+    // 出口近傍 dt キャップ (診断, env ゲート): dt_local 確定後に縮める。既定 (未設定) は不変。
+    {
+        static const double dtOutletScale = [](){ const char* e = getenv("FORGE_DT_OUTLET_SCALE"); return e ? atof(e) : 0.0; }();
+        static const double dtOutletXmin  = [](){ const char* e = getenv("FORGE_DT_OUTLET_XMIN");  return e ? atof(e) : 0.0; }();
+        if (dtOutletScale > 0.0 && dtOutletScale < 1.0) {
+            scaleOutletDt_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>>(
+                msh.nCells, var.c_d["ccx"], (flow_float)dtOutletXmin, (flow_float)dtOutletScale, var.c_d["dt_local"]);
+            gpuErrchk( cudaPeekAtLastError() );
+        }
+    }
+
     const bool needHostRead = (adaptDt && cfg.dtControl == 1) || printCfl;
     if (needHostRead) {
         thrust::device_ptr<flow_float> d_ptr = thrust::device_pointer_cast(var.c_d["cfl"]);

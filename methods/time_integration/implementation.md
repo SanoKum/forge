@@ -398,6 +398,33 @@ $D^{n-1}=f_x^{n-1}V-(M^n-M^{n-1})/\Delta t$ で推定して代入したもの。
 - 陰解法での扱いは固定値版と同じ明示ソース（ステップ内定数のため Jacobian 不要。$\mathbf f\cdot\mathbf u$
   仕事項の対角寄与は微小につき省略）。
 
+## 陰的更新の正値性ガード (`updateGuardAlpha`, 2026-09-02)
+
+計画: [`plans/active/time_integration-update-positivity-guard.md`](../../plans/active/time_integration-update-positivity-guard.md)。
+
+block-DPLUR の commit (`applyBlockImplicitCorrection_d` / 同 InPlace) で、セルごとに
+縮小率 $s\in\{1,1/2,\dots,1/32\}$ (半減列) を選び $q\leftarrow q_N+s\Delta q$ とする:
+
+$$\rho(q_N+s\Delta q)\ge\alpha\rho(q_N),\qquad e_i(q_N+s\Delta q)\ge\alpha e_i(q_N),\qquad e_i=\rho e-\tfrac12|\rho\mathbf u|^2/\rho$$
+
+$\alpha$ = `time.deltaT.updateGuardAlpha` (既定 0.0 = OFF・ビット同一迂回、推奨 0.5)。
+P でなく $(\rho, e_i)$ を使うのは TP で EOS 反転を避けつつ P 崩落と等価な検知をするため
+(CPG では $P=(\gamma-1)e_i$ で厳密に等価)。5 回半減しても満たせないセルは $s=1/32$ で
+commit し、EOS 床は最後の防波堤として残す。既に $\rho\le0$/$e_i\le0$ のセルは対象外。
+目的は「P アンダーシュート → pMin 床洗浄 → NaN」(case/45 run_0015_cflsweep で特定した
+cfl_pseudo 上限の律速) を、全域 `implicitRelax` なしにセル局所で抑えること。
+
+## line-implicit (`lineImplicit`, 2026-09-02)
+
+計画: [`plans/active/time_integration-line-implicit.md`](../../plans/active/time_integration-line-implicit.md)。
+
+壁法線ライン (積層方向の CV 鎖、壁 CV 種の greedy 構築) 上の隣接結合を、point-DPLUR の
+lag から **block 三重対角の直接解 (block-Thomas, 1 ライン 1 スレッド・内部 double)** に
+昇格する。sweep カーネルはライン CV について点解せず diag/rhs/近傍行列 K (単位ベクトル列
+抽出 = 点経路と同一 Jacobian) を保存し、各 sweep 直後の `lineThomas_d` が dq_new を上書き
+する。反復に残る lag はライン外 (流れ方向) のみになる。**ただし case/45 M6 ノズルの実測では cfl 上限は不変** (律速は壁法線でなく streamwise lag と判明) で、効果は同一設定の収束 −14 %/step に留まる — 詳細と罠 (lu5 ピボット/printf 引数上限) は plan 参照。`lineImplicit: 1`
+(既定 0 = 挙動不変)。blockDPLUR==1 専用、lowMachPrecond>=2 と併用不可。
+
 ## 既知の TODO / 注意点
 
 - 非定常 dual-time 陰解法（`tI==11 && unsteady==1 && dualTime==1`）は実装済（2026-06、`blockDPLUR==1` のみ、物理 $\Delta t$ 固定 `control=0`）。`implicitCorrection_d.cu` の `dualtime_explicit_d` は SLAU/Roe 用の別系統補助で本流とは独立（未使用）。

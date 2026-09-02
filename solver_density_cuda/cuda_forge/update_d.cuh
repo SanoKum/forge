@@ -114,7 +114,8 @@ __global__ void applyBlockImplicitCorrection_d
  flow_float* dq_block_2,
  flow_float* dq_block_3,
  flow_float* dq_block_4,
- geom_int* axis_flag
+ geom_int* axis_flag,
+ flow_float updateGuardAlpha
 );
 
 void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);

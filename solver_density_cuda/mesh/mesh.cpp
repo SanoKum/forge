@@ -986,3 +986,126 @@ void matrix::initMatrix(mesh& msh)
 
 }
 
+
+// =============================================================================
+// line-implicit のライン構築 (plans/active/time_integration-line-implicit.md)。
+// 壁 CV を種に「最初は最近接隣 (壁法線 = 最短エッジ)、以降は前進方向と最も揃う隣」へ
+// greedy に鎖を伸ばす。構造化 TFI/積層メッシュでは j 列がそのまま再構成される。
+// 載らない CV は line_prev/next = -1 のまま point-DPLUR fallback。
+void mesh::buildImplicitLines(const flow_float* ccx, const flow_float* ccy, const flow_float* ccz)
+{
+    const geom_int n = this->nCells;
+    // 内部面の隣接リスト (両側とも実 CV の面のみ)
+    std::vector<std::vector<geom_int>> adj(n);
+    for (geom_int ip = 0; ip < this->nNormalPlanes; ++ip) {
+        const geom_int c0 = this->planes[ip].iCells[0];
+        const geom_int c1 = this->planes[ip].iCells[1];
+        if (c0 >= 0 && c0 < n && c1 >= 0 && c1 < n) {
+            adj[c0].push_back(c1);
+            adj[c1].push_back(c0);
+        }
+    }
+    // 壁種 bcond の CV を種にする
+    std::vector<geom_int> seeds;
+    {
+        std::vector<char> isWall(n, 0);
+        for (bcond& bc : this->bconds)
+            if (bc.bcondKind == "wall" || bc.bcondKind == "wall_isothermal")
+                for (geom_int ic : bc.iCells)
+                    if (ic >= 0 && ic < n && !isWall[ic]) { isWall[ic] = 1; seeds.push_back(ic); }
+    }
+    // 座標: node モードは nodes[ic].coords (CV=節点) を正とする。host の ccx 配列は
+    // 初期化順によって未充填 (全ゼロ) のことがある (2026-09-02 実測) ため信用しない。
+    std::vector<double> px(n), py(n), pz(n);
+    const bool useNodes = ((geom_int)this->nodes.size() >= n);
+    for (geom_int ic = 0; ic < n; ++ic) {
+        if (useNodes && this->nodes[ic].coords.size() >= 2) {
+            px[ic] = (double)this->nodes[ic].coords[0];
+            py[ic] = (double)this->nodes[ic].coords[1];
+            pz[ic] = (this->nodes[ic].coords.size() >= 3) ? (double)this->nodes[ic].coords[2] : 0.0;
+        } else {
+            px[ic] = (double)ccx[ic]; py[ic] = (double)ccy[ic]; pz[ic] = (double)ccz[ic];
+        }
+    }
+    auto dist2 = [&](geom_int a, geom_int b) {
+        const double dx = px[a] - px[b];
+        const double dy = py[a] - py[b];
+        const double dz = pz[a] - pz[b];
+        return dx*dx + dy*dy + dz*dz;
+    };
+    std::vector<char> visited(n, 0);
+    std::vector<geom_int> prevArr(n, -1), nextArr(n, -1);
+    std::vector<geom_int> offsets(1, 0), cells;
+    const double cosMin = 0.7;   // 前進方向との整列条件 (45°)
+    // 実験用: ライン長上限 (FORGE_LINE_MAXLEN, 既定 0 = 無制限)。壁側から数えて打ち切る。
+    long maxLen_env = 0;
+    if (const char* e = getenv("FORGE_LINE_MAXLEN")) maxLen_env = atol(e);
+    geom_int nLines = 0, lenMax = 0;
+    for (geom_int seed : seeds) {
+        if (visited[seed]) continue;
+        std::vector<geom_int> line;
+        line.push_back(seed);
+        visited[seed] = 1;
+        geom_int cur = seed;
+        double dx = 0.0, dy = 0.0, dz = 0.0;   // 前進方向 (未定 = 最初)
+        bool haveDir = false;
+        while (true) {
+            geom_int best = -1; double bestScore = -1.0e300;
+            for (geom_int nb : adj[cur]) {
+                if (visited[nb]) continue;
+                if (!haveDir) {
+                    const double s = -dist2(cur, nb);       // 最近接 (壁法線 = 最短エッジ)
+                    if (s > bestScore) { bestScore = s; best = nb; }
+                } else {
+                    const double ex = px[nb] - px[cur];
+                    const double ey = py[nb] - py[cur];
+                    const double ez = pz[nb] - pz[cur];
+                    const double el = std::sqrt(ex*ex + ey*ey + ez*ez) + 1.0e-300;
+                    const double c  = (ex*dx + ey*dy + ez*dz) / el;
+                    if (c > cosMin && c > bestScore) { bestScore = c; best = nb; }
+                }
+            }
+            if (best < 0) break;
+            const double ex = px[best] - px[cur];
+            const double ey = py[best] - py[cur];
+            const double ez = pz[best] - pz[cur];
+            const double el = std::sqrt(ex*ex + ey*ey + ez*ez) + 1.0e-300;
+            dx = ex/el; dy = ey/el; dz = ez/el; haveDir = true;
+            line.push_back(best);
+            visited[best] = 1;
+            cur = best;
+            if (maxLen_env > 0 && (long)line.size() >= maxLen_env) break;
+        }
+        if ((geom_int)line.size() < 3) {          // 短すぎる鎖はライン化しない (point fallback)
+            for (geom_int ic : line) visited[ic] = 0;
+            visited[seed] = 1;                    // 種は再訪しない
+            continue;
+        }
+        for (size_t k = 0; k < line.size(); ++k) {
+            if (k > 0)               prevArr[line[k]] = line[k-1];
+            if (k + 1 < line.size()) nextArr[line[k]] = line[k+1];
+            cells.push_back(line[k]);
+        }
+        offsets.push_back((geom_int)cells.size());
+        lenMax = std::max(lenMax, (geom_int)line.size());
+        ++nLines;
+    }
+    this->nImplicitLines = nLines;
+    const geom_int nOn = (geom_int)cells.size();
+    printf("[lineImplicit] lines=%d  covered CVs=%d/%d (%.1f%%)  maxLen=%d\n",
+           (int)nLines, (int)nOn, (int)n, 100.0*(double)nOn/(double)std::max(n,(geom_int)1), (int)lenMax);
+    gpuErrchk(cudaMalloc((void**)&this->line_prev_d, sizeof(geom_int)*n));
+    gpuErrchk(cudaMalloc((void**)&this->line_next_d, sizeof(geom_int)*n));
+    gpuErrchk(cudaMemcpy(this->line_prev_d, prevArr.data(), sizeof(geom_int)*n, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(this->line_next_d, nextArr.data(), sizeof(geom_int)*n, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMalloc((void**)&this->line_offsets_d, sizeof(geom_int)*offsets.size()));
+    gpuErrchk(cudaMemcpy(this->line_offsets_d, offsets.data(), sizeof(geom_int)*offsets.size(), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMalloc((void**)&this->line_cells_d, sizeof(geom_int)*std::max(nOn,(geom_int)1)));
+    gpuErrchk(cudaMemcpy(this->line_cells_d, cells.data(), sizeof(geom_int)*nOn, cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMalloc((void**)&this->line_Kprev_d, sizeof(flow_float)*25*this->nCells_all));
+    gpuErrchk(cudaMalloc((void**)&this->line_Knext_d, sizeof(flow_float)*25*this->nCells_all));
+    gpuErrchk(cudaMemset(this->line_Kprev_d, 0, sizeof(flow_float)*25*this->nCells_all));
+    gpuErrchk(cudaMemset(this->line_Knext_d, 0, sizeof(flow_float)*25*this->nCells_all));
+    gpuErrchk(cudaMalloc((void**)&this->line_W_d, sizeof(double)*25*this->nCells_all));
+    gpuErrchk(cudaMalloc((void**)&this->line_y_d, sizeof(double)*5*this->nCells_all));
+}

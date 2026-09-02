@@ -180,6 +180,20 @@ public:
     // 厳密に 0 に固定する (state 初期化 + 運動量残差射影) のに使う。壁ゴーストを撤廃する代替。
     geom_int* wall_flag_d = nullptr;
 
+    // --- line-implicit (plans/active/time_integration-line-implicit.md) ---
+    // 壁法線ライン (積層方向の CV 鎖)。buildImplicitLines() が greedy に構築して上げる。
+    // 載らない CV は point-DPLUR fallback (line_prev/next = -1)。
+    geom_int nImplicitLines = 0;
+    geom_int* line_prev_d = nullptr;      // [nCells] ライン上の前隣 (壁側)。-1 = なし
+    geom_int* line_next_d = nullptr;      // [nCells] ライン上の次隣 (外側)。-1 = なし
+    geom_int* line_offsets_d = nullptr;   // [nLines+1] CSR
+    geom_int* line_cells_d = nullptr;     // [Σ長] ライン順 (壁→終端) の CV id
+    flow_float* line_Kprev_d = nullptr;   // [25*nCells] 前隣への近傍行列 K (rhs += K·dq_prev)
+    flow_float* line_Knext_d = nullptr;   // [25*nCells] 次隣への近傍行列
+    double* line_W_d = nullptr;           // [25*nCells] Thomas scratch (D̃⁻¹·Knext)
+    double* line_y_d = nullptr;           // [5*nCells]  Thomas scratch (前進 rhs)
+    void buildImplicitLines(const flow_float* ccx, const flow_float* ccy, const flow_float* ccz);
+
     // 等温壁 CV フラグ [nCells] (wall_isothermal bcond の CV=1)。node-centered 等温壁の壁ノード
     // T ピン (applyNodeIsothermalWallPin / WMLES pin) と対で、block-DPLUR のエネルギー行 (row4) を
     // decouple するのに使う (運動量 wall_flag と同型。state ピンと Jacobian の不整合による発散防止)。

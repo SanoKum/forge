@@ -185,6 +185,32 @@ void applyScalarImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cud
     gpuErrchkKernelSync();
 }
 
+// 陰的更新の正値性ガード (plans/active/time_integration-update-positivity-guard.md):
+// commit 予定の Δq が「ro または内部エネルギー e_i を 1 step で alpha 倍未満に落とす」場合、
+// 半減列 s∈{1,1/2,...,1/32} で Δq を縮小する (床に当てる前の局所 under-relax)。
+// P でなく (ro, e_i) を見るのは TP の EOS 反転を避けるため (CPG では P=(γ-1)e_i と等価)。
+__device__ inline flow_float updateGuardScale
+(
+ flow_float alpha,
+ flow_float ro0, flow_float rux0, flow_float ruy0, flow_float ruz0, flow_float roe0,
+ flow_float d0, flow_float d1, flow_float d2, flow_float d3, flow_float d4
+)
+{
+    const flow_float tiny = (flow_float)1e-30;
+    const flow_float ei0 = roe0 - (flow_float)0.5*(rux0*rux0 + ruy0*ruy0 + ruz0*ruz0)/fmaxf(ro0, tiny);
+    if (!(ro0 > (flow_float)0.0) || !(ei0 > (flow_float)0.0)) return (flow_float)1.0; // 病的セルは対象外
+    flow_float s = (flow_float)1.0;
+    #pragma unroll
+    for (int k = 0; k < 6; ++k) {
+        const flow_float ro_n = ro0 + s*d0;
+        const flow_float ux = rux0 + s*d1, uy = ruy0 + s*d2, uz = ruz0 + s*d3;
+        const flow_float ei_n = (roe0 + s*d4) - (flow_float)0.5*(ux*ux + uy*uy + uz*uz)/fmaxf(ro_n, tiny);
+        if (ro_n >= alpha*ro0 && ei_n >= alpha*ei0) return s;
+        s *= (flow_float)0.5;
+    }
+    return s; // 6 回半減しても不成立: s=1/64 で commit (EOS 床が最後の防波堤)
+}
+
 __global__ void applyBlockImplicitCorrection_d
 (
  geom_int nCells_all , geom_int nCells,
@@ -206,20 +232,28 @@ __global__ void applyBlockImplicitCorrection_d
  flow_float* dq_block_2,
  flow_float* dq_block_3,
  flow_float* dq_block_4,
- geom_int* axis_flag   // node-centered 軸対称: 軸上 CV で roUy=0 (対称条件)。nullptr 可。
+ geom_int* axis_flag , // node-centered 軸対称: 軸上 CV で roUy=0 (対称条件)。nullptr 可。
+ flow_float updateGuardAlpha   // >0 で正値性ガード有効 (0 = 既存とビット同一)
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
 
     if (ic < nCells) {
-        ro[ic]   = roN[ic]   + dq_block_0[ic];
-        roUx[ic] = roUxN[ic] + dq_block_1[ic];
+        flow_float d0 = dq_block_0[ic], d1 = dq_block_1[ic], d2 = dq_block_2[ic],
+                   d3 = dq_block_3[ic], d4 = dq_block_4[ic];
+        if (updateGuardAlpha > (flow_float)0.0) {
+            const flow_float s = updateGuardScale(updateGuardAlpha,
+                roN[ic], roUxN[ic], roUyN[ic], roUzN[ic], roeN[ic], d0, d1, d2, d3, d4);
+            d0 *= s; d1 *= s; d2 *= s; d3 *= s; d4 *= s;
+        }
+        ro[ic]   = roN[ic]   + d0;
+        roUx[ic] = roUxN[ic] + d1;
         // 軸上 CV は半径方向運動量を 0 に保つ (SU2 MARKER_SYM 流。block-DPLUR の連成で
         // 補正が漏れるのを commit 時に射影。roUy~0 なので KE 不整合は無視できる)。
         roUy[ic] = (axis_flag != nullptr && axis_flag[ic] == 1)
-                       ? (flow_float)0.0 : roUyN[ic] + dq_block_2[ic];
-        roUz[ic] = roUzN[ic] + dq_block_3[ic];
-        roe[ic]  = roeN[ic]  + dq_block_4[ic];
+                       ? (flow_float)0.0 : roUyN[ic] + d2;
+        roUz[ic] = roUzN[ic] + d3;
+        roe[ic]  = roeN[ic]  + d4;
     }
 }
 
@@ -246,7 +280,8 @@ void applyBlockImplicitCorrection_d_wrapper(solverConfig& cfg , cudaConfig& cuda
         // 注: 軸上 roUy=0 を commit で強制すると block-DPLUR の線形 solve と不整合になり発散級に悪化
         // (Mach~1000)。SU2 流の対称面は Jacobian を整合的に修正する必要がある (block-DPLUR の row 修正)。
         // 暫定で無効 (nullptr=baseline)。near-axis corner は open issue (docs §7.1)。
-        nullptr
+        nullptr,
+        cfg.updateGuardAlpha
     );
 
     gpuErrchk( cudaPeekAtLastError() );
@@ -408,16 +443,23 @@ __global__ void applyBlockImplicitCorrectionInPlace_d
 (
  geom_int nCells,
  flow_float* ro, flow_float* roUx, flow_float* roUy, flow_float* roUz, flow_float* roe,
- flow_float* dq0, flow_float* dq1, flow_float* dq2, flow_float* dq3, flow_float* dq4
+ flow_float* dq0, flow_float* dq1, flow_float* dq2, flow_float* dq3, flow_float* dq4,
+ flow_float updateGuardAlpha
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
     if (ic < nCells) {
-        ro[ic]   += dq0[ic];
-        roUx[ic] += dq1[ic];
-        roUy[ic] += dq2[ic];
-        roUz[ic] += dq3[ic];
-        roe[ic]  += dq4[ic];
+        flow_float d0 = dq0[ic], d1 = dq1[ic], d2 = dq2[ic], d3 = dq3[ic], d4 = dq4[ic];
+        if (updateGuardAlpha > (flow_float)0.0) {
+            const flow_float s = updateGuardScale(updateGuardAlpha,
+                ro[ic], roUx[ic], roUy[ic], roUz[ic], roe[ic], d0, d1, d2, d3, d4);
+            d0 *= s; d1 *= s; d2 *= s; d3 *= s; d4 *= s;
+        }
+        ro[ic]   += d0;
+        roUx[ic] += d1;
+        roUy[ic] += d2;
+        roUz[ic] += d3;
+        roe[ic]  += d4;
     }
 }
 
@@ -427,7 +469,8 @@ void applyBlockImplicitCorrectionInPlace_d_wrapper(solverConfig& cfg , cudaConfi
         msh.nCells,
         var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"], var.c_d["roe"],
         var.c_d["dq_block_old_0"], var.c_d["dq_block_old_1"], var.c_d["dq_block_old_2"],
-        var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"]
+        var.c_d["dq_block_old_3"], var.c_d["dq_block_old_4"],
+        cfg.updateGuardAlpha
     );
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

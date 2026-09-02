@@ -130,3 +130,5 @@ y+1.5 本計算 `run_0070_ns_v1` (162 s, 48k step cfl1)。
   **メッシュの罠 (要申し送り)**: 第一セル 2.4 µm (wf 4.5e-5 × r_t 53.75 mm, ni1700) で median-dual 変換が
   閉性破綻 (`dual faces not closed` normalized 0.099, 壁 bcond 面積 3 % 欠損)。~3.5 µm では健全 →
   node y+1 双対幾何の float32 桁落ち修正 (既往) でも守れない下限がある。回避 = wall_first を上げ y+~1.4 で運用。
+
+- 2026-09-01: `deltastar_from_run` を平面近似から**軸対称質量収支** (円環重み $(1-y/r_w)$、$\delta^*=r_w(1-\sqrt{1-2I/r_w})$) に置換。M6 出口 ($\delta/r_w\approx0.14$) でも差は δ* の 1.4 % / 出口 M +0.05 % と実測 (case/45 run_0007) — 平面近似は「欠損重心が壁近傍に集中」するため想定より無害だった。既存 v3 結果の再計算は不要。
