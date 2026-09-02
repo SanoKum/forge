@@ -414,6 +414,17 @@ commit し、EOS 床は最後の防波堤として残す。既に $\rho\le0$/$e_
 目的は「P アンダーシュート → pMin 床洗浄 → NaN」(case/45 run_0015_cflsweep で特定した
 cfl_pseudo 上限の律速) を、全域 `implicitRelax` なしにセル局所で抑えること。
 
+## line-implicit (`lineImplicit`, 2026-09-02)
+
+計画: [`plans/active/time_integration-line-implicit.md`](../../plans/active/time_integration-line-implicit.md)。
+
+壁法線ライン (積層方向の CV 鎖、壁 CV 種の greedy 構築) 上の隣接結合を、point-DPLUR の
+lag から **block 三重対角の直接解 (block-Thomas, 1 ライン 1 スレッド・内部 double)** に
+昇格する。sweep カーネルはライン CV について点解せず diag/rhs/近傍行列 K (単位ベクトル列
+抽出 = 点経路と同一 Jacobian) を保存し、各 sweep 直後の `lineThomas_d` が dq_new を上書き
+する。反復に残る lag はライン外 (流れ方向) のみになる。**ただし case/45 M6 ノズルの実測では cfl 上限は不変** (律速は壁法線でなく streamwise lag と判明) で、効果は同一設定の収束 −14 %/step に留まる — 詳細と罠 (lu5 ピボット/printf 引数上限) は plan 参照。`lineImplicit: 1`
+(既定 0 = 挙動不変)。blockDPLUR==1 専用、lowMachPrecond>=2 と併用不可。
+
 ## 既知の TODO / 注意点
 
 - 非定常 dual-time 陰解法（`tI==11 && unsteady==1 && dualTime==1`）は実装済（2026-06、`blockDPLUR==1` のみ、物理 $\Delta t$ 固定 `control=0`）。`implicitCorrection_d.cu` の `dualtime_explicit_d` は SLAU/Roe 用の別系統補助で本流とは独立（未使用）。

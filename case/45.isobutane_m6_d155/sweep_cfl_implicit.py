@@ -89,8 +89,8 @@ def analyze(rd: Path) -> dict:
                 if out["max_growth"] is None or g > out["max_growth"]:
                     out["max_growth"] = g
                     out["max_growth_field"] = n
-    out["finished"] = out["first_nan_step"] is None
     out["last_step"] = int(np.atleast_1d(step)[-1])
+    out["finished"] = (out["first_nan_step"] is None) and (out["last_step"] >= 500)
     return out
 
 
@@ -113,7 +113,8 @@ def main():
         verdict = "OK(完走)" if a["finished"] else \
             f"DIVERGED@{a.get('first_nan_step')} ({a.get('first_nan_field')})" \
             if a.get("first_nan_step") is not None else f"STOP@{a.get('last_step')}"
-        print(f"    -> {verdict}  rc={rc}  max_growth={a.get('max_growth'):.3g} "
+        mg = a.get('max_growth')
+        print(f"    -> {verdict}  rc={rc}  max_growth={mg if mg is None else format(mg,'.3g')} "
               f"({a.get('max_growth_field')})", flush=True)
         # 大きい res は掃除 (最後の 1 つと発散直前だけ残す)
         res = sorted(rd.glob("res_[0-9]*.h5"),

@@ -99,6 +99,8 @@ __global__ void runge_kutta_exp_d
 
 
 void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , variables& var);
+// line-implicit: sweep カーネル保存の diag/K/rhs でライン block-Thomas を解き dq_new を上書き
+void lineThomas_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
 
 // block DPLUR (古典 DPLUR) の sweep 間バッファ入れ替え。ドライバ側から各 sweep 後に呼ぶ。
 void swapBlockImplicitCorrectionBuffers(variables& var);

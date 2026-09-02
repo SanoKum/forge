@@ -43,6 +43,11 @@ public:
     // >0 で「1 step で ro・内部エネルギーが alpha 倍未満に落ちる」セルの Δq を半減列で縮小。
     // plans/active/time_integration-update-positivity-guard.md
     flow_float updateGuardAlpha = 0.0;
+    // line-implicit (壁法線ライン block-Thomas を DPLUR に埋め込む)。0=OFF (既定)。
+    // 1 で高 AR 積層方向の結合を直接解に昇格し cfl_pseudo 上限を引き上げる。
+    // blockDPLUR==1 専用・lowMachPrecond>=2 とは併用不可 (config 検証で拒否)。
+    // plans/active/time_integration-line-implicit.md
+    int lineImplicit = 0;
     // 軸対称 near-axis 安定化: 擬似時間スペクトル半径に軸項 λ_axis=β·(|u_r|+c)·A_planar を加える。
     // 近軸 (r→0) で Δτ∝CFL·r/(|u_r|+c) を自然に与え半径運動量不安定を抑える。0=不変 (既定)。
     flow_float axisTimestepBeta = 0.0;

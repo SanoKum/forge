@@ -113,6 +113,7 @@
 | [gpu-implicit-plan.md](accepted/gpu-implicit-plan.md) | `time_integration` | GPU 陰解法基盤 (block-DPLUR / 軸対称 / SST point-implicit / scalar 版 / dual-time BDF2)。親計画 |
 | [time_integration-implicit-stable-cfl.md](accepted/time_integration-implicit-stable-cfl.md) | `time_integration` | 陰解法 (block DPLUR) の安定 cfl_pseudo 引き上げ |
 | [time_integration-lowmach-preconditioning.md](accepted/time_integration-lowmach-preconditioning.md) | `time_integration` | 低マッハ前処理 (Weiss–Smith) — 密度ベース経路の散逸スケール是正と陰解法固有値前処理 |
+| [time_integration-line-implicit.md](accepted/time_integration-line-implicit.md) | `time_integration` | **line-implicit (壁法線 block-Thomas)** 実装 (2026-09-02, `lineImplicit` opt-in): 構造化で 1250 本/被覆100%。**M6 ノズルでは cfl 上限不変** (律速は streamwise lag と判明、壁法線説は否定) — 収束 −14 %/step のみ。lu5 ピボット罠 (LASWP 先行必須)・device printf 引数上限罠を記録。次の本丸は streamwise 第 2 ライン族/LU-SGS 順序 |
 | [time_integration-update-positivity-guard.md](accepted/time_integration-update-positivity-guard.md) | `time_integration` | **陰的更新の正値性ガード (負の結果, 2026-09-02)**: commit 時の局所 under-relax (`updateGuardAlpha`, opt-in) は CFL 上限を上げない — 上限の真因は defect-correction 反復不安定で床 NaN は終端症状。lowMachPrecond=2 併用も不成立 (SST チャネルで爆発)。生産は cfl8+implicitRelax0.7 |
 | [time_integration-scalar-dplur-axisym-source.md](accepted/time_integration-scalar-dplur-axisym-source.md) | `time_integration` | scalar DPLUR の軸対称ソース Jacobian 整合 (TP 対応) |
 | [turbulence-enhanced-wall-treatment.md](accepted/turbulence-enhanced-wall-treatment.md) | `turbulence` | SST Enhanced (Automatic / y⁺ 非依存) Wall Treatment |

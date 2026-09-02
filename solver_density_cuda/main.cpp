@@ -1070,6 +1070,12 @@ void blockDPLURSolve(StepContext& s)
         s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
             timeIntegration_d_wrapper(iSweep, s.cfg , s.cuda_cfg , s.msh , s.var);
         });
+        // line-implicit: ライン CV の dq_new を block-Thomas で上書き (swap 前)
+        if (useBlock && s.cfg.lineImplicit == 1) {
+            s.profiler.measureCuda(ProfileSection::TimeIntegration, [&]() {
+                lineThomas_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+            });
+        }
         if (useBlock) {
             swapBlockImplicitCorrectionBuffers(s.var);
         } else {
@@ -1442,6 +1448,15 @@ int main(void) {
     ImplicitDiagLogger implicit_diag_logger;
 
     cudaConfig cuda_cfg = initializeSimulation(cfg, msh, mat_ns, var, fluct, pprobes);
+    // line-implicit (plans/active/time_integration-line-implicit.md): 壁法線ラインを構築。
+    // blockDPLUR==1 専用・完全前処理 (lowMachPrecond>=2) とは併用不可。
+    if (cfg.lineImplicit == 1) {
+        if (cfg.blockDPLUR != 1 || cfg.lowMachPrecond >= 2 || cfg.timeIntegration != 11) {
+            fprintf(stderr, "[lineImplicit] requires timeIntegration=11, blockDPLUR=1, lowMachPrecond<2\n");
+            exit(1);
+        }
+        msh.buildImplicitLines(var.c.at("ccx").data(), var.c.at("ccy").data(), var.c.at("ccz").data());
+    }
     ResidualCsvLogger residual_logger("residual_history.csv", cfg, msh, var);
 
     writeInitialOutputs(cfg , msh , var);
