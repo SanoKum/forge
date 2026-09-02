@@ -35,6 +35,7 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 | `run_0009_cpg_euler` | CPG 版 Euler (`problem_d155_cpg_euler.yaml`) | 完走・NaN 0。CPG は A/A*=159 (semi-perfect 88.2) でノズルが伸びる (出口壁半径 1.03 m) — 比較チェーン専用で製品形状ではない | active (比較チェーン) |
 | `run_0010_cpg_ns_coarse` | CPG NS 中継 (y+~50) | 完走・NaN 0 | active (中継) |
 | `run_0011_cpg_ns` | **CPG NS 本計算** (wall_first 6.5e-5=y+~2 [4.5e-5 は CPG 長尺で AR1403 FAIL→緩和], 相関 δ\* 物理壁, 24000 step) — 比較の forge 側 | 完走・NaN 0・品質 PASS。残差 2 桁 warm 床 (既知パターン) | active (**比較 forge 側**) |
+| `run_0016_chamber_cpg` | **チャンバー A/B** (Codex レビュー準拠): 完全形状 (入口管+収縮+ノズル) + 出口後方 4D_e×外径 3D_e チャンバー+フランジ壁の 4 ブロック transfinite (`gen_chamber_mesh.py` → `mesh_chamber/`)。品質 PASS (AR296)。静止雰囲気 1389 Pa IC + 段階起動 18000 step で plume 確立 (ジェット軸 M5.97, 外周静止)。**probe (cfl4 OK/8@181/16@21) は素メッシュと同一挙動 = 出口境界は無罪** | active (**A/B の正本**) |
 | `run_0012_su2_sst` | **SU2 v8.5 RANS-SST** (同一メッシュ msh→su2 変換, axisym, ROE+MUSCL, SST V2003m, Sutherland/Pr0.72/Prt0.9, 40k+20k iter) | 収束: rms[Rho] −6.5・rms[RhoE] −2.3・出口 massflux/Mach ドリフト 0.003 %/5k (手順書合格実績以上)。`history.csv` は継続分のみ | active (**比較 SU2 側**) |
 | `run_0013_cpg_ns_plainsst` | forge 素 SST 化 A/B (`dilatationCorrection: 0, katoLaunder: 0` — prepare 後に solverConfig 直接編集。YAML への独自キー追記は黙って無視されるため不可), IC=run_0011, 12000 step | 完走・NaN 0。**素 SST にすると SU2 と一致: δ99 ≤3 %・θ ≤0.4 %・δ* ≤1.3 %** | active (**帰属 A/B の正本**) |
 | `run_0014_cpg_ns_dilat0_kl1` | 帰属分離 (dilatation OFF / KL ON) | run_0013 と ≤0.7 % 差 → **Kato-Launder は無関係、差は dilatationCorrection 単独** | active (帰属分離) |
@@ -52,7 +53,7 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 
 - **素の上限 (implicitRelax=1): TP は cfl 2 (3 で発散)、CPG は 3 (4 で発散)**。既定挙動としては単桁前半で頭打ち。
 - **原因は低マッハ調整ではない** (仮説棄却): ① 現行 config は `lowMachPrecond: 0` で低マッハ処理は不活性、② 発散箇所は亜音速チェンバでなく**下流端の超音速壁 BL 内** (壁から ~0.003 r_t の対数層)、③ `lowMachPrecond: 2` を入れると逆に悪化 (step 97→13)。
-- **真のメカニズム = 陰的更新の P アンダーシュート → EOS 床 (pMin=1 Pa) 洗浄 → NaN**。NaN ダンプで P=1.000 Pa 張り付き・T→0・ro<0 の指紋。最厚 BL・最低圧 (P~1.4 kPa) の下流端は床までの絶対マージンが最小で最初に破れる。ω 残差の先行爆発は症状 (ω~1e10 の増幅表示)。
+- **終端症状 = 陰的更新の P アンダーシュート → EOS 床洗浄 → NaN** (ω 爆発は増幅表示)。**帰属の最終確定 (2026-09-02, チャンバー A/B 完了)**: 発散種の位置はメッシュ依存 (fine=壁∩出口コーナー / coarse=出口手前コア / 高cfl=スロート軸上) で、①背圧値 100/10 Pa・②逆流 Tt 1500K・③出口近傍局所 dt キャップ・④**チャンバー付加 (出口境界を 8 m 後方へ, run_0016)** の全てに**不感** (発散 cfl・step ほぼ不変: chamber cfl4 OK/8@181/16@21 vs 素 cfl4 OK/8@215/16@17)。⇒ **出口境界・コーナー BC は主因ではなく、内部の streamwise defect-correction 反復不安定が律速** (Codex レビューの A/B 分岐で「内部」判定)。残る根治候補は streamwise 第 2 ライン族 (ADI) / LU-SGS 流下順序。
 - **切り分け**: `nStepInner` 10/20 無効 (DPLUR 内部収束でない)・`implicitRelaxSST` 0.5 無効 (SST 方程式でない) — **`implicitRelax` (流れ方程式の緩和) だけが効く**。
 - **緩和込みの上限**: relax0.7 → cfl 8 (12 で発散)、relax0.5 → cfl 16+。積 cfl×relax ≈ 6-8 で飽和。
 - **収束レース**: 実効速度も cfl×relax でスケールし **cfl8+relax0.7 が最速** (4000 step で rms_roUx 現行 cfl1 比 1/3、rms_roOmega 1/4)。cfl16+relax0.5 は頭打ち。図 `run_0015_cflsweep/race_residuals.png`。

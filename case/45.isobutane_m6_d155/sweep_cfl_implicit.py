@@ -29,7 +29,8 @@ OUTINT = 500
 
 
 def make_probe(tag: str, base: str, cfl: float, patch: dict | None,
-               ic_from: str | None = None, nstep: int = NSTEP) -> Path:
+               ic_from: str | None = None, nstep: int = NSTEP,
+               bsub_list=None) -> Path:
     rd = SWEEP / tag
     if rd.exists():
         shutil.rmtree(rd)
@@ -46,6 +47,14 @@ def make_probe(tag: str, base: str, cfl: float, patch: dict | None,
     subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"),
                     str(res), str(rd / "nozzle.h5")],
                    env=_ENV, check=True, capture_output=True, text=True)
+    # bcond の文字列置換 (probes.json の "bcond_sub": [[old,new],...])
+    bsub = None
+    cfgb = (rd / "bcondConfig.yaml").read_text()
+    if bsub_list:
+        for old, new in bsub_list:
+            assert old in cfgb, f"bcond_sub: '{old}' が見つからない"
+            cfgb = cfgb.replace(old, new)
+        (rd / "bcondConfig.yaml").write_text(cfgb)
     cfg = (rd / "solverConfig.yaml").read_text()
     cfg = re.sub(r"nStepOuter: \d+", f"nStepOuter: {nstep}", cfg)
     cfg = re.sub(r"outStepInterval: \d+", f"outStepInterval: {OUTINT}", cfg)
@@ -104,7 +113,8 @@ def main():
         print(f"=== {tag}: base={p['base']} cfl={p['cfl']} patch={p.get('patch')}",
               flush=True)
         rd = make_probe(tag, p["base"], p["cfl"], p.get("patch"),
-                        p.get("ic_from"), int(p.get("nstep", NSTEP)))
+                        p.get("ic_from"), int(p.get("nstep", NSTEP)),
+                        p.get("bcond_sub"))
         rc = run_forge(rd)
         a = analyze(rd)
         a.update({"rc": rc, "cfl": p["cfl"], "base": p["base"],
