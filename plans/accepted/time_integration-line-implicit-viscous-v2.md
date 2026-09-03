@@ -107,3 +107,13 @@ line-implicit の上限自体が低い」のかを決着させる。
   BDF 物理項支配レジーム到達済み。⇒ **「壁擬似時間律速の完全除去」は未達のまま**が正確で、
   収縮律速 3 候補 (off-line lag / segregated SST / defect-correction 不整合) の切り分けは、
   壁端点を除去できない以上、別経路 (例: SST 連成陰化 or LHS 2 次化) からになる。
+- 2026-09-03: **収縮律速の消去法完了 (診断 4 腕, 各 100 step 窓 20-95, 対照 dir_cp4)**:
+  ① `FORGE_FREEZE_TURB=1`: roe/roUx 収縮 **2.07/3.37 桁で対照と完全一致** → segregated SST は
+  平均流収縮を妨げていない (注: μt は凍結 k,ω から毎回再計算されるので「ほぼ固定」)。
+  ② `implicitRelaxSST` 0.7/1.0: 平均流不変。**ω 収縮はむしろ悪化** (0.39→0.26→0.05 桁) =
+  ω は relax 0.5 で縁辺安定。SST 2×2 line 化は ω 品質・バースト向けで平均流 nSub は減らない。
+  ③ `nStepInner` 5→10: **全チェックポイントで収縮一致** → 線形系は 5 sweep で解き切れている
+  (off-line lag は近似 LHS の線形解の中で処理済み)。
+  ⇒ **平均流のサブ反復収縮律速 = defect-correction 不整合 (1次 FVS LHS × 2次 KEEP+ES RHS) に確定**。
+  根治候補: line K の FD 化 (RHS 整合をライン方向だけ入れる, v2 機構流用可) / JFNK
+  (DPLUR+line を前処理に) / adaptive early-exit は律速に依らず ~20-30% 得。
