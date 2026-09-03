@@ -440,9 +440,16 @@ lag から **block 三重対角の直接解 (block-Thomas, 1 ライン 1 スレ�
   (λ_visc/λ_ac = 2ν/(Δn·c) ≪ 1) なので効果は僅差** — 意味を持つのは Δn < 2ν/c の超極薄セルのみ。
 - **`lineViscousDtRelief: θ`**: on-line セルの擬似 dt 粘性スペクトル半径を (1−θ) 倍 (`setDT_d`
   で面ごとに割引、対流+音響分は残す)。θ=1 でも安定 (上と同じ理由で利得も僅差)。
+- **`lineDtDirectional: 1`**: 方向別 dt — line 面 (Thomas が厳密に解く結合) の λ を音響込みで
+  CFL の max から除外し、Δτ を off-line 面 (lag 側) の λ だけで決める。**注意: 除外は
+  `line_prev/next` に一致する内部面のみで、壁ノードの境界半割面は残る** — 壁 CV 自身の Δτ は
+  境界面の音響制約のまま、Δτ が streamwise 基準 (×AR) に伸びるのは壁の 1 つ内側以降。
+  case/39 DDES で cp4 安定・ωバースト最大 9.5→6.15 (directional による低減, 帰属機構は未分離)。
 - **実測の価値は pseudo-CFL 引き上げ** (case/39 ny160 DDES): point は cfl_pseudo 2 で発散、
   line は 8 まで安定。**cfl_pseudo 4 + nSub 13 で point (cp1+nSub20) の 0.88 倍時間・同品質**、
   同時間ならより深い収束・ωバースト低減。定常 (M6) と dual-time DDES で律速モードが違う点に注意。
+  サブ反復収縮の残る律速候補は off-line lag / segregated SST / 2次 KEEP RHS×1次 FVS LHS の
+  defect-correction 不整合の 3 者。
 
 ## 既知の TODO / 注意点
 

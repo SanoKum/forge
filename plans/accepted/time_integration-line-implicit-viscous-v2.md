@@ -71,3 +71,21 @@ line-implicit の上限自体が低い」のかを決着させる。
     ctrl@20 品質に必要な nSub は 12-13 のまま。
   - 運用示唆: 同品質の最速点は cp4+nSub13 (~0.87×) で不変だが、**directional はバースト余裕を
     +50% 積み増す**ので nSub 削減時の安全マージンとして併用推奨。
+- 2026-09-03: **記録の補正 (Codex レビュー 3 点)**:
+  1. **「壁セル Δτ が AR≈74 倍」は現実装では不成立** — `setDT` の directional 除外は
+     `line_prev/next` に一致する**内部 line 面だけ**で、壁ノードの**境界半割面は CFL の max に
+     残る**。壁 CV は内部 line 面と境界面が同じ V/S (実測 1.408e-5 m) なので、境界面が同じ音響
+     制約を残す。**AR 倍化は壁の 1 つ内側以降の line CV のみ**。壁境界面 λ の除外可否
+     (Dirichlet 行 decouple 済みなら安全かもしれない) は未検証の将来項目。
+  2. ωバースト半減の帰属は「directional dt により半減 (実測)」に留める — 「壁 Δτ 拡大が均した」
+     は未分離の推論 (1. の通り壁セル自身の Δτ は伸びていない)。
+  3. 収縮律速の候補は **3 者**: off-line lag / segregated SST / **2次 KEEP RHS×1次 FVS LHS の
+     defect-correction 不整合** (M6 の cfl×relax 飽和と同根の可能性)。
+- 2026-09-03: **推奨構成の直接 A/B (directional cp4 × nSub13/15)** — 結果は下記追記。
+- 2026-09-03: **推奨構成の直接 A/B 完了** (`run_diag_lineimp2_dir_cp4_nsub13/15`, 300 step):
+  - `directional cp4 + nSub13`: **317 s = ctrl の 0.92 倍**、step 終端品質は同等〜良
+    (roUx 4.4e-7 vs ctrl 8.0e-7, roe 2.45e-4 vs 2.13e-4)、ωバースト最大 6.15 (ctrl 10.8)。
+  - `directional cp4 + nSub15`: 363 s (1.05 倍) で全量 ctrl より良い (roUx 2.0e-7, roe 1.33e-4)。
+  - 非 directional nSub13 (302 s, 0.88 倍) より directional は +5% 遅いが、バースト余裕 −35%
+    (9.5→6.15) を買う取引。**生産候補 = directional cp4+nSub13 (速度優先) / nSub15 (品質・余裕優先)**。
+  - 残作業 (本採用の条件): 生産再開時に nSub15 で長時間 (数万 step) のバースト余裕検証を 1 本。

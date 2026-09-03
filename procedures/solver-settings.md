@@ -53,6 +53,31 @@
 - 非定常 (`unsteady: 1`, `dualTime: 0`) の物理時間刻みは `cfl` (または `dt`) で決まる。
 - ログの `max cfl` 表示は `cfg.cfl` に追従する値であり、実効積分 CFL ではない点に注意する。
 
+## lineImplicit — 壁法線 line-implicit (block-Thomas) と v2 オプション
+
+```yaml
+time:
+  deltaT: {..., blockDPLUR: 1, lineImplicit: 1, lineKFreeze: 1, lineDtDirectional: 1}
+```
+
+壁法線ライン上の隣接結合 (対流+音響 Jacobian) を point-DPLUR の lag から block 三重対角の
+直接解に昇格する。`timeIntegration: 11` + `blockDPLUR: 1` 専用、`lowMachPrecond>=2` 併用不可。
+全キー既定 0 = 挙動不変。詳細は [`methods/time_integration/implementation.md`](../methods/time_integration/implementation.md) の
+「line-implicit」節と plan ([v1](../plans/accepted/time_integration-line-implicit.md) /
+[v2](../plans/accepted/time_integration-line-implicit-viscous-v2.md))。
+
+- **`lineImplicit: 1`**: 本体。v2 (factor/solve 分離) 込みでコスト +32%/subiter (ny160 DDES 実測)。
+- **`lineKFreeze: 1`**: dual-time サブ反復間で K/LU を凍結 (収束軌道不変・コスト削減)。dual-time では常用推奨。
+- **`lineDtDirectional: 1`**: 方向別 dt — 内部 line 面の λ (音響込み) を擬似 dt の CFL max から除外。
+  壁ノードの境界半割面は除外されない (壁 CV 自身の Δτ は境界面律速のまま) 点に注意。
+- `lineViscCoupling` / `lineViscousDtRelief`: line 面のスカラー粘性結合と粘性 CFL 割引。
+  圧縮性の壁法線 pseudo-dt 律速は音響 (λ_visc/λ_ac=2ν/(Δn·c)≪1) なので通常は効果僅差 — 既定 off で可。
+
+**使い分け (2026-09-03 実測)**: 定常 M6 ノズル (case/45) では cfl 上限を上げない (streamwise
+対流律速) — 使わない。**壁解像 DDES/dual-time (case/39) では point の cfl_pseudo 上限 (2 で発散)
+を 8 まで引き上げ、`cfl_pseudo 4 + nSub 13-15` で現行比 ~13% 高速・ωバースト低減** — 採用候補
+(長時間 run でのバースト余裕検証は未了)。
+
 ## bodyForce — 一様体積力 (周期チャネル駆動)
 
 ```yaml
