@@ -1311,8 +1311,9 @@ void advanceImplicitDualTime(StepContext& s)
         blockDPLURSolve(s, m);
         // 診断 (FORGE_RESID_SNAP=1): subiter 0 の res (BDF 込み R*) と最終 dq を退避 (局所収縮率 g の分母)。
         {
-            static const bool snap = [](){ const char* e = getenv("FORGE_RESID_SNAP"); return e && atoi(e) != 0; }();
-            if (snap && m == 0) {
+            // FORGE_RESID_SNAP=<m>: 退避する subiter 番号 (既定 0 相当は "0"。未設定なら無効)。
+            static const int snapM = [](){ const char* e = getenv("FORGE_RESID_SNAP"); return e ? atoi(e) : -1; }();
+            if (snapM >= 0 && m == snapM) {
                 const size_t nb = (size_t)s.msh.nCells_all * sizeof(flow_float);
                 const char* src[] = {"res_ro","res_roUx","res_roUy","res_roUz","res_roe",
                                      "dq_block_old_0","dq_block_old_1","dq_block_old_2","dq_block_old_3","dq_block_old_4"};
@@ -1488,7 +1489,7 @@ int main(void) {
     }
     // FORGE_RESID_SNAP=1: dual-time の subiter 0 直後の res/dq を未使用スロット (res_*_m / dq_*_new
     // スカラー枠) へ退避して出力に含める → 局所収縮率 g=|dq_final|/|dq_sub0| を場で測れる。
-    if (const char* e = getenv("FORGE_RESID_SNAP"); e && atoi(e) != 0) {
+    if (const char* e = getenv("FORGE_RESID_SNAP"); e != nullptr) {  // 値は退避 subiter 番号 ("0" も有効)
         for (const char* n : {"res_ro_m","res_roUx_m","res_roUy_m","res_roUz_m","res_roe_m",
                               "dq_ro_new","dq_roUx_new","dq_roUy_new","dq_roUz_new","dq_roe_new"})
             var.output_cellValNames.push_back(n);
