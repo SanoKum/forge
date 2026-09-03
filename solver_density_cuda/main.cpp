@@ -1313,11 +1313,16 @@ void advanceImplicitDualTime(StepContext& s)
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             applyBlockImplicitCorrectionInPlace_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         });
-        if (include_scalar) {
+        // FORGE_FREEZE_TURB=1 は dual-time でも SST 状態更新を凍結する (2026-09-03 修正: 従来この
+        // 経路は無条件更新で、freeze 診断が定常専用だった — dual-time A/B は無効だった)。
+        if (include_scalar && !freezeTurbEnabled()) {
             s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
                 applySSTPointImplicit(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
                 periodicMirrorScalarState_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var); // §4.5 k/ω 周期ミラー
             });
+        } else if (include_scalar) {
+            static bool logged = false;
+            if (!logged) { printf("[FREEZE_TURB] dual-time: SST state update frozen\n"); logged = true; }
         }
         // 液相モーメント (非平衡凝縮) を segregated point-implicit で更新。condensation==0 で no-op。
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {

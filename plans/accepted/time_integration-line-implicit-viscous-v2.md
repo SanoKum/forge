@@ -117,3 +117,17 @@ line-implicit の上限自体が低い」のかを決着させる。
   ⇒ **平均流のサブ反復収縮律速 = defect-correction 不整合 (1次 FVS LHS × 2次 KEEP+ES RHS) に確定**。
   根治候補: line K の FD 化 (RHS 整合をライン方向だけ入れる, v2 機構流用可) / JFNK
   (DPLUR+line を前処理に) / adaptive early-exit は律速に依らず ~20-30% 得。
+- 2026-09-03: **訂正 (Codex レビュー・重大)**: 上記「消去法完了」の freeze A/B は**無効だった** —
+  `FORGE_FREEZE_TURB` のゲートは定常経路 (`implicitNonlinearUpdate`) 専用で、dual-time の
+  `advanceImplicitDualTime` は `applySSTPointImplicit` を無条件に呼んでいた (同一経路の 2 回走で
+  一致は自明)。**「defect-correction 不整合が単独原因として確定」は撤回** (commit d3b55d6d の
+  結論を本追補で差し替え)。dual-time にもゲート+起動ログを追加して再走 (`run_diag_lineimp2_frz2`):
+  - 凍結の実証: res_100 の roK/roOmega は**内部 (wd>1e-4) で IC とビット一致**。変化は壁ピン帯
+    (wd≤3.2e-5, roOmega の 2.5% ノード = `nodeOmegaWfDirichlet` 等の壁 Dirichlet — 両腕共通) のみ。
+  - **結果: 平均流収縮は active と実質一致** (roe@20 2.07/2.07, roUx 3.37/3.36 — 0.01 差が
+    「今回は本当に別経路」の傍証)。
+  ⇒ 支持される結論は「**この窓では SST フィードバックは平均流収縮の主律速でない**」まで。
+  nStepInner 一致の読みも訂正: 「線形系を解き切った」でなく「**同じ近似 LHS をさらに解いても
+  非線形収縮は改善しない**」(sweep 増は無価値、の実用結論は不変)。
+  残候補: defect-correction 不整合 / implicitRelax=0.5 の緩和上限 / lineKFreeze の古い LHS /
+  off-line Jacobian の忠実度 / 壁 CV の pseudo-time 制約 → ir0.7・kfreeze-off の追試で切り分け続行。
