@@ -18,6 +18,7 @@
 | [convection-pep-scheme-survey.md](investigations/convection-pep-scheme-survey.md) | `convection` | PEP (Pressure-Equilibrium-Preserving) 系スキーム技術調査と forge 実装方針 |
 | [nozzle-optimization-tool-survey.md](investigations/nozzle-optimization-tool-survey.md) | `—` | 超音速・極超音速ノズル最適化ツール — 技術動向調査と開発フロー提案 |
 | [nozzle-top-internal-shock-diagnosis.md](investigations/nozzle-top-internal-shock-diagnosis.md) | `verification / nozzle` | TOP ベルの内部衝撃波と軸 M 過大 (+22%) は物理と確証 — SU2 同一メッシュ 2×2 (RANS/Euler) で forge と定量一致、Rd/Ru スイープで円弧曲率起因も確認 (2026-08-13) |
+| [nozzle-deltastar-throat-review.md](investigations/nozzle-deltastar-throat-review.md) | `design / nozzle` | 排除厚さ補正の総点検: 与えたスロート δ\* が NS 実効値 (0.0015 r_t) の 3〜12 倍過大で NS 質量流量が Euler 設計比 +0.8〜3.7 % → 試験部 M −0.2〜−0.7 % の主因。Md トリム/law 側帰還の順序問題と打ち手 (質量流量ゲート・全域 CFD 抽出・積分法) (2026-09-04) |
 | [nozzle-throat-curvature-shape-representation-survey.md](investigations/nozzle-throat-curvature-shape-representation-survey.md) | `design / nozzle` | スロート曲率を制御する形状表現の文献調査 (case/41 接合こぶ対策) — CONTUR は壁接合を作らず軸分布 C2 で曲率連続を保証、R=2 は遷音速理論の下限、推奨は R=5 判別 A/B → κ(s) 表現 (2026-08-17) |
 | [su2-nemo-contact-thermo-investigation.md](investigations/su2-nemo-contact-thermo-investigation.md) | `convection / thermophysics` | SU2-NEMO contact/interface thermo 取り扱い調査 (forge mixed-order face-state 比較) |
 | [turbulence-des-flux-survey.md](investigations/turbulence-des-flux-survey.md) | `turbulence` | DES/DDES/IDDES 用 低散逸対流 flux 設計 技術調査（圧縮性 LES/DES） |
