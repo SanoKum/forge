@@ -143,3 +143,19 @@ line-implicit の上限自体が低い」のかを決着させる。
   **残るのは近似 LHS の忠実度ファミリー (1次 FVS×2次 KEEP の defect-correction 不整合 +
   off-line Jacobian 忠実度 + 壁 CV pseudo-time 制約)** で、単独犯の特定はこの窓では不能。
   打ち手は変わらず: adaptive early-exit (無条件) / line K の FD 化 / JFNK。
+- 2026-09-03: **CFL-nSub マップ + 残差局在の測定 (Codex 提案の最安切り分け, run_diag_cflmap_*)**:
+  - **Phase 1 (cp マップ, directional+nSub20 固定, 各 100 step)**: cp8 OK / cp12 OK / **cp14 発散
+    @step3 / cp16 @step2 / cp24 @step1** → 上限は [12,14)。**収縮は cp8 で飽和** (roe@10:
+    cp4 1.22 / cp8 1.27 / cp12 1.28) — BDF 項が対角支配に入った後は Δτ 増が効かない構図。
+    振動兆候ゼロ (roe 増加 subiter 率 0.000)。min ro=1.16/min P=1.02e5 で EOS 床とは無縁
+    (M6 の床洗浄とは終端症状が別物)。**運用最良点 = cp8** (上限へ 1.5 倍の余裕)。
+  - **発散モードの指紋 (cp14 の inner 履歴)**: (ro, roUy, roe) が **subiter 間で単調増幅**
+    (step0 subiter11 から成長・×1.6/3subiter)、roUz/roK は無傷 → 壁法線 (y) の音響/質量-
+    エネルギー系の反復モード。NaN 拡散は 1 step で 86-100% に及ぶため種セル特定には
+    per-subiter 検査が必要 (将来項目)。
+  - **Phase 3 (残差局在, cp8 + `FORGE_OUT_RESIDUALS=1` [main.cpp に env 追加, res_*/dq_block_new_*
+    を h5 出力へ])**: 相対補正要求 η=|dq|/max(|Q|,Q_ref) は**丘頂直前のせん断層 (x/h≈8.6,
+    wd≈0.09-0.11h) に全 5 式が同座で局在**。壁ノード帯は p99 で BL 上部より小さく **壁 CV は
+    支配的でない**。max η ~4e-5 と絶対値も健全。⇒ 判定木では **off-line (streamwise/spanwise)
+    枝** — line K の忠実化だけでは動かず、次に効かせるなら streamwise 第 2 ライン族 (x 周期 →
+    cyclic Thomas) か、物理活性域の要求として受容 (現状 cp8+nSub13 で実用充分) の二択。

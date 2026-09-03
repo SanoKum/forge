@@ -1461,6 +1461,16 @@ int main(void) {
     ImplicitDiagLogger implicit_diag_logger;
 
     cudaConfig cuda_cfg = initializeSimulation(cfg, msh, mat_ns, var, fluct, pprobes);
+    // 診断 (FORGE_OUT_RESIDUALS=1): 流れ残差場と陰的補正 dq を h5 出力へ追加する
+    // (サブ反復収縮の空間局在の測定用。既定 off = 出力不変)。書かれる値は「最終サブ反復・
+    // 最終 sweep 時点」の res_* (BDF 項込み R*) と dq_block_new_* (implicitRelax 適用後)。
+    if (const char* e = getenv("FORGE_OUT_RESIDUALS"); e && atoi(e) != 0) {
+        for (const char* n : {"res_ro","res_roUx","res_roUy","res_roUz","res_roe",
+                              "dq_block_new_0","dq_block_new_1","dq_block_new_2",
+                              "dq_block_new_3","dq_block_new_4"})
+            var.output_cellValNames.push_back(n);
+        printf("[FORGE_OUT_RESIDUALS] residual/dq fields added to h5 outputs\n");
+    }
     // line-implicit (plans/active/time_integration-line-implicit.md): 壁法線ラインを構築。
     // blockDPLUR==1 専用・完全前処理 (lowMachPrecond>=2) とは併用不可。
     if (cfg.lineImplicit == 1) {
