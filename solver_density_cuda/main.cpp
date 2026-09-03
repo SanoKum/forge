@@ -1309,6 +1309,19 @@ void advanceImplicitDualTime(StepContext& s)
             setDT_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var, /*adaptDt=*/true, /*printCfl=*/printCflDt);
         });
         blockDPLURSolve(s, m);
+        // 診断 (FORGE_RESID_SNAP=1): subiter 0 の res (BDF 込み R*) と最終 dq を退避 (局所収縮率 g の分母)。
+        {
+            static const bool snap = [](){ const char* e = getenv("FORGE_RESID_SNAP"); return e && atoi(e) != 0; }();
+            if (snap && m == 0) {
+                const size_t nb = (size_t)s.msh.nCells_all * sizeof(flow_float);
+                const char* src[] = {"res_ro","res_roUx","res_roUy","res_roUz","res_roe",
+                                     "dq_block_old_0","dq_block_old_1","dq_block_old_2","dq_block_old_3","dq_block_old_4"};
+                const char* dst[] = {"res_ro_m","res_roUx_m","res_roUy_m","res_roUz_m","res_roe_m",
+                                     "dq_ro_new","dq_roUx_new","dq_roUy_new","dq_roUz_new","dq_roe_new"};
+                for (int q = 0; q < 10; ++q)
+                    gpuErrchk(cudaMemcpy(s.var.c_d[dst[q]], s.var.c_d[src[q]], nb, cudaMemcpyDeviceToDevice));
+            }
+        }
         // dual-time の commit は in-place（roN=Q^n は BDF 基準で固定のため roN+dq は使えない）。
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             applyBlockImplicitCorrectionInPlace_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -1464,12 +1477,22 @@ int main(void) {
     // 診断 (FORGE_OUT_RESIDUALS=1): 流れ残差場と陰的補正 dq を h5 出力へ追加する
     // (サブ反復収縮の空間局在の測定用。既定 off = 出力不変)。書かれる値は「最終サブ反復・
     // 最終 sweep 時点」の res_* (BDF 項込み R*) と dq_block_new_* (implicitRelax 適用後)。
+    // 注意: blockDPLURSolve は sweep 毎に new/old を swap するため、最終補正は dq_block_old_* に
+    // 残る (dq_block_new_* は 1 sweep 前 — 2026-09-03 Codex 指摘で修正)。
     if (const char* e = getenv("FORGE_OUT_RESIDUALS"); e && atoi(e) != 0) {
         for (const char* n : {"res_ro","res_roUx","res_roUy","res_roUz","res_roe",
-                              "dq_block_new_0","dq_block_new_1","dq_block_new_2",
-                              "dq_block_new_3","dq_block_new_4"})
+                              "dq_block_old_0","dq_block_old_1","dq_block_old_2",
+                              "dq_block_old_3","dq_block_old_4"})
             var.output_cellValNames.push_back(n);
         printf("[FORGE_OUT_RESIDUALS] residual/dq fields added to h5 outputs\n");
+    }
+    // FORGE_RESID_SNAP=1: dual-time の subiter 0 直後の res/dq を未使用スロット (res_*_m / dq_*_new
+    // スカラー枠) へ退避して出力に含める → 局所収縮率 g=|dq_final|/|dq_sub0| を場で測れる。
+    if (const char* e = getenv("FORGE_RESID_SNAP"); e && atoi(e) != 0) {
+        for (const char* n : {"res_ro_m","res_roUx_m","res_roUy_m","res_roUz_m","res_roe_m",
+                              "dq_ro_new","dq_roUx_new","dq_roUy_new","dq_roUz_new","dq_roe_new"})
+            var.output_cellValNames.push_back(n);
+        printf("[FORGE_RESID_SNAP] subiter-0 residual/dq snapshots added to h5 outputs\n");
     }
     // line-implicit (plans/active/time_integration-line-implicit.md): 壁法線ラインを構築。
     // blockDPLUR==1 専用・完全前処理 (lowMachPrecond>=2) とは併用不可。

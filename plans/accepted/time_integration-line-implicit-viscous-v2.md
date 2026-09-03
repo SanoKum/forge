@@ -159,3 +159,18 @@ line-implicit の上限自体が低い」のかを決着させる。
     支配的でない**。max η ~4e-5 と絶対値も健全。⇒ 判定木では **off-line (streamwise/spanwise)
     枝** — line K の忠実化だけでは動かず、次に効かせるなら streamwise 第 2 ライン族 (x 周期 →
     cyclic Thomas) か、物理活性域の要求として受容 (現状 cp8+nSub13 で実用充分) の二択。
+- 2026-09-03: **診断修正 + 局所収縮率 g + cp8 nSub 直接 A/B (Codex 補正 3 点への対応)**:
+  - 診断修正: `FORGE_OUT_RESIDUALS` の dq 出力を **dq_block_old_*** (swap 後の最終補正) に修正
+    (旧 dq_block_new_* は 1 sweep 前 — 定性結論は不変だが正した)。`FORGE_RESID_SNAP=1` を追加
+    (subiter0 の res/dq を res_*_m / dq_*_new スロットへ退避し出力 → g を場で測れる)。
+  - **局所収縮率 g=|dq_final|/|dq_sub0| (cp8, step100, run_diag_cflmap_cp8_g)**: 中央値 0.000-0.004、
+    p99 ≤0.039、**増幅 (g>1) ノードはゼロ**。帯別も壁ノード帯 0.010 vs コア 0.004 の緩い勾配のみ。
+    ⇒ **局所的な数値律速は存在しない — 収縮率は全域一様**。判定木は「off-line 枝」でなく
+    **「全域一様 → 1次 FVS LHS × 2次 KEEP RHS の演算子不整合が本命」** に確定 (先の off-line 判定は
+    η 最大位置の誤読で撤回済み)。streamwise 第 2 ライン族は根拠を失い保留。
+  - **cp8 × nSub 直接 A/B (300 step, 同一 IC)**: cp8+nSub13 = **315 s (ctrl の 0.91 倍) で
+    全指標 ctrl 同等以上** (ro 6.6e-10 / roUx 3.3e-7 / roe 2.13e-4, ωバースト 6.02)。
+    cp8+nSub12 = 291 s (0.84 倍) だが roe 3.0e-4 (+42%) の妥協。cp4+nSub13 とはほぼ等価。
+  - **生産推奨 (最終)**: `lineImplicit1 + lineKFreeze1 + lineDtDirectional1 + cfl_pseudo 8 + nSub 13`
+    (同品質 0.91×・バースト −44%)。速度優先なら nSub12 (0.84×, roe 微妥協)。
+    さらなる短縮は演算子不整合ファミリー (JFNK / LHS 散逸整合) か adaptive early-exit。
