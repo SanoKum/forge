@@ -203,3 +203,21 @@ line-implicit の上限自体が低い」のかを決着させる。
   壁法線音響で絞られていた BL セルの小 Δτ が実は安定マージンだった (dual-time の BDF 対角の
   ような保護が定常には無い)。⇒ **v2 は dual-time DDES 専用の武器**と結論。定常 RANS の生産は
   従来どおり point-DPLUR + cfl6/8+relax0.7。
+- 2026-09-03: **訂正 (Codex レビュー) + back-to-back 正式 A/B (同一バイナリ・同一 IC,
+  run_0015_cflsweep/tp_cfl6r07_{point2,line2b,linemono,line_ni3,line_ni2,linedir2})**:
+  前項の「v2 でも定常側は損」「DDES 専用」は言い過ぎだった。正式値:
+  | 腕 (cfl6+r0.7, warm 2000 step) | Time | 末尾 roe |
+  | point (ni5) | 15.99 s | 0.626 |
+  | **split line (ni5)** | **28.97 s (1.81×)** | 0.556 (−11%) |
+  | mono line (ni5, FORGE_LINE_MONO=1) | 43.90 s (2.75×) | 0.556 |
+  | split line ni3 | 25.08 s (1.57×) | 0.577 |
+  | split line ni2 | 発散 @785 | — |
+  - **factor/solve 分離は定常でも有効** (2.75×→1.81×, −34%) — 「効かない」は誤り。ただし最良
+    チューニング (ni3) でも 1.57× コスト vs roe −8% で**この case では採算不成立**。ni2 発散 =
+    off-line lag に sweep ≥3 が必要。「1250 line の占有率壊滅」は未プロファイルの仮説に格下げ。
+  - **directional 発散の帰属を訂正**: 種は **x/r_t 71-89 の下流域・全断面** (壁至近 3%・近軸 1%,
+    res_nan_26.h5 保持) — 「BL セルの露出」でなく**既知の streamwise 内部モード**が、directional で
+    Δτ の上がった下流域セルで先に点火したもの (cp6/cp8 同 step の理由も状態依存で説明がつく)。
+    定常律速 = streamwise 対流、の既存結論を補強。
+  - **結論の正確な形**: case/45 M6 定常の現設定では non-directional v2 は採算不成立・directional は
+    使用不可。**他の定常高 AR 問題への一般化はしない** (3D 定常や別ケースは未検証)。
