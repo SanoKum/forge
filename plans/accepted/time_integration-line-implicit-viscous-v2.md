@@ -89,3 +89,17 @@ line-implicit の上限自体が低い」のかを決着させる。
   - 非 directional nSub13 (302 s, 0.88 倍) より directional は +5% 遅いが、バースト余裕 −35%
     (9.5→6.15) を買う取引。**生産候補 = directional cp4+nSub13 (速度優先) / nSub15 (品質・余裕優先)**。
   - 残作業 (本採用の条件): 生産再開時に nSub15 で長時間 (数万 step) のバースト余裕検証を 1 本。
+- 2026-09-03: **壁境界半割面 Λ の除外実験 (`lineDtWallRelief`, opt-in 診断)** — Codex 提案の
+  3 分岐実験。wall 種 bcond の境界面のみ明示フラグ (19642 面) で setDT の max から除外
+  (inlet/outlet/periodic は残す。LHS の境界 A⁺ 対角は不変)。結果は**分岐③: 発散**
+  (`run_diag_lineimp2_dirwall_cp4`, step ~80-100 で ro が非有限 → detectNaN 停止。
+  対照 `dir_cp4` 再走は完走)。最初に落ちたのが **ro (連続の式)** なのは示唆的 — 壁ノードは
+  運動量 3 行+エネルギー行を Dirichlet decouple 済みで、**生きているのは密度・圧力側**。
+  結論: **壁境界 Λ は現行構成 (境界結合が LHS 対角 A⁺ のみ) では安定化に必要**で、
+  除外するには境界整合の陰化 (連続行の境界 Jacobian 強化等) が前提 = 将来項目。
+- 2026-09-03: **dt_local 壁距離プロファイル (dir_cp4, `dt_profile.csv`)** が Codex 指摘を定量確認:
+  壁ノード帯 (wd<5e-5) の dt_med **1.9e-6** vs 内側 **1.4-1.7e-5 (~8 倍差)** — directional の
+  AR 倍恩恵は第一内点以降のみで、壁 CV 自身は境界面 Λ で絞られたまま。内側は ~7.5·dt で
+  BDF 物理項支配レジーム到達済み。⇒ **「壁擬似時間律速の完全除去」は未達のまま**が正確で、
+  収縮律速 3 候補 (off-line lag / segregated SST / defect-correction 不整合) の切り分けは、
+  壁端点を除去できない以上、別経路 (例: SST 連成陰化 or LHS 2 次化) からになる。

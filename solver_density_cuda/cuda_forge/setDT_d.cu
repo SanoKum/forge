@@ -134,7 +134,10 @@ __global__ void setCFL_cell_d
  const geom_int* line_next,
  // 方向別 dt (lineDtDirectional==1): line 面 (Thomas が厳密に解く結合) の λ を CFL の max から
  // 完全除外し、Δτ を off-line 面 (lag 側) の λ だけで決める。壁セルの Δτ は streamwise 基準 (×AR)。
- int lineDtDirectional
+ int lineDtDirectional,
+ // 診断 (lineDtWallRelief==1): wall 種境界半割面の λ も on-line セルの max から除外 (壁端点律速の切り分け)。
+ const unsigned char* plane_wall,
+ int lineDtWallRelief
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -154,6 +157,7 @@ __global__ void setCFL_cell_d
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             geom_int ip = cell_planes[ilp];
 
+            if (lineDtWallRelief != 0 && onLine && plane_wall != nullptr && plane_wall[ip] != 0) continue;
             if (lineDtDirectional != 0 && onLine) {
                 const geom_int ic0 = plane_cells[2*ip+0];
                 const geom_int ic1 = plane_cells[2*ip+1];
@@ -349,7 +353,9 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         (cfg.lineImplicit == 1) ? cfg.lineViscousDtRelief : (flow_float)0.0,
         (cfg.lineImplicit == 1) ? msh.line_prev_d : nullptr,
         (cfg.lineImplicit == 1) ? msh.line_next_d : nullptr,
-        (cfg.lineImplicit == 1) ? cfg.lineDtDirectional : 0
+        (cfg.lineImplicit == 1) ? cfg.lineDtDirectional : 0,
+        (cfg.lineImplicit == 1) ? msh.plane_wall_flag_d : nullptr,
+        (cfg.lineImplicit == 1) ? cfg.lineDtWallRelief : 0
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
 
