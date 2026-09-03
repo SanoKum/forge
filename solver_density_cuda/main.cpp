@@ -1465,7 +1465,7 @@ int main(void) {
         }
         msh.buildImplicitLines(var.c.at("ccx").data(), var.c.at("ccy").data(), var.c.at("ccz").data());
     } else if (cfg.lineKFreeze != 0 || cfg.lineViscCoupling != 0 ||
-               cfg.lineViscousDtRelief != (flow_float)0.0) {
+               cfg.lineViscousDtRelief != (flow_float)0.0 || cfg.lineDtDirectional != 0) {
         fprintf(stderr, "[lineImplicit] lineKFreeze/lineViscCoupling/lineViscousDtRelief require lineImplicit=1\n");
         exit(1);
     }

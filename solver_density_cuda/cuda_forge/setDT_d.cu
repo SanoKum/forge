@@ -131,7 +131,10 @@ __global__ void setCFL_cell_d
  flow_float* vis_turb,
  flow_float lineReliefTheta,
  const geom_int* line_prev,
- const geom_int* line_next
+ const geom_int* line_next,
+ // 方向別 dt (lineDtDirectional==1): line 面 (Thomas が厳密に解く結合) の λ を CFL の max から
+ // 完全除外し、Δτ を off-line 面 (lag 側) の λ だけで決める。壁セルの Δτ は streamwise 基準 (×AR)。
+ int lineDtDirectional
 )
 {
     geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
@@ -145,12 +148,18 @@ __global__ void setCFL_cell_d
         cfl[ic] = 0.0;
         //cfl_pseudo[ic] = 0.0;
 
-        const bool lineRelief = (lineReliefTheta > (flow_float)0.0 && line_prev != nullptr &&
-                                 (line_prev[ic] >= 0 || line_next[ic] >= 0));
+        const bool onLine = (line_prev != nullptr && (line_prev[ic] >= 0 || line_next[ic] >= 0));
+        const bool lineRelief = (lineReliefTheta > (flow_float)0.0 && onLine);
 
         for (geom_int ilp=index_st; ilp<index_en; ilp++) {
             geom_int ip = cell_planes[ilp];
 
+            if (lineDtDirectional != 0 && onLine) {
+                const geom_int ic0 = plane_cells[2*ip+0];
+                const geom_int ic1 = plane_cells[2*ip+1];
+                const geom_int other = (ic0 == ic) ? ic1 : ic0;
+                if (other == line_prev[ic] || other == line_next[ic]) continue;  // line 面は除外
+            }
             flow_float cfl_p = cfl_pln[ip];
             if (lineRelief) {
                 // setCFL_pln_d と同一式で面の粘性 CFL を再計算し θ 分を引く (対流+音響分は必ず残る)。
@@ -339,7 +348,8 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
         var.c_d["vis_turb"],
         (cfg.lineImplicit == 1) ? cfg.lineViscousDtRelief : (flow_float)0.0,
         (cfg.lineImplicit == 1) ? msh.line_prev_d : nullptr,
-        (cfg.lineImplicit == 1) ? msh.line_next_d : nullptr
+        (cfg.lineImplicit == 1) ? msh.line_next_d : nullptr,
+        (cfg.lineImplicit == 1) ? cfg.lineDtDirectional : 0
     ) ;
     gpuErrchk( cudaPeekAtLastError() );
 

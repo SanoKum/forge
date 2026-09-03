@@ -325,6 +325,7 @@ void solverConfig::read(std::string fname)
         this->lineKFreeze = getOptionalValidatedValue<int>(deltaT, "lineKFreeze", 0, "time.deltaT");
         this->lineViscCoupling = getOptionalValidatedValue<int>(deltaT, "lineViscCoupling", 0, "time.deltaT");
         this->lineViscousDtRelief = getOptionalValidatedValue<double>(deltaT, "lineViscousDtRelief", 0.0, "time.deltaT");
+        this->lineDtDirectional = getOptionalValidatedValue<int>(deltaT, "lineDtDirectional", 0, "time.deltaT");
         {
             double raw = getOptionalValidatedValue<double>(deltaT, "implicitRelaxSST", -1.0, "time.deltaT");
             this->implicitRelaxSST = (raw < 0.0) ? this->implicitRelax : (flow_float)raw;
