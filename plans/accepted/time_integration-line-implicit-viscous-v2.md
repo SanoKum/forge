@@ -131,3 +131,15 @@ line-implicit の上限自体が低い」のかを決着させる。
   非線形収縮は改善しない**」(sweep 増は無価値、の実用結論は不変)。
   残候補: defect-correction 不整合 / implicitRelax=0.5 の緩和上限 / lineKFreeze の古い LHS /
   off-line Jacobian の忠実度 / 壁 CV の pseudo-time 制約 → ir0.7・kfreeze-off の追試で切り分け続行。
+- 2026-09-03: **残候補 probe 2 本 (各 100 step, 対照 dir_cp4)**:
+  - `implicitRelax` 0.5→0.7 (`run_diag_lineimp2_ir07`): **発散** (NaN)。relax 0.5 は任意の減衰でなく
+    **安定必須** — 近似 LHS の defect-correction が要求する緩和で、収縮率の上限 (毎 subiter ≤半歩)
+    を課すが外せない。⇒ この候補は「defect-correction 不整合」に吸収される (LHS が忠実なら
+    relax→1 で Newton 級収縮が許されるはず)。
+  - `lineKFreeze` off = K/LU 毎 subiter 再構築 (`run_diag_lineimp2_nokfrz`): **収縮完全一致**
+    (roe@20 2.07 / roUx@20 3.37)。**「K 凍結の古い LHS」候補は消去** — 凍結はコスト削減のみで
+    収縮に無害と直接実証。
+  ⇒ 総括: 安く動かせる要素 (SST/sweep 数/K 鮮度/relax) を全て振っても収縮は 2.07/3.37 に固着。
+  **残るのは近似 LHS の忠実度ファミリー (1次 FVS×2次 KEEP の defect-correction 不整合 +
+  off-line Jacobian 忠実度 + 壁 CV pseudo-time 制約)** で、単独犯の特定はこの窓では不能。
+  打ち手は変わらず: adaptive early-exit (無条件) / line K の FD 化 / JFNK。
