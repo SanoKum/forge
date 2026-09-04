@@ -1,4 +1,5 @@
 #include "speciesTransport_d.cuh"
+#include "chemistrySource_d.cuh"
 
 #include "scalarTransport_d.cuh"
 #include "thermo_d.cuh"
@@ -315,6 +316,81 @@ __global__ void species_dplur_sweep_d(
 
         dq_new[ic] = implicit_relax * (res_roY[ic] + neighbor) / diag;
     }
+}
+
+
+// 種ブロック版 scalar-DPLUR sweep (chemistry jacobianMode==2)。全化学種を 1 スレッドで扱い、セル内の
+//   [ (V/Δτ + transport_diag_s + V·src_jac_s) δ_sk − V·R_sk ] δ(ρY_k) = res_s + Σ_f offdiag_f·δ(ρY_s)_old[nbr]
+// を密 LU で解く (R は chemistry_d の温度結合込み Jacobian 残差行列)。隣接項は種ごとのスカラ sweep と同じ。
+// methods/chemistry.md §4 (decoupled point-implicit)。
+__global__ void species_dplur_block_sweep_d(
+    int nSpecies,
+    flow_float implicit_relax,
+    flow_float* dt_local,
+    geom_int nCells,
+    geom_float* vol,
+    geom_int* plane_cells,
+    geom_int* cell_planes_index,
+    geom_int* cell_planes,
+    flow_float* massflux,
+    flow_float* roN,
+    flow_float* const* res_roY,
+    flow_float* const* transport_diag,
+    flow_float* const* src_jac,
+    const flow_float* chem_jac,
+    flow_float* const* dq_old,
+    flow_float* const* dq_new)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int n = nSpecies;
+    const double dt_l = (double)dt_local[ic];
+    const double v = (double)vol[ic];
+
+    double rhs[THERMO_MAX_SPECIES];
+    for (int s = 0; s < n; ++s) rhs[s] = (double)res_roY[s][ic];
+    const geom_int plane_begin = cell_planes_index[ic];
+    const geom_int plane_end   = cell_planes_index[ic + 1];
+    for (geom_int po = plane_begin; po < plane_end; ++po) {
+        const geom_int ip  = cell_planes[po];
+        const geom_int ic0 = plane_cells[2 * ip + 0];
+        const geom_int ic1 = plane_cells[2 * ip + 1];
+        const geom_int other_ic = (ic0 == ic) ? ic1 : ic0;
+        const flow_float mdot = massflux[ip];
+        const flow_float inflow = (ic0 == ic) ? max(-mdot, static_cast<flow_float>(0.0))
+                                              : max( mdot, static_cast<flow_float>(0.0));
+        if (other_ic < nCells) {
+            const double offdiag = (double)inflow / (double)max(roN[other_ic], static_cast<flow_float>(1.0e-30));
+            for (int s = 0; s < n; ++s) rhs[s] += offdiag * (double)dq_old[s][other_ic];
+        }
+    }
+
+    double M[THERMO_MAX_SPECIES*THERMO_MAX_SPECIES];
+    const double diag0 = v / max(dt_l, 1.0e-30);
+    for (int s = 0; s < n; ++s) {
+        for (int k = 0; k < n; ++k) M[s*n+k] = -v * (double)chem_jac[((size_t)ic*n + s)*n + k];
+        M[s*n+s] += diag0 + (double)transport_diag[s][ic] + v * (double)src_jac[s][ic];
+        if (M[s*n+s] < 1.0e-30) M[s*n+s] = 1.0e-30;
+    }
+    // 部分ピボット LU で M x = rhs
+    for (int k = 0; k < n; ++k) {
+        int p = k; double amax = fabs(M[k*n+k]);
+        for (int i = k + 1; i < n; ++i) if (fabs(M[i*n+k]) > amax) { amax = fabs(M[i*n+k]); p = i; }
+        if (p != k) { for (int j = 0; j < n; ++j) { const double t = M[k*n+j]; M[k*n+j] = M[p*n+j]; M[p*n+j] = t; } const double t = rhs[k]; rhs[k] = rhs[p]; rhs[p] = t; }
+        const double d = (fabs(M[k*n+k]) > 1.0e-300) ? M[k*n+k] : 1.0e-300;
+        for (int i = k + 1; i < n; ++i) {
+            const double f = M[i*n+k] / d;
+            if (f == 0.0) continue;
+            for (int j = k; j < n; ++j) M[i*n+j] -= f * M[k*n+j];
+            rhs[i] -= f * rhs[k];
+        }
+    }
+    for (int i = n - 1; i >= 0; --i) {
+        double t = rhs[i];
+        for (int j = i + 1; j < n; ++j) t -= M[i*n+j] * rhs[j];
+        rhs[i] = t / M[i*n+i];
+    }
+    for (int s = 0; s < n; ++s) dq_new[s][ic] = (flow_float)((double)implicit_relax * rhs[s]);
 }
 
 // 緩和整合 scalar-DPLUR の commit: ρY_s = ρY_s^N + δ(ρY_s)。実現可能性フロア (ρY_s>=0)。
@@ -749,6 +825,48 @@ bool speciesImplicitCoupled(solverConfig& cfg, variables& var)
 // δ(ρY_s) を dq=0 から nStepInner 回 Jacobi sweep で緩和し (流れ block と同一 implicitRelax/sweep 回数)、
 // ρY_s = ρY_s^N + δ(ρY_s) を commit する。呼び出し前に speciesUpdateOuter で ρY_s^N=ρY_s を取ること。
 // commit 後の Σ_s ρY_s=ρ 再正規化・Y=ρY/ρ 同期は呼び出し側 (main.cpp) で行う。
+// 種ブロック sweep 用: dq_roY{s} / dq_roY{s}_old の device ポインタ配列 (swap のたびに作り直す)。
+static flow_float** g_dqNew_arr = nullptr;
+static flow_float** g_dqOld_arr = nullptr;
+static int g_dq_arr_cap = 0;
+static void buildDqPtrArrays(variables& var, int nSpecies)
+{
+    if (g_dq_arr_cap < nSpecies) {
+        if (g_dqNew_arr) cudaFree(g_dqNew_arr);
+        if (g_dqOld_arr) cudaFree(g_dqOld_arr);
+        gpuErrchk( cudaMalloc((void**)&g_dqNew_arr, nSpecies*sizeof(flow_float*)) );
+        gpuErrchk( cudaMalloc((void**)&g_dqOld_arr, nSpecies*sizeof(flow_float*)) );
+        g_dq_arr_cap = nSpecies;
+    }
+    std::vector<flow_float*> hn(nSpecies), ho(nSpecies);
+    for (int s = 0; s < nSpecies; ++s) { hn[s] = var.c_d["dq_roY"+std::to_string(s)]; ho[s] = var.c_d["dq_roY"+std::to_string(s)+"_old"]; }
+    gpuErrchk( cudaMemcpy(g_dqNew_arr, hn.data(), nSpecies*sizeof(flow_float*), cudaMemcpyHostToDevice) );
+    gpuErrchk( cudaMemcpy(g_dqOld_arr, ho.data(), nSpecies*sizeof(flow_float*), cudaMemcpyHostToDevice) );
+}
+// 1 sweep 分: chemistry ブロックが有効なら種ブロック kernel、無効なら種ごとのスカラ kernel。
+static void speciesSweepOnce(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var, int nSpecies)
+{
+    const flow_float* cj = chemistry_jac_device_ptr();
+    if (cj != nullptr) {
+        buildDqPtrArrays(var, nSpecies);
+        species_dplur_block_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+            nSpecies, cfg.implicitRelax, var.c_d["dt_local"], msh.nCells, var.c_d["volume"],
+            msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
+            var.p_d["massflux"], var.c_d["roN"],
+            g_resroY_dev, g_transdiag_dev, g_srcjac_dev, cj, g_dqOld_arr, g_dqNew_arr);
+        return;
+    }
+    for (int s = 0; s < nSpecies; s++) {
+        const std::string i = std::to_string(s);
+        species_dplur_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+            cfg.implicitRelax, var.c_d["dt_local"], msh.nCells, var.c_d["volume"],
+            msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
+            var.p_d["massflux"], var.c_d["roN"],
+            var.c_d["res_roY"+i], var.c_d["transport_diag_Y"+i], var.c_d["src_jac_Y"+i],
+            var.c_d["dq_roY"+i+"_old"], var.c_d["dq_roY"+i]);
+    }
+}
+
 void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
 {
     if (!speciesEnabled(var)) return;
@@ -765,24 +883,7 @@ void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg
 
     const int nSweep = std::max(1, cfg.nStepInner);
     for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
-        for (int s = 0; s < nSpecies; s++) {
-            const std::string i = std::to_string(s);
-            species_dplur_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
-                cfg.implicitRelax,
-                var.c_d["dt_local"],
-                msh.nCells,
-                var.c_d["volume"],
-                msh.map_plane_cells_d,
-                msh.map_cell_planes_index_d,
-                msh.map_cell_planes_d,
-                var.p_d["massflux"],
-                var.c_d["roN"],
-                var.c_d["res_roY"+i],
-                var.c_d["transport_diag_Y"+i],
-                var.c_d["src_jac_Y"+i],
-                var.c_d["dq_roY"+i+"_old"],
-                var.c_d["dq_roY"+i]);
-        }
+        speciesSweepOnce(cfg, cuda_cfg, msh, var, nSpecies);
         // sweep 後に old↔new を swap (最終補正は dq_old 側に残る)。
         for (int s = 0; s < nSpecies; s++) {
             const std::string i = std::to_string(s);
@@ -802,6 +903,22 @@ void speciesImplicitDPLURSolve_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg
 
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
+}
+
+
+// 有限速度化学 (jacobianMode==2, 案C): 予測子 δ(ρY)* から反応熱の変化分を線形化して res_roe に注入する。
+//   res_roe += V Σ_k (∂Q̇/∂(ρY_k)) δ(ρY_k)*  (= V (Q̇* − Q̇ⁿ)。Q̇ⁿ は chemistry_source_d で陽に加算済)
+// 再結合熱をスロート付近で陽的に入れると 1 擬似ステップで内部エネルギーの数十 % になり発散する (case/46 run_0002) ため、
+// 化学種の陰的更新と整合した量だけを流れブロックに見せる。methods/chemistry.md §4。
+__global__ void chemistry_heat_inject_d(
+    geom_int nCells, int nSpecies, geom_float* vol,
+    const flow_float* cq, flow_float* const* dq, flow_float* res_roe)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    double acc = 0.0;
+    for (int k = 0; k < nSpecies; ++k) acc += (double)cq[(size_t)ic*nSpecies + k] * (double)dq[k][ic];
+    res_roe[ic] += (flow_float)((double)vol[ic] * acc);
 }
 
 // ===== 案C: block-triangular roe↔roY coupling のオーケストレーション =====
@@ -838,15 +955,7 @@ void speciesEOSCrossPredictInject_d_wrapper(solverConfig& cfg, cudaConfig& cuda_
     }
     const int nSweep = std::max(1, cfg.nStepInner);
     for (int iSweep = 0; iSweep < nSweep; ++iSweep) {
-        for (int s = 0; s < nSpecies; ++s) {
-            const std::string i = std::to_string(s);
-            species_dplur_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
-                cfg.implicitRelax, var.c_d["dt_local"], msh.nCells, var.c_d["volume"],
-                msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
-                var.p_d["massflux"], var.c_d["roN"],
-                var.c_d["res_roY"+i], var.c_d["transport_diag_Y"+i], var.c_d["src_jac_Y"+i],
-                var.c_d["dq_roY"+i+"_old"], var.c_d["dq_roY"+i]);
-        }
+        speciesSweepOnce(cfg, cuda_cfg, msh, var, nSpecies);
         for (int s = 0; s < nSpecies; ++s) {
             const std::string i = std::to_string(s);
             std::swap(var.c_d["dq_roY"+i], var.c_d["dq_roY"+i+"_old"]);
@@ -854,6 +963,13 @@ void speciesEOSCrossPredictInject_d_wrapper(solverConfig& cfg, cudaConfig& cuda_
     }
     // 最終補正 δ(ρY_s)* は dq_roY{s}_old に残る。ポインタ配列を再構築。
     rebuildDqYoldPtrs(var, nSpecies);
+
+    // 有限速度化学 (jacobianMode==2): 反応熱の陰的注入 (射影前の δ* を使う。Σ_s ω_s=0 なので化学寄与は接空間内)。
+    if (chemistry_cq_device_ptr() != nullptr) {
+        chemistry_heat_inject_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
+            msh.nCells, nSpecies, var.c_d["volume"], chemistry_cq_device_ptr(), g_dqYold_dev, var.c_d["res_roe"]);
+        gpuErrchk( cudaPeekAtLastError() );
+    }
 
     // --- 接空間射影 z_s = δz*_s - Y_s Σδz* (dq_old を in-place で z に) ---
     species_eos_project_tangent_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(

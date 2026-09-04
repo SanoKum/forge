@@ -1,4 +1,5 @@
 #include "timeIntegration_d.cuh"
+#include "chemistrySource_d.cuh"   // 有限速度化学: 反応熱の (4,4) 対角 (chemistry_jacroe_device_ptr)
 #include "lowMachPrecond_d.cuh"   // Phase 4: β (lowMachBeta)・c' (lowMachCprime) device ヘルパ
 #include "cuda_forge/eos_jacobian_d.cuh"  // 一般EOS固有系 (eos_split_jacobian_general_closed)。precond 経路で使用
 #include "cuda_forge/block_dplur_jacobian_d.cuh"  // block_dplur::accumulate_split_jacobian_cf (共有ヘッダ)
@@ -738,6 +739,10 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  // Jacobian も加えない。decouple 用 axis_flag (nodeAxisDirichlet ゲート) とは独立に渡す (nullptr 可)。
  geom_int* axis_flag_src,
 
+ // 有限速度化学 (jacobianMode==2): 反応熱の安定化側エネルギー対角 max(0,−∂Q̇/∂(ρe)) [1/s] (nullptr 可)。
+ // diag(4,4) += V·src_jac_roe。methods/chemistry.md §3。
+ flow_float* src_jac_roe,
+
  // node-centered 壁 no-slip: 壁ノードで運動量3行 (index1=roUx,2=roUy,3=roUz) を decouple する (nullptr 可)。
  // SU2 `DeleteValsRowi` 相当。残差射影だけでは block-DPLUR が壁運動量を連成したまま dq≠0 を返し速度 drift
  // するのを防ぐ。連続(行0)・エネルギー(行4)は保持。methods/discretization.md §7.2.1。
@@ -801,6 +806,8 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         block_dplur::add_identity_scaled(diag_block, static_cast<ST>(v / max(dt_l, static_cast<ST>(1.0e-30))));
         // dual-time: 物理時間項 a·V/Δt を対角へ（定常は unsteady_diag==0）。
         block_dplur::add_identity_scaled(diag_block, v * static_cast<ST>(unsteady_diag));
+        // 有限速度化学: 反応熱のエネルギー自己抑制 (負帰還側のみ) を (4,4) へ。
+        if (src_jac_roe != nullptr) diag_block[4][4] += static_cast<ST>(v) * static_cast<ST>(src_jac_roe[ic]);
 
         ST rhs[5] = {
             static_cast<ST>(res_ro[ic]),
@@ -1410,6 +1417,7 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 nullptr,  /* axis_flag: 旧 nodeAxisDirichlet の全 5 行 decouple (撤去) */ \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr),  /* axis_ur_flag: 軸ノードの roUy 行 decouple (常時) */ \
                 ((cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr),  /* axis_flag_src: SU2 流 (enc==2) の軸ソース Jacobian ガード (軸ノードはソース 0) */ \
+                chemistry_jacroe_device_ptr(),  /* src_jac_roe: 有限速度化学 反応熱の (4,4) 対角 (mode 2 のみ, 他は nullptr) */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag: 壁運動量3行 decouple */ \
                 ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.iso_wall_flag_d : nullptr),  /* iso_wall_flag: 等温壁 roe 行 decouple (T ピンと対) */ \
                 ((cfg.discretization == "node") ? 1 : 0),  /* isNode: 5e 境界半割面の粘性対角スキップ */ \

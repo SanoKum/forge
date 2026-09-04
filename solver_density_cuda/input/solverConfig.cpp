@@ -626,6 +626,13 @@ void solverConfig::read(std::string fname)
                 if (this->thermalMethod != 2) throw std::runtime_error("'physProp.chemistry.enabled: 1' requires thermalMethod: 2.");
                 if (this->nSpecies < 2)      throw std::runtime_error("'physProp.chemistry.enabled: 1' requires >=2 species.");
                 if (this->chemMechanismFile.empty()) throw std::runtime_error("'physProp.chemistry.mechanismFile' is required.");
+                // 定常陰解法 (timeIntegration 11) で反応熱を陰的に注入するには 案C 予測子 + 種ブロック Jacobian が必要
+                // (陽的注入はスロート付近の再結合熱で数 step 発散: methods/chemistry.md §4)。
+                if (this->timeIntegration == 11 && !(this->speciesImplicitCoupling == 2 && this->chemJacobianMode >= 2)) {
+                    std::cout << "[chemistry] WARNING: implicit (timeIntegration 11) reacting flow should use "
+                                 "time.deltaT.speciesImplicitCoupling: 2 and physProp.chemistry.jacobianMode: 2 "
+                                 "(implicit reaction-heat injection). Current settings inject reaction heat explicitly." << std::endl;
+                }
             }
         }
         if (physProp["Sc"])                     this->Sc = physProp["Sc"].as<double>();

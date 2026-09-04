@@ -15,6 +15,16 @@ bool chemistryEnabled(const solverConfig& cfg);
 // chemistry.enabled==0 では何もしない。
 void chemistry_init(solverConfig& cfg);
 
+// jacobianMode==2 (種ブロック point-implicit) 用アクセサ。ブロックが無効 (mode<2 / chemistry off) なら nullptr / false。
+//   chemistry_jac_device_ptr(): R [nCells*ns*ns] (R_sk = J_total_sk + d_s δ_sk, d_s は src_jac_Y に入れた対角消費部分)
+//   chemistry_jacroe_device_ptr(): max(0,−∂Q̇/∂(ρe)) [nCells] → block-DPLUR の (5,5) 対角へ
+flow_float* chemistry_jac_device_ptr();
+flow_float* chemistry_jacroe_device_ptr();
+//   chemistry_cq_device_ptr(): ∂Q̇/∂(ρY_k) [nCells*ns]。案C 予測子 δ(ρY)* から反応熱を線形化して陰的に注入する用
+//   (res_roe += V Σ_k ∂Q̇/∂(ρY_k) δ(ρY_k)*)。speciesEOSCrossPredictInject が使う。
+flow_float* chemistry_cq_device_ptr();
+bool chemistry_block_active();
+
 // host 側の反応表 (未初期化なら nullptr)。
 const ReactionTable* chemistry_table_host();
 

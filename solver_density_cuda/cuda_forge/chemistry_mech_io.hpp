@@ -113,8 +113,8 @@ inline void loadMechanism(const std::string& path, const std::vector<std::string
         if (r >= CHEM_MAX_REACTIONS) throw std::runtime_error("[chemistry] too many reactions (CHEM_MAX_REACTIONS)");
         const std::string eq = rx["equation"].as<std::string>();
         std::string type = rx["type"] ? rx["type"].as<std::string>() : "elementary";
-        if (type == "falloff" || type == "chemically-activated" || type == "pressure-dependent-Arrhenius" || type == "Chebyshev")
-            throw std::runtime_error("[chemistry] reaction type '" + type + "' not supported yet (Phase 2): " + eq);
+        if (type == "chemically-activated" || type == "pressure-dependent-Arrhenius" || type == "Chebyshev")
+            throw std::runtime_error("[chemistry] reaction type '" + type + "' not supported: " + eq);
 
         bool reversible = true; size_t pos; std::string lhs, rhs;
         if ((pos = eq.find("<=>")) != std::string::npos) { lhs = eq.substr(0, pos); rhs = eq.substr(pos + 3); }
@@ -123,10 +123,10 @@ inline void loadMechanism(const std::string& path, const std::vector<std::string
         else throw std::runtime_error("[chemistry] cannot parse equation: " + eq);
 
         const Side L = parseSide(lhs, names, eq), R = parseSide(rhs, names, eq);
-        if (L.falloffM || R.falloffM) throw std::runtime_error("[chemistry] falloff '(+M)' not supported yet (Phase 2): " + eq);
+        const bool falloff = (L.falloffM || R.falloffM || type == "falloff");
         if ((int)L.terms.size() > CHEM_MAX_SIDE || (int)R.terms.size() > CHEM_MAX_SIDE)
             throw std::runtime_error("[chemistry] too many species on one side (CHEM_MAX_SIDE): " + eq);
-        const bool thirdBody = (L.M || R.M || type == "three-body");
+        const bool thirdBody = !falloff && (L.M || R.M || type == "three-body");
 
         rt.nR[r] = (int)L.terms.size(); rt.nP[r] = (int)R.terms.size();
         int order = thirdBody ? 1 : 0; double dnu = 0.0;
@@ -136,18 +136,29 @@ inline void loadMechanism(const std::string& path, const std::vector<std::string
         rt.thirdBody[r] = thirdBody ? 1 : 0;
         rt.reversible[r] = reversible ? 1 : 0;
 
-        const YAML::Node rc = rx["rate-constant"];
-        if (!rc) throw std::runtime_error("[chemistry] 'rate-constant' missing: " + eq);
-        const double A = rc["A"].as<double>();
-        const double b = rc["b"] ? rc["b"].as<double>() : 0.0;
-        const double Ea = rc["Ea"].as<double>();
-        // A: (vol/qty)^(order-1)/s → (m^3/mol)^(order-1)/s
-        rt.A[r]  = A * std::pow(u.vol / u.qty, order - 1);
-        rt.b[r]  = b;
-        rt.Ea[r] = Ea * u.Ea;
+        auto readRate = [&](const YAML::Node& rc, double& A, double& b, double& Ea, int ord) {
+            if (!rc) throw std::runtime_error("[chemistry] rate constant missing: " + eq);
+            A = rc["A"].as<double>() * std::pow(u.vol / u.qty, ord - 1);   // (vol/qty)^(ord-1)/s → SI
+            b = rc["b"] ? rc["b"].as<double>() : 0.0;
+            Ea = rc["Ea"].as<double>() * u.Ea;
+        };
+        rt.falloff[r] = 0;
+        if (falloff) {
+            readRate(rx["high-P-rate-constant"], rt.A[r],  rt.b[r],  rt.Ea[r],  order);       // k∞ (M を含まない次数)
+            readRate(rx["low-P-rate-constant"],  rt.A0[r], rt.b0[r], rt.Ea0[r], order + 1);   // k0 ([M] 1 次分)
+            rt.falloff[r] = 1;
+            if (rx["Troe"]) {
+                const YAML::Node tr = rx["Troe"];
+                rt.troeA[r] = tr["A"].as<double>(); rt.troeT3[r] = tr["T3"].as<double>(); rt.troeT1[r] = tr["T1"].as<double>();
+                rt.troeT2[r] = tr["T2"] ? tr["T2"].as<double>() : 0.0;
+                rt.falloff[r] = 2;
+            }
+        } else {
+            readRate(rx["rate-constant"], rt.A[r], rt.b[r], rt.Ea[r], order);
+        }
 
         const double defEff = rx["default-efficiency"] ? rx["default-efficiency"].as<double>() : 1.0;
-        for (int s = 0; s < rt.nSpecies; ++s) rt.eff[r][s] = thirdBody ? defEff : 0.0;
+        for (int s = 0; s < rt.nSpecies; ++s) rt.eff[r][s] = (thirdBody || falloff) ? defEff : 0.0;
         if (rx["efficiencies"]) {
             for (const auto& kv : rx["efficiencies"]) {
                 const std::string nm = kv.first.as<std::string>();

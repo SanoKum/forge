@@ -87,6 +87,16 @@ Jacobian は $n_s\times n_s$ 密 (H₂ 系で $n_s\le13$)。有限差分は検�
   同一 block 解の中で見る。
 - **非定常 (dual-time / 陽解法 RK, 副経路)** — Strang 分離: 対流拡散半ステップ → セル内 ODE $d(\rho Y)/dt=\dot\omega$ を backward Euler
   で sub-cycle (同じ Jacobian・LU) → 対流拡散半ステップ。sub-cycle 数は $\Delta t/\tau_c$ (Gershgorin 近似) から適応。
+- **反応熱の陰的注入 (Phase 2a, 2026-09-04)**: 反応熱 $\dot Q^n$ を陽に流れブロックへ入れると、燃焼室組成のままのスロート付近
+  (再結合熱 $\dot Q\sim7\times10^{11}$ W/m³, $\tau_c\sim4\times10^{-8}$ s) では擬似時間刻み $10^{-6}$ s で 1 step に内部エネルギーの
+  数十 % が加わり数 step で発散する (case/46 run_0002–0007: 結合方式・`cfl_pseudo` 0.2 でも同じ)。案C の予測子 $\delta(\rho Y)^*$
+  (種ブロック陰解の出力) を使って
+  $$\dot Q^*=\dot Q^n+\sum_k\frac{\partial\dot Q}{\partial(\rho Y_k)}\,\delta(\rho Y_k)^*,\qquad
+    \frac{\partial\dot Q}{\partial(\rho Y_k)}=-\sum_s c_s\,J^{\rm tot}_{sk}$$
+  と線形化し、差分 $V(\dot Q^*-\dot Q^n)$ を EOS-JVP と同じ場所で `res_roe` に加える。これは離散恒等式
+  $\Delta E=-\sum_s c_s\,\Delta(\rho Y_s)$ (ホストテストの反応器と同じ) の線形化で、化学種が陰的に消費した分だけの熱を流れが見るので
+  過大な発熱を出さない。**反応流の定常陰解法は `speciesImplicitCoupling: 2` + `jacobianMode: 2` を必須**とする
+  (coupling 0/1 では予測子が無く陽的注入のまま)。非定常陽解法 (RK, 小さい $\Delta t$) は陽的注入で問題ない (case/35 run_0049)。
 - **正値性**: 消費項 (対角負) を陰、生成項を陽に置く Patankar 型で $\rho Y_s\ge0$ を保つ。残りは既存の `species_renormalize_d` でクリップ・再正規化。
 
 ### 5. 乱流‐化学相互作用 (TCI)
@@ -135,8 +145,11 @@ $\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\v
 | datum 保持 | `thermo_d.{cuh,cu}` (`SpeciesThermo::h_datum`) | sensible datum で除いた $h^{abs}_s(T_{ref})$ [J/mol] を保持し、$\dot Q$ と $K_c$ (絶対 $H$) に使う。**構造体が変わったので full rebuild 必須** | 済 |
 | 設定・変数 | `input/solverConfig.{hpp,cpp}` (`physProp.chemistry`), `variables.cpp` (`registerSpecies(n, chemistry)`) | キーは [solver-settings.md](../procedures/solver-settings.md) | 済 |
 | node 周期の化学種残差 gather | `cuda_forge/periodicNode_d.cu` | `periodicNodeGather` が `res_roY{s}` (と凝縮モーメント残差) を合算し、`periodicMirrorNSState` が `roY{s}` をミラーする。**従来は流れ 5 変数と k/ω だけで、seam の化学種は部分体積分しか更新されなかった** (化学以前からの欠落。run_0049 で発覚・修正) | 済 |
-| 種ブロック point-implicit | `species_dplur_sweep_d` の拡張 (ブロック LU) | 既存 sweep の対角スカラを $n_s\times n_s$ に置換 | Phase 2 |
-| Strang 分離 | `chemistrySubcycle_d` | 非定常経路のセル内 ODE | Phase 2 |
+| 種ブロック point-implicit (`jacobianMode: 2`) | `speciesTransport_d.cu` `species_dplur_block_sweep_d` (`speciesSweepOnce` が block/scalar を切替) | chemistry が `chem_jac` (温度結合込み $J^{\rm tot}$ の残差行列 $R=J^{\rm tot}+\mathrm{diag}(d)$, $d_s=\max(0,-J_{ss})$ は `src_jac_Y` へ) を書き、sweep はセル毎に $[(V/\Delta\tau+D^{\rm conv}+V\,\mathrm{src\_jac})I-VR]\delta=\mathrm{rhs}$ を部分ピボット LU (double) で解く。coupling 1 の解と coupling 2 の予測子の両方で使う | 済 (Phase 2a) |
+| 反応熱の陰的注入 | `chemistry_heat_inject_d` (speciesTransport_d.cu, 案C 予測子直後) + `chem_cq` ($\partial\dot Q/\partial\rho Y_k$) | 理論 §4。`res_roe += V\sum_k(\partial\dot Q/\partial\rho Y_k)\delta(\rho Y_k)^*` | 済 (Phase 2a) |
+| 反応熱のエネルギー対角 | `timeIntegration_d.cu` `implicit_defect_correction_block_d` (`src_jac_roe` 引数) | $(4,4)\ +=\ V\max(0,-\partial\dot Q/\partial\rho e)$ (precond 版 `_precond_d` は未配線) | 済 (Phase 2a) |
+| Strang 分離 | `chemistrySubcycle_d` | 非定常経路のセル内 ODE | Phase 2b |
+| Falloff (Troe) | `chem_source` / `chemistry_mech_io.hpp` | Burke 2012 用 | Phase 2b |
 | ホスト単体検証 | `tools/test_chemistry.cpp` + `tools/chem_reference_cantera.py` | Jacobian 有限差分照合 (相対 2e-8 PASS)、0-D 定積反応器 BDF1 が Cantera と一致 (着火遅れ 32.0 vs 32.2 µs, 平衡 T +1.3 K)、絶対/sensible datum の一致 | 済 |
 
 ビルド: `g++ -O2 -std=c++17 -I solver_density_cuda solver_density_cuda/tools/test_chemistry.cpp -lyaml-cpp -o /tmp/tchem` →

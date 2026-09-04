@@ -162,10 +162,11 @@ physProp: {thermalMethod: 2, species: [H2, O2, H, O, OH, H2O, HO2, H2O2, N2], sp
 | --- | --- | --- |
 | `enabled` | 0 | 1 で反応ソース $\dot\omega_s$ と反応熱 $\dot Q$ を有効化。0 なら全経路ビット不変 |
 | `mechanismFile` | — | 反応機構 (Cantera YAML サブセット: `equation`, `rate-constant {A,b,Ea}`, `type: three-body`, `efficiencies`, `units`)。同梱: `solver_density_cuda/tools/mechanisms/` (Jachimowski 1988 9 種 20 反応 / 13 種 33 反応)。falloff (Troe) は未対応 (Phase 2) |
-| `jacobianMode` | 1 | 0: 陽ソースのみ, 1: 対角 point-implicit (`src_jac_Y{s}` に $\max(0,-\partial\dot\omega_s/\partial\rho Y_s)$), 2: 種ブロック (Phase 2, 現状は 1 と同じ) |
+| `jacobianMode` | 1 | 0: 陽ソースのみ, 1: 対角 point-implicit (`src_jac_Y{s}` に $\max(0,-\partial\dot\omega_s/\partial\rho Y_s)$, 温度結合込み), 2: 種ブロック $n_s\times n_s$ point-implicit + 反応熱の陰的注入 + エネルギー対角 (**定常陰解法の反応流はこれ**。`time.deltaT.speciesImplicitCoupling: 2` と併用必須) |
 | `tMaxReaction` | 6000 | 速度式評価の温度上限 [K] |
 | `freezeBelowT` | 0 | この温度未満で反応を凍結 ($\dot\omega=0$) [K]。試験部の低温域で反応評価を省く用 |
 
+- **定常陰解法 (`timeIntegration: 11`) の反応流は `speciesImplicitCoupling: 2` + `jacobianMode: 2` が必須**。陽的な反応熱注入 (coupling 0/1 または jacobianMode ≤1) はスロート付近の再結合熱で数 step で発散する (case/46 run_0002–0007)。非定常陽解法 (RK, `dt` ≲ 化学時間) は jacobianMode 1 でよい。
 - **`thermoHrefTemp: 298.15` を必ず指定する** (反応熱は sensible datum の残差項 $\dot Q=-\sum_s h^{abs}_s(T_{ref})\dot\omega_s$ として入る。絶対 datum (0) でも動くが陰解法は不安定)。
 - 機構に現れる種は `species` に全て含めること (無ければ起動時エラー)。`species` にだけある種は不活性として扱う。
 - 熱力学 DB は `tools/cea_thermo_to_species_db.py thermo.inp --species ...` で CEA から生成する (ラジカルは内蔵 DB に無い)。

@@ -32,7 +32,33 @@ struct ReactionTable {
     int    reversible[CHEM_MAX_REACTIONS];            // 1: 逆反応を K_c から
     double dnu[CHEM_MAX_REACTIONS];                   // Σ(ν''-ν') (三体 M を除く)
     double eff[CHEM_MAX_REACTIONS][THERMO_MAX_SPECIES];   // 三体効率 (既定 1)
+    // falloff (+M): k = k∞ Pr/(1+Pr) F, Pr = k0 [M]/k∞。A/b/Ea が高圧極限 k∞、A0/b0/Ea0 が低圧極限 k0。
+    int    falloff[CHEM_MAX_REACTIONS];               // 0: なし, 1: Lindemann (F=1), 2: Troe
+    double A0[CHEM_MAX_REACTIONS], b0[CHEM_MAX_REACTIONS], Ea0[CHEM_MAX_REACTIONS];
+    double troeA[CHEM_MAX_REACTIONS], troeT3[CHEM_MAX_REACTIONS], troeT1[CHEM_MAX_REACTIONS], troeT2[CHEM_MAX_REACTIONS]; // T2<=0 で項なし
 };
+
+// falloff の ln k_f(T, [M]) (Lindemann / Troe)。微分は呼び出し側で有限差分 (滑らかなスカラ関数、相対刻み 1e-4)。
+THERMO_HD double chem_ln_kf_falloff(const ReactionTable* rt, int r, double T, double lnT, double RuT, double M)
+{
+    const double lnkinf = log(rt->A[r])  + rt->b[r]*lnT  - rt->Ea[r]/RuT;
+    const double lnk0   = log(rt->A0[r]) + rt->b0[r]*lnT - rt->Ea0[r]/RuT;
+    const double Mp = (M > 1.0e-300) ? M : 1.0e-300;
+    const double lnPr = lnk0 + log(Mp) - lnkinf;
+    const double Pr = exp(lnPr);
+    double lnF = 0.0;
+    if (rt->falloff[r] == 2) {
+        double Fc = (1.0 - rt->troeA[r]) * exp(-T / rt->troeT3[r]) + rt->troeA[r] * exp(-T / rt->troeT1[r]);
+        if (rt->troeT2[r] > 0.0) Fc += exp(-rt->troeT2[r] / T);
+        if (Fc < 1.0e-300) Fc = 1.0e-300;
+        const double lFc = log10(Fc);
+        const double c = -0.4 - 0.67*lFc, n = 0.75 - 1.27*lFc, d = 0.14;
+        const double lPr = lnPr / 2.302585092994046;
+        const double x = (lPr + c) / (n - d*(lPr + c));
+        lnF = 2.302585092994046 * lFc / (1.0 + x*x);
+    }
+    return lnkinf + log(Pr / (1.0 + Pr)) + lnF;
+}
 
 // -----------------------------------------------------------------------------
 // 化学種ごとの無次元ギブス関数 g_s = S°_s/Ru − H_s/(Ru T) (絶対エンタルピー基準)。
@@ -89,10 +115,28 @@ THERMO_HD void chem_source(const SpeciesThermo* sp, const ReactionTable* rt,
     const double lncstd = log(cstd);
 
     for (int r = 0; r < rt->nReac; ++r) {
-        // ---- 正反応速度定数 kf = A T^b exp(-Ea/RuT) ----
-        const double lnkf = log(rt->A[r]) + rt->b[r]*lnT - rt->Ea[r]/RuT;
-        const double kf   = exp(lnkf);
-        const double dlnkf_dT = rt->b[r]*invT + rt->Ea[r]/(RuT*T);
+        // ---- 三体濃度 [M] (三体反応・falloff で使用) ----
+        double M = 1.0;
+        if (rt->thirdBody[r] || rt->falloff[r]) {
+            M = 0.0;
+            for (int s = 0; s < n; ++s) M += rt->eff[r][s] * X[s];
+        }
+        // ---- 正反応速度定数 kf = A T^b exp(-Ea/RuT) (falloff は k∞ Pr/(1+Pr) F) ----
+        double lnkf, dlnkf_dT, dkf_dM_over_kf = 0.0;
+        if (rt->falloff[r]) {
+            lnkf = chem_ln_kf_falloff(rt, r, T, lnT, RuT, M);
+            const double dT = 1.0e-4 * T, dM = 1.0e-4 * ((M > 1.0e-30) ? M : 1.0e-30);
+            const double lp = chem_ln_kf_falloff(rt, r, T + dT, log(T + dT), THERMO_RU*(T + dT), M);
+            const double lm = chem_ln_kf_falloff(rt, r, T - dT, log(T - dT), THERMO_RU*(T - dT), M);
+            dlnkf_dT = (lp - lm) / (2.0*dT);
+            const double mp = chem_ln_kf_falloff(rt, r, T, lnT, RuT, M + dM);
+            const double mm = chem_ln_kf_falloff(rt, r, T, lnT, RuT, (M - dM > 0.0) ? M - dM : 0.0);
+            dkf_dM_over_kf = (mp - mm) / (((M - dM > 0.0) ? 2.0*dM : M + dM));   // ∂ln kf/∂[M]
+        } else {
+            lnkf = log(rt->A[r]) + rt->b[r]*lnT - rt->Ea[r]/RuT;
+            dlnkf_dT = rt->b[r]*invT + rt->Ea[r]/(RuT*T);
+        }
+        const double kf = exp(lnkf);
 
         // ---- 逆反応速度定数 kb = kf / Kc ----
         double kb = 0.0, dlnkb_dT = 0.0;
@@ -143,15 +187,10 @@ THERMO_HD void chem_source(const SpeciesThermo* sp, const ReactionTable* rt,
             }
         }
 
-        // ---- 三体濃度 [M] ----
-        double M = 1.0;
-        if (rt->thirdBody[r]) {
-            M = 0.0;
-            for (int s = 0; s < n; ++s) M += rt->eff[r][s] * X[s];
-        }
-
+        // falloff では [M] は Pr 経由で kf に入るので進行率の乗数にしない
+        const double Mq = rt->thirdBody[r] ? M : 1.0;
         const double qf = kf*Pf, qb = kb*Pb;
-        const double q  = M * (qf - qb);                 // [mol/m3/s]
+        const double q  = Mq * (qf - qb);                // [mol/m3/s]
 
         // ---- ω_s 加算 ----
         for (int j = 0; j < rt->nR[r]; ++j) { const int s = rt->rIdx[r][j]; omega[s] -= sp[s].MW * rt->rNu[r][j] * q; }
@@ -159,7 +198,7 @@ THERMO_HD void chem_source(const SpeciesThermo* sp, const ReactionTable* rt,
 
         // ---- ∂ω_s/∂T (固定 [X]) ----
         if (dOmegadT) {
-            const double dq_dT = M * (qf*dlnkf_dT - qb*dlnkb_dT);
+            const double dq_dT = Mq * (qf*dlnkf_dT - qb*dlnkb_dT);
             for (int j = 0; j < rt->nR[r]; ++j) { const int s = rt->rIdx[r][j]; dOmegadT[s] -= sp[s].MW * rt->rNu[r][j] * dq_dT; }
             for (int j = 0; j < rt->nP[r]; ++j) { const int s = rt->pIdx[r][j]; dOmegadT[s] += sp[s].MW * rt->pNu[r][j] * dq_dT; }
         }
@@ -183,11 +222,16 @@ THERMO_HD void chem_source(const SpeciesThermo* sp, const ReactionTable* rt,
                     J[s*n+k] += sp[s].MW * rt->pNu[r][j] * dq_dXk * invWk;
                 }
             };
-            for (int j = 0; j < rt->nR[r]; ++j) accumulate(rt->rIdx[r][j],  M * kf * dPf[j]);
-            for (int j = 0; j < rt->nP[r]; ++j) accumulate(rt->pIdx[r][j], -M * kb * dPb[j]);
+            for (int j = 0; j < rt->nR[r]; ++j) accumulate(rt->rIdx[r][j],  Mq * kf * dPf[j]);
+            for (int j = 0; j < rt->nP[r]; ++j) accumulate(rt->pIdx[r][j], -Mq * kb * dPb[j]);
             if (rt->thirdBody[r]) {
                 for (int k = 0; k < n; ++k) {
                     if (rt->eff[r][k] != 0.0) accumulate(k, rt->eff[r][k] * (qf - qb));
+                }
+            } else if (rt->falloff[r]) {
+                // ∂q/∂X_k += (∂kf/∂[M]) eff_k (Pf − Pb/Kc) = eff_k (∂ln kf/∂[M]) (qf − qb)  (kb = kf/Kc)
+                for (int k = 0; k < n; ++k) {
+                    if (rt->eff[r][k] != 0.0) accumulate(k, rt->eff[r][k] * dkf_dM_over_kf * (qf - qb));
                 }
             }
         }
