@@ -617,7 +617,7 @@ if __name__ == "__main__":
 def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                dstar_csv=None, dstar_blend=(6.0, 9.0),
                delta_r_csv=None, offset: str = "normal", euler_ref=None,
-               omega: float | None = None, prev_run=None) -> dict:
+               omega: float | None = None, prev_run=None, initializer=None) -> dict:
     r"""**物理壁 (inviscid + δ*) の RANS run** を準備する (A12)。
 
     plan: plans/active/tooling-nozzle-axismach-viscous-deltastar.md。
@@ -661,6 +661,24 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
             csv = np.interp(np.clip(x, _tbl[0, 0], _tbl[-1, 0]), _tbl[:, 0], _tbl[:, 1])
             return (1.0 - w) * _corr(x) + w * csv
     delta_r_x = None
+    init_info = None
+    init_cfg = initializer if initializer is not None else p.raw.get("deltastar_initializer")
+    if init_cfg and delta_r_csv is None and dstar_csv is None:
+        # 積分法初期壁 (plan §4.1): 初回 NS 専用。断熱 / 指定壁温は thermal_bc で。
+        from ..feedback.deltastar_integral import integral_bl, delta_r_function
+        model = str(init_cfg.get("model", "contur"))
+        if model not in ("contur", "contur_momentum_integral"):
+            raise ValueError(f"deltastar_initializer.model={model!r} は未対応 (contur のみ)")
+        res_init = integral_bl(d["wall"], wall_inv, _gam_or_gas(p), p.cp, float(p.spec["Pt"]), float(p.spec["Tt"]),
+                               scale, thermal_bc=init_cfg.get("thermal_bc"),
+                               theta0_m=init_cfg.get("theta0_m"), x_virtual_m=init_cfg.get("x_virtual_m"),
+                               a_crocco=float(init_cfg.get("a_crocco", 1.0)), closure=str(init_cfg.get("closure", "contur")))
+        delta_r_x = delta_r_function(res_init)
+        offset = "radial"
+        init_info = dict(res_init["settings"])
+        init_info["delta_r_throat"] = float(np.interp(0.0, res_init["x"], res_init["delta_r"]))
+        init_info["delta_r_exit"] = float(res_init["delta_r"][-1])
+        (run_dir / "delta_r_initial.csv").write_text("")   # 後で上書き (run_dir は下で作る)
     if delta_r_csv is not None:
         if dstar_csv is not None:
             raise ValueError("delta_r_csv と dstar_csv は排他")
@@ -672,7 +690,16 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     wall = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
                               float(p.spec["Tt"]), _gam_or_gas(p), p.cp, dstar_x=dstar_x,
                               offset=offset, delta_r_x=delta_r_x)
-    if delta_r_csv is not None:
+    if init_info is not None:
+        np.savetxt(run_dir / "delta_r_initial.csv",
+                   np.c_[res_init["x"], res_init["delta_r"], res_init["dstar_n"], res_init["theta"] * scale,
+                         res_init["H"], res_init["N"], res_init["Cf"], res_init["M"], res_init["Tw"], res_init["Taw"]],
+                   delimiter=",", comments="",
+                   header="x_rt,delta_r_rt,dstar_n_rt,theta_m,H,N,Cf,M_e,Tw,Taw")
+        (run_dir / "delta_r_initial.json").write_text(json.dumps(init_info, indent=1, default=str))
+    if init_info is not None:
+        dstar_src = f"integral_bl:{init_info['model']} thermal_bc={init_info['thermal_bc']} (radial)"
+    elif delta_r_csv is not None:
         dstar_src = f"delta_r_csv:{delta_r_csv} (radial, core-matched Euler ref {euler_ref}, omega {omega})"
     else:
         dstar_src = ("correlation_hist_v1" if dstar_csv is None else f"{dstar_csv} (blend {dstar_blend})") + f" ({offset})"
@@ -759,6 +786,7 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                                 "dstar_throat_correlation": float(wall._dstar_hist(0.0)),
                                 "delta_r_throat_applied": float(wall.r_throat - 1.0)},
             "offset": wall.offset_mode, "euler_ref": (str(euler_ref) if euler_ref else None),
+            "initializer": init_info,
             "omega": omega, "prev_run": (str(prev_run) if prev_run else None),
             "delta_r_csv": (str(delta_r_csv) if delta_r_csv else None),
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],

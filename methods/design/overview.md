@@ -642,11 +642,15 @@ $x<x_{lo}$ を相関×比で補完) は**スロート δ\* を NS 実効値の 3
    運動量積分 + べき乗則プロファイル + Spalding–Chi 摩擦) を入口から前進積分し $\delta^*_n(x)$ を得る。断熱壁 / 指定壁温 (定数・テーブル)
    を同一実装で扱う。**初期値生成専用**で、CFD との一致率は合否条件にしない。半径方向補正 $\delta_r = \delta^*_n/\cos	heta_w$。
 2. **NS 後の固定点反復**: 設計 Euler run (設計壁・反復中固定) と NS run を**同じ物理 $r$** で比べる
-   (`metrics/deltastar.py::deltastar_from_core_matched_euler`)。コア $r\le0.3\,r_{w,E}$ の面積重み流量を一致させる倍率 $\alpha$ で
-   $q_{ref}=\alpha q_E$ を作り、符号付き質量欠損 $D=2\pi\int_0^{r_{w,NS}}(q_{ref}-q_{NS})r\,dr$ を壁側の円環に詰め直した
-   $\delta_r = r_{w,NS}-r_{eff}$ を**直管〜出口の全列**で取る ($x_{lo}$ なし・縁判定なし・相関補完なし)。
+   (`metrics/deltastar.py::deltastar_from_core_matched_euler`, 断面ごとの純関数は `band_local_deficit`)。
+   参照 $q_{ref}$ は**境界層のすぐ外側の帯** $y\in[y_b, 2y_b]$ ($y_b=\max(4\delta_{in}, 0.02 r_w)$、帯内の残留欠損が
+   $D$ の 10 % を超えれば $y_b$ を倍にして再試行) で比 $q_{NS}/q_E$ を $y$ の 1 次でフィットし境界層域へ延長して作る。
+   符号付き質量欠損 $D=2\pi\int_{y<y_b}(q_{ref}-q_{NS})r\,dr$ を壁側の円環に詰め直した $\delta_r = r_{w,NS}-r_{eff}$ を
+   **直管〜出口の全列**で取る ($x_{lo}$ なし・縁判定なし・相関補完なし)。内側 30 % コアの単一倍率 α とコア RMS は診断
+   (同じ $x$ でコア全体を合わせる方式は、上流の壁 δ 誤差が特性線で下流の軸へ運ぶ波を欠損に取り込み反復が収縮しなかった —
+   case/45 run_0019)。実測: 壁の異なる 3 つの NS 場から同じ $\delta_r(x)$ が ±1 % で出る。
    壁更新は半径方向 $r^{k+1}_{phys} = r_{inv} + (1-\omega)\delta^k_{in} + \omega\,\delta^k_{ext}$ ($\omega$=0.5 → 1.0)。
-   真のスロート探索 (A13) と上流 Hermite 再生成は維持。
+   真のスロート探索 (A13) と上流 Hermite 再生成は維持。反復ドライバは `feedback/deltastar_loop.py`。
 3. **帳簿 (必須)**: NS/Euler 質量流量比 (= 有効音速スロート面積比) と質量流量由来の等価スロート補正量 $r_{t,W}-\sqrt{\dot m_{NS}/\dot m_E}$
    を `collect` が出す。ゲート $|\dot m_{NS}/\dot m_E - 1| \le 0.3\,\%$。
 

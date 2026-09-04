@@ -10,7 +10,13 @@
      - 点数と壁近傍伸長率への収束
      - コア振幅差は α で除去、コア形状差はゲート (core_rms) で検出
      - コア範囲 25/30/35 % 感度
-  2. 積分法初期推定器 (`feedback/deltastar_integral.py`) — 実装後に追加
+  2. 積分法初期推定器 (`feedback/deltastar_integral.py`, CONTUR 運動量積分)
+     - CPG 断熱: 全域有限・正、スロートで薄い (平板相関の 1/10 程度)、下流で単調増加
+     - CPG 等温 (定数 Tw / Tw(x) テーブル): 走る・有限
+     - 指定壁温 → 回復壁温に近づけると断熱解へ連続的に一致
+     - 入口 θ0 感度: スロート以降はほぼ無記憶 (×0.5/×2 で 5 % 以内)
+     - 半径方向補正 δ_r = δ*_n / cos φ_w
+     (設計は case/45 の problem YAML から design_chain で作る: ~1 s)
 """
 import sys
 from pathlib import Path
@@ -19,7 +25,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from forge_design.metrics.deltastar import core_matched_deficit  # noqa: E402
+from forge_design.metrics.deltastar import core_matched_deficit, band_local_deficit  # noqa: E402
 
 FAIL = 0
 
@@ -150,6 +156,88 @@ check("コア範囲 25/30/35 %: δ_r 不変 (<0.5 %)", max(abs(d - ds[1]) for d 
 res_neg = core_matched_deficit(r, qE(r) * (1.0 + 0.05 * (r / 5.0) ** 4), qE(r), 5.0)
 check("負の欠損: reason=negative_deficit, δ_r<0", "negative_deficit" in res_neg["reason"] and res_neg["delta_r"] < 0,
       f"{res_neg['delta_r']:.4f}")
+
+# =============================== 1b. 帯局所参照 (生産抽出) =============================
+# 同じ合成プロファイルで band_local_deficit を検証。加えて「コアに波 (形状差) がある」場合に
+# コア全体方式が汚染され、帯局所方式は汚染されないことを確認する (V1 pass1 の知見)。
+rw = 5.0; r = wall_clustered_grid(rw)
+qE = lambda r_: 1.0 + 0.2 * (r_ / rw) ** 2
+resb = band_local_deficit(r, 1.7 * qE(r), qE, rw, delta_in=0.05)
+check("帯局所: 比例プロファイルで δ_r = 0", abs(resb["delta_r"]) < 1e-6, f"{resb['delta_r']:.2e}")
+for d_true in (0.01, 0.05, 0.2):
+    qN = profile_with_annulus_deficit(r, lambda r_: 1.3 * qE(r_), rw, d_true)
+    resb = band_local_deficit(r, qN, qE, rw, delta_in=d_true)          # δ_in = 真値 (固定点近傍)
+    check(f"帯局所: 円環欠損 δ_r={d_true} を復元 (δ_in=真値)", abs(resb["delta_r"] - d_true) < 2e-3 * rw,
+          f"got {resb['delta_r']:.5f}, y_b {resb['band_y_b']:.3f}")
+    resb2 = band_local_deficit(r, qN, qE, rw, delta_in=0.3 * d_true)   # δ_in が 3 倍過小でも (帯下限/再試行)
+    check(f"帯局所: δ_in 過小 (×0.3) でも復元", abs(resb2["delta_r"] - d_true) < 4e-3 * rw,
+          f"got {resb2['delta_r']:.5f}, retry {resb2['band_retry']}")
+# 滑らかな BL: 参照解と比較
+d99 = 0.4; r_fine = np.linspace(0, rw, 200001)
+d_exact = equiv_delta_exact(r_fine, qE(r_fine), profile_smooth_bl(r_fine, qE, rw, d99), rw)
+resb = band_local_deficit(r, profile_smooth_bl(r, qE, rw, d99), qE, rw, delta_in=d_exact)
+check("帯局所: べき乗則 BL を参照解 ±3 %", abs(resb["delta_r"] - d_exact) / d_exact < 0.03,
+      f"exact {d_exact:.5f} got {resb['delta_r']:.5f}")
+# コアの波: q_NS = q_E (1 + ε sin(2π r/r_w)) × BL。全域コア整合は汚染、帯局所は復元
+eps = 0.01
+wave = lambda r_: qE(r_) * (1.0 + eps * np.sin(2 * np.pi * r_ / rw))
+qN_w = profile_smooth_bl(r, wave, rw, d99)
+res_core = core_matched_deficit(r, qN_w, qE, rw)
+res_band = band_local_deficit(r, qN_w, qE, rw, delta_in=d_exact)
+err_core = abs(res_core["delta_r"] - d_exact) / d_exact; err_band = abs(res_band["delta_r"] - d_exact) / d_exact
+check("コア波 1 %: 帯局所は ±3 % で復元", err_band < 0.03, f"band {err_band:.3f}, core-matched {err_core:.3f}")
+check("コア波 1 %: 帯局所の誤差 < コア全体方式の誤差", err_band < err_core, f"band {err_band:.3f} vs core {err_core:.3f}")
+# Euler 壁 ≠ NS 壁
+rw_n = rw + 0.3; rn = wall_clustered_grid(rw_n)
+qN = profile_with_annulus_deficit(rn, qE, rw_n, 0.12)
+resb = band_local_deficit(rn, qN, lambda r_: qE(np.minimum(r_, rw)), rw)
+check("帯局所: 壁半径差 0.3 でも円環欠損 0.12 を復元", abs(resb["delta_r"] - 0.12) < 3e-3 * rw_n, f"got {resb['delta_r']:.5f}")
+
+# =============================== 2. 積分法初期推定器 ==================================
+from forge_design.probdef import load_problem  # noqa: E402
+from forge_design.evaluate.runner_axismach import design_chain  # noqa: E402
+from forge_design.feedback.deltastar_integral import integral_bl, delta_r_function  # noqa: E402
+from forge_design.feedback.deltastar import dstar_flatplate  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
+prob = load_problem(ROOT / "case/45.isobutane_m6_d155/problem_d155_ns.yaml")
+dsn = design_chain(prob)
+S = float(prob.spec["r_throat"]); Pt = float(prob.spec["Pt"]); Tt = float(prob.spec["Tt"])
+ad = integral_bl(dsn["wall"], dsn["wall_inv"], prob.gamma, prob.cp, Pt, Tt, S)
+k0 = int(np.argmin(np.abs(ad["x"])))
+check("積分法 CPG 断熱: 全域有限", bool(np.all(np.isfinite(ad["delta_r"]))))
+check("積分法 CPG 断熱: 全域正", bool(np.all(ad["delta_r"] > 0)), f"min {ad['delta_r'].min():.2e}")
+m_dn = ad["x"] > 0.5
+check("積分法 CPG 断熱: スロート下流で単調増加", bool(np.all(np.diff(ad["delta_r"][m_dn]) > -1e-9)))
+# 平板相関 (入口起点 s) との比較: スロートで一桁薄い (加速による薄化を表現)
+s_arc = (0.0 - dsn["wall"].x_in) * S
+fp_t = float(dstar_flatplate(np.array([s_arc]), np.array([1.0]), Pt, Tt, prob.gamma, prob.cp)[0]) / S
+check("積分法 CPG 断熱: スロート δ*_n が平板相関の 1/4 以下", ad["dstar_n"][k0] < 0.25 * fp_t,
+      f"integral {ad['dstar_n'][k0]:.5f} vs flat-plate {fp_t:.5f}")
+check("積分法: δ_r = δ*_n / cos φ_w", np.allclose(ad["delta_r"], ad["dstar_n"] / ad["cos_phi"]))
+check("積分法: 断熱では Tw = Taw", np.allclose(ad["Tw"], ad["Taw"]))
+iso = integral_bl(dsn["wall"], dsn["wall_inv"], prob.gamma, prob.cp, Pt, Tt, S,
+                  thermal_bc={"mode": "prescribed_temperature", "Tw": 600.0})
+check("積分法 CPG 等温 600 K: 全域有限・正", bool(np.all(np.isfinite(iso["delta_r"])) and np.all(iso["delta_r"] > 0)))
+check("積分法 CPG 等温: Tw = 600 K が使われる", np.allclose(iso["Tw"], 600.0))
+tab = integral_bl(dsn["wall"], dsn["wall_inv"], prob.gamma, prob.cp, Pt, Tt, S,
+                  thermal_bc={"mode": "prescribed_temperature", "Tw_table": np.c_[ad["x"], ad["Taw"]].tolist()})
+check("積分法 等温 (Tw=Taw テーブル) → 断熱解と一致 (<0.5 %)",
+      float(np.max(np.abs(tab["delta_r"] - ad["delta_r"]) / np.maximum(ad["delta_r"], 1e-6))) < 5e-3)
+# 連続性: Tw を Taw の 0.9, 0.99, 1.0 倍にすると断熱へ近づく
+devs = []
+for f in (0.9, 0.99):
+    r_ = integral_bl(dsn["wall"], dsn["wall_inv"], prob.gamma, prob.cp, Pt, Tt, S,
+                     thermal_bc={"mode": "prescribed_temperature", "Tw_table": np.c_[ad["x"], f * ad["Taw"]].tolist()})
+    devs.append(float(np.max(np.abs(r_["delta_r"] - ad["delta_r"]) / np.maximum(ad["delta_r"], 1e-6))))
+check("積分法 等温→断熱の連続性 (偏差が単調減少)", devs[0] > devs[1], f"{devs}")
+# θ0 感度: スロート以降はほぼ無記憶
+th = [integral_bl(dsn["wall"], dsn["wall_inv"], prob.gamma, prob.cp, Pt, Tt, S, theta0_m=f * ad["settings"]["theta0_m"])
+      for f in (0.5, 2.0)]
+dev_t = max(abs(t["dstar_n"][k0] - ad["dstar_n"][k0]) / ad["dstar_n"][k0] for t in th)
+check("積分法 θ0 ×0.5/×2: スロート δ*_n の変化 < 5 %", dev_t < 0.05, f"{dev_t:.3e}")
+fn = delta_r_function(ad)
+check("積分法 delta_r_function: 補間が一致", abs(float(fn(ad["x"][k0])) - ad["delta_r"][k0]) < 1e-12)
 
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAIL'}")
 sys.exit(1 if FAIL else 0)

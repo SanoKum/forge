@@ -171,11 +171,100 @@ def core_matched_deficit(r, q_ns, q_e, rw_e: float, core_frac: float = 0.30,
                 mass_deficit=D, delta_r=float(delta_r), outer_share=outer_share, reason=reason)
 
 
+
+def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
+                       k_band: float = 4.0, band_min_frac: float = 0.02, band_width: float = 1.0,
+                       n_axis_skip: int = 1, core_frac: float = 0.30, refine: int = 4, _retry: int = 0,
+                       slope_max: float = 0.02):
+    r"""1 断面の**帯局所参照・質量欠損 → 半径方向等価排除厚** (生産抽出、純関数)。
+
+    plan §4.3 の修正 (2026-09-04 V1 pass1 の知見): 内側 30 % コアの単一倍率 α では、上流の壁 δ 誤差が
+    特性線で下流の軸へ運ぶ波 (コア形状差) を欠損に取り込む。そこで参照 $q_{ref}$ は
+    **境界層のすぐ外側の帯** $y\in[y_b, (1+w)y_b]$ で比 $q_{NS}/q_E$ を $y$ の 1 次で LSQ フィットし、
+    境界層域 $y<y_b$ へ延長して作る ($y_b = \max(k\,\delta_{in},\ f_{min} r_w)$、縁判定は不要)。
+    欠損 $D = 2\pi\int_{y<y_b}(q_{ref}-q_{NS})r\,dr$、$\delta_r = r_w - r_{eff}$。
+    内側 30 % の α・コア RMS は診断として併記する。q_e は配列または callable(r)。"""
+    r0 = np.asarray(r, dtype=float); q0 = np.asarray(q_ns, dtype=float)
+    if refine > 1:
+        t = np.linspace(0.0, 1.0, refine, endpoint=False)
+        rr = np.concatenate([(r0[:-1, None] + (r0[1:] - r0[:-1])[:, None] * t[None, :]).ravel(), [r0[-1]]])
+        qN = np.interp(rr, r0, q0)
+        qE = np.asarray(q_e(rr), dtype=float) if callable(q_e) else np.interp(rr, r0, np.asarray(q_e, dtype=float))
+    else:
+        rr, qN = r0, q0
+        qE = np.asarray(q_e(rr), dtype=float) if callable(q_e) else np.asarray(q_e, dtype=float)
+    rwN = float(rr[-1]); y = rwN - rr
+    d_in = float(rwN - rw_e) if delta_in is None else float(delta_in)
+    y_b = max(k_band * max(d_in, 0.0), band_min_frac * rwN) * (2.0 ** _retry)
+    y_t = min((1.0 + band_width) * y_b, 0.85 * rwN)
+    if y_b >= 0.8 * rwN:
+        return None
+    mb = (y >= y_b) & (y <= y_t)
+    if mb.sum() < 4:
+        return None
+    ratio = qN[mb] / np.maximum(qE[mb], 1e-30)
+    A = np.c_[np.ones(mb.sum()), y[mb] - y_b]
+    coef, *_ = np.linalg.lstsq(A, ratio, rcond=None)
+    a, b = float(coef[0]), float(coef[1])
+    band_rms = float(np.sqrt(np.mean((ratio - (a + b * (y[mb] - y_b))) ** 2)))
+    # 帯が境界層の中にあると比 q_NS/q_E が帯の幅で数 % 以上変わる (コアの波は < 1 %)。
+    # 線形フィットは BL の形も吸収してしまい残留欠損では検出できないので、帯内の比の変化量で判定し y_b を倍にする。
+    if abs(b * (y_t - y_b)) > slope_max and _retry < 3:
+        return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
+                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max)
+    ratio_fn = a + b * (y - y_b)
+    qref = ratio_fn * qE
+    mz = y <= y_b                                     # 境界層域 (壁側)
+    integrand = (qref - qN) * rr
+    D = float(2 * np.pi * np.trapezoid(integrand[mz], rr[mz]))
+    # 帯の中の残留欠損 (参照の整合診断): 本来 ~0。大きければ帯が境界層の中にある → y_b を 2 倍して再試行
+    # (δ99/δ* は 2〜10 と場所で変わるので k_band 固定では足りない。閾値でなく自己整合で縁を外す)
+    D_band = float(2 * np.pi * np.trapezoid(integrand[mb], rr[mb]))
+    if D > 0 and abs(D_band) > 0.1 * D and _retry < 3:
+        return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
+                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max)
+    seg = 0.5 * (qref[1:] * rr[1:] + qref[:-1] * rr[:-1]) * np.diff(rr)
+    F_from_wall = 2 * np.pi * np.concatenate([[0.0], np.cumsum(seg[::-1])])
+    r_desc = rr[::-1]
+    reason = []
+    if D < 0:
+        q_scale = max(float(np.mean(qref[mz])), 1e-30)
+        delta_r = D / (2 * np.pi * rwN * q_scale)
+        reason.append("negative_deficit")
+    else:
+        F_zone = float(np.interp(rwN - y_b, r_desc[::-1], F_from_wall[::-1]))  # 帯下端までの容量
+        if D > F_zone:
+            if _retry < 3:
+                return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
+                                          n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max)
+            delta_r = float("nan"); reason.append("no_root")
+        else:
+            r_eff = float(np.interp(D, F_from_wall, r_desc))
+            delta_r = rwN - r_eff
+    # 診断: 内側コアの単一倍率と形状 RMS
+    mc = rr <= core_frac * rw_e
+    if mc.sum() >= n_axis_skip + 3:
+        num = np.trapezoid(qN[mc] * rr[mc], rr[mc]); den = np.trapezoid(qE[mc] * rr[mc], rr[mc])
+        alpha = float(num / den) if den > 0 else float("nan")
+        rel = qN[mc] / np.maximum(alpha * qE[mc], 1e-30) - 1.0
+        core_rms = float(np.sqrt(np.mean(rel[n_axis_skip:] ** 2)))
+    else:
+        alpha, core_rms = float("nan"), float("nan")
+    return dict(r_wall_euler=float(rw_e), r_wall_ns=rwN, delta_in=rwN - float(rw_e), alpha=alpha,
+                core_rms=core_rms, core_rms_noaxis=core_rms, core_maxdev=float("nan"),
+                mass_deficit=D, delta_r=float(delta_r), outer_share=float("nan"),
+                band_y_b=y_b, band_ratio_a=a, band_slope=b * y_b, band_rms=band_rms,
+                band_deficit_share=(D_band / D if D > 0 else float("nan")), band_retry=_retry,
+                reason=reason)
+
+
 def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30,
                                       core_frac_sens=(0.25, 0.35), n_axis_skip: int = 1,
                                       outer_frac: float = 0.25, smooth_lam: float = 1e-3,
                                       gate_core_rms: float = 0.01, gate_sens: float = 0.05,
-                                      gate_sens_floor: float = 1e-3, refine: int = 4, out_dir=None) -> dict:
+                                      gate_sens_floor: float = 1e-3, refine: int = 4, out_dir=None,
+                                      method: str = "band", k_band: float = 4.0, k_band_sens=(3.0, 6.0),
+                                      band_min_frac: float = 0.02, gate_band_rms: float = 0.005) -> dict:
     r"""**固定 Euler 基準・コア整合**の半径方向等価排除厚 $\delta_r(x)$ を NS 全列で抽出する。
 
     定義 (plan §4.2–4.4):
@@ -214,19 +303,26 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
         if x < xE[0] - 1e-9 or x > xE[-1] + 1e-9:
             return None
         _, rwE = euler_q_at(x, r0[:1])
-        res = core_matched_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), core_frac=fc,
-                                   n_axis_skip=n_axis_skip, outer_frac=outer_frac, refine=refine)
+        if method == "band":
+            res = band_local_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), k_band=fc,
+                                     band_min_frac=band_min_frac, n_axis_skip=n_axis_skip,
+                                     core_frac=core_frac, refine=refine)
+        else:
+            res = core_matched_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), core_frac=fc,
+                                       n_axis_skip=n_axis_skip, outer_frac=outer_frac, refine=refine)
         if res is None:
             return None
         res["x"] = x
         return res
 
     rows = []
+    main_par = k_band if method == "band" else core_frac
+    sens_par = list(k_band_sens) if method == "band" else list(core_frac_sens)
     for i in range(N["x"].shape[0]):
-        base = extract_one(i, core_frac)
+        base = extract_one(i, main_par)
         if base is None:
             continue
-        sens = [extract_one(i, fc) for fc in core_frac_sens]
+        sens = [extract_one(i, fc) for fc in sens_par]
         base["delta_r_sens"] = [s["delta_r"] if s else np.nan for s in sens]
         rows.append(base)
     x = np.array([r_["x"] for r_ in rows])
@@ -236,7 +332,10 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
     ok = np.ones(len(rows), bool); hard_ok = np.ones(len(rows), bool); reasons = []
     for k, r_ in enumerate(rows):
         rs = list(r_["reason"])
-        if r_["core_rms_noaxis"] > gate_core_rms: rs.append("core_shape")
+        if method == "band":
+            if r_.get("band_rms", 0.0) > gate_band_rms: rs.append("band_fit")
+            if np.isfinite(r_.get("band_deficit_share", np.nan)) and abs(r_["band_deficit_share"]) > 0.1: rs.append("band_not_clean")
+        elif r_["core_rms_noaxis"] > gate_core_rms: rs.append("core_shape")
         if np.isfinite(draw[k]) and draw[k] > 0 and np.all(np.isfinite(sens[k])):
             if np.max(np.abs(sens[k] - draw[k])) > max(gate_sens * draw[k], gate_sens_floor): rs.append("core_frac_sens")
         if np.isfinite(r_["outer_share"]) and r_["outer_share"] < 0.8: rs.append("deficit_not_near_wall")
@@ -261,9 +360,16 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
                core_maxdev=np.array([r_["core_maxdev"] for r_ in rows]),
                mass_deficit=np.array([r_["mass_deficit"] for r_ in rows]),
                outer_share=np.array([r_["outer_share"] for r_ in rows]),
+               band_y_b=np.array([r_.get("band_y_b", np.nan) for r_ in rows]),
+               band_slope=np.array([r_.get("band_slope", np.nan) for r_ in rows]),
+               band_rms=np.array([r_.get("band_rms", np.nan) for r_ in rows]),
+               band_deficit_share=np.array([r_.get("band_deficit_share", np.nan) for r_ in rows]),
+               band_retry=np.array([r_.get("band_retry", 0) for r_ in rows]),
                delta_r_raw=draw, delta_r_smooth=dsm, delta_r_use=duse, delta_r_sens=sens,
                ok=ok, hard_ok=hard_ok, reason=np.array(reasons),
-               settings=dict(core_frac=core_frac, core_frac_sens=list(core_frac_sens), n_axis_skip=n_axis_skip,
+               settings=dict(method=method, k_band=k_band, k_band_sens=list(k_band_sens), band_min_frac=band_min_frac,
+                             gate_band_rms=gate_band_rms,
+                             core_frac=core_frac, core_frac_sens=list(core_frac_sens), n_axis_skip=n_axis_skip,
                              outer_frac=outer_frac, smooth_lam=smooth_lam, gate_core_rms=gate_core_rms,
                              gate_sens=gate_sens, gate_sens_floor=gate_sens_floor, refine=refine,
                              ns_res=N["res"], euler_res=E["res"],
@@ -273,9 +379,10 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
         od = Path(out_dir); od.mkdir(parents=True, exist_ok=True)
         np.savetxt(od / "delta_r_equiv.csv",
                    np.c_[x, draw, dsm, duse, out["delta_in"], out["alpha"], out["core_rms_noaxis"], sens,
+                         out["band_y_b"], out["band_slope"], out["band_rms"], out["band_deficit_share"],
                          ok.astype(int), hard_ok.astype(int)],
                    delimiter=",", comments="",
-                   header="x_rt,delta_r_raw,delta_r_smooth,delta_r_use,delta_in,alpha,core_rms_noaxis,delta_r_c25,delta_r_c35,ok,hard_ok")
+                   header="x_rt,delta_r_raw,delta_r_smooth,delta_r_use,delta_in,alpha,core_rms_noaxis,delta_r_sens1,delta_r_sens2,band_y_b,band_slope,band_rms,band_deficit_share,ok,hard_ok")
         diag = {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in out.items()}
         (od / "delta_r_equiv_diag.json").write_text(json.dumps(diag))
     return out

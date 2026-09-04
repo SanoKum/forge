@@ -97,29 +97,33 @@ $$\eta_{NS} = \frac{r}{r_{w,NS} - \delta_{r,in}},\qquad \eta_E = \frac{r}{r_{inv
   $\eta_E > 1$ (Euler 壁の外側) は Euler 壁値で定数外挿。
 - Euler メッシュ・解は反復中固定、HDF5 は書き換えない。$x$ の無次元化は設計スロート半径 `scale_m` で固定。
 
-### 4.3 コア整合と等価半径
+### 4.3 参照プロファイルと等価半径 (2026-09-04 V1 pass 1 で修正: 帯局所参照)
 
-コア範囲 $0\le\eta\le\eta_c$ ($\eta_c=0.30$ 既定、感度 0.25/0.35)。軸対称面積重みでコア流量を厳密一致させる倍率
+**当初案 (内側 30 % コアの単一倍率 α)** は V1 pass 1 で不採用になった。同じ $x$ でコア全体を比べると、
+上流の壁 δ 誤差が特性線に沿って約 $r_w/\tan\mu \approx 45\,r_t$ 下流の軸へ運ぶ波 (コア形状差) をその $x$ の欠損に
+取り込む。pass 0 の $x$=20〜50 で旧抽出より 15 % 大きな値が出て、pass 1 の壁に $+0.03\,r_t$ のこぶを作り、軸 M に
+$+0.8/-1.6\,\%$ の波を立てた。pass 1 の場から同じ方式で抽出すると δ が ±25 % 動き、反復は収縮しない
+(case/45 `run_0019_ns_cm_pass1`)。
 
-$$\alpha = \frac{\int_0^{\eta_c} q_{NS}\,\eta\,d\eta}{\int_0^{\eta_c} q_E\,\eta\,d\eta},\qquad q_{ref} = \alpha\,q_E$$
+**採用 (帯局所参照)**: 境界層のすぐ外側の帯 $y\in[y_b, 2y_b]$、$y_b=\max(4\,\delta_{in}(x),\ 0.02\,r_w)$ で
+比 $q_{NS}/q_E$ を $y$ の 1 次で LSQ フィットし、境界層域 $y<y_b$ へ延長して $q_{ref}$ を作る (縁判定は不要、
+$\delta_{in}$ は「NS 壁 − Euler 壁」で常に既知)。
 
-コア形状の一致度はコア相対 RMS $\sqrt{\langle(q_{NS}/q_{ref}-1)^2\rangle}$ (軸直近 3 点除外版も併記)。
-
-符号付き質量欠損 (正値クリップしない) と等価半径:
-
-$$D = 2\pi\int_0^{r_w}(q_{ref}-q_{NS})\,r\,dr,\qquad
+$$D = 2\pi\int_{y<y_b}(q_{ref}-q_{NS})\,r\,dr,\qquad
 2\pi\int_{r_{eff}}^{r_w} q_{ref}\,r\,dr = D\ \Rightarrow\ \delta_r = r_w - r_{eff}$$
 
-内部名は `delta_r_equiv`。
+$D$ が帯下端までの容量を超えれば $y_b$ を 2 倍して再試行 (2 回まで)。内側 30 % の α とコア RMS は**診断**に降格。
+実測: pass 0 / pass 1 / v1 の 3 つの異なる壁の場から同じ $\delta_r(x)$ が ±1 % (x ≥ 0) で出る = 壁に依らない境界層量。
+内部名は `delta_r_equiv`、関数は `metrics/deltastar.py::band_local_deficit` (旧 `core_matched_deficit` は比較用に残置)。
 
 ### 4.4 抽出ゲート
 
-断面ごとに CSV/JSON へ: `x, r_wall_euler, r_wall_ns, r_ref, alpha_core, core_rms, core_rms_noaxis, core_maxdev,
-mass_deficit, delta_r_raw, delta_r_smooth, delta_r_c25, delta_r_c35, ok, reason`。
+断面ごとに CSV/JSON へ: `x, delta_r_raw, delta_r_smooth, delta_r_use, delta_in, alpha, core_rms_noaxis,
+delta_r_sens1/2 (帯幅 k=3/6), band_y_b, band_slope, band_rms, band_deficit_share, ok, hard_ok` (+ reason)。
 
-不合格 (`ok=false`) 条件: コア形状 RMS > 閾値 / コア範囲感度 > 閾値 / $D<0$ / 求根解なし / 補間範囲外 /
-欠損がコア全体に分布 (累積欠損の 80 % が $\eta<0.8$ で発生) / 壁更新後の幾何ゲート違反。
-暫定閾値: コア RMS 1 %、コア範囲感度 5 % (V0 で確定)。
+- **hard** (値を使わず前回値保持): $D<0$ / 求根解なし / NaN。
+- **soft** (値は使い記録): 帯フィット RMS > 0.5 % / 帯幅感度 > max(5 %, 0.001 $r_t$) / 帯内残留欠損 > 10 % of $D$。
+平滑化は hard-ok の生値だけで、範囲外は端値 (外挿しない)。
 
 **pass 0 では診断扱い、固定点で本ゲート** (ユーザ計画からの修正点 2): pass 0 は有効輪郭が 2 % 太い状態で
 コア形状 RMS 1 % を広域で破り得る。破った断面も値は使い `ok=false` で記録し、合否判定は最終固定点で行う。
@@ -185,3 +189,7 @@ $\omega=0.5$ 初期値、安定なら 1.0。壁更新は**半径方向** (法線
 ## 9. 変更ログ
 
 - `2026-09-04` — 起票 (ユーザ計画を採択。修正 3 点: η 正規化を有効壁で / pass 0 ゲートは診断扱い / SC → CONTUR 運動量積分法)。
+- `2026-09-04` — 抽出器・単体試験・loop ドライバ実装、V0 成立 (スロート δ_r 0.0015 = 質量流量実効値, 全 case)。
+  V1 pass 1 (`run_0019`, ω=0.5, コア全体 α): 質量流量比 1.020→1.010、x≤30 の残差 −0.4→−0.1 % に改善したが試験部軸 M に
+  +0.8/−1.6 % の波 → 抽出器を帯局所参照 (§4.3) に変更。pass 0/1/v1 の場で δ_r が ±1 % 一致。pass 2 (`run_0020`, ω=1.0) 投入。
+  積分法初期推定器 (CONTUR) 実装: スロート δ*_n 0.0011 (抽出 0.0015, 旧相関 0.017)、x≤20 で抽出と 5〜20 % 一致、θ0 無記憶。

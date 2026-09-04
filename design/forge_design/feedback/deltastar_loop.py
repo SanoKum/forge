@@ -81,22 +81,61 @@ def run_pass(problem, euler_ref, prev_run, run_dir, omega: float = 0.5, ic_from=
     return m
 
 
+def run_pass0_integral(problem, euler_ref, run_dir, ic_from, initializer=None, prepare_only: bool = False,
+                       nsteps=None, omega: float = 0.5) -> dict:
+    """pass 0: 積分法 (CONTUR) 初期壁で NS を立て、終了後に抽出して次 pass 用 delta_r_next.csv まで作る。
+    initializer=None なら problem YAML の `deltastar_initializer` (無ければ断熱 contur)。"""
+    from ..evaluate.runner_axismach import prepare_ns, run_staged_ns, collect
+    from ..evaluate.runner import FORGE_TOOLS
+    run_dir = Path(run_dir)
+    init = initializer if initializer is not None else {"model": "contur", "thermal_bc": {"mode": "adiabatic"}}
+    info = prepare_ns(problem, run_dir, nsteps=nsteps, ic_from=ic_from, initializer=init,
+                      euler_ref=euler_ref, omega=omega)
+    print(json.dumps({k: info[k] for k in ("throat_physical", "dstar_source", "initializer", "mesh", "nStepOuter", "cfl_main")},
+                     indent=1, default=str), flush=True)
+    print(Path(run_dir, "MESH_QUALITY.txt").read_text().splitlines()[-1], flush=True)
+    if prepare_only:
+        return info
+    rc = run_staged_ns(run_dir)
+    print("forge rc", rc, flush=True)
+    m = collect(problem, run_dir)
+    print(json.dumps(m, indent=1), flush=True)
+    subprocess.run([sys.executable, str(FORGE_TOOLS / "check_convergence.py"), str(run_dir)], check=False)
+    fp = extract_and_merge(run_dir, euler_ref, omega=omega)
+    (run_dir / "fixed_point.json").write_text(json.dumps(fp, indent=1))
+    print("extract(new):", json.dumps({k: v for k, v in fp.items() if k != "massflow"}), flush=True)
+    print("massflow(new):", json.dumps(fp["massflow"]), flush=True)
+    return m
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="δ_r 固定点反復 (固定 Euler 基準)")
     ap.add_argument("--problem", required=True)
     ap.add_argument("--euler-ref", required=True)
-    ap.add_argument("--prev", required=True, help="前 pass の NS run (抽出元・IC 既定)")
+    ap.add_argument("--prev", default=None, help="前 pass の NS run (抽出元・IC 既定)。--init-integral では不要")
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--omega", type=float, default=0.5)
     ap.add_argument("--ic-from", default=None)
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--extract-only", action="store_true", help="抽出と delta_r_next.csv だけ作る")
+    ap.add_argument("--init-integral", action="store_true",
+                    help="pass 0: 積分法 (CONTUR) 初期壁で NS を立てる (YAML の deltastar_initializer を使う)")
+    ap.add_argument("--init-thermal", default=None, help="--init-integral の熱境界条件 JSON (例 '{\"mode\":\"adiabatic\"}')")
     a = ap.parse_args(argv)
     if a.extract_only:
         s = extract_and_merge(a.prev, a.euler_ref, omega=a.omega)
         print(json.dumps(s, indent=1))
         return 0
+    if a.init_integral:
+        init = None
+        if a.init_thermal:
+            init = {"model": "contur", "thermal_bc": json.loads(a.init_thermal)}
+        run_pass0_integral(a.problem, a.euler_ref, a.run_dir, a.ic_from, initializer=init,
+                           prepare_only=a.prepare_only, nsteps=a.steps, omega=a.omega)
+        return 0
+    if not a.prev:
+        ap.error("--prev が必要 (--init-integral でなければ)")
     run_pass(a.problem, a.euler_ref, a.prev, a.run_dir, omega=a.omega, ic_from=a.ic_from,
              prepare_only=a.prepare_only, nsteps=a.steps)
     return 0
