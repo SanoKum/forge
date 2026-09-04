@@ -72,10 +72,15 @@ def gas_states(p: Problem) -> dict:
             "ext": st(ex["M_inf"], ex["p_inf"], ex["T_inf"]), "R": R}
 
 
-def design_from_problem(p: Problem):
+def design_from_problem(p: Problem, design_external: dict | None = None):
+    """逆設計は**設計点** (spec.external、または design_external) の外部圧で行う。作動点 (operating_points) は
+    CFD の境界条件・IC だけを変え、形状は変えない (2026-09-05 修正: それまで作動点ごとに p_ext が変わり kernel/形状が
+    作動点依存になっていた — run_0010/0017 は作動点間で形状が一致していない)。"""
     geo = p.geometry
     st = gas_states(p)
-    p_ext_ratio = st["ext"]["P"] / st["exhaust"]["P"]
+    ext_d = design_external or p.spec["external"]
+    g = p.gamma; R = st["R"]
+    p_ext_ratio = float(ext_d["p_inf"]) / st["exhaust"]["P"]
     spec = SernKernelSpec(M_in=float(p.spec["inflow"]["M_in"]),
                           theta_r0=np.deg2rad(_dv(p, "theta_r0_deg")), theta_c0=np.deg2rad(_dv(p, "theta_c0_deg")),
                           L_cowl=_dv(p, "L_cowl"), gamma=p.gamma, p_ext_over_p_in=p_ext_ratio,
@@ -183,9 +188,10 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
         raise ValueError("runner_sern は sern_2d 専用")
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=False)
+    design_ext = dict(p.spec["external"])          # 設計点 = spec.external (作動点で上書きされる前に保存)
     opinfo = select_operating_point(p, op)
     st = gas_states(p)
-    kern, design, fr_moc, theta_b = design_from_problem(p)
+    kern, design, fr_moc, theta_b = design_from_problem(p, design_external=design_ext)
     H = float(p.spec["H_m"])
     m = p.mesh
     mp = SernMeshParams(ni_up=int(m.get("ni_up", 16)), ni_noz=int(m.get("ni_noz", 120)), ni_plume=int(m.get("ni_plume", 220)),
@@ -229,7 +235,7 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
     ex = st["exhaust"]
     F_ideal_nd, M_e_id = ideal_gross_thrust(ex["M"], st["ext"]["P"] / ex["P"], p.gamma)
     info = {"problem": str(problem_path), "run_dir": str(run_dir), "nsteps": n, "H_m": H, "states": st,
-            "operating_point": opinfo, "wall_offset": bool(wall_offset),
+            "operating_point": opinfo, "wall_offset": bool(wall_offset), "design_external": design_ext,
             "design": {"key_point": list(design.key_point), "foot_a": list(design.foot_a), "lip_e": list(design.lip_e),
                        "L_ramp": design.L_ramp, "mass_fraction_check": design.mass_fraction_check,
                        "theta_e_deg": float(np.rad2deg(design.info["theta_e"])), "theta_b_deg": float(np.rad2deg(theta_b)),

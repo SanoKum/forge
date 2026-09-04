@@ -67,7 +67,7 @@ class SernCampaign:
 
     def _design_probe(self, x):
         raw = self.base_raw; geo = raw["geometry"]; st_in = raw["spec"]["inflow"]
-        ex0 = self.ops[0]["external"]
+        ex0 = raw["spec"]["external"]      # 設計点 (作動点ではない)
         g = float(raw["gas"].get("gamma", 1.4)); cp = float(raw["gas"].get("cp", 1004.5)); Rg = cp * (g - 1) / g
         p_ratio = float(ex0["p_inf"]) / float(st_in["p_in"])
         M_c, f, tr, tc, Lc = [float(v) for v in x]
