@@ -82,6 +82,45 @@ def extract_and_merge(prev_run, euler_run, omega: float = 0.5, smooth_lam: float
     return summary
 
 
+def solve_rt(problem, R_exit_m: float, prev_run=None, euler_run=None, n_iter: int = 6) -> dict:
+    r"""出口の物理半径 $R$ を仕様に合わせる **スロート半径 $r_t$ の 1 変数解**。
+
+    設計は $r_t$ 無次元で不変なので $R = r_t\,[r_F/r_t + \delta_r(x_F)/r_t]$ の $r_t$ だけを解く。
+    - prev_run なし: 積分法 (CONTUR) の $\delta_{r}(x_F; r_t)$ で Newton (CFD 前に使う)。
+    - prev_run あり: その run の抽出 δ_r(x_F) を使い、$r_t$ 依存は $Re^{-0.2}$ で補正 (NS 後の最終補正; 再計算不要)。
+    戻り: dict(r_t_m, delta_exit_rt, source, iters)。"""
+    from ..probdef import load_problem
+    from ..evaluate.runner_axismach import design_chain, _gam_or_gas
+    from ..feedback.deltastar_integral import integral_bl
+    p = load_problem(problem); d = design_chain(p)
+    S0 = float(p.spec["r_throat"]); Pt = float(p.spec["Pt"]); Tt = float(p.spec["Tt"])
+    rF = float(d["wall_inv"][-1, 1]); xF = float(d["wall_inv"][-1, 0])
+    hist = []
+    if prev_run is None:
+        rt = S0
+        for k in range(n_iter):
+            de = float(integral_bl(d["wall"], d["wall_inv"], _gam_or_gas(p), p.cp, Pt, Tt, rt)["delta_r"][-1])
+            rt_new = R_exit_m / (rF + de); hist.append((rt, de, rt_new))
+            if abs(rt_new - rt) < 1e-7: rt = rt_new; break
+            rt = rt_new
+        src = "integral_bl (CONTUR)"
+    else:
+        prev_run = Path(prev_run)
+        if not (prev_run / "delta_r_equiv.csv").exists():
+            if euler_run is None: raise ValueError("prev_run に抽出結果が無く euler_run も未指定")
+            deltastar_from_core_matched_euler(prev_run, euler_run, out_dir=prev_run)
+        e = np.genfromtxt(prev_run / "delta_r_equiv.csv", delimiter=",", names=True)
+        d_meas = float(np.interp(xF - 0.3, e["x_rt"], e["delta_r_raw"]))
+        S_prev = float(json.loads((prev_run / "prepare_info.json").read_text())["scale_m"])
+        rt = S_prev
+        for k in range(n_iter):
+            de = d_meas * (rt / S_prev) ** -0.2
+            rt_new = R_exit_m / (rF + de); hist.append((rt, de, rt_new)); rt = rt_new
+        src = f"measured delta_r from {prev_run.name} (Re^-0.2 scaling)"
+    return dict(r_t_m=float(rt), r_t_prev_m=S0, delta_exit_rt=float(hist[-1][1]), r_F_rt=rF, x_F_rt=xF,
+                R_exit_m=R_exit_m, source=src, iters=hist, length_m=float(xF * rt))
+
+
 def run_pass(problem, euler_ref, prev_run, run_dir, omega: float = 0.5, ic_from=None,
              prepare_only: bool = False, nsteps=None, cfl_main=None, implicit_relax=None,
              stages: str = "full", ramp=None, ramp_steps: int = 1000) -> dict:
@@ -171,7 +210,13 @@ def main(argv=None) -> int:
     ap.add_argument("--stages", default="full", choices=("full", "none", "ramp"), help="起動: full=soft/mid/本段, none=本段のみ, ramp=cfl を段階的に上げて本段")
     ap.add_argument("--ramp", default=None, help="--stages ramp の cfl 列 (例 '1,2,3.5')")
     ap.add_argument("--ramp-steps", type=int, default=1000)
+    ap.add_argument("--solve-rt", type=float, default=None, metavar="R_EXIT_M",
+                    help="出口物理半径 [m] を与えて r_t を解くだけ (--prev があれば実測 δ_r で、無ければ積分法で)")
     a = ap.parse_args(argv)
+    if a.solve_rt is not None:
+        r = solve_rt(a.problem, a.solve_rt, prev_run=a.prev, euler_run=a.euler_ref)
+        print(json.dumps(r, indent=1, default=str))
+        return 0
     if a.extract_only:
         s = extract_and_merge(a.prev, a.euler_ref, omega=a.omega)
         print(json.dumps(s, indent=1))
