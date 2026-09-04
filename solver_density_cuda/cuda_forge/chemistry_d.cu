@@ -31,6 +31,109 @@ bool chemistryEnabled(const solverConfig& cfg)
     return cfg.chemEnabled != 0 && cfg.thermalMethod == 2 && cfg.nSpecies >= 2;
 }
 
+bool chemistry_strang_active(const solverConfig& cfg)
+{
+    return chemistryEnabled(cfg) && cfg.chemStrang == 1 && cfg.unsteady == 1 && cfg.dualTime == 0
+        && (cfg.timeIntegration == 1 || cfg.timeIntegration == 3);
+}
+
+// -----------------------------------------------------------------------------
+// Strang 分離: セル内 ODE  d(ρY_s)/dt = ω_s,  d(ρe)/dt = Q̇  を dt_half だけ進める。
+//   backward Euler を sub-cycle (h ≤ 0.5 τ_c, τ_c=1/max|J_ss|; 最大 CHEM_STRANG_MAXSUB 回) し、各 sub-step は
+//   線形陰的 Euler (I − h J_tot) δ = h ω を 2 回 Newton 反復。エネルギーは離散恒等式 Δ(ρe) = −Σ_s c_s Δ(ρY_s) で更新
+//   (絶対 datum では 0)。ρ・運動量は不変。T は e から Newton 反転 (thermo_T_from_e)。
+// -----------------------------------------------------------------------------
+#define CHEM_STRANG_MAXSUB 64
+__global__ void chemistry_strang_d(
+    geom_int nCells, int nSpecies, double dt_half, double Tmax, double Tfreeze,
+    const SpeciesThermo* sp, const ReactionTable* rt,
+    const flow_float* ro, const flow_float* roUx, const flow_float* roUy, const flow_float* roUz,
+    flow_float* const* roY_dev, flow_float* roe, flow_float* chemQdot, flow_float* chemTau)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int n = nSpecies;
+    const double rho = (double)ro[ic];
+    if (!(rho > 0.0)) return;
+    const double ux = (double)roUx[ic]/rho, uy = (double)roUy[ic]/rho, uz = (double)roUz[ic]/rho;
+    const double ek = 0.5*(ux*ux + uy*uy + uz*uz);
+    double e = (double)roe[ic]/rho - ek;
+    double U[THERMO_MAX_SPECIES], Y[THERMO_MAX_SPECIES], om[THERMO_MAX_SPECIES], dOdT[THERMO_MAX_SPECIES];
+    double J[THERMO_MAX_SPECIES*THERMO_MAX_SPECIES], M[THERMO_MAX_SPECIES*THERMO_MAX_SPECIES], rhs[THERMO_MAX_SPECIES], dTdU[THERMO_MAX_SPECIES];
+    double usum = 0.0;
+    for (int s = 0; s < n; ++s) { double u = (double)roY_dev[s][ic]; if (u < 0.0) u = 0.0; U[s] = u; usum += u; }
+    if (usum <= 0.0) return;
+    for (int s = 0; s < n; ++s) { U[s] *= rho/usum; Y[s] = U[s]/rho; }
+    double T = thermo_T_from_e(sp, n, Y, e, 1000.0, 200.0, 6000.0);
+    if (T < Tfreeze) { chemQdot[ic] = 0.0; return; }
+    const double U0e = e;
+    double t = 0.0; int nsub = 0;
+    while (t < dt_half && nsub < CHEM_STRANG_MAXSUB) {
+        // Jacobian at current state
+        double Tc = (T > Tmax) ? Tmax : ((T < 200.0) ? 200.0 : T);
+        double Qd;
+        chem_source(sp, rt, rho, Tc, Y, om, &Qd, 2, J, dOdT);
+        const double cv = thermo_cp_mix(sp, n, Y, Tc) - thermo_R_mix(sp, n, Y);
+        const double inv_rhocv = 1.0/(rho*((cv > 1.0e-3) ? cv : 1.0e-3));
+        double jmax = 0.0;
+        for (int k = 0; k < n; ++k) { const double e_k = thermo_h_mass(sp[k], Tc) - thermo_R_species(sp[k])*Tc; dTdU[k] = -e_k*inv_rhocv; }
+        for (int s = 0; s < n; ++s) { const double jss = J[s*n+s] + dOdT[s]*dTdU[s]; if (fabs(jss) > jmax) jmax = fabs(jss); }
+        double h = (jmax > 0.0) ? 0.5/jmax : dt_half;
+        if (nsub == CHEM_STRANG_MAXSUB - 1 || h > dt_half - t) h = dt_half - t;
+        if (h < 1.0e-30) break;
+        // 線形陰的 Euler + 1 回の Newton 補正: (I − h J_tot) δ = h ω(U^k) − (U^k − U^n)
+        double Un[THERMO_MAX_SPECIES]; for (int s = 0; s < n; ++s) Un[s] = U[s];
+        for (int it = 0; it < 2; ++it) {
+            if (it > 0) {
+                double Tk = thermo_T_from_e(sp, n, Y, e, T, 200.0, 6000.0); Tc = (Tk > Tmax) ? Tmax : ((Tk < 200.0) ? 200.0 : Tk); T = Tk;
+                chem_source(sp, rt, rho, Tc, Y, om, &Qd, 2, J, dOdT);
+                const double cv2 = thermo_cp_mix(sp, n, Y, Tc) - thermo_R_mix(sp, n, Y);
+                const double inv2 = 1.0/(rho*((cv2 > 1.0e-3) ? cv2 : 1.0e-3));
+                for (int k = 0; k < n; ++k) { const double e_k = thermo_h_mass(sp[k], Tc) - thermo_R_species(sp[k])*Tc; dTdU[k] = -e_k*inv2; }
+            }
+            for (int s = 0; s < n; ++s) {
+                for (int k = 0; k < n; ++k) M[s*n+k] = -h*(J[s*n+k] + dOdT[s]*dTdU[k]);
+                M[s*n+s] += 1.0;
+                rhs[s] = h*om[s] - (U[s] - Un[s]);
+            }
+            // LU (部分ピボット)
+            for (int k = 0; k < n; ++k) {
+                int p = k; double amax = fabs(M[k*n+k]);
+                for (int i = k+1; i < n; ++i) if (fabs(M[i*n+k]) > amax) { amax = fabs(M[i*n+k]); p = i; }
+                if (p != k) { for (int j = 0; j < n; ++j) { const double tt = M[k*n+j]; M[k*n+j] = M[p*n+j]; M[p*n+j] = tt; } const double tt = rhs[k]; rhs[k] = rhs[p]; rhs[p] = tt; }
+                const double d = (fabs(M[k*n+k]) > 1.0e-300) ? M[k*n+k] : 1.0e-300;
+                for (int i = k+1; i < n; ++i) { const double f = M[i*n+k]/d; if (f == 0.0) continue; for (int j = k; j < n; ++j) M[i*n+j] -= f*M[k*n+j]; rhs[i] -= f*rhs[k]; }
+            }
+            for (int i = n-1; i >= 0; --i) { double tt = rhs[i]; for (int j = i+1; j < n; ++j) tt -= M[i*n+j]*rhs[j]; rhs[i] = tt/M[i*n+i]; }
+            // 更新 + エネルギー (Δe = −Σ c_s ΔU_s/ρ) + 実現可能性
+            double de = 0.0, us = 0.0;
+            for (int s = 0; s < n; ++s) { double Us = U[s] + rhs[s]; if (Us < 0.0) Us = 0.0; de -= (sp[s].h_datum/sp[s].MW)*(Us - U[s])/rho; U[s] = Us; us += Us; }
+            e += de;
+            for (int s = 0; s < n; ++s) { U[s] *= rho/us; Y[s] = U[s]/rho; }
+        }
+        T = thermo_T_from_e(sp, n, Y, e, T, 200.0, 6000.0);
+        t += h; ++nsub;
+    }
+    for (int s = 0; s < n; ++s) roY_dev[s][ic] = (flow_float)U[s];
+    roe[ic] = (flow_float)(rho*(e + ek));
+    chemQdot[ic] = (flow_float)(rho*(e - U0e)/dt_half);   // 平均反応熱 [W/m3]
+    chemTau[ic]  = (flow_float)((nsub > 0) ? dt_half/nsub : 1.0e30);   // 平均 sub-step (診断)
+}
+
+void chemistryStrangHalfStep_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var, double dt_half)
+{
+    if (!g_chem_ready || !chemistry_strang_active(cfg)) return;
+    flow_float** roY = species_roY_device_ptr();
+    if (roY == nullptr) return;
+    chemistry_strang_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+        msh.nCells, var.nSpeciesRegistered, dt_half, cfg.chemTmaxReaction, cfg.chemFreezeBelowT,
+        thermo_species_device_ptr(), g_rt_dev,
+        var.c_d["ro"], var.c_d["roUx"], var.c_d["roUy"], var.c_d["roUz"],
+        roY, var.c_d["roe"], var.c_d["chemQdot"], var.c_d["chemTau"]);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchkKernelSync();
+}
+
 void chemistry_init(solverConfig& cfg)
 {
     g_chem_ready = false;
@@ -163,6 +266,7 @@ __global__ void chemistry_source_d(
 void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
 {
     if (!g_chem_ready || !chemistryEnabled(cfg)) return;
+    if (chemistry_strang_active(cfg)) return;   // Strang 分離: ソース項は RK に入れない (advanceExplicitRK の半ステップで進める)
     // jacobianMode==2: 種ブロック Jacobian バッファを遅延確保 (nCells × ns × ns)
     g_block_active = false;
     if (cfg.chemJacobianMode >= 2) {

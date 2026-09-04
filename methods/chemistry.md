@@ -148,8 +148,8 @@ $\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\v
 | 種ブロック point-implicit (`jacobianMode: 2`) | `speciesTransport_d.cu` `species_dplur_block_sweep_d` (`speciesSweepOnce` が block/scalar を切替) | chemistry が `chem_jac` (温度結合込み $J^{\rm tot}$ の残差行列 $R=J^{\rm tot}+\mathrm{diag}(d)$, $d_s=\max(0,-J_{ss})$ は `src_jac_Y` へ) を書き、sweep はセル毎に $[(V/\Delta\tau+D^{\rm conv}+V\,\mathrm{src\_jac})I-VR]\delta=\mathrm{rhs}$ を部分ピボット LU (double) で解く。coupling 1 の解と coupling 2 の予測子の両方で使う | 済 (Phase 2a) |
 | 反応熱の陰的注入 | `chemistry_heat_inject_d` (speciesTransport_d.cu, 案C 予測子直後) + `chem_cq` ($\partial\dot Q/\partial\rho Y_k$) | 理論 §4。`res_roe += V\sum_k(\partial\dot Q/\partial\rho Y_k)\delta(\rho Y_k)^*` | 済 (Phase 2a) |
 | 反応熱のエネルギー対角 | `timeIntegration_d.cu` `implicit_defect_correction_block_d` (`src_jac_roe` 引数) | $(4,4)\ +=\ V\max(0,-\partial\dot Q/\partial\rho e)$ (precond 版 `_precond_d` は未配線) | 済 (Phase 2a) |
-| Strang 分離 | `chemistrySubcycle_d` | 非定常経路のセル内 ODE | Phase 2b |
-| Falloff (Troe) | `chem_source` / `chemistry_mech_io.hpp` | Burke 2012 用 | Phase 2b |
+| Strang 分離 (`strang: 1`) | `chemistry_strang_d` / `chemistryStrangHalfStep_d_wrapper` (chemistry_d.cu), `advanceExplicitRK` (main.cpp) | 非定常 RK の前後で dt/2 ずつセル内 ODE ($d\rho Y/dt=\omega$, $\Delta\rho e=-\sum c_s\Delta\rho Y_s$) を backward Euler sub-cycle ($h\le0.5\tau_c$, 最大 64 回, 各 2 Newton, 温度は $e$ から反転)。前半の後に N/M 始点を取り直す。有効時はソース項を RK に入れない | 済 (Phase 2c) |
+| Falloff (Lindemann/Troe) | `chem_ln_kf_falloff` (chemistry_d.cuh), `chemistry_mech_io.hpp` (`high-P-rate-constant`/`low-P-rate-constant`/`Troe`) | $k=k_\infty\frac{P_r}{1+P_r}F$。$\partial\ln k/\partial T$, $\partial\ln k/\partial[M]$ は滑らかなスカラ関数の中心差分 (相対 1e-4)。GRI H₂/O₂ (`tools/mechanisms/h2o2_gri30_nasa9_10sp29r.yaml`) で Jacobian FD 2e-8, 着火遅れ 43.6 vs Cantera 44.0 µs | 済 (Phase 2b) |
 | ホスト単体検証 | `tools/test_chemistry.cpp` + `tools/chem_reference_cantera.py` | Jacobian 有限差分照合 (相対 2e-8 PASS)、0-D 定積反応器 BDF1 が Cantera と一致 (着火遅れ 32.0 vs 32.2 µs, 平衡 T +1.3 K)、絶対/sensible datum の一致 | 済 |
 
 ビルド: `g++ -O2 -std=c++17 -I solver_density_cuda solver_density_cuda/tools/test_chemistry.cpp -lyaml-cpp -o /tmp/tchem` →

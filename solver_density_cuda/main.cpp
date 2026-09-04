@@ -1202,6 +1202,15 @@ void advanceExplicitRK(StepContext& s)
     const int iteration_count = s.cfg.perStepIterationCount();
     const char* iteration_label = s.cfg.perStepIterationLabel();
 
+    // 有限速度化学 Strang 分離 (chemistry.strang==1, unsteady RK): 前半 dt/2 のセル内化学 ODE を進めてから
+    // N/M 始点を取り直す (RK が化学後の状態から始まるように)。後半 dt/2 は RK 後 (writeStepOutputs 前)。
+    const bool strang = chemistry_strang_active(s.cfg);
+    if (strang) {
+        chemistryStrangHalfStep_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var , 0.5 * (double)s.cfg.dt);
+        updateVariablesOuter(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
+        speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+    }
+
     for (int iloop = 0 ; iloop < iteration_count ; iloop++) {
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
@@ -1228,6 +1237,9 @@ void advanceExplicitRK(StepContext& s)
     }
 
     s.profiler.measureWall(ProfileSection::UpdateOuter, [&]() {
+        if (strang) {   // Strang 後半 dt/2 (RK 直後の状態から)
+            chemistryStrangHalfStep_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var , 0.5 * (double)s.cfg.dt);
+        }
         updateVariablesOuter(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
         speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}N/M 次ステップ用
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 Y_s を最終 roY_s と同期

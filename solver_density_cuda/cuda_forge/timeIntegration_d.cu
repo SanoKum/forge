@@ -1090,7 +1090,8 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  int isAxisymmetric,
  flow_float* A_planar,
  flow_float axisRFloor,
- flow_float unsteady_diag
+ flow_float unsteady_diag,
+ flow_float* src_jac_roe   // 有限速度化学 (jacobianMode 2): 反応熱の安定化側エネルギー対角 max(0,−∂Q̇/∂ρe) [1/s] (nullptr 可)
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -1123,6 +1124,7 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         const flow_float v_over_dtau = static_cast<flow_float>(v / max(dt_l, static_cast<flow_float>(1.0e-30)));
         block_dplur::add_identity_scaled(D0, v_over_dtau);
         block_dplur::add_identity_scaled(D0, static_cast<flow_float>(v) * unsteady_diag);  // dual-time BDF (非前処理)
+        if (src_jac_roe != nullptr) D0[4][4] += static_cast<flow_float>(v) * src_jac_roe[ic];   // 有限速度化学 反応熱 (4,4)
 
         flow_float b[5] = { res_ro[ic], res_roUx[ic], res_roUy[ic], res_roUz[ic], res_roe[ic] };
         flow_float nbr[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -1389,7 +1391,8 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 axisymEnc,
                 (cfg.isAxisymmetric == 1) ? ((cfg.axisRFloor > (flow_float)0.0 || cfg.hoopAreaFromClosure == 1) ? var.c_d["A_closure_y"] : var.c_d["A_planar"]) : var.c_d["volume"],
                 cfg.axisRFloor,
-                cfg.unsteadyDiagCoef
+                cfg.unsteadyDiagCoef,
+                chemistry_jacroe_device_ptr()   /* 有限速度化学 反応熱の (4,4) 対角 (mode 2 のみ, 他は nullptr) */
               );
             } else {
             // implicitSolvePrecision: 0=float (既定・高速), 1=double (軸対称近軸の根治, 遅い)。

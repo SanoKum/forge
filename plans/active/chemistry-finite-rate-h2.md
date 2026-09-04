@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `thermophysics / chemistry`
-- **status**: `in_progress` (Phase 0・1・2a・2b(falloff) 完了 2026-09-04。Strang 分離・Phase 3 未着手)
+- **status**: `in_progress` (Phase 0・1・2 (a: ブロック陰解+反応熱陰的注入, b: falloff, c: Strang) 完了 2026-09-04。Phase 3 未着手)
 - **related_docs**:
   - `methods/chemistry.md` (現在仕様: 理論・実装方針)
   - `methods/thermophysics.md` (多成分 TP gas、sensible datum、種輸送・陰解法結合)
@@ -51,7 +51,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | **0** 前提整備 | CEA 平衡/凍結スクリーニング、`thermo.inp→species_db.yaml` ツール、Jachimowski YAML 化 + Cantera 検証、方針文書 | `tools/cea_thermo_to_species_db.py`, `tools/mechanisms/*.yaml`, `notes/investigations/scripts/cea_kinetics_screen/`, `methods/chemistry.md` | **done** (§9) |
 | **0b** BC | 指定組成 `Yb` 配線: `inlet_Pressure` は M5/M7 で配線済 (case/44 `run_0091` が `Y0/Y1` を使用中、thermophysics plan §10 の記述は古い)。残りは `inlet_Pressure_dir` のみ (燃焼室出口組成は `inlet_Pressure` で与えられるので低優先) | `cuda_forge/boundaryCond_d.cu` | `inlet_Pressure` done / `_dir` todo |
 | **1** ソース項 | `chemistry_d.{cuh,cu}` (機構読込・SI 換算・device 定数)、`chemistrySource_d` ($\dot\omega_s$, $\dot Q$, 解析 Jacobian)、`h_datum` 保持、config キー、ホスト 0-D テスト `tools/test_chemistry.cpp`、GPU 0-D 着火 (case/35 run_0049) | `cuda_forge/chemistry_d.*`, `chemistry_mech_io.hpp`, `thermo_d.*`, `input/solverConfig.*`, `main.cpp`, `periodicNode_d.cu` | **done** (§9) |
-| **2** 陰解法結合 | 種ブロック point-implicit (LU)、案C 予測子経由の**反応熱の陰的注入**、$(4,4)$ 反応熱 Jacobian、falloff (Troe) — **done**; Strang 分離 (陽解法/dual-time) — todo | `speciesTransport_d.cu`, `chemistry_d.*`, `timeIntegration_d.cu`, `case/46` | **2a/2b done** (§9), Strang todo |
+| **2** 陰解法結合 | 種ブロック point-implicit (LU)、案C 予測子経由の**反応熱の陰的注入**、$(4,4)$ 反応熱 Jacobian (precond 版含む)、falloff (Troe)、Strang 分離 (非定常 RK) | `speciesTransport_d.cu`, `chemistry_d.*`, `timeIntegration_d.cu`, `main.cpp`, `case/46`, `case/35` | **done** (§9) |
 | **3** 燃焼器 RANS | 低マッハ前処理 + SST + No-TCI、PaSR、13 種 (NO) | `ransSource_d` 連携, `chemistry_d` | todo |
 | **4** 応用 | 加熱器 → ノズル → 試験部 end-to-end、設計チェーン確認メニューへ | `design/`, `methods/design/` | todo |
 
@@ -77,8 +77,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 
 - [x] `methods/chemistry.md` 起草 (理論・実装方針)
 - [x] Phase 1 実装・検証 (0-D 着火)
-- [x] Phase 2a/2b 実装・検証 (ノズル化学非平衡 case/46, falloff)
-- [ ] Strang 分離・Phase 3 実装・検証 (§6)
+- [x] Phase 2 実装・検証 (ノズル化学非平衡 case/46, falloff, Strang)
+- [ ] Phase 3 実装・検証 (§6)
 - [ ] `status: done` + §9 変更ログ
 - [ ] `plans/active/` → `plans/accepted/` へ移動、`plans/README.md` 同期
 
@@ -146,4 +146,12 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
     Jacobian FD 2.1e-8 PASS、着火遅れ 43.6 vs Cantera 44.0 µs (1200 K 1 atm)。Burke 2012 機構は同形式で読める。
   - 残: Strang 分離 (非定常)、`_precond_d` (低マッハ前処理) への $(4,4)$ 配線、`inlet_Pressure_dir` 組成、Phase 3 (燃焼器 RANS・PaSR)、
     反応 ON での `cfl_pseudo` 上限スイープ (frozen 同等の 2 は確認、4 以上は未)。
+- `2026-09-04` — **Phase 2c (Strang 分離) + CFL 上限 + precond 配線**。
+  - `chemistry.strang: 1`: 非定常 RK の前後 dt/2 でセル内 ODE を backward Euler sub-cycle ($h\le0.5\tau_c$, ≤64 回, 2 Newton, $\Delta\rho e=-\sum c_s\Delta\rho Y_s$)。
+    有効時はソース項を RK に入れず、前半後に N/M 始点を取り直す (`advanceExplicitRK`)。
+    case/35 `run_0052` (dt 5e-9) / `run_0053` (dt 5e-8, 10 倍): いずれも着火遅れ 32.0 µs・平衡 2945 K (Cantera 32.2 µs・2944 K) で dt に依らず一致、場は厳密一様。
+    ソース項経路 (run_0049: 2948.4 K) より平衡温度が正確。**コストは重い** (run_0052 913 s vs run_0049 94 s; 729 ノードで GPU 未飽和 + local memory の 16×16 double 行列) → 要最適化 (FP32 化・レジスタ化)。
+  - `cfl_pseudo` 上限 (case/46 run_0009/0010, 反応 ON 定常陰解): 4 は安定 (残差は 2 と同水準)、8 はリミットサイクル (残差 2 桁悪化) → 実用上限 ≈4。
+  - `implicit_defect_correction_block_precond_d` (lowMachPrecond) にも反応熱の $(4,4)$ 対角 (`src_jac_roe`) を配線 (加熱器の低マッハ用。未検証)。
+  - 残: Phase 3 (燃焼加熱器 RANS: 低マッハ precond + SST + No-TCI → PaSR、Burrows–Kurkov)、`inlet_Pressure_dir` 組成、Strang/ソースカーネルの性能最適化。
 

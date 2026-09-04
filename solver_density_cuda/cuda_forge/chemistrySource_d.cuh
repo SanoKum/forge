@@ -25,6 +25,11 @@ flow_float* chemistry_jacroe_device_ptr();
 flow_float* chemistry_cq_device_ptr();
 bool chemistry_block_active();
 
+// Strang 分離 (chemistry.strang==1, 非定常陽解法 RK のみ): true なら chemistrySource_d_wrapper はソースを加えず、
+// advanceExplicitRK の前後で chemistryStrangHalfStep_d_wrapper(dt/2) がセル内 ODE を backward Euler sub-cycle で進める。
+bool chemistry_strang_active(const solverConfig& cfg);
+void chemistryStrangHalfStep_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var, double dt_half);
+
 // host 側の反応表 (未初期化なら nullptr)。
 const ReactionTable* chemistry_table_host();
 
