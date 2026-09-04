@@ -168,4 +168,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
     → 差の主因は**混合不足** (上流壁 slip で初期 BL/せん断層厚ゼロ、入口乱流量が仮置き) と着火の早さ (No-TCI)。
     残差は振動プラトー (`check_convergence` NOT CONVERGED、リップ後流)。
   - 次: 入口角ノードの解消 (solver 側) → 全壁 no-slip + 入口 BL、入口 k/ω の感度、PaSR (`tci: 1`) の C_mix 較正、cell モードとの比較。
+- `2026-09-04` — **Phase 3 更新: 入口∩壁角の根治後 (plan `boundary-node-inlet-corner-wall`)**。全壁 no-slip 等温 + 入口 BL プロファイルで
+  run_0014–0017 が安定。反応 run_0017: 出口組成が実験にほぼ重なり、X_H₂O ピーク 0.51 @ 1.78 cm (実験 0.50 @ 2.0)、全温ピーク 1.06 (実験 1.18)、
+  着火点 x≈9 cm (定常化; 実験 18–25 cm)。残差はプラトー (NOT CONVERGED)。残る差: 主流 M 2.57 (実験 2.2, 壁関数 BL の blockage 不足)、
+  全温ピーク不足と早い着火 (No-TCI/壁関数/入口 k-ω 仮置き)。次: PaSR `tci: 1` の C_mix 感度、入口 k/ω・δ 感度、y⁺ 確認。
 

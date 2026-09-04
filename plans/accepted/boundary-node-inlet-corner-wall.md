@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `boundary / discretization`
-- **status**: `in_progress`
+- **status**: `done`
 - **related_docs**:
   - `methods/discretization.md` §7.2 (D)
   - `procedures/solver-settings.md` (`mesh.nodeInletCornerWall`)
@@ -34,7 +34,7 @@ node モードで入口と no-slip 壁を共有する角ノードの質量蓄積
 ## 5. 実装ステップ
 
 1. `mesh/gmshReader.hpp` (所有ロジック), `input/solverConfig.*` (キー), `mesh/convertGmshToForge.cpp` (受け渡し) — 済 (2026-09-04)
-2. case/47 で全壁 no-slip + 入口 BL プロファイル (`run_0014` 以降) が 2 次・cfl 2 で安定することを確認 — 進行中
+2. case/47 で全壁 no-slip + 入口 BL プロファイル (`run_0014`–`0017`) が 2 次・cfl 2 (混合 20000 step) + 反応 (20000 step) で安定 — 済
 
 ## 6. 検証
 
@@ -48,9 +48,14 @@ node モードで入口と no-slip 壁を共有する角ノードの質量蓄積
 ## 8. 完了条件
 
 - [x] methods §7.2 (D) 記述
-- [ ] case/47 検証
-- [ ] status done → accepted へ移動
+- [x] case/47 検証
+- [x] status done → accepted へ移動
 
 ## 9. 変更ログ
 
 - `2026-09-04` — 初稿・実装。
+- `2026-09-04` — 検証完了。12 step トレースで角ノード ρ 0.879→0.875・P≈1 atm (修正前は +7 %/step の質量蓄積)。
+  変換ログ `nodeInletCornerWall: 4 inlet half-faces at wall nodes reassigned` (空気入口 2 角 + H₂ スロット 2 角)。
+  case/47 run_0014–0017 (全壁 no-slip + BL プロファイル, 2 次 cfl 2, 反応 ON) が NaN なしで完走。出口組成が実験にほぼ重なる
+  (旧 slip 回避 run_0008 の H₂O ピーク y 1.48 cm → 1.78 cm, 実験 2.0)。3D (`buildMedianDual3D`) は未対応のまま。`accepted/` へ移動。
+

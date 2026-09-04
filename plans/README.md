@@ -24,7 +24,6 @@
 | Plan | area | 概要 |
 | --- | --- | --- |
 | [chemistry-finite-rate-h2.md](active/chemistry-finite-rate-h2.md) | `thermophysics / chemistry` | **有限速度化学 (H₂ 燃焼・ノズル化学非平衡)** (2026-09-04 起票): 種ブロック point-implicit + sensible datum 反応熱陽注入。Phase 0 (CEA スクリーニング・熱力学 DB ツール・Jachimowski YAML) 完了、Phase 1 ソース項から実装 |
-| [boundary-node-inlet-corner-wall.md](active/boundary-node-inlet-corner-wall.md) | `boundary / discretization` | node の入口∩壁コーナーで質量が溜まり P 暴走する問題の根治: 変換時に入口側半割面を壁へ帰属 (`mesh.nodeInletCornerWall`)。Burrows–Kurkov (case/47) で発覚 (2026-09-04) |
 | [architecture-bndfirstorder-removal.md](active/architecture-bndfirstorder-removal.md) | `architecture / boundary` | **`mesh.bndFirstOrder` の廃止**。使用禁止をルール化済 (粘性応力を破壊 + 疑似 2D で全域に効く)、コード削除が残タスク |
 | [axisymmetric-freestream-hoop-gauge.md](active/axisymmetric-freestream-hoop-gauge.md) | `axisymmetric` | 軸対称 hoop ソースの自由流保持 (pRef ゲージ整合 + 離散閉性面積、倍精度不要) |
 | [architecture-node-option-consolidation.md](active/architecture-node-option-consolidation.md) | `architecture` | node の `node*` オプション削減 — 整合セットを既定化し旧規約系フラグを撤去する手順 |
@@ -51,6 +50,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [boundary-node-inlet-corner-wall.md](accepted/boundary-node-inlet-corner-wall.md) | `boundary / discretization` | node の入口∩壁コーナーの質量蓄積→P 暴走を根治: 変換時に入口側半割面を壁へ帰属 (`mesh.nodeInletCornerWall: 1`)。case/47 で検証済 (2026-09-04) |
 | [tooling-nozzle-deltastar-core-matched-euler.md](accepted/tooling-nozzle-deltastar-core-matched-euler.md) | `tooling / design / boundary layer` | **排除厚さ更新 (2026-09-04 完了)**: CONTUR 運動量積分の初期壁 + 固定 Euler 基準・帯局所抽出 (BL 直外の帯で q_NS/q_E を線形フィット) の半径方向固定点反復。旧相関はスロート δ\* を 3〜12 倍過大に与え NS 質量流量 +0.8〜3.7 %・試験部 M −0.2〜−0.7 % の主因だった。case/45 M6: ṁ 比 0.9999・出口コア M +0.01 % を Md トリムなしで達成 (run_0020–0023)、case/42 M5・case/44 も設定不変で合格。Md トリム/law 帰還/x_lo は廃止 |
 | [discretization-median-dual-2d-facevect-precision.md](accepted/discretization-median-dual-2d-facevect-precision.md) | `discretization` | **2D 双対幾何+CW 判定の桁落ち除去** (ローカル原点+double, 2026-08-31): 真犯人は makeMesh の float shoelace CW 判定 (スリバーで境界 surfVect 誤反転)。閉性 1e-7・第一セル 2.4 μm (y+1 真値) 変換可能に |
 | [design-isobutane-wt-m5-sweep.md](accepted/design-isobutane-wt-m5-sweep.md) | `design campaign` | イソブタン風洞 **M5** R×L_U×L_c 27 点スイープ完了 (2026-08-30): quintic 不成立→knot MK2.5・L_c≥14、パレート 9 点、**推奨 R3/L_U9/L_c14** (4.37 m, dM 0.043 %M_d)。凝縮後段確認 +29 K で dry 確定 |
