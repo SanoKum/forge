@@ -27,6 +27,13 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0006_nasa_cowl3deg_euler` | 同上、カウル長 3.12H、**カウル角 3°** | C_T 0.9786 / C_L −0.031 / C_M −0.904 (内面のみ 0.9797 vs MOC 0.9791)。力係数 STEADY、残差プラトー (`NOT CONVERGED`)。`metrics.json`, `mach_field.png`, `wall_pressure_cfd_vs_moc.png` | active (ref) |
 | `run_0007_nasa_cowl12deg_euler` | 同上、カウル長 3.12H、**カウル角 12°** | C_T 0.9314 / C_L +0.120 / C_M −0.287 (内面のみ 0.9662 vs MOC 0.9656; カウル外面の衝撃圧が推力 −0.035)。力係数 STEADY、残差プラトー (`NOT CONVERGED`)。`metrics.json`, `mach_field.png`, `wall_pressure_cfd_vs_moc.png` | active (ref) |
 
+| `run_0008_smoke_sst_node` | RANS 化 (S3): node + SST (壁関数), 本段 cfl 4 | **発散** (本段 step 3, ω が inf) | 破棄予定 |
+| `run_0009_smoke_sst_node_cfl1` | 同上、本段 cfl 1 | **発散** (step 7, カウル角部直下流 x≈0.13H の内面側で roOmega inf。node+SST 固有、未解決) | 破棄予定 |
+| `run_0011_smoke_sst_cell_cfl2` | RANS 化: **cell + SST (wallTreatmentSST 1, 第一セル 4e-3 H, y+~20–40)**, 本段 cfl 2, 8000 step | **C_T(p) 0.9685 / C_T(p+τ) 0.9602 (摩擦 −0.0085) / C_L 0.154 / C_M −0.980**、力係数 STEADY。残差 rms_roK/roOmega は増加後プラトー (`NOT CONVERGED`)。ランプ壁圧に 3% の偶奇鋸歯。`deltastar_vs_euler.png`, `wall_offset_deltastar_vs_euler.json` | active (ref) |
+| `run_0012_smoke_sst_cell_dstar` | S5 δ* 補正 (単独抽出版 δ*: 膨張扇の ρu 変化を欠損と誤認し δ*/H 0.24 の過大値) | C_T 0.958 — δ* が誤りで無効 | 破棄予定 |
+| `run_0013_smoke_sst_cell_dstar_euler` | **S5 δ* 一発補正**: run_0011 と run_0002 (Euler) の質量流束欠損差から δ*(x) を抽出 (ランプ 0.009→0.11 H, カウル 0.006→0.013 H) し壁を法線オフセット、cell SST で再評価 | **C_T(p) 0.9685 (不変) / C_T(p+τ) 0.9602 / C_L 0.146 (無補正 0.154 → Euler 0.143) / C_M −0.930 (−0.980 → Euler −0.939)**。壁圧が MOC の破線に全域で乗る (`wall_pressure_cfd_vs_moc.png`) | active (ref) |
+| `run_0010_moo_euler_2op/` | **S6 多作動点 MOO** (cell Euler, 作動点 cruise M∞6/p 0.05 p_in [w 0.6] + accel M∞4/0.15 [w 0.4], dv 5 個, LHS 12 + EHVI infill 3×2) | 18 評価 / 17 PASS / 1 INFEASIBLE、HV 1.179。パレート 8 点 (L 3.9–12.5 H, C_T,w 0.960–0.977)。`pareto.json`, `pareto.png`, `ledger.jsonl`, 各点 `doe_NNN_<op>/`, `inf_II_J_<op>/` | active (ref) |
+
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
@@ -38,3 +45,15 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
   C_M は −0.90 → −0.69 → −0.29 (入口基準) で角を開くほど頭下げが緩む。NASA が 6° を最良としたのは飛行域全体のトリム舵角で、
   1 作動点の本比較では順位付けできない (S6 の多作動点束ねで評価する量)。
 - 残差は全 run で 1.3〜1.5 桁プラトー (せん断層・衝撃の cell 床)。力係数は 500 step 出力で 1e-5 以内 (STEADY)。
+
+### S5 / S6 のまとめ (2026-09-04)
+
+- **RANS 化**: node + SST は本段でカウル角部直下流 (内面側 x≈0.13H) から ω が発散 (cfl 4/1 とも)。cell + SST (壁関数) は
+  cfl 2 で安定し、圧力推力は Euler 比 +0.25 %、摩擦で −0.85 % (twall は forge の「流体に働く traction」規約、
+  `viscousFlux_d.cu` L527 で符号確認)。node 側は未解決の課題として plan に残す。
+- **δ* 一発補正 (S5)**: 単独の 0.99 max 縁判定は SERN の非一様コア (膨張扇) を欠損と誤認して 20 倍過大になる。
+  **Euler 場を基準にした質量流束欠損** (`deltastar_sern_vs_euler`) で妥当な δ* (ランプ末端 0.11 H) が取れ、
+  オフセット壁の RANS は壁圧・揚力・モーメントを非粘性設計値に戻した。推力は δ* に鈍感 (0.9685 不変)。
+- **MOO (S6)**: 1 点 ≈ 135 s (2 作動点、GPU 共有時)。パレートは「長いランプほど C_T,w 高い」の単調前線
+  (3.9H で 0.960 → 12.5H で 0.977) で、短い側は θ_r0 14–16°・M_c 3.2 付近、長い側は M_c 3.9・f 0.47。
+  C_M (−20H 基準) は前線上で −0.19〜−2.6 と大きく変わり、カウル角 2° 台が頭下げ最小 — C_M を制約に入れると前線の選択が変わる。

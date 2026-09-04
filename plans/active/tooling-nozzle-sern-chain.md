@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S4 完了 (同日)。次 = RANS 化 → S5 δ* → S6 MOO -->
+- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。残 = node+SST の安定化、RANS での MOO、S7 3D 確認 -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) 「SERN チェーン」節 (現在仕様。本計画と同時に起草)
   - [`design/CAPABILITIES.md`](../../design/CAPABILITIES.md) (問題タイプ `sern_2d` を 📋 で登録)
@@ -221,4 +221,14 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   カウル角 3/6/12° で C_T 0.9786/0.9704/0.9314 (単調減 = NASA)。**カウル外面の衝撃圧は MOC に無い寄与** (12° で C_T −0.035) で、
   評価器で必ず取る。C_M の傾向は基準点に依存するため、問題定義の `moment_ref` は機体 CG を必ず与える (§8-3 の回答)。
   詳細は case/46 README。
+- `2026-09-04` — **RANS 化・S5・S6 (Euler) 完了** (case/46 run_0008–0013, run_0010_moo_euler_2op):
+  (i) node + SST は本段でカウル角部直下流の内面側から ω が発散 (cfl 4/1 とも、run_0008/0009) → **未解決**。評価器は
+  cell + SST (壁関数, cfl 2) で成立 (run_0011: C_T(p) 0.9685 / 摩擦 −0.0085 / C_L 0.154 / C_M −0.980、力 STEADY)。
+  twall の符号は「流体に働く traction」(viscousFlux_d.cu L527/L679) で確認し `sern_forces` に反映。
+  (ii) S5: 単独抽出の δ* は膨張扇を欠損と誤認 (0.24 H) → **Euler 基準の質量流束欠損** `deltastar_sern_vs_euler` を採用
+  (ランプ 0.009→0.11 H)。オフセット壁 RANS (run_0013) で壁圧が MOC に全域一致、C_L 0.146 / C_M −0.930 (Euler 0.143 / −0.939)、
+  C_T は不変。(iii) S6: `opt/driver_sern.py` で 2 作動点 (cruise w0.6 / accel w0.4) Euler MOO、18 評価 17 PASS、HV 1.179、
+  パレート 8 点 (L 3.9–12.5 H で C_T,w 0.960–0.977)。1 評価 ≈ 135 s。RANS 化した MOO は評価器の切替 (`evaluate.model: sst`,
+  `discretization: cell`) だけで回るが、1 評価 ≈ 3× のコスト。作動点 accel (p_ext/p_in 0.15) は Euler では剥離が出ないため
+  RANS で再評価が要る。
 
