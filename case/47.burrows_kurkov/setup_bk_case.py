@@ -5,7 +5,7 @@
 import argparse, pathlib, shutil, subprocess, os, h5py, numpy as np, cantera as ct
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--chem", type=int, default=0); ap.add_argument("--tci", type=int, default=0)
 ap.add_argument("--cfl", type=float, default=2.0); ap.add_argument("--nstep", type=int, default=20000); ap.add_argument("--restart", default=None)
-ap.add_argument("--jac", type=int, default=2); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--profile", type=int, default=0); ap.add_argument("--out", type=int, default=0); ap.add_argument("--relax", type=float, default=0.7); ap.add_argument("--Twall", type=float, default=350.0); a = ap.parse_args()
+ap.add_argument("--jac", type=int, default=2); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--profile", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--tauchem", type=int, default=1); ap.add_argument("--out", type=int, default=0); ap.add_argument("--relax", type=float, default=0.7); ap.add_argument("--Twall", type=float, default=350.0); a = ap.parse_args()
 HERE = pathlib.Path(__file__).parent; d = pathlib.Path(a.run_dir); d.mkdir(exist_ok=True)
 names = ["H2", "O2", "H", "O", "OH", "H2O", "HO2", "H2O2", "N2"]
 g = ct.Solution(str(HERE / "mech.yaml")); assert g.species_names == names
@@ -20,7 +20,7 @@ inlet_h2:  {{physID: 2, kind: inlet_uniformVelocity, outputHDFflg: 0, ints: {{in
 outlet:    {{physID: 3, kind: outlet_statPress, outputHDFflg: 1, ints: , floats: {{Ps: 101325.0, Pt: 101325.0, Tt: 300.0}}}}
 wall:      {{physID: 4, kind: wall_isothermal, outputHDFflg: 1, ints: {{wallFunc: 1}}, floats: {{Ts: {a.Twall:.1f}, Ux: 0.0, Uy: 0.0, Uz: 0.0}}}}
 """ + ("" if a.profile else "wall_slip: {physID: 5, kind: slip,            outputHDFflg: 0, ints: , floats: }\n"))
-chem = f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, tci: {a.tci}}}"
+chem = f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, tci: {a.tci}, tciCmix: {a.cmix}, tciTauChem: {a.tauchem}}}"
 value = a.restart if a.restart else "bk.h5"
 (d / "solverConfig.yaml").write_text(f"""# case/47 Burrows-Kurkov: chem={a.chem} tci={a.tci} cfl_pseudo={a.cfl}
 mesh: {{meshFormat: "hdf5", discretization: "node", nodeWallViscGradFlux: 1, nodeWallDirichlet: 1, nodeInletCornerWall: {a.profile}, meshFileName: "bk.h5", valueFileName: "{value}"}}

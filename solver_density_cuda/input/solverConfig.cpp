@@ -630,6 +630,7 @@ void solverConfig::read(std::string fname)
             this->chemTci           = getOptionalValidatedValue<int>(ch, "tci", 0, "physProp.chemistry");
             this->chemTciCmix       = getOptionalValidatedValue<double>(ch, "tciCmix", 1.0, "physProp.chemistry");
             this->chemTciMixModel   = getOptionalValidatedValue<int>(ch, "tciMixModel", 0, "physProp.chemistry");
+            this->chemTciTauChem    = getOptionalValidatedValue<int>(ch, "tciTauChem", 1, "physProp.chemistry");
             if (this->chemEnabled != 0) {
                 if (this->thermalMethod != 2) throw std::runtime_error("'physProp.chemistry.enabled: 1' requires thermalMethod: 2.");
                 if (this->nSpecies < 2)      throw std::runtime_error("'physProp.chemistry.enabled: 1' requires >=2 species.");

@@ -166,6 +166,7 @@ physProp: {thermalMethod: 2, species: [H2, O2, H, O, OH, H2O, HO2, H2O2, N2], sp
 | `tMaxReaction` | 6000 | 速度式評価の温度上限 [K] |
 | `freezeBelowT` | 0 | この温度未満で反応を凍結 ($\dot\omega=0$) [K]。試験部の低温域で反応評価を省く用 |
 | `tci` | 0 | 1: PaSR (Partially Stirred Reactor) で $\dot\omega,\dot Q$, Jacobian に $\kappa=\tau_c/(\tau_c+\tau_{mix})$ を掛ける ($\tau_c=1/\max_s\lvert\partial\dot\omega_s/\partial\rho Y_s\rvert$)。RANS SST 時のみ (他は κ=1 と警告)。出力 `chemKappa` |
+| `tciTauChem` | 1 | τ_c の定義: 0 = $1/\max_s\lvert\partial\dot\omega_s/\partial\rho Y_s\rvert$ (最速ラジカル時間 ~1e-8 s。κ≈0.03 で **消炎する** [case/47 run_0018]), 1 = 燃料/酸化剤 (H₂, O₂) の消費時間 $\max(\rho Y_s/\lvert\dot\omega_s\rvert)$ (推奨) |
 | `tciCmix`, `tciMixModel` | 1.0, 0 | $\tau_{mix}=C_{mix}\sqrt{\nu/\varepsilon}$ (0, Kolmogorov) または $C_{mix}k/\varepsilon$ (1, 積分), $\varepsilon=\beta^*k\omega$。未較正 (Phase 3 で Burrows–Kurkov により決める) |
 | `strang` | 0 | 1: 非定常陽解法 (`unsteady: 1`, RK) で化学を Strang 分離 (dt/2 セル内 backward-Euler sub-cycle → RK → dt/2)。剛性な化学でも RK の `dt` を化学時間に縛られずに取れる。定常・dual-time では無視 |
 

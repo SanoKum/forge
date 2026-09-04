@@ -194,7 +194,7 @@ __global__ void chemistry_source_d(
     flow_float* chem_jac,      // jacMode==2: [nCells*ns*ns] (nullptr 可)
     flow_float* chem_jacroe,   // jacMode==2: [nCells] (nullptr 可)
     flow_float* chem_cq,       // jacMode==2: [nCells*ns] ∂Q̇/∂(ρY_k) (nullptr 可)
-    int tci, double cmix, int mixModel,                       // PaSR (RANS SST): tci==1 で κ スケール
+    int tci, double cmix, int mixModel, int tauChemModel,     // PaSR (RANS SST): tci==1 で κ スケール
     const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -235,14 +235,28 @@ __global__ void chemistry_source_d(
     // ---- PaSR: κ = τ_c/(τ_c+τ_mix), τ_c = 1/max_s|J_ss| (温度結合込み), τ_mix from SST (k, ω) ----
     double kappa = 1.0;
     if (tci == 1 && roK != nullptr && roOmega != nullptr && mode > 0) {
-        double jm = 0.0;
-        for (int s = 0; s < nSpecies; ++s) { const double jss = fabs(J[s*nSpecies+s] + dOdT[s]*dTdU[s]); if (jss > jm) jm = jss; }
+        double tc = 0.0;
+        if (tauChemModel == 0) {
+            double jm = 0.0;
+            for (int s = 0; s < nSpecies; ++s) { const double jss = fabs(J[s*nSpecies+s] + dOdT[s]*dTdU[s]); if (jss > jm) jm = jss; }
+            tc = (jm > 0.0) ? 1.0/jm : 0.0;
+        } else {
+            // 燃料/酸化剤 (H2, O2) の消費時間 ρY_s/|ω_s| の大きい方 (ラジカルの最速時間より遅い代表時間)。
+            // 消費している (ω<0) 種のみ。どちらも反応していなければ κ=1 (反応なし)。
+            for (int s = 0; s < nSpecies; ++s) {
+                const double W = sp[s].MW;
+                const bool fuelOrOx = (fabs(W - 0.0020159) < 1.0e-5) || (fabs(W - 0.0319988) < 1.0e-5);
+                if (!fuelOrOx || omega[s] >= 0.0) continue;
+                const double t_s = rho*Y[s]/(-omega[s] + 1.0e-300);
+                if (t_s > tc) tc = t_s;
+            }
+        }
         const double k  = fmax((double)roK[ic]/rho, 1.0e-12);
         const double om = fmax((double)roOmega[ic]/rho, 1.0e-12);
         const double eps = 0.09*k*om;
         const double nu = (double)vis_lam[ic]/rho;
         const double tmix = (mixModel == 1) ? cmix*k/eps : cmix*sqrt(nu/eps);
-        if (jm > 0.0) { const double tc = 1.0/jm; kappa = tc/(tc + tmix); }
+        if (tc > 0.0) kappa = tc/(tc + tmix);
     }
     chemKappa[ic] = (flow_float)kappa;
     if (kappa != 1.0) {
@@ -322,7 +336,7 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         roY, res, sj,
         var.c_d["res_roe"], var.c_d["chemQdot"], var.c_d["chemTau"],
         g_block_active ? g_jac_dev : nullptr, g_block_active ? g_jacroe_dev : nullptr, g_block_active ? g_cq_dev : nullptr,
-        cfg.chemTci, cfg.chemTciCmix, cfg.chemTciMixModel,
+        cfg.chemTci, cfg.chemTciCmix, cfg.chemTciMixModel, cfg.chemTciTauChem,
         rans ? var.c_d["roK"] : nullptr, rans ? var.c_d["roOmega"] : nullptr, var.c_d["vis_lam"], var.c_d["chemKappa"]);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
