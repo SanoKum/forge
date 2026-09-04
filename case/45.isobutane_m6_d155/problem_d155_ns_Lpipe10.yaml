@@ -49,7 +49,7 @@ geometry:
 
 mesh:
   discretization: node
-  ni: 1250
+  ni: 1400   # L_pipe 10 で全長が伸びる分 (AR 1310 → ≤1000)
   nj: 97
   wall_first_frac: 4.5e-5  # 第一セル ~3.5 µm, y+~1.4 (2D双対幾何修正後は y+1 帯も可)
   throat_refine: 3.0

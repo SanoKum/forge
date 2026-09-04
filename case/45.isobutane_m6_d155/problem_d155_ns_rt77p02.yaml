@@ -12,7 +12,7 @@
 # 凝縮の事前見積り: 出口 T 233.5 K vs H2O 飽和 263.9 K (x_H2O 0.1356, pH2O 303 Pa)
 #   = −30 K 過冷却 → dry 前提は出口近傍で破れる。方針 (a): 本 run は dry、採用点で
 #   凝縮 ON restart 再評価 (split_h2o は最初から有効にしておく)。
-name: isobutane_m6_d155_ns_rt77p05
+name: isobutane_m6_d155_ns_rt77p02
 type: wind_tunnel_axisym_axismach
 gas:
   model: semiperfect
@@ -25,7 +25,7 @@ spec:
   Pt: 5.5e6
   Tt: 1600.0
   p_ambient: 2237.0
-  r_throat: 0.07705      # [m] 最終補正 (run_0025 の実測 δ_r,exit 0.684 r_t で出口半径 0.775 m 合わせ; 2026-09-04)
+  r_throat: 0.07702      # [m] 最終補正 (run_0025 の壁に載せた δ_r,exit 0.688 r_t で出口半径 0.775 m 合わせ; solve_rt 2026-09-04)
   M_design: 6.0
 
 dv:
