@@ -1,0 +1,14 @@
+# Burrows & Kurkov Fig.13 total temperature (combustion, experimental solid line), T_tot/T_ref with T_ref=2380 K; 目視読み取り (±0.03)
+# y_cm, Ttot_over_Tref
+0.0, 0.20
+0.5, 0.36
+1.0, 0.62
+1.25, 0.80
+1.5, 0.97
+1.75, 1.12
+1.9, 1.18
+2.0, 1.15
+2.25, 1.05
+2.5, 0.97
+3.0, 0.90
+3.5, 0.88
