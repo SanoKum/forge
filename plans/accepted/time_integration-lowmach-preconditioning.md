@@ -544,3 +544,26 @@ forge の保存変数パイプラインに侵襲的なため不採用。
   - **旧 `run_0042` の node `=2` step0 NaN は explicit RK3 時代の交絡**で、現行 block-DPLUR では node `=2` も安定。
   - 詳細: [`notes/investigations/backstep-lowmach-checkerboard.md`](../../notes/investigations/backstep-lowmach-checkerboard.md)、
     run `case/18.backstep/run_0073–0079`。
+- `2026-09-05` — **node × `lowMachPrecond>=2` の境界ノード凍結を修正** (`implicit_defect_correction_block_precond_d`,
+  case/48 Cabra H₂/N₂ 低マッハ同軸ジェットで発覚)。前処理版 block カーネルは標準 block カーネルの node 用行処理
+  (境界半割面の粘性対角スキップ `isNode` / 軸 roUy 行 decouple `axis_ur_flag` / 壁運動量 3 行・等温壁 roe 行
+  decouple) を持たず、境界ノードで node→ghost の退化 dcc≈0 が粘性対角 2ν·delta/dcc を爆発させ **dq≈0 で境界
+  ノード (軸・壁・出口・遠方) が IC のまま凍結**していた (軸ノードが T 1045 K/u 4 m/s のまま隣接ノード 305 K/
+  80 m/s: `run_0030`/`run_0033`/`run_0034`; precond 0・explicit では軸が追従 `run_0035`/`run_0026`)。
+  標準カーネルと同じ処理を追加 (rank-1 項は `g[row]=0` で同じ行を触らない)。修正後は軸が隣接ノードに追従
+  (`run_0036`)。**影響範囲**: node × `lowMachPrecond>=2` のみ (cell / precond 0-1 はビット不変。既往の node
+  precond≥2 run は case/39 periodic hills・case/43 のみで、周期境界/軸の凍結を含んでいた可能性あり)。
+  同時に発覚した TP 亜音速出口の γ 混用は plan boundary-node-nozzle-wall-outlet-stability §2.12。
+- `2026-09-05 (2)` — **多成分 × 定常擬似時間 × `lowMachPrecond>=2` の接触面暴走を修正 (`speciesPrecondDt`)**。
+  境界凍結修正後も、異組成ジェット (case/48 H₂/N₂ 305 K → vitiated 1045 K coflow) では軸上ジェット核で
+  P 100→148 kPa・T 1045→1150 K の暴走が 1000 step で発生 (`run_0049`/`run_0052`)。単一種 (`run_0048`)・
+  一様組成 9 種 (`run_0053`)・precond 0 (`run_0060`)・dual-time (`run_0059`/`run_0061`, dt 2e-7/1e-6) では
+  発生しない = **Γ_c が流れ 5 変数の擬似時間項だけを変え、分離更新の ρY_s は拡大後 Δτ' で素の擬似時間項のまま**
+  進むため、組成前線と密度前線が擬似時間で別速度になり接触面で ρ·R_mix(Y)·T が不整合になる機構。
+  `time.deltaT.speciesPrecondDt` を追加: 0 = 従来 (Δτ') / **1 = 前処理拡大前の Δτ (既定)** / 2 = Δτ'·β。
+  setDT が `dt_local_sp` を用意し化学種 DPLUR (block/scalar sweep, LU) がそれを読む (explicit RK の化学種は従来
+  どおり `dt_local`)。**検証**: `run_0062` (mode 1) / `run_0063` (mode 2) はともに 1500 step で P 100.2–102.6 kPa・
+  T≤1045 K (mode 0 `run_0064`: 91–148 kPa / 1144 K)。mode 1 を既定にした (mode 2 は β≈ε² で化学種の擬似 dt が
+  桁で小さく収束が遅い)。**影響範囲**: nSpecies≥2 × lowMachPrecond≥2 × 定常/dual-time 擬似時間のみ (それ以外は
+  `dt_local_sp = dt_local` のコピーでビット同値)。k/ω (ransTransport) は同構造の不整合を潜在的に持つが未対応。
+

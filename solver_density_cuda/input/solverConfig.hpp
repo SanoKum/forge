@@ -65,6 +65,12 @@ public:
     // 1: ρ と全 species に共通リミタ ψ_ρY=min(ψ_ρ, min_s ψ_Y_s) を適用し ρ_f=ρ(Y_f) 整合だけを切り分ける
     //    (p・速度は各自のリミタのまま)。nSpecies>1 かつ speciesFaceReconstruction>=1 で有効。
     int multispeciesRhoYCommonLimiter = 0;
+    // 多成分 × lowMachPrecond>=2 (定常擬似時間): 化学種の擬似時間刻み。0: 流れと同じ前処理拡大後 Δτ' (旧既定・
+    // 多成分接触面で不安定) / 1: 拡大前の物理スペクトル半径基準 Δτ (setDTlocal_precond_scale 前の値) / 2: Δτ'·β (β=lowMachBeta)。
+    // 前処理 Γ_c は流れ 5 変数の擬似時間項だけを変え、分離更新される ρY_s の擬似時間項は変わらないため、組成
+    // 前線と密度前線が擬似時間で別速度で進み接触面で組成-密度が不整合になり P が暴走する (case/48 Cabra,
+    // precond 0 / dual-time では起きない)。plans/accepted/time_integration-lowmach-preconditioning.md 2026-09-05。
+    int speciesPrecondDt = 1;      // 既定 1 (2026-09-05: 0 は多成分接触面で暴走することを case/48 で実証。0 は A/B 用)
     int speciesImplicitCoupling = 0; // 多成分 TP 陰解法 (timeIntegration==11, nSpecies>=2) の化学種更新方式。
                                      // 0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
                                      // 1: 緩和整合 scalar-DPLUR (流れ block と同一 dt_local/implicitRelax/nStepInner

@@ -195,4 +195,13 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   Strang v2: 周期箱 dt 5e-8 で 155 → 63 s (2.5×)、精度同一。プロファイラに `chemistry_source` / `species_implicit` 区間を追加。
   **推奨: 定常陰解法の反応流は `jacobianInterval: 5`**。残る大物は `chemistry_source_d` の 3 KB スタック/126 レジスタ (占有率) と
   `species_implicit` の予測子 5 sweep (各 sweep で dq ポインタ配列を H2D コピー)。
+- `2026-09-05` — **Phase 3b: Cabra H₂/N₂ 浮き上がり火炎 (case/48) の混合場立ち上げで forge の低マッハ node 経路のバグを
+  3 件修正** (反応 ON はまだ)。(A) node × `lowMachPrecond>=2` の前処理 block カーネルが境界ノードを凍結、(B) TP 亜音速
+  `outlet_statPress` の γ 混用 (config γ vs γ_mix) で低マッハ出口が一様逆流、(C) 多成分 × 定常擬似時間 × precond で
+  組成前線と密度前線の擬似速度が不整合 → `time.deltaT.speciesPrecondDt` (既定 1 = 前処理拡大前 Δτ を化学種に使う)。
+  詳細は [plan lowmach 変更ログ 2026-09-05](../accepted/time_integration-lowmach-preconditioning.md) /
+  [plan outlet §2.12](boundary-node-nozzle-wall-outlet-stability.md) / `case/48.cabra_h2n2/README.md`。
+  修正後の多成分混合 (`run_0062`, 1500 step) は P 100–103 kPa・T≤1045 K で健全。dual-time (`run_0061`, dt 1e-6, 2 ms) も
+  健全で代替経路になる。**BK (case/47) は (B) の影響で残差が 0.5 % 変化** (壁近傍の亜音速出口列; 再現ノイズ 1e-5) —
+  出口プロファイル比較の再確認が未了。次: Cabra 混合場の収束 → 反応 ON (`jacobianInterval 5`) → 浮き上がり高さ・軸/半径分布の比較。
 

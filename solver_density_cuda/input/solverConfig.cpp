@@ -339,6 +339,10 @@ void solverConfig::read(std::string fname)
         // 多成分 TP 陰解法の化学種更新方式: 既定 0 (従来 segregated 点陰的・ビット不変)。
         // 1 で緩和整合 scalar-DPLUR (流れ block と同一緩和。plan thermophysics-species-implicit-coupling.md)。
         this->speciesImplicitCoupling = getOptionalValidatedValue<int>(deltaT, "speciesImplicitCoupling", 0, "time.deltaT");
+        this->speciesPrecondDt = getOptionalValidatedValue<int>(deltaT, "speciesPrecondDt", 1, "time.deltaT");
+        if (this->speciesPrecondDt < 0 || this->speciesPrecondDt > 2) {
+            throw std::runtime_error("time.deltaT.speciesPrecondDt must be 0 (Δτ' as flow), 1 (unexpanded Δτ) or 2 (Δτ'·β)");
+        }
         // 多成分 face 整合再構成: 既定 0 (mixed-order・ビット不変)。1 で Y を ρ と同じ再構成し thermo/species 流束整合。
         this->speciesFaceReconstruction = getOptionalValidatedValue<int>(deltaT, "speciesFaceReconstruction", 0, "time.deltaT");
         // multispeciesRhoYCommonLimiter: opt-in 診断 (既定 0・ビット不変)。1 で ρ と全 species に共通 min リミタ。

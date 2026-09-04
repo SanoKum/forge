@@ -263,6 +263,23 @@ __global__ void setDTlocal_precond_scale_d
 }
 
 
+// 化学種用擬似時間刻み (speciesPrecondDt==2): dt_local_sp = dt_local·β (β=lowMachBeta)。
+__global__ void setDTlocal_species_beta_d
+(
+ flow_float precondEps, geom_int nCells,
+ flow_float* Ux, flow_float* Uy, flow_float* Uz, flow_float* sonic,
+ const flow_float* dt_local, flow_float* dt_local_sp
+)
+{
+    geom_int ic = blockDim.x*blockIdx.x + threadIdx.x;
+    if (ic < nCells) {
+        const flow_float c = max(sonic[ic], static_cast<flow_float>(1.0e-8));
+        const flow_float vmag = sqrt(Ux[ic]*Ux[ic] + Uy[ic]*Uy[ic] + Uz[ic]*Uz[ic]);
+        const flow_float beta = lowMachBeta(c, vmag, precondEps);
+        dt_local_sp[ic] = dt_local[ic] * max(min(beta, static_cast<flow_float>(1.0)), static_cast<flow_float>(1.0e-6));
+    }
+}
+
 // 診断: 出口近傍の局所 dt キャップ (壁∩出口コーナー不安定の切り分け用, env ゲート)。
 //   FORGE_DT_OUTLET_SCALE (0<s<1) と FORGE_DT_OUTLET_XMIN [m] の両方を与えると、
 //   x > XMIN のセルの dt_local を s 倍に縮める。既定 (未設定) は完全に不変。
@@ -379,6 +396,10 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
     // Phase 4: 完全前処理モード (LHS) では擬似時間刻みを前処理スペクトル半径基準に拡大する。
     // lowMachPrecond==2 (RHS+LHS) / ==3 (LHS のみ) の双方で擬似時間項は前処理されるため両方で適用する。
     if (cfg.lowMachPrecond >= 2) {
+        // 化学種用 (speciesPrecondDt==1): 前処理拡大前の Δτ を退避
+        if (cfg.speciesPrecondDt == 1) {
+            gpuErrchk( cudaMemcpy(var.c_d["dt_local_sp"], var.c_d["dt_local"], sizeof(flow_float)*msh.nCells_all, cudaMemcpyDeviceToDevice) );
+        }
         setDTlocal_precond_scale_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
             cfg.precondEps,
             msh.nCells,
@@ -388,6 +409,14 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
             var.c_d["dt_local"]
         );
         gpuErrchk( cudaPeekAtLastError() );
+        if (cfg.speciesPrecondDt == 2) {
+            setDTlocal_species_beta_d<<<cuda_cfg.dimGrid_cell , cuda_cfg.dimBlock>>> (
+                cfg.precondEps, msh.nCells,
+                var.c_d["Ux"], var.c_d["Uy"], var.c_d["Uz"], var.c_d["sonic"],
+                var.c_d["dt_local"], var.c_d["dt_local_sp"]
+            );
+            gpuErrchk( cudaPeekAtLastError() );
+        }
         gpuErrchkKernelSync();
     }
 
@@ -408,6 +437,12 @@ void setDT_d_wrapper(solverConfig& cfg , cudaConfig& cuda_cfg , mesh& msh , vari
                 msh.nCells, var.c_d["ccx"], (flow_float)dtOutletXmin, (flow_float)dtOutletScale, var.c_d["dt_local"]);
             gpuErrchk( cudaPeekAtLastError() );
         }
+    }
+
+    // 化学種用擬似時間刻み dt_local_sp: speciesPrecondDt==0 または前処理なしでは流れと同じ dt_local (ビット同値)。
+    // (1/2 は前処理ブロック内で確定済み)
+    if (!(cfg.lowMachPrecond >= 2 && (cfg.speciesPrecondDt == 1 || cfg.speciesPrecondDt == 2))) {
+        gpuErrchk( cudaMemcpy(var.c_d["dt_local_sp"], var.c_d["dt_local"], sizeof(flow_float)*msh.nCells_all, cudaMemcpyDeviceToDevice) );
     }
 
     const bool needHostRead = (adaptDt && cfg.dtControl == 1) || printCfl;

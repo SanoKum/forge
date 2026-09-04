@@ -63,7 +63,7 @@ public:
 
         "gamma" , "cp" , "Rmix" ,  // Rmix: 混合比気体定数 R [J/(kg·K)] セル毎 (M6 TP 流束キャッシュ用; CPG は (γ-1)cp/γ)
 
-        "cfl"   , "cfl_pseudo", "dt_local",
+        "cfl"   , "cfl_pseudo", "dt_local", "dt_local_sp",
         "res_ro"    , "res_roUx"   , "res_roUy"   , "res_roUz"   , "res_roe", "res_roK", "res_roOmega",
         "res_ro_m"  , "res_roUx_m" , "res_roUy_m" , "res_roUz_m" , "res_roe_m", "res_roK_m", "res_roOmega_m",
         "dq_ro_old" , "dq_roUx_old", "dq_roUy_old", "dq_roUz_old", "dq_roe_old",
@@ -240,7 +240,7 @@ public:
         "limiter_P" , 
         //"limiter_Ht" , 
 
-        "dt_local",
+        "dt_local", "dt_local_sp",
 
         "axisym_divU",
 

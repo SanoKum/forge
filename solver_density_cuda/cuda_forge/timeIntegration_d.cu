@@ -1091,7 +1091,14 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
  flow_float* A_planar,
  flow_float axisRFloor,
  flow_float unsteady_diag,
- flow_float* src_jac_roe   // 有限速度化学 (jacobianMode 2): 反応熱の安定化側エネルギー対角 max(0,−∂Q̇/∂ρe) [1/s] (nullptr 可)
+ flow_float* src_jac_roe,  // 有限速度化学 (jacobianMode 2): 反応熱の安定化側エネルギー対角 max(0,−∂Q̇/∂ρe) [1/s] (nullptr 可)
+ // node-centered 境界の行処理 (標準 block カーネルと同一。2026-09-05 に追加: これが無いと node × precond で
+ // 境界半割面の退化 dcc≈0 が粘性対角を爆発させ、境界ノード (軸・壁・出口・遠方) が dq≈0 で凍結する。
+ // case/48 Cabra: 軸ノードが IC のまま動かず、隣接ノードとの状態差が圧力/組成の暴走を起こした)。
+ geom_int* axis_ur_flag,   // 軸ノード (node × 軸対称): roUy 行 decouple (nullptr 可)
+ geom_int* wall_flag,      // 壁ノード (nodeWallDirichlet): 運動量 3 行 decouple (nullptr 可)
+ geom_int* iso_wall_flag,  // 等温壁ノード: roe 行 decouple (nullptr 可)
+ int isNode                // 1: 境界半割面 (other_ic>=nCells) の粘性対角をスキップ (ghostless)
 )
 {
     geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
@@ -1149,16 +1156,20 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
                                               local_enthalpy, local_sonic, a_plus, k_off);
             block_dplur::add_scaled_5x5(D0, a_plus, face_area);
 
-            const flow_float dcc_x = ccx[other_ic] - ccx[ic];
-            const flow_float dcc_y = ccy[other_ic] - ccy[ic];
-            const flow_float dcc_z = ccz[other_ic] - ccz[ic];
-            const flow_float dcc = max(sqrt(dcc_x*dcc_x + dcc_y*dcc_y + dcc_z*dcc_z), static_cast<flow_float>(1.0e-30));
-            const flow_float dcc_dot_s = max(fabs(dcc_x*sx[ip] + dcc_y*sy[ip] + dcc_z*sz[ip]), static_cast<flow_float>(1.0e-30));
-            const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
-            // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
-            // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
-            const flow_float viscous_diag = static_cast<flow_float>(2.0) * nu_eff * delta / dcc;
-            block_dplur::add_identity_scaled(D0, viscous_diag);
+            // 粘性対角: node モードの境界半割面 (other_ic>=nCells=ゴースト側) はスキップ (標準 block カーネルと同じ。
+            // 境界ノードは境界面上に乗るため node→ghost が退化し 2ν·delta/dcc が爆発→dq≈0 で境界ノードが凍結する)。
+            if (!(isNode != 0 && other_ic >= nCells)) {
+                const flow_float dcc_x = ccx[other_ic] - ccx[ic];
+                const flow_float dcc_y = ccy[other_ic] - ccy[ic];
+                const flow_float dcc_z = ccz[other_ic] - ccz[ic];
+                const flow_float dcc = max(sqrt(dcc_x*dcc_x + dcc_y*dcc_y + dcc_z*dcc_z), static_cast<flow_float>(1.0e-30));
+                const flow_float dcc_dot_s = max(fabs(dcc_x*sx[ip] + dcc_y*sy[ip] + dcc_z*sz[ip]), static_cast<flow_float>(1.0e-30));
+                const flow_float delta = max(dcc * face_area * face_area / dcc_dot_s, static_cast<flow_float>(1.0e-30));
+                // 粘性対角は residual の粘性流束 Jacobian (2ν·ss²/dcc_dot_s = 2ν·delta/dcc) と整合させる
+                // (旧 face_area·(2ν/delta) は ≈2ν に潰れ近軸で r 重み喪失・ゼロ面積面にスプリアス。詳細は site1 コメント)。
+                const flow_float viscous_diag = static_cast<flow_float>(2.0) * nu_eff * delta / dcc;
+                block_dplur::add_identity_scaled(D0, viscous_diag);
+            }
 
             // 近傍 += k_off S ΔQ_nbr (= -A_c⁻ S ΔQ_nbr)。
             if (other_ic < nCells) {
@@ -1206,6 +1217,24 @@ __global__ void __launch_bounds__(BLOCK_DPLUR_THREADS) implicit_defect_correctio
         const flow_float chi_eos = local_sonic*local_sonic - gm1*(local_enthalpy - ek);  // c²−κh (CPG で ≈0)
         flow_float gvec[5] = { static_cast<flow_float>(1.0), vx, vy, vz, Htot };
         const flow_float rvec[5] = { chi_eos + gm1*ek, -gm1*vx, -gm1*vy, -gm1*vz, gm1 };
+
+        // node 境界の Dirichlet 行 decouple (標準 block カーネルと同一): D0 の行を単位行・rhs=0 にし、
+        // rank-1 項 γ g rᵀ がその行に乗らないよう g[row]=0 にする → y[row]=z[row]=0 で x[row]=0。
+        {
+            bool rowDec[5] = {false, false, false, false, false};
+            if (axis_ur_flag != nullptr && axis_ur_flag[ic] == 1) rowDec[2] = true;
+            if (wall_flag != nullptr && wall_flag[ic] == 1) { rowDec[1] = true; rowDec[2] = true; rowDec[3] = true; }
+            if (iso_wall_flag != nullptr && iso_wall_flag[ic] == 1) rowDec[4] = true;
+            #pragma unroll
+            for (int row = 0; row < 5; ++row) {
+                if (!rowDec[row]) continue;
+                #pragma unroll
+                for (int jj = 0; jj < 5; ++jj) D0[row][jj] = static_cast<flow_float>(0.0);
+                D0[row][row] = static_cast<flow_float>(1.0);
+                b[row] = static_cast<flow_float>(0.0);
+                gvec[row] = static_cast<flow_float>(0.0);
+            }
+        }
         const double dbeta = static_cast<double>(beta);
         const double alpha = (1.0 - dbeta) / (dbeta * static_cast<double>(local_sonic) * static_cast<double>(local_sonic));
         const double gam = static_cast<double>(v_over_dtau) * alpha;   // = (V/Δτ')·α
@@ -1392,7 +1421,11 @@ void timeIntegration_d_wrapper(int loop , solverConfig& cfg , cudaConfig& cuda_c
                 (cfg.isAxisymmetric == 1) ? ((cfg.axisRFloor > (flow_float)0.0 || cfg.hoopAreaFromClosure == 1) ? var.c_d["A_closure_y"] : var.c_d["A_planar"]) : var.c_d["volume"],
                 cfg.axisRFloor,
                 cfg.unsteadyDiagCoef,
-                chemistry_jacroe_device_ptr()   /* 有限速度化学 反応熱の (4,4) 対角 (mode 2 のみ, 他は nullptr) */
+                chemistry_jacroe_device_ptr(),   /* 有限速度化学 反応熱の (4,4) 対角 (mode 2 のみ, 他は nullptr) */
+                ((cfg.discretization == "node" && cfg.isAxisymmetric == 1) ? msh.axis_flag_d : nullptr),  /* axis_ur_flag */
+                ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.wall_flag_d : nullptr),  /* wall_flag */
+                ((cfg.discretization == "node" && cfg.nodeWallDirichlet == 1) ? msh.iso_wall_flag_d : nullptr),  /* iso_wall_flag */
+                ((cfg.discretization == "node") ? 1 : 0)  /* isNode: 境界半割面の粘性対角スキップ */
               );
             } else {
             // implicitSolvePrecision: 0=float (既定・高速), 1=double (軸対称近軸の根治, 遅い)。

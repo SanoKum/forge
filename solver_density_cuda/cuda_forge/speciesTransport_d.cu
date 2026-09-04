@@ -865,7 +865,7 @@ static void speciesBlockFactor(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         g_blockCap = need;
     }
     species_block_factor_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
-        nSpecies, var.c_d["dt_local"], msh.nCells, var.c_d["volume"],
+        nSpecies, var.c_d["dt_local_sp"], msh.nCells, var.c_d["volume"],
         g_transdiag_dev, g_srcjac_dev, cj, g_blockLU, g_blockPiv);
     gpuErrchk( cudaPeekAtLastError() );
 }
@@ -885,7 +885,7 @@ static void speciesSweepOnce(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh,
     for (int s = 0; s < nSpecies; s++) {
         const std::string i = std::to_string(s);
         species_dplur_sweep_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(
-            cfg.implicitRelax, var.c_d["dt_local"], msh.nCells, var.c_d["volume"],
+            cfg.implicitRelax, var.c_d["dt_local_sp"], msh.nCells, var.c_d["volume"],
             msh.map_plane_cells_d, msh.map_cell_planes_index_d, msh.map_cell_planes_d,
             var.p_d["massflux"], var.c_d["roN"],
             var.c_d["res_roY"+i], var.c_d["transport_diag_Y"+i], var.c_d["src_jac_Y"+i],

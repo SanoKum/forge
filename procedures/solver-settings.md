@@ -107,6 +107,29 @@ time:
 
 毎ステップ GPU リダクション (`thrust::any_of`) が走るため、原因調査時のみ有効化し、本番計算では `0` のままにする。ダンプされた `res_nan_<step>.h5` を ParaView で開けば、どの境界・どのセルで最初に NaN が出たかを直接確認できる。
 
+## lowMachPrecond — 低マッハ前処理 (node での注意)
+
+```yaml
+time:
+  deltaT: {..., blockDPLUR: 1, lowMachPrecond: 2, precondEps: 0.15, speciesPrecondDt: 0}
+```
+
+`lowMachPrecond: 2` (RHS 散逸 c' + LHS 完全前処理) は剥離・再循環・同軸ジェットなど低マッハ域の市松と
+残差プラトーに必須 ([plan](../plans/accepted/time_integration-lowmach-preconditioning.md))。`=1` は LHS 不整合で
+不可。設計と検証は同 plan を参照。
+
+- **node × `lowMachPrecond>=2` は 2026-09-05 以前のバイナリで境界ノードが凍結していた** (前処理版 block
+  カーネルに node の行処理が無く、軸・壁・出口・遠方ノードが IC のまま動かない)。修正済だが、それ以前の
+  node precond run (case/39, 43) の結論は再計算なしに流用しない。
+- **TP (`thermalMethod: 2`) × 亜音速 `outlet_statPress`** は同日に特性構成の γ 混用 (config γ と γ_mix) を修正。
+  低マッハ出口 (coflow 数 m/s) で出口列が一様に逆流する症状はこのバグの指紋 ([plan §2.12](../plans/active/boundary-node-nozzle-wall-outlet-stability.md))。
+- **多成分 (nSpecies≥2) × 定常擬似時間 × `lowMachPrecond>=2`**: 流れの擬似時間項だけが Γ_c で前処理され、
+  分離更新される ρY_s は前処理されないため、組成前線と密度前線が擬似時間で別速度に進み接触面 (異組成ジェット)
+  で P が暴走する (case/48: precond 0 と dual-time では起きない)。`speciesPrecondDt` で化学種側の擬似時間刻みを
+  選ぶ: **1 (既定) = 前処理拡大前の Δτ** (case/48 で安定を確認)、2 = Δτ'·β (安定だが化学種の収束が遅い)、
+  0 = 旧挙動 (Δτ'、多成分接触面で暴走。A/B 用のみ)。詳細は plan 変更ログ 2026-09-05 (2)。dual-time
+  (`unsteady: 1, dualTime: 1`, 物理 dt 1e-6 程度) も安定な代替。
+
 ## リスタート手順
 
 前の run の結果から引き継ぐ場合は `valueFileName` に該当の `res_*.h5` を指定する。
