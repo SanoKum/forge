@@ -86,10 +86,11 @@ def design_from_problem(p: Problem, design_external: dict | None = None):
                           L_cowl=_dv(p, "L_cowl"), gamma=p.gamma, p_ext_over_p_in=p_ext_ratio,
                           x_max=float(geo.get("x_max_kernel", 10.0)), nj=int(geo.get("nj_moc", 301)),
                           dx=float(geo.get("dx_moc", 2e-3)))
-    k = PlanarMOC(spec).march()
     if str(geo.get("mode", "keypoint")) == "straight":
+        k = PlanarMOC(spec).march()
         d = k.straight_design(_dv(p, "L_ramp"))
     else:
+        k = PlanarMOC(spec).march(stop_at=(_dv(p, "f"), _dv(p, "M_c")))   # c の少し先で打ち切る
         d = k.design_ramp(M_c=_dv(p, "M_c"), f=_dv(p, "f"))
     xr, yr = p.spec.get("moment_ref", [0.0, 0.0])
     fr = wall_forces(d, spec.M_in, p.gamma, pa_over_pin=p_ext_ratio, x_ref=float(xr), y_ref=float(yr))

@@ -74,7 +74,7 @@ class SernCampaign:
         spec = SernKernelSpec(M_in=float(st_in["M_in"]), theta_r0=np.deg2rad(tr), theta_c0=np.deg2rad(tc), L_cowl=Lc, gamma=g,
                               p_ext_over_p_in=p_ratio, x_max=float(geo.get("x_max_kernel", 10.0)),
                               nj=int(geo.get("nj_moc_probe", 151)), dx=float(geo.get("dx_moc_probe", 4e-3)))
-        k = PlanarMOC(spec).march(); d = k.design_ramp(M_c=M_c, f=f, ds=2e-3)
+        k = PlanarMOC(spec).march(stop_at=(f, M_c)); d = k.design_ramp(M_c=M_c, f=f, ds=2e-3)
         if d.info["warnings"]:
             raise ValueError(str(d.info["warnings"]))
         Lmax = float(geo.get("L_ramp_max", 1e9))

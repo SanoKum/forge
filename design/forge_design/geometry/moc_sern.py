@@ -109,9 +109,17 @@ class PlanarMOC:
         return np.asarray(xs, dtype=float)
 
     # ------------------------------------------------------------------ march
-    def march(self):
+    def march(self, stop_at=None):
+        """stop_at=(f, M_c): 質量流量比 f の流線を march と同時に積分し、その上で M ≥ M_c に達した station の
+        少し先 (余裕 `stop_margin` = 0.3H) で march を打ち切る。設計に要る場は key point c の C⁻ の依存領域
+        (c より上流) だけで、c より下流の kernel は使わない (2026-09-05、ユーザ指摘: 解析領域が必要以上に広い)。
+        x_max は上限として残る。"""
         s, g = self.s, self.g
         X = self._stations()
+        stop_margin = 0.3
+        y_s = None; x_stop = None
+        if stop_at is not None:
+            f_s, M_stop = float(stop_at[0]), float(stop_at[1]); y_s = 1.0 - f_s
         n_st = len(X)
         nj = s.nj
         sj = np.linspace(0.0, 1.0, nj)
@@ -231,6 +239,18 @@ class PlanarMOC:
             y1 = ylo1 + sj * (yup1 - ylo1)
             Y[n + 1] = y1; TH[n + 1] = th; NU[n + 1] = nu; MM[n + 1] = M_new
             ylo[n + 1] = ylo1; yup[n + 1] = yup1
+            # --- key point 到達判定 (f 流線を同時積分) ---
+            if y_s is not None and x_stop is None:
+                th_s0 = float(np.interp(y_s, y0, th0)); y_pred = y_s + dx * np.tan(th_s0)
+                th_s1 = float(np.interp(y_pred, y1, th)); y_s = y_s + dx * np.tan(0.5 * (th_s0 + th_s1))
+                M_s = float(np.interp(y_s, y1, M_new))
+                if M_s >= M_stop:
+                    x_stop = x1 + stop_margin
+            if x_stop is not None and x1 >= x_stop:
+                n_last = n + 1
+                X = X[: n_last + 1]; Y = Y[: n_last + 1]; TH = TH[: n_last + 1]; NU = NU[: n_last + 1]; MM = MM[: n_last + 1]
+                ylo = ylo[: n_last + 1]; yup = yup[: n_last + 1]
+                break
             # --- TE 扇のレイ束 (C⁺, J⁺ 保存) を station n+1 へ前進し補間データに合流 ---
             if not lower_wall:
                 if rays_y is None:  # TE 直後: 扇の状態範囲 [ν_TE, ν_ext] を nr 本に分割
@@ -270,6 +290,7 @@ class PlanarMOC:
                     self._aug = None
         self.X, self.Y, self.TH, self.NU, self.M = X, Y, TH, NU, MM
         self.ylo, self.yup = ylo, yup
+        self.stopped_at = x_stop
         if self.p_te_over_p_in is None:  # カウルが x_max まで
             self.p_ext_over_p_in = (float(s.p_ext_over_p_in) if s.p_ext_over_p_in is not None
                                     else float(p_over_pt(MM[-1, 0], g) / p_over_pt(s.M_in, g)))
