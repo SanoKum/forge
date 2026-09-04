@@ -147,6 +147,31 @@ time:
 無効果 (組成を thermo に使わないため)。詳細は [`../methods/convection/theory.md`](../methods/convection/theory.md)
 の「多成分 TP の face 組成整合」節。
 
+## physProp.chemistry — 有限速度化学 (H₂ 燃焼・ノズル化学非平衡)
+
+多成分 TP (`thermalMethod: 2`, `species` ≥2 種) に化学反応ソース項を加える。理論・実装は
+[`methods/chemistry.md`](../methods/chemistry.md)、計画は [`plans/active/chemistry-finite-rate-h2.md`](../plans/active/chemistry-finite-rate-h2.md)。
+
+```yaml
+physProp: {thermalMethod: 2, species: [H2, O2, H, O, OH, H2O, HO2, H2O2, N2], speciesDBFile: "species_db.yaml",
+           thermoHrefTemp: 298.15,
+           chemistry: {enabled: 1, mechanismFile: "mech.yaml", jacobianMode: 1, tMaxReaction: 6000.0, freezeBelowT: 0.0}}
+```
+
+| キー | 既定 | 意味 |
+| --- | --- | --- |
+| `enabled` | 0 | 1 で反応ソース $\dot\omega_s$ と反応熱 $\dot Q$ を有効化。0 なら全経路ビット不変 |
+| `mechanismFile` | — | 反応機構 (Cantera YAML サブセット: `equation`, `rate-constant {A,b,Ea}`, `type: three-body`, `efficiencies`, `units`)。同梱: `solver_density_cuda/tools/mechanisms/` (Jachimowski 1988 9 種 20 反応 / 13 種 33 反応)。falloff (Troe) は未対応 (Phase 2) |
+| `jacobianMode` | 1 | 0: 陽ソースのみ, 1: 対角 point-implicit (`src_jac_Y{s}` に $\max(0,-\partial\dot\omega_s/\partial\rho Y_s)$), 2: 種ブロック (Phase 2, 現状は 1 と同じ) |
+| `tMaxReaction` | 6000 | 速度式評価の温度上限 [K] |
+| `freezeBelowT` | 0 | この温度未満で反応を凍結 ($\dot\omega=0$) [K]。試験部の低温域で反応評価を省く用 |
+
+- **`thermoHrefTemp: 298.15` を必ず指定する** (反応熱は sensible datum の残差項 $\dot Q=-\sum_s h^{abs}_s(T_{ref})\dot\omega_s$ として入る。絶対 datum (0) でも動くが陰解法は不安定)。
+- 機構に現れる種は `species` に全て含めること (無ければ起動時エラー)。`species` にだけある種は不活性として扱う。
+- 熱力学 DB は `tools/cea_thermo_to_species_db.py thermo.inp --species ...` で CEA から生成する (ラジカルは内蔵 DB に無い)。
+- 出力: `chemQdot` [W/m³], `chemTau` [s] (=1/max|∂ω_s/∂ρY_s|、化学時間の目安。`dt` や `cfl_pseudo` の妥当性判断に使う)。
+- 検証: `case/35.uniform_periodic_box/run_0049_node_h2_ignition` (0-D 着火 vs Cantera)。
+
 ## discretization / bndFirstOrder — 離散化レイアウト (node-centered)
 
 `mesh.discretization` (任意, 既定 `"cell"`)。`"node"` で node-centered (中点双対 median-dual) 化。

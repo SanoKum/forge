@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `thermophysics / chemistry`
-- **status**: `in_progress` (Phase 0 完了 2026-09-04、Phase 1 未着手)
+- **status**: `in_progress` (Phase 0・1 完了 2026-09-04、Phase 2 未着手)
 - **related_docs**:
   - `methods/chemistry.md` (現在仕様: 理論・実装方針)
   - `methods/thermophysics.md` (多成分 TP gas、sensible datum、種輸送・陰解法結合)
@@ -50,7 +50,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | --- | --- | --- | --- |
 | **0** 前提整備 | CEA 平衡/凍結スクリーニング、`thermo.inp→species_db.yaml` ツール、Jachimowski YAML 化 + Cantera 検証、方針文書 | `tools/cea_thermo_to_species_db.py`, `tools/mechanisms/*.yaml`, `notes/investigations/scripts/cea_kinetics_screen/`, `methods/chemistry.md` | **done** (§9) |
 | **0b** BC | 指定組成 `Yb` 配線: `inlet_Pressure` は M5/M7 で配線済 (case/44 `run_0091` が `Y0/Y1` を使用中、thermophysics plan §10 の記述は古い)。残りは `inlet_Pressure_dir` のみ (燃焼室出口組成は `inlet_Pressure` で与えられるので低優先) | `cuda_forge/boundaryCond_d.cu` | `inlet_Pressure` done / `_dir` todo |
-| **1** ソース項 | `chemistry_d.{cuh,cu}` (機構読込・SI 換算・device 定数)、`chemistrySource_d` ($\dot\omega_s$, $\dot Q$, 解析 Jacobian)、`a7_abs` 保持、config キー、ホスト 0-D テスト `tools/test_chemistry.cpp` | `cuda_forge/chemistry_d.*`, `thermo_d.*`, `input/solverConfig.*`, `main.cpp` (`assembleResidual`) | todo |
+| **1** ソース項 | `chemistry_d.{cuh,cu}` (機構読込・SI 換算・device 定数)、`chemistrySource_d` ($\dot\omega_s$, $\dot Q$, 解析 Jacobian)、`h_datum` 保持、config キー、ホスト 0-D テスト `tools/test_chemistry.cpp`、GPU 0-D 着火 (case/35 run_0049) | `cuda_forge/chemistry_d.*`, `chemistry_mech_io.hpp`, `thermo_d.*`, `input/solverConfig.*`, `main.cpp`, `periodicNode_d.cu` | **done** (§9) |
 | **2** 陰解法結合 | 種ブロック point-implicit (LU)、案C への反応寄与、$(5,5)$ 反応熱 Jacobian、Strang 分離 (陽解法/dual-time)、falloff (Troe) | `speciesTransport_d.cu`, `species_eos_coupling_d.cuh`, `timeIntegration_d.cu` | todo |
 | **3** 燃焼器 RANS | 低マッハ前処理 + SST + No-TCI、PaSR、13 種 (NO) | `ransSource_d` 連携, `chemistry_d` | todo |
 | **4** 応用 | 加熱器 → ノズル → 試験部 end-to-end、設計チェーン確認メニューへ | `design/`, `methods/design/` | todo |
@@ -76,7 +76,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 ## 8. 完了条件
 
 - [x] `methods/chemistry.md` 起草 (理論・実装方針)
-- [ ] Phase 1–3 実装・検証 (§6)
+- [x] Phase 1 実装・検証 (0-D 着火)
+- [ ] Phase 2–3 実装・検証 (§6)
 - [ ] `status: done` + §9 変更ログ
 - [ ] `plans/active/` → `plans/accepted/` へ移動、`plans/README.md` 同期
 
@@ -107,3 +108,21 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
     | 2000 / 1 | 3.5 | 3.5 | 3.6 |
     Jach13 = Jach9 (N 化学は着火に無関係) で YAML 化の整合を確認。Jachimowski は低温側で GRI 系より 1.4–2 倍速い (Slack データに合わせた 1988 校正、既知傾向)。
   - **YAML の罠**: 種名 `NO` / `N` は YAML 1.1 (PyYAML) で真偽値に化ける → DB 生成はキーを引用符付きにした。yaml-cpp (forge) 側も同様の扱いを Phase 1 で確認する。
+- `2026-09-04` — **Phase 1 完了** (反応ソース項・反応熱・解析 Jacobian・対角 point-implicit)。
+  - 実装: `cuda_forge/chemistry_d.cuh` (`ReactionTable`, `chem_source`: Arrhenius・三体・$K_c$・$\dot Q$・$n_s\times n_s$ 解析 Jacobian・$\partial\omega/\partial T$)、
+    `chemistry_mech_io.hpp` (Cantera YAML サブセット読込)、`chemistry_d.cu` (device ソース項、`res_roY`/`res_roe`/`src_jac_Y` 加算、`chemQdot`/`chemTau` 出力)、
+    `SpeciesThermo::h_datum` (sensible datum の除去分を保持 → $\dot Q=-\sum c_s\dot\omega_s$、$K_c$ は絶対 $H$)、`physProp.chemistry` キー、
+    `registerSpecies(n, chemistry)`。既定 (`enabled: 0`) では全経路ビット不変 (構造体変更のため full rebuild)。
+  - ホスト検証 (`tools/test_chemistry.cpp`, 参照 `tools/chem_reference_cantera.py`): Jacobian 有限差分照合 $\partial\omega/\partial\rho Y$ 1.8e-8・$\partial\omega/\partial T$ 1.3e-9 (PASS)、
+    $\sum\dot\omega_s\sim10^{-13}$ (質量保存)。0-D 定積 BDF1 反応器 (量論 H₂-air 1200 K 1 atm) の着火遅れは刻みを締めると Cantera へ収束
+    (29.4 → 31.1 → 32.0 µs; Cantera 32.2)、平衡 T 2945.2 vs 2943.9 K。13 種 33 反応 (1500 K 2 atm) も 4.7 vs 5.0 µs・3065 vs 3064 K。
+    絶対 datum と sensible datum で同一の平衡 T (反応熱経路の検証)。
+  - **GPU 検証** `case/35.uniform_periodic_box/run_0049_node_h2_ignition` (node 8³ 全面 periodic = 定積反応器, explicit RK3 dt 5e-9 s, 10000 step 94 s):
+    着火遅れ 32.0 µs (Cantera 32.2)、平衡 T 2948.4 K (Cantera 2943.9, +0.15 %)、全ノード一様 (T 差 0.004 K, |u| 1e-4 m/s)。
+    図 `h2_ignition_vs_cantera.png`。
+  - **発見・修正したバグ (化学以前からの欠落)**: node 周期の `periodicNodeGather` が化学種残差 `res_roY{s}` を合算していなかった
+    (流れ 5 変数と k/ω のみ)。seam ノードでは化学種の移流・反応が部分体積分 (面 1/2・辺 1/4・角 1/8) しか効かず、エネルギーだけ合算されて
+    不整合 (run_0049 初回: seam が着火せず圧力波で場が乱れた)。`res_roY{s}`・凝縮モーメント残差の gather と `roY{s}` の root→member ミラーを追加。
+    体積ソースは `volumePartial_d` を使う (bodyForce/ransSource と同じ規約)。**既往の node 周期×多成分 run (case/28 等は非周期なので影響なし) を要確認**。
+  - 残: Phase 2 (種ブロック point-implicit、案C 結合、falloff、Strang)、`chemQdot` の陰解法 $(5,5)$ Jacobian、FP32 化。
+

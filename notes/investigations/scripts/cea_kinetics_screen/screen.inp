@@ -106,6 +106,33 @@ reac
   name=CO2 moles=0.0490034 t,k=2500
 output siunits
 end
+problem case=A3000_eq rocket equilibrium p,bar=11.39 supar=15.07,53.2
+reac
+  name=H2O moles=0.0609135 t,k=3000
+  name=N2 moles=0.66486 t,k=3000
+  name=O2 moles=0.216072 t,k=3000
+  name=Ar moles=0.00797588 t,k=3000
+  name=CO2 moles=0.0490034 t,k=3000
+output siunits
+end
+problem case=A3000_fz1 rocket frozen nfz=1 p,bar=11.39 supar=15.07,53.2
+reac
+  name=H2O moles=0.0609135 t,k=3000
+  name=N2 moles=0.66486 t,k=3000
+  name=O2 moles=0.216072 t,k=3000
+  name=Ar moles=0.00797588 t,k=3000
+  name=CO2 moles=0.0490034 t,k=3000
+output siunits
+end
+problem case=A3000_fz2 rocket frozen nfz=2 p,bar=11.39 supar=15.07,53.2
+reac
+  name=H2O moles=0.0609135 t,k=3000
+  name=N2 moles=0.66486 t,k=3000
+  name=O2 moles=0.216072 t,k=3000
+  name=Ar moles=0.00797588 t,k=3000
+  name=CO2 moles=0.0490034 t,k=3000
+output siunits
+end
 problem case=B10_eq rocket equilibrium p,bar=11.39 supar=15.07,53.2
 reac
   oxid=Air moles=1.0 t,k=300
@@ -188,5 +215,47 @@ reac
   oxid=Air moles=1.0 t,k=300
   fuel=H2 moles=0.4000 t,k=300
   oxid=O2 moles=0.3069 t,k=300
+output siunits
+end
+problem case=B55_eq rocket equilibrium p,bar=11.39 supar=15.07,53.2
+reac
+  oxid=Air moles=1.0 t,k=300
+  fuel=H2 moles=0.5500 t,k=300
+  oxid=O2 moles=0.4218 t,k=300
+output siunits
+end
+problem case=B55_fz1 rocket frozen nfz=1 p,bar=11.39 supar=15.07,53.2
+reac
+  oxid=Air moles=1.0 t,k=300
+  fuel=H2 moles=0.5500 t,k=300
+  oxid=O2 moles=0.4218 t,k=300
+output siunits
+end
+problem case=B55_fz2 rocket frozen nfz=2 p,bar=11.39 supar=15.07,53.2
+reac
+  oxid=Air moles=1.0 t,k=300
+  fuel=H2 moles=0.5500 t,k=300
+  oxid=O2 moles=0.4218 t,k=300
+output siunits
+end
+problem case=B70_eq rocket equilibrium p,bar=11.39 supar=15.07,53.2
+reac
+  oxid=Air moles=1.0 t,k=300
+  fuel=H2 moles=0.7000 t,k=300
+  oxid=O2 moles=0.5366 t,k=300
+output siunits
+end
+problem case=B70_fz1 rocket frozen nfz=1 p,bar=11.39 supar=15.07,53.2
+reac
+  oxid=Air moles=1.0 t,k=300
+  fuel=H2 moles=0.7000 t,k=300
+  oxid=O2 moles=0.5366 t,k=300
+output siunits
+end
+problem case=B70_fz2 rocket frozen nfz=2 p,bar=11.39 supar=15.07,53.2
+reac
+  oxid=Air moles=1.0 t,k=300
+  fuel=H2 moles=0.7000 t,k=300
+  oxid=O2 moles=0.5366 t,k=300
 output siunits
 end

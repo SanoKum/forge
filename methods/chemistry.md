@@ -6,8 +6,9 @@
 [`plans/active/chemistry-finite-rate-h2.md`](../plans/active/chemistry-finite-rate-h2.md)、
 文献調査は [`notes/investigations/chemistry-finite-rate-h2-survey.md`](../notes/investigations/chemistry-finite-rate-h2-survey.md)。
 
-**状態 (2026-09-04)**: 理論・設計を確定、Phase 0 (熱力学 DB 生成ツール・機構ファイル・CEA スクリーニング) 完了。
-ソルバ実装 (Phase 1 以降) は未着手。
+**状態 (2026-09-04)**: Phase 0 (熱力学 DB 生成ツール・機構ファイル・CEA スクリーニング) と **Phase 1 (反応ソース項
+$\dot\omega_s$・反応熱 $\dot Q$・解析 Jacobian・対角 point-implicit) を実装・検証済**。0-D 着火 (量論 H₂-air 1200 K 1 atm) が
+ホスト単体テスト・GPU 周期箱の両方で Cantera と一致。Phase 2 (種ブロック陰解・falloff・Strang) 以降は未着手。
 
 ---
 
@@ -53,7 +54,7 @@ $$
   K_p=\exp\!\Big(-\frac{\Delta G^\circ_r}{R_uT}\Big)=\exp\!\Big(\sum_s(\nu''_{sr}-\nu'_{sr})\big(\tfrac{S^\circ_s}{R_u}-\tfrac{H_s}{R_uT}\big)\Big)$$
   $H_s/R_uT$, $S^\circ_s/R_u$ は NASA-9 (thermophysics.md §2.2) から。**$\Delta G^\circ$ は絶対基準の $a_7$ で評価する**
   (sensible datum を焼き込んだ $a_7$ を使うと $\Delta H^\circ_r$ から生成エンタルピー差が消えて $K_c$ が狂う)。
-  そのため thermo DB は焼き込み前の $a_7$ を `a7_abs` として別に保持する。
+  そのため `SpeciesThermo::h_datum` に焼き込みで除いた $h^{abs}_s(T_{ref})$ [J/mol] を保持し、$H_s^{abs}=h_s+h_{datum,s}$ で $\Delta G^\circ$ を組む。
 
 ### 3. 化学 Jacobian (解析)
 
@@ -120,28 +121,38 @@ $\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\v
   同梱: [`tools/mechanisms/h2air_jachimowski1988_13sp33r.yaml`](../solver_density_cuda/tools/mechanisms/h2air_jachimowski1988_13sp33r.yaml)
   (Table I 全 33 反応) と [`h2o2_jachimowski1988_9sp20r.yaml`](../solver_density_cuda/tools/mechanisms/h2o2_jachimowski1988_9sp20r.yaml)
   (反応 (1)–(20)、N₂ 不活性)。**同じファイルを Cantera が読める**ので、0-D/1-D の参照解は Cantera (CPU, `.venv-chem`) で作る。
-- `solverConfig.yaml` (予定): `physProp.chemistry: {enabled: 1, mechanismFile: ..., tci: 0, tMaxReaction: 6000, freezeBelowT: 0}`。
+- `solverConfig.yaml`: `physProp.chemistry: {enabled: 1, mechanismFile: ..., jacobianMode: 1, tMaxReaction: 6000, freezeBelowT: 0}`
+  (キーの説明は [procedures/solver-settings.md](../procedures/solver-settings.md))。PaSR の `tci` は Phase 3。
 
-### 2. カーネル構成 (予定)
+### 2. カーネル構成 (Phase 1 実装済)
 
-| 処理 | ファイル (予定) | 内容 |
-| --- | --- | --- |
-| 機構読込・SI 換算・device 定数化 | `cuda_forge/chemistry_d.{cuh,cu}` (`ReactionTable`) | 反応表 (化学量論, $A,b,E_a$, 効率, falloff) を SoA で device へ |
-| $\dot\omega_s$, $\dot Q$, Jacobian | `chemistrySource_d` (`__global__`) | `res_roY{s}` へ $V\dot\omega_s$、`res_roe` へ $V\dot Q$、`src_jac_Y{s,k}` (密ブロック)、`src_jac_roe` |
-| 種ブロック point-implicit | `species_dplur_sweep_d` の拡張 (ブロック LU) | 既存 sweep の対角スカラを $n_s\times n_s$ に置換 |
-| Strang 分離 | `chemistrySubcycle_d` | 非定常経路のセル内 ODE |
-| ホスト単体検証 | `tools/test_chemistry.cpp` | `THERMO_HD` 共有コードで 0-D 反応器 → Cantera 参照解と比較、Jacobian 有限差分照合 |
+| 処理 | ファイル | 内容 | 状態 |
+| --- | --- | --- | --- |
+| 反応表 + 生成率評価 (host/device 共通) | `cuda_forge/chemistry_d.cuh` (`ReactionTable`, `chem_source`) | 固定長 POD の反応表。`chem_source(sp, rt, ρ, T, Y, ω, Q̇, jacMode, J, ∂ω/∂T)` が Arrhenius・三体・$K_c$ 逆反応・反応熱・解析 Jacobian (`jacMode` 0/1 対角/2 全 $n_s\times n_s$) を double で評価 | 済 |
+| 機構ファイル読込 (host) | `cuda_forge/chemistry_mech_io.hpp` (`chem_io::loadMechanism`) | Cantera YAML サブセット → `ReactionTable`。単位換算 (cm³/mol/s, cal/mol → SI)、種名を `physProp.species` 順に対応付け。falloff は明示エラー | 済 (falloff は Phase 2) |
+| device 側ソース項 | `cuda_forge/chemistry_d.cu` (`chemistry_init`, `chemistry_source_d`, `chemistrySource_d_wrapper`) | セル毎に `res_roY{s} += Vω_s`, `res_roe += VQ̇`, `src_jac_Y{s} += max(0,−∂ω_s/∂ρY_s)`, 診断 `chemQdot`/`chemTau`。周期 node では部分体積 `volumePartial_d` を使う (seam 二重計上防止) | 済 |
+| host インタフェース | `cuda_forge/chemistrySource_d.cuh` | `main.cpp`: `thermo_init_db` 直後に `chemistry_init`、`assembleResidual` の `speciesTransport_d_wrapper` 直後に `chemistrySource_d_wrapper` | 済 |
+| datum 保持 | `thermo_d.{cuh,cu}` (`SpeciesThermo::h_datum`) | sensible datum で除いた $h^{abs}_s(T_{ref})$ [J/mol] を保持し、$\dot Q$ と $K_c$ (絶対 $H$) に使う。**構造体が変わったので full rebuild 必須** | 済 |
+| 設定・変数 | `input/solverConfig.{hpp,cpp}` (`physProp.chemistry`), `variables.cpp` (`registerSpecies(n, chemistry)`) | キーは [solver-settings.md](../procedures/solver-settings.md) | 済 |
+| node 周期の化学種残差 gather | `cuda_forge/periodicNode_d.cu` | `periodicNodeGather` が `res_roY{s}` (と凝縮モーメント残差) を合算し、`periodicMirrorNSState` が `roY{s}` をミラーする。**従来は流れ 5 変数と k/ω だけで、seam の化学種は部分体積分しか更新されなかった** (化学以前からの欠落。run_0049 で発覚・修正) | 済 |
+| 種ブロック point-implicit | `species_dplur_sweep_d` の拡張 (ブロック LU) | 既存 sweep の対角スカラを $n_s\times n_s$ に置換 | Phase 2 |
+| Strang 分離 | `chemistrySubcycle_d` | 非定常経路のセル内 ODE | Phase 2 |
+| ホスト単体検証 | `tools/test_chemistry.cpp` + `tools/chem_reference_cantera.py` | Jacobian 有限差分照合 (相対 2e-8 PASS)、0-D 定積反応器 BDF1 が Cantera と一致 (着火遅れ 32.0 vs 32.2 µs, 平衡 T +1.3 K)、絶対/sensible datum の一致 | 済 |
 
-呼び出し順は `assembleResidual` 内で `speciesTransport_d_wrapper` → **`chemistrySource_d_wrapper`** → `condensationSource_d_wrapper` の位置
-(architecture/overview.md §5.2 の 9–11 の間)。
+ビルド: `g++ -O2 -std=c++17 -I solver_density_cuda solver_density_cuda/tools/test_chemistry.cpp -lyaml-cpp -o /tmp/tchem` →
+`/tmp/tchem tools/mechanisms/h2o2_jachimowski1988_9sp20r.yaml tools/mechanisms/species_db_h2air_cea.yaml ref.csv 1200 1 5e-4`
+(`ref.csv` は `.venv-chem/bin/python tools/chem_reference_cantera.py MECH.yaml ref.csv 1200 1 5e-4`)。
 
 ### 3. 精度方針
 
 濃度・質量作用則の積・Jacobian 解は double、$\ln k_f$ と $\ln K_c$ の温度依存項は FP32 で評価して $\exp$ は 1 回
 (thermophysics.md 実装 §6b の「桁落ちする量だけ double」方針)。
 
-### 4. 検証 (予定。詳細は plan §6)
+### 4. 検証
 
-1. 0-D 定積着火遅れ・定圧平衡到達 (ホストテスト vs Cantera 同一 YAML)。
-2. Q1D ノズル再結合 (H₂/O₂ 平衡入口 → 膨張) vs Cantera PFR (面積則)。frozen / equilibrium / finite-rate 三者図。
-3. Burrows–Kurkov (M2.44 vitiated air + H₂ 壁噴射)。
+1. **0-D 定積着火 (済, 2026-09-04)**: ホストテスト (上記) と GPU 周期箱
+   `case/35.uniform_periodic_box/run_0049_node_h2_ignition` (node 8³ 全面 periodic, 量論 H₂-air 1200 K 1 atm, explicit RK3
+   dt=5e-9 s, jacobianMode=1)。全 729 ノードが一様に着火 (T 差 0.004 K, |u|<1e-4 m/s)、着火遅れ 32.0 µs (Cantera 32.2)、
+   平衡温度 2948 K (Cantera 2944, +0.15 %)。図 `h2_ignition_vs_cantera.png`。
+2. Q1D ノズル再結合 (H₂/O₂ 平衡入口 → 膨張) vs Cantera PFR (面積則)。frozen / equilibrium / finite-rate 三者図 (Phase 2)。
+3. Burrows–Kurkov (M2.44 vitiated air + H₂ 壁噴射) (Phase 3)。

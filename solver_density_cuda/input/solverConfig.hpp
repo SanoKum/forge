@@ -349,6 +349,12 @@ public:
                                                // だが、種ごとに桁違いの生成エンタルピー (H2O≈-13.4MJ/kg) を
                                                // 除いて多成分 implicit の roe/roY 緩和ミスマッチ起因の T ジャンプ
                                                // を抑え安定化する。0 (既定) で従来 NASA 絶対基準・ビット不変。
+    // 有限速度化学 (physProp.chemistry, methods/chemistry.md)。既定 off で全経路ビット不変。
+    int chemEnabled = 0;                       // 1: 反応ソース項 ω_s・反応熱 Q̇ を有効化 (thermalMethod==2, nSpecies>=2 必須)
+    std::string chemMechanismFile = "";        // 反応機構 (Cantera YAML サブセット)
+    double chemTmaxReaction = 6000.0;          // 速度式評価の温度上限 [K]
+    double chemFreezeBelowT = 0.0;             // この温度未満で反応を凍結 (ω=0) [K]
+    int chemJacobianMode = 1;                  // 0: 陽ソースのみ, 1: 対角 point-implicit (src_jac_Y), 2: 全ブロック (Phase 2)
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
                                                // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)

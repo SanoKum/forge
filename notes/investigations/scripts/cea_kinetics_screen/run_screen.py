@@ -24,8 +24,8 @@ def reac_heater(h):
     return [f"  oxid=Air moles=1.0 t,k=300", f"  fuel=H2 moles={h:.4f} t,k=300", f"  oxid=O2 moles={o2add:.4f} t,k=300"]
 
 cases = []
-for Tt in (1161, 1600, 2000, 2500): cases.append((f"A{Tt}", reac_va3(Tt)))
-for h in (0.10, 0.20, 0.30, 0.40): cases.append((f"B{int(h*100):02d}", reac_heater(h)))
+for Tt in (1161, 1600, 2000, 2500, 3000): cases.append((f"A{Tt}", reac_va3(Tt)))
+for h in (0.10, 0.20, 0.30, 0.40, 0.55, 0.70): cases.append((f"B{int(h*100):02d}", reac_heater(h)))
 
 inp = ""
 for name, reac in cases:

@@ -615,6 +615,19 @@ void solverConfig::read(std::string fname)
         if (physProp["speciesDBFile"])          this->speciesDBFile = physProp["speciesDBFile"].as<std::string>();
         if (physProp["speciesDiffusionMethod"]) this->speciesDiffusionMethod = physProp["speciesDiffusionMethod"].as<int>();
         if (physProp["thermoHrefTemp"])         this->thermoHrefTemp = physProp["thermoHrefTemp"].as<double>();
+        if (physProp["chemistry"]) {
+            const YAML::Node ch = physProp["chemistry"];
+            this->chemEnabled       = getOptionalValidatedValue<int>(ch, "enabled", 0, "physProp.chemistry");
+            if (ch["mechanismFile"]) this->chemMechanismFile = ch["mechanismFile"].as<std::string>();
+            this->chemTmaxReaction  = getOptionalValidatedValue<double>(ch, "tMaxReaction", 6000.0, "physProp.chemistry");
+            this->chemFreezeBelowT  = getOptionalValidatedValue<double>(ch, "freezeBelowT", 0.0, "physProp.chemistry");
+            this->chemJacobianMode  = getOptionalValidatedValue<int>(ch, "jacobianMode", 1, "physProp.chemistry");
+            if (this->chemEnabled != 0) {
+                if (this->thermalMethod != 2) throw std::runtime_error("'physProp.chemistry.enabled: 1' requires thermalMethod: 2.");
+                if (this->nSpecies < 2)      throw std::runtime_error("'physProp.chemistry.enabled: 1' requires >=2 species.");
+                if (this->chemMechanismFile.empty()) throw std::runtime_error("'physProp.chemistry.mechanismFile' is required.");
+            }
+        }
         if (physProp["Sc"])                     this->Sc = physProp["Sc"].as<double>();
         if (physProp["Sc_t"])                   this->Sc_t = physProp["Sc_t"].as<double>();
         // 乱流シュミット数は turbulence.turbulentSchmidt でも設定可 (turbulentPrandtl と同じ場所)。

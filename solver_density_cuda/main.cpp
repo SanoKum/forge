@@ -48,6 +48,7 @@
 #include "cuda_forge/ransTransport_d.cuh"
 #include "cuda_forge/ransSource_d.cuh"
 #include "cuda_forge/speciesTransport_d.cuh"
+#include "cuda_forge/chemistrySource_d.cuh"
 #include "cuda_forge/condensationTransport_d.cuh"
 #include "cuda_forge/viscousFlux_d.cuh"
 #include "cuda_forge/updateCenterVelocity_d.cuh"
@@ -787,6 +788,7 @@ cudaConfig initializeSimulation(
 
     cout << "Init Thermo DB \n";
     thermo_init_db(cfg);   // NASA-9/LJ 化学種 DB を構築し device へアップロード (thermalMethod==2 用)
+    chemistry_init(cfg);   // 有限速度化学: 反応機構を読み device へ (chemistry.enabled==1 のみ)
 
     cout << "Read Mesh \n";
     if (cfg.meshFormat == "hdf5") {
@@ -808,7 +810,7 @@ cudaConfig initializeSimulation(
     applyInletProfiles(cfg , msh);
 
     // 化学種変数を登録 (allocVariables より前)。nSpecies<=1 では no-op。
-    var.registerSpecies(cfg.nSpecies);
+    var.registerSpecies(cfg.nSpecies, cfg.chemEnabled);
 
     // 非平衡凝縮モーメント変数を登録 (allocVariables より前)。condensation==0 では no-op。
     var.registerCondensation(cfg.nCondSpecies);
@@ -992,6 +994,7 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         speciesTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 化学種移流残差
+        chemistrySource_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);   // 有限速度化学ソース (ω_s, Q̇, 対角 Jacobian)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         condensationTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 液相モーメント移流残差 (Phase 1)
