@@ -48,12 +48,22 @@ def _bcond_config(p, st):
             + wall("sidewall_in") + wall("sidewall_out"))
 
 
-def paste_region_ic3d(h5path, y_mid, scale, half_W_m, st, gamma):
+def paste_region_ic3d(h5path, y_mid, scale, half_W_m, st, gamma, minfo=None):
+    """領域別一様 IC。node では CELLS/centCoords が双対重心で、側壁面 (z=W/2) 上のノードは内外どちらとも
+    決めにくい (ランプ∩側壁の共有ノードなど) ので、`minfo` があれば**ノード index** で判定する:
+    排気 = 上バンド (j ≥ jm) かつ k ≤ k_sw の base ノード + カウル上コピー (dup1)、側壁外コピー (dup2) と他は外部流。"""
     ex, en = st["exhaust"], st["ext"]
     with h5py.File(h5path, "r+") as f:
         cc = f["/CELLS/centCoords"][:].reshape(-1, 3)
         xn, yn = cc[:, 0] / scale, cc[:, 1] / scale
-        upper = (yn > y_mid(xn)) & (cc[:, 2] <= half_W_m * (1 + 1e-9))
+        if minfo is not None and len(cc) == minfo["nodes"]:
+            NJ, nz, jm, ksw = minfo["NJ"], minfo["nz"], minfo["jm"], minfo["k_sw"]
+            N_base = minfo["ni"] * NJ * nz; ids = np.arange(len(cc))
+            k = ids % nz; j = (ids // nz) % NJ
+            upper = (ids < N_base) & (j >= jm) & (k <= ksw)
+            upper |= (ids >= N_base) & (ids < N_base + minfo["n_dup_cowl"])
+        else:
+            upper = (yn > y_mid(xn)) & (cc[:, 2] <= half_W_m * (1 + 1e-9))
         ro = np.where(upper, ex["ro"], en["ro"]); u = np.where(upper, ex["u"], en["u"]); P = np.where(upper, ex["P"], en["P"])
         v = f["/VALUE"]
         v["ro"][:] = ro; v["roUx"][:] = ro * u; v["roUy"][:] = 0.0; v["roUz"][:] = 0.0
@@ -97,7 +107,7 @@ def prepare(problem_path, run_dir, nsteps=None, op=None) -> dict:
     for f in run_dir.glob("sern_qc.xmf"):
         f.unlink()
     (run_dir / "solverConfig.yaml").write_text(cfg); (run_dir / "solverConfig_main.yaml").write_text(cfg)
-    paste_region_ic3d(run_dir / MESH, y_mid, H, 0.5 * prm.W * H, st, p.gamma)
+    paste_region_ic3d(run_dir / MESH, y_mid, H, 0.5 * prm.W * H, st, p.gamma, minfo=minfo if disc == "node" else None)
     ex = st["exhaust"]; F_ideal_nd, M_e_id = ideal_gross_thrust(ex["M"], st["ext"]["P"] / ex["P"], p.gamma)
     info = {"problem": str(problem_path), "run_dir": str(run_dir), "nsteps": n, "H_m": H, "states": st, "operating_point": opinfo,
             "design_external": design_ext, "design": {"key_point": list(design.key_point), "L_ramp": design.L_ramp, "theta_e_deg": float(np.rad2deg(design.info["theta_e"])),

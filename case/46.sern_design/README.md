@@ -41,6 +41,8 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0018_smoke_sst_node_lownpr` | 低 NPR 作動点の単点評価: 設計点 (p_ext 0.05) の形状を **M∞1.5, p_ext/p_in 0.6** (遷音速加速相当の過膨張) で node SST 評価 | C_T(p) 0.928 / C_T(p+τ) 0.920 / **C_L −0.316 / C_M +1.82 (頭上げ)**、剥離ゼロ (ランプ後半で 0.2→0.6 p_in へ滑らかに再圧縮)、STEADY | active (ref) |
 | `run_0019_moo_sst_node_3op/` | **S6 RANS 版 MOO (3 作動点・設計点固定版)**: node SST、cruise (0.05, w 0.5) / accel (0.20, w 0.3) / lownpr (0.60, M∞1.5, w 0.2)、C_M,w ≥ −2.5、LHS 10 + EHVI 2×2。**run_0010/0017 は作動点ごとに kernel (自由境界圧) を再設計していたバグがあり、作動点間で形状が一致しない → 本 run で置換** | (実行中) | active |
 | `run_0020_smoke_sst_node_3d` | **S7 3D 確認**: スモーク設計を有限スパン W=2H + 側壁 (x ≤ L_cowl) + 外側空間 1.5H の 3D hex (52.5 万セル, 品質 PASS: AR 425, skew 0.29) で node SST 評価。z=0 対称面 (半スパン)。2D 参照 = run_0016 | (実行中) | active |
+| `run_0021_diag3d_euler_sw` | 3D 切り分け (a): 側壁あり・Euler slip、重心ベース IC | soft 段 step 51 で NaN (ノズル幅外のランプ直下 z≈W/2〜1.24H と側壁外コピー) | 破棄予定 |
+| `run_0022_diag3d_sst_nosw` | 3D 切り分け (b): 側壁なし (排気が横方向に開放)・SST、重心ベース IC | soft 段 step 3 で ω NaN (ノズル幅端 z=W/2 の 20 倍圧力不連続、非物理な構成) | 破棄予定 |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
