@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。残 = node+SST の安定化、RANS での MOO、S7 3D 確認 -->
+- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。node+SST は解決 (真因 = stage 間 interp 移植)。残 = RANS (node) での MOO、S7 3D 確認 -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) 「SERN チェーン」節 (現在仕様。本計画と同時に起草)
   - [`design/CAPABILITIES.md`](../../design/CAPABILITIES.md) (問題タイプ `sern_2d` を 📋 で登録)
@@ -231,4 +231,11 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   パレート 8 点 (L 3.9–12.5 H で C_T,w 0.960–0.977)。1 評価 ≈ 135 s。RANS 化した MOO は評価器の切替 (`evaluate.model: sst`,
   `discretization: cell`) だけで回るが、1 評価 ≈ 3× のコスト。作動点 accel (p_ext/p_in 0.15) は Euler では剥離が出ないため
   RANS で再評価が要る。
+- `2026-09-04` — **node + SST 発散の真因を解決** (case/46 run_0014–0016): 真因は solver ではなく、段階起動の stage 間移植
+  `interp_field.py` (座標最近傍) が**スリットの座標一致双子壁ノードを同じ元ノードに写す**こと (合成場で 134/134 station 誤写像を確認)。
+  排気側壁ノードが外部流の圧力を持ち 2 次で爆発していた。`runner_sern.restart_by_index` (index コピー) に替えて板厚 0 のまま完走
+  (run_0016: C_T(p) 0.9691 / 摩擦 −0.0065 / C_L 0.155 / C_M −0.981、cell と一致)。板厚オプション `mesh.cowl_thickness` は任意
+  (入口側で 0 に絞ると 4 境界ノードができて発散するので入口から一定にする)。twall の符号規約は node (壁に働く力) と cell (流体に働く力)
+  で逆 → `sern_forces` で離散化ごとに切替。**残観察**: node の rms_roOmega が本段で 3e18 一定 (壁ノード ω ピン留め残差の混入、場は健全) と
+  境界角の単ノード圧力外れ (入口角・TE)。**教訓**: 座標一致ノードを持つメッシュ (スリット/薄板) では最近傍補間の restart を使わない。
 

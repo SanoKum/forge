@@ -294,7 +294,8 @@ def collect(problem_path, run_dir) -> dict:
     st = info["states"]; ex, en = st["exhaust"], st["ext"]; H = info["H_m"]
     xr, yr = p.spec.get("moment_ref", [0.0, 0.0])
     hist = force_history(run_dir, p_a=en["P"], F_ideal=info["F_ideal_N_per_m"], H=H, x_ref=float(xr) * H, y_ref=float(yr) * H,
-                         mdot_u_in=ex["ro"] * ex["u"] ** 2 * H, p_in=ex["P"])
+                         mdot_u_in=ex["ro"] * ex["u"] ** 2 * H, p_in=ex["P"],
+                         twall_on_fluid=(info.get("discretization", "cell") == "cell"))
     verdict = (run_dir / "CONVERGENCE_VERDICT.txt").read_text().strip().splitlines()[-2:] if (run_dir / "CONVERGENCE_VERDICT.txt").exists() else []
     out = {"convergence_verdict": verdict, "n_snapshots": len(hist), "history": hist,
            "operating_point": info.get("operating_point"), "L_ramp": info["design"]["L_ramp"]}

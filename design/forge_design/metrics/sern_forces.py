@@ -47,8 +47,11 @@ def polyline_forces(h5file, fluid_below: bool, p_a: float, x_ref: float, y_ref: 
 
 
 def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref: float = 0.0, y_ref: float = 0.0,
-                ids=None, mdot_u_in: float = 0.0, p_in: float = 0.0) -> dict:
-    """1 出力ステップの力係数。F_ideal [N/m]、H [m]。総推力 = 入口流れ推力 + 壁推力。"""
+                ids=None, mdot_u_in: float = 0.0, p_in: float = 0.0, twall_on_fluid: bool = True) -> dict:
+    """1 出力ステップの力係数。F_ideal [N/m]、H [m]。総推力 = 入口流れ推力 + 壁推力。
+    twall_on_fluid: forge の twall の規約。cell (viscousFlux_d.cu L527: tau = −τ_w ê_t を流体へ) は True、
+    node (L679: W の CV に入る力 = 壁ノードに働く力) は False。case/26 平板 (node, 流れ +x) で twall_x>0、
+    case/46 run_0011 (cell) で twall_x<0 を確認 (2026-09-04)。"""
     ids = ids or {"ramp": 4, "cowl_in": 5, "cowl_out": 6}
     run_dir = Path(run_dir)
     parts = {}
@@ -69,7 +72,8 @@ def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref:
         # forge の twall は「流体に働く」traction (cell: tau = −τ_w ê_t、node: W の CV に入る力 —
         # viscousFlux_d.cu L527/L679、2026-09-04 確認)。壁に働く摩擦力 = −Σ twall·|dl| で、流れ方向 (+x)
         # の抗力になる → 推力寄与は +Σ twall_x·|dl| (負)。揚力寄与は −Σ twall_y·|dl|。
-        Fx_t = sum(v.get("Fx_tau", 0.0) for v in parts.values()); Fy_t = sum(v.get("Fy_tau", 0.0) for v in parts.values())
+        sgn = 1.0 if twall_on_fluid else -1.0     # 壁に働く摩擦力 = −sgn·Σ twall·|dl|
+        Fx_t = sgn * sum(v.get("Fx_tau", 0.0) for v in parts.values()); Fy_t = sgn * sum(v.get("Fy_tau", 0.0) for v in parts.values())
         out["C_T_with_shear"] = (F_gross + Fx_t) / F_ideal
         out["C_L_with_shear"] = (Fy - Fy_t) / F_ideal
         out["C_T_friction"] = Fx_t / F_ideal
