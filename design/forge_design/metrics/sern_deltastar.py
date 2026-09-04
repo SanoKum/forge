@@ -22,9 +22,12 @@ def _structured_upper(run_dir: Path):
         cc = f["CELLS/centCoords"][:].reshape(-1, 3)
     N_low = ni * njb; N_up = ni * (njt - 1)
     if info.get("discretization", "cell") == "node":
+        dup = m.get("dup_stations", list(range(ite)))
+        dup_idx = {int(i): k for k, i in enumerate(dup)}
+
         def up(i, j):
             if j == 0:
-                return N_low + N_up + i if i < ite else i * njb + (njb - 1)
+                return N_low + N_up + dup_idx[i] if i in dup_idx else i * njb + (njb - 1)
             return N_low + i * (njt - 1) + (j - 1)
         idx = np.array([[up(i, j) for j in range(njt)] for i in range(ni)])
     else:

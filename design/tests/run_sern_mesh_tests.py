@@ -22,7 +22,7 @@ prm = SernMeshParams(ni_up=8, ni_noz=40, ni_plume=60, nj_top=31, nj_bot=21, scal
 coords, quads, bedges, info, y_mid = generate_sern_mesh(d, prm)
 ni, njt, njb, ite = info["ni"], info["nj_top"], info["nj_bot"], info["i_te"]
 check("セル数 = (ni−1)(nj_top−1 + nj_bot−1)", quads.shape[0] == (ni - 1) * (njt - 1 + njb - 1))
-check("ノード数 = ni·nj_bot + ni·(nj_top−1) + i_te 重複 (TE は共有)", coords.shape[0] == ni * njb + ni * (njt - 1) + ite)
+check("ノード数 = ni·nj_bot + ni·(nj_top−1) + 重複 station 数", coords.shape[0] == ni * njb + ni * (njt - 1) + len(info["dup_stations"]))
 # 反時計回り (符号付き面積 > 0)
 xy = coords[:, :2]
 a = np.zeros(len(quads))

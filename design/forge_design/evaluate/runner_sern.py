@@ -192,6 +192,7 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
                         nj_top=int(m.get("nj_top", 101)), nj_bot=int(m.get("nj_bot", 61)), L_up=float(m.get("L_up", 0.5)),
                         x_out_extra=float(m.get("x_out_extra", 2.0)), bot_depth=float(m.get("bot_depth", 3.0)),
                         first_wall_frac=float(m.get("first_wall_frac", 2e-3)),
+                        cowl_thickness=float(m.get("cowl_thickness", 2e-3 if m.get("discretization", "cell") == "node" else 0.0)),
                         interface_angle=float(m.get("interface_angle_rad", theta_b)),
                         top_ext_angle=float(np.deg2rad(m.get("top_ext_angle_deg", np.rad2deg(design.info["theta_e"])))),
                         scale=H)

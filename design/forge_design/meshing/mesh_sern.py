@@ -10,6 +10,10 @@ plan: plans/active/tooling-nozzle-sern-chain.md §4.7 / S2。無次元 (H = 1) �
 バンド: 下 (下境界→中間線, nj_bot 点) / 上 (中間線→ランプ, nj_top 点)。x station は共通。
 カウル (x ≤ L_cowl) は**スリット**: 中間線ノードを上下 2 重にし、上側 = cowl_in、下側 = cowl_out。
 TE 以降の中間線ノードは共有 (内部線)。
+**カウル板厚 `cowl_thickness`** (2026-09-04): 厚さ 0 だと上下の壁ノードが同一座標になり、node モードでは双子の
+壁ノードが同じ状態 (片側は排気 15 kPa、反対側は外部流 2 kPa なのに同一 p) になって 2 次で発散した
+(case/46 run_0008/0009)。厚さ t(x) を「x=−L_up で 0 → 直管部で t → TE 手前 20 % で 0」の台形で入れ、
+t>0 の station だけ 2 重ノードにする (i=0 と TE は共有)。壁第一セルは上下とも first_wall_frac·H の絶対値。
 物理タグ: PHYS_SERN。
 """
 from __future__ import annotations
@@ -34,8 +38,9 @@ class SernMeshParams:
     L_up: float = 0.5
     x_out_extra: float = 2.0
     bot_depth: float = 3.0
-    first_wall_frac: float = 2.0e-3
-    first_bot_frac: float = 0.02
+    first_wall_frac: float = 2.0e-3      # 壁第一セル / H (上下バンドとも絶対値で同じ)
+    first_bot_frac: float = 0.02         # (未使用)
+    cowl_thickness: float = 0.0          # カウル板厚 / H (0 = 厚さ 0 のスリット)。node では 2e-3 を推奨 (docstring)
     interface_angle: float = 0.0
     top_ext_angle: float = 0.0
     scale: float = 1.0
@@ -106,16 +111,20 @@ def generate_sern_mesh(design, prm: SernMeshParams):
 
     y_bot = float(y_mid(x_out)) - prm.bot_depth
     yt, ym = y_top(xs), y_mid(xs)
-    s_top = _tanh_two_sided(prm.nj_top, prm.first_wall_frac)
-    s_bot = _radial_fracs(prm.nj_bot, prm.first_wall_frac)   # 上端 (カウル外面/中間線) にクラスタ
-    # 下端 (遠方) は粗いまま
+    # カウル板厚 t(x): −L_up で 0 → −L_up/2 で t → 0.8 L_cowl まで t → TE で 0 (台形)。TE 以降 0
+    t_c = float(prm.cowl_thickness)
+    tk = np.zeros_like(xs)
+    if t_c > 0.0:
+        tk = np.interp(xs, [-prm.L_up, -0.5 * prm.L_up, 0.8 * L_cowl, L_cowl], [0.0, t_c, t_c, 0.0], left=0.0, right=0.0)
+    dup = tk > 1e-15                      # 2 重ノードにする station (厚さ 0 なら i < i_te 全部)
+    if t_c <= 0.0:
+        dup = np.arange(len(xs)) < i_te
+    ym_up, ym_lo = ym + 0.5 * tk, ym - 0.5 * tk
     ni, njt, njb = len(xs), prm.nj_top, prm.nj_bot
+    dup_idx = {int(i): k for k, i in enumerate(np.where(dup)[0])}
     N_low = ni * njb
     N_up = ni * (njt - 1)
-    # スリットの 2 重ノードは i < i_te のみ。TE ノード (i = i_te) は上下で共有する
-    # (厚さ 0 のカウル後縁は 1 点。i_te も重複させると TE 直後のセル辺が上下で不一致になり
-    #  幅 0 の隙間 = 未タグ境界辺が 2 本できる — 2026-09-04 メッシュテストで検出)
-    N_dup = i_te
+    N_dup = len(dup_idx)
     coords = np.zeros((N_low + N_up + N_dup, 3))
 
     def low(i, j):
@@ -123,18 +132,22 @@ def generate_sern_mesh(design, prm: SernMeshParams):
 
     def up(i, j):
         if j == 0:
-            return N_low + N_up + i if i < i_te else low(i, njb - 1)
+            return N_low + N_up + dup_idx[i] if i in dup_idx else low(i, njb - 1)
         return N_low + i * (njt - 1) + (j - 1)
 
     for i in range(ni):
-        yb = y_bot + s_bot * (ym[i] - y_bot)
+        # 壁第一セルは上下とも first_wall_frac·H (絶対値)。バンド高さで割った比に直す
+        h_lo = max(ym_lo[i] - y_bot, 1e-12); h_up = max(yt[i] - ym_up[i], 1e-12)
+        s_bot = _radial_fracs(njb, min(prm.first_wall_frac / h_lo, 0.5 / (njb - 1)))
+        s_top = _tanh_two_sided(njt, min(prm.first_wall_frac / h_up, 0.5 / (njt - 1)))
+        yb = y_bot + s_bot * (ym_lo[i] - y_bot)
         coords[low(i, 0):low(i, njb), 0] = xs[i]
         coords[low(i, 0):low(i, njb), 1] = yb
-        yu = ym[i] + s_top * (yt[i] - ym[i])
+        yu = ym_up[i] + s_top * (yt[i] - ym_up[i])
         coords[up(i, 1):up(i, njt - 1) + 1, 0] = xs[i]
         coords[up(i, 1):up(i, njt - 1) + 1, 1] = yu[1:]
-        if i < i_te:
-            coords[up(i, 0)] = (xs[i], ym[i], 0.0)
+        if i in dup_idx:
+            coords[up(i, 0)] = (xs[i], ym_up[i], 0.0)
     quads = []
     for i in range(ni - 1):
         for j in range(njb - 1):
@@ -158,7 +171,8 @@ def generate_sern_mesh(design, prm: SernMeshParams):
         bedges["outlet"].append((up(ni - 1, j), up(ni - 1, j + 1)))
     coords *= prm.scale
     info = {"ni": ni, "nj_top": njt, "nj_bot": njb, "cells": int(quads.shape[0]), "nodes": int(coords.shape[0]),
-            "x_out": x_out, "y_bot": y_bot, "i_te": i_te, "L_cowl": L_cowl, "L_ramp": L_ramp}
+            "x_out": x_out, "y_bot": y_bot, "i_te": i_te, "L_cowl": L_cowl, "L_ramp": L_ramp,
+            "cowl_thickness": t_c, "dup_stations": [int(i) for i in np.where(dup)[0]]}
     return coords, quads, bedges, info, y_mid
 
 
