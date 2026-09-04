@@ -34,6 +34,26 @@ def _dv(p: Problem, name, default=None) -> float:
     return float(v["value"] if isinstance(v, dict) else v)
 
 
+def select_operating_point(p: Problem, op: str | None) -> dict:
+    """spec.operating_points[] から名前で 1 点を選び spec.external (と inflow の上書き) に反映する。
+    op=None で operating_points が無ければ spec.external をそのまま使う。戻り値 = 選んだ点 (重み込み)。"""
+    ops = p.spec.get("operating_points")
+    if not ops:
+        if op not in (None, "", "default"):
+            raise ValueError("spec.operating_points が無いのに --op が指定された")
+        return {"name": "default", "weight": 1.0, "external": dict(p.spec["external"])}
+    names = [o["name"] for o in ops]
+    if op in (None, "", "default"):
+        op = names[0]
+    if op not in names:
+        raise ValueError(f"作動点 '{op}' が無い (候補: {names})")
+    o = ops[names.index(op)]
+    p.spec["external"] = dict(o["external"])
+    if "inflow" in o:
+        p.spec["inflow"] = {**p.spec["inflow"], **o["inflow"]}
+    return {"name": op, "weight": float(o.get("weight", 1.0)), "external": dict(o["external"])}
+
+
 def gas_states(p: Problem) -> dict:
     g, cp = p.gamma, p.cp
     R = cp * (g - 1.0) / g
@@ -124,6 +144,23 @@ def _bcond_config(p: Problem, st: dict) -> str:
             + wall("cowl_out", P["cowl_out"]) + outlet("bottom", P["bottom"]) + outlet("top_out", P["top_out"]))
 
 
+def apply_wall_offset(design, wall_offset: dict, H: float):
+    """壁を法線方向 (流体と反対側) に dn(x) [m] だけ動かした SernDesign を返す (無次元化して適用)。
+    ramp: 上壁なので +n = 上、cowl: 下壁 (内面が上向き) なので +n = 下。表は (x_m, dn_m) の 2 列。"""
+    import copy
+    d = copy.deepcopy(design)
+    for name, arr in (("ramp", d.ramp_xy), ("cowl", d.cowl_xy)):
+        tbl = wall_offset.get(name)
+        if tbl is None:
+            continue
+        tbl = np.asarray(tbl, dtype=float)
+        dn = np.interp(arr[:, 0], tbl[:, 0] / H, tbl[:, 1] / H, left=tbl[0, 1] / H, right=tbl[-1, 1] / H)
+        t = np.gradient(arr, axis=0); t /= np.maximum(np.hypot(t[:, 0], t[:, 1]), 1e-30)[:, None]
+        nrm = np.column_stack([-t[:, 1], t[:, 0]]) if name == "ramp" else np.column_stack([t[:, 1], -t[:, 0]])
+        arr += dn[:, None] * nrm
+    return d
+
+
 def paste_region_ic(h5path, y_mid, scale: float, st: dict, gamma: float) -> None:
     ex, en = st["exhaust"], st["ext"]
     with h5py.File(h5path, "r+") as f:
@@ -138,12 +175,15 @@ def paste_region_ic(h5path, y_mid, scale: float, st: dict, gamma: float) -> None
             v["roK"][:] = ro * np.where(upper, ex["k"], en["k"]); v["roOmega"][:] = ro * np.where(upper, ex["omega"], en["omega"])
 
 
-def prepare(problem_path, run_dir, nsteps=None) -> dict:
+def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offset=None) -> dict:
+    """op: 作動点名 (spec.operating_points)。wall_offset: {"ramp": (x_m, dn_m), "cowl": (x_m, dn_m)} の
+    法線オフセット表 [m] (S5 δ* 一発補正。壁を流体と反対側へ dn だけ動かす)。"""
     p = load_problem(problem_path)
     if p.type != "sern_2d":
         raise ValueError("runner_sern は sern_2d 専用")
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=False)
+    opinfo = select_operating_point(p, op)
     st = gas_states(p)
     kern, design, fr_moc, theta_b = design_from_problem(p)
     H = float(p.spec["H_m"])
@@ -155,6 +195,8 @@ def prepare(problem_path, run_dir, nsteps=None) -> dict:
                         interface_angle=float(m.get("interface_angle_rad", theta_b)),
                         top_ext_angle=float(np.deg2rad(m.get("top_ext_angle_deg", np.rad2deg(design.info["theta_e"])))),
                         scale=H)
+    if wall_offset:
+        design = apply_wall_offset(design, wall_offset, H)
     coords, quads, bedges, minfo, y_mid = generate_sern_mesh(design, mp)
     write_msh41_named(run_dir / "sern.msh", coords, quads, bedges, PHYS_SERN)
     np.savetxt(run_dir / "ramp_contour.csv", design.ramp_xy * H, delimiter=",", header="x_m,y_m", comments="")
@@ -186,6 +228,7 @@ def prepare(problem_path, run_dir, nsteps=None) -> dict:
     ex = st["exhaust"]
     F_ideal_nd, M_e_id = ideal_gross_thrust(ex["M"], st["ext"]["P"] / ex["P"], p.gamma)
     info = {"problem": str(problem_path), "run_dir": str(run_dir), "nsteps": n, "H_m": H, "states": st,
+            "operating_point": opinfo, "wall_offset": bool(wall_offset),
             "design": {"key_point": list(design.key_point), "foot_a": list(design.foot_a), "lip_e": list(design.lip_e),
                        "L_ramp": design.L_ramp, "mass_fraction_check": design.mass_fraction_check,
                        "theta_e_deg": float(np.rad2deg(design.info["theta_e"])), "theta_b_deg": float(np.rad2deg(theta_b)),
@@ -243,7 +286,8 @@ def collect(problem_path, run_dir) -> dict:
     hist = force_history(run_dir, p_a=en["P"], F_ideal=info["F_ideal_N_per_m"], H=H, x_ref=float(xr) * H, y_ref=float(yr) * H,
                          mdot_u_in=ex["ro"] * ex["u"] ** 2 * H, p_in=ex["P"])
     verdict = (run_dir / "CONVERGENCE_VERDICT.txt").read_text().strip().splitlines()[-2:] if (run_dir / "CONVERGENCE_VERDICT.txt").exists() else []
-    out = {"convergence_verdict": verdict, "n_snapshots": len(hist), "history": hist}
+    out = {"convergence_verdict": verdict, "n_snapshots": len(hist), "history": hist,
+           "operating_point": info.get("operating_point"), "L_ramp": info["design"]["L_ramp"]}
     if hist:
         last = hist[-1]
         out.update({k: last[k] for k in ("step", "C_T", "C_T_wall", "C_L", "C_M", "T_wall", "L", "M_noseup")})
@@ -261,8 +305,11 @@ def main(argv=None):
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--prepare-only", action="store_true")
     ap.add_argument("--stages", default="full", choices=["full", "none", "main"])
+    ap.add_argument("--op", default=None, help="作動点名 (spec.operating_points)")
+    ap.add_argument("--wall-offset", default=None, help="δ* オフセット JSON ({ramp: [[x_m, dn_m],...], cowl: [...]})")
     a = ap.parse_args(argv)
-    info = prepare(a.problem, a.run_dir, a.steps)
+    wo = json.loads(Path(a.wall_offset).read_text()) if a.wall_offset else None
+    info = prepare(a.problem, a.run_dir, a.steps, op=a.op, wall_offset=wo)
     print(json.dumps({k: info[k] for k in ("design", "moc_forces", "mesh")}, indent=1))
     if a.prepare_only:
         return 0
