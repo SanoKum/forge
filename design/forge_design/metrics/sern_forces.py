@@ -43,6 +43,10 @@ def polyline_forces(h5file, fluid_below: bool, p_a: float, x_ref: float, y_ref: 
     if tf is not None:
         tm = tf * ln[:, None]
         out.update({"Fx_tau": float(tm[:, 0].sum()), "Fy_tau": float(tm[:, 1].sum())})
+        # 剥離指標: 壁接線 (+x 向き) 方向のせん断が負 (逆流) な面の長さ割合。符号規約は呼び出し側で補正 (tau_sign)
+        tvec = np.column_stack([d[:, 0], d[:, 1]]) / ln[:, None]
+        tt = (tf[:, 0] * tvec[:, 0] + tf[:, 1] * tvec[:, 1])
+        out["_tau_t"] = tt; out["_ln"] = ln; out["_xm"] = xm[:, 0]
     return out
 
 
@@ -65,6 +69,10 @@ def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref:
     Mn = sum(v["M_noseup_p"] for v in parts.values())
     T_wall = -Fx
     F_gross = mdot_u_in + (p_in - p_a) * H + T_wall
+    for v in parts.values():
+        if "_tau_t" not in v:
+            for k in ("_tau_t", "_ln", "_xm"):
+                v.pop(k, None)
     out = {"step": step, "T_wall": T_wall, "L": Fy, "M_noseup": Mn, "F_gross": F_gross, "F_ideal": F_ideal,
            "C_T": F_gross / F_ideal, "C_T_wall": T_wall / F_ideal, "C_L": Fy / F_ideal, "C_M": Mn / (F_ideal * H),
            "parts": parts}
@@ -77,6 +85,18 @@ def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref:
         out["C_T_with_shear"] = (F_gross + Fx_t) / F_ideal
         out["C_L_with_shear"] = (Fy - Fy_t) / F_ideal
         out["C_T_friction"] = Fx_t / F_ideal
+        # 剥離: 壁に働く接線力が −x (逆流) の長さ割合と最上流位置 (ランプ・カウル内面)
+        for name in ("ramp", "cowl_in"):
+            v = parts.get(name)
+            if v and "_tau_t" in v:
+                on_wall = -sgn * v["_tau_t"]          # 壁に働く接線力 (+x = 付着流)
+                rev = on_wall < 0.0
+                v["sep_frac"] = float(v["_ln"][rev].sum() / v["_ln"].sum())
+                v["sep_x_min"] = float(v["_xm"][rev].min()) if rev.any() else None
+                for k in ("_tau_t", "_ln", "_xm"):
+                    v.pop(k, None)
+        out["sep_frac_ramp"] = parts.get("ramp", {}).get("sep_frac")
+        out["sep_x_min_ramp"] = parts.get("ramp", {}).get("sep_x_min")
     return out
 
 

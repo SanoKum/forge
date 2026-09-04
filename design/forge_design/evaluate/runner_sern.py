@@ -302,6 +302,9 @@ def collect(problem_path, run_dir) -> dict:
     if hist:
         last = hist[-1]
         out.update({k: last[k] for k in ("step", "C_T", "C_T_wall", "C_L", "C_M", "T_wall", "L", "M_noseup")})
+        for k in ("C_T_with_shear", "C_T_friction", "sep_frac_ramp", "sep_x_min_ramp"):
+            if k in last:
+                out[k] = last[k]
         out["steadiness"] = {k: steadiness([h[k] for h in hist]) for k in ("C_T", "C_L", "C_M")}
         out["moc_forces"] = info["moc_forces"]
         out["cfd_vs_moc"] = {k: (last[k] - info["moc_forces"][k]) for k in ("C_T", "C_L", "C_M")}

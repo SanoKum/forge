@@ -2,7 +2,7 @@
 
 dv = (M_c, f, theta_r0_deg, theta_c0_deg, L_cowl) [YAML の dv.min/max]。1 評価 = 作動点数分の forge run
 (`spec.operating_points[]`、重み w_k)。目的 (最小化):
-    f1 = −Σ_k w_k C_T^(k)      (Kriging)
+    f1 = −Σ_k w_k C_T^(k)      (Kriging。RANS では摩擦込み C_T)
     f2 = L_ramp / H            (逆設計の決定的結果。候補点では Kriging で近似)
 ゲート: 逆設計成立 (kernel 内に key point、C⁻ が直線ランプに着地)、メッシュ品質 PASS、各作動点で
 NaN なし・力係数 STEADY。C_M (機体 CG 基準) は台帳に記録し制約は任意 (`opt.cm_min/cm_max`)。
@@ -97,14 +97,15 @@ class SernCampaign:
                 L_ramp = info["design"]["L_ramp"]
                 rc = R.run_staged(rd, "full", soft_steps=int(self.optcfg.get("soft_steps", 1500)))
                 out = R.collect(prob, rd)
-                st = out.get("steadiness", {}); ct = out.get("C_T")
+                st = out.get("steadiness", {}); ct = out.get("C_T_with_shear", out.get("C_T"))   # RANS は摩擦込み
                 if rc != 0 or ct is None or not np.isfinite(ct) or "DIVERGED" in " ".join(out.get("convergence_verdict", [])):
                     row["fail_class"] = "DIVERGED"; raise RuntimeError(f"{o['name']}: forge rc={rc} / C_T={ct}")
                 if st.get("C_T", {}).get("verdict") != "STEADY":
                     row["fail_class"] = "UNSTEADY"; raise RuntimeError(f"{o['name']}: C_T {st.get('C_T')}")
                 w = float(o.get("weight", 1.0)); wsum += w
                 ct_w += w * ct; cm_w += w * out["C_M"]
-                row["ops"][o["name"]] = {"C_T": ct, "C_L": out["C_L"], "C_M": out["C_M"], "step": out["step"], "run_dir": str(rd)}
+                row["ops"][o["name"]] = {"C_T": ct, "C_T_p": out["C_T"], "C_L": out["C_L"], "C_M": out["C_M"], "step": out["step"], "run_dir": str(rd),
+                                         "sep_frac_ramp": out.get("sep_frac_ramp"), "sep_x_min_ramp": out.get("sep_x_min_ramp")}
                 for f_ in rd.glob("res_[0-9]*.h5"):   # 容量節約: 場は最終のみ残す
                     if f_ != sorted(rd.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]:
                         f_.unlink()
