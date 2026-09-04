@@ -18,7 +18,7 @@
 | `wind_tunnel_axisym` | `evaluate/runner_wt.py` | 🔧 | 旧生産系 (B8)。axismach に置換済み、回帰対照として保持 |
 | `wind_tunnel_axisym_walldriven` | `evaluate/runner_walldriven.py` | 🔧 | 壁駆動系。axismach に置換済み |
 | `wind_tunnel_axisym_axismach` | `evaluate/runner_axismach.py` | ✅ | 現行生産 (case/42 isobutane, case/44 vitiated air)。ガス・凝縮メニューが最も厚い |
-| `sern_2d` | `evaluate/runner_sern.py` (予定) | 📋 | ⑤ SERN: 燃焼器出口 starting line + 2D 平面最大推力 key point 逆設計 + 多作動点 RANS + MOO。plan: [`plans/active/tooling-nozzle-sern-chain.md`](../plans/active/tooling-nozzle-sern-chain.md) (2026-09-04 起票) |
+| `sern_2d` | `evaluate/runner_sern.py` (予定) | 🔧 | ⑤ SERN: 燃焼器出口 starting line + 2D 平面最大推力 key point 逆設計 (**S1 実装・解析検算済み** `geometry/moc_sern.py`) + 多作動点 RANS (未) + MOO (未)。plan: [`plans/active/tooling-nozzle-sern-chain.md`](../plans/active/tooling-nozzle-sern-chain.md) (2026-09-04 起票) |
 
 ## 2. ガスモデル・物理メニュー (`evaluate.*` / `gas.*` キー)
 
