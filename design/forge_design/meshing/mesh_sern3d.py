@@ -6,8 +6,8 @@
 
 ノード重複 (スリット):
   D1 カウル: i < i_te かつ z_k ≤ W/2 の中間線ノードを上下 2 重 (2D と同じ)。
-  D2 側壁: k = k_sw (z = W/2), i < i_sw (後縁 station は共有), 上バンド内部 j (jm < j < NJ−1) を内外 2 重。j = jm では内側 = cowl_in 側の
-     上コピー、外側 = 中間線の元ノード (cowl_out 兼)、j = NJ−1 (ランプ) は共有。
+  D2 側壁: k = k_sw (z = W/2), i < i_sw (後縁 station は共有), 上バンド j (jm < j ≤ NJ−1、ランプ線含む) を内外 2 重。j = jm では内側 = cowl_in 側の
+     上コピー、外側 = 中間線の元ノード (cowl_out 兼)。ランプ線を共有すると入口面で 2 種の入口に属する矛盾ノードになる。
 境界面 (quad): inlet_nozzle / inlet_ext / outlet / ramp / top_out / cowl_in / cowl_out / bottom / sym (z=0) /
               side_far (z = Z_far) / sidewall_in / sidewall_out。
 hex は gmsh 型 5 (底面 4 点 CCW → 上面 4 点)。座標一致ノードを持つので stage 間 restart は index コピーにすること。
@@ -101,8 +101,8 @@ def generate_sern_mesh3d(design, prm: SernMesh3DParams):
         for k in range(k_sw + 1):
             dup1[(i, k)] = nid; nid += 1
     for i in range(i_sw):                      # 側壁後縁 (i_sw) は共有 (カウル TE と同じ)
-        for j in range(jm + 1, NJ - 1):
-            dup2[(i, j)] = nid; nid += 1
+        for j in range(jm + 1, NJ):            # ランプ線 (j = NJ−1) も内外 2 重: 共有すると入口面で
+            dup2[(i, j)] = nid; nid += 1       # inlet_nozzle と inlet_ext の両方に属し step 3 で発散した
     coords = np.zeros((nid, 3))
     for i in range(ni):
         for j in range(NJ):

@@ -59,8 +59,10 @@ def paste_region_ic3d(h5path, y_mid, scale, half_W_m, st, gamma, minfo=None):
         if minfo is not None and len(cc) == minfo["nodes"]:
             NJ, nz, jm, ksw = minfo["NJ"], minfo["nz"], minfo["jm"], minfo["k_sw"]
             N_base = minfo["ni"] * NJ * nz; ids = np.arange(len(cc))
-            k = ids % nz; j = (ids // nz) % NJ
-            upper = (ids < N_base) & (j >= jm) & (k <= ksw)
+            k = ids % nz; j = (ids // nz) % NJ; i = ids // (nz * NJ); ite = minfo["i_te"]
+            # 中間線 (j = jm) の元ノードはカウル区間 (i < i_te) では cowl_out = 外部流。排気側は dup1 コピーが担う。
+            # カウル下流 (i ≥ i_te) の共有中間線ノードだけ排気に入れる (プリューム境界)
+            upper = (ids < N_base) & (k <= ksw) & ((j > jm) | ((j == jm) & (i >= ite)))
             upper |= (ids >= N_base) & (ids < N_base + minfo["n_dup_cowl"])
         else:
             upper = (yn > y_mid(xn)) & (cc[:, 2] <= half_W_m * (1 + 1e-9))
