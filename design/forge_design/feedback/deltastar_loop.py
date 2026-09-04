@@ -46,6 +46,10 @@ def extract_and_merge(prev_run, euler_run, omega: float = 0.5, smooth_lam: float
         f_s, diag = smooth_delta_quintic(x, raw, weights=wts, knot_spacing=knot_spacing, lam=lam)
         d_ext = f_s(x)
         d_next = (1.0 - omega) * d_in + omega * d_ext
+        if omega < 1.0:
+            # 前回入力 δ_in (旧方式の壁など) の凸凹を引き継がないよう、緩和後も同じ P-spline を通す
+            f_b, _ = smooth_delta_quintic(x, d_next, knot_spacing=knot_spacing, lam=lam)
+            d_next = f_b(x)
         # 単調性ガード: 新しい物理壁 r_inv + δ_next がスロート下流で非単調なら λ を 10 倍して再平滑化
         r_new = r_inv + d_next
         m = x >= 0.5
