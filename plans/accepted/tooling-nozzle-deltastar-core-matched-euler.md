@@ -236,3 +236,9 @@ $\omega=0.5$ 初期値、安定なら 1.0。壁更新は**半径方向** (法線
   (b) `ramp` (`run_0027`): metrics は run_0025 と同一 (出口面コア M 6.0000、ṁ 1.0002)、NaN 0・STEADY。(a) は全残差列が cfl1/30000 step の
   最終水準に 5000〜8900 step で到達し出口 M は 8000 step で凍結 → **warm start の生産レシピ = stages none, cfl 5, implicitRelax 0.7, 12000 step
   (NS ≈ 95 s、従来 195 s)**。ランプは利得なし (cold start 用に残置)。cold start (中継 → 初回 NS) を cfl 5 で立てられるかは未検証 (`full` を既定のまま)。
+- `2026-09-04` — **中継の要否と Euler の CFL (ユーザ提案)**: (1) NS pass 0 を Euler 場から直接 y+~1 メッシュへ (`--init-integral --ic-from <Euler>`, 既定 full 起動)
+  → 中継ありと同等 (`run_0029`: ṁ 0.9999、出口面コア M +0.00〜0.04 %) = **y+~50 の中継 run は不要**。soft/mid を抜いて cfl 5 で一気に立てると step 1 で NaN
+  (`run_0030`, 削除) → cold start には soft/mid が必要。soft/mid + 本段 cfl 5 + relax 0.7 12000 step (`run_0031`) は cfl1/24000 と同等。
+  (2) Euler は cfl 6 + implicitRelax 0.7 (soft のみ + 本段 12000, `run_0028`) で run_0001 と同一 metrics・ALL PASS (残差到達 4700〜8900 step)。8000 step (`run_0032`) は
+  metrics 同一だが残差未達判定。**新レシピ: 設計 → Euler (soft + 12000 @cfl6/r0.7) → NS pass 0 (中継なし, full 起動, 本段 cfl5/r0.7 12000) → 必要なら pass 1 (none, cfl5/r0.7 12000)**。
+  Euler runner に `--cfl/--implicit-relax/--stages/--ic-from` を追加。注: 本日午後の壁時計は別セッションの GPU 共有で 2〜3 倍に膨らんでおり要再計測。
