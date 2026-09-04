@@ -109,8 +109,13 @@ def solve_rt(problem, R_exit_m: float, prev_run=None, euler_run=None, n_iter: in
         if not (prev_run / "delta_r_equiv.csv").exists():
             if euler_run is None: raise ValueError("prev_run に抽出結果が無く euler_run も未指定")
             deltastar_from_core_matched_euler(prev_run, euler_run, out_dir=prev_run)
-        e = np.genfromtxt(prev_run / "delta_r_equiv.csv", delimiter=",", names=True)
-        d_meas = float(np.interp(xF - 0.3, e["x_rt"], e["delta_r_raw"]))
+        # 次 pass の壁に実際に載る値 (P-spline 平滑化後 = delta_r_next.csv の x_F 端) を使う。無ければ生抽出の x_F−0.3
+        if (prev_run / "delta_r_next.csv").exists():
+            nx = np.loadtxt(prev_run / "delta_r_next.csv", delimiter=",", skiprows=1)
+            d_meas = float(np.interp(xF, nx[:, 0], nx[:, 1]))
+        else:
+            e = np.genfromtxt(prev_run / "delta_r_equiv.csv", delimiter=",", names=True)
+            d_meas = float(np.interp(xF - 0.3, e["x_rt"], e["delta_r_raw"]))
         S_prev = float(json.loads((prev_run / "prepare_info.json").read_text())["scale_m"])
         rt = S_prev
         for k in range(n_iter):
