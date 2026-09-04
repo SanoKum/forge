@@ -422,6 +422,32 @@ class PlanarMOC:
                                 "theta_e": float(ths[-1]), "K_minus_spread": float(np.ptp(ths + pm_nu(Ms, g)))})
 
 
+    # ------------------------------------------------------------------ 直線ランプ (検証用・逆設計なし)
+    def straight_design(self, L_ramp: float) -> SernDesign:
+        """kernel の直線ランプ (θ_r0) を x = L_ramp で切った「設計しない」形状。NASA TM X-71972 の
+        平板 SERN のような検証用。壁状態は kernel の境界行から取る。"""
+        if not self._marched:
+            self.march()
+        s = self.s
+        if L_ramp > self.X[-1] + 1e-12:
+            raise ValueError(f"L_ramp={L_ramp} > x_max={self.X[-1]}: kernel を伸ばす")
+        m = self.X <= L_ramp + 1e-12
+        xk = self.X[m]
+        ramp_xy = np.column_stack([xk, self.y_up(xk)])
+        ramp_M = self.M[: len(xk), -1]; ramp_th = self.TH[: len(xk), -1]
+        xc_ = self.X[self.X <= s.L_cowl + 1e-12]
+        cowl_xy = np.column_stack([xc_, -xc_ * np.tan(s.theta_c0)])
+        the, _, Me = self.state_at(float(xk[-1]), float(self.y_up(xk[-1])))
+        return SernDesign(ramp_xy=ramp_xy, ramp_M=ramp_M, ramp_theta=ramp_th, cowl_xy=cowl_xy,
+                          cowl_M=self.M[: len(xc_), 0], cowl_theta=self.TH[: len(xc_), 0],
+                          key_point=(float(xk[-1]), float(self.y_up(xk[-1])), float(Me), float(the)),
+                          foot_a=(0.0, 1.0), lip_e=(float(xk[-1]), float(self.y_up(xk[-1]))),
+                          mass_fraction=float("nan"), mass_fraction_check=float("nan"),
+                          p_ext_over_p_in=float(self.p_ext_over_p_in),
+                          info={"warnings": list(self.warnings), "n_rays": 0, "theta_e": float(s.theta_r0),
+                                "K_minus_spread": 0.0, "mode": "straight"})
+
+
 # ---------------------------------------------------------------------- 力積分
 def wall_forces(design: SernDesign, M_in: float, g: float = 1.4, pa_over_pin: float | None = None,
                 x_ref: float = 0.0, y_ref: float = 0.0) -> dict:
