@@ -23,7 +23,7 @@ wall:      {{physID: 4, kind: wall_isothermal, outputHDFflg: 1, ints: {{wallFunc
 chem = f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, tci: {a.tci}}}"
 value = a.restart if a.restart else "bk.h5"
 (d / "solverConfig.yaml").write_text(f"""# case/47 Burrows-Kurkov: chem={a.chem} tci={a.tci} cfl_pseudo={a.cfl}
-mesh: {{meshFormat: "hdf5", discretization: "node", nodeWallViscGradFlux: 1, nodeWallDirichlet: 1, meshFileName: "bk.h5", valueFileName: "{value}"}}
+mesh: {{meshFormat: "hdf5", discretization: "node", nodeWallViscGradFlux: 1, nodeWallDirichlet: 1, nodeInletCornerWall: {a.profile}, meshFileName: "bk.h5", valueFileName: "{value}"}}
 gpu: 1
 solver: "SLAU"
 physProp: {{isCompressible: 1, thermalMethod: 2, viscMethod: 2, ro: 0.24, visc: 4.5e-5, thermCond: 0.08, cp: 1300.0, gamma: 1.3,
