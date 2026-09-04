@@ -240,5 +240,23 @@ check("積分法 θ0 ×0.5/×2: スロート δ*_n の変化 < 5 %", dev_t < 0.0
 fn = delta_r_function(ad)
 check("積分法 delta_r_function: 補間が一致", abs(float(fn(ad["x"][k0])) - ad["delta_r"][k0]) < 1e-12)
 
+# =============================== 3. δ_r の 5 次 P-spline 平滑化 ==========================
+from forge_design.metrics.deltastar import smooth_delta_quintic  # noqa: E402
+xg = np.linspace(-1.0, 95.0, 1250)
+d_true = 0.0015 + 0.0075 * (np.maximum(xg, 0) / 95.0) ** 0.5 * 95.0 / 8.0 * 0.6   # 滑らかな成長 (スロート 0.0015 → 出口 ~0.7)
+rng = np.random.default_rng(0)
+d_noisy = d_true * (1.0 + 0.03 * rng.standard_normal(len(xg)))              # 抽出ノイズ 3 %
+wts = np.ones_like(xg); wts[(xg < -0.5)] = 0.0                              # hard 不合格を混ぜる
+f_s, dg = smooth_delta_quintic(xg, d_noisy, weights=wts, knot_spacing=2.0, lam=1.0)
+d_s = f_s(xg)
+err = np.abs(d_s - d_true) / d_true
+check("P-spline: 3 % ノイズから真値を ±1.5 % (中央値) で復元", float(np.median(err[xg > 0])) < 0.015, f"median {np.median(err[xg>0]):.4f}")
+check("P-spline: 全域正・有限", bool(np.all(np.isfinite(d_s)) and np.all(d_s >= 0)))
+# 曲率の滑らかさ: 2 階差分の高周波成分がノイズ入り生値より 2 桁小さい
+def hf2(v):
+    d2 = np.gradient(np.gradient(v, xg), xg); w = 25; return float(np.std(d2 - np.convolve(d2, np.ones(w) / w, mode="same")))
+check("P-spline: δ'' の高周波が生値の 1/50 以下", hf2(d_s) < hf2(d_noisy) / 50, f"{hf2(d_s):.2e} vs {hf2(d_noisy):.2e}")
+check("P-spline: 重み 0 の点を無視 (x<-0.5 の外挿値が有限)", bool(np.all(np.isfinite(f_s(np.array([-0.9, -0.7]))))))
+
 print(f"\n{'ALL PASS' if FAIL == 0 else f'{FAIL} FAIL'}")
 sys.exit(1 if FAIL else 0)

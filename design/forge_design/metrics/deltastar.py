@@ -436,3 +436,47 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
         diag = {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in out.items()}
         (od / "delta_r_equiv_diag.json").write_text(json.dumps(diag))
     return out
+
+
+# --- δ_r(x) の 5 次 P-spline 平滑化 (壁曲率を滑らかにする; 2026-09-04 ユーザ指摘) ----------------------------
+def smooth_delta_quintic(x, d, weights=None, knot_spacing: float = 2.0, lam: float = 1.0,
+                         x_stretch: float = 4.0, penalty_order: int = 3, positive: bool = True):
+    r"""抽出した $\delta_r(x)$ を **5 次 B-spline + 3 階差分ペナルティ (P-spline)** で平滑化する。
+
+    壁は $r_{inv}(x)+\delta_r(x)$ を補間 5 次 B-spline で通すので、δ_r の 2 階微分のノイズがそのまま壁曲率に乗る。
+    3 次平滑化スプラインは曲率まで滑らかにしないため、$\int(\delta_r''')^2$ に相当する係数 3 階差分ペナルティで
+    **曲率が滑らかな** δ_r を作る (ユーザ提案)。ノットは $\xi=\sqrt{x-x_0+x_s}$ で等間隔 (スロート側で密:
+    δ_r は x=0→8 で 20 倍に育つ)。weights=0 の点 (hard 不合格) は無視。戻り: (callable δ_s(x), 診断 dict)。"""
+    from scipy.interpolate import BSpline
+    x = np.asarray(x, dtype=float); d = np.asarray(d, dtype=float)
+    w = np.ones_like(d) if weights is None else np.asarray(weights, dtype=float)
+    ok = np.isfinite(d) & (w > 0)
+    x0 = float(x[ok].min())
+    xi = lambda xx: np.sqrt(np.maximum(xx - x0, 0.0) + x_stretch)
+    k = 5
+    xi_all = xi(x[ok]); xi_lo, xi_hi = float(xi_all.min()), float(xi_all.max())
+    # ノット間隔: 物理 x で knot_spacing 相当 (ξ 空間では dξ = dx/(2ξ) → 中央値で換算)
+    dxi = knot_spacing / (2.0 * np.median(xi_all))
+    n_int = max(int(np.ceil((xi_hi - xi_lo) / dxi)) - 1, 4)
+    inner = np.linspace(xi_lo, xi_hi, n_int + 2)[1:-1]
+    t = np.concatenate([[xi_lo] * (k + 1), inner, [xi_hi] * (k + 1)])
+    n_cp = len(t) - k - 1
+    B = BSpline.design_matrix(xi_all, t, k).toarray()
+    D = np.diff(np.eye(n_cp), n=penalty_order, axis=0)
+    W = w[ok][:, None]
+    A = B.T @ (W * B) + lam * (D.T @ D)
+    c = np.linalg.solve(A, B.T @ (w[ok] * d[ok]))
+    spl = BSpline(t, c, k, extrapolate=False)
+
+    def f(xx):
+        xx = np.asarray(xx, dtype=float)
+        q = np.clip(xi(xx), xi_lo, xi_hi)
+        v = spl(q)
+        return np.maximum(v, 0.0) if positive else v
+
+    fit = f(x[ok])
+    rel = (fit - d[ok]) / np.maximum(np.abs(d[ok]), 1e-6)
+    diag = dict(n_cp=int(n_cp), knot_spacing=knot_spacing, lam=lam, penalty_order=penalty_order,
+                resid_rel_rms=float(np.sqrt(np.mean(rel ** 2))), resid_abs_max=float(np.max(np.abs(fit - d[ok]))),
+                resid_rel_p95=float(np.percentile(np.abs(rel), 95)))
+    return f, diag

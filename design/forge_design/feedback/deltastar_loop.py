@@ -27,7 +27,8 @@ import numpy as np
 from ..metrics.deltastar import deltastar_from_core_matched_euler, massflow_ratio
 
 
-def extract_and_merge(prev_run, euler_run, omega: float = 0.5, **kw) -> dict:
+def extract_and_merge(prev_run, euler_run, omega: float = 0.5, smooth_lam: float = 1.0,
+                      knot_spacing: float = 2.0, **kw) -> dict:
     """前 pass の NS run から抽出し、次 pass の入力 δ_r(x) を作る。
     出力 (prev_run 内): delta_r_equiv.csv / delta_r_equiv_diag.json / delta_r_next.csv。"""
     prev_run = Path(prev_run)
@@ -35,26 +36,31 @@ def extract_and_merge(prev_run, euler_run, omega: float = 0.5, **kw) -> dict:
     d_in = d["delta_in"]
     d_use = d["delta_r_use"]
     held = ~np.isfinite(d_use)
-    d_next = np.where(held, d_in, (1.0 - omega) * d_in + omega * np.where(held, 0.0, d_use))
-    # 単調性ガード: 新しい物理壁 r_w,NS − δ_in + δ_next がスロート下流で非単調なら、δ_next の平滑化を段階的に強める
-    # (PhysicalNozzleWall.validate が非単調で弾く。設計壁は x≥0.5 で単調増加なので δ の減少勾配だけが原因)
-    from scipy.interpolate import make_smoothing_spline
+    # 平滑化 (2026-09-04 ユーザ指摘: 3 次平滑化では壁曲率が凸凹): 抽出 raw を 5 次 P-spline (3 階差分ペナルティ,
+    # ノット 2 r_t, λ=1) で「曲率が滑らか」な δ_ext(x) にしてから緩和する。hard 不合格の点は重み 0。
+    from ..metrics.deltastar import smooth_delta_quintic
     x = d["x"]; r_inv = d["r_wall_euler"]
-    lam_used = None
-    for k, lam in enumerate((None, 1e-2, 1e-1, 1.0, 10.0)):
-        cand = d_next if lam is None else make_smoothing_spline(x, d_next, lam=lam)(x)
-        r_new = r_inv + cand
+    raw = d["delta_r_raw"]; wts = d["hard_ok"].astype(float) & np.isfinite(raw) if False else (d["hard_ok"] & np.isfinite(raw)).astype(float)
+    lam_used = None; diag = None
+    for lam in (smooth_lam, smooth_lam * 10, smooth_lam * 100, smooth_lam * 1000):
+        f_s, diag = smooth_delta_quintic(x, raw, weights=wts, knot_spacing=knot_spacing, lam=lam)
+        d_ext = f_s(x)
+        d_next = (1.0 - omega) * d_in + omega * d_ext
+        # 単調性ガード: 新しい物理壁 r_inv + δ_next がスロート下流で非単調なら λ を 10 倍して再平滑化
+        r_new = r_inv + d_next
         m = x >= 0.5
         if np.all(np.diff(r_new[m]) > -1e-9):
-            d_next = cand; lam_used = lam; break
+            lam_used = lam; break
     else:
-        d_next = cand; lam_used = f"{lam} (still non-monotone)"
+        lam_used = f"{lam} (still non-monotone)"
+    d_use = d_ext                                   # 以降の帳簿は平滑化後の抽出値で取る
+    held = ~np.isfinite(d["delta_r_use"])
     np.savetxt(prev_run / "delta_r_next.csv", np.c_[d["x"], d_next, d_in, d_use, held.astype(int)],
                delimiter=",", comments="",
-               header=f"x_rt,delta_r,delta_in_prev,delta_r_use,held (omega={omega}; extra_smooth_lam={lam_used})")
+               header=f"x_rt,delta_r,delta_in_prev,delta_r_use_smoothed,held (omega={omega}; quintic P-spline knot={knot_spacing} lam={lam_used}; resid_rel_rms={diag['resid_rel_rms']:.4f})")
     fin = np.isfinite(d_use) & (d_in > 1e-4)
     ratio = d_use[fin] / d_in[fin]
-    summary = {"omega": omega, "extra_smooth_lam": (None if lam_used is None else str(lam_used)),
+    summary = {"omega": omega, "smooth": {"kind": "quintic_pspline", "knot_spacing": knot_spacing, "lam": str(lam_used), **diag},
                "n_stations": int(len(d["x"])), "n_ok": int(d["ok"].sum()),
                "n_hard_ok": int(d["hard_ok"].sum()), "n_held": int(held.sum()),
                "use_over_in_median": float(np.median(ratio)) if fin.any() else None,

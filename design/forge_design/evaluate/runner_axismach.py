@@ -673,9 +673,15 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                                scale, thermal_bc=init_cfg.get("thermal_bc"),
                                theta0_m=init_cfg.get("theta0_m"), x_virtual_m=init_cfg.get("x_virtual_m"),
                                a_crocco=float(init_cfg.get("a_crocco", 1.0)), closure=str(init_cfg.get("closure", "contur")))
+        # 積分法の出力も同じ 5 次 P-spline で平滑化 (N(Re) テーブルの折れ目などを壁曲率に持ち込まない)
+        from ..metrics.deltastar import smooth_delta_quintic
+        f_s, sm_diag = smooth_delta_quintic(res_init["x"], res_init["delta_r"], knot_spacing=2.0, lam=1.0)
+        res_init["delta_r_raw_integral"] = res_init["delta_r"].copy()
+        res_init["delta_r"] = f_s(res_init["x"])
         delta_r_x = delta_r_function(res_init)
         offset = "radial"
         init_info = dict(res_init["settings"])
+        init_info["smooth"] = {"kind": "quintic_pspline", **sm_diag}
         init_info["delta_r_throat"] = float(np.interp(0.0, res_init["x"], res_init["delta_r"]))
         init_info["delta_r_exit"] = float(res_init["delta_r"][-1])
         (run_dir / "delta_r_initial.csv").write_text("")   # 後で上書き (run_dir は下で作る)
