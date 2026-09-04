@@ -748,6 +748,9 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                delimiter=",", header="x_m,r_m", comments="")
     n = nsteps or int(p.evaluate.get("nStepOuter", 48000))
     out_int = int(p.evaluate.get("outStepInterval", max(n // 6, 1)))
+    if n % out_int:
+        # forge は outStepInterval の倍数でしか res を書かない → 最終 step の res が残るよう n を割り切る間隔に直す
+        out_int = next(n // k for k in (3, 2, 4, 6, 1) if n % k == 0)
     cfl_main = float(cfl_main if cfl_main is not None else p.evaluate.get("cfl_main", 1.0))
     implicit_relax = implicit_relax if implicit_relax is not None else p.evaluate.get("implicit_relax")
     (run_dir / "bcondConfig.yaml").write_text(_bcond_with_species(_bcond(p, euler=False), _tp_species_Y(p)))
