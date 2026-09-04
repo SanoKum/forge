@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S3 + S4(a) 完了 (同日)、S4(b) NASA 傾向照合を実行中 -->
+- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S4 完了 (同日)。次 = RANS 化 → S5 δ* → S6 MOO -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) 「SERN チェーン」節 (現在仕様。本計画と同時に起草)
   - [`design/CAPABILITIES.md`](../../design/CAPABILITIES.md) (問題タイプ `sern_2d` を 📋 で登録)
@@ -215,4 +215,10 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   (x/H 6–7 の後縁扇反射位置に小差)。残差は 1.4 桁プラトー (`NOT CONVERGED`) だが力係数は STEADY (1e-5)。
   `geometry.mode: straight` (平板ランプを切るだけ、NASA 照合用) を追加。S4(b) は run_0003–0007 (カウル長 2/3.12/4.5H、
   カウル角 3/6/12°, M∞10, γ1.3) を投入。
+- `2026-09-04` — **S4(b) 合格** (case/46 run_0003–0007, `geometry.mode: straight`, cell Euler, M∞10/γ1.3): 内面の力は
+  forge と MOC が 5 形状すべてで C_T +0.001 以内・C_M 0.05 以内で一致。カウル長 2.0/3.12/4.5H で C_T 0.9605/0.9704/0.9720
+  (短縮で大きく減、延長の利得は小 = NASA)、前方基準 (−20H) の C_M −1.31/−0.68/−0.36 (短いカウルで大きな頭下げ = NASA)。
+  カウル角 3/6/12° で C_T 0.9786/0.9704/0.9314 (単調減 = NASA)。**カウル外面の衝撃圧は MOC に無い寄与** (12° で C_T −0.035) で、
+  評価器で必ず取る。C_M の傾向は基準点に依存するため、問題定義の `moment_ref` は機体 CG を必ず与える (§8-3 の回答)。
+  詳細は case/46 README。
 
