@@ -80,3 +80,6 @@ restart 可能) で組む。飽和到達 M は 5.3–5.5 帯の見込み (dry ru
 - 2026-09-04: **粘性トリム (Md 6.0144) は撤回**。トリムが打ち消していた −0.24 % はスロート δ\* の 8 倍過大 (相関) による有効スロート面積 +2 % が主因と判明
   ([調査ノート](../../notes/investigations/nozzle-deltastar-throat-review.md))。新チェーン (積分法初期壁 + 固定 Euler 基準抽出,
   [plan](tooling-nozzle-deltastar-core-matched-euler.md)) で **Md 6.0 のまま出口面コア M +0.01〜0.02 %** (case/45 `run_0023`)。生産形は run_0023 の壁。
+- 2026-09-04: **最終形 = case/45 `run_0038_ns_final_rt77p02`**: r_t 77.02 mm (`deltastar_loop --solve-rt 0.775` で出口半径 0.775 m 合わせ)、
+  物理出口半径 0.7750 m、全長 (スロート→出口) 7.325 m、ṁ_NS/ṁ_E 1.0002、出口面コア M 6.0002、Md 6.0 (トリムなし)。点列 `points_d155_final_{ns,euler}.csv`。
+  上流直管を 10 r_t にしても δ_r・出口 M は不変 (`run_0034`)。凝縮 ON の再評価は未実施 (run_0008 はトリム壁)。

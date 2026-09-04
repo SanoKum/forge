@@ -14,7 +14,7 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
   dry 本体 + 採用点の凝縮 ON 再評価 (方針 a)。
 
 > **2026-09-04 更新**: 粘性トリム (Md 6.0144, run_0005–0007) は撤回。新チェーン (積分法初期壁 + 固定 Euler 基準・帯局所抽出) で
-> **Md 6.0 トリムなし**のまま ṁ_NS/ṁ_E 0.9999・出口面コア M +0.01〜0.02 % (`run_0023_ns_ib_pass1` = 生産形)。旧 v3 のスロート δ\* は実効値の 8 倍過大だった
+> **Md 6.0 トリムなし**のまま ṁ_NS/ṁ_E 1.0002・出口面コア M 6.0002 (`run_0038_ns_final_rt77p02` = **最終形**: r_t 77.02 mm、出口半径 0.7750 m、全長 7.325 m; 点列 `points_d155_final_ns.csv`)。旧 v3 のスロート δ\* は実効値の 8 倍過大だった
 > ([調査ノート](../../notes/investigations/nozzle-deltastar-throat-review.md), [plan](../../plans/accepted/tooling-nozzle-deltastar-core-matched-euler.md))。
 
 ## 計算 run 一覧
@@ -46,6 +46,9 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 | `run_0032_euler_cfl6_r07_8k` | Euler `--cfl 6 --implicit-relax 0.7 --stages soft --steps 8000` (run_0028 の短縮版) | 完走・NaN 0・品質 PASS。metrics は run_0001 と同一 (dM 0.0361 %、出口軸 M 6.00005、ε_M 0.0057 %) だが `check_convergence` は未達判定 (12000 step の run_0028 は ALL PASS) → Euler 本段は 12000 を推奨 | active (Euler 短縮の記録) |
 | `run_0033_euler_Lpipe10` | 上流配管の影響テスト用 Euler: `problem_d155_R2_Lc39.3_tp_Lpipe10.yaml` (直管 L_pipe 0.5 → 10 r_t)、cfl 6/relax 0.7/soft | 完走・NaN 0 (run_0034 の固定 Euler 基準) | active (基準) |
 | `run_0035_euler_rt77p05` / `run_0036_ns_final_rt77p05` | 最終 r_t 補正の 1 回目: r_t 77.05 mm (run_0025 の**生抽出** δ_r(x_F−0.3)=0.684 で解いた値) の Euler + NS (run_0025 から warm start, none/cfl5/12000) | 完走・NaN 0・SOFT-PASS・ALL STEADY。ṁ 1.0002、出口面コア M 6.0000、固定点 0.996〜1.002。**物理出口半径 0.7753 m と 0.3 mm 残った** = 壁に載るのは平滑化後の δ_r,exit 0.688 なので、solve_rt をその値を使うよう修正して r_t 77.02 mm でやり直し (run_0037/0038) | active (補正 1 回目の記録) |
+| `run_0034_ns_ib_pass0_Lpipe10` | **上流配管の影響**: 直管 L_pipe 0.5 → 10 r_t (入口境界層が 6 倍厚い)、他は run_0031 と同じ (中継なし, full, cfl5, 12000; ni 1400) | 完走・NaN 0・SOFT-PASS・ALL STEADY。**スロート以降の δ_r は L_pipe 0.5 (run_0031) と 0.3 % 以内で同一 (x=0: 0.0014/0.0014, x=90: 0.659/0.661)、出口面コア M +0.00〜0.03 % も同一**。ṁ 比 0.9992 (スロート実効 δ 0.0018 vs 0.0014 = 0.03 mm)。→ 収縮部の加速で上流の境界層履歴は消える (積分法の θ0 無記憶と整合) | active (**配管非依存の根拠**) |
+| `run_0037_euler_rt77p02` | 最終 r_t 77.02 mm の Euler (固定基準, cfl 6/relax 0.7/soft) | 完走・NaN 0・PASS・**ALL PASS**・ALL STEADY | active (最終形の基準) |
+| **`run_0038_ns_final_rt77p02`** | **最終形**: r_t 77.02 mm (solve_rt: run_0025 の壁に載せた δ_r,exit 0.688 で 0.775 m 合わせ)、δ_r = run_0025 抽出 (P-spline)、warm start (none/cfl5/relax0.7/12000) | 完走・NaN 0・SOFT-PASS・ALL STEADY (残差 warm 床)。**物理出口半径 0.7750 m (spec 一致)、ṁ_NS/ṁ_E 1.0002、出口面コア M 6.0002 (+0.00 %)、固定点 0.993〜1.002、全長 (スロート→出口) 7.325 m、物理スロート半径 77.14 mm**。点列 `points_d155_final_{ns,euler}.csv` | active (**最終形の正本**) |
 | `run_0008_ns_trim_cond` | 凝縮 ON restart (`problem_d155_trim_ns_cond.yaml`: Kw+HK condModel1+Kantrowitz, 蒸発 ON, IC=run_0007, 12000 step) | 完走・NaN 0・**STEADY** (4k/8k/12k で M_exit 差 5e-4)。軸 onset x≈69 r_t、出口 g 0.20 % (H₂O の 2 %)、**出口軸 M 5.9273 (−1.2 %)**・試験区間に M 低下勾配 (x60→96 で 6.00→5.93)。dry の軸は x≈24 r_t (M5.5) で飽和線越え S≈14 (`axis_values.csv` の Tsat_post) | active (**凝縮評価の正本**) |
 
 ## SU2 クロスチェック (境界層厚さ, 2026-09-01)
