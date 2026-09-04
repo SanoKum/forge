@@ -82,4 +82,4 @@ restart 可能) で組む。飽和到達 M は 5.3–5.5 帯の見込み (dry ru
   [plan](tooling-nozzle-deltastar-core-matched-euler.md)) で **Md 6.0 のまま出口面コア M +0.01〜0.02 %** (case/45 `run_0023`)。生産形は run_0023 の壁。
 - 2026-09-04: **最終形 = case/45 `run_0038_ns_final_rt77p02`**: r_t 77.02 mm (`deltastar_loop --solve-rt 0.775` で出口半径 0.775 m 合わせ)、
   物理出口半径 0.7750 m、全長 (スロート→出口) 7.325 m、ṁ_NS/ṁ_E 1.0002、出口面コア M 6.0002、Md 6.0 (トリムなし)。点列 `points_d155_final_{ns,euler}.csv`。
-  上流直管を 10 r_t にしても δ_r・出口 M は不変 (`run_0034`)。凝縮 ON の再評価は未実施 (run_0008 はトリム壁)。
+  上流直管を 10 r_t にしても δ_r・出口 M は不変 (`run_0034`)。凝縮 ON を最終壁で再評価 (`run_0039`): 軸 onset 57.9 r_t、出口軸 M −1.36 %、出口面コア M −0.18 %、g 0.27 % — 結論不変 (Tt 1600 K は凝縮不可避、凝縮フリーは Tt ≳ 1820 K)。
