@@ -265,7 +265,9 @@ def run_forge(run_dir) -> int:
     return r.returncode
 
 
-def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000) -> int:
+def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000, soft_cfl: float = 0.5, soft_conv: int = 0) -> int:
+    """soft_cfl / soft_conv: soft 段の CFL と convMethod (既定 0.5 / 1 次)。3D SST の後縁 3 重点など、1 次でも
+    立ち上がりが厳しいケースで下げる。"""
     run_dir = Path(run_dir)
     cfg_main = (run_dir / "solverConfig_main.yaml").read_text() if (run_dir / "solverConfig_main.yaml").exists() \
         else (run_dir / "solverConfig.yaml").read_text()
@@ -278,8 +280,8 @@ def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000) -> int:
         return run_forge(run_dir)
     if stages == "none":
         return run_forge(run_dir)
-    soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 0.5, cfl_pseudo: 0.5", cfg_main)
-    soft = soft.replace("convMethod: 1", "convMethod: 0")
+    soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", f"cfl: {soft_cfl}, cfl_pseudo: {soft_cfl}", cfg_main)
+    soft = soft.replace("convMethod: 1", f"convMethod: {soft_conv}")
     soft = re.sub(r"nStepOuter: \d+", f"nStepOuter: {soft_steps}", soft)
     soft = re.sub(r"outStepInterval: \d+", f"outStepInterval: {soft_steps}", soft)
     (run_dir / "solverConfig.yaml").write_text(soft)
