@@ -168,6 +168,7 @@ physProp: {thermalMethod: 2, species: [H2, O2, H, O, OH, H2O, HO2, H2O2, N2], sp
 | `tci` | 0 | 1: PaSR (Partially Stirred Reactor) で $\dot\omega,\dot Q$, Jacobian に $\kappa=\tau_c/(\tau_c+\tau_{mix})$ を掛ける ($\tau_c=1/\max_s\lvert\partial\dot\omega_s/\partial\rho Y_s\rvert$)。RANS SST 時のみ (他は κ=1 と警告)。出力 `chemKappa` |
 | `tciTauChem` | 1 | τ_c の定義: 0 = $1/\max_s\lvert\partial\dot\omega_s/\partial\rho Y_s\rvert$ (最速ラジカル時間 ~1e-8 s。κ≈0.03 で **消炎する** [case/47 run_0018]), 1 = 燃料/酸化剤 (H₂, O₂) の消費時間 $\max(\rho Y_s/\lvert\dot\omega_s\rvert)$ (推奨) |
 | `tciCmix`, `tciMixModel` | 1.0, 0 | $\tau_{mix}=C_{mix}\sqrt{\nu/\varepsilon}$ (0, Kolmogorov) または $C_{mix}k/\varepsilon$ (1, 積分), $\varepsilon=\beta^*k\omega$。未較正 (Phase 3 で Burrows–Kurkov により決める) |
+| `jacobianInterval` | 1 | 定常陰解法 (`timeIntegration: 11`, jacobianMode 2) で化学 Jacobian (種ブロック・反応熱感度・対角) を n ステップごとに再評価し、間は凍結する (ω・Q̇ は毎ステップ)。流れブロックの frozen-coefficient と同じ発想で、化学ソース項カーネルの大半 (Jacobian 組立) を省く。非定常/陽解法では無視 |
 | `strang` | 0 | 1: 非定常陽解法 (`unsteady: 1`, RK) で化学を Strang 分離 (dt/2 セル内 backward-Euler sub-cycle → RK → dt/2)。剛性な化学でも RK の `dt` を化学時間に縛られずに取れる。定常・dual-time では無視 |
 
 - **定常陰解法 (`timeIntegration: 11`) の反応流は `speciesImplicitCoupling: 2` + `jacobianMode: 2` が必須**。陽的な反応熱注入 (coupling 0/1 または jacobianMode ≤1) はスロート付近の再結合熱で数 step で発散する (case/46 run_0002–0007)。非定常陽解法 (RK, `dt` ≲ 化学時間) は jacobianMode 1 でよい。

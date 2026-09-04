@@ -17,6 +17,8 @@ static bool g_chem_ready = false;
 static flow_float* g_jac_dev = nullptr;      // R_sk = J_total_sk + d_s δ_sk (d_s = max(0,−J_ss) は src_jac_Y に入れる)
 static flow_float* g_jacroe_dev = nullptr;   // max(0, −∂Q̇/∂(ρe)) [1/s]
 static flow_float* g_cq_dev = nullptr;       // g_k = ∂Q̇/∂(ρY_k) = −Σ_s c_s J_total_sk [nCells × ns] (反応熱の陰的注入用)
+static flow_float* g_diag_dev = nullptr;     // d_s = max(0,−J_ss) [nCells × ns] (Jacobian 凍結ステップで src_jac_Y に再加算する用)
+static int g_stepCounter = 0;
 static geom_int g_jac_cap = 0;
 static int g_jac_ns = 0;
 static bool g_block_active = false;
@@ -67,52 +69,56 @@ __global__ void chemistry_strang_d(
     double T = thermo_T_from_e(sp, n, Y, e, 1000.0, 200.0, 6000.0);
     if (T < Tfreeze) { chemQdot[ic] = 0.0; return; }
     const double U0e = e;
-    double t = 0.0; int nsub = 0;
+    // sub-step 制御 (v2, 高速化): 刻みは「主要種の相対変化 <20 % かつ |ΔT|<30 K」で受理し、超えたら半分にして再試行。
+    // 反応していないセルは 1 sub-step (h=dt_half)・Newton 1 回で終わる。受理後、補正が大きければ Newton をもう 1 回。
+    double t = 0.0; int nsub = 0; double h = dt_half;
     while (t < dt_half && nsub < CHEM_STRANG_MAXSUB) {
-        // Jacobian at current state
-        double Tc = (T > Tmax) ? Tmax : ((T < 200.0) ? 200.0 : T);
-        double Qd;
-        chem_source(sp, rt, rho, Tc, Y, om, &Qd, 2, J, dOdT);
-        const double cv = thermo_cp_mix(sp, n, Y, Tc) - thermo_R_mix(sp, n, Y);
-        const double inv_rhocv = 1.0/(rho*((cv > 1.0e-3) ? cv : 1.0e-3));
-        double jmax = 0.0;
-        for (int k = 0; k < n; ++k) { const double e_k = thermo_h_mass(sp[k], Tc) - thermo_R_species(sp[k])*Tc; dTdU[k] = -e_k*inv_rhocv; }
-        for (int s = 0; s < n; ++s) { const double jss = J[s*n+s] + dOdT[s]*dTdU[s]; if (fabs(jss) > jmax) jmax = fabs(jss); }
-        double h = (jmax > 0.0) ? 0.5/jmax : dt_half;
-        if (nsub == CHEM_STRANG_MAXSUB - 1 || h > dt_half - t) h = dt_half - t;
+        if (h > dt_half - t) h = dt_half - t;
         if (h < 1.0e-30) break;
-        // 線形陰的 Euler + 1 回の Newton 補正: (I − h J_tot) δ = h ω(U^k) − (U^k − U^n)
-        double Un[THERMO_MAX_SPECIES]; for (int s = 0; s < n; ++s) Un[s] = U[s];
-        for (int it = 0; it < 2; ++it) {
-            if (it > 0) {
-                double Tk = thermo_T_from_e(sp, n, Y, e, T, 200.0, 6000.0); Tc = (Tk > Tmax) ? Tmax : ((Tk < 200.0) ? 200.0 : Tk); T = Tk;
+        double Un[THERMO_MAX_SPECIES], en = e, Tn = T; for (int s = 0; s < n; ++s) Un[s] = U[s];
+        bool accepted = false;
+        for (int attempt = 0; attempt < 10 && !accepted; ++attempt) {
+            double Tc = (T > Tmax) ? Tmax : ((T < 200.0) ? 200.0 : T);
+            double Qd; double relmax = 0.0;
+            for (int it = 0; it < 2; ++it) {
                 chem_source(sp, rt, rho, Tc, Y, om, &Qd, 2, J, dOdT);
-                const double cv2 = thermo_cp_mix(sp, n, Y, Tc) - thermo_R_mix(sp, n, Y);
-                const double inv2 = 1.0/(rho*((cv2 > 1.0e-3) ? cv2 : 1.0e-3));
-                for (int k = 0; k < n; ++k) { const double e_k = thermo_h_mass(sp[k], Tc) - thermo_R_species(sp[k])*Tc; dTdU[k] = -e_k*inv2; }
+                const double cv = thermo_cp_mix(sp, n, Y, Tc) - thermo_R_mix(sp, n, Y);
+                const double inv_rhocv = 1.0/(rho*((cv > 1.0e-3) ? cv : 1.0e-3));
+                for (int k = 0; k < n; ++k) { const double e_k = thermo_h_mass(sp[k], Tc) - thermo_R_species(sp[k])*Tc; dTdU[k] = -e_k*inv_rhocv; }
+                for (int s = 0; s < n; ++s) {
+                    for (int k = 0; k < n; ++k) M[s*n+k] = -h*(J[s*n+k] + dOdT[s]*dTdU[k]);
+                    M[s*n+s] += 1.0;
+                    rhs[s] = h*om[s] - (U[s] - Un[s]);
+                }
+                for (int k = 0; k < n; ++k) {
+                    int p = k; double amax = fabs(M[k*n+k]);
+                    for (int i = k+1; i < n; ++i) if (fabs(M[i*n+k]) > amax) { amax = fabs(M[i*n+k]); p = i; }
+                    if (p != k) { for (int j = 0; j < n; ++j) { const double tt = M[k*n+j]; M[k*n+j] = M[p*n+j]; M[p*n+j] = tt; } const double tt = rhs[k]; rhs[k] = rhs[p]; rhs[p] = tt; }
+                    const double d = (fabs(M[k*n+k]) > 1.0e-300) ? M[k*n+k] : 1.0e-300;
+                    for (int i = k+1; i < n; ++i) { const double f = M[i*n+k]/d; if (f == 0.0) continue; for (int j = k; j < n; ++j) M[i*n+j] -= f*M[k*n+j]; rhs[i] -= f*rhs[k]; }
+                }
+                for (int i = n-1; i >= 0; --i) { double tt = rhs[i]; for (int j = i+1; j < n; ++j) tt -= M[i*n+j]*rhs[j]; rhs[i] = tt/M[i*n+i]; }
+                double de = 0.0, us = 0.0; relmax = 0.0;
+                for (int s = 0; s < n; ++s) {
+                    double Us = U[s] + rhs[s]; if (Us < 0.0) Us = 0.0;
+                    de -= (sp[s].h_datum/sp[s].MW)*(Us - U[s])/rho;
+                    if (Un[s] > 1.0e-6*rho) { const double r_ = fabs(Us - Un[s])/Un[s]; if (r_ > relmax) relmax = r_; }
+                    U[s] = Us; us += Us;
+                }
+                e += de;
+                for (int s = 0; s < n; ++s) { U[s] *= rho/us; Y[s] = U[s]/rho; }
+                const double Tk = thermo_T_from_e(sp, n, Y, e, T, 200.0, 6000.0); T = Tk; Tc = (Tk > Tmax) ? Tmax : ((Tk < 200.0) ? 200.0 : Tk);
+                if (it == 0 && relmax < 0.05 && fabs(T - Tn) < 5.0) break;   // 補正が小さければ Newton 1 回で十分
             }
-            for (int s = 0; s < n; ++s) {
-                for (int k = 0; k < n; ++k) M[s*n+k] = -h*(J[s*n+k] + dOdT[s]*dTdU[k]);
-                M[s*n+s] += 1.0;
-                rhs[s] = h*om[s] - (U[s] - Un[s]);
+            if (relmax < 0.2 && fabs(T - Tn) < 30.0) { accepted = true; }
+            else {   // 却下: 状態を戻して刻みを半分に
+                for (int s = 0; s < n; ++s) { U[s] = Un[s]; Y[s] = U[s]/rho; }
+                e = en; T = Tn; h *= 0.5;
+                if (h < 1.0e-30) { accepted = true; }
             }
-            // LU (部分ピボット)
-            for (int k = 0; k < n; ++k) {
-                int p = k; double amax = fabs(M[k*n+k]);
-                for (int i = k+1; i < n; ++i) if (fabs(M[i*n+k]) > amax) { amax = fabs(M[i*n+k]); p = i; }
-                if (p != k) { for (int j = 0; j < n; ++j) { const double tt = M[k*n+j]; M[k*n+j] = M[p*n+j]; M[p*n+j] = tt; } const double tt = rhs[k]; rhs[k] = rhs[p]; rhs[p] = tt; }
-                const double d = (fabs(M[k*n+k]) > 1.0e-300) ? M[k*n+k] : 1.0e-300;
-                for (int i = k+1; i < n; ++i) { const double f = M[i*n+k]/d; if (f == 0.0) continue; for (int j = k; j < n; ++j) M[i*n+j] -= f*M[k*n+j]; rhs[i] -= f*rhs[k]; }
-            }
-            for (int i = n-1; i >= 0; --i) { double tt = rhs[i]; for (int j = i+1; j < n; ++j) tt -= M[i*n+j]*rhs[j]; rhs[i] = tt/M[i*n+i]; }
-            // 更新 + エネルギー (Δe = −Σ c_s ΔU_s/ρ) + 実現可能性
-            double de = 0.0, us = 0.0;
-            for (int s = 0; s < n; ++s) { double Us = U[s] + rhs[s]; if (Us < 0.0) Us = 0.0; de -= (sp[s].h_datum/sp[s].MW)*(Us - U[s])/rho; U[s] = Us; us += Us; }
-            e += de;
-            for (int s = 0; s < n; ++s) { U[s] *= rho/us; Y[s] = U[s]/rho; }
         }
-        T = thermo_T_from_e(sp, n, Y, e, T, 200.0, 6000.0);
         t += h; ++nsub;
+        if (h < dt_half - t) h *= 2.0;   // 受理が続けば刻みを戻す
     }
     for (int s = 0; s < n; ++s) roY_dev[s][ic] = (flow_float)U[s];
     roe[ic] = (flow_float)(rho*(e + ek));
@@ -195,17 +201,21 @@ __global__ void chemistry_source_d(
     flow_float* chem_jacroe,   // jacMode==2: [nCells] (nullptr 可)
     flow_float* chem_cq,       // jacMode==2: [nCells*ns] ∂Q̇/∂(ρY_k) (nullptr 可)
     int tci, double cmix, int mixModel, int tauChemModel,     // PaSR (RANS SST): tci==1 で κ スケール
-    const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa)
+    const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa,
+    int frozenJac, flow_float* chem_diag)                     // frozenJac==1: Jacobian を再評価せず前回の対角 (chem_diag) を src_jac に足す
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
 
     const double rho = (double)ro[ic];
     double Tc = (double)T[ic];
-    chemQdot[ic] = 0.0; chemTau[ic] = 1.0e30; chemKappa[ic] = 1.0;
-    if (chem_jacroe) chem_jacroe[ic] = 0.0;
-    if (chem_jac) for (int i = 0; i < nSpecies*nSpecies; ++i) chem_jac[(size_t)ic*nSpecies*nSpecies + i] = 0.0;
-    if (chem_cq)  for (int k = 0; k < nSpecies; ++k) chem_cq[(size_t)ic*nSpecies + k] = 0.0;
+    if (!frozenJac) {
+        chemQdot[ic] = 0.0; chemTau[ic] = 1.0e30; chemKappa[ic] = 1.0;
+        if (chem_jacroe) chem_jacroe[ic] = 0.0;
+        if (chem_jac) for (int i = 0; i < nSpecies*nSpecies; ++i) chem_jac[(size_t)ic*nSpecies*nSpecies + i] = 0.0;
+        if (chem_cq)  for (int k = 0; k < nSpecies; ++k) chem_cq[(size_t)ic*nSpecies + k] = 0.0;
+        if (chem_diag) for (int k = 0; k < nSpecies; ++k) chem_diag[(size_t)ic*nSpecies + k] = 0.0;
+    } else { chemQdot[ic] = 0.0; }
     if (!(rho > 0.0) || !(Tc > 0.0) || Tc < Tfreeze) return;
     if (Tc > Tmax) Tc = Tmax;
     if (Tc < 200.0) Tc = 200.0;
@@ -217,7 +227,20 @@ __global__ void chemistry_source_d(
     if (ysum > 0.0) for (int s = 0; s < nSpecies; ++s) Y[s] /= ysum;
 
     double Qdot = 0.0;
-    const int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
+    int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
+    if (frozenJac && mode > 0) {
+        // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
+        chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, 0, J, nullptr);
+        const double V = (double)vol[ic];
+        const double kappa = (double)chemKappa[ic];
+        for (int s = 0; s < nSpecies; ++s) {
+            res_roY_dev[s][ic] += (flow_float)(V * kappa * omega[s]);
+            src_jac_dev[s][ic] += chem_diag[(size_t)ic*nSpecies + s];
+        }
+        res_roe[ic] += (flow_float)(V * kappa * Qdot);
+        chemQdot[ic] = (flow_float)(kappa * Qdot);
+        return;
+    }
     chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, mode, J, (mode > 0) ? dOdT : nullptr);
 
     // 温度結合: ∂T/∂(ρY_k) = −e_k/(ρ c_v),  ∂T/∂(ρe) = 1/(ρ c_v)  (methods/chemistry.md §3)
@@ -275,6 +298,7 @@ __global__ void chemistry_source_d(
             const double jss = J[s*nSpecies+s] + dOdT[s] * dTdU[s];
             const double d_s = (jss < 0.0) ? -jss : 0.0;
             src_jac_dev[s][ic] += (flow_float)d_s;
+            if (chem_diag) chem_diag[(size_t)ic*nSpecies + s] = (flow_float)d_s;
             if (fabs(jss) > jmax) jmax = fabs(jss);
             if (mode == 2) {
                 // R_sk = J_total_sk + d_s δ_sk  (対角の消費部分は src_jac_Y に、残りをブロックへ)
@@ -314,6 +338,9 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
             gpuErrchk( cudaMalloc((void**)&g_jacroe_dev, (size_t)msh.nCells_all*sizeof(flow_float)) );
             if (g_cq_dev) cudaFree(g_cq_dev);
             gpuErrchk( cudaMalloc((void**)&g_cq_dev, (size_t)msh.nCells*ns*sizeof(flow_float)) );
+            if (g_diag_dev) cudaFree(g_diag_dev);
+            gpuErrchk( cudaMalloc((void**)&g_diag_dev, (size_t)msh.nCells*ns*sizeof(flow_float)) );
+            gpuErrchk( cudaMemset(g_diag_dev, 0, (size_t)msh.nCells*ns*sizeof(flow_float)) );
             gpuErrchk( cudaMemset(g_jacroe_dev, 0, (size_t)msh.nCells_all*sizeof(flow_float)) );
             g_jac_cap = msh.nCells; g_jac_ns = ns;
         }
@@ -325,6 +352,10 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
     flow_float** res = species_resroY_device_ptr();
     flow_float** sj  = species_srcjac_device_ptr();
     if (roY == nullptr || res == nullptr || sj == nullptr) return;
+    // Jacobian 凍結: 定常陰解法 (timeIntegration 11, dualTime 0) で jacobianInterval>1 のとき、間のステップは ω/Q̇ のみ評価。
+    // 非定常・陽解法では毎ステップ評価 (凍結しない)。g_diag_dev が無い (mode<2) 場合も凍結しない (対角は src_jac に直接入るため)。
+    const bool steadyImplicit = (cfg.timeIntegration == 11 && cfg.dualTime == 0);
+    const bool frozen = steadyImplicit && g_block_active && cfg.chemJacobianInterval > 1 && (g_stepCounter % cfg.chemJacobianInterval != 0);
 
     chemistry_source_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
         msh.nCells, var.nSpeciesRegistered, cfg.chemJacobianMode,
@@ -337,7 +368,9 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         var.c_d["res_roe"], var.c_d["chemQdot"], var.c_d["chemTau"],
         g_block_active ? g_jac_dev : nullptr, g_block_active ? g_jacroe_dev : nullptr, g_block_active ? g_cq_dev : nullptr,
         cfg.chemTci, cfg.chemTciCmix, cfg.chemTciMixModel, cfg.chemTciTauChem,
-        rans ? var.c_d["roK"] : nullptr, rans ? var.c_d["roOmega"] : nullptr, var.c_d["vis_lam"], var.c_d["chemKappa"]);
+        rans ? var.c_d["roK"] : nullptr, rans ? var.c_d["roOmega"] : nullptr, var.c_d["vis_lam"], var.c_d["chemKappa"],
+        frozen ? 1 : 0, g_diag_dev);
+    ++g_stepCounter;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
 }

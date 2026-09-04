@@ -627,6 +627,7 @@ void solverConfig::read(std::string fname)
             this->chemFreezeBelowT  = getOptionalValidatedValue<double>(ch, "freezeBelowT", 0.0, "physProp.chemistry");
             this->chemJacobianMode  = getOptionalValidatedValue<int>(ch, "jacobianMode", 1, "physProp.chemistry");
             this->chemStrang        = getOptionalValidatedValue<int>(ch, "strang", 0, "physProp.chemistry");
+            this->chemJacobianInterval = getOptionalValidatedValue<int>(ch, "jacobianInterval", 1, "physProp.chemistry");
             this->chemTci           = getOptionalValidatedValue<int>(ch, "tci", 0, "physProp.chemistry");
             this->chemTciCmix       = getOptionalValidatedValue<double>(ch, "tciCmix", 1.0, "physProp.chemistry");
             this->chemTciMixModel   = getOptionalValidatedValue<int>(ch, "tciMixModel", 0, "physProp.chemistry");
