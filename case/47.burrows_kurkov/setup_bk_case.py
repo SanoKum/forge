@@ -5,14 +5,14 @@
 import argparse, pathlib, shutil, subprocess, os, h5py, numpy as np, cantera as ct
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--chem", type=int, default=0); ap.add_argument("--tci", type=int, default=0)
 ap.add_argument("--cfl", type=float, default=2.0); ap.add_argument("--nstep", type=int, default=20000); ap.add_argument("--restart", default=None)
-ap.add_argument("--jac", type=int, default=2); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--profile", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--tauchem", type=int, default=1); ap.add_argument("--out", type=int, default=0); ap.add_argument("--relax", type=float, default=0.7); ap.add_argument("--Twall", type=float, default=350.0); a = ap.parse_args()
+ap.add_argument("--jac", type=int, default=2); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--profile", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--delta", type=float, default=0.006); ap.add_argument("--mesh", default=None); ap.add_argument("--kfac", type=float, default=1.0); ap.add_argument("--tauchem", type=int, default=1); ap.add_argument("--out", type=int, default=0); ap.add_argument("--relax", type=float, default=0.7); ap.add_argument("--Twall", type=float, default=350.0); a = ap.parse_args()
 HERE = pathlib.Path(__file__).parent; d = pathlib.Path(a.run_dir); d.mkdir(exist_ok=True)
 names = ["H2", "O2", "H", "O", "OH", "H2O", "HO2", "H2O2", "N2"]
 g = ct.Solution(str(HERE / "mech.yaml")); assert g.species_names == names
 g.TPY = 1270.0, 101325.0, {"O2": 0.258, "N2": 0.486, "H2O": 0.256}; aA = g.sound_speed; roA = g.density; UA = 2.44*aA; YA = g.Y.copy()
 g.TPY = 254.0, 101325.0, {"H2": 1.0}; aH = g.sound_speed; roH = g.density; UH = 1.0*aH; YH = g.Y.copy()
 print(f"air: rho={roA:.5f} U={UA:.1f} (a={aA:.1f}); H2: rho={roH:.5f} U={UH:.1f}")
-kA, omA = 1.5*(0.01*UA)**2, 5.0e4; kH, omH = 1.5*(0.02*UH)**2, 5.0e5
+kA, omA = a.kfac*1.5*(0.01*UA)**2, 5.0e4; kH, omH = a.kfac*1.5*(0.02*UH)**2, 5.0e5   # kfac: k を kfac 倍 (ω 固定 → μt/μ も kfac 倍)
 def yf(Y): return ", ".join(f"Y{i}: {Y[i]:.6f}" for i in range(len(names)))
 (d / "bcondConfig.yaml").write_text(f"""# Burrows-Kurkov (NASA TM X-2828): vitiated air M2.44/1270K/1atm, H2 slot M1/254K/1atm, walls isothermal {a.Twall:.0f} K
 inlet_air: {{physID: 1, kind: inlet_uniformVelocity, outputHDFflg: 0, ints: {{inletProfile: {a.profile}}}, floats: {{ro: {roA:.6f}, Ux: {UA:.2f}, Uy: 0.0, Uz: 0.0, Ps: 101325.0, k: {kA:.1f}, omega: {omA:.1f}, {yf(YA)}}}}}
@@ -43,7 +43,7 @@ turbulence: {{model: "sst", wallTreatmentSST: 1, nodeOmegaWfDirichlet: 1, scalar
 initial: "uniform_p101325_u10"
 """)
 for f in ("species_db.yaml", "mech.yaml", "probe.yaml"): shutil.copy(HERE / f, d / f)
-shutil.copy(HERE / ("mesh/bk_noslip.msh" if a.profile else "mesh/bk.msh"), d / "bk.msh")
+shutil.copy(HERE / ("mesh/" + a.mesh if a.mesh else ("mesh/bk_noslip.msh" if a.profile else "mesh/bk.msh")), d / "bk.msh")
 CONV = "/home/sano/work/forge-chem/solver_density_cuda/build/convertGmshToForge"
 if not (d / "bk.h5").exists():
     env = dict(os.environ, LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/hdf5/serial")
@@ -77,5 +77,5 @@ if not a.restart:
             else: v.create_dataset(k, data=val.astype(v["ro"].dtype))
         print(f"IC written: N={N} slot nodes={slot.sum()}")
 if a.profile:
-    subprocess.run(["/home/sano/work/forge/.venv-chem/bin/python", str(HERE / "gen_bk_inlet_profiles.py"), str(d), "--UA", f"{UA:.3f}", "--UH", f"{UH:.3f}"], check=True)
+    subprocess.run(["/home/sano/work/forge/.venv-chem/bin/python", str(HERE / "gen_bk_inlet_profiles.py"), str(d), "--UA", f"{UA:.3f}", "--UH", f"{UH:.3f}", "--delta", f"{a.delta}"], check=True)
 print("done", d)

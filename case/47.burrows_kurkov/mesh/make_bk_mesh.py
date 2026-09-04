@@ -6,7 +6,7 @@
 import argparse, gmsh, math
 ap = argparse.ArgumentParser(); ap.add_argument("--nx", type=int, default=360); ap.add_argument("--nxu", type=int, default=50)
 ap.add_argument("--nxs", type=int, default=30); ap.add_argument("--ny_slot", type=int, default=24); ap.add_argument("--ny_lip", type=int, default=4)
-ap.add_argument("--ny_air", type=int, default=140); ap.add_argument("--dy1", type=float, default=5e-5); ap.add_argument("--out", default="bk.msh"); a = ap.parse_args()
+ap.add_argument("--ny_air", type=int, default=140); ap.add_argument("--dy1", type=float, default=5e-5); ap.add_argument("--out", default="bk.msh"); ap.add_argument("--topcluster", type=int, default=0); a = ap.parse_args()
 Lu, Ls, Lc = 0.05, 0.02, 0.356; hs, hl, Ha = 0.004, 0.00076, 0.089
 y1 = hs; y2 = hs + hl; ytop0 = y2 + Ha; ytop1 = 0.105
 gmsh.initialize(); gmsh.model.add("bk")
@@ -53,9 +53,34 @@ for _ in range(80):
     r = 0.5*(lo+hi); s = a.dy1*(r**N - 1)/(r - 1)
     if s > Ha: hi = r
     else: lo = r
-for l in (a_face, a_in, c_out3): T(l, N + 1, "Progression", r)
-# 主流の向き: a_face は pL2→pA2 (下→上) で進行比 r>1 は下が細かい。a_in は pA1→pA0 (上→下) なので 1/r。c_out3 は pC2→pC3 (下→上)。
-T(a_in, N + 1, "Progression", 1.0/r)
+if a.topcluster:
+    # 上下両壁にクラスタ (v2): 下半分 Ha/2 を dy1 から幾何級数, 上半分は鏡像 → 各壁の第 1 間隔 = dy1。Bump では第 1 間隔を制御できないので
+    # 主流ブロックを上下 2 分割せず、Transfinite の "Bump" 係数を第 1 間隔 dy1 に合うよう二分法で決める (両端対称)。
+    def first_spacing_bump(c, N, L):
+        # gmsh Bump: 節点分布 t_i (i=0..N) を Bump 係数 c で生成する式 (gmsh の transfiniteCurve と同じ)。
+        import math
+        if c > 1.0:
+            a_ = -4.0*math.sqrt(c-1.0)*math.atan2(1.0, math.sqrt(c-1.0))/((N)*L)
+        else:
+            a_ = 2.0*math.sqrt(1.0-c)*math.log(abs((1.0+1.0/math.sqrt(1.0-c))/(1.0-1.0/math.sqrt(1.0-c))))/((N)*L)
+        b_ = -a_*L*L/(4.0*(c-1.0))
+        pts=[]
+        for i in range(N+1):
+            t=i/N; pts.append(a_*(t*L-L/2.0)**3/3.0 + b_*(t*L) + 0*0)
+        # 正規化
+        p0=pts[0]; pN=pts[-1]; pts=[(q-p0)/(pN-p0)*L for q in pts]
+        return pts[1]-pts[0]
+    lo, hi = 1.0e-3, 0.999
+    for _ in range(100):
+        c = 0.5*(lo+hi); ds = first_spacing_bump(c, N, Ha)
+        if ds > a.dy1: hi = c
+        else: lo = c
+    for l in (a_face, a_in, c_out3): T(l, N + 1, "Bump", c)
+    print(f"topcluster: Bump coef={c:.5f} first spacing≈{first_spacing_bump(c, N, Ha):.2e}")
+else:
+    for l in (a_face, a_in, c_out3): T(l, N + 1, "Progression", r)
+    # 主流の向き: a_face は pL2→pA2 (下→上) で進行比 r>1 は下が細かい。a_in は pA1→pA0 (上→下) なので 1/r。c_out3 は pC2→pC3 (下→上)。
+    T(a_in, N + 1, "Progression", 1.0/r)
 for s in (S_slot, S_air, S_C1, S_C2, S_C3):
     gmsh.model.geo.mesh.setTransfiniteSurface(s); gmsh.model.geo.mesh.setRecombine(2, s)
 gmsh.model.geo.synchronize()
