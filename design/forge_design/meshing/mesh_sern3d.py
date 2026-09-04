@@ -150,7 +150,8 @@ def generate_sern_mesh3d(design, prm: SernMesh3DParams):
             sd = "lo" if j < jm else ("up_in" if k < k_sw else "up_out")
             sd1 = "lo" if j < jm else ("up_in" if k + 1 < k_sw or (k + 1 == k_sw and k < k_sw) else "up_out")
             # k+1 == k_sw の面ノードは内側 (inner) — 外側 cell は k = k_sw から
-            nm = "inlet_ext" if j < jm else "inlet_nozzle"
+            # 入口面: ノズル幅 (z ≤ W/2) の上バンドだけが燃焼器出口。側壁の外側 (k ≥ k_sw) は上バンドでも外部流
+            nm = "inlet_ext" if (j < jm or k >= k_sw) else "inlet_nozzle"
             B[nm].append((node(0, j, k, sd), node(0, j + 1, k, sd), node(0, j + 1, k + 1, sd1), node(0, j, k + 1, sd1)))
             B["outlet"].append((node(ni - 1, j, k, sd), node(ni - 1, j, k + 1, sd1), node(ni - 1, j + 1, k + 1, sd1), node(ni - 1, j + 1, k, sd)))
     for i in range(ni - 1):
