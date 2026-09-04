@@ -25,6 +25,7 @@ CFD-in-the-loop アンカー更新 (A5) は problem YAML の geometry キーで�
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -423,7 +424,7 @@ def design_chain(p: Problem) -> dict:
             "cd_series": float(ht.cd_series())}
 
 
-def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
+def prepare(problem_path, run_dir, nsteps=None, ic_from=None, cfl_main=None, implicit_relax=None) -> dict:
     p = load_problem(problem_path)
     if p.type != "wind_tunnel_axisym_axismach":
         raise ValueError("runner_axismach は wind_tunnel_axisym_axismach 専用")
@@ -465,8 +466,12 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     if q.returncode != 0:
         raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
     # node 変換 (node config を書いてから変換 — 必須) + 等エントロピー IC
-    (run_dir / "solverConfig.yaml").write_text(
-        _apply_gas_to_config(_config_euler_node(p, n, out_int, 4.0, 1), p, run_dir))
+    cfg_e = _apply_gas_to_config(_config_euler_node(p, n, out_int, 4.0, 1), p, run_dir)
+    if cfl_main is not None:
+        cfg_e = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", f"cfl: {float(cfl_main)}, cfl_pseudo: {float(cfl_main)}", cfg_e)
+    if implicit_relax is not None:
+        cfg_e = cfg_e.replace("blockDPLUR: 1,", f"blockDPLUR: 1, implicitRelax: {float(implicit_relax)},", 1)
+    (run_dir / "solverConfig.yaml").write_text(cfg_e)
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
@@ -500,7 +505,7 @@ def prepare(problem_path, run_dir, nsteps=None, ic_from=None) -> dict:
     return info
 
 
-def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False,
+def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False, stages: str = "full",
                mesh_h5: str = "nozzle.h5") -> int:
     """soft 段 (1次+cfl0.5, 3000 step) → [mid 段 (2次+cfl1, 3000 step)] → 本段。
     walldriven W3 と同方式・段階起動必須。`cfl_main` で本段 CFL を上書き
@@ -528,10 +533,13 @@ def run_staged(run_dir, cfl_main: float | None = None, mid_stage: bool = False,
         for f in run_dir.glob("res_*"):
             f.unlink()
 
+    if stages == "none":
+        (run_dir / "solverConfig.yaml").write_text(cfg_main)
+        return run_forge(run_dir)
     soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 0.5, cfl_pseudo: 0.5", cfg_main)
     soft = soft.replace("convMethod: 1", "convMethod: 0")
     _stage(soft, 3000, "soft")
-    if mid_stage:
+    if mid_stage and stages == "full":
         mid = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 1.0, cfl_pseudo: 1.0", cfg_main)
         _stage(mid, 3000, "mid")
     (run_dir / "solverConfig.yaml").write_text(cfg_main)
@@ -596,15 +604,23 @@ def main(argv=None) -> int:
     ap.add_argument("run_dir")
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--prepare-only", action="store_true")
+    ap.add_argument("--cfl", type=float, default=None, help="本段 cfl (YAML evaluate.cfl_main を上書き)")
+    ap.add_argument("--implicit-relax", type=float, default=None, help="implicitRelax を deltaT に挿入")
+    ap.add_argument("--stages", default="full", choices=("full", "soft", "none"), help="full=soft/mid/本段, soft=soft+本段, none=本段のみ")
+    ap.add_argument("--ic-from", default=None)
     a = ap.parse_args(argv)
-    info = prepare(a.problem, a.run_dir, nsteps=a.steps)
-    print(json.dumps(info, indent=1))
+    info = prepare(a.problem, a.run_dir, nsteps=a.steps, ic_from=a.ic_from, cfl_main=a.cfl, implicit_relax=a.implicit_relax)
+    info["stages"] = a.stages
+    (Path(a.run_dir) / "prepare_info.json").write_text(json.dumps(info, indent=1, default=str))
+    print(json.dumps(info, indent=1, default=str))
     if a.prepare_only:
         return 0
     pp = load_problem(a.problem)
-    rc = run_staged(a.run_dir, cfl_main=pp.evaluate.get("cfl_main"),
-                    mid_stage=bool(pp.evaluate.get("mid_stage", pp.is_semiperfect)))
-    print(f"forge exit={rc}")
+    import time as _t
+    t0 = _t.time()
+    rc = run_staged(a.run_dir, cfl_main=(a.cfl if a.cfl is not None else pp.evaluate.get("cfl_main")),
+                    mid_stage=bool(pp.evaluate.get("mid_stage", pp.is_semiperfect)), stages=a.stages)
+    print(f"forge exit={rc} (wall {_t.time() - t0:.0f} s, stages={a.stages})")
     print(json.dumps(collect(a.problem, a.run_dir), indent=1))
     return rc
 
