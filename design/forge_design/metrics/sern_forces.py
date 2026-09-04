@@ -69,10 +69,6 @@ def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref:
     Mn = sum(v["M_noseup_p"] for v in parts.values())
     T_wall = -Fx
     F_gross = mdot_u_in + (p_in - p_a) * H + T_wall
-    for v in parts.values():
-        if "_tau_t" not in v:
-            for k in ("_tau_t", "_ln", "_xm"):
-                v.pop(k, None)
     out = {"step": step, "T_wall": T_wall, "L": Fy, "M_noseup": Mn, "F_gross": F_gross, "F_ideal": F_ideal,
            "C_T": F_gross / F_ideal, "C_T_wall": T_wall / F_ideal, "C_L": Fy / F_ideal, "C_M": Mn / (F_ideal * H),
            "parts": parts}
@@ -97,6 +93,9 @@ def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref:
                     v.pop(k, None)
         out["sep_frac_ramp"] = parts.get("ramp", {}).get("sep_frac")
         out["sep_x_min_ramp"] = parts.get("ramp", {}).get("sep_x_min")
+    for v in parts.values():                      # 作業配列は JSON に出さない
+        for k in ("_tau_t", "_ln", "_xm"):
+            v.pop(k, None)
     return out
 
 
