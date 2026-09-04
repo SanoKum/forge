@@ -101,8 +101,10 @@ Jacobian は $n_s\times n_s$ 密 (H₂ 系で $n_s\le13$)。有限差分は検�
 
 ### 5. 乱流‐化学相互作用 (TCI)
 
-Phase 3 まで **laminar finite-rate (No-TCI)**。後付けで PaSR: $\dot\omega_s\to\kappa\,\dot\omega_s$,
-$\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (SST の $k,\omega$ から $\varepsilon=\beta^*k\omega$)。EDC・flamelet は採らない。
+既定は **laminar finite-rate (No-TCI)**。`chemistry.tci: 1` で PaSR: $\dot\omega_s\to\kappa\,\dot\omega_s$ (Jacobian・$\dot Q$ も同じ κ),
+$\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_c=1/\max_s|\partial\dot\omega_s/\partial\rho Y_s|$ (温度結合込み対角),
+$\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または $C_{\rm mix}k/\varepsilon$ (1), $\varepsilon=\beta^*k\omega$ (SST)。
+κ の状態微分は Jacobian に入れない。実装は `chemistry_source_d` (ソース項経路のみ。Strang 経路は κ=1)。$C_{\rm mix}$ は未較正 (Phase 3)。EDC・flamelet は採らない。
 
 ### 参考文献
 

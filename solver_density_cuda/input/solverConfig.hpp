@@ -355,6 +355,9 @@ public:
     double chemTmaxReaction = 6000.0;          // 速度式評価の温度上限 [K]
     double chemFreezeBelowT = 0.0;             // この温度未満で反応を凍結 (ω=0) [K]
     int chemJacobianMode = 1;                  // 0: 陽ソースのみ, 1: 対角 point-implicit (src_jac_Y), 2: 全ブロック (Phase 2)
+    int chemTci = 0;                           // 1: PaSR (κ=τ_c/(τ_c+τ_mix) で ω・Q̇・Jacobian をスケール)。RANS SST 時のみ有効
+    double chemTciCmix = 1.0;                  // τ_mix の係数 C_mix
+    int chemTciMixModel = 0;                   // 0: τ_mix=C_mix·sqrt(ν/ε) (Kolmogorov), 1: C_mix·k/ε (積分), ε=β* k ω
     int chemStrang = 0;                        // 1: 非定常陽解法 (unsteady 1, RK) で化学を Strang 分離 (dt/2 セル内 BE sub-cycle → RK → dt/2)。
                                                //    定常/dual-time では無視 (ソース項経路)。
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)

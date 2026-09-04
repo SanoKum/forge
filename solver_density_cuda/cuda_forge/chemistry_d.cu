@@ -193,14 +193,16 @@ __global__ void chemistry_source_d(
     flow_float* chemQdot, flow_float* chemTau,
     flow_float* chem_jac,      // jacMode==2: [nCells*ns*ns] (nullptr 可)
     flow_float* chem_jacroe,   // jacMode==2: [nCells] (nullptr 可)
-    flow_float* chem_cq)       // jacMode==2: [nCells*ns] ∂Q̇/∂(ρY_k) (nullptr 可)
+    flow_float* chem_cq,       // jacMode==2: [nCells*ns] ∂Q̇/∂(ρY_k) (nullptr 可)
+    int tci, double cmix, int mixModel,                       // PaSR (RANS SST): tci==1 で κ スケール
+    const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
 
     const double rho = (double)ro[ic];
     double Tc = (double)T[ic];
-    chemQdot[ic] = 0.0; chemTau[ic] = 1.0e30;
+    chemQdot[ic] = 0.0; chemTau[ic] = 1.0e30; chemKappa[ic] = 1.0;
     if (chem_jacroe) chem_jacroe[ic] = 0.0;
     if (chem_jac) for (int i = 0; i < nSpecies*nSpecies; ++i) chem_jac[(size_t)ic*nSpecies*nSpecies + i] = 0.0;
     if (chem_cq)  for (int k = 0; k < nSpecies; ++k) chem_cq[(size_t)ic*nSpecies + k] = 0.0;
@@ -228,6 +230,26 @@ __global__ void chemistry_source_d(
             const double e_k = thermo_h_mass(sp[k], Tc) - thermo_R_species(sp[k]) * Tc;
             dTdU[k] = -e_k * inv_rhocv;
         }
+    }
+
+    // ---- PaSR: κ = τ_c/(τ_c+τ_mix), τ_c = 1/max_s|J_ss| (温度結合込み), τ_mix from SST (k, ω) ----
+    double kappa = 1.0;
+    if (tci == 1 && roK != nullptr && roOmega != nullptr && mode > 0) {
+        double jm = 0.0;
+        for (int s = 0; s < nSpecies; ++s) { const double jss = fabs(J[s*nSpecies+s] + dOdT[s]*dTdU[s]); if (jss > jm) jm = jss; }
+        const double k  = fmax((double)roK[ic]/rho, 1.0e-12);
+        const double om = fmax((double)roOmega[ic]/rho, 1.0e-12);
+        const double eps = 0.09*k*om;
+        const double nu = (double)vis_lam[ic]/rho;
+        const double tmix = (mixModel == 1) ? cmix*k/eps : cmix*sqrt(nu/eps);
+        if (jm > 0.0) { const double tc = 1.0/jm; kappa = tc/(tc + tmix); }
+    }
+    chemKappa[ic] = (flow_float)kappa;
+    if (kappa != 1.0) {
+        for (int s = 0; s < nSpecies; ++s) { omega[s] *= kappa; if (mode > 0) dOdT[s] *= kappa; }
+        Qdot *= kappa;
+        if (mode == 1) for (int s = 0; s < nSpecies; ++s) J[s*nSpecies+s] *= kappa;
+        if (mode == 2) for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] *= kappa;
     }
 
     const double V = (double)vol[ic];
@@ -283,6 +305,8 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         }
         g_block_active = true;
     }
+    const bool rans = (cfg.LESorRANS == 2 && cfg.RANSmodel == 1);
+    if (cfg.chemTci == 1 && !rans) { static bool warned = false; if (!warned) { std::cout << "[chemistry] WARNING: tci=1 requires RANS SST; PaSR disabled (kappa=1)." << std::endl; warned = true; } }
     flow_float** roY = species_roY_device_ptr();
     flow_float** res = species_resroY_device_ptr();
     flow_float** sj  = species_srcjac_device_ptr();
@@ -297,7 +321,9 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         var.c_d["ro"], var.c_d["T"],
         roY, res, sj,
         var.c_d["res_roe"], var.c_d["chemQdot"], var.c_d["chemTau"],
-        g_block_active ? g_jac_dev : nullptr, g_block_active ? g_jacroe_dev : nullptr, g_block_active ? g_cq_dev : nullptr);
+        g_block_active ? g_jac_dev : nullptr, g_block_active ? g_jacroe_dev : nullptr, g_block_active ? g_cq_dev : nullptr,
+        cfg.chemTci, cfg.chemTciCmix, cfg.chemTciMixModel,
+        rans ? var.c_d["roK"] : nullptr, rans ? var.c_d["roOmega"] : nullptr, var.c_d["vis_lam"], var.c_d["chemKappa"]);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();
 }

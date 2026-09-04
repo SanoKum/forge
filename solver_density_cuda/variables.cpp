@@ -78,7 +78,7 @@ void variables::registerSpecies(int nSpecies, int chemistry)
 
     // 有限速度化学 (chemistry.enabled): 反応熱 Q̇ [W/m3] と化学時間 τ_c [s] の診断出力。
     if (chemistry != 0) {
-        for (const auto& name : {std::string("chemQdot"), std::string("chemTau")}) {
+        for (const auto& name : {std::string("chemQdot"), std::string("chemTau"), std::string("chemKappa")}) {
             this->cellValNames.push_back(name);
             this->c.emplace(name, std::vector<flow_float>{});
             this->c_d.emplace(name, nullptr);
