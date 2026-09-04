@@ -13,6 +13,10 @@ Pt 5.5 MPa / Tt 1600 K / φ=0.9 燃焼ガス (semi-perfect NASA-9) / M_design 6 
 - 凝縮事前見積り: 出口 T 233.5 K vs Tsat(H₂O) 263.9 K = **−30 K 過冷却** →
   dry 本体 + 採用点の凝縮 ON 再評価 (方針 a)。
 
+> **2026-09-04 更新**: 粘性トリム (Md 6.0144, run_0005–0007) は撤回。新チェーン (積分法初期壁 + 固定 Euler 基準・帯局所抽出) で
+> **Md 6.0 トリムなし**のまま ṁ_NS/ṁ_E 0.9999・出口面コア M +0.01〜0.02 % (`run_0023_ns_ib_pass1` = 生産形)。旧 v3 のスロート δ\* は実効値の 8 倍過大だった
+> ([調査ノート](../../notes/investigations/nozzle-deltastar-throat-review.md), [plan](../../plans/accepted/tooling-nozzle-deltastar-core-matched-euler.md))。
+
 ## 計算 run 一覧
 
 | run | 目的・主要設定差分 | 主要結果・成果物 | 状態 |

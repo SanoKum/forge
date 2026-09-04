@@ -77,3 +77,6 @@ restart 可能) で組む。飽和到達 M は 5.3–5.5 帯の見込み (dry ru
 - 2026-08-31: 起票。最短探索完了 (R2 39.3/2.7 → 95.104 r_t)。
 - 2026-08-31: Euler/NS v1/v3 (トリム前後)・凝縮 ON まで完了、status done。
   ショートカット失敗の記録: 旧設計の δ* CSV 流用は物理壁フィルタ不合格 (正規 v1→v3 要)。
+- 2026-09-04: **粘性トリム (Md 6.0144) は撤回**。トリムが打ち消していた −0.24 % はスロート δ\* の 8 倍過大 (相関) による有効スロート面積 +2 % が主因と判明
+  ([調査ノート](../../notes/investigations/nozzle-deltastar-throat-review.md))。新チェーン (積分法初期壁 + 固定 Euler 基準抽出,
+  [plan](tooling-nozzle-deltastar-core-matched-euler.md)) で **Md 6.0 のまま出口面コア M +0.01〜0.02 %** (case/45 `run_0023`)。生産形は run_0023 の壁。

@@ -44,13 +44,13 @@
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
-| [tooling-nozzle-deltastar-core-matched-euler.md](active/tooling-nozzle-deltastar-core-matched-euler.md) | `tooling / design / boundary layer` | **排除厚さ更新** (2026-09-04 起票): 積分法 (CONTUR 運動量積分) 初期壁 + **固定 Euler 基準のコア整合質量欠損から全域 δ_r を抽出して固定点反復**。温度縁/ρu 最大縁/x_lo/相関ブレンド/Md トリム/law 帰還を生産経路から廃止。根拠 = スロート δ\* 3〜12 倍過大 ([調査ノート](../notes/investigations/nozzle-deltastar-throat-review.md)) |
 | [turbulence-reichardt-gap-residual.md](active/turbulence-reichardt-gap-residual.md) | `turbulence / boundary` | 壁解像プロファイルが $y^+\approx30$ で Reichardt 相関を約 5% 下回る件。**SU2 (全残差収束) も 0.948 で forge と 0.1–0.2% 一致**するため forge 固有性・自由流乱流・補間手法は除外済み。**壁法則スイープで Spalding は逆に 1.020** (法則間の広がり 7%) = **壁法則選択のモデル形式不確かさが観測差と同程度**。ただし forge/SU2 とも SST なので**共通 SST 誤差は未除外**、Spalding の正しさも未証明。**forge の実装バグではないが壁関数の低摩擦バイアスには寄与する** (壁法則段 1.0425)。残る候補は有限 $Re$ ($Re_\theta$ 3600–5800) / 入口・前縁の扱い |
 
 ## accepted (現役の設計判断)
 
 | Plan | area | 概要 |
 | --- | --- | --- |
+| [tooling-nozzle-deltastar-core-matched-euler.md](accepted/tooling-nozzle-deltastar-core-matched-euler.md) | `tooling / design / boundary layer` | **排除厚さ更新 (2026-09-04 完了)**: CONTUR 運動量積分の初期壁 + 固定 Euler 基準・帯局所抽出 (BL 直外の帯で q_NS/q_E を線形フィット) の半径方向固定点反復。旧相関はスロート δ\* を 3〜12 倍過大に与え NS 質量流量 +0.8〜3.7 %・試験部 M −0.2〜−0.7 % の主因だった。case/45 M6: ṁ 比 0.9999・出口コア M +0.01 % を Md トリムなしで達成 (run_0020–0023)、case/42 M5・case/44 も設定不変で合格。Md トリム/law 帰還/x_lo は廃止 |
 | [discretization-median-dual-2d-facevect-precision.md](accepted/discretization-median-dual-2d-facevect-precision.md) | `discretization` | **2D 双対幾何+CW 判定の桁落ち除去** (ローカル原点+double, 2026-08-31): 真犯人は makeMesh の float shoelace CW 判定 (スリバーで境界 surfVect 誤反転)。閉性 1e-7・第一セル 2.4 μm (y+1 真値) 変換可能に |
 | [design-isobutane-wt-m5-sweep.md](accepted/design-isobutane-wt-m5-sweep.md) | `design campaign` | イソブタン風洞 **M5** R×L_U×L_c 27 点スイープ完了 (2026-08-30): quintic 不成立→knot MK2.5・L_c≥14、パレート 9 点、**推奨 R3/L_U9/L_c14** (4.37 m, dM 0.043 %M_d)。凝縮後段確認 +29 K で dry 確定 |
 | [design-isobutane-m6-d155.md](accepted/design-isobutane-m6-d155.md) | `design campaign` | **M6 出口径 1.55 m 最短全長スタディ完了** (2026-08-31, case/45): 最短ロバスト R2/L_c39.7/M_K2.7 → **スロート→出口 7.337 m** (r_t 76.4 mm)。粘性トリム Md6.0144 で **NS dry 出口軸 M 6.0008**・δ\* 2巡固定点。**Tt 1600 K は凝縮不可避** (S≈14, 凝縮 ON 出口 M 5.927・軸勾配)、凝縮フリーは Tt≳1820 K |
