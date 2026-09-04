@@ -43,6 +43,7 @@
 | [turbulence-iddes-sst.md](active/turbulence-iddes-sst.md) | `turbulence` | SST-DDES / SST-IDDES 実装計画 |
 | [turbulence-sst-thermal-flux-model.md](active/turbulence-sst-thermal-flux-model.md) | `turbulence / boundary` | SST 壁関数のエネルギー流束モデル置換 (Kader q_w)。等温壁×粗メッシュの熱負荷予測と T_aw 強閉包の前提 (in_progress: 平板合格 ±7%・Kader T⁺ 原式修正済。残 = T⁺ 圧縮性補正 [ベル +87% 実測]) |
 | [turbulence-wmles-wall-stress.md](active/turbulence-wmles-wall-stress.md) | `turbulence / boundary` | WMLES 用代数壁応力モデル (Reichardt + Kader)。既存 SST 壁関数資産 (Normal_Neighbor / AddTauWall) を流用し τ_w/q_w で壁粘性流束を置換 |
+| [tooling-nozzle-deltastar-core-matched-euler.md](active/tooling-nozzle-deltastar-core-matched-euler.md) | `tooling / design / boundary layer` | **排除厚さ更新** (2026-09-04 起票): 積分法 (CONTUR 運動量積分) 初期壁 + **固定 Euler 基準のコア整合質量欠損から全域 δ_r を抽出して固定点反復**。温度縁/ρu 最大縁/x_lo/相関ブレンド/Md トリム/law 帰還を生産経路から廃止。根拠 = スロート δ\* 3〜12 倍過大 ([調査ノート](../notes/investigations/nozzle-deltastar-throat-review.md)) |
 | [turbulence-reichardt-gap-residual.md](active/turbulence-reichardt-gap-residual.md) | `turbulence / boundary` | 壁解像プロファイルが $y^+\approx30$ で Reichardt 相関を約 5% 下回る件。**SU2 (全残差収束) も 0.948 で forge と 0.1–0.2% 一致**するため forge 固有性・自由流乱流・補間手法は除外済み。**壁法則スイープで Spalding は逆に 1.020** (法則間の広がり 7%) = **壁法則選択のモデル形式不確かさが観測差と同程度**。ただし forge/SU2 とも SST なので**共通 SST 誤差は未除外**、Spalding の正しさも未証明。**forge の実装バグではないが壁関数の低摩擦バイアスには寄与する** (壁法則段 1.0425)。残る候補は有限 $Re$ ($Re_\theta$ 3600–5800) / 入口・前縁の扱い |
 
 ## accepted (現役の設計判断)

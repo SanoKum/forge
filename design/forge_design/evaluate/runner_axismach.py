@@ -566,7 +566,15 @@ def collect(problem_path, run_dir) -> dict:
                               x_d=info["x_E"] * scale, gamma=p.gamma)
     except Exception as e:  # noqa: BLE001 — 一様性は診断 (核心は軸 M)
         uni = {"error": str(e)}
+    mf = None
+    if info.get("euler_ref"):
+        try:
+            from ..metrics.deltastar import massflow_ratio
+            mf = massflow_ratio(run_dir, info["euler_ref"])
+        except Exception as e:  # noqa: BLE001 — 帳簿は診断
+            mf = {"error": str(e)}
     out = {"res_file": res[-1].name,
+           "massflow": mf,
            "dM_max": float(np.max(np.abs(dM))),
            "dM_max_rel_Md": float(np.max(np.abs(dM)) / Md),
            "dM_rms": float(np.sqrt(np.mean(dM ** 2))),
@@ -607,7 +615,9 @@ if __name__ == "__main__":
 
 # --- A12: 粘性 δ* 補正 (RANS 経路) ------------------------------------------------
 def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
-               dstar_csv=None, dstar_blend=(6.0, 9.0)) -> dict:
+               dstar_csv=None, dstar_blend=(6.0, 9.0),
+               delta_r_csv=None, offset: str = "normal", euler_ref=None,
+               omega: float | None = None, prev_run=None) -> dict:
     r"""**物理壁 (inviscid + δ*) の RANS run** を準備する (A12)。
 
     plan: plans/active/tooling-nozzle-axismach-viscous-deltastar.md。
@@ -619,6 +629,10 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
       (-1, -0.5) 等で CSV を全域採用 [case/44 v3])
     - メッシュ/段階起動レシピは B8 系 NS v1 (run_0028-0030) で確立したものを流用。
       coarse 中継 (y+~50) は YAML の mesh/evaluate 設定だけの違いで同じ関数で作る
+    - **`delta_r_csv` (生産経路, plans/active/tooling-nozzle-deltastar-core-matched-euler.md)**:
+      半径方向補正 δ_r(x) [r_t] の CSV (列 x_rt, delta_r; `feedback.deltastar_loop` が作る
+      `delta_r_next.csv`) を全域そのまま使い、`offset="radial"` で壁を作る。`dstar_csv`/`dstar_blend`
+      (旧 v3 継ぎはぎ) とは排他。`euler_ref` (固定 Euler 参照 run) は帳簿用に prepare_info へ記録。
     """
     from ..feedback.deltastar import _sutherland
     from ..geometry.wall_axismach import PhysicalNozzleWall
@@ -646,9 +660,22 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
             w = w * w * (3.0 - 2.0 * w)
             csv = np.interp(np.clip(x, _tbl[0, 0], _tbl[-1, 0]), _tbl[:, 0], _tbl[:, 1])
             return (1.0 - w) * _corr(x) + w * csv
+    delta_r_x = None
+    if delta_r_csv is not None:
+        if dstar_csv is not None:
+            raise ValueError("delta_r_csv と dstar_csv は排他")
+        tbl_r = np.loadtxt(delta_r_csv, delimiter=",", skiprows=1)
+        if not np.all(np.isfinite(tbl_r[:, 1])):
+            raise ValueError("delta_r_csv に非有限値がある (deltastar_loop.extract_and_merge で前回値保持済みの CSV を渡す)")
+        delta_r_x = lambda x, _t=tbl_r: np.interp(x, _t[:, 0], _t[:, 1])
+        offset = "radial"
     wall = PhysicalNozzleWall(d["wall"], wall_inv, scale, float(p.spec["Pt"]),
-                              float(p.spec["Tt"]), _gam_or_gas(p), p.cp, dstar_x=dstar_x)
-    dstar_src = "correlation_hist_v1" if dstar_csv is None else f"{dstar_csv} (blend {dstar_blend})"
+                              float(p.spec["Tt"]), _gam_or_gas(p), p.cp, dstar_x=dstar_x,
+                              offset=offset, delta_r_x=delta_r_x)
+    if delta_r_csv is not None:
+        dstar_src = f"delta_r_csv:{delta_r_csv} (radial, core-matched Euler ref {euler_ref}, omega {omega})"
+    else:
+        dstar_src = ("correlation_hist_v1" if dstar_csv is None else f"{dstar_csv} (blend {dstar_blend})") + f" ({offset})"
     msgs = wall.validate()
     if msgs:
         raise ValueError("物理壁フィルタ不合格: " + "; ".join(msgs))
@@ -729,7 +756,11 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
             "dstar_source": dstar_src, "mdot_ratio_moc": None,
             "throat_physical": {"x": wall.x_throat, "r": wall.r_throat,
                                 "kappa": wall.kappa_throat,
-                                "dstar_throat": float(wall._dstar_hist(0.0))},
+                                "dstar_throat_correlation": float(wall._dstar_hist(0.0)),
+                                "delta_r_throat_applied": float(wall.r_throat - 1.0)},
+            "offset": wall.offset_mode, "euler_ref": (str(euler_ref) if euler_ref else None),
+            "omega": omega, "prev_run": (str(prev_run) if prev_run else None),
+            "delta_r_csv": (str(delta_r_csv) if delta_r_csv else None),
             "x0": d["x0"], "x_A": d["x_A"], "x_E": d["x_E"], "L_c": d["L_c"],
             "Lc_mode": d["Lc_mode"], "Lc_solve": d["Lc_solve"],
             "anchor": list(d["anchor"]), "anchor_source": d["anchor_source"],

@@ -628,28 +628,34 @@ $x_F$ 22.85→19.11 (−16%) が上限 — **$x_F - x_E \approx 12.6\,r_t$ (終�
 「全長を設計変数にする」節) を使う — このスイープの知見 (内部衝撃波の下限・一様化区間の床)
 は $L_c$ と $x_F$ のどちらを dv にしても同じ制約として効く。
 
-### 粘性 δ\* 補正 (A12, `runner_axismach.prepare_ns` / `metrics/deltastar.py`)
+### 粘性 δ\* 補正 — 固定 Euler 基準のコア整合抽出 (2026-09-04 更新中)
 
-計画: [`plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md`](../../plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md)。
+計画: [`plans/active/tooling-nozzle-deltastar-core-matched-euler.md`](../../plans/active/tooling-nozzle-deltastar-core-matched-euler.md)
+(旧 A12 [`tooling-nozzle-axismach-viscous-deltastar.md`](../../plans/accepted/tooling-nozzle-axismach-viscous-deltastar.md) を置換)。
+根拠: [調査ノート](../../notes/investigations/nozzle-deltastar-throat-review.md) — 旧方式 (平板相関 + ρU_x 最大縁抽出 +
+$x<x_{lo}$ を相関×比で補完) は**スロート δ\* を NS 実効値の 3〜12 倍**に与えており、NS 質量流量が Euler 設計比 +0.8〜3.7 %、
+試験部 M −0.2〜−0.7 % の主因だった。旧記述「相関 δ\* で十分」は撤回。
 
-物理壁 = inviscid 壁 (cplus) + 排除厚 $\delta^*(x)$ の法線オフセット。**相関 δ\*
-(`feedback/deltastar.py`, Eckert 参照温度 + 乱流平板) で十分** — CFD 抽出 δ\* との差
-(~10%、下流ほど増) は RANS 軸 M に観測可能な影響を持たず (v1/v2 でプロファイル全点
-1e-3 一致)、δ\* は 1 反復で固定点に達する (run_0070/0071 実測)。
+**現行仕様 (2 段構成)**:
 
-- **RANS チェーン**: coarse SST 中継 (y+~50, 43 s) → y+1.5 低 Re SST 本計算
-  (48k step cfl1, 162 s)。起動レシピは B8 系 NS v1 (run_0028–0030) のものを流用
-  (`prepare_ns` / `run_staged_ns` に実装: 3 段起動・ω 底層フロア・整合背圧 6588 Pa)。
-- **無帰還の到達点**: RANS 軸 M ‖ΔM‖∞ **0.533% $M_d$** (B8 系の 1.2% の半分以下)。
-  残差は δ\* で表現できない設計側残差 (Euler の x≈6 谷と同源) + 近スロート粘性効果で、
-  0.5% ゲート化には law 側帰還 (A5 の RANS 版) が要る (future work)。
-- **δ\* 抽出** (`metrics/deltastar.py`): 質量流束欠損の積分。探索窓はフリーストリーム
-  まで (1.5 $r_t$)、x<8 はコア未一様で測らず相関へブレンド。測定域端は端勾配の
-  線形外挿 (端値クリップは壁 B-spline を非単調化する — 実測)。
-- **case/44 (M4.19, TP, r_t 0.21 m) での知見 (2026-08-18)**: 相関 δ\* は強い加速域で**過大** (x=8 で CFD/相関 0.68、
-  x=3 で 0.51) となり得る — 符号は case 依存で v1 だけでは決められない。BL 縁で ρu が極大なら x≥3 でも δ\* は測れるので、
-  `prepare_ns(dstar_blend=(x_lo, x_hi))` でブレンド区間を変え (負値で CSV 全域採用) CFD δ\* を全域に使う。末端 (出口 BC 影響で
-  抽出勾配が急増) はトレンド勾配で外挿する。δ\* は 2 反復で固定点 (1.001)。残る軸 M 残差 (近スロート −0.2〜−0.3 %) は δ\* 非表現。
+1. **初回 NS 用の壁**: 境界層積分法 (`feedback/deltastar_integral.py`, CONTUR = Sivells AEDC-TR-78-63 §5 の軸対称 von Kármán
+   運動量積分 + べき乗則プロファイル + Spalding–Chi 摩擦) を入口から前進積分し $\delta^*_n(x)$ を得る。断熱壁 / 指定壁温 (定数・テーブル)
+   を同一実装で扱う。**初期値生成専用**で、CFD との一致率は合否条件にしない。半径方向補正 $\delta_r = \delta^*_n/\cos	heta_w$。
+2. **NS 後の固定点反復**: 設計 Euler run (設計壁・反復中固定) と NS run を**同じ物理 $r$** で比べる
+   (`metrics/deltastar.py::deltastar_from_core_matched_euler`)。コア $r\le0.3\,r_{w,E}$ の面積重み流量を一致させる倍率 $\alpha$ で
+   $q_{ref}=\alpha q_E$ を作り、符号付き質量欠損 $D=2\pi\int_0^{r_{w,NS}}(q_{ref}-q_{NS})r\,dr$ を壁側の円環に詰め直した
+   $\delta_r = r_{w,NS}-r_{eff}$ を**直管〜出口の全列**で取る ($x_{lo}$ なし・縁判定なし・相関補完なし)。
+   壁更新は半径方向 $r^{k+1}_{phys} = r_{inv} + (1-\omega)\delta^k_{in} + \omega\,\delta^k_{ext}$ ($\omega$=0.5 → 1.0)。
+   真のスロート探索 (A13) と上流 Hermite 再生成は維持。
+3. **帳簿 (必須)**: NS/Euler 質量流量比 (= 有効音速スロート面積比) と質量流量由来の等価スロート補正量 $r_{t,W}-\sqrt{\dot m_{NS}/\dot m_E}$
+   を `collect` が出す。ゲート $|\dot m_{NS}/\dot m_E - 1| \le 0.3\,\%$。
+
+廃止 (生産経路から): 温度縁 / ρU_x 最大縁の生産抽出 (`deltastar_from_run` は比較用に残置) / $x_{lo}$ / 上流相関補完 /
+積分法と CFD のブレンド / Md トリム / law 側 Mach 帰還。
+
+- **RANS チェーン**: coarse SST 中継 (y+~50) → y+1〜1.4 低 Re SST 本計算 (`prepare_ns` / `run_staged_ns`: 3 段起動・ω 底層フロア・整合背圧)。
+- **旧方式の実測 (記録)**: v1 相関 / v3 (ρU_x 最大縁, x≥x_lo) の到達点は case/42 M5 −0.29 %, M6 −0.43 %, case/45 −0.24 % (出口コア)。
+  「1〜2 反復で固定点」は $x\ge x_{lo}$ のみの確認で、スロートは検証外だった。
 
 **壁表現の方針 (2026-08-16 確定)**: MOC 壁テーブルは**平滑化せず補間** 5 次 B-spline で
 表現し、スロート端は**必ず上流 (U→T Hermite) の $(r'=0,\ r''=1/R)$ にクランプ**する
