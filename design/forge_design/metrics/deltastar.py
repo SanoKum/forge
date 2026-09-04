@@ -176,7 +176,7 @@ def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
                        k_band: float = 1.5, band_min_frac: float = 0.02, band_width: float = 0.5,
                        n_axis_skip: int = 1, core_frac: float = 0.30, refine: int = 4, _retry: int = 0,
                        slope_max: float = 0.01, band_growth: float = 1.25, max_retry: int = 14,
-                       fit_from: float = 1.0):
+                       fit_from: float = 1.0, y_b_fixed: float | None = None):
     r"""1 断面の**帯局所参照・質量欠損 → 半径方向等価排除厚** (生産抽出、純関数)。
 
     plan §4.3 の修正 (2026-09-04 V1 pass1 の知見): 内側 30 % コアの単一倍率 α では、上流の壁 δ 誤差が
@@ -198,7 +198,10 @@ def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
         qE = np.asarray(q_e(rr), dtype=float) if callable(q_e) else np.asarray(q_e, dtype=float)
     rwN = float(rr[-1]); y = rwN - rr
     d_in = float(rwN - rw_e) if delta_in is None else float(delta_in)
-    y_b0 = max(k_band * max(d_in, 0.0), band_min_frac * rwN) * (band_growth ** _retry)   # 適応探索する「縁」候補
+    if y_b_fixed is not None:                      # 2 パス目: 隣接列で平滑化した帯位置を固定して使う (帯のトグルを防ぐ)
+        y_b0 = float(y_b_fixed); max_retry = 0
+    else:
+        y_b0 = max(k_band * max(d_in, 0.0), band_min_frac * rwN) * (band_growth ** _retry)   # 適応探索する「縁」候補
     y_b = fit_from * y_b0                                                                 # 参照フィット帯の下端 = 積分域の上端
     y_t = min((1.0 + band_width) * y_b, 0.85 * rwN)
     if y_b >= 0.8 * rwN:
@@ -285,7 +288,8 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
                                       method: str = "band", k_band: float = 1.5, k_band_sens=(1.125, 2.25),
                                       band_min_frac: float = 0.02, band_width: float = 0.5,
                                       gate_band_rms: float = 0.005, slope_max: float = 0.01,
-                                      band_growth: float = 1.25, max_retry: int = 14, fit_from: float = 1.0) -> dict:
+                                      band_growth: float = 1.25, max_retry: int = 14, fit_from: float = 1.0,
+                                      band_smooth_x: float = 0.0) -> dict:
     r"""**固定 Euler 基準・コア整合**の半径方向等価排除厚 $\delta_r(x)$ を NS 全列で抽出する。
 
     定義 (plan §4.2–4.4):
@@ -319,7 +323,7 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
         rw = (1 - w) * rwE_col[k] + w * rwE_col[k + 1]
         return (1 - w) * q0 + w * q1, rw
 
-    def extract_one(i, fc):
+    def extract_one(i, fc, y_b_fixed=None):
         x = float(N["x"][i, 0]); r0 = N["r"][i]; q0 = N["q"][i]
         if x < xE[0] - 1e-9 or x > xE[-1] + 1e-9:
             return None
@@ -328,7 +332,8 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
             res = band_local_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), k_band=fc,
                                      band_min_frac=band_min_frac, band_width=band_width,
                                      n_axis_skip=n_axis_skip, core_frac=core_frac, refine=refine,
-                                     slope_max=slope_max, band_growth=band_growth, max_retry=max_retry, fit_from=fit_from)
+                                     slope_max=slope_max, band_growth=band_growth, max_retry=max_retry, fit_from=fit_from,
+                                     y_b_fixed=y_b_fixed)
         else:
             res = core_matched_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), core_frac=fc,
                                        n_axis_skip=n_axis_skip, outer_frac=outer_frac, refine=refine)
@@ -337,14 +342,35 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
         res["x"] = x
         return res
 
-    rows = []
     main_par = k_band if method == "band" else core_frac
     sens_par = list(k_band_sens) if method == "band" else list(core_frac_sens)
+    yb_fixed = None
+    if method == "band" and band_smooth_x > 0:
+        # 1 パス目: 各列の適応 y_b。隣接列で帯が 1.25 倍刻みにトグルすると δ_r が ±1 % ジグザグになる
+        # (run_0022 x=90–94 で実測) ので、log y_b を x 方向に移動中央値 (窓 band_smooth_x [r_t]) で平滑化して固定する。
+        xs_all = N["x"][:, 0]; yb_all = np.full(len(xs_all), np.nan)
+        for i in range(len(xs_all)):
+            b0 = extract_one(i, main_par)
+            if b0 is not None:
+                yb_all[i] = b0.get("band_y_b", np.nan)
+        fin = np.isfinite(yb_all)
+        lyb = np.log(np.where(fin, yb_all, np.nan))
+        sm = np.full_like(lyb, np.nan)
+        for i in range(len(xs_all)):
+            w = fin & (np.abs(xs_all - xs_all[i]) <= 0.5 * band_smooth_x)
+            if w.sum() >= 3:
+                sm[i] = np.median(lyb[w])
+        yb_fixed = np.exp(sm)
+    rows = []
     for i in range(N["x"].shape[0]):
-        base = extract_one(i, main_par)
+        if yb_fixed is not None and np.isfinite(yb_fixed[i]):
+            base = extract_one(i, main_par, y_b_fixed=float(yb_fixed[i]))
+            sens = [extract_one(i, main_par, y_b_fixed=float(yb_fixed[i]) * f) for f in (0.8, 1.25)]
+        else:
+            base = extract_one(i, main_par)
+            sens = [extract_one(i, fc) for fc in sens_par]
         if base is None:
             continue
-        sens = [extract_one(i, fc) for fc in sens_par]
         base["delta_r_sens"] = [s["delta_r"] if s else np.nan for s in sens]
         rows.append(base)
     x = np.array([r_["x"] for r_ in rows])
@@ -391,6 +417,7 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
                ok=ok, hard_ok=hard_ok, reason=np.array(reasons),
                settings=dict(method=method, k_band=k_band, k_band_sens=list(k_band_sens), band_min_frac=band_min_frac,
                              band_width=band_width, slope_max=slope_max, band_growth=band_growth, max_retry=max_retry, fit_from=fit_from,
+                             band_smooth_x=band_smooth_x,
                              gate_band_rms=gate_band_rms,
                              core_frac=core_frac, core_frac_sens=list(core_frac_sens), n_axis_skip=n_axis_skip,
                              outer_frac=outer_frac, smooth_lam=smooth_lam, gate_core_rms=gate_core_rms,

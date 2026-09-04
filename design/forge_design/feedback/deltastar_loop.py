@@ -36,12 +36,26 @@ def extract_and_merge(prev_run, euler_run, omega: float = 0.5, **kw) -> dict:
     d_use = d["delta_r_use"]
     held = ~np.isfinite(d_use)
     d_next = np.where(held, d_in, (1.0 - omega) * d_in + omega * np.where(held, 0.0, d_use))
+    # 単調性ガード: 新しい物理壁 r_w,NS − δ_in + δ_next がスロート下流で非単調なら、δ_next の平滑化を段階的に強める
+    # (PhysicalNozzleWall.validate が非単調で弾く。設計壁は x≥0.5 で単調増加なので δ の減少勾配だけが原因)
+    from scipy.interpolate import make_smoothing_spline
+    x = d["x"]; r_inv = d["r_wall_euler"]
+    lam_used = None
+    for k, lam in enumerate((None, 1e-2, 1e-1, 1.0, 10.0)):
+        cand = d_next if lam is None else make_smoothing_spline(x, d_next, lam=lam)(x)
+        r_new = r_inv + cand
+        m = x >= 0.5
+        if np.all(np.diff(r_new[m]) > -1e-9):
+            d_next = cand; lam_used = lam; break
+    else:
+        d_next = cand; lam_used = f"{lam} (still non-monotone)"
     np.savetxt(prev_run / "delta_r_next.csv", np.c_[d["x"], d_next, d_in, d_use, held.astype(int)],
                delimiter=",", comments="",
-               header=f"x_rt,delta_r,delta_in_prev,delta_r_use,held (omega={omega})")
+               header=f"x_rt,delta_r,delta_in_prev,delta_r_use,held (omega={omega}; extra_smooth_lam={lam_used})")
     fin = np.isfinite(d_use) & (d_in > 1e-4)
     ratio = d_use[fin] / d_in[fin]
-    summary = {"omega": omega, "n_stations": int(len(d["x"])), "n_ok": int(d["ok"].sum()),
+    summary = {"omega": omega, "extra_smooth_lam": (None if lam_used is None else str(lam_used)),
+               "n_stations": int(len(d["x"])), "n_ok": int(d["ok"].sum()),
                "n_hard_ok": int(d["hard_ok"].sum()), "n_held": int(held.sum()),
                "use_over_in_median": float(np.median(ratio)) if fin.any() else None,
                "use_over_in_p10_p90": [float(np.percentile(ratio, 10)), float(np.percentile(ratio, 90))] if fin.any() else None,
