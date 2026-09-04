@@ -44,8 +44,11 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0021_diag3d_euler_sw` | 3D 切り分け (a): 側壁あり・Euler slip (最終版: index IC・ランプ線 2 重化) | **soft 段 (1 次) 完走、本段 (2 次, cfl 1) step 5 で NaN**: ノズル幅外 (z>W/2) のランプ角部 (x≈0) 直下、スパン全域。M∞6 の外部流が 15° 凸角で p/10 以下に膨張する場所 (ノズル内は M2.5 で無害) = 2 次再構成の負圧 | 診断 (ref) |
 | `run_0022_diag3d_sst_nosw` | 3D 切り分け (b): 側壁なし (排気が横方向に開放)・SST、重心ベース IC | soft 段 step 3 で ω NaN (ノズル幅端 z=W/2 の 20 倍圧力不連続、非物理な構成) | 破棄予定 |
 | `run_0023_smoke_sst_node_3d_noouter` | **S7 3D 基準 (外側空間なし)**: z=W/2 を側壁の境界壁にした 2D 押し出し + 側壁境界層 (33 万セル)。node SST | **完走・2D と一致**: C_T(p) 0.9699 / C_T(p+τ) 0.9619 / C_L 0.156 / C_M −0.969 (2D run_0016: 0.9691 / 0.9626 / 0.155 / −0.981)。3D node パイプライン (メッシュ・IC・段階起動・quad 力積分) は健全 | active (ref) |
-| `run_0024_diag3d_euler_accel` | 3D (外側空間あり) を加速作動点 (M∞3.5, p_ext/p_in 0.2) で Euler slip: 外側ランプ角部の膨張を緩めて横端トポロジを検証 | (実行中) | active |
-| `run_0025_smoke_sst_node_3d_accel` | 同上を node SST | (実行中) | active |
+| `run_0024_diag3d_euler_accel` | 3D (外側空間あり) を加速作動点 (M∞3.5, p_ext/p_in 0.2) で Euler slip: 外側ランプ角部の膨張を緩めて横端トポロジを検証 | **soft 段 (1 次) 2000 step 完走** (横端トポロジは Euler で成立)、本段 (2 次) step 425 でランプ後縁下流の top_out (静圧出口、流れが境界に平行) から NaN | 診断 (ref) |
+| `run_0025_smoke_sst_node_3d_accel` | 同上を node SST (冷間) | soft 段 step 5 でカウル後縁∩側壁後縁直後の 3 重点 (下側せん断層 × 横せん断層, x 1.14H) で ω 発散 | 破棄予定 |
+| `run_0026_smoke_sst_node_3d_accel_warm` | 同上、Euler (run_0024 soft 段末尾) から暖機 | 3 重点は通過 (step 237 まで) したが top_out 付近で ω 発散。**暖機コピーが Euler の wall_dist (番兵値) まで上書きしていたバグ** → 壁距離全滅が真因の可能性大 | 破棄予定 |
+| `run_0027_diag3d_euler_accel_slip` | run_0024 の top_out を slip 壁 (ランプ延長) にした Euler | (実行中) | active |
+| `run_0028_smoke_sst_node_3d_accel_warm_slip` | node SST、top_out slip、Euler 暖機 (状態量のみコピー、soft CFL 0.25) | (実行中) | active |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
