@@ -256,8 +256,8 @@ def restart_by_index(res_h5, mesh_h5) -> None:
     ノードに写す → 排気側の壁ノードが外部流の圧力を持ち 2 次で発散した (interp_field の全 134 station で誤写像を確認)。"""
     with h5py.File(res_h5, "r") as src, h5py.File(mesh_h5, "r+") as dst:
         n = len(dst["VALUE/ro"])
-        for k in src["VALUE"]:
-            if k in dst["VALUE"] and len(src["VALUE"][k]) == n:
+        for k in ("ro", "roUx", "roUy", "roUz", "roe", "roK", "roOmega"):   # 状態量のみ (wall_dist は触らない)
+            if k in src["VALUE"] and k in dst["VALUE"] and len(src["VALUE"][k]) == n:
                 dst["VALUE"][k][:] = src["VALUE"][k][:]
 
 
