@@ -147,7 +147,9 @@ def _bcond_config(p: Problem, st: dict) -> str:
     P = PHYS_SERN
     return (inlet("inlet_nozzle", P["inlet_nozzle"], ex) + inlet("inlet_ext", P["inlet_ext"], en)
             + outlet("outlet", P["outlet"]) + wall("ramp", P["ramp"]) + wall("cowl_in", P["cowl_in"])
-            + wall("cowl_out", P["cowl_out"]) + outlet("bottom", P["bottom"]) + outlet("top_out", P["top_out"]))
+            + wall("cowl_out", P["cowl_out"]) + outlet("bottom", P["bottom"])
+            + (outlet("top_out", P["top_out"]) if p.evaluate.get("top_out_kind", "outlet") == "outlet"
+               else f"top_out: {{physID: {P['top_out']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n"))
 
 
 def apply_wall_offset(design, wall_offset: dict, H: float):

@@ -43,7 +43,9 @@ def _bcond_config(p, st):
     def wall(name, kind=None):
         return f"{name}: {{physID: {P[name]}, kind: {kind or wall_kind}, outputHDFflg: 1, ints: , floats: }}\n"
     return (inlet("inlet_nozzle", ex) + inlet("inlet_ext", en) + outlet("outlet") + wall("ramp") + wall("cowl_in") + wall("cowl_out")
-            + outlet("bottom") + outlet("top_out") + f"sym: {{physID: {P['sym']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n"
+            + outlet("bottom") + (outlet("top_out") if p.evaluate.get("top_out_kind", "outlet") == "outlet"
+                                  else f"top_out: {{physID: {P['top_out']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n")
+            + f"sym: {{physID: {P['sym']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n"
             + f"side_far: {{physID: {P['side_far']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n"
             + wall("sidewall_in") + wall("sidewall_out"))
 
