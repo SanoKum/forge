@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S1 実装済み (同日)、次 = S2/S3 -->
+- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S3 + S4(a) 完了 (同日)、S4(b) NASA 傾向照合を実行中 -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) 「SERN チェーン」節 (現在仕様。本計画と同時に起草)
   - [`design/CAPABILITIES.md`](../../design/CAPABILITIES.md) (問題タイプ `sern_2d` を 📋 で登録)
@@ -205,4 +205,14 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   縁条件残差最小側 — 粗いので最適性の確証は別途 (fine sweep か等長拘束の直接最適化)。
   **速度**: kernel march 14 s (nj 301, dx 2e-3, x 9H)、逆設計 1 本 <1 s。図: scratchpad `sern/` (artifact 化)。
   **未対応**: semi-perfect ガス (圧力比写像)、非一様入口、p_ext > p_TE の衝撃。
+- `2026-09-04` — **S2–S3 実装 + S4(a) 合格**。`meshing/mesh_sern.py` (2 バンド構造 quad、カウルはスリット =
+  中間線ノードを上下 2 重、**TE 点は共有** — 重複させると TE 直後に幅 0 の隙間 = 未タグ境界辺が出る、
+  `tests/run_sern_mesh_tests.py` で検出・修正)、`evaluate/runner_sern.py` (逆設計→メッシュ→品質ゲート→領域別一様 IC→
+  段階起動 soft 1 次 cfl0.5 3000 step → 本段 2 次 cfl4。staging の場移植は `interp_field.py`)、
+  `metrics/sern_forces.py` (壁面出力 `res_<name>_<id>_<step>.h5` の CONNE 面ごとに (p−p_a)·n を積分。cell = 面値 / node = 節点平均)。
+  **S4(a)**: case/46 run_0002 (cell Euler slip, 56k セル, 品質 PASS) で C_T 0.9660 vs MOC 0.9666 (−0.05 %)、
+  C_L 0.1427 vs 0.1392、C_M −0.939 vs −0.946。壁圧分布はランプ・カウル内面とも MOC に重なる
+  (x/H 6–7 の後縁扇反射位置に小差)。残差は 1.4 桁プラトー (`NOT CONVERGED`) だが力係数は STEADY (1e-5)。
+  `geometry.mode: straight` (平板ランプを切るだけ、NASA 照合用) を追加。S4(b) は run_0003–0007 (カウル長 2/3.12/4.5H、
+  カウル角 3/6/12°, M∞10, γ1.3) を投入。
 
