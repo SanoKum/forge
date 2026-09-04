@@ -4,7 +4,7 @@
 ジェット: H2 25 %/N2 75 % (vol), 305 K, バルク 107 m/s (管内 1/7 乗則, 中心 131 m/s); coflow: 1045 K, 3.5 m/s, X O2 .15/H2O .099/N2 .751。1 atm。"""
 import argparse, pathlib, shutil, subprocess, os, h5py, numpy as np, yaml, cantera as ct
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--chem", type=int, default=0); ap.add_argument("--jac", type=int, default=2); ap.add_argument("--ji", type=int, default=5)
-ap.add_argument("--tci", type=int, default=0); ap.add_argument("--cfl", type=float, default=1.0); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--relax", type=float, default=0.7)
+ap.add_argument("--tci", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--cfl", type=float, default=1.0); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--relax", type=float, default=0.7)
 ap.add_argument("--nstep", type=int, default=20000); ap.add_argument("--out", type=int, default=0); ap.add_argument("--restart", default=None); ap.add_argument("--kfac", type=float, default=1.0)
 ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--sfr", type=int, default=0); a = ap.parse_args()
 HERE = pathlib.Path(__file__).parent; d = pathlib.Path(a.run_dir); d.mkdir(exist_ok=True)
@@ -32,7 +32,7 @@ wall:         {{physID: 4, kind: wall, outputHDFflg: 0, ints: , floats: {{Ux: 0.
 farfield:     {{physID: 5, kind: {a.far}, outputHDFflg: 0, ints: , floats: {"{Ps: 101325.0, Pt: 101325.0, Tt: 1045.0}" if a.far.startswith("outlet") else ""}}}
 axis:         {{physID: 6, kind: {"slip" if a.planar else "axis"}, outputHDFflg: 0, ints: , floats: }}
 """)
-chem = "" if a.single else f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, jacobianInterval: {a.ji}, tci: {a.tci}, tciTauChem: 1}}"
+chem = "" if a.single else f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, jacobianInterval: {a.ji}, tci: {a.tci}, tciCmix: {a.cmix}, tciTauChem: 1}}"
 if a.single: chem = ""
 value = a.restart if a.restart else "cabra.h5"
 (d / "solverConfig.yaml").write_text(f"""# case/48 Cabra H2/N2: chem={a.chem} cfl_pseudo={a.cfl} conv={a.conv}
