@@ -3,7 +3,7 @@
 plan §4.7。壁面出力 (outputHDFflg: 1) は MESH/COORD (n,3) と VALUE/Ps (n) [node: ノード値 / cell: 面値]
 を持つ。ランプ・カウルは x に単調なので x ソートした折れ線で (p − p_a) を台形積分する。
 規約 (moc_sern.wall_forces と同じ): 推力 = 壁力の −x 成分、揚力 = +y、モーメント = 頭上げ正 (基準点指定)。
-壁摩擦 (twall_x/y) は存在すれば別枠で加算し、符号は未検証として `shear_sign_unverified` を立てる。
+壁摩擦 (twall_x/y) は forge の「流体に働く traction」規約 (viscousFlux_d.cu) に従い、壁力 = −Σ twall·|dl| として別枠で加算する。
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def polyline_forces(h5file, fluid_below: bool, p_a: float, x_ref: float, y_ref: 
            "length": float(ln.sum()), "n_faces": int(len(conn)), "p_mean": float(np.sum(pf * ln) / ln.sum())}
     if tf is not None:
         tm = tf * ln[:, None]
-        out.update({"Fx_tau": float(tm[:, 0].sum()), "Fy_tau": float(tm[:, 1].sum()), "shear_sign_unverified": True})
+        out.update({"Fx_tau": float(tm[:, 0].sum()), "Fy_tau": float(tm[:, 1].sum())})
     return out
 
 
@@ -66,9 +66,13 @@ def sern_forces(run_dir, step: int, p_a: float, F_ideal: float, H: float, x_ref:
            "C_T": F_gross / F_ideal, "C_T_wall": T_wall / F_ideal, "C_L": Fy / F_ideal, "C_M": Mn / (F_ideal * H),
            "parts": parts}
     if any("Fx_tau" in v for v in parts.values()):
-        Fx_t = sum(v.get("Fx_tau", 0.0) for v in parts.values())
-        out["C_T_with_shear"] = (F_gross - Fx_t) / F_ideal
-        out["shear_sign_unverified"] = True
+        # forge の twall は「流体に働く」traction (cell: tau = −τ_w ê_t、node: W の CV に入る力 —
+        # viscousFlux_d.cu L527/L679、2026-09-04 確認)。壁に働く摩擦力 = −Σ twall·|dl| で、流れ方向 (+x)
+        # の抗力になる → 推力寄与は +Σ twall_x·|dl| (負)。揚力寄与は −Σ twall_y·|dl|。
+        Fx_t = sum(v.get("Fx_tau", 0.0) for v in parts.values()); Fy_t = sum(v.get("Fy_tau", 0.0) for v in parts.values())
+        out["C_T_with_shear"] = (F_gross + Fx_t) / F_ideal
+        out["C_L_with_shear"] = (Fy - Fy_t) / F_ideal
+        out["C_T_friction"] = Fx_t / F_ideal
     return out
 
 
