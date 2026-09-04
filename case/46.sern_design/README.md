@@ -41,9 +41,11 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0018_smoke_sst_node_lownpr` | 低 NPR 作動点の単点評価: 設計点 (p_ext 0.05) の形状を **M∞1.5, p_ext/p_in 0.6** (遷音速加速相当の過膨張) で node SST 評価 | C_T(p) 0.928 / C_T(p+τ) 0.920 / **C_L −0.316 / C_M +1.82 (頭上げ)**、剥離ゼロ (ランプ後半で 0.2→0.6 p_in へ滑らかに再圧縮)、STEADY | active (ref) |
 | `run_0019_moo_sst_node_3op/` | **S6 RANS 版 MOO (3 作動点・設計点固定版)**: node SST、cruise (0.05, w 0.5) / accel (0.20, w 0.3) / lownpr (0.60, M∞1.5, w 0.2)、C_M,w ≥ −2.5、LHS 10 + EHVI 2×2。**run_0010/0017 は作動点ごとに kernel (自由境界圧) を再設計していたバグがあり、作動点間で形状が一致しない → 本 run で置換** | 14 評価 / 10 PASS / 3 は C_M 制約 / 1 は key point 不成立、HV 0.983。**低 NPR 点が支配的**: 長いランプは lownpr で C_T 0.83–0.90 に落ち、前線は最短ランプ (L 3.8H, C_T,w 0.9607) の 1 点に退化。lownpr でランプ剥離が出始める (sep_frac 最大 0.10 = doe_004)。`pareto.json`, `pareto.png` | active (ref) |
 | `run_0020_smoke_sst_node_3d` | **S7 3D 確認 (外側空間あり)**: スモーク設計を有限スパン W=2H + 側壁 (x ≤ L_cowl) + 外側空間 1.5H の 3D hex (52.5 万セル, 品質 PASS) で node SST 評価。z=0 対称面 | **未解決**: 4 回投入して全て soft 段 step 3–8 で NaN。判明した原因と対処: ① 入口面の幅外側が inlet_nozzle になっていた (修正)、② ランプ∩側壁の共有ノードが 2 種の入口に属した (ランプ線も 2 重化)、③ index IC がカウル外面ノードを排気にしていた (修正)。それでも入口面直下・カウル横端 (z≈W/2) の外部流ノードから発散 → 横端トポロジ (カウル横端の凸角 + 側壁∩入口線) が残課題 | active (未解決) |
-| `run_0021_diag3d_euler_sw` | 3D 切り分け (a): 側壁あり・Euler slip、重心ベース IC | soft 段 step 51 で NaN (ノズル幅外のランプ直下 z≈W/2〜1.24H と側壁外コピー) | 破棄予定 |
+| `run_0021_diag3d_euler_sw` | 3D 切り分け (a): 側壁あり・Euler slip (最終版: index IC・ランプ線 2 重化) | **soft 段 (1 次) 完走、本段 (2 次, cfl 1) step 5 で NaN**: ノズル幅外 (z>W/2) のランプ角部 (x≈0) 直下、スパン全域。M∞6 の外部流が 15° 凸角で p/10 以下に膨張する場所 (ノズル内は M2.5 で無害) = 2 次再構成の負圧 | 診断 (ref) |
 | `run_0022_diag3d_sst_nosw` | 3D 切り分け (b): 側壁なし (排気が横方向に開放)・SST、重心ベース IC | soft 段 step 3 で ω NaN (ノズル幅端 z=W/2 の 20 倍圧力不連続、非物理な構成) | 破棄予定 |
 | `run_0023_smoke_sst_node_3d_noouter` | **S7 3D 基準 (外側空間なし)**: z=W/2 を側壁の境界壁にした 2D 押し出し + 側壁境界層 (33 万セル)。node SST | **完走・2D と一致**: C_T(p) 0.9699 / C_T(p+τ) 0.9619 / C_L 0.156 / C_M −0.969 (2D run_0016: 0.9691 / 0.9626 / 0.155 / −0.981)。3D node パイプライン (メッシュ・IC・段階起動・quad 力積分) は健全 | active (ref) |
+| `run_0024_diag3d_euler_accel` | 3D (外側空間あり) を加速作動点 (M∞3.5, p_ext/p_in 0.2) で Euler slip: 外側ランプ角部の膨張を緩めて横端トポロジを検証 | (実行中) | active |
+| `run_0025_smoke_sst_node_3d_accel` | 同上を node SST | (実行中) | active |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
