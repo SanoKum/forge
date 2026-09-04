@@ -37,6 +37,7 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0014_smoke_sst_node_thick` | node+SST 再挑戦 1: カウル板厚 0.2 % H (入口側で 0 に絞る台形) + interp 移植 | **soft 段 step 4 で発散** — 入口角 (x=−L_up, y=0) の 1 ノードが inlet×2 + wall×2 の 4 境界を持つ形になったため | 破棄予定 |
 | `run_0015_smoke_sst_node_thick_idx` | node+SST 再挑戦 2: 板厚 0.2 % H (入口から一定、TE 手前で 0) + **stage 間の場移植を index コピーに変更** | **完走**: C_T(p) 0.9691 / C_T(p+τ) 0.9626 (摩擦 −0.0065) / C_L 0.155 / C_M −0.978、力 STEADY。rms_roOmega は本段開始直後から 3e18 一定 (壁ノード ω ピン留めの診断値、場は健全) | active (ref) |
 | `run_0016_smoke_sst_node_t0_idx` | node+SST 再挑戦 3: **板厚 0 (元のスリット) + index コピー移植** — 真因の切り分け | **完走**、run_0015 と同値 (C_T(p) 0.9691 / C_L 0.155 / C_M −0.981) → **真因は interp_field の最近傍移植が座標一致の双子壁ノードを同じ元ノードに写していたこと** (板厚は不要) | active (ref) |
+| `run_0017_moo_sst_node_2op/` | **S6 多作動点 MOO (RANS 版)**: node + SST、作動点 cruise (M∞6, p_ext/p_in 0.05, w 0.6) + accel (M∞3.5, 0.20 過膨張, w 0.4)、目的 = 摩擦込み C_T の重み付き平均と L_ramp、**制約 C_M,w ≥ −2.5** (x_ref −20H)、LHS 10 + EHVI 2×2 | 14 評価 / 10 PASS / 3 は C_M 制約で除外 / 1 は key point 不成立。HV 0.953、パレート 5 点 (L 5.5–9.7 H で C_T,w 0.960–0.967)。剥離割合はランプ全点で 0 (accel の p_ext 0.2 p_in では剥離せず)。1 点 ≈ 76 s (2 作動点)。`pareto.json`, `pareto.png`, `ledger.jsonl` | active (ref) |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
@@ -74,3 +75,13 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 - 残る node 固有の観察: (i) rms_roOmega が本段で 3.3e18 一定 (壁ノードの ω ピン留め残差が混入する診断値。場は STEADY で ω max 1.5e7 は
   外部流側の壁ノード)、(ii) 入口角 (inlet+wall) と後縁・ランプ後縁の**単ノードの圧力が外れる** (cowl_in 入口角 2.2 p_in、cowl_out 入口角
   0.36 p_in)。力積分への影響は小 (node/cell の C_L 差 0.001) だが、壁圧分布を読むときは端点を除く。
+
+### S6 RANS 版 MOO のまとめ (2026-09-04, run_0017)
+
+- node + SST を評価器にした 2 作動点 MOO が 1 点 76 s (GPU 専有時) で回った。摩擦込み C_T は Euler 版より 0.5〜1 % 低く、
+  cruise (高 NPR) より accel (p_ext 0.2 p_in) の方が C_T が高い (外部圧が高いぶん (p−p_a) の積分が有利)。
+- C_M ≥ −2.5 の制約で 3 点 (カウル角 6〜7°・長いランプ) が除外され、パレートは L 5.5〜9.7 H の短い側に寄った。
+  前線上はカウル角 2〜8°、M_c 3.5〜3.8、f 0.35〜0.44。C_M 最良 (−1.47) は L 9.66H・カウル角 2.7° (doe_004)。
+- **剥離は全点でゼロ**: accel の p_ext/p_in 0.2 ではランプ末端 (0.13 p_in) がやや過膨張でも超音速の順圧力勾配で付着したまま。
+  剥離 (RSS/FSS) を評価するには遷音速加速に相当する p_ext/p_in ≳ 0.5 の作動点が要る (次の課題)。
+- Euler 版 (run_0010) との差: 同程度の L で C_T,w が 0.5〜1 % 低い (摩擦)。前線の形 (長いほど高推力) は同じ。
