@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `thermophysics / chemistry`
-- **status**: `in_progress` (Phase 0・1 完了 2026-09-04、Phase 2 未着手)
+- **status**: `in_progress` (Phase 0・1・2a・2b(falloff) 完了 2026-09-04。Strang 分離・Phase 3 未着手)
 - **related_docs**:
   - `methods/chemistry.md` (現在仕様: 理論・実装方針)
   - `methods/thermophysics.md` (多成分 TP gas、sensible datum、種輸送・陰解法結合)
@@ -51,7 +51,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | **0** 前提整備 | CEA 平衡/凍結スクリーニング、`thermo.inp→species_db.yaml` ツール、Jachimowski YAML 化 + Cantera 検証、方針文書 | `tools/cea_thermo_to_species_db.py`, `tools/mechanisms/*.yaml`, `notes/investigations/scripts/cea_kinetics_screen/`, `methods/chemistry.md` | **done** (§9) |
 | **0b** BC | 指定組成 `Yb` 配線: `inlet_Pressure` は M5/M7 で配線済 (case/44 `run_0091` が `Y0/Y1` を使用中、thermophysics plan §10 の記述は古い)。残りは `inlet_Pressure_dir` のみ (燃焼室出口組成は `inlet_Pressure` で与えられるので低優先) | `cuda_forge/boundaryCond_d.cu` | `inlet_Pressure` done / `_dir` todo |
 | **1** ソース項 | `chemistry_d.{cuh,cu}` (機構読込・SI 換算・device 定数)、`chemistrySource_d` ($\dot\omega_s$, $\dot Q$, 解析 Jacobian)、`h_datum` 保持、config キー、ホスト 0-D テスト `tools/test_chemistry.cpp`、GPU 0-D 着火 (case/35 run_0049) | `cuda_forge/chemistry_d.*`, `chemistry_mech_io.hpp`, `thermo_d.*`, `input/solverConfig.*`, `main.cpp`, `periodicNode_d.cu` | **done** (§9) |
-| **2** 陰解法結合 | 種ブロック point-implicit (LU)、案C への反応寄与、$(5,5)$ 反応熱 Jacobian、Strang 分離 (陽解法/dual-time)、falloff (Troe) | `speciesTransport_d.cu`, `species_eos_coupling_d.cuh`, `timeIntegration_d.cu` | todo |
+| **2** 陰解法結合 | 種ブロック point-implicit (LU)、案C 予測子経由の**反応熱の陰的注入**、$(4,4)$ 反応熱 Jacobian、falloff (Troe) — **done**; Strang 分離 (陽解法/dual-time) — todo | `speciesTransport_d.cu`, `chemistry_d.*`, `timeIntegration_d.cu`, `case/46` | **2a/2b done** (§9), Strang todo |
 | **3** 燃焼器 RANS | 低マッハ前処理 + SST + No-TCI、PaSR、13 種 (NO) | `ransSource_d` 連携, `chemistry_d` | todo |
 | **4** 応用 | 加熱器 → ノズル → 試験部 end-to-end、設計チェーン確認メニューへ | `design/`, `methods/design/` | todo |
 
@@ -77,7 +77,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 
 - [x] `methods/chemistry.md` 起草 (理論・実装方針)
 - [x] Phase 1 実装・検証 (0-D 着火)
-- [ ] Phase 2–3 実装・検証 (§6)
+- [x] Phase 2a/2b 実装・検証 (ノズル化学非平衡 case/46, falloff)
+- [ ] Strang 分離・Phase 3 実装・検証 (§6)
 - [ ] `status: done` + §9 変更ログ
 - [ ] `plans/active/` → `plans/accepted/` へ移動、`plans/README.md` 同期
 
@@ -125,4 +126,24 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
     不整合 (run_0049 初回: seam が着火せず圧力波で場が乱れた)。`res_roY{s}`・凝縮モーメント残差の gather と `roY{s}` の root→member ミラーを追加。
     体積ソースは `volumePartial_d` を使う (bodyForce/ransSource と同じ規約)。**既往の node 周期×多成分 run (case/28 等は非周期なので影響なし) を要確認**。
   - 残: Phase 2 (種ブロック point-implicit、案C 結合、falloff、Strang)、`chemQdot` の陰解法 $(5,5)$ Jacobian、FP32 化。
+- `2026-09-04` — **Phase 2a/2b 完了** (ブランチ `feature/chemistry-finite-rate`, worktree `forge-chem`)。
+  - **種ブロック point-implicit** (`jacobianMode: 2`): chemistry が温度結合込み $J^{\rm tot}_{sk}=J_{sk}+\partial\omega_s/\partial T\cdot\partial T/\partial\rho Y_k$ を
+    `chem_jac` に書き、`species_dplur_block_sweep_d` がセル毎 $n_s\times n_s$ LU (double) で δ(ρY) を解く (coupling 1 の解・coupling 2 の予測子の両方)。
+    $(4,4)$ 対角に $\max(0,-\partial\dot Q/\partial\rho e)$。
+  - **発散と根治**: `case/46.nozzle_h2o2_kinetics` (燃焼室 CEA 平衡 2788 K・11.39 bar, va3 ノズル, 15 種) で反応熱を陽的に入れる構成
+    (run_0002–0007: jac 1/2, coupling 0/1/2, cfl_pseudo 2/0.2) は**全て数 step で NaN**。スロート付近の再結合熱 $\dot Q\approx7.5\times10^{11}$ W/m³
+    (Cantera 評価, $\tau_c$ 4e-8 s) が擬似 Δt 1e-6 s で内部エネルギーの 30 %/step。案C 予測子 δ(ρY)* で線形化した
+    $V\sum_k(\partial\dot Q/\partial\rho Y_k)\delta(\rho Y_k)^*$ を `res_roe` に注入 (`chemistry_heat_inject_d`) すると
+    **run_0008 は cfl_pseudo 2 (frozen と同じ) で安定・12000 step 完走**、`rms_roe` 4.3 桁低下 (frozen 基準と同じプラトー水準)。
+    → 定常陰解法の反応流は `speciesImplicitCoupling: 2` + `jacobianMode: 2` 必須 (config に警告を追加)。
+  - **検証** (run_0008 vs Q1D Cantera 参照 `q1d_kinetics_ref.py`): 軸線 $Y_{OH}$ が forge スロート状態 (M=1.3) 始点の Q1D と全域一致
+    (出口 6.39e-5 vs 6.44e-5)、NO は Zeldovich が遅く凍結 (3.07e-2, Q1D 同値; CEA 平衡スロートの 2.3e-2 は非現実)。
+    frozen (run_0001, 燃焼室組成凍結) 比で出口 T +58 K, M −0.045 (−1.1 %); CEA 平衡スロート始点 Q1D の fr−fz は +40 K, −0.044。
+    T/M の絶対値は 1D 面平均と軸値の差 (出口 M 3.85 vs 3.91) があり比較対象にしない。出口量は 4000→12000 step で T 0.5 K・$Y_{OH}$ 0.3 % の変化 (準定常)。
+    `check_convergence`: run_0001/run_0008 とも STALLED プラトー (NOT CONVERGED; run_0091 系の既知 warm 床)。
+  - **falloff (Lindemann/Troe)**: `chem_ln_kf_falloff` + 温度/[M] 微分は滑らかなスカラ関数の中心差分 (相対 1e-4)。
+    Cantera h2o2.yaml (GRI H₂/O₂ 29 反応, Troe 2 本) を CEA NASA-9 熱力学に付け替えた `tools/mechanisms/h2o2_gri30_nasa9_10sp29r.yaml` で
+    Jacobian FD 2.1e-8 PASS、着火遅れ 43.6 vs Cantera 44.0 µs (1200 K 1 atm)。Burke 2012 機構は同形式で読める。
+  - 残: Strang 分離 (非定常)、`_precond_d` (低マッハ前処理) への $(4,4)$ 配線、`inlet_Pressure_dir` 組成、Phase 3 (燃焼器 RANS・PaSR)、
+    反応 ON での `cfl_pseudo` 上限スイープ (frozen 同等の 2 は確認、4 以上は未)。
 
