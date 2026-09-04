@@ -62,7 +62,17 @@ gmsh.model.geo.synchronize()
 gmsh.model.addPhysicalGroup(1, [a_in], 1, "inlet_air")
 gmsh.model.addPhysicalGroup(1, [s_in], 2, "inlet_h2")
 gmsh.model.addPhysicalGroup(1, [c_out1, c_out2, c_out3], 3, "outlet")
-gmsh.model.addPhysicalGroup(1, [s_bot, c_bot, s_top, lip_face, a_bot, a_top, c_top], 4, "wall")
+# 入口に接する上流ダクト/スロットの壁は slip (5): 入口ノード=壁ノードの衝突 (u 指定 vs u=0/T 固定) で圧力が暴走する (run_0002)。
+# no-slip 等温壁 (4) はステップ面と燃焼器の上下壁のみ。
+# 上壁 (c_top) も slip: slip→no-slip の切替点 (x=0) が前縁特異点になり P 7-9 bar/T 2200 K で発散 (run_0004/0005)。
+# 上壁 BL は計測域 (y<4 cm) から遠く、断面積への影響 ~1 % なので当面 slip で近似する (入口 BL プロファイル導入までの暫定)。
+ap_noslip = a.out.endswith("bk_noslip.msh")
+if ap_noslip:   # 入口 BL プロファイル (inletProfile) 併用時: 全壁 no-slip (入口壁角ノードは u=0 で整合)
+    gmsh.model.addPhysicalGroup(1, [c_bot, lip_face, c_top, s_bot, s_top, a_bot, a_top], 4, "wall")
+    gmsh.model.addPhysicalGroup(1, [], 5, "wall_slip")
+else:
+    gmsh.model.addPhysicalGroup(1, [c_bot, lip_face], 4, "wall")
+    gmsh.model.addPhysicalGroup(1, [s_bot, s_top, a_bot, a_top, c_top], 5, "wall_slip")
 gmsh.model.addPhysicalGroup(2, [S_slot, S_air, S_C1, S_C2, S_C3], 7, "fluid")
 gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
 gmsh.model.mesh.generate(2)

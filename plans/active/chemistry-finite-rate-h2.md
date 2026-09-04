@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `thermophysics / chemistry`
-- **status**: `in_progress` (Phase 0・1・2 (a: ブロック陰解+反応熱陰的注入, b: falloff, c: Strang) 完了 2026-09-04。Phase 3 未着手)
+- **status**: `in_progress` (Phase 0–2 完了、Phase 3 Burrows–Kurkov 一次結果あり 2026-09-04)
 - **related_docs**:
   - `methods/chemistry.md` (現在仕様: 理論・実装方針)
   - `methods/thermophysics.md` (多成分 TP gas、sensible datum、種輸送・陰解法結合)
@@ -52,7 +52,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | **0b** BC | 指定組成 `Yb` 配線: `inlet_Pressure` は M5/M7 で配線済 (case/44 `run_0091` が `Y0/Y1` を使用中、thermophysics plan §10 の記述は古い)。残りは `inlet_Pressure_dir` のみ (燃焼室出口組成は `inlet_Pressure` で与えられるので低優先) | `cuda_forge/boundaryCond_d.cu` | `inlet_Pressure` done / `_dir` todo |
 | **1** ソース項 | `chemistry_d.{cuh,cu}` (機構読込・SI 換算・device 定数)、`chemistrySource_d` ($\dot\omega_s$, $\dot Q$, 解析 Jacobian)、`h_datum` 保持、config キー、ホスト 0-D テスト `tools/test_chemistry.cpp`、GPU 0-D 着火 (case/35 run_0049) | `cuda_forge/chemistry_d.*`, `chemistry_mech_io.hpp`, `thermo_d.*`, `input/solverConfig.*`, `main.cpp`, `periodicNode_d.cu` | **done** (§9) |
 | **2** 陰解法結合 | 種ブロック point-implicit (LU)、案C 予測子経由の**反応熱の陰的注入**、$(4,4)$ 反応熱 Jacobian (precond 版含む)、falloff (Troe)、Strang 分離 (非定常 RK) | `speciesTransport_d.cu`, `chemistry_d.*`, `timeIntegration_d.cu`, `main.cpp`, `case/46`, `case/35` | **done** (§9) |
-| **3** 燃焼器 RANS | 低マッハ前処理 + SST + No-TCI、PaSR、13 種 (NO) | `ransSource_d` 連携, `chemistry_d` | todo |
+| **3** 燃焼器 RANS | Burrows–Kurkov (case/47): SST 壁関数 + No-TCI で自己着火・火炎を再現 (定量は混合不足)。PaSR 実装済 (未較正)。加熱器 (低マッハ) は未 | `case/47`, `chemistry_d` (tci) | **in_progress** (§9) |
 | **4** 応用 | 加熱器 → ノズル → 試験部 end-to-end、設計チェーン確認メニューへ | `design/`, `methods/design/` | todo |
 
 ## 6. 検証
@@ -154,4 +154,18 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   - `cfl_pseudo` 上限 (case/46 run_0009/0010, 反応 ON 定常陰解): 4 は安定 (残差は 2 と同水準)、8 はリミットサイクル (残差 2 桁悪化) → 実用上限 ≈4。
   - `implicit_defect_correction_block_precond_d` (lowMachPrecond) にも反応熱の $(4,4)$ 対角 (`src_jac_roe`) を配線 (加熱器の低マッハ用。未検証)。
   - 残: Phase 3 (燃焼加熱器 RANS: 低マッハ precond + SST + No-TCI → PaSR、Burrows–Kurkov)、`inlet_Pressure_dir` 組成、Strang/ソースカーネルの性能最適化。
+- `2026-09-04` — **Phase 3 一次結果 (Burrows–Kurkov, case/47)**。
+  - 形状・条件は NASA TM X-2828 から (`papers/combustion/Burrows_Kurkov_1973_NASA-TM-X-2828.pdf`): 主流 M2.44/1270 K/1 atm (Y O₂ .258/N₂ .486/H₂O .256),
+    H₂ スロット 0.4 cm (リップ 0.076 cm) M1/254 K, 燃焼器 35.6 cm (上壁 9.38→10.5 cm 直線拡大)。gmsh 平面構造 68809 ノード (品質 PASS)。
+    実験の出口プロファイル (Fig.6 組成, Fig.13 全温) は図の目視読み取り (±0.03)。
+  - **起動の罠 (node モード)**: ①`wall_isothermal` の壁温キーは `Ts` (`T` は無視され 0 K)。②IC の壁ノードは u=0・T_wall で作る (流速込み roe は T=0→NaN)。
+    ③**入口と壁を共有する角ノード**で `inlet_uniformVelocity` と壁 Dirichlet が衝突し P 数十 bar → NaN (1 次では延命、2 次で発散)。
+    入口 BL プロファイル (`inletProfile` + Crocco–Busemann ρ) でも解消せず → **未解決の制約**として記録 (別 plan 候補)。
+    回避: 上流ダクト/スロット壁と燃焼器上壁を slip、no-slip 等温壁 (壁関数) はステップ面と燃焼器下壁のみ。段階起動 (1 次 cfl 0.5 → 2 次 cfl 2)。
+  - **結果** (`run_0007` 混合 → `run_0008` 反応, jacobianMode 2 + coupling 2, cfl_pseudo 1, 20000 step, NaN なし):
+    自己着火と壁噴流火炎を再現。出口 X_H₂O ピーク 0.51 (実験 0.50) だが位置 y 1.48 cm (実験 2.0 cm)、全温ピーク 1.10 (実験 1.18)、
+    着火点 x 5–9 cm で上流へドリフト中 (実験 18–25 cm)。混合基準でも H₂ 層が実験より薄く、主流 M 2.55 (上壁 slip)。
+    → 差の主因は**混合不足** (上流壁 slip で初期 BL/せん断層厚ゼロ、入口乱流量が仮置き) と着火の早さ (No-TCI)。
+    残差は振動プラトー (`check_convergence` NOT CONVERGED、リップ後流)。
+  - 次: 入口角ノードの解消 (solver 側) → 全壁 no-slip + 入口 BL、入口 k/ω の感度、PaSR (`tci: 1`) の C_mix 較正、cell モードとの比較。
 
