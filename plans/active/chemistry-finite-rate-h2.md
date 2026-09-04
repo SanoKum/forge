@@ -183,4 +183,16 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   出口の組成プロファイルは実験にほぼ重なる (H₂O ピーク 0.505 @ 1.96 cm vs 0.50 @ 2.0)。残る差は (i) 全温ピーク 1.08 vs 1.18、(ii) 着火点 5–9 cm vs 18–25 cm、
   (iii) 主流 M 2.5 vs 2.2 (側壁 BL の blockage = 2D の限界、追わない)。着火位置は入口乱流・BL・PaSR いずれでも動かず、壁関数/等温壁/リップ後流の
   扱いか H₂ 噴射条件の精査が次の候補 (保留)。
+- `2026-09-04` — **化学カーネル高速化 (項目 3)**: (1) 種ブロック LU をステップ 1 回に (sweep は前進/後退代入のみ), (2) log(A) 事前計算,
+  (3) `jacobianInterval` (定常陰解法で化学 Jacobian を n step ごとに凍結), (4) Strang v2 (相対変化で刻み制御, 非反応セルは 1 sub-step)。
+  アイドル GPU 計測 (case/47 BK, 69k ノード, 9 種, 300 step, `run_dbg_time_*`):
+  | 構成 | 300 step | ms/step | chemistry_source | species_implicit |
+  |---|---|---|---|---|
+  | 変更前 | 17.8 s | 59 | (turbulence_model 内) | (update_inner 2.9 ms) |
+  | 変更後, `jacobianInterval: 1` | 13.6 s | 45 | 10.4 ms | 6.2 ms |
+  | 変更後, `jacobianInterval: 5` | 8.6 s | 29 | 3.7 ms | 4.4 ms |
+  残差は 4–5 桁一致 (run 間ノイズ内)。混合のみ (化学 OFF) 18.6 ms/step に対し反応 ON の追加コストは 2.4× → 1.5×。
+  Strang v2: 周期箱 dt 5e-8 で 155 → 63 s (2.5×)、精度同一。プロファイラに `chemistry_source` / `species_implicit` 区間を追加。
+  **推奨: 定常陰解法の反応流は `jacobianInterval: 5`**。残る大物は `chemistry_source_d` の 3 KB スタック/126 レジスタ (占有率) と
+  `species_implicit` の予測子 5 sweep (各 sweep で dq ポインタ配列を H2D コピー)。
 
