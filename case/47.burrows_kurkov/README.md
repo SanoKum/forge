@@ -35,4 +35,6 @@ M1・254 K・1 atm で壁平行に噴射。x=35.6 cm の出口で組成 (モル�
 | `run_0018_react_pasr` | run_0017 restart + **PaSR** (`tci: 1`, C_mix 1, Kolmogorov τ_mix, τ_c=1/max\|J_ss\|) | **消炎** (OH max 2e-7, κ min 0.03): 最速ラジカル時間ベースの τ_c が短すぎ κ が全域で小さい → `tciTauChem: 1` (燃料/酸化剤消費時間) を追加 | ref (PaSR 感度・失敗記録) |
 | `run_0019_react_pasr_tauchem1` | PaSR, `tciTauChem: 1` (H₂/O₂ 消費時間), C_mix 1 | κ (火炎内平均) 0.96 → ほぼ No-TCI と同じ (X_H₂O 0.50 @ 1.78 cm, T_tot 1.06, 着火 7.5 cm) | ref (PaSR 感度) |
 | `run_0020_react_pasr_cmix001` | PaSR, `tciTauChem: 0`, C_mix 0.01 | κ 平均 0.70: 発熱が下がる (T max 2163 K, X_H₂O 0.47, T_tot 0.91) が**着火位置は 8 cm で動かない** → 早い着火は TCI でなくリップ/壁近傍のモデル (壁関数・等温壁・入口 k/ω) 起因と考えられる | ref (PaSR 感度) |
+| `run_0021_react_delta10` | run_0017 restart, 入口 BL δ 6→**10 mm** (報告書「初期境界層厚さ約 1 cm」) | X_H₂=0.5 @ 1.48 cm (実験 1.5), X_H₂O ピーク 0.51 @ 1.82 cm, 着火 7.9 cm, 主流 M 2.51 (変わらず) | ref (δ 感度) |
+| `run_0022_react_kx10` | 同 + 入口 k ×10 (ω 固定 → μt/μ ×10), δ 10 mm | 混合が強まり X_H₂=0.5 @ 1.62 cm, X_H₂O ピーク 0.51 @ 2.21 cm (実験 2.0: やや過混合), 全温ピーク 1.07 (幅は実験に近い), **主流 M 2.40** (BL 肥厚で blockage 増), 着火 6.7 cm | ref (入口乱流感度) |
 
