@@ -13,6 +13,11 @@ r"""排除厚さの固定点反復ドライバ (固定 Euler 基準・コア整�
       --euler-ref case/45.isobutane_m6_d155/run_0001_euler_shortest_dry \
       --prev case/45.isobutane_m6_d155/run_0004_ns_v3 \
       --run-dir case/45.isobutane_m6_d155/run_0019_ns_cm_pass1 [--omega 0.5] [--prepare-only]
+
+推奨 (2026-09-04, case/45 run_0026 で検証): 収束済み NS 場からの warm start では
+  `--stages none --cfl 5 --implicit-relax 0.7 --steps 12000`
+(soft/mid 6000 step は不要、cfl 5 + relax 0.7 で 5000〜9000 step で cfl1/24000 step と同じ残差水準・出口 M は 8000 step で凍結。
+ NS 1 本 ≈ 95 s)。cold start (Euler → 中継 → 初回 NS) では `--stages full` (既定) か `--stages ramp --ramp 1,2,3.5`。
 """
 from __future__ import annotations
 
@@ -78,7 +83,8 @@ def extract_and_merge(prev_run, euler_run, omega: float = 0.5, smooth_lam: float
 
 
 def run_pass(problem, euler_ref, prev_run, run_dir, omega: float = 0.5, ic_from=None,
-             prepare_only: bool = False, nsteps=None) -> dict:
+             prepare_only: bool = False, nsteps=None, cfl_main=None, implicit_relax=None,
+             stages: str = "full", ramp=None, ramp_steps: int = 1000) -> dict:
     from ..evaluate.runner_axismach import prepare_ns, run_staged_ns, collect
     from ..evaluate.runner import FORGE_TOOLS
     prev_run = Path(prev_run); run_dir = Path(run_dir)
@@ -87,14 +93,21 @@ def run_pass(problem, euler_ref, prev_run, run_dir, omega: float = 0.5, ic_from=
     print("massflow(prev):", json.dumps(summ["massflow"]), flush=True)
     info = prepare_ns(problem, run_dir, nsteps=nsteps, ic_from=ic_from or prev_run,
                       delta_r_csv=prev_run / "delta_r_next.csv", offset="radial",
-                      euler_ref=euler_ref, omega=omega, prev_run=prev_run)
+                      euler_ref=euler_ref, omega=omega, prev_run=prev_run,
+                      cfl_main=cfl_main, implicit_relax=implicit_relax)
+    info["stages"] = {"stages": stages, "ramp": (list(ramp) if ramp else None), "ramp_steps": ramp_steps}
+    (run_dir / "prepare_info.json").write_text(json.dumps(info, indent=1, default=str))
     print(json.dumps({k: info[k] for k in ("throat_physical", "dstar_source", "mesh", "nStepOuter", "cfl_main")}, indent=1), flush=True)
     print(Path(run_dir, "MESH_QUALITY.txt").read_text().splitlines()[-1], flush=True)
     if prepare_only:
         return info
-    rc = run_staged_ns(run_dir)
-    print("forge rc", rc, flush=True)
+    import time as _t
+    t0 = _t.time()
+    rc = run_staged_ns(run_dir, stages=stages, ramp=ramp, ramp_steps=ramp_steps)
+    print(f"forge rc {rc}  (NS wall time {_t.time() - t0:.0f} s, stages={stages})", flush=True)
     m = collect(problem, run_dir)
+    m["ns_wall_time_s"] = _t.time() - t0
+    (run_dir / "metrics.json").write_text(json.dumps(m, indent=1))
     print(json.dumps(m, indent=1), flush=True)
     subprocess.run([sys.executable, str(FORGE_TOOLS / "check_convergence.py"), str(run_dir)], check=False)
     # 固定点差: 新 run から抽出し、入力 (= 新 run の壁 − Euler 壁) と比較
@@ -106,7 +119,8 @@ def run_pass(problem, euler_ref, prev_run, run_dir, omega: float = 0.5, ic_from=
 
 
 def run_pass0_integral(problem, euler_ref, run_dir, ic_from, initializer=None, prepare_only: bool = False,
-                       nsteps=None, omega: float = 0.5) -> dict:
+                       nsteps=None, omega: float = 0.5, cfl_main=None, implicit_relax=None,
+                       stages: str = "full", ramp=None, ramp_steps: int = 1000) -> dict:
     """pass 0: 積分法 (CONTUR) 初期壁で NS を立て、終了後に抽出して次 pass 用 delta_r_next.csv まで作る。
     initializer=None なら problem YAML の `deltastar_initializer` (無ければ断熱 contur)。"""
     from ..evaluate.runner_axismach import prepare_ns, run_staged_ns, collect
@@ -114,15 +128,21 @@ def run_pass0_integral(problem, euler_ref, run_dir, ic_from, initializer=None, p
     run_dir = Path(run_dir)
     init = initializer if initializer is not None else {"model": "contur", "thermal_bc": {"mode": "adiabatic"}}
     info = prepare_ns(problem, run_dir, nsteps=nsteps, ic_from=ic_from, initializer=init,
-                      euler_ref=euler_ref, omega=omega)
+                      euler_ref=euler_ref, omega=omega, cfl_main=cfl_main, implicit_relax=implicit_relax)
+    info["stages"] = {"stages": stages, "ramp": (list(ramp) if ramp else None), "ramp_steps": ramp_steps}
+    (run_dir / "prepare_info.json").write_text(json.dumps(info, indent=1, default=str))
     print(json.dumps({k: info[k] for k in ("throat_physical", "dstar_source", "initializer", "mesh", "nStepOuter", "cfl_main")},
                      indent=1, default=str), flush=True)
     print(Path(run_dir, "MESH_QUALITY.txt").read_text().splitlines()[-1], flush=True)
     if prepare_only:
         return info
-    rc = run_staged_ns(run_dir)
-    print("forge rc", rc, flush=True)
+    import time as _t
+    t0 = _t.time()
+    rc = run_staged_ns(run_dir, stages=stages, ramp=ramp, ramp_steps=ramp_steps)
+    print(f"forge rc {rc}  (NS wall time {_t.time() - t0:.0f} s, stages={stages})", flush=True)
     m = collect(problem, run_dir)
+    m["ns_wall_time_s"] = _t.time() - t0
+    (run_dir / "metrics.json").write_text(json.dumps(m, indent=1))
     print(json.dumps(m, indent=1), flush=True)
     subprocess.run([sys.executable, str(FORGE_TOOLS / "check_convergence.py"), str(run_dir)], check=False)
     fp = extract_and_merge(run_dir, euler_ref, omega=omega)
@@ -146,6 +166,11 @@ def main(argv=None) -> int:
     ap.add_argument("--init-integral", action="store_true",
                     help="pass 0: 積分法 (CONTUR) 初期壁で NS を立てる (YAML の deltastar_initializer を使う)")
     ap.add_argument("--init-thermal", default=None, help="--init-integral の熱境界条件 JSON (例 '{\"mode\":\"adiabatic\"}')")
+    ap.add_argument("--cfl", type=float, default=None, help="本段 cfl (YAML evaluate.cfl_main を上書き)")
+    ap.add_argument("--implicit-relax", type=float, default=None, help="implicitRelax (YAML evaluate.implicit_relax を上書き)")
+    ap.add_argument("--stages", default="full", choices=("full", "none", "ramp"), help="起動: full=soft/mid/本段, none=本段のみ, ramp=cfl を段階的に上げて本段")
+    ap.add_argument("--ramp", default=None, help="--stages ramp の cfl 列 (例 '1,2,3.5')")
+    ap.add_argument("--ramp-steps", type=int, default=1000)
     a = ap.parse_args(argv)
     if a.extract_only:
         s = extract_and_merge(a.prev, a.euler_ref, omega=a.omega)
@@ -155,13 +180,17 @@ def main(argv=None) -> int:
         init = None
         if a.init_thermal:
             init = {"model": "contur", "thermal_bc": json.loads(a.init_thermal)}
+        ramp = tuple(float(v) for v in a.ramp.split(",")) if a.ramp else None
         run_pass0_integral(a.problem, a.euler_ref, a.run_dir, a.ic_from, initializer=init,
-                           prepare_only=a.prepare_only, nsteps=a.steps, omega=a.omega)
+                           prepare_only=a.prepare_only, nsteps=a.steps, omega=a.omega, cfl_main=a.cfl,
+                           implicit_relax=a.implicit_relax, stages=a.stages, ramp=ramp, ramp_steps=a.ramp_steps)
         return 0
     if not a.prev:
         ap.error("--prev が必要 (--init-integral でなければ)")
+    ramp = tuple(float(v) for v in a.ramp.split(",")) if a.ramp else None
     run_pass(a.problem, a.euler_ref, a.prev, a.run_dir, omega=a.omega, ic_from=a.ic_from,
-             prepare_only=a.prepare_only, nsteps=a.steps)
+             prepare_only=a.prepare_only, nsteps=a.steps, cfl_main=a.cfl, implicit_relax=a.implicit_relax,
+             stages=a.stages, ramp=ramp, ramp_steps=a.ramp_steps)
     return 0
 
 

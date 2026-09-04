@@ -617,7 +617,8 @@ if __name__ == "__main__":
 def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                dstar_csv=None, dstar_blend=(6.0, 9.0),
                delta_r_csv=None, offset: str = "normal", euler_ref=None,
-               omega: float | None = None, prev_run=None, initializer=None) -> dict:
+               omega: float | None = None, prev_run=None, initializer=None,
+               cfl_main: float | None = None, implicit_relax: float | None = None) -> dict:
     r"""**物理壁 (inviscid + δ*) の RANS run** を準備する (A12)。
 
     plan: plans/active/tooling-nozzle-axismach-viscous-deltastar.md。
@@ -731,7 +732,8 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
                delimiter=",", header="x_m,r_m", comments="")
     n = nsteps or int(p.evaluate.get("nStepOuter", 48000))
     out_int = int(p.evaluate.get("outStepInterval", max(n // 6, 1)))
-    cfl_main = float(p.evaluate.get("cfl_main", 1.0))
+    cfl_main = float(cfl_main if cfl_main is not None else p.evaluate.get("cfl_main", 1.0))
+    implicit_relax = implicit_relax if implicit_relax is not None else p.evaluate.get("implicit_relax")
     (run_dir / "bcondConfig.yaml").write_text(_bcond_with_species(_bcond(p, euler=False), _tp_species_Y(p)))
     (run_dir / "probe.yaml").write_text(PROBE_STUB)
     # 品質は cell 変換コピーで検査 (品質ツールは node CONNE 非対応)
@@ -748,8 +750,11 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
     if q.returncode != 0:
         raise RuntimeError(f"メッシュ品質 FAIL:\n{q.stdout}")
     # node/SST 変換 (config を先に書く — wall_dist は no-slip 壁で作られる)
-    (run_dir / "solverConfig.yaml").write_text(
-        _apply_gas_to_config(_config_sst_node(p, n, out_int, cfl_main), p, run_dir))
+    cfg_ns = _apply_gas_to_config(_config_sst_node(p, n, out_int, cfl_main), p, run_dir)
+    if implicit_relax is not None:
+        # 陰解法の緩和 (cfl 6 + implicitRelax 0.7 が生産推奨: case/45 run_0018)。deltaT ブロックに挿入
+        cfg_ns = cfg_ns.replace("blockDPLUR: 1,", f"blockDPLUR: 1, implicitRelax: {float(implicit_relax)},", 1)
+    (run_dir / "solverConfig.yaml").write_text(cfg_ns)
     subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "nozzle.msh", "nozzle.h5"],
                    cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
     paste_isentropic_ic(run_dir / "nozzle.h5", wall, scale,
@@ -801,19 +806,24 @@ def prepare_ns(problem_path, run_dir, nsteps=None, ic_from=None,
             "start_line": d["start_line"], "wall_mode": d["wall_mode"],
             "Md": d["Md"], "R": d["R"],
             "qa": {k: v for k, v in d["qa"].items() if k != "violations"},
-            "nStepOuter": n, "cfl_main": cfl_main, "scale_m": scale,
+            "nStepOuter": n, "cfl_main": cfl_main, "implicit_relax": implicit_relax, "scale_m": scale,
             "ic_from": str(ic_from) if ic_from else None,
             "mesh": {"ni": mp.ni, "nj": mp.nj, "wall_first_frac": mp.wall_first_frac}}
     (run_dir / "prepare_info.json").write_text(json.dumps(info, indent=1))
     return info
 
 
-def run_staged_ns(run_dir) -> int:
-    """NS の 3 段起動 (run_0030 レシピ): soft (1次 cfl0.5 ni10) → mid (1次 cfl1)
-    → 本段 (2次 cfl_main)。各段の最終場を IC に引き継ぐ。"""
+def run_staged_ns(run_dir, stages: str = "full", ramp=None, ramp_steps: int = 1000) -> int:
+    """NS の起動。stages:
+    - "full" (既定・run_0030 レシピ): soft (1次 cfl0.5 ni10, 3000 step) → mid (1次 cfl1, 3000) → 本段 (2次 cfl_main)。
+    - "none": 本段だけ (収束済み NS 場からの warm start 用)。
+    - "ramp": 2 次のまま cfl を `ramp` (例 (1, 2, 3.5)) の順に各 ramp_steps だけ回して本段 cfl_main へ
+      (forge に CFL ランプ機能は無いので restart で段階化する。本段の step 数はランプ分を差し引く)。
+    各段の最終場を IC に引き継ぐ。"""
     import re
     run_dir = Path(run_dir)
     cfg_main = (run_dir / "solverConfig.yaml").read_text()
+    n_main = int(re.search(r"nStepOuter: (\d+)", cfg_main).group(1))
 
     def _stage(cfg, nsteps):
         cfg = re.sub(r"nStepOuter: \d+", f"nStepOuter: {nsteps}", cfg)
@@ -830,15 +840,28 @@ def run_staged_ns(run_dir) -> int:
         for f in run_dir.glob("res_*"):
             f.unlink()
 
-    soft = cfg_main
-    soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 0.5, cfl_pseudo: 0.5", soft)
-    soft = soft.replace("convMethod: 1", "convMethod: 0")
-    soft = soft.replace("nStepInner: 5", "nStepInner: 10")
-    _stage(soft, 3000)
-    mid = cfg_main
-    mid = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 1.0, cfl_pseudo: 1.0", mid)
-    mid = mid.replace("convMethod: 1", "convMethod: 0")
-    mid = mid.replace("nStepInner: 5", "nStepInner: 10")
-    _stage(mid, 3000)
+    if stages == "full":
+        soft = cfg_main
+        soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 0.5, cfl_pseudo: 0.5", soft)
+        soft = soft.replace("convMethod: 1", "convMethod: 0")
+        soft = soft.replace("nStepInner: 5", "nStepInner: 10")
+        _stage(soft, 3000)
+        mid = cfg_main
+        mid = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", "cfl: 1.0, cfl_pseudo: 1.0", mid)
+        mid = mid.replace("convMethod: 1", "convMethod: 0")
+        mid = mid.replace("nStepInner: 5", "nStepInner: 10")
+        _stage(mid, 3000)
+    elif stages == "ramp":
+        ramp = tuple(ramp or (1.0, 2.0, 3.5))
+        for c in ramp:
+            st = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", f"cfl: {c}, cfl_pseudo: {c}", cfg_main)
+            _stage(st, int(ramp_steps))
+        n_main = max(n_main - int(ramp_steps) * len(ramp), int(ramp_steps))
+        # 最終 res が書かれるよう outStepInterval の倍数に丸める (forge は outStepInterval の倍数でしか res を書かない)
+        out_int = int(re.search(r"outStepInterval: (\d+)", cfg_main).group(1))
+        n_main = max((n_main // out_int) * out_int, out_int)
+        cfg_main = re.sub(r"nStepOuter: \d+", f"nStepOuter: {n_main}", cfg_main)
+    elif stages != "none":
+        raise ValueError("stages は 'full' / 'none' / 'ramp'")
     (run_dir / "solverConfig.yaml").write_text(cfg_main)
     return run_forge(run_dir)

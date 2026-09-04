@@ -230,3 +230,9 @@ $\omega=0.5$ 初期値、安定なら 1.0。壁更新は**半径方向** (法線
   (T −0.3 %, Ux +0.03 %) M が +0.1〜0.17 %。Euler run では同じ効果が 0.14 % (M +0.02 %) と小さい (軸側の第 1 節点間隔 0.31 vs NS 0.68 r_t)。
   r/r_w ≥ 0.05 のコアは x=50/90 とも Euler 設計と ±0.05 % で一致 (旧 v3 は全コアが −0.3〜−0.4 %)。→ 「NS の軸指標を第 1 内点で読む」案は**保留** (ユーザ判断 2026-09-04: 特性曲線法の設計基準 = 軸値と不整合になる)。軸ノード値を指標のまま維持し、+0.1 % は既知の軸スパイクとして併記する。
   軸ノードの P ディップ自体は node 軸対称の軸特異性 (`nodeAxisDirichlet` は TP 不可、`axisymMethod:1` は出口角で発散 — 既知) の残件。
+- `2026-09-04` — **起動レシピの A/B (ユーザ提案: soft/mid 不要? cfl 5? CFL ランプ?)**: forge に CFL ランプ機能は無いので runner に
+  `run_staged_ns(stages="full"|"none"|"ramp", ramp=(1,2,3.5), ramp_steps=1000)` と `prepare_ns(cfl_main=, implicit_relax=)`、loop CLI に
+  `--stages/--cfl/--implicit-relax/--ramp/--ramp-steps` を追加。run_0025 の固定点から (a) `none` + cfl 5 + relax 0.7 (`run_0026`) と
+  (b) `ramp` (`run_0027`): metrics は run_0025 と同一 (出口面コア M 6.0000、ṁ 1.0002)、NaN 0・STEADY。(a) は全残差列が cfl1/30000 step の
+  最終水準に 5000〜8900 step で到達し出口 M は 8000 step で凍結 → **warm start の生産レシピ = stages none, cfl 5, implicitRelax 0.7, 12000 step
+  (NS ≈ 95 s、従来 195 s)**。ランプは利得なし (cold start 用に残置)。cold start (中継 → 初回 NS) を cfl 5 で立てられるかは未検証 (`full` を既定のまま)。
