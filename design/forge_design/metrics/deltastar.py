@@ -173,15 +173,18 @@ def core_matched_deficit(r, q_ns, q_e, rw_e: float, core_frac: float = 0.30,
 
 
 def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
-                       k_band: float = 4.0, band_min_frac: float = 0.02, band_width: float = 1.0,
+                       k_band: float = 1.5, band_min_frac: float = 0.02, band_width: float = 0.5,
                        n_axis_skip: int = 1, core_frac: float = 0.30, refine: int = 4, _retry: int = 0,
-                       slope_max: float = 0.02):
+                       slope_max: float = 0.01, band_growth: float = 1.25, max_retry: int = 14,
+                       fit_from: float = 1.0):
     r"""1 断面の**帯局所参照・質量欠損 → 半径方向等価排除厚** (生産抽出、純関数)。
 
     plan §4.3 の修正 (2026-09-04 V1 pass1 の知見): 内側 30 % コアの単一倍率 α では、上流の壁 δ 誤差が
     特性線で下流の軸へ運ぶ波 (コア形状差) を欠損に取り込む。そこで参照 $q_{ref}$ は
     **境界層のすぐ外側の帯** $y\in[y_b, (1+w)y_b]$ で比 $q_{NS}/q_E$ を $y$ の 1 次で LSQ フィットし、
-    境界層域 $y<y_b$ へ延長して作る ($y_b = \max(k\,\delta_{in},\ f_{min} r_w)$、縁判定は不要)。
+    境界層域 $y<y_b$ へ延長して作る。$y_b$ は $\max(k\,\delta_{in},\ f_{min} r_w)$ (既定 k=1.5 = 境界層の中) から始め、
+    帯内の比の変化が slope_max (1 %) を下回るまで band_growth (1.25) 倍ずつ広げる (適応帯: 4 つの異なる壁の NS 場で
+    δ_r のばらつき 3 %、固定 k=4/w=1 では 6.5 % — case/45 run_0004/0019/0020/0021)。
     欠損 $D = 2\pi\int_{y<y_b}(q_{ref}-q_{NS})r\,dr$、$\delta_r = r_w - r_{eff}$。
     内側 30 % の α・コア RMS は診断として併記する。q_e は配列または callable(r)。"""
     r0 = np.asarray(r, dtype=float); q0 = np.asarray(q_ns, dtype=float)
@@ -195,7 +198,8 @@ def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
         qE = np.asarray(q_e(rr), dtype=float) if callable(q_e) else np.asarray(q_e, dtype=float)
     rwN = float(rr[-1]); y = rwN - rr
     d_in = float(rwN - rw_e) if delta_in is None else float(delta_in)
-    y_b = max(k_band * max(d_in, 0.0), band_min_frac * rwN) * (2.0 ** _retry)
+    y_b0 = max(k_band * max(d_in, 0.0), band_min_frac * rwN) * (band_growth ** _retry)   # 適応探索する「縁」候補
+    y_b = fit_from * y_b0                                                                 # 参照フィット帯の下端 = 積分域の上端
     y_t = min((1.0 + band_width) * y_b, 0.85 * rwN)
     if y_b >= 0.8 * rwN:
         return None
@@ -207,11 +211,33 @@ def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
     coef, *_ = np.linalg.lstsq(A, ratio, rcond=None)
     a, b = float(coef[0]), float(coef[1])
     band_rms = float(np.sqrt(np.mean((ratio - (a + b * (y[mb] - y_b))) ** 2)))
+    # 縁候補帯 [y_b0, (1+w) y_b0] での比の変化 (適応判定用; fit_from=1 なら上と同じ帯)
+    mb0 = (y >= y_b0) & (y <= min((1.0 + band_width) * y_b0, 0.85 * rwN))
+    if mb0.sum() >= 4:
+        c0, *_ = np.linalg.lstsq(np.c_[np.ones(mb0.sum()), y[mb0] - y_b0], qN[mb0] / np.maximum(qE[mb0], 1e-30), rcond=None)
+        slope0 = float(c0[1]) * (min((1.0 + band_width) * y_b0, 0.85 * rwN) - y_b0)
+        a0 = float(c0[0])
+    else:
+        slope0, a0 = 0.0, a
+    # 内側コアの単一倍率 (診断 + 「帯が境界層の深部にある」検出: 縁候補の比がコア比より 5 % 以上低い)
+    mc = rr <= core_frac * rw_e
+    if mc.sum() >= n_axis_skip + 3:
+        num = np.trapezoid(qN[mc] * rr[mc], rr[mc]); den = np.trapezoid(qE[mc] * rr[mc], rr[mc])
+        alpha = float(num / den) if den > 0 else float("nan")
+        rel = qN[mc] / np.maximum(alpha * qE[mc], 1e-30) - 1.0
+        core_rms = float(np.sqrt(np.mean(rel[n_axis_skip:] ** 2)))
+    else:
+        alpha, core_rms = float("nan"), float("nan")
+    if np.isfinite(alpha) and a0 < 0.95 * alpha and _retry < max_retry:
+        return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
+                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max,
+                                  band_growth=band_growth, max_retry=max_retry, fit_from=fit_from)
     # 帯が境界層の中にあると比 q_NS/q_E が帯の幅で数 % 以上変わる (コアの波は < 1 %)。
     # 線形フィットは BL の形も吸収してしまい残留欠損では検出できないので、帯内の比の変化量で判定し y_b を倍にする。
-    if abs(b * (y_t - y_b)) > slope_max and _retry < 3:
+    if abs(slope0) > slope_max and _retry < max_retry:
         return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
-                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max)
+                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max,
+                                  band_growth=band_growth, max_retry=max_retry, fit_from=fit_from)
     ratio_fn = a + b * (y - y_b)
     qref = ratio_fn * qE
     mz = y <= y_b                                     # 境界層域 (壁側)
@@ -220,9 +246,10 @@ def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
     # 帯の中の残留欠損 (参照の整合診断): 本来 ~0。大きければ帯が境界層の中にある → y_b を 2 倍して再試行
     # (δ99/δ* は 2〜10 と場所で変わるので k_band 固定では足りない。閾値でなく自己整合で縁を外す)
     D_band = float(2 * np.pi * np.trapezoid(integrand[mb], rr[mb]))
-    if D > 0 and abs(D_band) > 0.1 * D and _retry < 3:
+    if D > 0 and abs(D_band) > 0.1 * D and _retry < max_retry:
         return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
-                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max)
+                                  n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max,
+                                  band_growth=band_growth, max_retry=max_retry, fit_from=fit_from)
     seg = 0.5 * (qref[1:] * rr[1:] + qref[:-1] * rr[:-1]) * np.diff(rr)
     F_from_wall = 2 * np.pi * np.concatenate([[0.0], np.cumsum(seg[::-1])])
     r_desc = rr[::-1]
@@ -234,26 +261,18 @@ def band_local_deficit(r, q_ns, q_e, rw_e: float, delta_in: float | None = None,
     else:
         F_zone = float(np.interp(rwN - y_b, r_desc[::-1], F_from_wall[::-1]))  # 帯下端までの容量
         if D > F_zone:
-            if _retry < 3:
+            if _retry < max_retry:
                 return band_local_deficit(r, q_ns, q_e, rw_e, delta_in, k_band, band_min_frac, band_width,
-                                          n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max)
+                                          n_axis_skip, core_frac, refine, _retry + 1, slope_max=slope_max,
+                                          band_growth=band_growth, max_retry=max_retry, fit_from=fit_from)
             delta_r = float("nan"); reason.append("no_root")
         else:
             r_eff = float(np.interp(D, F_from_wall, r_desc))
             delta_r = rwN - r_eff
-    # 診断: 内側コアの単一倍率と形状 RMS
-    mc = rr <= core_frac * rw_e
-    if mc.sum() >= n_axis_skip + 3:
-        num = np.trapezoid(qN[mc] * rr[mc], rr[mc]); den = np.trapezoid(qE[mc] * rr[mc], rr[mc])
-        alpha = float(num / den) if den > 0 else float("nan")
-        rel = qN[mc] / np.maximum(alpha * qE[mc], 1e-30) - 1.0
-        core_rms = float(np.sqrt(np.mean(rel[n_axis_skip:] ** 2)))
-    else:
-        alpha, core_rms = float("nan"), float("nan")
     return dict(r_wall_euler=float(rw_e), r_wall_ns=rwN, delta_in=rwN - float(rw_e), alpha=alpha,
                 core_rms=core_rms, core_rms_noaxis=core_rms, core_maxdev=float("nan"),
                 mass_deficit=D, delta_r=float(delta_r), outer_share=float("nan"),
-                band_y_b=y_b, band_ratio_a=a, band_slope=b * y_b, band_rms=band_rms,
+                band_y_b=y_b0, band_fit_from=fit_from, band_ratio_a=a, band_slope=slope0, band_rms=band_rms,
                 band_deficit_share=(D_band / D if D > 0 else float("nan")), band_retry=_retry,
                 reason=reason)
 
@@ -263,8 +282,10 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
                                       outer_frac: float = 0.25, smooth_lam: float = 1e-3,
                                       gate_core_rms: float = 0.01, gate_sens: float = 0.05,
                                       gate_sens_floor: float = 1e-3, refine: int = 4, out_dir=None,
-                                      method: str = "band", k_band: float = 4.0, k_band_sens=(3.0, 6.0),
-                                      band_min_frac: float = 0.02, gate_band_rms: float = 0.005) -> dict:
+                                      method: str = "band", k_band: float = 1.5, k_band_sens=(1.125, 2.25),
+                                      band_min_frac: float = 0.02, band_width: float = 0.5,
+                                      gate_band_rms: float = 0.005, slope_max: float = 0.01,
+                                      band_growth: float = 1.25, max_retry: int = 14, fit_from: float = 1.0) -> dict:
     r"""**固定 Euler 基準・コア整合**の半径方向等価排除厚 $\delta_r(x)$ を NS 全列で抽出する。
 
     定義 (plan §4.2–4.4):
@@ -305,8 +326,9 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
         _, rwE = euler_q_at(x, r0[:1])
         if method == "band":
             res = band_local_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), k_band=fc,
-                                     band_min_frac=band_min_frac, n_axis_skip=n_axis_skip,
-                                     core_frac=core_frac, refine=refine)
+                                     band_min_frac=band_min_frac, band_width=band_width,
+                                     n_axis_skip=n_axis_skip, core_frac=core_frac, refine=refine,
+                                     slope_max=slope_max, band_growth=band_growth, max_retry=max_retry, fit_from=fit_from)
         else:
             res = core_matched_deficit(r0, q0, lambda rr: euler_q_at(x, rr)[0], float(rwE), core_frac=fc,
                                        n_axis_skip=n_axis_skip, outer_frac=outer_frac, refine=refine)
@@ -368,6 +390,7 @@ def deltastar_from_core_matched_euler(ns_run, euler_run, core_frac: float = 0.30
                delta_r_raw=draw, delta_r_smooth=dsm, delta_r_use=duse, delta_r_sens=sens,
                ok=ok, hard_ok=hard_ok, reason=np.array(reasons),
                settings=dict(method=method, k_band=k_band, k_band_sens=list(k_band_sens), band_min_frac=band_min_frac,
+                             band_width=band_width, slope_max=slope_max, band_growth=band_growth, max_retry=max_retry, fit_from=fit_from,
                              gate_band_rms=gate_band_rms,
                              core_frac=core_frac, core_frac_sens=list(core_frac_sens), n_axis_skip=n_axis_skip,
                              outer_frac=outer_frac, smooth_lam=smooth_lam, gate_core_rms=gate_core_rms,
