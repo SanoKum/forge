@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。node+SST は解決 (真因 = stage 間 interp 移植)。残 = 低 NPR (p_ext/p_in ≳ 0.5) 作動点の剥離評価、S7 3D 確認 -->
+- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。node+SST は解決 (真因 = stage 間 interp 移植)。残 = S7 3D (外側空間ありの横端トポロジ)、亜音速外部流用チャンバー -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) 「SERN チェーン」節 (現在仕様。本計画と同時に起草)
   - [`design/CAPABILITIES.md`](../../design/CAPABILITIES.md) (問題タイプ `sern_2d` を 📋 で登録)
@@ -242,4 +242,12 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   目的は摩擦込み C_T。14 評価 10 PASS、HV 0.953、パレート 5 点 (L 5.5–9.7 H, C_T,w 0.960–0.967)。1 点 76 s。
   剥離指標 (`sep_frac_ramp`: 壁に働く接線力が逆向きの長さ割合) を `sern_forces` に追加したが、この作動点範囲では全点 0 —
   剥離を評価するには p_ext/p_in ≳ 0.5 の作動点が要る (未実施)。RANS でも前線の形は Euler と同じ。
+- `2026-09-05` — **設計点固定バグ修正**: 作動点ごとに kernel (自由境界圧) を再設計していた (run_0010/0017 は作動点間で形状不一致)。
+  `design_from_problem(p, design_external)` で spec.external に固定。**低 NPR 作動点** (M∞1.5, p_ext/p_in 0.6) を単点評価 (run_0018:
+  C_T 0.92, C_L −0.32, C_M +1.8 頭上げ、剥離なし・滑らかな再圧縮) → 第 3 作動点 (w 0.2) にした **3 作動点 node SST MOO** (run_0019,
+  10 PASS): 低 NPR が支配的で長いランプは C_T 0.83–0.90 に落ち、前線は最短ランプ (L 3.8H) に退化、剥離割合 sep_frac が最大 0.10 で発火。
+  チャンバー: 超音速外部流 (M∞>1) では不要、亜音速/静止 (地上試験) には未実装 (case/23 方式が要る)。
+  **S7 3D**: `meshing/mesh_sern3d.py` (2 バンド押し出し hex、カウル/側壁スリット、TE/側壁後縁共有、ランプ線も内外 2 重)、
+  `evaluate/runner_sern3d.py` (index IC、quad 力積分 [CONNE = 5 整数/面])。**外側空間なし基準 (run_0023) は 2D と 1 % 以内で一致**。
+  外側空間あり (run_0020) は横端トポロジで soft 段 NaN が未解決 (3 バグ修正済み: 入口タグ / 2 種入口の共有ノード / IC)。
 

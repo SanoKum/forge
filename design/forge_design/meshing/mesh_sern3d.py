@@ -80,9 +80,14 @@ def generate_sern_mesh3d(design, prm: SernMesh3DParams):
     hw = 0.5 * prm.W
     s_in = _radial_fracs(prm.nz_in, min(prm.first_z_frac / hw, 0.5 / (prm.nz_in - 1)))
     z_in = hw * s_in
-    s_out = _radial_fracs(prm.nz_out, min(prm.first_z_frac / prm.Z_ext, 0.5 / (prm.nz_out - 1)))
-    z_out = hw + prm.Z_ext * (1.0 - s_out[::-1])   # 側壁側が細かい
-    zs = np.concatenate([z_in, z_out[1:]]); nz = len(zs); k_sw = prm.nz_in - 1
+    if prm.nz_out > 0:
+        s_out = _radial_fracs(prm.nz_out, min(prm.first_z_frac / prm.Z_ext, 0.5 / (prm.nz_out - 1)))
+        z_out = hw + prm.Z_ext * (1.0 - s_out[::-1])   # 側壁側が細かい
+        zs = np.concatenate([z_in, z_out[1:]])
+    else:
+        zs = z_in                                        # 外側空間なし: z = W/2 が遠方境界 (側壁 = 境界壁)
+    nz = len(zs); k_sw = prm.nz_in - 1
+    no_outer = prm.nz_out == 0
     # --- 2D 断面 (各 station の y 列) ---
     Y2 = np.zeros((ni, NJ))
     for i in range(ni):
@@ -100,7 +105,7 @@ def generate_sern_mesh3d(design, prm: SernMesh3DParams):
     for i in range(i_te):
         for k in range(k_sw + 1):
             dup1[(i, k)] = nid; nid += 1
-    for i in range(i_sw):                      # 側壁後縁 (i_sw) は共有 (カウル TE と同じ)
+    for i in (range(0) if no_outer else range(i_sw)):   # 側壁後縁 (i_sw) は共有 (カウル TE と同じ)。外側空間なしなら重複なし
         for j in range(jm + 1, NJ):            # ランプ線 (j = NJ−1) も内外 2 重: 共有すると入口面で
             dup2[(i, j)] = nid; nid += 1       # inlet_nozzle と inlet_ext の両方に属し step 3 で発散した
     coords = np.zeros((nid, 3))
@@ -167,9 +172,13 @@ def generate_sern_mesh3d(design, prm: SernMesh3DParams):
         for j in range(NJ - 1):
             sd = "lo" if j < jm else "up_in"
             B["sym"].append((node(i, j, 0, sd), node(i, j + 1, 0, sd), node(i + 1, j + 1, 0, sd), node(i + 1, j, 0, sd)))
-            sdo = "lo" if j < jm else "up_out"
-            B["side_far"].append((node(i, j, nz - 1, sdo), node(i + 1, j, nz - 1, sdo), node(i + 1, j + 1, nz - 1, sdo), node(i, j + 1, nz - 1, sdo)))
-            if i + 1 <= i_sw and j >= jm:
+            sdo = "lo" if j < jm else ("up_in" if no_outer else "up_out")
+            far_q = (node(i, j, nz - 1, sdo), node(i + 1, j, nz - 1, sdo), node(i + 1, j + 1, nz - 1, sdo), node(i, j + 1, nz - 1, sdo))
+            if no_outer and j >= jm and i + 1 <= i_sw:
+                B["sidewall_in"].append(far_q)          # 外側空間なし: 遠方境界のノズル区間が側壁 (境界壁)
+            else:
+                B["side_far"].append(far_q)
+            if (not no_outer) and i + 1 <= i_sw and j >= jm:
                 B["sidewall_in"].append((node(i, j, k_sw, "up_in"), node(i + 1, j, k_sw, "up_in"), node(i + 1, j + 1, k_sw, "up_in"), node(i, j + 1, k_sw, "up_in")))
                 B["sidewall_out"].append((node(i, j, k_sw, "up_out"), node(i, j + 1, k_sw, "up_out"), node(i + 1, j + 1, k_sw, "up_out"), node(i + 1, j, k_sw, "up_out")))
     coords *= prm.scale

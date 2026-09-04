@@ -39,10 +39,11 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0016_smoke_sst_node_t0_idx` | node+SST 再挑戦 3: **板厚 0 (元のスリット) + index コピー移植** — 真因の切り分け | **完走**、run_0015 と同値 (C_T(p) 0.9691 / C_L 0.155 / C_M −0.981) → **真因は interp_field の最近傍移植が座標一致の双子壁ノードを同じ元ノードに写していたこと** (板厚は不要) | active (ref) |
 | `run_0017_moo_sst_node_2op/` | **S6 多作動点 MOO (RANS 版; 作動点ごとの再設計バグ入り、run_0019 で置換)**: node + SST、作動点 cruise (M∞6, p_ext/p_in 0.05, w 0.6) + accel (M∞3.5, 0.20 過膨張, w 0.4)、目的 = 摩擦込み C_T の重み付き平均と L_ramp、**制約 C_M,w ≥ −2.5** (x_ref −20H)、LHS 10 + EHVI 2×2 | 14 評価 / 10 PASS / 3 は C_M 制約で除外 / 1 は key point 不成立。HV 0.953、パレート 5 点 (L 5.5–9.7 H で C_T,w 0.960–0.967)。剥離割合はランプ全点で 0 (accel の p_ext 0.2 p_in では剥離せず)。1 点 ≈ 76 s (2 作動点)。`pareto.json`, `pareto.png`, `ledger.jsonl` | active (ref) |
 | `run_0018_smoke_sst_node_lownpr` | 低 NPR 作動点の単点評価: 設計点 (p_ext 0.05) の形状を **M∞1.5, p_ext/p_in 0.6** (遷音速加速相当の過膨張) で node SST 評価 | C_T(p) 0.928 / C_T(p+τ) 0.920 / **C_L −0.316 / C_M +1.82 (頭上げ)**、剥離ゼロ (ランプ後半で 0.2→0.6 p_in へ滑らかに再圧縮)、STEADY | active (ref) |
-| `run_0019_moo_sst_node_3op/` | **S6 RANS 版 MOO (3 作動点・設計点固定版)**: node SST、cruise (0.05, w 0.5) / accel (0.20, w 0.3) / lownpr (0.60, M∞1.5, w 0.2)、C_M,w ≥ −2.5、LHS 10 + EHVI 2×2。**run_0010/0017 は作動点ごとに kernel (自由境界圧) を再設計していたバグがあり、作動点間で形状が一致しない → 本 run で置換** | (実行中) | active |
-| `run_0020_smoke_sst_node_3d` | **S7 3D 確認**: スモーク設計を有限スパン W=2H + 側壁 (x ≤ L_cowl) + 外側空間 1.5H の 3D hex (52.5 万セル, 品質 PASS: AR 425, skew 0.29) で node SST 評価。z=0 対称面 (半スパン)。2D 参照 = run_0016 | (実行中) | active |
+| `run_0019_moo_sst_node_3op/` | **S6 RANS 版 MOO (3 作動点・設計点固定版)**: node SST、cruise (0.05, w 0.5) / accel (0.20, w 0.3) / lownpr (0.60, M∞1.5, w 0.2)、C_M,w ≥ −2.5、LHS 10 + EHVI 2×2。**run_0010/0017 は作動点ごとに kernel (自由境界圧) を再設計していたバグがあり、作動点間で形状が一致しない → 本 run で置換** | 14 評価 / 10 PASS / 3 は C_M 制約 / 1 は key point 不成立、HV 0.983。**低 NPR 点が支配的**: 長いランプは lownpr で C_T 0.83–0.90 に落ち、前線は最短ランプ (L 3.8H, C_T,w 0.9607) の 1 点に退化。lownpr でランプ剥離が出始める (sep_frac 最大 0.10 = doe_004)。`pareto.json`, `pareto.png` | active (ref) |
+| `run_0020_smoke_sst_node_3d` | **S7 3D 確認 (外側空間あり)**: スモーク設計を有限スパン W=2H + 側壁 (x ≤ L_cowl) + 外側空間 1.5H の 3D hex (52.5 万セル, 品質 PASS) で node SST 評価。z=0 対称面 | **未解決**: 4 回投入して全て soft 段 step 3–8 で NaN。判明した原因と対処: ① 入口面の幅外側が inlet_nozzle になっていた (修正)、② ランプ∩側壁の共有ノードが 2 種の入口に属した (ランプ線も 2 重化)、③ index IC がカウル外面ノードを排気にしていた (修正)。それでも入口面直下・カウル横端 (z≈W/2) の外部流ノードから発散 → 横端トポロジ (カウル横端の凸角 + 側壁∩入口線) が残課題 | active (未解決) |
 | `run_0021_diag3d_euler_sw` | 3D 切り分け (a): 側壁あり・Euler slip、重心ベース IC | soft 段 step 51 で NaN (ノズル幅外のランプ直下 z≈W/2〜1.24H と側壁外コピー) | 破棄予定 |
 | `run_0022_diag3d_sst_nosw` | 3D 切り分け (b): 側壁なし (排気が横方向に開放)・SST、重心ベース IC | soft 段 step 3 で ω NaN (ノズル幅端 z=W/2 の 20 倍圧力不連続、非物理な構成) | 破棄予定 |
+| `run_0023_smoke_sst_node_3d_noouter` | **S7 3D 基準 (外側空間なし)**: z=W/2 を側壁の境界壁にした 2D 押し出し + 側壁境界層 (33 万セル)。node SST | **完走・2D と一致**: C_T(p) 0.9699 / C_T(p+τ) 0.9619 / C_L 0.156 / C_M −0.969 (2D run_0016: 0.9691 / 0.9626 / 0.155 / −0.981)。3D node パイプライン (メッシュ・IC・段階起動・quad 力積分) は健全 | active (ref) |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
@@ -90,3 +91,13 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 - **剥離は全点でゼロ**: accel の p_ext/p_in 0.2 ではランプ末端 (0.13 p_in) がやや過膨張でも超音速の順圧力勾配で付着したまま。
   剥離 (RSS/FSS) を評価するには遷音速加速に相当する p_ext/p_in ≳ 0.5 の作動点が要る (次の課題)。
 - Euler 版 (run_0010) との差: 同程度の L で C_T,w が 0.5〜1 % 低い (摩擦)。前線の形 (長いほど高推力) は同じ。
+
+### S7 3D の現状 (2026-09-05)
+
+- **外側空間なし** (側壁 = 境界壁、横方向膨張なし) は node SST で完走し、2D と力係数が 1 % 以内で一致 (run_0023)。
+  3D の hex 生成・スリット・index IC・段階起動 (index コピー)・quad 力積分は動く。壁面出力 CONNE は 1 面 5 整数 [5, n0..n3]。
+- **外側空間あり** (カウルと側壁の横端が外部流に露出) は 4 回とも soft 段 step 3–8 で NaN。入口タグ・共有ノードの 2 種入口・
+  IC の 3 つの実バグを潰した後も、入口面直下・カウル横端 (z≈W/2) の外部流から発散する。横端 (カウル外面 ⟂ 側壁外面の凸角線、
+  側壁∩入口線の壁+入口ノード) の node 境界処理が疑わしい。Euler (slip) で同じ IC の切り分けを実行中。
+- 次の手: (i) Euler でも落ちるなら幾何/境界の問題 → 側壁を全高フェンス化 (カウル横端を凹角に)、または側壁を入口 1 セル下流から
+  始めて入口∩壁ノードを避ける。(ii) SST だけ落ちるなら壁関数代表点の角部処理。

@@ -126,8 +126,14 @@ def run_staged(run_dir, stages="full", soft_steps=2000):
 
 # ---------------------------------------------------------------------- 3D 壁面力
 def _parse_conne(flat):
-    """[型, 節点数, n0..] の列を面ごとの節点 id リストにする。"""
-    out = []; i = 0; flat = flat.astype(int)
+    """壁面出力 MESH/CONNE を面ごとの節点 id リストにする。
+    3D (quad): 1 面 5 整数 [5, n0, n1, n2, n3] (case/46 run_0023 で確認)。2D (line): 1 面 4 整数 [2, 2, a, b]。"""
+    flat = flat.astype(int)
+    if len(flat) % 5 == 0 and np.all(flat[0::5] == 5):
+        return list(flat.reshape(-1, 5)[:, 1:5])
+    if len(flat) % 4 == 0 and np.all(flat[0::4] == 2):
+        return list(flat.reshape(-1, 4)[:, 2:4])
+    out = []; i = 0
     while i < len(flat):
         nn = int(flat[i + 1]); out.append(flat[i + 2:i + 2 + nn]); i += 2 + nn
     return out
