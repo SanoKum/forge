@@ -99,6 +99,8 @@ enum class ProfileSection {
     Limiter,
     DucrosSensor,
     TurbulenceModel,
+    ChemistrySource,     // 有限速度化学 ソース項 (ω, Q̇, Jacobian)
+    SpeciesImplicit,     // 化学種の陰解法 (予測子/ブロック sweep/commit)
     ConvectiveFlux,
     AxisymmetricSource,
     ViscousFlux,
@@ -753,6 +755,8 @@ private:
             case ProfileSection::Limiter: return "limiter";
             case ProfileSection::DucrosSensor: return "ducros_sensor";
             case ProfileSection::TurbulenceModel: return "turbulence_model";
+            case ProfileSection::ChemistrySource: return "chemistry_source";
+            case ProfileSection::SpeciesImplicit: return "species_implicit";
             case ProfileSection::ConvectiveFlux: return "convective_flux";
             case ProfileSection::AxisymmetricSource: return "axisym_source";
             case ProfileSection::ViscousFlux: return "viscous_flux";
@@ -994,7 +998,9 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         speciesTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 化学種移流残差
-        chemistrySource_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);   // 有限速度化学ソース (ω_s, Q̇, 対角 Jacobian)
+    });
+    s.profiler.measureCuda(ProfileSection::ChemistrySource, [&]() {
+        chemistrySource_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);   // 有限速度化学ソース (ω_s, Q̇, Jacobian)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         condensationTransport_d_wrapper(s.cfg , s.cuda_cfg, s.msh , s.var);  // 液相モーメント移流残差 (Phase 1)
@@ -1134,7 +1140,7 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     // freezeSpecies 時は予測/移項もしない (組成完全凍結)。
     const bool eosCoupled = speciesEOSCoupled(s.cfg, s.var) && !freezeSpecies;
     if (eosCoupled) {
-        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+        s.profiler.measureCuda(ProfileSection::SpeciesImplicit, [&]() {
             speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // roY_N = roY
             speciesEOSCrossPredictInject_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         });
@@ -1170,7 +1176,7 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     //                          =0: 従来 segregated 点陰的 forward-Euler (既定・ビット不変)。
     // freezeSpecies 時は化学種更新を完全にスキップ (ρY_s 凍結)。EOS は凍結 ρY/ρ で評価される。
     if (!freezeSpecies) {
-        s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
+        s.profiler.measureCuda(ProfileSection::SpeciesImplicit, [&]() {
             if (eosCoupled) {
                 speciesEOSFinalCommit_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
             } else {

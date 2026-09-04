@@ -167,6 +167,8 @@ inline void loadMechanism(const std::string& path, const std::vector<std::string
                 rt.eff[r][idx] = kv.second.as<double>();
             }
         }
+        rt.lnA[r]  = std::log(rt.A[r]);
+        rt.lnA0[r] = (rt.A0[r] > 0.0) ? std::log(rt.A0[r]) : 0.0;
         if (equations) equations->push_back(eq);
         ++r;
     }

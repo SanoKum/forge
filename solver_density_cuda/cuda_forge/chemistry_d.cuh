@@ -20,6 +20,8 @@ struct ReactionTable {
     int nReac;
     int nSpecies;                          // 流れ側 (cfg.speciesNames) の化学種数
     double A [CHEM_MAX_REACTIONS];         // SI: (m^3/mol)^(order-1)/s
+    double lnA[CHEM_MAX_REACTIONS];        // log(A) (読込時に計算。カーネルの log を省く)
+    double lnA0[CHEM_MAX_REACTIONS];       // log(A0) (falloff 低圧極限)
     double b [CHEM_MAX_REACTIONS];         // 温度指数
     double Ea[CHEM_MAX_REACTIONS];         // 活性化エネルギー [J/mol]
     int    nR[CHEM_MAX_REACTIONS];         // 反応物側の化学種数
@@ -41,8 +43,8 @@ struct ReactionTable {
 // falloff の ln k_f(T, [M]) (Lindemann / Troe)。微分は呼び出し側で有限差分 (滑らかなスカラ関数、相対刻み 1e-4)。
 THERMO_HD double chem_ln_kf_falloff(const ReactionTable* rt, int r, double T, double lnT, double RuT, double M)
 {
-    const double lnkinf = log(rt->A[r])  + rt->b[r]*lnT  - rt->Ea[r]/RuT;
-    const double lnk0   = log(rt->A0[r]) + rt->b0[r]*lnT - rt->Ea0[r]/RuT;
+    const double lnkinf = rt->lnA[r]  + rt->b[r]*lnT  - rt->Ea[r]/RuT;
+    const double lnk0   = rt->lnA0[r] + rt->b0[r]*lnT - rt->Ea0[r]/RuT;
     const double Mp = (M > 1.0e-300) ? M : 1.0e-300;
     const double lnPr = lnk0 + log(Mp) - lnkinf;
     const double Pr = exp(lnPr);
@@ -133,7 +135,7 @@ THERMO_HD void chem_source(const SpeciesThermo* sp, const ReactionTable* rt,
             const double mm = chem_ln_kf_falloff(rt, r, T, lnT, RuT, (M - dM > 0.0) ? M - dM : 0.0);
             dkf_dM_over_kf = (mp - mm) / (((M - dM > 0.0) ? 2.0*dM : M + dM));   // ∂ln kf/∂[M]
         } else {
-            lnkf = log(rt->A[r]) + rt->b[r]*lnT - rt->Ea[r]/RuT;
+            lnkf = rt->lnA[r] + rt->b[r]*lnT - rt->Ea[r]/RuT;
             dlnkf_dT = rt->b[r]*invT + rt->Ea[r]/(RuT*T);
         }
         const double kf = exp(lnkf);
