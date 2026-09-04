@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `tooling / optimization`
-- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。node+SST は解決 (真因 = stage 間 interp 移植)。残 = S7 3D (外側空間ありの横端トポロジ)、亜音速外部流用チャンバー -->
+- **status**: `in_progress`  <!-- 2026-09-04 起票 (branch feature/sern-design)。S0–S6 完了 (同日、S6 は Euler)。node+SST は解決 (真因 = stage 間 interp 移植)。残 = S7 3D の SST (後縁 3 重点で ω 発散; Euler は成立)、亜音速外部流用チャンバー -->
 - **related_docs**:
   - [`methods/design/overview.md`](../../methods/design/overview.md) 「SERN チェーン」節 (現在仕様。本計画と同時に起草)
   - [`design/CAPABILITIES.md`](../../design/CAPABILITIES.md) (問題タイプ `sern_2d` を 📋 で登録)
@@ -255,4 +255,11 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   `bot_depth` 3H も超音速外部流なら 1H 程度で足りる (次キャンペーンで縮める)。
   **3D 外側空間あり**: Euler は 1 次 soft 段を完走、2 次本段でノズル幅外のランプ角部 (M∞6 が 15° 凸角で p/10 に膨張) から発散。
   加速作動点 (M∞3.5) で Euler/SST を再試行中 (run_0024/0025)。
+- `2026-09-05` — **S7 3D: Euler で外側空間あり構成が成立** (run_0027, 加速点, 52.5 万セル, top_out = slip):
+  幅内ランプ T −0.005/L −0.019 (2D +0.014/+0.085)、幅外ランプ T −0.025/L −0.104 → C_T 0.932 (2D 0.976), C_L −0.20 (2D 0.00),
+  C_M +1.07。側壁がカウル後縁で終わると排気が横に逃げてランプ圧が 1/3 に落ちる = 3D 効果は推力 −4.5 %・揚力反転で大きい。
+  3D の落とし穴 (修正済み): 入口面の幅外は inlet_ext / ランプ∩側壁の共有ノードは 2 種入口 → 2 重化 / index IC のカウル外面 /
+  暖機コピーは状態量のみ (wall_dist を潰さない) / top_out 静圧出口は流れ平行で不安定 → slip。M∞6 では幅外ランプ角部の真空膨張で
+  2 次が落ちる (加速点 M∞3.5 で回避)。**SST 3D は後縁 3 重点で ω → inf (run_0028) が未解決**。
+  壁面出力 CONNE (3D) = [5, n0..n3]。kernel は key point で打ち切り。
 

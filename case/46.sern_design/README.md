@@ -47,8 +47,9 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0024_diag3d_euler_accel` | 3D (外側空間あり) を加速作動点 (M∞3.5, p_ext/p_in 0.2) で Euler slip: 外側ランプ角部の膨張を緩めて横端トポロジを検証 | **soft 段 (1 次) 2000 step 完走** (横端トポロジは Euler で成立)、本段 (2 次) step 425 でランプ後縁下流の top_out (静圧出口、流れが境界に平行) から NaN | 診断 (ref) |
 | `run_0025_smoke_sst_node_3d_accel` | 同上を node SST (冷間) | soft 段 step 5 でカウル後縁∩側壁後縁直後の 3 重点 (下側せん断層 × 横せん断層, x 1.14H) で ω 発散 | 破棄予定 |
 | `run_0026_smoke_sst_node_3d_accel_warm` | 同上、Euler (run_0024 soft 段末尾) から暖機 | 3 重点は通過 (step 237 まで) したが top_out 付近で ω 発散。**暖機コピーが Euler の wall_dist (番兵値) まで上書きしていたバグ** → 壁距離全滅が真因の可能性大 | 破棄予定 |
-| `run_0027_diag3d_euler_accel_slip` | run_0024 の top_out を slip 壁 (ランプ延長) にした Euler | (実行中) | active |
-| `run_0028_smoke_sst_node_3d_accel_warm_slip` | node SST、top_out slip、Euler 暖機 (状態量のみコピー、soft CFL 0.25) | (実行中) | active |
+| `run_0027_diag3d_euler_accel_slip` | run_0024 の top_out を slip 壁 (ランプ延長) にした Euler | **完走** (soft 1500 + 本段 3000, 力 STEADY): C_T 0.932 / C_L −0.204 / C_M +1.07。ランプ幅内: 揚力 −0.019・推力 −0.005、幅外 (機体下面): 揚力 −0.104・推力 −0.025 (外部流の膨張による負圧)。**外側空間ありの 3D は Euler で成立** | active (ref) |
+| `run_0028_smoke_sst_node_3d_accel_warm_slip` | node SST、top_out slip、Euler 暖機 (状態量のみコピー、soft CFL 0.25) | soft 段 step 686 で **カウル後縁∩側壁後縁の 3 重点** (x 1.0H, y −0.1, z=W/2, 壁距離 0.4–3 mm) で ω → inf。SST の 2 せん断層交差の頑健性問題 (Euler は同格子で成立) | 破棄予定 |
+| `run_0029_ref2d_euler_node_accel_slip` | run_0027 の 2D 参照: node Euler slip、加速点、top_out slip | C_T 0.976 / C_L +0.004 / C_M −0.001 (ランプ T +0.014 L +0.085, cowl_in T +0.005 L −0.091) | active (ref) |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
@@ -104,5 +105,12 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 - **外側空間あり** (カウルと側壁の横端が外部流に露出) は 4 回とも soft 段 step 3–8 で NaN。入口タグ・共有ノードの 2 種入口・
   IC の 3 つの実バグを潰した後も、入口面直下・カウル横端 (z≈W/2) の外部流から発散する。横端 (カウル外面 ⟂ 側壁外面の凸角線、
   側壁∩入口線の壁+入口ノード) の node 境界処理が疑わしい。Euler (slip) で同じ IC の切り分けを実行中。
-- 次の手: (i) Euler でも落ちるなら幾何/境界の問題 → 側壁を全高フェンス化 (カウル横端を凹角に)、または側壁を入口 1 セル下流から
-  始めて入口∩壁ノードを避ける。(ii) SST だけ落ちるなら壁関数代表点の角部処理。
+- **外側空間あり・Euler は成立** (run_0027, 加速点 M∞3.5, top_out slip): 3 つの実バグ (入口タグ / 2 種入口の共有ノード /
+  IC) と M∞6 の幅外ランプ角部の真空膨張 (2 次で負圧) を避ければ回る。**横方向膨張の効果**: 側壁がカウル後縁で終わるため、
+  その先で排気が幅外 (0.05 p_in 相当の低圧) へ横に逃げ、幅内ランプの圧力が 2D の ~0.3 p_in から ~0.1 p_in に落ちる。
+  面別 (半スパン正規化): ランプ幅内 T −0.005 / L −0.019 (2D: +0.014 / +0.085)、幅外 T −0.025 / L −0.104、カウル内外は 2D と同じ。
+  合計 C_T 0.932 (2D 0.976)、C_L −0.204 (2D +0.004)、C_M +1.07 (2D −0.001)。→ **短い側壁の SERN は 2D 設計値から推力 −4.5 %、
+  揚力は符号反転** (この加速点で)。側壁長 L_sw を dv/仕様に持つ意味が大きい。
+- **SST 3D は未解決**: 暖機 + 正しい壁距離 + top_out slip でも soft 段 step 686 でカウル後縁∩側壁後縁の 3 重点 (2 せん断層の交差、
+  壁距離 0.4–3 mm) で ω → inf (run_0028)。候補: 後縁に板厚を持たせて 2 つの剥離線を分離、`FORGE_FREEZE_TURB=1` で soft 段を凍結乱流で
+  通してから解放、3 重点近傍の ω 上限。
