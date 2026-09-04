@@ -241,6 +241,17 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
     return info
 
 
+def restart_by_index(res_h5, mesh_h5) -> None:
+    """同一メッシュの stage 間移植: VALUE を index でコピーする (座標最近傍の `interp_field.py` は使わない)。
+    理由 (2026-09-04, case/46 run_0009): スリットカウルの上下壁ノードは座標が一致し、最近傍補間が双子を同じ元
+    ノードに写す → 排気側の壁ノードが外部流の圧力を持ち 2 次で発散した (interp_field の全 134 station で誤写像を確認)。"""
+    with h5py.File(res_h5, "r") as src, h5py.File(mesh_h5, "r+") as dst:
+        n = len(dst["VALUE/ro"])
+        for k in src["VALUE"]:
+            if k in dst["VALUE"] and len(src["VALUE"][k]) == n:
+                dst["VALUE"][k][:] = src["VALUE"][k][:]
+
+
 def run_forge(run_dir) -> int:
     r = subprocess.run([str(FORGE_TOOLS / "run_case.sh"), str(Path(run_dir).resolve())], env=_ENV, capture_output=True, text=True)
     (Path(run_dir) / "run_case_stdout.log").write_text(r.stdout + r.stderr)
@@ -253,8 +264,7 @@ def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000) -> int:
         else (run_dir / "solverConfig.yaml").read_text()
     if stages == "main":  # soft 段の res_*.h5 が残っている状態から本段だけ回す
         res = sorted(run_dir.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
-        subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"), str(res[-1].resolve()), str((run_dir / MESH).resolve())],
-                       env=_ENV, check=True, capture_output=True, text=True)
+        restart_by_index(res[-1], run_dir / MESH)
         for f in run_dir.glob("res_*"):
             f.unlink()
         (run_dir / "solverConfig.yaml").write_text(cfg_main)
@@ -270,8 +280,7 @@ def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000) -> int:
     res = sorted(run_dir.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
     if rc != 0 or not res:
         raise RuntimeError("soft 段が失敗 (res_nan_*.h5 / forge_run.log を見る)")
-    subprocess.run([sys.executable, str(FORGE_TOOLS / "interp_field.py"), str(res[-1].resolve()), str((run_dir / MESH).resolve())],
-                   env=_ENV, check=True, capture_output=True, text=True)
+    restart_by_index(res[-1], run_dir / MESH)
     for f in run_dir.glob("res_*"):
         f.unlink()
     (run_dir / "solverConfig.yaml").write_text(cfg_main)

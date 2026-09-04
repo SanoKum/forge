@@ -12,8 +12,8 @@ plan: plans/active/tooling-nozzle-sern-chain.md §4.7 / S2。無次元 (H = 1) �
 TE 以降の中間線ノードは共有 (内部線)。
 **カウル板厚 `cowl_thickness`** (2026-09-04): 厚さ 0 だと上下の壁ノードが同一座標になり、node モードでは双子の
 壁ノードが同じ状態 (片側は排気 15 kPa、反対側は外部流 2 kPa なのに同一 p) になって 2 次で発散した
-(case/46 run_0008/0009)。厚さ t(x) を「x=−L_up で 0 → 直管部で t → TE 手前 20 % で 0」の台形で入れ、
-t>0 の station だけ 2 重ノードにする (i=0 と TE は共有)。壁第一セルは上下とも first_wall_frac·H の絶対値。
+(case/46 run_0008/0009)。厚さ t(x) を「入口から t、TE 手前 20 % で 0 に絞る」形で入れ、t>0 の station だけ 2 重ノードにする (TE は共有。
+入口側を 0 に絞ると 4 境界を持つ 1 ノードができて発散するので入口では厚さを保つ)。壁第一セルは上下とも first_wall_frac·H の絶対値。
 物理タグ: PHYS_SERN。
 """
 from __future__ import annotations
@@ -111,11 +111,12 @@ def generate_sern_mesh(design, prm: SernMeshParams):
 
     y_bot = float(y_mid(x_out)) - prm.bot_depth
     yt, ym = y_top(xs), y_mid(xs)
-    # カウル板厚 t(x): −L_up で 0 → −L_up/2 で t → 0.8 L_cowl まで t → TE で 0 (台形)。TE 以降 0
+    # カウル板厚 t(x): 入口 (−L_up) から 0.8 L_cowl まで t、TE で 0 に絞る。TE 以降 0。入口側で 0 に絞ると i=0 が
+    # 4 種の境界 (inlet×2 + wall×2) を持つ 1 ノードになり soft 段 step 4 で発散した (run_0014) ので入口では厚さを保つ
     t_c = float(prm.cowl_thickness)
     tk = np.zeros_like(xs)
     if t_c > 0.0:
-        tk = np.interp(xs, [-prm.L_up, -0.5 * prm.L_up, 0.8 * L_cowl, L_cowl], [0.0, t_c, t_c, 0.0], left=0.0, right=0.0)
+        tk = np.interp(xs, [-prm.L_up, 0.8 * L_cowl, L_cowl], [t_c, t_c, 0.0], left=t_c, right=0.0)
     dup = tk > 1e-15                      # 2 重ノードにする station (厚さ 0 なら i < i_te 全部)
     if t_c <= 0.0:
         dup = np.arange(len(xs)) < i_te
