@@ -62,7 +62,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | 優先 | 項目 | 状態・次アクション |
 | --- | --- | --- |
 | P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
-| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量を追加し、統計定常を確認 | **ツール done 2026-09-05** (`ignx,tmax,exit_massflux,exit_hflux,exit_y_/exit_yflux_/exit_yout_<種>`; 抽出失敗・末尾 NaN は偽 STEADY にしない; commit 967e49d4→1add8d63)。適用: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED。**Cabra 反応 ON 全 run で出口質量流束が 37–63 % 変動** (出口 y 54–78 mm の環状逆流) → 付着後 +30k (`run_0073`) でも ±20 % の擬似時間リミットサイクル (z/d 26 の T が 183 K 動く)。切り分け順 (codex 2): ①外周 slip→`outlet_statPress` (`run_0074`: **不採用**、外周 ±18 m/s の出入りで悪化) → ③precond 0 低 CFL (`run_0075`: 振幅 ±20→±11 % に減るが消えず = **前処理起因ではない**) → ②領域拡張 (`run_0076` 実行中: Lx 0.40 m, R 0.20 m) → ④dual-time。**解決まで Cabra 下流比較を「一致」と呼ばない** |
+| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量を追加し、統計定常を確認 | **ツール done 2026-09-05** (`ignx,tmax,exit_massflux,exit_hflux,exit_y_/exit_yflux_/exit_yout_<種>`; 抽出失敗・末尾 NaN は偽 STEADY にしない; commit 967e49d4→1add8d63)。適用: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED。**Cabra 反応 ON 全 run で出口質量流束が 37–63 % 変動** (出口 y 54–78 mm の環状逆流) → 付着後 +30k (`run_0073`) でも ±20 % の擬似時間リミットサイクル (z/d 26 の T が 183 K 動く)。切り分け順 (codex 2): ①外周 slip→`outlet_statPress` (`run_0074`: **不採用**、外周 ±18 m/s の出入りで悪化) → ③precond 0 低 CFL (`run_0075`: 振幅 ±20→±11 % に減るが消えず = **前処理起因ではない**) → ②領域拡張 (`run_0076` は nx 変更でリップ解像度が変わり step 4617 でリップ発散 → 近傍解像度を合わせた `run_0078` を再投入予定) / ④dual-time (`run_0077` 実行中: dt 1e-5 s × 10000 = 0.1 s)。**解決まで Cabra 下流比較を「一致」と呼ばない** |
 | P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **reopen** (codex 2): 初版は coflow 組成バグ (ΣX=1.1) → 修正・再計算済 (2026-09-05, §9 (7)): 1045 K で Jach 1.46 / Li 1.69 / Burke 3.49 ms、Jach は Li 比 14–43 % 早い (定性結論不変)。Cabra A/B (`run_0072`, Li) は付着推移同一 → **TCI 欠如が主因という仮説を強く支持** (確定ではない)。forge⇔Cantera 0-D 照合は済 (Li+CEA 熱力学で 1 % 以内、§9 (7)(e))。残: 実加熱器圧力での比較、0-D/CFD/実験の着火判定 (max dT/dt / Y_OH>2e-4 / OH 発光) の対応付け |
 | P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
 | P1-5 | BK 早着火の条件整理 (機構 A/B・入口乱流・壁温・3D blockage) と end-to-end 収支 (質量・元素・全エンタルピー・圧損・出口一様性) の必須出力化 | todo (Cabra A/B は済、BK 機構 A/B は未) |
@@ -287,3 +287,6 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 - `2026-09-05 (10)` — **切り分け ③**: `run_0075` (precond 0, cfl_pseudo 0.5, 外周 slip, run_0073 から +30k)。出口質量流束は
   0.034–0.042 kg/s (±11 %) で振動し全残差プラトー、逆流なし。振幅は precond 2 (±20 %) より小さいが消えない → **擬似時間リミットサイクルは
   前処理起因ではない** (前処理は増幅要因に留まる)。z/d 9 は ΔT ≤8 K、z/d 26 は 63–116 K。次: ② `run_0076` (領域拡張) → ④ dual-time。
+- `2026-09-05 (11)` — **切り分け ② 初回は失敗**: `run_0076` (拡張メッシュ nx 480) は step 4617 でジェット管リップ (x −4.5〜0.7 mm, r 2.2〜4.6 mm) の
+  付着火炎根元から NaN 発散。拡張域は健全。出口近傍の軸方向格子幅が 0.20→0.07 mm と変わったことが交絡 → 近傍解像度を旧メッシュに一致させた
+  `cabra_ext2.msh` (nx 354, ny_co2 82) で `run_0078` を準備 (補間済)。**④ `run_0077` (dual-time, dt 1e-5 s × 10000 step) を先に実行中**。
