@@ -69,6 +69,10 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0049_wired_m10on` | 同レシピを `run_staged` に組み込んだ版で m10_on | **本段 step 171 で発散**。run_0048 とメッシュ・config がバイト一致なのに結果が割れる = **本段 cfl 1.0 は限界的** | 破棄予定 |
 | `run_0050_cfl05_m10on_a` / `run_0051_cfl05_m10on_b` / `run_0052_cfl05_m6on` / `run_0053_cfl05_m4off` | 本段 cfl 0.5 / 6000 step に下げて再現性確認 (m10_on は 2 回) | **4 本とも完走・全て STEADY**。m10_on は 2 回とも C_T 0.9246 / 摩擦込み 0.9175 / C_M −6.216 で**完全一致**。m6_on 0.9089 (0.9018) / m4_off 0.9759 (0.9701)、cfl 1.0 の値と一致 → **確定レシピ** (plan §4.12) | active (ref) |
 | `run_0054_moo_cycle3op` | **S6 MOO 再取得の第 2 回**: 確定レシピ (plan §4.12) で `problem_moo_sst_node_cycle3op.yaml`。3 作動点 × node SST × ext_top テーパ × 板厚 5e-3 × 3 段起動、dv 5 変数、`cm_min` −7.0、剥離制約なし。DOE 40 + infill 8×2 = 56 評価、HV ref (−0.75, 20.5)。1 評価 ≈ 8 分 (1 run ≈ 156 s × 3) → 約 7.5 時間 | 実行中。`pareto.json` / `ledger.jsonl` | active |
+| `run_0060`–`run_0067` | 起動レシピの切り分け: ランプ角部の丸め (`mesh.ramp_fillet`) 導入、dv 箱の隅と既定 dv での確認、緩レシピ試験 | 丸めで角部発散は解消 (θ_r0 22° でも通る)。既定 dv の力係数は丸め前と一致 (0.9091/0.9246/0.9758)。残る m4_off×短カウルは緩レシピでも救えず → 梯子方式へ (plan §4.13) | active (ref) / 一部破棄予定 |
+| `run_0069_moo_cycle3op` | MOO 第 3 回 (丸め + 梯子, L_cowl 上限 2.5)。**22 評価 / PASS 14 で打ち切り** | 失敗は L_cowl ≲ 0.7 に集中。最良 doe_004 C_T_w 0.9434 @ Lc 2.30。**C_T が L_cowl 上限に張り付いていたため箱を広げて再投入** (plan §8-8) | 破棄予定 |
+| `run_0070_aws_smoke_m6on` | **AWS g5 (A10G, CUDA 13.2)** での動作確認。設計点 m6_on | C_T 0.9091 / 摩擦込み 0.9019 / C_M −8.259、STEADY。ローカル run_0063 と一致 (C_L のみ 2e-4 差) | active (ref) |
+| `run_0071_moo_cycle3op_wide` | **S6 MOO 本番 (AWS)**: L_cowl 上限 4.5 H の広い箱。3 作動点 × node SST × 丸め × 3 段起動 + 梯子、DOE 40 + infill 8×2 = 56 評価 | 実行中 (AWS `~/forge/case/46.sern_design/`) | active |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは
