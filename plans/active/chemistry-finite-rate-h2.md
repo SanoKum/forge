@@ -67,7 +67,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
 | P1-5 | BK 早着火の条件整理 (機構 A/B 後に入口乱流・壁温・3D blockage) | P0-3 A/B 待ち |
 | P1-6 | Cabra 入口感度 (管内長 ~50d・リップ熱条件・入口 k/ω・格子) | todo |
-| P1-7 | **ドキュメント同期**: `methods/index.md` / `methods/chemistry.md` (precond 反応熱・PaSR 記述) / `plans/README.md` が Phase 0 時点で停止。case/47 run 表の 1 run = 1 行化・OH 閾値の統一 (2e-4 へ) | todo |
+| P1-7 | **ドキュメント同期** | **methods/index.md・methods/chemistry.md (状態行・falloff・precond 配線=済をコード確認・検証節・TCI 節)・plans/README.md は 2026-09-05 同期済**。残: case/47・48 run 表の grouped 行 (破棄予定の診断 run 群) の 1 run = 1 行化は run 群の削除と併せてユーザ判断; OH 閾値は新規解析を 2e-4 に統一済 (旧 README 数値は 1e-4 のまま注記なし) |
 | P1-8 | 回帰整備: case/28・case/44 の `chemistry.enabled: 0` ビット不変検証のエビデンス化、0-D テストの自動テスト登録 | todo |
 | P2-9 | `chemistry_source_d` 占有率最適化 (3 KB スタック/126 レジスタ)、`inlet_Pressure_dir` 組成対応 | todo |
 

@@ -23,7 +23,7 @@
 
 | Plan | area | 概要 |
 | --- | --- | --- |
-| [chemistry-finite-rate-h2.md](active/chemistry-finite-rate-h2.md) | `thermophysics / chemistry` | **有限速度化学 (H₂ 燃焼・ノズル化学非平衡)** (2026-09-04 起票): 種ブロック point-implicit + sensible datum 反応熱陽注入。Phase 0 (CEA スクリーニング・熱力学 DB ツール・Jachimowski YAML) 完了、Phase 1 ソース項から実装 |
+| [chemistry-finite-rate-h2.md](active/chemistry-finite-rate-h2.md) | `thermophysics / chemistry` | **有限速度化学 (H₂ 燃焼・ノズル化学非平衡)** (2026-09-04 起票): 種ブロック point-implicit + sensible datum 反応熱陽注入。Phase 0–2 完了 (0-D/Q1D で Cantera 一致)。Phase 3 燃焼器 RANS: BK 出口組成一致・着火位置過大、Cabra リップ付着 — 機構 A/B で TCI 欠如が支配因子と確定。残作業は §5.1 (codex レビュー優先順, 2026-09-05) |
 | [architecture-bndfirstorder-removal.md](active/architecture-bndfirstorder-removal.md) | `architecture / boundary` | **`mesh.bndFirstOrder` の廃止**。使用禁止をルール化済 (粘性応力を破壊 + 疑似 2D で全域に効く)、コード削除が残タスク |
 | [axisymmetric-freestream-hoop-gauge.md](active/axisymmetric-freestream-hoop-gauge.md) | `axisymmetric` | 軸対称 hoop ソースの自由流保持 (pRef ゲージ整合 + 離散閉性面積、倍精度不要) |
 | [architecture-node-option-consolidation.md](active/architecture-node-option-consolidation.md) | `architecture` | node の `node*` オプション削減 — 整合セットを既定化し旧規約系フラグを撤去する手順 |

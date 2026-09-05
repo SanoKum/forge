@@ -6,9 +6,12 @@
 [`plans/active/chemistry-finite-rate-h2.md`](../plans/active/chemistry-finite-rate-h2.md)、
 文献調査は [`notes/investigations/chemistry-finite-rate-h2-survey.md`](../notes/investigations/chemistry-finite-rate-h2-survey.md)。
 
-**状態 (2026-09-04)**: Phase 0 (熱力学 DB 生成ツール・機構ファイル・CEA スクリーニング) と **Phase 1 (反応ソース項
-$\dot\omega_s$・反応熱 $\dot Q$・解析 Jacobian・対角 point-implicit) を実装・検証済**。0-D 着火 (量論 H₂-air 1200 K 1 atm) が
-ホスト単体テスト・GPU 周期箱の両方で Cantera と一致。Phase 2 (種ブロック陰解・falloff・Strang) 以降は未着手。
+**状態 (2026-09-05)**: Phase 0–2 (熱力学 DB ツール・機構ファイル・反応ソース項・解析 Jacobian・種ブロック point-implicit・
+反応熱の陰的注入・falloff (Troe)・Strang 分離・Jacobian 凍結・PaSR) を実装・検証済。0-D 着火 (case/35) と Q1D ノズル再結合
+(case/46) は Cantera と一致。Phase 3 (燃焼器 RANS) は Burrows–Kurkov (case/47) で出口組成が実験と一致する一方、着火位置は
+上流に過大 (5–9 cm vs 18–25 cm)、Cabra (case/48) は laminar-chemistry / PaSR ともリップ付着 (実験 H/d≈10)。両者とも
+**TCI 欠如が支配因子**で、機構交換 (Li 2004) でも変わらないことを確認済 (plan §9 2026-09-05)。TCI の方針は
+[`notes/investigations/cabra-liftoff-model-fidelity-survey.md`](../notes/investigations/cabra-liftoff-model-fidelity-survey.md)。
 
 ---
 
@@ -104,7 +107,7 @@ Jacobian は $n_s\times n_s$ 密 (H₂ 系で $n_s\le13$)。有限差分は検�
 既定は **laminar finite-rate (No-TCI)**。`chemistry.tci: 1` で PaSR: $\dot\omega_s\to\kappa\,\dot\omega_s$ (Jacobian・$\dot Q$ も同じ κ),
 $\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_c$ は `tciTauChem` で選択 (0: $1/\max_s|\partial\dot\omega_s/\partial\rho Y_s|$ = 最速ラジカル時間 ~1e-8 s で κ≈0.03 となり Burrows–Kurkov で消炎 [run_0018]; 1 [既定]: 燃料/酸化剤 H₂・O₂ の消費時間 $\max(\rho Y_s/|\dot\omega_s|)$),
 $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または $C_{\rm mix}k/\varepsilon$ (1), $\varepsilon=\beta^*k\omega$ (SST)。
-κ の状態微分は Jacobian に入れない。実装は `chemistry_source_d` (ソース項経路のみ。Strang 経路は κ=1)。$C_{\rm mix}$ は未較正 (Phase 3)。EDC・flamelet は採らない。
+κ の状態微分は Jacobian に入れない。実装は `chemistry_source_d` (ソース項経路のみ。Strang 経路は κ=1)。$C_{\rm mix}$ は未較正。**Cabra (case/48) で PaSR は C_mix 1/4 とも付着推移を変えない** — 自着火安定化火炎は化学律速で、混合速度リミッタでは着火遅れ統計 (最反応性混合分率・低散逸ポケット) を表現できない。EDC・flamelet は採らない。次段の候補は 1st-order RANS-CMC / transported PDF (plan §5.1 P0-4, 文献根拠は上記調査メモ)。
 
 ### 参考文献
 
@@ -119,7 +122,7 @@ $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または 
 
 ## 実装
 
-### 1. 入力配管 (Phase 0, 実装済)
+### 1. 入力配管 (実装済)
 
 - **熱力学 DB**: `solver_density_cuda/tools/cea_thermo_to_species_db.py thermo.inp --species ... --out species_db.yaml`
   が NASA CEA `thermo.inp` から forge の `speciesDBFile` を生成する (NASA-9 2 温度域、LJ パラメータは Cantera h2o2/gri30 の
@@ -136,12 +139,12 @@ $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または 
 - `solverConfig.yaml`: `physProp.chemistry: {enabled: 1, mechanismFile: ..., jacobianMode: 1, tMaxReaction: 6000, freezeBelowT: 0}`
   (キーの説明は [procedures/solver-settings.md](../procedures/solver-settings.md))。PaSR の `tci` は Phase 3。
 
-### 2. カーネル構成 (Phase 1 実装済)
+### 2. カーネル構成 (Phase 1–2 実装済)
 
 | 処理 | ファイル | 内容 | 状態 |
 | --- | --- | --- | --- |
 | 反応表 + 生成率評価 (host/device 共通) | `cuda_forge/chemistry_d.cuh` (`ReactionTable`, `chem_source`) | 固定長 POD の反応表。`chem_source(sp, rt, ρ, T, Y, ω, Q̇, jacMode, J, ∂ω/∂T)` が Arrhenius・三体・$K_c$ 逆反応・反応熱・解析 Jacobian (`jacMode` 0/1 対角/2 全 $n_s\times n_s$) を double で評価 | 済 |
-| 機構ファイル読込 (host) | `cuda_forge/chemistry_mech_io.hpp` (`chem_io::loadMechanism`) | Cantera YAML サブセット → `ReactionTable`。単位換算 (cm³/mol/s, cal/mol → SI)、種名を `physProp.species` 順に対応付け。falloff は明示エラー | 済 (falloff は Phase 2) |
+| 機構ファイル読込 (host) | `cuda_forge/chemistry_mech_io.hpp` (`chem_io::loadMechanism`) | Cantera YAML サブセット → `ReactionTable`。単位換算 (cm³/mol/s, cal/mol → SI)、種名を `physProp.species` 順に対応付け。falloff (`high-P-rate-constant`/`low-P-rate-constant`/`Troe`, T2 省略可) も読む。Cantera `ck2yaml` 出力 (Li 2004, Burke 2012) をそのまま読めることを case/48 `run_0072` で確認 | 済 |
 | device 側ソース項 | `cuda_forge/chemistry_d.cu` (`chemistry_init`, `chemistry_source_d`, `chemistrySource_d_wrapper`) | セル毎に `res_roY{s} += Vω_s`, `res_roe += VQ̇`, `src_jac_Y{s} += max(0,−∂ω_s/∂ρY_s)`, 診断 `chemQdot`/`chemTau`。周期 node では部分体積 `volumePartial_d` を使う (seam 二重計上防止) | 済 |
 | host インタフェース | `cuda_forge/chemistrySource_d.cuh` | `main.cpp`: `thermo_init_db` 直後に `chemistry_init`、`assembleResidual` の `speciesTransport_d_wrapper` 直後に `chemistrySource_d_wrapper` | 済 |
 | datum 保持 | `thermo_d.{cuh,cu}` (`SpeciesThermo::h_datum`) | sensible datum で除いた $h^{abs}_s(T_{ref})$ [J/mol] を保持し、$\dot Q$ と $K_c$ (絶対 $H$) に使う。**構造体が変わったので full rebuild 必須** | 済 |
@@ -149,7 +152,7 @@ $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または 
 | node 周期の化学種残差 gather | `cuda_forge/periodicNode_d.cu` | `periodicNodeGather` が `res_roY{s}` (と凝縮モーメント残差) を合算し、`periodicMirrorNSState` が `roY{s}` をミラーする。**従来は流れ 5 変数と k/ω だけで、seam の化学種は部分体積分しか更新されなかった** (化学以前からの欠落。run_0049 で発覚・修正) | 済 |
 | 種ブロック point-implicit (`jacobianMode: 2`) | `speciesTransport_d.cu` `species_dplur_block_sweep_d` (`speciesSweepOnce` が block/scalar を切替) | chemistry が `chem_jac` (温度結合込み $J^{\rm tot}$ の残差行列 $R=J^{\rm tot}+\mathrm{diag}(d)$, $d_s=\max(0,-J_{ss})$ は `src_jac_Y` へ) を書き、sweep はセル毎に $[(V/\Delta\tau+D^{\rm conv}+V\,\mathrm{src\_jac})I-VR]\delta=\mathrm{rhs}$ を部分ピボット LU (double) で解く。coupling 1 の解と coupling 2 の予測子の両方で使う | 済 (Phase 2a) |
 | 反応熱の陰的注入 | `chemistry_heat_inject_d` (speciesTransport_d.cu, 案C 予測子直後) + `chem_cq` ($\partial\dot Q/\partial\rho Y_k$) | 理論 §4。`res_roe += V\sum_k(\partial\dot Q/\partial\rho Y_k)\delta(\rho Y_k)^*` | 済 (Phase 2a) |
-| 反応熱のエネルギー対角 | `timeIntegration_d.cu` `implicit_defect_correction_block_d` (`src_jac_roe` 引数) | $(4,4)\ +=\ V\max(0,-\partial\dot Q/\partial\rho e)$ (precond 版 `_precond_d` は未配線) | 済 (Phase 2a) |
+| 反応熱のエネルギー対角 | `timeIntegration_d.cu` `implicit_defect_correction_block_d` (`src_jac_roe` 引数) | $(4,4)\ +=\ V\max(0,-\partial\dot Q/\partial\rho e)$ (precond 版 `_precond_d` は配線済: 2026-09-05 コード確認) | 済 (Phase 2a) |
 | Jacobian 凍結 (`jacobianInterval: n`) | `chemistry_d.cu` (`frozenJac`, `chem_diag`) | 定常陰解法で n ステップに 1 回だけ Jacobian (`chem_jac`/`chem_cq`/`chem_jacroe`/対角 `chem_diag`) を再評価。凍結ステップは `chem_source(mode 0)` で ω・Q̇ だけ計算し、前回の対角を `src_jac_Y` に足す。κ (PaSR) も前回値。種ブロック LU (`species_block_factor_d`) は dt_local が変わるため毎ステップ分解 (sweep 間では再利用) | 済 (高速化 2) |
 | Strang 分離 (`strang: 1`) | `chemistry_strang_d` / `chemistryStrangHalfStep_d_wrapper` (chemistry_d.cu), `advanceExplicitRK` (main.cpp) | 非定常 RK の前後で dt/2 ずつセル内 ODE ($d\rho Y/dt=\omega$, $\Delta\rho e=-\sum c_s\Delta\rho Y_s$) を backward Euler sub-cycle (v2: 刻みは「主要種の相対変化 <20 %・|ΔT|<30 K」で受理、超えたら半分にして再試行、受理が続けば倍に戻す。非反応セルは 1 sub-step・Newton 1 回。最大 64 sub-step、温度は $e$ から反転)。前半の後に N/M 始点を取り直す。有効時はソース項を RK に入れない | 済 (Phase 2c) |
 | Falloff (Lindemann/Troe) | `chem_ln_kf_falloff` (chemistry_d.cuh), `chemistry_mech_io.hpp` (`high-P-rate-constant`/`low-P-rate-constant`/`Troe`) | $k=k_\infty\frac{P_r}{1+P_r}F$。$\partial\ln k/\partial T$, $\partial\ln k/\partial[M]$ は滑らかなスカラ関数の中心差分 (相対 1e-4)。GRI H₂/O₂ (`tools/mechanisms/h2o2_gri30_nasa9_10sp29r.yaml`) で Jacobian FD 2e-8, 着火遅れ 43.6 vs Cantera 44.0 µs | 済 (Phase 2b) |
@@ -170,5 +173,11 @@ $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または 
    `case/35.uniform_periodic_box/run_0049_node_h2_ignition` (node 8³ 全面 periodic, 量論 H₂-air 1200 K 1 atm, explicit RK3
    dt=5e-9 s, jacobianMode=1)。全 729 ノードが一様に着火 (T 差 0.004 K, |u|<1e-4 m/s)、着火遅れ 32.0 µs (Cantera 32.2)、
    平衡温度 2948 K (Cantera 2944, +0.15 %)。図 `h2_ignition_vs_cantera.png`。
-2. Q1D ノズル再結合 (H₂/O₂ 平衡入口 → 膨張) vs Cantera PFR (面積則)。frozen / equilibrium / finite-rate 三者図 (Phase 2)。
-3. Burrows–Kurkov (M2.44 vitiated air + H₂ 壁噴射) (Phase 3)。
+2. **Q1D ノズル再結合 (済)**: `case/46.nozzle_h2o2_kinetics run_0008` — $Y_{OH}$ が Cantera PFR (面積則) と一致、frozen 比で
+   出口 $T$ +58 K・$M$ −1.1 %。反応熱を陽的に入れると定常陰解法はスロートで発散するため `speciesImplicitCoupling: 2` +
+   `jacobianMode: 2` が必須 (plan §9 2026-09-04)。`check_convergence` は NOT CONVERGED (rms_roUy stalled) のまま。
+3. **Burrows–Kurkov (一次結果)**: `case/47 run_0025` (メッシュ v2, 入口 BL δ 10 mm, 入口 k×3): 出口 $X_{H_2O}$ ピーク 0.505 @ 1.96 cm
+   (実験 0.50 @ 2.0)、全温ピーク 1.08 vs 1.18、着火 4–6 cm (実験 18–25 cm, 未解決)。3 バグ修正後の再確認 `run_0028` で結論維持。
+4. **Cabra H₂/N₂ (一次結果)**: `case/48 run_0069`–`run_0073` — 自着火 x/d≈20 → 上流伝播 → リップ付着 (実験 H/d≈10)。PaSR C_mix・
+   機構 (Li 2004) とも非感応。文献どおり laminar-chemistry の構造的失敗であり、H/d 再現には transported PDF / CMC 級の TCI が要る。
+   準定常判定は `tools/check_quasisteady.py --quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_<種>` (2026-09-05 追加)。
