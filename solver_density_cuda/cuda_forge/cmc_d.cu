@@ -458,7 +458,7 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
                            const flow_float* dt_local, flow_float* const* roY_dev,
                            flow_float* Q, flow_float* roQ,
                            flow_float* omegaBar, flow_float* qdotBar, flow_float* jacBar, flow_float* cmc_dY, flow_float* cmc_TQmax,
-                           flow_float* ypdfOut, flow_float* hpdfOut, flow_float* tauOut, flow_float* cmc_TQst)
+                           flow_float* ypdfOut, flow_float* hpdfOut, flow_float* tauOut, flow_float* cmc_TQst, int doChem)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -511,7 +511,7 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
         for (int s = 0; s < ns; ++s) ypdf[s] += Om[k] * Y[s];
         hpdf += Om[k] * h;
         const bool interior = (k > 0 && k < ne - 1);
-        if (!g_cmc.chemOn || !interior || Om[k] < g_cmc.pdfFloor || T < g_cmc.Tfreeze) continue;
+        if (!doChem || !g_cmc.chemOn || !interior || Om[k] < g_cmc.pdfFloor || T < g_cmc.Tfreeze) continue;
         const double rhoEta = p / (thermo_R_mix(sp, ns, Y) * T);
         double Qd = 0.0;
         chem_source(sp, rt, rhoEta, fmin(T, g_cmc.Tmax), Y, omega, &Qd, 2, J, dOdT);
@@ -537,7 +537,7 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     cmc_dY[ic] = (flow_float)dy; cmc_TQmax[ic] = (flow_float)TQmax; cmc_TQst[ic] = (flow_float)TQst;
     for (int s = 0; s < ns; ++s) ypdfOut[(size_t)s * nCells + ic] = (flow_float)ypdf[s];
     hpdfOut[ic] = (flow_float)hpdf;
-    tauOut[ic]  = (flow_float)fmax((double)dt_local[ic] * g_cmc.relax, 1.0e-12);
+    tauOut[ic]  = (flow_float)fmax((double)dt_local[ic] * g_cmc.relax, 1.0e-9);   // 下限: 初期化直後 (dt_local 未設定) でも有限
     for (int s = 0; s < ns; ++s) omegaBar[(size_t)s * nCells + ic] = (flow_float)obar[s];
     qdotBar[ic] = (flow_float)qbar;
     for (int i = 0; i < ns * ns; ++i) jacBar[(size_t)ic * ns * ns + i] = (flow_float)jbar[i];
@@ -627,6 +627,15 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
 
     cmc_q_init_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(msh.nCells_all, var.c_d.at("ro"), g_Q, g_roQ);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    // PDF 積分値 (Ỹ_pdf, h̃_pdf, τ) を初期場で一度埋める (化学は走らせない)。これを怠ると初回の残差組み立てで
+    // couple 2 の緩和ソースが Ỹ_pdf=0 に向かって全種を剥ぎ取り step 2 で NaN になる (run_0083 初版)。
+    cmc_step_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+        msh.nCells, msh.nCells_all, thermo_species_device_ptr(), chemistry_table_device(),
+        var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
+        var.c_d.at("dt_local"), species_roY_device_ptr(),
+        g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
+        g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 0);
+    gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
     g_q_ready = true; g_cmcStep = 0;
     std::printf("cmcQInit_d: nEta=%d nSlice=%d (%.1f MB x6), hF=%.4g hO=%.4g J/kg, couple=%d chem=%d\n",
                 ne, g_nSlice, bytes / 1.0e6, c.hF, c.hO, c.couple, c.chemOn);
@@ -676,7 +685,7 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
             var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
             var.c_d.at("dt_local"), species_roY_device_ptr(),
             g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
-            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"));
+            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1);
     }
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
 }
