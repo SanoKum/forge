@@ -390,6 +390,7 @@ public:
     double chemCmcXiSt = 0.47;      // 診断 cmc_TQst の η (量論混合分率)
     double chemCmcAlpha = 0.05;     // couple 3: 平均 Y,h を PDF 積分状態へブレンドする割合 /step
     double chemCmcDTmax = 10.0;     // couple 4: 1 step あたりの発熱による温度上昇上限 [K] (残りは持ち越し)
+    int chemCmcFp32 = 1;            // 1: 条件付き化学の速度定数・Jacobian を fp32 で評価 (chemistry_f32_d.cuh; 点陰解は double)。0: 全て double (参照用)
     std::string chemCmcRestartQ = "";  // 条件付き場 Q(η) の restart ファイル (run dir 相対, 例 ../run_0097/cmc_Q.bin)。空なら混合線から
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。

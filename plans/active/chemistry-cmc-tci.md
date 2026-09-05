@@ -69,9 +69,10 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 | 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場で分散の妥当性 | 実装済・300 step smoke OK (実現可能性 1e-12, χ 10²–10³ 1/s)。発達場 `run_0080` (5000 step) で確認中 |
 | 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 | **done 2026-09-05**: `run_0081` で条件付き T が全 node 1045.00 K (混合線保存)、`cmc_dY` ≤0.017 (差分拡散分のみ) |
 | 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | 実装済 (凍結で η 拡散の線形不変を確認; 化学は `run_0082` で検証中) |
-| 5 | Phase C: 結合 | couple 1 (PDF 平均ソース) は平均場が燃えず、couple 2 (緩和ソース) は差分拡散差を反応熱に換算して NaN、couple 3 全置換は陰解法と非整合で NaN → couple 3 (Y,h ブレンド) はリップの熱伝導/Le≠1 で非物理 → **couple 4 (Y ブレンド + ブレンドの反応熱) を検証中 (`run_0089_cmc_c4`)**。性能: 化学 ON 652 ms/step (単独) → 融合カーネル化は Phase D 後 |
+| 5 | Phase C: 結合 | couple 1 (PDF 平均ソース) は平均場が燃えず、couple 2 (緩和ソース) は差分拡散差を反応熱に換算して NaN、couple 3 全置換は陰解法と非整合で NaN → couple 3 (Y,h ブレンド) はリップの熱伝導/Le≠1 で非物理 → **couple 4 (Y ブレンド + ブレンドの反応熱) を検証中 (`run_0089_cmc_c4`)**。性能: 化学 ON 652 ms/step (単独) → **2026-09-05 (12) で CMC 部分 ~175 ms/step に短縮** (fp32 化学ほか; 残りは輸送残差の融合) |
 | 6 | Phase D: Cabra $T_c$ 1015/1030/1045/1060/1075 K の $H$ 応答曲線 (Y_OH>2e-4) vs 実験・文献、中心軸/半径 T ±30 K | todo |
-| 7 | Phase D: BK 着火位置、`tci 0/1` 回帰、性能 (PDF 閾値スキップ) | todo |
+| 7 | Phase D: BK 着火位置、`tci 0/1` 回帰 | todo |
+| 7b | 性能: 物理空間輸送残差 (410 スライス × 2 カーネル, 41 ms/step) を面幾何共有の融合カーネルに。PDF 閾値スキップは効果小 (Ω<1e-4 は活性対の 17 %) | todo (低優先) |
 | 8 | ドキュメント: `procedures/solver-settings.md` に `cmc` キー、`methods/index.md` | todo |
 
 ## 6. 検証
@@ -170,3 +171,9 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   上流へ移動、条件付き着火前線 (T_Q>1300 K) も 23.6 → 14.1 と追従。laminar 化学の付着 (0) とは異なり、実験 H/d≈10 に向かって収束しつつある形。
   平均 T_max は 1063 K と低く (軸 z/d 26: 883 K) 平均場の加熱は遅い (上限持ち越し + 陰的経路の減衰) → 継続計算で確認。
   Q(η) の restart 永続化 (`cmc_Q.bin`, `cmc.restartQ`) を実装。
+- `2026-09-05 (12)` — **性能: CMC 部分 613→133 (+41) ms/step** (methods/chemistry_cmc.md 実装 §4 に表)。`CMC_TIMING` 区間計測と ncu で
+  「node 毎 1 カーネルの化学が FP64 パイプ 87 % で律速 (RTX 3060 は fp64 = fp32 の 1/64)」と特定。対策の順: (node,η) 分割 → 活性対の圧縮リスト
+  (`thrust::copy_if`) → T 反転のウォームスタート → **fp32 化学 `chemistry_f32_d.cuh` (`cmc.fp32: 1` 既定; 点陰解は double)** → η 拡散 float +
+  時間積分の一括化。各段階で 40 step A/B (run_tmp_prof_* , 削除済) が double 参照と相対 1e-6〜1e-5 で一致 (OH の 4e-4 は Y~1e-13 のノイズ)。
+  couple 1/2 の ω̄/J̄ 集計は double atomicAdd (順序非決定) だが生産の couple 5 は使わない。長期 run_0098 は旧バイナリで続行中。
+

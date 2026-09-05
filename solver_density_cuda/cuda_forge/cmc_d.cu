@@ -3,6 +3,11 @@
 // =============================================================================
 #include "cmc_d.cuh"
 #include "scalarTransport_d.cuh"
+#include "chemistry_f32_d.cuh"
+#include <thrust/device_ptr.h>
+#include <thrust/copy.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/functional.h>
 #include "chemistrySource_d.cuh"
 #include "chemistry_d.cuh"
 #include <vector>
@@ -319,6 +324,12 @@ static flow_float *g_qrel = nullptr;
 static flow_float *g_qdebt = nullptr;
 static flow_float *g_qcap = nullptr;    // couple 5: リミッタ後の発熱 [J/m3] を陰的化学ソース経路 (res_roe) へ渡す   // couple 4: 1 step の ΔT 上限で出し切れなかった発熱の持ち越し [J/m3]   // couple 4: 条件付き点陰解で実際に進んだ反応の PDF 平均発熱 [J/kg] (この step)   // couple 4: PDF 積分の反応離脱 D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) と前ステップ値
 static int g_cmcStep = 0;
+// 分割版 cmc_step の作業配列 (double): [η][node] の Ω, <χ|η>, T, Ω·q_rel, Ω·Q̇ と [s][node] の Ỹ_pdf, h̃_pdf, ω̄/J̄ 集計
+static double *g_OmD = nullptr, *g_chiEtaD = nullptr, *g_TEtaD = nullptr, *g_qrelEtaD = nullptr, *g_QdEtaD = nullptr;
+static double *g_ypdfD = nullptr, *g_hpdfD = nullptr, *g_omegaAccD = nullptr, *g_jacAccD = nullptr;
+__constant__ SpeciesThermoF g_spf[THERMO_MAX_SPECIES];   // fp32 化学 (cmc.fp32) の係数表
+__constant__ ReactionTableF g_rtf;
+static int g_cmcFp32 = 1;
 
 __device__ __forceinline__ size_t sl(int var, int k) { return (size_t)(var * g_cmc.nEta + k); }
 
@@ -557,6 +568,279 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     for (int i = 0; i < ns * ns; ++i) jacBar[(size_t)ic * ns * ns + i] = (flow_float)jbar[i];
 }
 
+// =============================================================================
+// 分割版 cmc_step: 旧 cmc_step_d は node 1 thread が 41 η 点の化学 (9×9 点陰解) を直列に回すため占有率が低く
+// 620 ms/step を占めていた (CMC_TIMING 計測)。同じ演算を node×η の thread に展開する。評価順序・意味は旧 kernel と同じ
+// (拡散 → PDF 平均は更新前の Q → 各 η の化学 → 診断)。couple 1/2 の ω̄・J̄ だけ double atomicAdd で集計する (順序非決定;
+// 生産の couple 5 は使わない)。
+// =============================================================================
+// (A) node 毎: β-PDF 重み Ω_k と AMC <χ|η>_k
+__global__ void cmc_stepA_weights_d(geom_int nCells, const flow_float* xi, const flow_float* xiVar, const flow_float* chi,
+                                    double* OmOut, double* chiOut)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int ne = g_cmc.nEta;
+    double Om[CMC_MAX_ETA];
+    cmc_pdf_weights((double)xi[ic], (double)xiVar[ic], Om);
+    double gnorm = 0.0;
+    for (int k = 0; k < ne; ++k) gnorm += Om[k] * g_cmc.G[k];
+    const double chim = fmax((double)chi[ic], 0.0);
+    for (int k = 0; k < ne; ++k) {
+        OmOut[(size_t)k * nCells + ic] = Om[k];
+        chiOut[(size_t)k * nCells + ic] = (gnorm > 1.0e-30) ? chim * g_cmc.G[k] / gnorm : chim * g_cmc.G[k];
+    }
+}
+
+// (B) (node, 変数) 毎: η 拡散 (陰的三重対角, 端 Dirichlet)。対角優位なので float の Thomas で十分 (fp64 版と 1e-6 で一致)。
+__global__ void cmc_stepB_etadiff_d(geom_int nCells, geom_int nCells_all, const flow_float* dt_local, const double* chiEta, flow_float* Q)
+{
+    const size_t idx = (size_t)blockDim.x * blockIdx.x + threadIdx.x;
+    const int ns = g_cmc.nSpecies, ne = g_cmc.nEta;
+    if (idx >= (size_t)(ns + 1) * nCells) return;
+    const int var = (int)(idx / nCells); const geom_int ic = (geom_int)(idx % nCells);
+    const float dtau = (float)((double)dt_local[ic] * g_cmc.dtScale);
+    float a[CMC_MAX_ETA], bb[CMC_MAX_ETA], cc[CMC_MAX_ETA], d[CMC_MAX_ETA];
+    for (int k = 1; k < ne - 1; ++k) {
+        const float hm = (float)(g_cmc.eta[k] - g_cmc.eta[k-1]), hp = (float)(g_cmc.eta[k+1] - g_cmc.eta[k]), hc = 0.5f * (hm + hp);
+        const float D = 0.5f * (float)chiEta[(size_t)k * nCells + ic] * dtau;
+        a[k] = -D / (hm * hc); cc[k] = -D / (hp * hc); bb[k] = 1.0f - a[k] - cc[k];
+        d[k] = Q[sl(var, k) * nCells_all + ic];
+    }
+    const float q0 = Q[sl(var, 0) * nCells_all + ic], qN = Q[sl(var, ne-1) * nCells_all + ic];
+    d[1] -= a[1] * q0; d[ne-2] -= cc[ne-2] * qN;
+    for (int k = 2; k < ne - 1; ++k) { const float m = a[k] / bb[k-1]; bb[k] -= m * cc[k-1]; d[k] -= m * d[k-1]; }
+    d[ne-2] /= bb[ne-2];
+    for (int k = ne - 3; k >= 1; --k) d[k] = (d[k] - cc[k] * d[k+1]) / bb[k];
+    for (int k = 1; k < ne - 1; ++k) Q[sl(var, k) * nCells_all + ic] = d[k];
+}
+
+// (C) node 毎: PDF 平均 Ỹ_pdf, h̃_pdf (化学更新前の Q で評価 = 旧 kernel と同じ)
+__global__ void cmc_stepC_average_d(geom_int nCells, geom_int nCells_all, const double* Om, const flow_float* Q, double* ypdfD, double* hpdfD)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int ns = g_cmc.nSpecies, ne = g_cmc.nEta;
+    double ypdf[THERMO_MAX_SPECIES]; for (int s = 0; s < ns; ++s) ypdf[s] = 0.0;
+    double hpdf = 0.0, Y[THERMO_MAX_SPECIES];
+    for (int k = 0; k < ne; ++k) {
+        const double om = Om[(size_t)k * nCells + ic];
+        double ysum = 0.0;
+        for (int s = 0; s < ns; ++s) { double y = (double)Q[sl(s, k) * nCells_all + ic]; if (y < 0.0) y = 0.0; Y[s] = y; ysum += y; }
+        if (ysum > 0.0) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+        for (int s = 0; s < ns; ++s) ypdf[s] += om * Y[s];
+        hpdf += om * (double)Q[sl(ns, k) * nCells_all + ic];
+    }
+    for (int s = 0; s < ns; ++s) ypdfD[(size_t)s * nCells + ic] = ypdf[s];
+    hpdfD[ic] = hpdf;
+}
+
+// CMC 専用の T(h,Y) Newton 反転: thermo_T_from_h と同じ式だが lnT を種ループの外で 1 回だけ取り (fp64 log が 9 分の 1)、
+// 前 step の T(η) をウォームスタートにする (通常 1–2 反復で収束)。範囲外は thermo_cph_molar にフォールバック。
+__device__ __forceinline__ double cmc_T_from_h(const SpeciesThermo* sp, int n, const double* Y, double h, double T_guess, double T_min, double T_max)
+{
+    double T = T_guess;
+    if (!(T > T_min)) T = T_min;
+    if (T > T_max) T = T_max;
+    #pragma unroll 1
+    for (int it = 0; it < 20; ++it) {
+        const double Ti = 1.0 / T, Ti2 = Ti * Ti, lnT = log(T), T2 = T * T, T3 = T2 * T, T4 = T3 * T;
+        double cp = 0.0, h_T = 0.0;
+        for (int i = 0; i < n; ++i) {
+            double cpi, hi;
+            if (T >= sp[i].Tlo && T <= sp[i].Thi) {
+                const double* a = thermo_pick_coeffs(sp[i], T);
+                cpi = THERMO_RU * (a[0]*Ti2 + a[1]*Ti + a[2] + a[3]*T + a[4]*T2 + a[5]*T3 + a[6]*T4);
+                hi  = THERMO_RU * T * (-a[0]*Ti2 + a[1]*lnT*Ti + a[2] + a[3]*T/2.0 + a[4]*T2/3.0 + a[5]*T3/4.0 + a[6]*T4/5.0 + a[7]*Ti);
+            } else { thermo_cph_molar(sp[i], T, &cpi, &hi); }
+            cp += Y[i] * (cpi / sp[i].MW); h_T += Y[i] * (hi / sp[i].MW);
+        }
+        const double cpf = (cp > 1.0e-3 ? cp : 1.0e-3);
+        double dT = (h_T - h) / cpf;
+        if (dT >  0.5*T) dT =  0.5*T;
+        if (dT < -0.5*T) dT = -0.5*T;
+        T -= dT;
+        if (T < T_min) T = T_min;
+        if (T > T_max) T = T_max;
+        if (dT < 0.0) dT = -dT;
+        if (dT < 1.0e-3 + 1.0e-6*T) break;
+    }
+    return T;
+}
+
+// (D0) (node, η) 毎: 条件付き温度 T(η) と化学を評価するかのフラグ
+__global__ void cmc_stepD0_temp_d(geom_int nCells, geom_int nCells_all, const SpeciesThermo* sp, const double* Om, const flow_float* Q,
+                                  double* TEta, double* qrelEta, double* QdEta, int* flag, int doChem)
+{
+    const size_t idx = (size_t)blockDim.x * blockIdx.x + threadIdx.x;
+    const int ns = g_cmc.nSpecies, ne = g_cmc.nEta;
+    if (idx >= (size_t)ne * nCells) return;
+    const int k = (int)(idx / nCells); const geom_int ic = (geom_int)(idx % nCells);
+    double Y[THERMO_MAX_SPECIES]; double ysum = 0.0;
+    for (int s = 0; s < ns; ++s) { double y = (double)Q[sl(s, k) * nCells_all + ic]; if (y < 0.0) y = 0.0; Y[s] = y; ysum += y; }
+    if (ysum > 0.0) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+    const double h = (double)Q[sl(ns, k) * nCells_all + ic];
+    const double Tprev = TEta[idx];   // 前 step の T(η) (初回は 0 → 粗い推定にフォールバック)
+    const double Tg = (Tprev > 200.0 && Tprev < g_cmc.Tmax) ? Tprev : fmin(fmax(300.0 + h / 1200.0, 200.0), 4000.0);
+    const double T = cmc_T_from_h(sp, ns, Y, h, Tg, 200.0, g_cmc.Tmax);
+    TEta[idx] = T; qrelEta[idx] = 0.0; QdEta[idx] = 0.0;
+    const bool interior = (k > 0 && k < ne - 1);
+    flag[idx] = (doChem && g_cmc.chemOn && interior && Om[idx] >= g_cmc.pdfFloor && T >= g_cmc.Tfreeze) ? 1 : 0;
+}
+
+// (D1) 活性対リスト毎: 化学 (点陰解)。qrelEta / QdEta は Ω 重み付き。
+__global__ void cmc_stepD1_chem_d(geom_int nCells, geom_int nCells_all, int nActive, const int* list, const SpeciesThermo* sp, const ReactionTable* rt,
+                                  const flow_float* P, const flow_float* dt_local, const double* Om, flow_float* Q, const double* TEta,
+                                  double* qrelEta, double* QdEta, double* omegaAcc, double* jacAcc, int accumSrc, unsigned long long* omHist)
+{
+    const int ia = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ia >= nActive) return;
+    const size_t idx = (size_t)list[ia];
+    const int ns = g_cmc.nSpecies;
+    const int k = (int)(idx / nCells); const geom_int ic = (geom_int)(idx % nCells);
+    const double om = Om[idx], T = TEta[idx];
+    if (omHist) atomicAdd(&omHist[(om < 1.0e-5) ? 0 : (om < 1.0e-4) ? 1 : (om < 1.0e-3) ? 2 : 3], 1ULL);
+    double Y[THERMO_MAX_SPECIES]; double ysum = 0.0;
+    for (int s = 0; s < ns; ++s) { double y = (double)Q[sl(s, k) * nCells_all + ic]; if (y < 0.0) y = 0.0; Y[s] = y; ysum += y; }
+    if (ysum > 0.0) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+    double h = (double)Q[sl(ns, k) * nCells_all + ic];
+    const double p = (double)P[ic], dtau = (double)dt_local[ic] * g_cmc.dtScale;
+    const double rhoEta = p / (thermo_R_mix(sp, ns, Y) * T);
+    double omega[THERMO_MAX_SPECIES], dOdT[THERMO_MAX_SPECIES], J[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES];
+    double A[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES], rhs[THERMO_MAX_SPECIES];
+    double Qd = 0.0;
+    chem_source(sp, rt, rhoEta, fmin(T, g_cmc.Tmax), Y, omega, &Qd, 2, J, dOdT);
+    if (accumSrc) {
+        for (int s = 0; s < ns; ++s) atomicAdd(&omegaAcc[(size_t)s * nCells + ic], om * omega[s]);
+        for (int i = 0; i < ns * ns; ++i) atomicAdd(&jacAcc[(size_t)ic * ns * ns + i], om * J[i]);
+    }
+    QdEta[idx] = om * Qd;
+    for (int s = 0; s < ns; ++s) { for (int q = 0; q < ns; ++q) A[s*ns + q] = -dtau * J[s*ns + q]; A[s*ns + s] += 1.0; rhs[s] = dtau * omega[s] / rhoEta; }
+    if (cmc_solve_dense(ns, A, rhs)) {
+        double qr = 0.0;
+        for (int s = 0; s < ns; ++s) qr -= om * (sp[s].h_datum / sp[s].MW) * rhs[s];
+        qrelEta[idx] = qr;
+        ysum = 0.0;
+        for (int s = 0; s < ns; ++s) { Y[s] = fmax(Y[s] + rhs[s], 0.0); ysum += Y[s]; }
+        if (ysum > 0.0) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+        h += dtau * Qd / rhoEta;
+        for (int s = 0; s < ns; ++s) Q[sl(s, k) * nCells_all + ic] = (flow_float)Y[s];
+        Q[sl(ns, k) * nCells_all + ic] = (flow_float)h;
+    }
+}
+
+// (D0f/D1f) fp32 版 (cmc.fp32=1, 既定): 速度定数・Jacobian・T 反転を float、点陰解だけ double。式は D0/D1 と同じ。
+__global__ void cmc_stepD0f_temp_d(geom_int nCells, geom_int nCells_all, const double* Om, const flow_float* Q,
+                                   double* TEta, double* qrelEta, double* QdEta, int* flag, int doChem)
+{
+    const size_t idx = (size_t)blockDim.x * blockIdx.x + threadIdx.x;
+    const int ns = g_cmc.nSpecies, ne = g_cmc.nEta;
+    if (idx >= (size_t)ne * nCells) return;
+    const int k = (int)(idx / nCells); const geom_int ic = (geom_int)(idx % nCells);
+    float Y[THERMO_MAX_SPECIES]; float ysum = 0.0f;
+    for (int s = 0; s < ns; ++s) { float y = Q[sl(s, k) * nCells_all + ic]; if (y < 0.0f) y = 0.0f; Y[s] = y; ysum += y; }
+    if (ysum > 0.0f) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+    const float h = Q[sl(ns, k) * nCells_all + ic];
+    const float Tmax = (float)g_cmc.Tmax, Tprev = (float)TEta[idx];
+    const float Tg = (Tprev > 200.0f && Tprev < Tmax) ? Tprev : fminf(fmaxf(300.0f + h / 1200.0f, 200.0f), 4000.0f);
+    const float T = chemf_T_from_h(g_spf, ns, Y, h, Tg, 200.0f, Tmax);
+    TEta[idx] = (double)T; qrelEta[idx] = 0.0; QdEta[idx] = 0.0;
+    const bool interior = (k > 0 && k < ne - 1);
+    flag[idx] = (doChem && g_cmc.chemOn && interior && Om[idx] >= g_cmc.pdfFloor && (double)T >= g_cmc.Tfreeze) ? 1 : 0;
+}
+
+__global__ void cmc_stepD1f_chem_d(geom_int nCells, geom_int nCells_all, int nActive, const int* list,
+                                   const flow_float* P, const flow_float* dt_local, const double* Om, flow_float* Q, const double* TEta,
+                                   double* qrelEta, double* QdEta, double* omegaAcc, double* jacAcc, int accumSrc)
+{
+    const int ia = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ia >= nActive) return;
+    const size_t idx = (size_t)list[ia];
+    const int ns = g_cmc.nSpecies;
+    const int k = (int)(idx / nCells); const geom_int ic = (geom_int)(idx % nCells);
+    const double om = Om[idx];
+    const float T = (float)TEta[idx];
+    float Y[THERMO_MAX_SPECIES]; float ysum = 0.0f;
+    for (int s = 0; s < ns; ++s) { float y = Q[sl(s, k) * nCells_all + ic]; if (y < 0.0f) y = 0.0f; Y[s] = y; ysum += y; }
+    if (ysum > 0.0f) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+    float h = Q[sl(ns, k) * nCells_all + ic];
+    const double dtau = (double)dt_local[ic] * g_cmc.dtScale;
+    const float rhoEta = P[ic] / (chemf_R_mix(g_spf, ns, Y) * T);
+    float omega[THERMO_MAX_SPECIES], Jf[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES], Qd = 0.0f;
+    chemf_source(g_spf, &g_rtf, rhoEta, fminf(T, (float)g_cmc.Tmax), Y, omega, &Qd, Jf);
+    if (accumSrc) {
+        for (int s = 0; s < ns; ++s) atomicAdd(&omegaAcc[(size_t)s * nCells + ic], om * (double)omega[s]);
+        for (int i = 0; i < ns * ns; ++i) atomicAdd(&jacAcc[(size_t)ic * ns * ns + i], om * (double)Jf[i]);
+    }
+    QdEta[idx] = om * (double)Qd;
+    double A[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES], rhs[THERMO_MAX_SPECIES];
+    for (int s = 0; s < ns; ++s) { for (int q = 0; q < ns; ++q) A[s*ns + q] = -dtau * (double)Jf[s*ns + q]; A[s*ns + s] += 1.0; rhs[s] = dtau * (double)omega[s] / (double)rhoEta; }
+    if (cmc_solve_dense(ns, A, rhs)) {
+        double qr = 0.0;
+        for (int s = 0; s < ns; ++s) qr -= om * ((double)g_spf[s].h_datum / (double)g_spf[s].MW) * rhs[s];
+        qrelEta[idx] = qr;
+        ysum = 0.0f;
+        for (int s = 0; s < ns; ++s) { Y[s] = fmaxf(Y[s] + (float)rhs[s], 0.0f); ysum += Y[s]; }
+        if (ysum > 0.0f) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+        h += (float)(dtau * (double)Qd / (double)rhoEta);
+        for (int s = 0; s < ns; ++s) Q[sl(s, k) * nCells_all + ic] = Y[s];
+        Q[sl(ns, k) * nCells_all + ic] = h;
+    }
+}
+
+// 全スライス一括の point-implicit 更新 (scalarTimeIntegration_d の timeIntegration 11 と同式: coef_N=1, coef_M=0, coef_Res=1,
+//   ρφ = ρφ_N + (res Δτ/V) / (1 + Δτ(src_jac + diag/V)), floor なし)。410 回の小起動を 1 回にする。
+__global__ void cmc_q_timeint_d(geom_int nCells, int nSlice, geom_int nCells_all, const flow_float* dt_local, const geom_float* vol,
+                                flow_float* roQ, const flow_float* resQ, const flow_float* sjQ, const flow_float* diagQ)
+{
+    const size_t idx = (size_t)blockDim.x * blockIdx.x + threadIdx.x;
+    if (idx >= (size_t)nSlice * nCells) return;
+    const int s = (int)(idx / nCells); const geom_int ic = (geom_int)(idx % nCells);
+    const size_t i = (size_t)s * nCells_all + ic;
+    const flow_float dt_l = dt_local[ic]; const geom_float v = vol[ic];
+    const flow_float fac = static_cast<flow_float>(1.0) + dt_l * (sjQ[i] + diagQ[i] / v);
+    roQ[i] = roQ[i] + (resQ[i] * dt_l / v) / fac;
+}
+
+// (E) node 毎: roQ 再同期, 診断, PDF 平均ソースの書き出し (旧 kernel の末尾と同じ)
+__global__ void cmc_stepE_finalize_d(geom_int nCells, geom_int nCells_all, const flow_float* ro, const flow_float* dt_local, flow_float* const* roY_dev,
+                                     const flow_float* Q, flow_float* roQ, const double* Om, const double* TEta, const double* qrelEta, const double* QdEta,
+                                     const double* ypdfD, const double* hpdfD, const double* omegaAcc, const double* jacAcc,
+                                     flow_float* omegaBar, flow_float* qdotBar, flow_float* jacBar, flow_float* cmc_dY, flow_float* cmc_TQmax,
+                                     flow_float* ypdfOut, flow_float* hpdfOut, flow_float* tauOut, flow_float* cmc_TQst,
+                                     flow_float* cmc_xiOm, flow_float* cmc_xipdf, flow_float* dpdfOut, flow_float* qrelOut)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int ns = g_cmc.nSpecies, ne = g_cmc.nEta;
+    const double rho = (double)ro[ic];
+    double TQmax = 0.0, TQst = 0.0, qrel = 0.0, qbar = 0.0, xo = 0.0;
+    for (int k = 0; k < ne; ++k) {
+        const size_t i = (size_t)k * nCells + ic;
+        const double T = TEta[i];
+        if (!(T == T)) TQmax = nan("");
+        if (T > TQmax) TQmax = T;
+        if (k == g_cmc.kSt) TQst = T;
+        qrel += qrelEta[i]; qbar += QdEta[i]; xo += Om[i] * g_cmc.eta[k];
+    }
+    for (int s = 0; s <= ns; ++s) for (int k = 0; k < ne; ++k) { const size_t i = sl(s, k) * nCells_all + ic; roQ[i] = (flow_float)(rho * (double)Q[i]); }
+    double dy = 0.0, bpdf = 0.0;
+    for (int s = 0; s < ns; ++s) {
+        const double yp = ypdfD[(size_t)s * nCells + ic];
+        const double ym = (double)roY_dev[s][ic] / fmax(rho, 1.0e-30); dy = fmax(dy, fabs(yp - ym));
+        bpdf += g_bilger.c[s] * yp;
+        dpdfOut[(size_t)s * nCells + ic] = (flow_float)(yp - (xo * g_cmc.YF[s] + (1.0 - xo) * g_cmc.YO[s]));
+        ypdfOut[(size_t)s * nCells + ic] = (flow_float)yp;
+        omegaBar[(size_t)s * nCells + ic] = (flow_float)omegaAcc[(size_t)s * nCells + ic];
+    }
+    cmc_dY[ic] = (flow_float)dy; cmc_TQmax[ic] = (flow_float)TQmax; cmc_TQst[ic] = (flow_float)TQst;
+    cmc_xiOm[ic] = (flow_float)xo; cmc_xipdf[ic] = (flow_float)fmin(fmax((bpdf - g_bilger.betaO) / (g_bilger.betaF - g_bilger.betaO), 0.0), 1.0);
+    hpdfOut[ic] = (flow_float)hpdfD[ic];
+    tauOut[ic]  = (flow_float)fmax((double)dt_local[ic] * g_cmc.relax, 1.0e-9);
+    qdotBar[ic] = (flow_float)qbar; qrelOut[ic] = (flow_float)qrel;
+    for (int i = 0; i < ns * ns; ++i) jacBar[(size_t)ic * ns * ns + i] = (flow_float)jacAcc[(size_t)ic * ns * ns + i];
+}
+
 // couple 3: 平均場の化学種・温度を PDF 積分値で上書き (文献 RANS-CMC の標準: 平均スカラーは CMC から診断)。
 //   roY_s = ρ̄ Ỹ_pdf,s (正規化), T̃ = T(h̃_pdf, Ỹ_pdf), roe = ρ̄ (e_int(T̃,Ỹ) + |u|²/2), e_int = h − R_mix T (sensible datum)。
 __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* hpdf,
@@ -649,6 +933,29 @@ ScalarTransportDesc sliceDesc(int s, const solverConfig& cfg)
 
 } // namespace
 
+// 区間計測: 環境変数 CMC_TIMING=<steps> で、その step 数毎に各区間の GPU 時間 (ms/step 平均) を stdout に出す
+struct CmcTimer {
+    int every = 0; int count = 0; cudaEvent_t ev[8]; double acc[7] = {0,0,0,0,0,0,0}; bool init = false;
+    void begin() {
+        if (!init) { const char* e = std::getenv("CMC_TIMING"); every = e ? std::atoi(e) : 0; if (every > 0) for (auto& x : ev) cudaEventCreate(&x); init = true; }
+        if (every > 0) cudaEventRecord(ev[0]);
+    }
+    void mark(int i) { if (every > 0) cudaEventRecord(ev[i]); }
+    void end(int n, const char* const* names) {
+        if (every <= 0) return;
+        cudaEventSynchronize(ev[n]);
+        for (int i = 0; i < n; ++i) { float ms = 0; cudaEventElapsedTime(&ms, ev[i], ev[i + 1]); acc[i] += ms; }
+        if (++count % every == 0) {
+            std::printf("[cmc timing ms/step]");
+            for (int i = 0; i < n; ++i) { std::printf(" %s=%.1f", names[i], acc[i] / every); acc[i] = 0; }
+            std::printf("\n");
+        }
+    }
+};
+static CmcTimer g_timerR, g_timerU, g_timerS;
+static int* g_activeFlag = nullptr; static int* g_activeList = nullptr; static int g_nActive = 0;   // 化学を評価する (node,η) 対の圧縮リスト (ワープ発散回避)
+static unsigned long long* g_omHist = nullptr;   // 計測用: 活性対の Ω 分布 [<1e-5, <1e-4, <1e-3, ≥1e-3]
+
 // デバッグプローブ: 環境変数 CMC_PROBE_NODE=<node index> [CMC_PROBE_EVERY=<steps>] で、その node の Q(η) を stdout に出す
 static void cmcProbe(const char* tag)
 {
@@ -701,6 +1008,57 @@ const flow_float* cmc_omega_device_ptr() { return g_omega; }
 const flow_float* cmc_qdot_device_ptr()  { return g_qdot; }
 const flow_float* cmc_jac_device_ptr()   { return g_jac; }
 
+// cmc_step の起動: 既定は分割版 (A–E)。環境変数 CMC_STEP_LEGACY=1 で旧 1-kernel 版 (A/B 比較用)。
+static void cmcStepLaunch(cudaConfig& cuda_cfg, variables& var, int doChem)
+{
+    static int legacy = -1;
+    if (legacy < 0) { const char* e = std::getenv("CMC_STEP_LEGACY"); legacy = (e && std::atoi(e) != 0) ? 1 : 0; }
+    if (legacy) {
+        cmc_step_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+            g_nCells, g_nCellsAll, thermo_species_device_ptr(), chemistry_table_device(),
+            var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
+            var.c_d.at("dt_local"), species_roY_device_ptr(),
+            g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
+            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), doChem, var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"), g_dpdf, g_qrel);
+        return;
+    }
+    const int ns = g_cmc_host.nSpecies, ne = g_cmc_host.nEta, blk = 256;
+    const int accumSrc = (g_cmc_host.couple == 1 || g_cmc_host.couple == 2) ? 1 : 0;
+    auto grid = [&](size_t n) { return (unsigned)((n + blk - 1) / blk); };
+    g_timerS.begin();
+    cmc_stepA_weights_d<<<grid(g_nCells), blk>>>(g_nCells, var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"), g_OmD, g_chiEtaD);
+    g_timerS.mark(1);
+    if (doChem) cmc_stepB_etadiff_d<<<grid((size_t)(ns + 1) * g_nCells), blk>>>(g_nCells, g_nCellsAll, var.c_d.at("dt_local"), g_chiEtaD, g_Q);
+    g_timerS.mark(2);
+    cmc_stepC_average_d<<<grid(g_nCells), blk>>>(g_nCells, g_nCellsAll, g_OmD, g_Q, g_ypdfD, g_hpdfD);
+    g_timerS.mark(3);
+    if (accumSrc) { gpuErrchk( cudaMemsetAsync(g_omegaAccD, 0, (size_t)ns * g_nCells * sizeof(double)) ); gpuErrchk( cudaMemsetAsync(g_jacAccD, 0, (size_t)ns * ns * g_nCells * sizeof(double)) ); }
+    const size_t nPair = (size_t)ne * g_nCells;
+    if (g_cmcFp32) cmc_stepD0f_temp_d<<<grid(nPair), blk>>>(g_nCells, g_nCellsAll, g_OmD, g_Q, g_TEtaD, g_qrelEtaD, g_QdEtaD, g_activeFlag, doChem);
+    else cmc_stepD0_temp_d<<<grid(nPair), blk>>>(g_nCells, g_nCellsAll, thermo_species_device_ptr(), g_OmD, g_Q, g_TEtaD, g_qrelEtaD, g_QdEtaD, g_activeFlag, doChem);
+    {   // 活性対の圧縮リスト (thrust copy_if; 順序は idx 昇順で決定的)
+        thrust::device_ptr<int> flag(g_activeFlag), list(g_activeList);
+        auto end = thrust::copy_if(thrust::counting_iterator<int>(0), thrust::counting_iterator<int>((int)nPair), flag, list, thrust::identity<int>());
+        g_nActive = (int)(end - list);
+    }
+    if (g_timerS.every > 0 && !g_omHist) { gpuErrchk( cudaMalloc((void**)&g_omHist, 4 * sizeof(unsigned long long)) ); gpuErrchk( cudaMemset(g_omHist, 0, 4 * sizeof(unsigned long long)) ); }
+    if (g_nActive > 0 && g_cmcFp32) cmc_stepD1f_chem_d<<<grid((size_t)g_nActive), blk>>>(g_nCells, g_nCellsAll, g_nActive, g_activeList,
+        var.c_d.at("P"), var.c_d.at("dt_local"), g_OmD, g_Q, g_TEtaD, g_qrelEtaD, g_QdEtaD, g_omegaAccD, g_jacAccD, accumSrc);
+    else if (g_nActive > 0) cmc_stepD1_chem_d<<<grid((size_t)g_nActive), blk>>>(g_nCells, g_nCellsAll, g_nActive, g_activeList, thermo_species_device_ptr(), chemistry_table_device(),
+        var.c_d.at("P"), var.c_d.at("dt_local"), g_OmD, g_Q, g_TEtaD, g_qrelEtaD, g_QdEtaD, g_omegaAccD, g_jacAccD, accumSrc, g_omHist);
+    g_timerS.mark(4);
+    cmc_stepE_finalize_d<<<grid(g_nCells), blk>>>(g_nCells, g_nCellsAll, var.c_d.at("ro"), var.c_d.at("dt_local"), species_roY_device_ptr(),
+        g_Q, g_roQ, g_OmD, g_TEtaD, g_qrelEtaD, g_QdEtaD, g_ypdfD, g_hpdfD, g_omegaAccD, g_jacAccD,
+        g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
+        g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"), g_dpdf, g_qrel);
+    g_timerS.mark(5);
+    { static const char* nm[] = {"A_weights", "B_etadiff", "C_average", "D_chem", "E_final"}; g_timerS.end(5, nm);
+      if (g_timerS.every > 0 && (g_timerS.count % g_timerS.every) == 0) { unsigned long long hh[4] = {0,0,0,0}; gpuErrchk( cudaMemcpy(hh, g_omHist, sizeof(hh), cudaMemcpyDeviceToHost) ); gpuErrchk( cudaMemset(g_omHist, 0, sizeof(hh)) );
+        const double tot = (double)(hh[0] + hh[1] + hh[2] + hh[3]) / g_timerS.every;
+        std::printf("[cmc active (node,eta) pairs] %d of %zu (%.1f%%); Omega hist per step: <1e-5 %.0f, <1e-4 %.0f, <1e-3 %.0f, >=1e-3 %.0f\n", g_nActive, (size_t)ne * g_nCells,
+                    100.0 * g_nActive / (double)((size_t)ne * g_nCells), hh[0] / (double)g_timerS.every, hh[1] / (double)g_timerS.every, hh[2] / (double)g_timerS.every, hh[3] / (double)g_timerS.every); (void)tot; } }
+}
+
 void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
 {
     g_q_ready = false;
@@ -746,6 +1104,13 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     gpuErrchk( cudaMemcpy(hh, hdev, 2 * sizeof(double), cudaMemcpyDeviceToHost) ); cudaFree(hdev);
     c.hF = hh[0]; c.hO = hh[1];
     gpuErrchk( cudaMemcpyToSymbol(g_cmc, &c, sizeof(CmcParams)) );
+    g_cmcFp32 = cfg.chemCmcFp32;
+    if (g_cmcFp32) {   // fp32 係数表を __constant__ へ
+        static SpeciesThermoF spf[THERMO_MAX_SPECIES]; static ReactionTableF rtf;
+        chemf_build_tables(thermo_species_host(), ns, rt, spf, &rtf);
+        gpuErrchk( cudaMemcpyToSymbol(g_spf, spf, sizeof(spf)) );
+        gpuErrchk( cudaMemcpyToSymbol(g_rtf, &rtf, sizeof(ReactionTableF)) );
+    }
 
     g_nSlice = (ns + 1) * ne; g_nCellsAll = msh.nCells_all; g_nCells = msh.nCells;
     const size_t bytes = (size_t)g_nSlice * g_nCellsAll * sizeof(flow_float);
@@ -762,6 +1127,11 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     if (g_qcap) cudaFree(g_qcap); gpuErrchk( cudaMalloc((void**)&g_qcap, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qcap, 0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_tau)  cudaFree(g_tau);  gpuErrchk( cudaMalloc((void**)&g_tau,  (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_tau,  0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_jac) cudaFree(g_jac); gpuErrchk( cudaMalloc((void**)&g_jac, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_jac, 0, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) );
+    { auto allocD = [&](double** pp, size_t n) { if (*pp) cudaFree(*pp); gpuErrchk( cudaMalloc((void**)pp, n * sizeof(double)) ); gpuErrchk( cudaMemset(*pp, 0, n * sizeof(double)) ); };
+      const size_t nk = (size_t)ne * msh.nCells, nsN = (size_t)ns * msh.nCells;
+      allocD(&g_OmD, nk); allocD(&g_chiEtaD, nk); allocD(&g_TEtaD, nk); allocD(&g_qrelEtaD, nk); allocD(&g_QdEtaD, nk);
+      allocD(&g_ypdfD, nsN); allocD(&g_hpdfD, (size_t)msh.nCells); allocD(&g_omegaAccD, nsN); allocD(&g_jacAccD, (size_t)msh.nCells * ns * ns); }
+    for (int** pp : {&g_activeFlag, &g_activeList}) { if (*pp) cudaFree(*pp); gpuErrchk( cudaMalloc((void**)pp, (size_t)ne * msh.nCells * sizeof(int)) ); }
 
     cmc_q_init_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(msh.nCells_all, var.c_d.at("ro"), g_Q, g_roQ);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
@@ -775,12 +1145,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     }
     // PDF 積分値 (Ỹ_pdf, h̃_pdf, τ) を初期場で一度埋める (化学は走らせない)。これを怠ると初回の残差組み立てで
     // couple 2 の緩和ソースが Ỹ_pdf=0 に向かって全種を剥ぎ取り step 2 で NaN になる (run_0083 初版)。
-    cmc_step_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
-        msh.nCells, msh.nCells_all, thermo_species_device_ptr(), chemistry_table_device(),
-        var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
-        var.c_d.at("dt_local"), species_roY_device_ptr(),
-        g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
-        g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 0, var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"), g_dpdf, g_qrel);
+    cmcStepLaunch(cuda_cfg, var, 0);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
     gpuErrchk( cudaMemcpy(g_dpdf_prev, g_dpdf, (size_t)ns * msh.nCells * sizeof(flow_float), cudaMemcpyDeviceToDevice) );   // 初期の反応離脱 (=0 or 復元場の値) を基準に
     g_q_ready = true; g_cmcStep = 0;
@@ -793,12 +1158,17 @@ void cmcQTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh,
 {
     if (!g_q_ready) return;
     const size_t bytes = (size_t)g_nSlice * g_nCellsAll * sizeof(flow_float);
+    g_timerR.begin();
     CHECK_CUDA_ERROR(cudaMemset(g_resQ, 0, bytes)); CHECK_CUDA_ERROR(cudaMemset(g_diagQ, 0, bytes)); CHECK_CUDA_ERROR(cudaMemset(g_sjQ, 0, bytes));
+    g_timerR.mark(1);
     for (int s = 0; s < g_nSlice; ++s) scalarTransportResidual_d(cfg, cuda_cfg, msh, var, sliceDesc(s, cfg));
+    g_timerR.mark(2);
     cmcProbe("after-residual");
     { const size_t n = (size_t)g_nCells * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_nonconservative_fix_d<<<grid, blk>>>(g_nCells, g_nSlice, g_nCellsAll, var.c_d.at("res_ro"), g_Q, g_resQ); }
+    g_timerR.mark(3);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    { static const char* nm[] = {"memset", "residual", "nc_fix"}; g_timerR.end(3, nm); }
 }
 
 void applyCmcQBoundaries(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
@@ -821,24 +1191,29 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
 {
     if (!g_q_ready) return;
     cmcProbe("before-transport");
+    g_timerU.begin();
     // (0) roQ を現在の ρ̄ で作り直す (ρ̄ は直前の流れ更新で変わっている)
     { const size_t n = (size_t)g_nCellsAll * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_resync_d<<<grid, blk>>>(g_nCellsAll, g_nSlice, var.c_d.at("ro"), g_Q, g_roQ); }
+    g_timerU.mark(1);
     // (1) 物理空間の輸送 point-implicit (各スライス; N=M=現在値のエイリアス)
-    for (int s = 0; s < g_nSlice; ++s) scalarTimeIntegration_d(0, cfg, cuda_cfg, msh, var, sliceDesc(s, cfg));
+    if (cfg.timeIntegration == 11) {
+        const size_t n = (size_t)g_nCells * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
+        cmc_q_timeint_d<<<grid, blk>>>(g_nCells, g_nSlice, g_nCellsAll, var.c_d.at("dt_local"), var.c_d.at("volume"), g_roQ, g_resQ, g_sjQ, g_diagQ);
+    } else {
+        for (int s = 0; s < g_nSlice; ++s) scalarTimeIntegration_d(0, cfg, cuda_cfg, msh, var, sliceDesc(s, cfg));
+    }
+    g_timerU.mark(2);
     { const size_t n = (size_t)g_nCells * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_primitive_d<<<grid, blk>>>(g_nCells, g_nSlice, g_nCellsAll, var.c_d.at("ro"), g_roQ, g_Q); }
+    g_timerU.mark(3);
     cmcProbe("after-transport");
     if (cfg.outStepInterval > 0 && ((g_cmcStep + 1) % cfg.outStepInterval) == 0) cmcQWrite("cmc_Q.bin");   // 最新の Q を上書き保存 (restart 用)
     // (2) η 拡散 + 化学 + PDF 平均 (interval 毎)
     ++g_cmcStep;
     if (cfg.chemCmcInterval <= 1 || (g_cmcStep % cfg.chemCmcInterval) == 0) {
-        cmc_step_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
-            g_nCells, g_nCellsAll, thermo_species_device_ptr(), chemistry_table_device(),
-            var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
-            var.c_d.at("dt_local"), species_roY_device_ptr(),
-            g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
-            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1, var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"), g_dpdf, g_qrel);
+        cmcStepLaunch(cuda_cfg, var, 1);
+        g_timerU.mark(4);
         if (g_cmc_host.couple == 4 || g_cmc_host.couple == 5) {
             cmc_blend_species_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, var.c_d.at("ro"), species_roY_device_ptr(), var.c_d.at("roe"),
@@ -851,6 +1226,8 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
                 var.c_d.at("ro"), var.c_d.at("roUx"), var.c_d.at("roUy"), var.c_d.at("roUz"),
                 species_roY_device_ptr(), var.c_d.at("roe"), g_cmc_host.Tmax);
         }
-    }
+    } else { g_timerU.mark(4); }
+    g_timerU.mark(5);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    { static const char* nm[] = {"resync", "timeint", "primitive", "cmc_step", "blend"}; g_timerU.end(5, nm); }
 }

@@ -129,7 +129,7 @@ $\tilde Y$ を PDF 積分で上書きする「full coupling」は採らない (�
 | 元素組成 | `chemistry_mech_io.hpp` | `species[].composition` を読み、元素×種の行列 $a_{e,s}$ と Bilger 係数を `ReactionTable` に持つ |
 | 混合分率診断 | `cuda_forge/cmc_d.cu` (`cmc_mixfrac_d`) | $\tilde Y$ → $\tilde\xi$ (Bilger)。`xi` を出力変数に登録 |
 | 分散輸送 | `cuda_forge/cmc_d.cu` + `scalarTransport_d` | `roXiVar` (保存量), `xiVar`, `res_roXiVar`, `transport_diag_xiVar`, `src_jac_xiVar`。生成 $2\mu_t/Sc_t|\nabla\tilde\xi|^2$・散逸 $\bar\rho\tilde\chi$ を点陰解 (散逸は `src_jac`) |
-| 条件付きスカラー | `cuda_forge/cmc_d.{cuh,cu}` | `Q` を `[node][var][eta]` で保持 (double)。物理空間輸送は `scalarTransport_d` を $N_\eta\times(n_s+1)$ 回 (var/η ループ)、$\eta$ 拡散 + 化学は node 毎のカーネル (三重対角 + 種ブロック LU) |
+| 条件付きスカラー | `cuda_forge/cmc_d.{cuh,cu}` | `Q` を `[slice][node]` (slice = var·$N_\eta$+k, `flow_float`) で保持。物理空間輸送の残差は `scalarTransport_d` を $N_\eta\times(n_s+1)$ 回、時間積分は全スライス一括 (`cmc_q_timeint_d`)。$\eta$ 拡散 + 化学は 5 カーネルに分割 (下記 §4): (A) node 毎 β-PDF 重み・AMC、(B) (node,var) 毎 Thomas、(C) node 毎 PDF 平均、(D) (node,η) 毎の化学 (活性対を圧縮リスト化; 速度定数・Jacobian は fp32 `chemistry_f32_d.cuh`、9×9 点陰解は double)、(E) node 毎の診断・ρ̄Q 再同期 |
 | β-PDF・積分 | `cmc_d.cuh` (`cmc_beta_pdf`, `cmc_integrate`) | Gauss–Jacobi でなく $\eta$ 格子上の台形則 + β-PDF の解析正規化 (端の特異性は不完全 β 関数で処理) |
 | ソース結合 | `chemistry_d.cu` (`chemistry_source_d` の `cmcMode` 分岐) | couple 2: $\bar\rho(\tilde Y^{pdf}-\tilde Y)/\tau$ 緩和 (既定候補), couple 1: PDF 平均 $\bar{\dot\omega}$ (不採用・診断) |
 | 設定 | `physProp.chemistry.cmc: {enabled, nEta, etaPow, pdfFloor, couple (1/2), chem, fuelT, oxidizerT, dtScale, interval, relax, xiSt}` | [solver-settings.md](../procedures/solver-settings.md) |
@@ -149,3 +149,24 @@ $\tilde Y$ を PDF 積分で上書きする「full coupling」は採らない (�
    $T_c\pm30$ K 内での一致を判定。中心軸・半径 T の平均差 ±30 K (実験読み取り誤差) 以内を目標。
 3. **Burrows–Kurkov** (case/47): 着火位置 18–25 cm。
 4. **回帰**: `tci: 0/1` はビット不変。
+
+### 4. 性能 (2026-09-05, Cabra 60k node, $N_\eta$=41, Li 9 種 21 反応, RTX 3060)
+
+初版の node 毎 1 カーネル (`cmc_step_d`, 1 thread が 41 η 点の化学を直列) は **CMC 部分だけで ~650 ms/step** (混合のみ 61 ms) だった。
+`CMC_TIMING=<steps>` (環境変数; cudaEvent 区間計測) と ncu で律速を特定し、以下の順に詰めた (数値は run_0098 と GPU 共用中の相対値。
+場は各段階で double 参照と相対 $10^{-6}$–$10^{-5}$ で一致することを 40 step の A/B で確認)。
+
+| 段階 | 変更 | `cmc_step` [ms/step] |
+| --- | --- | --- |
+| 初版 | node 毎 1 カーネル | 635 |
+| 分割 (A–E) | (node,η) thread 化 | 608 (占有率は律速でなかった) |
+| 活性対の圧縮 | フラグ → `thrust::copy_if` で (node,η) リスト化、ワープ発散を除去 (活性 28 %) | 529 |
+| T 反転のウォームスタート | 前 step の $T(\eta)$ を Newton 初期値に、$\ln T$ を種ループ外へ | 384 |
+| **fp32 化学** (`cmc.fp32: 1`, 既定) | ncu: FP64 パイプ 87 % が律速 (GA10x は fp64 = fp32 の 1/64)。速度定数・Jacobian・T 反転を float (`chemistry_f32_d.cuh`; 係数表は `__constant__`)、点陰解 Gauss は double | 162 |
+| η 拡散 float + 時間積分の一括化 | Thomas を float (対角優位)、410 スライスの point-implicit 更新を 1 カーネル | **133** (+ 残差 41) |
+
+平均場の化学 (`chemistry_d.cu`) は double のまま。fp32 化の精度根拠: 速度定数は対数空間で評価するので範囲は足りる、
+$\omega=k_fP_f-k_bP_b$ の平衡近傍の桁落ちは $10^{-7}\max(q_f,q_b)$ で点陰解が減衰する、$g_s$ の絶対誤差 $10^{-5}$ は $K_c$ の相対 $4\times10^{-5}$。
+残る大物は物理空間輸送の残差 (410 スライス × 2 カーネル, 41 ms) で、面幾何を共有する融合カーネル化が次の候補 (plan §5.1)。
+旧カーネルは `CMC_STEP_LEGACY=1` で残してある (A/B 参照用)。
+
