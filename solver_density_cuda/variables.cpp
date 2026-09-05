@@ -167,7 +167,13 @@ void variables::registerMixfrac()
         this->c.emplace(name, std::vector<flow_float>{});
         this->c_d.emplace(name, nullptr);
     }
-    for (const auto& name : {std::string("roXiVar"), std::string("xiVar"), std::string("xi"), std::string("chi")})
+    // CMC 診断 (cmc.enabled のときだけ意味を持つが、確保は軽いので常に): PDF 積分 Ỹ と輸送 Ỹ の最大差、条件付き T の最大
+    for (const auto& name : {std::string("cmc_dY"), std::string("cmc_TQmax")}) {
+        this->cellValNames.push_back(name);
+        this->c.emplace(name, std::vector<flow_float>{});
+        this->c_d.emplace(name, nullptr);
+    }
+    for (const auto& name : {std::string("roXiVar"), std::string("xiVar"), std::string("xi"), std::string("chi"), std::string("cmc_dY"), std::string("cmc_TQmax")})
         this->output_cellValNames.push_back(name);
     std::cout << "registerMixfrac: xi / roXiVar (variance) / chi registered\n";
 }

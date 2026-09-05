@@ -57,8 +57,8 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 | Phase | 内容 | 主要ファイル | 状態 |
 | --- | --- | --- | --- |
 | **A** 混合分率インフラ | 元素組成読込 (`composition`)、Bilger $\tilde\xi$ 診断カーネル、分散 `roXiVar` の登録・輸送・ソース、$\tilde\chi$、出力。Cabra 混合場で検証 | `chemistry_mech_io.hpp`, `chemistry_d.cuh`, `cuda_forge/cmc_d.{cuh,cu}` (新規), `variables.cpp`, `main.cpp`, `input/solverConfig.*` | **実装済 (2026-09-05)**, 検証中 (§9) |
-| **B** 条件付きスカラー | `Q` ストレージ・$\eta$ 格子・初期化 (混合線)・物理空間輸送 (scalarTransport ループ)・$\eta$ 拡散陰解 (AMC)・各 $\eta$ 点の化学点陰解・境界条件 | `cmc_d.{cuh,cu}`, `scalarTransport_d`, `chemistry_d` | todo |
-| **C** ソース結合 | β-PDF 積分で $\bar{\dot\omega},\bar{\dot Q}$, 対角 Jacobian を置換 (`tci: 2`)、`cmc_dY` 診断、`jacobianInterval`/PDF 閾値スキップ | `chemistry_d.cu`, `speciesTransport_d.cu` | todo |
+| **B** 条件付きスカラー | `Q` ストレージ・$\eta$ 格子・初期化 (混合線)・物理空間輸送 (scalarTransport ループ)・$\eta$ 拡散陰解 (AMC)・各 $\eta$ 点の化学点陰解・境界条件 | `cmc_d.{cuh,cu}`, `scalarTransport_d`, `chemistry_d` | **実装済 (2026-09-05)**, 凍結検証 PASS (§9 (3)) |
+| **C** ソース結合 | β-PDF 積分で $\bar{\dot\omega},\bar{\dot Q}$, ブロック Jacobian を置換 (`cmc.couple: 1`)、`cmc_dY` 診断、PDF 閾値スキップ | `chemistry_d.cu` (`cmcOmega/cmcQdot/cmcJac` 引数) | **実装済 (2026-09-05)**, 反応 ON 検証中 (`run_0082`) |
 | **D** 検証 | 凍結混合整合 → Cabra $H(T_c)$ 応答曲線 (5 点) → BK 着火位置 → 回帰 (`tci 0/1` ビット不変) | `case/48`, `case/47`, `tests/` | todo |
 
 ### 5.1 残作業表 (優先順)
@@ -67,9 +67,9 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 | --- | --- | --- |
 | 1 | Phase A: 元素組成読込 + Bilger $\tilde\xi$ 診断 | **done 2026-09-05** (カーネルは numpy 再計算と 3e-8 一致; Y_H₂ 由来 ξ との差 ≤0.068 は差分拡散の物理) |
 | 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場で分散の妥当性 | 実装済・300 step smoke OK (実現可能性 1e-12, χ 10²–10³ 1/s)。発達場 `run_0080` (5000 step) で確認中 |
-| 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 (化学 OFF で $Q$ が線形) | todo |
-| 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | todo |
-| 5 | Phase C: ソース結合 (`tci: 2`)、`cmc_dY` | todo |
+| 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 | **done 2026-09-05**: `run_0081` で条件付き T が全 node 1045.00 K (混合線保存)、`cmc_dY` ≤0.017 (差分拡散分のみ) |
+| 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | 実装済 (凍結で η 拡散の線形不変を確認; 化学は `run_0082` で検証中) |
+| 5 | Phase C: ソース結合 (`cmc.couple`)、`cmc_dY` | 実装済 (`run_0082` で検証中)。性能: CMC 化学 OFF でも 403 ms/step (混合分率のみ 61) → スライス毎 820 カーネル起動が主因、融合カーネル化は Phase D 後 |
 | 6 | Phase D: Cabra $T_c$ 1015/1030/1045/1060/1075 K の $H$ 応答曲線 (Y_OH>2e-4) vs 実験・文献、中心軸/半径 T ±30 K | todo |
 | 7 | Phase D: BK 着火位置、`tci 0/1` 回帰、性能 (PDF 閾値スキップ) | todo |
 | 8 | ドキュメント: `procedures/solver-settings.md` に `cmc` キー、`methods/index.md` | todo |
@@ -116,3 +116,13 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   **smoke `case/48 run_0079_mixfrac_smoke`** (run_0067 混合場, 化学 OFF, 300 step): NaN なし、`xi` は numpy 再計算と 3e-8 一致、
   `|xi − Y_H2/Y_H2,fuel|` 最大 0.068 はノズル出口リップの層流層 (差分拡散、`|ξ_H2−ξ_N2|` 0.148) で物理、分散の実現可能性違反 9e-13、
   χ̃ はせん断層で 10²–10³ 1/s、sqrt(var)/ξ ≈ 0.35–0.41 (文献 RMS/mean と同桁)。発達場は `run_0080` (5000 step)。
+- `2026-09-05 (3)` — **Phase B/C 実装**: `cmc_d.cu` に Q(η) の packed ストレージ ([slice][node], flow_float ×6 = 100 MB×6 @ Cabra 60k)、
+  混合線初期化 (流れの顕エンタルピーは device thermo で評価)、各スライスを `scalarTransport_d` に渡す物理空間輸送、
+  node 毎カーネル `cmc_step_d` (β-PDF 重み Ω_k: 端ビン解析処理 + 数値正規化、デルタは隣接 2 点配分; AMC の erfinv は host Newton で表化;
+  η 拡散は Thomas 陰解; 各 η 点で `chem_source` (jacMode 2) + 9×9 Gauss 消去の点陰解; PDF 平均 ω̄/Q̇̄/J̄ と Ỹ_pdf, T_Q max)、
+  `chemistry_source_d` に `cmcOmega/cmcQdot/cmcJac` を渡して平均場の Arrhenius を置換 (`cmc.couple: 1`)。config `physProp.chemistry.cmc`
+  (`nEta, etaPow, pdfFloor, couple, chem, fuelT, oxidizerT, dtScale, interval`; timeIntegration 11 のみ)。
+  **凍結検証 `run_0081_cmc_frozen`** (化学 OFF, couple 0): 初版は条件付き T が 998–1087 K と混合線上限 1045 K を超えた →
+  原因は保存形輸送のドリフト (未収束の平均流では Σṁ_f≠0 で一様 Q でも −Q Σṁ_f が残り、流れ側の Δρ と点陰解の Δρ が一致しないため
+  Q が (ρ+Δρ_s)/(ρ+Δρ_f) 倍ずつ動く)。`res_Q -= Q·res_ro` の非保存補正で **全 node 1045.00 K (厳密)** に。ρ̄Q の再同期も追加。
+  `cmc_dY` ≤0.017 は出口リップの差分拡散分 (Phase A と同じ)。反応 ON・結合 ON は `run_0082` (run_0080 混合場から 6000 step)。

@@ -864,6 +864,7 @@ cudaConfig initializeSimulation(
     speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
     condensationPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // φ = ρφ/ρ (液相モーメント読込済)
     cmcPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);   // xi, xiVar (mixfrac)
+    cmcQInit_d(cfg , cuda_cfg , msh , var);   // CMC 条件付きスカラー Q(η): 確保 + 混合線初期化 (cmc==0 で no-op)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
     // node-centered 壁 Dirichlet: IC の壁ノード速度を厳密 0 に初期化 (KE を roe から除去)。
     // この後 gasProperties が補正 roe から P/T を再計算する。cell/非 node では no-op。
@@ -881,6 +882,7 @@ cudaConfig initializeSimulation(
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
     applyCmcBoundaries(cfg , cuda_cfg , msh , var);
+    applyCmcQBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
     // 初期 setup でも周期勾配 gather を適用 (assembleResidual と整合; res_0 出力と初期診断を正しい合併勾配にする)。
     periodicGradientGather_d_wrapper(cfg , cuda_cfg , msh , var);
@@ -971,6 +973,7 @@ void assembleResidual(StepContext& s, int stage_index)
         applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyCondensationBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyCmcBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
+        applyCmcQBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
         calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -1018,6 +1021,7 @@ void assembleResidual(StepContext& s, int stage_index)
         ransGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         cmcMixfrac_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, ∇xi, ∇xiVar
         cmcVarianceTransport_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // 分散 ξ''² の移流+拡散+生成/散逸
+        cmcQTransport_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // Q(η) 各スライスの移流+拡散残差
         ransSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
@@ -1212,6 +1216,7 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
         cmcVarianceTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // φ=ρφ/ρ (出力/次残差用に同期)
         cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
+        cmcQUpdate_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // Q(η): 輸送 point-implicit → η 拡散 + 化学 → PDF 平均
     });
 }
 
@@ -1268,6 +1273,7 @@ void advanceExplicitRK(StepContext& s)
         cmcUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 φ を最終 ρφ と同期
         cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
+        cmcQUpdate_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // Q(η): 輸送 point-implicit → η 拡散 + 化学 → PDF 平均
     });
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
@@ -1384,6 +1390,7 @@ void advanceImplicitDualTime(StepContext& s)
             cmcVarianceTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
             condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
             cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
+            cmcQUpdate_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // Q(η): 輸送 point-implicit → η 拡散 + 化学 → PDF 平均
         });
     }
 

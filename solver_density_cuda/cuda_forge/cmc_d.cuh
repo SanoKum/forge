@@ -38,3 +38,18 @@ inline bool cmcMixfracEnabled(const solverConfig& cfg, const variables& var)
 {
     return cfg.chemMixfrac != 0 && var.mixfracRegistered != 0;
 }
+
+// ---------------------------------------------------------------------------
+// Phase B/C: 条件付きスカラー Q(η) (physProp.chemistry.cmc)。methods/chemistry_cmc.md 実装 §1。
+//   Q は [slice][node] の packed 配列 (slice = var*nEta + k, var = 0..n_s-1 が Y_α, n_s が h)。
+//   物理空間の移流+拡散は各スライスを scalarTransport_d に渡して流用、η 拡散 (AMC) と化学 (各 η 点の点陰解) は node 毎のカーネル。
+//   結合 (couple==1): PDF 平均の ω̄, Q̇̄, J̄ を chemistry_source_d に渡す (tci 2 相当)。
+// ---------------------------------------------------------------------------
+void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);   // 確保 + 混合線初期化 (restart 読込後)
+void cmcQTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);   // assembleResidual
+void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);      // 陰解法 inner
+void applyCmcQBoundaries(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+bool cmc_coupling_active();
+const flow_float* cmc_omega_device_ptr();   // [ns][nCells] PDF 平均 ω̄_s [kg/m3/s]
+const flow_float* cmc_qdot_device_ptr();    // [nCells] Q̇̄ [W/m3]
+const flow_float* cmc_jac_device_ptr();     // [nCells*ns*ns] PDF 平均 ∂ω_s/∂(ρY_k) [1/s]

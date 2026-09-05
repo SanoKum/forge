@@ -8,6 +8,7 @@
 #include "chemistry_d.cuh"
 #include "chemistry_mech_io.hpp"
 #include "chemistrySource_d.cuh"
+#include "cmc_d.cuh"
 #include "speciesTransport_d.cuh"
 
 static ReactionTable* g_rt_dev = nullptr;
@@ -183,6 +184,7 @@ void chemistry_init(solverConfig& cfg)
 }
 
 const ReactionTable* chemistry_table_host() { return g_table_loaded ? &g_rt_host : nullptr; }
+const ReactionTable* chemistry_table_device() { return g_rt_dev; }
 
 // -----------------------------------------------------------------------------
 // セルごとに ω_s, Q̇, 対角 Jacobian を評価し残差へ加算する。
@@ -205,7 +207,8 @@ __global__ void chemistry_source_d(
     flow_float* chem_cq,       // jacMode==2: [nCells*ns] ∂Q̇/∂(ρY_k) (nullptr 可)
     int tci, double cmix, int mixModel, int tauChemModel,     // PaSR (RANS SST): tci==1 で κ スケール
     const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa,
-    int frozenJac, flow_float* chem_diag)                     // frozenJac==1: Jacobian を再評価せず前回の対角 (chem_diag) を src_jac に足す
+    int frozenJac, flow_float* chem_diag,                     // frozenJac==1: Jacobian を再評価せず前回の対角 (chem_diag) を src_jac に足す
+    const flow_float* cmcOmega, const flow_float* cmcQdot, const flow_float* cmcJac)   // CMC 結合 (非 null): PDF 平均 ω̄/Q̇̄/J̄ で置換
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -233,7 +236,8 @@ __global__ void chemistry_source_d(
     int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
     if (frozenJac && mode > 0) {
         // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
-        chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, 0, J, nullptr);
+        if (cmcOmega) { for (int s = 0; s < nSpecies; ++s) omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; Qdot = (double)cmcQdot[ic]; }
+        else chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, 0, J, nullptr);
         const double V = (double)vol[ic];
         const double kappa = (double)chemKappa[ic];
         for (int s = 0; s < nSpecies; ++s) {
@@ -244,7 +248,14 @@ __global__ void chemistry_source_d(
         chemQdot[ic] = (flow_float)(kappa * Qdot);
         return;
     }
-    chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, mode, J, (mode > 0) ? dOdT : nullptr);
+    if (cmcOmega) {
+        // CMC 結合: 平均状態の Arrhenius ではなく条件付き空間の PDF 平均 (cmc_step_d) を使う。温度結合 (∂ω/∂T) は条件付き空間で処理済みなので 0。
+        for (int s = 0; s < nSpecies; ++s) { omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; dOdT[s] = 0.0; }
+        Qdot = (double)cmcQdot[ic];
+        for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = (mode > 0) ? (double)cmcJac[(size_t)ic*nSpecies*nSpecies + i] : 0.0;
+    } else {
+        chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, mode, J, (mode > 0) ? dOdT : nullptr);
+    }
 
     // 温度結合: ∂T/∂(ρY_k) = −e_k/(ρ c_v),  ∂T/∂(ρe) = 1/(ρ c_v)  (methods/chemistry.md §3)
     double dTdU[THERMO_MAX_SPECIES]; double inv_rhocv = 0.0;
@@ -372,7 +383,9 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         g_block_active ? g_jac_dev : nullptr, g_block_active ? g_jacroe_dev : nullptr, g_block_active ? g_cq_dev : nullptr,
         cfg.chemTci, cfg.chemTciCmix, cfg.chemTciMixModel, cfg.chemTciTauChem,
         rans ? var.c_d["roK"] : nullptr, rans ? var.c_d["roOmega"] : nullptr, var.c_d["vis_lam"], var.c_d["chemKappa"],
-        frozen ? 1 : 0, g_diag_dev);
+        frozen ? 1 : 0, g_diag_dev,
+        cmc_coupling_active() ? cmc_omega_device_ptr() : nullptr, cmc_coupling_active() ? cmc_qdot_device_ptr() : nullptr,
+        cmc_coupling_active() ? cmc_jac_device_ptr() : nullptr);
     ++g_stepCounter;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

@@ -32,6 +32,7 @@ void chemistryStrangHalfStep_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, 
 
 // host 側の反応表 (未初期化なら nullptr)。
 const ReactionTable* chemistry_table_host();
+const ReactionTable* chemistry_table_device();   // device 側の反応表 (CMC が各 η 点の化学に使う)
 
 // assembleResidual 内 (speciesTransport の直後) で呼ぶ: res_roY{s} += Vω_s, res_roe += VQ̇,
 // src_jac_Y{s} += max(0,−∂ω_s/∂(ρY_s))。chemistry off / 単成分では no-op。

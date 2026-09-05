@@ -649,6 +649,27 @@ void solverConfig::read(std::string fname)
                     throw std::runtime_error("'physProp.chemistry.mixfrac' requires 'mechanismFile' (element composition).");
                 if (this->chemMixfrac) std::cout << "[chemistry] mixture-fraction infrastructure ON (Bilger xi, variance transport, cChi=" << this->chemCchi << ")" << std::endl;
             }
+            if (ch["cmc"]) {
+                const YAML::Node cm = ch["cmc"];
+                this->chemCmc         = getOptionalValidatedValue<int>(cm, "enabled", 1, "physProp.chemistry.cmc");
+                this->chemCmcNEta     = getOptionalValidatedValue<int>(cm, "nEta", 41, "physProp.chemistry.cmc");
+                this->chemCmcEtaPow   = getOptionalValidatedValue<double>(cm, "etaPow", 1.5, "physProp.chemistry.cmc");
+                this->chemCmcPdfFloor = getOptionalValidatedValue<double>(cm, "pdfFloor", 1.0e-6, "physProp.chemistry.cmc");
+                this->chemCmcCouple   = getOptionalValidatedValue<int>(cm, "couple", 1, "physProp.chemistry.cmc");
+                this->chemCmcChem     = getOptionalValidatedValue<int>(cm, "chem", 1, "physProp.chemistry.cmc");
+                this->chemCmcTfuel    = getOptionalValidatedValue<double>(cm, "fuelT", 300.0, "physProp.chemistry.cmc");
+                this->chemCmcTox      = getOptionalValidatedValue<double>(cm, "oxidizerT", 300.0, "physProp.chemistry.cmc");
+                this->chemCmcDtScale  = getOptionalValidatedValue<double>(cm, "dtScale", 1.0, "physProp.chemistry.cmc");
+                this->chemCmcInterval = getOptionalValidatedValue<int>(cm, "interval", 1, "physProp.chemistry.cmc");
+                if (this->chemCmc) {
+                    if (!this->chemMixfrac) throw std::runtime_error("'physProp.chemistry.cmc' requires 'physProp.chemistry.mixfrac'.");
+                    if (this->chemCmcNEta < 5 || this->chemCmcNEta > 129) throw std::runtime_error("'physProp.chemistry.cmc.nEta' must be in [5,129].");
+                    if (this->chemCmcCouple && !this->chemEnabled) throw std::runtime_error("'physProp.chemistry.cmc.couple: 1' requires chemistry.enabled: 1.");
+                    if (this->timeIntegration != 11) throw std::runtime_error("'physProp.chemistry.cmc' is implemented for timeIntegration 11 (implicit) only.");
+                    std::cout << "[chemistry] CMC ON: nEta=" << this->chemCmcNEta << " couple=" << this->chemCmcCouple << " chem=" << this->chemCmcChem
+                              << " fuelT=" << this->chemCmcTfuel << " oxidizerT=" << this->chemCmcTox << std::endl;
+                }
+            }
             if (this->chemEnabled != 0) {
                 if (this->thermalMethod != 2) throw std::runtime_error("'physProp.chemistry.enabled: 1' requires thermalMethod: 2.");
                 if (this->nSpecies < 2)      throw std::runtime_error("'physProp.chemistry.enabled: 1' requires >=2 species.");

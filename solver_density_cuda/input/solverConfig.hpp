@@ -375,6 +375,17 @@ public:
     std::map<std::string, double> chemMixfracFuelX;  // 燃料流のモル分率 (種名 → X)。Bilger の β_F
     std::map<std::string, double> chemMixfracOxidX;  // 酸化剤流のモル分率。β_O
     double chemCchi = 2.0;                     // χ̃ = cChi (ε/k) ξ''²、ε/k = β* ω
+    // CMC (physProp.chemistry.cmc, methods/chemistry_cmc.md)。mixfrac 必須。既定 off でビット不変。
+    int    chemCmc = 0;             // 1: 条件付きスカラー Q(η) を解く
+    int    chemCmcNEta = 41;        // η 格子点数
+    double chemCmcEtaPow = 1.5;     // η_k = (k/(N-1))^pow (希薄側を密に)
+    double chemCmcPdfFloor = 1.0e-6;// Ω_k (β-PDF 重み) がこれ未満の η 点は化学をスキップ
+    int    chemCmcCouple = 1;       // 1: PDF 平均ソースで平均方程式の化学を置換 (tci 2 相当), 0: CMC を受動的に解くだけ
+    int    chemCmcChem = 1;         // 1: 条件付き空間で化学を進める, 0: 凍結 (混合線検証用)
+    double chemCmcTfuel = 300.0;    // 燃料流温度 [K] (η=1 の Dirichlet)
+    double chemCmcTox = 300.0;      // 酸化剤流温度 [K] (η=0 の Dirichlet)
+    double chemCmcDtScale = 1.0;    // 条件付き空間の擬似時間刻み = dt_local × scale
+    int    chemCmcInterval = 1;     // η 拡散+化学の更新間隔 (step)
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
                                                // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)
