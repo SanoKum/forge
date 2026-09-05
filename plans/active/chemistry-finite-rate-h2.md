@@ -62,7 +62,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | 優先 | 項目 | 状態・次アクション |
 | --- | --- | --- |
 | P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
-| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量を追加し、統計定常を確認 | **ツール done 2026-09-05** (`ignx,tmax,exit_massflux,exit_hflux,exit_y_/exit_yflux_/exit_yout_<種>`; 抽出失敗・末尾 NaN は偽 STEADY にしない; commit 967e49d4→1add8d63)。適用: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED。**Cabra 反応 ON 全 run で出口質量流束が 37–63 % 変動** (出口 y 54–78 mm の環状逆流) → 付着後 +30k (`run_0073`) でも ±20 % の擬似時間リミットサイクル (z/d 26 の T が 183 K 動く)。切り分け順 (codex 2): ①外周 slip→`outlet_statPress` (`run_0074` 実行中) ②領域延長/半径拡張 ③precond 0 低 CFL ④dual-time。**解決まで Cabra 下流比較を「一致」と呼ばない** |
+| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量を追加し、統計定常を確認 | **ツール done 2026-09-05** (`ignx,tmax,exit_massflux,exit_hflux,exit_y_/exit_yflux_/exit_yout_<種>`; 抽出失敗・末尾 NaN は偽 STEADY にしない; commit 967e49d4→1add8d63)。適用: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED。**Cabra 反応 ON 全 run で出口質量流束が 37–63 % 変動** (出口 y 54–78 mm の環状逆流) → 付着後 +30k (`run_0073`) でも ±20 % の擬似時間リミットサイクル (z/d 26 の T が 183 K 動く)。切り分け順 (codex 2): ①外周 slip→`outlet_statPress` (`run_0074`: **不採用**、外周 ±18 m/s の出入りで悪化) → ③precond 0 低 CFL (`run_0075` 実行中) → ②領域延長/半径拡張 → ④dual-time。**解決まで Cabra 下流比較を「一致」と呼ばない** |
 | P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **reopen** (codex 2): 初版は coflow 組成バグ (ΣX=1.1) → 修正・再計算済 (2026-09-05, §9 (7)): 1045 K で Jach 1.46 / Li 1.69 / Burke 3.49 ms、Jach は Li 比 14–43 % 早い (定性結論不変)。Cabra A/B (`run_0072`, Li) は付着推移同一 → **TCI 欠如が主因という仮説を強く支持** (確定ではない)。forge⇔Cantera 0-D 照合は済 (Li+CEA 熱力学で 1 % 以内、§9 (7)(e))。残: 実加熱器圧力での比較、0-D/CFD/実験の着火判定 (max dT/dt / Y_OH>2e-4 / OH 発光) の対応付け |
 | P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
 | P1-5 | BK 早着火の条件整理 (機構 A/B・入口乱流・壁温・3D blockage) と end-to-end 収支 (質量・元素・全エンタルピー・圧損・出口一様性) の必須出力化 | todo (Cabra A/B は済、BK 機構 A/B は未) |
@@ -273,3 +273,9 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   **刻みを締める (`TCHEM_RELMAX=0.03 TCHEM_DTMAX=4 TCHEM_DTCAP=5e-8`) と Li 43.46 vs 43.89 µs (−1.0 %)、Jach 32.03 vs 32.21 µs (−0.6 %)
   で一致 → 差は BDF1 刻み誤差。forge の Li (Troe 2 パラメータ・CEA 熱力学) は Cantera (Li 付属熱力学) と着火遅れ 1 % 以内で整合**
   (Jacobian FD 照合 6e-8 PASS、Σω=0)。既定の刻み (DTCAP 2e-6) は着火遅れを 5–15 % 短く出すので、ホストテストの合否判定には刻み指定を使う。
+- `2026-09-05 (8)` — **Cabra 出口振動の切り分け ①**: `run_0074` (外周 physID 5 を slip→`outlet_statPress`, run_0073 から +30k)。
+  外周で Uy −18〜+9 m/s の出入りが暴れ (coflow 3.5 m/s に対し非物理)、出口正味流束 −0.004〜0.072 kg/s と悪化 → **不採用**。
+  静圧固定の側面境界は低マッハ (M≈0.01) では数十 Pa の圧力差で大流速を作るため、開放 coflow の farfield にはならない
+  (逆流時の組成/エントロピーは内部外挿で、外部既知状態を与える BC ではない — codex 2 の指摘どおり)。内部 (z/d 9/26) は
+  末尾 ΔT 10–13 K まで静まり残差も falling だったので、境界を暴れさせた分だけ内部のリミットサイクルが崩れた可能性はある。
+  次: ③ `run_0075` (precond 0, cfl_pseudo 0.5, 外周 slip) で前処理起因かを判定 → ② 領域拡張 (半径 2 倍・長さ延長, cross-mesh restart) → ④ dual-time。
