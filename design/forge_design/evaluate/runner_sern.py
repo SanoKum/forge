@@ -23,8 +23,10 @@ from ..meshing.mesh_sern import PHYS_SERN, SernMeshParams, generate_sern_mesh, w
 from ..metrics.sern_forces import force_history, steadiness
 from ..probdef import Problem, dv_value, load_problem
 
-FORGE_TOOLS = Path("/home/sano/work/forge/solver_density_cuda/tools")
-FORGE_BUILD = Path("/home/sano/work/forge/solver_density_cuda/build")
+# リポジトリ位置から導く (AWS など別マシンでも動くように。FORGE_ROOT で上書き可)
+FORGE_ROOT = Path(os.environ.get("FORGE_ROOT", Path(__file__).resolve().parents[3]))
+FORGE_TOOLS = FORGE_ROOT / "solver_density_cuda" / "tools"
+FORGE_BUILD = FORGE_ROOT / "solver_density_cuda" / "build"
 _ENV = dict(os.environ, LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/hdf5/serial")
 MESH = "sern.h5"
 
