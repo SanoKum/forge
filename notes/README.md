@@ -32,6 +32,7 @@
 | ノート | 概要 |
 | --- | --- |
 | [chemistry-cabra-handover-2026-09-05.md](sessions/chemistry-cabra-handover-2026-09-05.md) | 引継ぎ文書 (Claude CLI 向け): 有限速度化学 (H₂) の実装状況・2026-09-05 に直した低マッハ node の 3 バグ・Cabra (case/48) の現状と判断待ち事項・作業場所 (worktree forge-chem) |
+| [codex-review-chemistry-2026-09-05.md](sessions/codex-review-chemistry-2026-09-05.md) | codex による第三者レビュー: 到達点評価 (実装検証は高水準・設計水準は未達)、TCI は 1st-order CMC 第一候補、P0=QoI 確定/SST プラトー/機構着火遅れ検証、ドキュメント不整合の指摘一覧 |
 | [condensation-nonequilibrium-session-prompt.md](sessions/condensation-nonequilibrium-session-prompt.md) | 次セッション用プロンプト: 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
 | [cutler-tp-multispecies-cfl-analysis-prompt.md](sessions/cutler-tp-multispecies-cfl-analysis-prompt.md) | 分析依頼プロンプト: 多成分 TP の陰解法 (block-DPLUR) で安定 CFL が ~1 に頭打ちする原因 |
 | [implicit-acceleration-session-prompt.md](sessions/implicit-acceleration-session-prompt.md) | 別セッション用プロンプト: 陰解法の安定 CFL 引き上げ |
