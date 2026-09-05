@@ -26,7 +26,7 @@
 
 3. **Budgets**: 月 $50 のコストアラートを作成 (Billing → Budgets → Cost budget)。
 4. **キーペア / セキュリティグループ**: SSH (22) は自宅 IP 制限で 1 つ作成。inbound は SSH のみ。
-5. **GitHub deploy key**: 計算機からの clone 用に read-only deploy key を `SanoKum/forge` に登録する。鍵はローカルで `ssh-keygen -t ed25519 -f forge-deploy` して公開鍵を GitHub → リポジトリ Settings → Deploy keys へ。秘密鍵は起動したインスタンスの `~/.ssh/` に `scp` で配置し、`~/.ssh/config` に:
+5. **GitHub deploy key**: 計算機からの clone 用に read-only deploy key を `forger-yuwa/forge` に登録する。鍵はローカルで `ssh-keygen -t ed25519 -f forge-deploy` して公開鍵を GitHub → リポジトリ Settings → Deploy keys へ。秘密鍵は起動したインスタンスの `~/.ssh/` に `scp` で配置し、`~/.ssh/config` に:
 
    ```
    Host github.com
@@ -59,7 +59,7 @@ aws ec2 run-instances --region us-east-1 \
 SSH ログイン (ユーザーは `ubuntu`) し、deploy key を配置してから:
 
 ```bash
-git clone --depth 1 git@github.com:SanoKum/forge.git ~/forge
+git clone --depth 1 git@github.com:forger-yuwa/forge.git ~/forge
 ~/forge/solver_density_cuda/tools/cloud/setup_instance.sh
 ```
 

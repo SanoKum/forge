@@ -37,7 +37,7 @@
 - 現行ルール ([`procedures/development-environment.md`](../../procedures/development-environment.md)):
   - 通常のビルド・ケース実行は Docker 基準 (`Dockerfile.cuda.dev`)
   - **速度評価・プロファイルは native 基準** — これは WSL2 の Docker 層が計測を不安定にするための規定。クラウドの Linux native ホストではこの問題は軽く、`ncu` / `nsys` (host importer 含む) がフルに動くのがクラウド化の利点の一つ
-- リポジトリは GitHub (`SanoKum/forge`, private) にあり、クラウド側は deploy key (read-only) で clone できる
+- リポジトリは GitHub (`forger-yuwa/forge`, private) にあり、クラウド側は deploy key (read-only) で clone できる
 - `case/` 配下の run 成果物は commit しない運用のため、クラウド上の結果はリポジトリ外 (S3) で回収する
 - ローカル GPU は RTX 3060 (Ampere, CC 8.6)。ビルドは `FORGE_CUDA_ARCHITECTURES` で対象アーキテクチャを指定する
 

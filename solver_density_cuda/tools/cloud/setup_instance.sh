@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # EC2 インスタンス初期セットアップ (Deep Learning Base GPU AMI, Ubuntu 22.04 想定)。
 # SSH ログイン後に一度だけ実行する:
-#   curl -fsSL https://raw.githubusercontent.com/SanoKum/forge/<branch>/solver_density_cuda/tools/cloud/setup_instance.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/forger-yuwa/forge/<branch>/solver_density_cuda/tools/cloud/setup_instance.sh | bash
 # もしくは clone 済みなら: ./solver_density_cuda/tools/cloud/setup_instance.sh
 #
 # 環境変数:
 #   FORGE_REPO_DIR   clone 先 (default: $HOME/forge)
 #   FORGE_BRANCH     clone するブランチ (default: main)
-#   FORGE_REPO_URL   リポジトリ URL (default: git@github.com:SanoKum/forge.git)
+#   FORGE_REPO_URL   リポジトリ URL (default: git@github.com:forger-yuwa/forge.git)
 set -euo pipefail
 
 repo_dir="${FORGE_REPO_DIR:-$HOME/forge}"
 branch="${FORGE_BRANCH:-main}"
-repo_url="${FORGE_REPO_URL:-git@github.com:SanoKum/forge.git}"
+repo_url="${FORGE_REPO_URL:-git@github.com:forger-yuwa/forge.git}"
 
 echo "== [1/5] GPU / Docker の確認 =="
 nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader
