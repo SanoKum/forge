@@ -209,7 +209,8 @@ __global__ void chemistry_source_d(
     const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa,
     int frozenJac, flow_float* chem_diag,                     // frozenJac==1: Jacobian を再評価せず前回の対角 (chem_diag) を src_jac に足す
     const flow_float* cmcOmega, const flow_float* cmcQdot, const flow_float* cmcJac,   // CMC 結合 1 (非 null): PDF 平均 ω̄/Q̇̄/J̄ で置換
-    int cmcMode, const flow_float* cmcYpdf, const flow_float* cmcHpdf, const flow_float* cmcTau)   // CMC 結合 2: PDF 積分状態へ緩和
+    int cmcMode, const flow_float* cmcYpdf, const flow_float* cmcHpdf, const flow_float* cmcTau,   // CMC 結合 2: PDF 積分状態へ緩和
+    const flow_float* cmcQcap, const flow_float* dt_local)   // CMC 結合 5: リミッタ後の発熱 [J/m3] を Q̇ = qcap/Δτ として res_roe へ
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -237,7 +238,8 @@ __global__ void chemistry_source_d(
     int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
     if (frozenJac && mode > 0) {
         // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
-        if (cmcMode == 2 && cmcYpdf) {
+        if (cmcMode == 5 && cmcQcap) { for (int s = 0; s < nSpecies; ++s) omega[s] = 0.0; Qdot = (double)cmcQcap[ic] / fmax((double)dt_local[ic], 1.0e-12); }
+        else if (cmcMode == 2 && cmcYpdf) {
             const double tau = fmax((double)cmcTau[ic], 1.0e-12); Qdot = 0.0;
             for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; Qdot -= (sp[s].h_datum / sp[s].MW) * omega[s]; }
         } else if (cmcOmega) { for (int s = 0; s < nSpecies; ++s) omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; Qdot = (double)cmcQdot[ic]; }
@@ -252,7 +254,12 @@ __global__ void chemistry_source_d(
         chemQdot[ic] = (flow_float)(kappa * Qdot);
         return;
     }
-    if (cmcMode == 2 && cmcYpdf) {
+    if (cmcMode == 5 && cmcQcap) {
+        // couple 5: 組成は CMC 側でブレンド済み (ソース 0)。発熱だけを陰的経路の Q̇ として入れる (DPLUR の線形化系の中で圧力応答が処理される)。
+        for (int s = 0; s < nSpecies; ++s) { omega[s] = 0.0; dOdT[s] = 0.0; }
+        for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = 0.0;
+        Qdot = (double)cmcQcap[ic] / fmax((double)dt_local[ic], 1.0e-12);
+    } else if (cmcMode == 2 && cmcYpdf) {
         // CMC 結合 2 (methods/chemistry_cmc.md §5): 平均組成・顕エンタルピーを PDF 積分値 Ỹ_pdf, h̃_pdf へ緩和させる
         //   ω_s = ρ(Ỹ_pdf,s − Y_s)/τ, Q̇ = ρ(h̃_pdf − h̃)/τ, ∂ω_s/∂(ρY_k) = −δ_sk/τ (点陰解で強い緩和も安定)。Σω_s = 0 (質量保存)。
         const double tau = fmax((double)cmcTau[ic], 1.0e-12);
@@ -409,7 +416,8 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         cmc_coupling_active() ? cmc_omega_device_ptr() : nullptr, cmc_coupling_active() ? cmc_qdot_device_ptr() : nullptr,
         cmc_coupling_active() ? cmc_jac_device_ptr() : nullptr,
         cmc_coupling_mode(), cmc_coupling_active() ? cmc_ypdf_device_ptr() : nullptr, cmc_coupling_active() ? cmc_hpdf_device_ptr() : nullptr,
-        cmc_coupling_active() ? cmc_tau_device_ptr() : nullptr);
+        cmc_coupling_active() ? cmc_tau_device_ptr() : nullptr,
+        cmc_coupling_active() ? cmc_qcap_device_ptr() : nullptr, var.c_d["dt_local"]);
     ++g_stepCounter;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

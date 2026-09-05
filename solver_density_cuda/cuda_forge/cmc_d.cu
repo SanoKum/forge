@@ -316,7 +316,8 @@ static flow_float *g_omega = nullptr, *g_qdot = nullptr, *g_jac = nullptr;   // 
 static flow_float *g_ypdf = nullptr, *g_hpdf = nullptr, *g_tau = nullptr;   // couple 2: PDF 積分 Ỹ_s, h̃, 緩和時間 τ
 static flow_float *g_dpdf = nullptr, *g_dpdf_prev = nullptr;
 static flow_float *g_qrel = nullptr;
-static flow_float *g_qdebt = nullptr;   // couple 4: 1 step の ΔT 上限で出し切れなかった発熱の持ち越し [J/m3]   // couple 4: 条件付き点陰解で実際に進んだ反応の PDF 平均発熱 [J/kg] (この step)   // couple 4: PDF 積分の反応離脱 D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) と前ステップ値
+static flow_float *g_qdebt = nullptr;
+static flow_float *g_qcap = nullptr;    // couple 5: リミッタ後の発熱 [J/m3] を陰的化学ソース経路 (res_roe) へ渡す   // couple 4: 1 step の ΔT 上限で出し切れなかった発熱の持ち越し [J/m3]   // couple 4: 条件付き点陰解で実際に進んだ反応の PDF 平均発熱 [J/kg] (この step)   // couple 4: PDF 積分の反応離脱 D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) と前ステップ値
 static int g_cmcStep = 0;
 
 __device__ __forceinline__ size_t sl(int var, int k) { return (size_t)(var * g_cmc.nEta + k); }
@@ -595,7 +596,7 @@ __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, c
 //   リップで数百 K の非物理な冷却を作って発散した: run_0087)。平均エネルギー式が伝導・境界を担い、CMC は反応進行だけを渡す。
 __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* ro,
                                     flow_float* const* roY_dev, flow_float* roe, flow_float* chemQdot, const flow_float* dt_local,
-                                    const flow_float* dpdf, flow_float* dpdf_prev, const flow_float* qrel, flow_float* qdebt)
+                                    const flow_float* dpdf, flow_float* dpdf_prev, const flow_float* qrel, flow_float* qdebt, flow_float* qcap, int viaResidual)
 {
     // couple 4: 組成を PDF 積分状態へ α ブレンド (熱を伴わない組成の同期)。反応熱は PDF 積分した反応離脱量
     //   D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) の**時間変化**にだけ対応させる: ΔQ = −Σ c_s ρ (D_pdf − D_pdf,prev)。
@@ -626,7 +627,8 @@ __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, co
     if (dQ >  cap) dQ =  cap;
     if (dQ < -cap) dQ = -cap;
     qdebt[ic] = (flow_float)(dQtot - dQ);
-    roe[ic] += (flow_float)dQ;
+    if (viaResidual) { qcap[ic] = (flow_float)dQ; }   // couple 5: 次の残差組み立てで Q̇ = qcap/Δτ として res_roe へ (陰解法が圧力応答を処理)
+    else            { roe[ic] += (flow_float)dQ; }   // couple 4: 直接加算
     const double dt = fmax((double)dt_local[ic], 1.0e-12);
     chemQdot[ic] = (flow_float)(dQ / dt);   // 診断: 等価な反応熱 [W/m3]
 }
@@ -668,6 +670,7 @@ int  cmc_coupling_mode()   { return g_q_ready ? g_cmc_host.couple : 0; }
 const flow_float* cmc_ypdf_device_ptr() { return g_ypdf; }
 const flow_float* cmc_hpdf_device_ptr() { return g_hpdf; }
 const flow_float* cmc_tau_device_ptr()  { return g_tau; }
+const flow_float* cmc_qcap_device_ptr() { return g_qcap; }
 const flow_float* cmc_omega_device_ptr() { return g_omega; }
 const flow_float* cmc_qdot_device_ptr()  { return g_qdot; }
 const flow_float* cmc_jac_device_ptr()   { return g_jac; }
@@ -730,6 +733,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     if (g_dpdf_prev) cudaFree(g_dpdf_prev); gpuErrchk( cudaMalloc((void**)&g_dpdf_prev, (size_t)ns * msh.nCells * sizeof(flow_float)) );
     if (g_qrel) cudaFree(g_qrel); gpuErrchk( cudaMalloc((void**)&g_qrel, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qrel, 0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_qdebt) cudaFree(g_qdebt); gpuErrchk( cudaMalloc((void**)&g_qdebt, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qdebt, 0, (size_t)msh.nCells * sizeof(flow_float)) );
+    if (g_qcap) cudaFree(g_qcap); gpuErrchk( cudaMalloc((void**)&g_qcap, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qcap, 0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_tau)  cudaFree(g_tau);  gpuErrchk( cudaMalloc((void**)&g_tau,  (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_tau,  0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_jac) cudaFree(g_jac); gpuErrchk( cudaMalloc((void**)&g_jac, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_jac, 0, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) );
 
@@ -801,10 +805,11 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
             var.c_d.at("dt_local"), species_roY_device_ptr(),
             g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
             g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1, var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"), g_dpdf, g_qrel);
-        if (g_cmc_host.couple == 4) {
+        if (g_cmc_host.couple == 4 || g_cmc_host.couple == 5) {
             cmc_blend_species_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, var.c_d.at("ro"), species_roY_device_ptr(), var.c_d.at("roe"),
-                var.c_d.at("chemQdot"), var.c_d.at("dt_local"), g_dpdf, g_dpdf_prev, g_qrel, g_qdebt);
+                var.c_d.at("chemQdot"), var.c_d.at("dt_local"), g_dpdf, g_dpdf_prev, g_qrel, g_qdebt, g_qcap,
+                (g_cmc_host.couple == 5) ? 1 : 0);
         }
         if (g_cmc_host.couple == 3) {
             cmc_overwrite_mean_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(

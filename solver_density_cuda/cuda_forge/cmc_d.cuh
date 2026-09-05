@@ -57,3 +57,4 @@ int  cmc_coupling_mode();                    // 0: なし, 1: PDF 平均ソー�
 const flow_float* cmc_ypdf_device_ptr();    // [ns][nCells] Ỹ_pdf = Σ Ω_k Q_s(η_k)
 const flow_float* cmc_hpdf_device_ptr();    // [nCells] h̃_pdf [J/kg]
 const flow_float* cmc_tau_device_ptr();     // [nCells] 緩和時間 τ = relax·Δτ_local [s]
+const flow_float* cmc_qcap_device_ptr();    // [nCells] couple 5: この step の発熱 (リミッタ後) [J/m3]
