@@ -55,6 +55,22 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | **3** 燃焼器 RANS | Burrows–Kurkov (case/47): SST 壁関数 + No-TCI で自己着火・火炎を再現 (定量は混合不足)。PaSR 実装済 (未較正)。加熱器 (低マッハ) は未 | `case/47`, `chemistry_d` (tci) | **in_progress** (§9) |
 | **4** 応用 | 加熱器 → ノズル → 試験部 end-to-end、設計チェーン確認メニューへ | `design/`, `methods/design/` | todo |
 
+### 5.1 残作業表 (優先順, 2026-09-05 codex レビュー反映)
+
+第三者レビュー ([notes/sessions/codex-review-chemistry-2026-09-05.md](../../notes/sessions/codex-review-chemistry-2026-09-05.md)) の優先順を採用。
+
+| 優先 | 項目 | 状態・次アクション |
+| --- | --- | --- |
+| P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
+| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量 (火炎基部位置・出口 massflux/エンタルピー流束/主要種流束・Tmax) を追加し、dual-time で統計定常を確認 | todo |
+| P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **done 2026-09-05** (§9): Jachimowski は Li 2004 比 15–35 % 短く、Burke 2012 比 1/2 (1045 K)〜1/6.6 (1015 K)。**次: Li または Burke での Cabra/BK 機構 A/B** |
+| P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
+| P1-5 | BK 早着火の条件整理 (機構 A/B 後に入口乱流・壁温・3D blockage) | P0-3 A/B 待ち |
+| P1-6 | Cabra 入口感度 (管内長 ~50d・リップ熱条件・入口 k/ω・格子) | todo |
+| P1-7 | **ドキュメント同期**: `methods/index.md` / `methods/chemistry.md` (precond 反応熱・PaSR 記述) / `plans/README.md` が Phase 0 時点で停止。case/47 run 表の 1 run = 1 行化・OH 閾値の統一 (2e-4 へ) | todo |
+| P1-8 | 回帰整備: case/28・case/44 の `chemistry.enabled: 0` ビット不変検証のエビデンス化、0-D テストの自動テスト登録 | todo |
+| P2-9 | `chemistry_source_d` 占有率最適化 (3 KB スタック/126 レジスタ)、`inlet_Pressure_dir` 組成対応 | todo |
+
 ## 6. 検証
 
 - **単体 / ビルド**: `tools/test_chemistry.cpp` (0-D 定積着火遅れ・定圧平衡到達 vs Cantera 同一 YAML、Jacobian 有限差分照合 $<10^{-6}$ 相対)。
@@ -216,3 +232,16 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   (EDC / 輸送 PDF / 着火遅れベースのモデル) を追加するか、(b) 燃焼加熱器の検証は Cabra の浮き上がり位置でなく
   下流の温度・組成 (z/d 26 の半径 T は実験と整合) と BK の出口組成で足りるとするか。
 
+- `2026-09-05 (4)` — **BK 出口プロファイル再確認 + 第三者レビュー + 機構着火遅れ検証**。
+  (a) BK: 3 バグ修正後バイナリで `case/47 run_0028_exit_recheck` (run_0025 `res_20000` から 5000 step 継続)。
+  出口結論は維持 (X_H₂O 0.504 @ 1.96 cm・全温ピーク 1.08 @ 1.85 cm 不変、γ 修正の差は壁直近亜音速出口列のみ)。
+  `check_convergence` NOT CONVERGED (run_0025 と同質)・`check_quasisteady machmax,pmax` STEADY。着火位置は 4.36→3.93 cm と
+  上流ドリフト継続 (DRIFTING、未解決)。
+  (b) codex レビュー ([notes/sessions/codex-review-chemistry-2026-09-05.md](../../notes/sessions/codex-review-chemistry-2026-09-05.md)):
+  「実装検証は高水準・予測的設計水準は未達」。優先順を §5.1 残作業表に採用。
+  (c) **機構比較** (`case/48 ign_delay_mech_compare.py`, Cabra 混合線・断熱定圧・1 atm): τ_min(ξ) は
+  T_c 1045 K で Jachimowski 1.32 ms / Li 2004 1.54 ms / Burke 2012 2.73 ms / GRI3.0-H2 14 ms (ξ_MR 0.025–0.045)。
+  1015 K では Jachimowski 4.4 ms vs Burke 29 ms (6.6 倍差)。**Jachimowski は検証済み機構に対し系統的に早着火側**で、
+  BK/Cabra の早着火の一因たり得る (支配因子は TCI 欠如)。Burke 2012 / Li 2004 の Cantera YAML を
+  `tools/mechanisms/h2_burke2012_cantera.yaml` / `h2co_li2004_cantera.yaml` に追加 (forge 用 NASA-7 変換は未)。
+  次: Li で Cabra 反応 ON A/B (`run_0072` 系) → 付着推移が変わるか確認。

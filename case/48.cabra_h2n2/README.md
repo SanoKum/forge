@@ -48,3 +48,16 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0069_react_cont` | run_0068 res_10000 から 20000 step 継続 (tci 0 = 層流化学) | 火炎基部が x/d 4.6 (4000) → 3.4 (12000) → **0 (16000 以降, リップ付着火炎)**。Tmax 1800–2020 K, 軸 T max 1593 K (z/d≈30)。`check_convergence` NOT CONVERGED (全列 plateau)。TCI なし RANS の典型 (平均温度で層流反応率を評価し着火過大) → PaSR へ。図 `compare_cabra_20000.png` | ref (tci 0 の結論) |
 | `run_0070_react_pasr` | 同条件で **PaSR (`tci 1`, tauChem 1, C_mix 1)**, run_0067 混合場から 30000 step | 着火は同じく x/d≈21 (5000)、火炎基部の上流伝播が遅くなるだけで 7.8 (10000) → 2.9 (20000) → 1.2 (30000) と**ほぼ付着**。軸 T は tci 0 と同様 (T>600 K が z/d 12.7, 実験 14)。`check_convergence` NOT CONVERGED。図 `compare_cabra_30000.png` | ref (PaSR C_mix 1) |
 | `run_0071_react_pasr_cmix4` | PaSR C_mix 4 (τ_mix 4 倍 → κ 小) の感度, 30000 step | 推移は C_mix 1 とほぼ同一 (21.2 → 7.9 → 4.4 → 1.9 → 1.4 → 1.2)。**PaSR の κ は基部の上流伝播を止めない** (近傍せん断層の平均場が既に可燃・高温)。NOT CONVERGED。図 `compare_cabra_30000.png` | ref (PaSR 感度の結論) |
+
+## 機構着火遅れ比較 (2026-09-05, plan §5.1 P0-3)
+
+`ign_delay_mech_compare.py` (Cantera, Cabra 混合線・断熱定圧 1 atm・τ = max dT/dt) による Jachimowski 9sp20r の 1000–1100 K 妥当性検証。成果物: `ign_delay_mech_compare.{csv,png,log}`。
+
+| 機構 | τ_min @T_c 1015 K | @1045 K | @1075 K |
+| --- | --- | --- | --- |
+| Jachimowski 9sp20r (forge 現行) | 4.41 ms | **1.32 ms** | 0.70 ms |
+| Li 2004 | 6.82 ms | 1.54 ms | 0.83 ms |
+| Burke 2012 | 28.99 ms | 2.73 ms | 1.21 ms |
+| GRI3.0 H₂ subset (既知不良) | 94.0 ms | 14.0 ms | 2.44 ms |
+
+ξ_MR は 0.025–0.045 (文献 ≈0.05 と整合)。**Jachimowski は Cabra 検証実績のある Li 2004 より 15–35 % 早く、Burke 2012 の 1/2 (1045 K)〜1/6.6 (1015 K)** — 検証済み機構に対し系統的に早着火側で、リップ付着・BK 早着火を悪化させる向き (支配因子は TCI 欠如)。GRI subset の 10 倍遅れは Benim 2020 の「使用不可」報告と整合し、比較系の健全性確認になっている。Burke/Li の Cantera YAML は `solver_density_cuda/tools/mechanisms/h2_burke2012_cantera.yaml` / `h2co_li2004_cantera.yaml` (forge 用変換は未)。次: Li で反応 ON A/B。
