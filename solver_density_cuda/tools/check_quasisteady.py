@@ -11,7 +11,7 @@
 CL/CD・massflux・推力・peak μt 等を「○○だ」と報告する応答は、必ず本ツールの VERDICT を引用すること。
 
 使い方:
-  python3 tools/check_quasisteady.py <run_dir> [--quantity shock,asym] [--mesh mesh.h5]
+  python3 tools/check_quasisteady.py <run_dir> [--quantity shock,asym,ignx,tmax,exit_massflux,exit_hflux,exit_y_H2O] [--mesh mesh.h5]
   python3 tools/check_quasisteady.py <run_dir> --tail 0.4 --drift 0.05 --osc 0.10
 終了コード: 全量が STEADY なら 0、1つでも DRIFTING/UNSETTLED があれば 1 (CI/スクリプトで使える)。
 OSCILLATING (リミットサイクル) は 0 扱いだが「平均±振幅」で報告すること (瞬時値で報告しない)。
@@ -288,10 +288,94 @@ FLATPLATE = ['theta', 'cf_retheta', 'cf_momentum']
 # 範囲は --wall-xmin/--wall-xmax、対象壁は --wall-phys-id で指定する (ケース固有値をハードコードしない)。
 WALL = ['wall_model_tau']
 
+# ---- 反応流 (chemistry) 用の派生量: --quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_<種名> ----
+# ignx [mm]      : 火炎基部位置 = Y_<--flame-species (既定 OH)> > --oh-thr (既定 2e-4, 文献の OH 発光基準) を
+#                  満たす DOF の最小 x。火炎が無ければ nan (系列から除外され、末尾に注記)。
+# tmax [K]       : 場の最高温度。
+# exit_massflux  : 出口面 (x >= x_max - --exit-tol の DOF。node 方式なら出口境界ノードそのもの) を y でソートし
+#                  台形則で ∫ρu_x dA。軸対称 (solverConfig mesh.isAxisymmetric) は 2πr 重みを自動で掛ける。
+# exit_hflux     : 同じ面の全エンタルピー流束 ∫ρu_x h0 dA, h0=(roe+P)/ro。
+# exit_y_<NAME>  : 同じ面の質量流束重み平均化学種質量分率 (physProp.species の名前。例 exit_y_H2O)。
+# いずれも**定常性判定用の汎関数** (面積重みは台形近似) であり、保存則監査や絶対値の議論には使わない。
+# cell 方式では境界セル重心が面上に無いので --exit-tol を第一セル幅程度に広げる。
+CHEM = ['ignx', 'tmax', 'exit_massflux', 'exit_hflux']
+CHEM_PREFIX = 'exit_y_'
+
+
+def read_solver_config(run_dir):
+    try:
+        import yaml
+        with open(os.path.join(run_dir, 'solverConfig.yaml')) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def make_q_chem(run_dir, mesh, want, oh_thr=2e-4, flame_species='OH', exit_tol=1e-6):
+    """want に含まれる反応流量の抽出子 dict と、解決できなかった量のリスト、種名リストを返す。"""
+    cfg = read_solver_config(run_dir)
+    species = list((cfg.get('physProp') or {}).get('species') or [])
+    axisym = int((cfg.get('mesh') or {}).get('isAxisymmetric', 0) or 0) == 1
+    cache = {}
+
+    def coords(V):
+        # node 方式: MESH/COORD の点数が VALUE と一致 → 節点座標 (双対重心より火炎位置に忠実)。
+        # cell 方式: /CELLS/centCoords。
+        n = V['T'].shape[0]
+        if 'c' not in cache:
+            with h5py.File(mesh, 'r') as h:
+                xyz = h['/MESH/COORD'][:].reshape(-1, 3) if '/MESH/COORD' in h else None
+            if xyz is None or xyz.shape[0] != n:
+                xyz = centroids(mesh)
+            if xyz.shape[0] != n:
+                raise RuntimeError(f'coords/VALUE size mismatch {xyz.shape[0]} vs {n}')
+            cache['c'] = xyz
+            x, y = xyz[:, 0], xyz[:, 1]
+            m = np.where(x >= x.max() - exit_tol)[0]
+            o = np.argsort(y[m]); m = m[o]; ym = y[m]
+            w = np.empty(len(m))
+            if len(m) >= 2:
+                w[1:-1] = 0.5 * (ym[2:] - ym[:-2]); w[0] = 0.5 * (ym[1] - ym[0]); w[-1] = 0.5 * (ym[-1] - ym[-2])
+            else:
+                w[:] = 1.0
+            if axisym:
+                w *= 2.0 * np.pi * np.abs(ym)
+            cache['exit'] = (m, w)
+        return cache['c']
+
+    def exit_flux(V, phi=None):
+        coords(V); m, w = cache['exit']
+        f = V['ro'][:][m] * V['Ux'][:][m] * w
+        return float(f.sum()) if phi is None else float((f * phi[m]).sum())
+
+    ex, bad = {}, []
+    for q in want:
+        if q == 'ignx':
+            if flame_species not in species:
+                bad.append(q); continue
+            key = f'Y{species.index(flame_species)}'
+            def q_ignx(cc, V, key=key):
+                x = coords(V)[:, 0]; sel = V[key][:] > oh_thr
+                return float(x[sel].min() * 1e3) if np.any(sel) else float('nan')
+            ex[q] = q_ignx
+        elif q == 'tmax':
+            ex[q] = lambda cc, V: float(V['T'][:].max())
+        elif q == 'exit_massflux':
+            ex[q] = lambda cc, V: exit_flux(V)
+        elif q == 'exit_hflux':
+            ex[q] = lambda cc, V: exit_flux(V, (V['roe'][:] + V['P'][:]) / V['ro'][:])
+        elif q.startswith(CHEM_PREFIX):
+            name = q[len(CHEM_PREFIX):]
+            if name not in species:
+                bad.append(q); continue
+            key = f'Y{species.index(name)}'
+            ex[q] = (lambda cc, V, key=key: exit_flux(V, V[key][:]) / exit_flux(V))
+    return ex, bad, species
+
 
 def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, cf_x=0.6, cf_ytop=None,
             wall_phys_id=None, wall_xmin=None, wall_xmax=None, wall_law='reichardt',
-            wall_axisym=False):
+            wall_axisym=False, oh_thr=2e-4, flame_species='OH', exit_tol=1e-6):
     mesh = find_mesh(run_dir, mesh_arg)
     if mesh is None:
         print(f"\n=== {run_dir}  -> NO mesh (.h5 with /CELLS/centCoords) ==="); return 3
@@ -309,10 +393,20 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
     qa = make_q_asym(cc)
     if qa:
         extractors['asym'] = qa
+    chem_want = [q for q in want if q in CHEM or q.startswith(CHEM_PREFIX)]
+    chem_bad, chem_species = [], []
+    if chem_want:
+        qc, chem_bad, chem_species = make_q_chem(run_dir, mesh, chem_want, oh_thr, flame_species, exit_tol)
+        extractors.update(qc)
     # 未知の量を黙って無視すると「評価していないのに ALL STEADY」になるので必ずエラーにする。
     # ただし判定は **固定集合** に対して行う (run 依存で適用不能な asym 等を unknown 扱いしない)。
-    known = set(BUILTIN) | set(FLATPLATE) | set(WALL)
+    known = set(BUILTIN) | set(FLATPLATE) | set(WALL) | set(CHEM) | {q for q in want if q.startswith(CHEM_PREFIX)}
     unknown = [q for q in want if q not in known]
+    if chem_bad:
+        # 化学種名が solverConfig の physProp.species に無い (または OH が無い) → 黙って skip せずエラー
+        print(f"\n=== {run_dir}  -> ERROR: chemistry quantity {chem_bad} needs species not in "
+              f"physProp.species {chem_species} ===")
+        return 3
     if unknown:
         print(f"\n=== {run_dir}  -> ERROR: unknown quantity {unknown} "
               f"(available: {sorted(known)}) ===")
@@ -413,6 +507,11 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
         print(l)
     if 'asym' not in quantities and 'asym' in want:
         print("  (asym skipped: mesh not up-down symmetric or scipy missing)")
+    if 'ignx' in quantities:
+        nflame = int(np.sum(np.isfinite(series['ignx'])))
+        if nflame < len(series['ignx']):
+            print(f"  (ignx: {len(series['ignx']) - nflame} snapshot(s) with no Y_{flame_species} > {oh_thr:g} "
+                  f"excluded from the series)")
     return worst
 
 
@@ -438,6 +537,11 @@ def main():
     ap.add_argument('--wall-law', default='reichardt', choices=['reichardt', 'spalding'],
                     help='cf_retheta の逆解きに使う壁法則。**ソルバが使った法則と揃えること** '
                          '(揃えないと A/B の符号すら逆に見える)。cf_momentum は壁出力非依存なので無関係')
+    ap.add_argument('--oh-thr', type=float, default=2e-4,
+                    help='ignx: flame-base criterion Y_<flame-species> > thr (default 2e-4)')
+    ap.add_argument('--flame-species', default='OH', help='ignx: species used for the flame-base criterion')
+    ap.add_argument('--exit-tol', type=float, default=1e-6,
+                    help='exit_*: DOFs with x >= x_max - tol form the exit plane [m] (widen for cell mode)')
     ap.add_argument('--mesh', default=None, help='input mesh h5 (auto-detected if omitted)')
     ap.add_argument('--tail', type=float, default=0.4, help='tail fraction of snapshots for the steadiness check')
     ap.add_argument('--drift', type=float, default=0.05, help='max fractional trend across tail for STEADY')
@@ -450,7 +554,9 @@ def main():
         worst = max(worst, analyze(rd, want, args.tail, args.drift, args.osc, args.min_snaps,
                                    args.mesh, args.cf_x, args.cf_ytop,
                                    args.wall_phys_id, args.wall_xmin, args.wall_xmax,
-                                   args.wall_law, args.wall_axisym))
+                                   args.wall_law, args.wall_axisym,
+                                   oh_thr=args.oh_thr, flame_species=args.flame_species,
+                                   exit_tol=args.exit_tol))
     print(f"\nOVERALL: {'ALL STEADY' if worst == 0 else 'NOT ALL STEADY (see above)'}")
     sys.exit(0 if worst == 0 else 1)
 
