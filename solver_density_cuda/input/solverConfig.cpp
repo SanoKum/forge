@@ -636,6 +636,19 @@ void solverConfig::read(std::string fname)
             this->chemTciCmix       = getOptionalValidatedValue<double>(ch, "tciCmix", 1.0, "physProp.chemistry");
             this->chemTciMixModel   = getOptionalValidatedValue<int>(ch, "tciMixModel", 0, "physProp.chemistry");
             this->chemTciTauChem    = getOptionalValidatedValue<int>(ch, "tciTauChem", 1, "physProp.chemistry");
+            if (ch["mixfrac"]) {
+                const YAML::Node mf = ch["mixfrac"];
+                this->chemMixfrac = getOptionalValidatedValue<int>(mf, "enabled", 1, "physProp.chemistry.mixfrac");
+                this->chemCchi    = getOptionalValidatedValue<double>(mf, "cChi", 2.0, "physProp.chemistry.mixfrac");
+                for (const char* key : {"fuelX", "oxidizerX"}) {
+                    if (!mf[key]) { if (this->chemMixfrac) throw std::runtime_error(std::string("'physProp.chemistry.mixfrac.") + key + "' (species -> mole fraction) is required."); continue; }
+                    auto& dst = (std::string(key) == "fuelX") ? this->chemMixfracFuelX : this->chemMixfracOxidX;
+                    for (const auto& kv : mf[key]) dst[kv.first.as<std::string>()] = kv.second.as<double>();
+                }
+                if (this->chemMixfrac && this->chemMechanismFile.empty())
+                    throw std::runtime_error("'physProp.chemistry.mixfrac' requires 'mechanismFile' (element composition).");
+                if (this->chemMixfrac) std::cout << "[chemistry] mixture-fraction infrastructure ON (Bilger xi, variance transport, cChi=" << this->chemCchi << ")" << std::endl;
+            }
             if (this->chemEnabled != 0) {
                 if (this->thermalMethod != 2) throw std::runtime_error("'physProp.chemistry.enabled: 1' requires thermalMethod: 2.");
                 if (this->nSpecies < 2)      throw std::runtime_error("'physProp.chemistry.enabled: 1' requires >=2 species.");

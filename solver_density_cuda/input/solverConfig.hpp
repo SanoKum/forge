@@ -369,6 +369,12 @@ public:
     int chemJacobianInterval = 1;              // 定常陰解法: 化学 Jacobian (ブロック/対角/反応熱感度) を n ステップごとに再評価 (間は凍結、ω・Q̇ は毎ステップ)
     int chemStrang = 0;                        // 1: 非定常陽解法 (unsteady 1, RK) で化学を Strang 分離 (dt/2 セル内 BE sub-cycle → RK → dt/2)。
                                                //    定常/dual-time では無視 (ソース項経路)。
+    // 混合分率インフラ (physProp.chemistry.mixfrac, methods/chemistry_cmc.md §4)。CMC (tci 2) の前提。
+    // ξ̃ は Bilger 式で平均組成から診断、分散 ξ''² は 1 本輸送、χ̃ = cChi·β*·ω·ξ''² (SST)。既定 off でビット不変。
+    int chemMixfrac = 0;                       // 1: ξ̃ 診断 + 分散輸送 + χ̃ を有効化 (mechanismFile の composition が必要)
+    std::map<std::string, double> chemMixfracFuelX;  // 燃料流のモル分率 (種名 → X)。Bilger の β_F
+    std::map<std::string, double> chemMixfracOxidX;  // 酸化剤流のモル分率。β_O
+    double chemCchi = 2.0;                     // χ̃ = cChi (ε/k) ξ''²、ε/k = β* ω
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
                                                // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)

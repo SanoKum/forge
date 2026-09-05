@@ -16,6 +16,9 @@
 #define CHEM_MAX_SIDE 4          // 片側の異なる化学種数の上限 (H2 系は 3 以下)
 #define CHEM_P_STD 1.0e5         // NASA-9 標準状態エントロピーの基準圧 [Pa] (1 bar)
 
+#ifndef CHEM_MAX_ELEM
+#define CHEM_MAX_ELEM 8
+#endif
 struct ReactionTable {
     int nReac;
     int nSpecies;                          // 流れ側 (cfg.speciesNames) の化学種数
@@ -38,6 +41,11 @@ struct ReactionTable {
     int    falloff[CHEM_MAX_REACTIONS];               // 0: なし, 1: Lindemann (F=1), 2: Troe
     double A0[CHEM_MAX_REACTIONS], b0[CHEM_MAX_REACTIONS], Ea0[CHEM_MAX_REACTIONS];
     double troeA[CHEM_MAX_REACTIONS], troeT3[CHEM_MAX_REACTIONS], troeT1[CHEM_MAX_REACTIONS], troeT2[CHEM_MAX_REACTIONS]; // T2<=0 で項なし
+    // 元素組成 (機構 YAML の species[].composition)。Bilger 混合分率の診断 (cmc_d, methods/chemistry_cmc.md §4) に使う。
+    int    nElem;                                          // 元素数 (H, O, N, C, Ar, He ...)
+    double elemW[CHEM_MAX_ELEM];                           // 元素の原子量 [kg/mol]
+    double atoms[THERMO_MAX_SPECIES][CHEM_MAX_ELEM];       // 種 s の分子中の元素 e の原子数
+    int    elemH, elemO, elemC;                            // Bilger 係数で使う元素 index (-1: 無し)
 };
 
 // falloff の ln k_f(T, [M]) (Lindemann / Troe)。微分は呼び出し側で有限差分 (滑らかなスカラ関数、相対刻み 1e-4)。

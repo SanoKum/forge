@@ -50,6 +50,7 @@
 #include "cuda_forge/speciesTransport_d.cuh"
 #include "cuda_forge/chemistrySource_d.cuh"
 #include "cuda_forge/condensationTransport_d.cuh"
+#include "cuda_forge/cmc_d.cuh"
 #include "cuda_forge/viscousFlux_d.cuh"
 #include "cuda_forge/updateCenterVelocity_d.cuh"
 #include "cuda_forge/interpVelocity_c2p_d.cuh"
@@ -818,6 +819,7 @@ cudaConfig initializeSimulation(
 
     // 非平衡凝縮モーメント変数を登録 (allocVariables より前)。condensation==0 では no-op。
     var.registerCondensation(cfg.nCondSpecies);
+    if (cfg.chemMixfrac != 0) var.registerMixfrac();   // 混合分率インフラ (xi, roXiVar, chi)
 
     var.allocVariables(cfg.gpu , msh);
 
@@ -826,6 +828,7 @@ cudaConfig initializeSimulation(
 
     // device rog[] ポインタ配列を構築 (二相 EOS が液相質量分率を読む)。condensation==0 で no-op。
     condensationInit_d(cfg , var);
+    cmcInit_d(cfg , var);   // Bilger 係数と Y[] ポインタ (mixfrac==0 で no-op)
 
     cout << "Read Initial Values \n";
     var.readValueHDF5(cfg.valueFileName , msh, cfg.kInit, cfg.omegaInit);
@@ -860,6 +863,7 @@ cudaConfig initializeSimulation(
     periodicMirrorNSState_d_wrapper(cfg , cuda_cfg , msh , var);
     speciesPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // Y_s = ρY_s/ρ (roY を読込済)
     condensationPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);  // φ = ρφ/ρ (液相モーメント読込済)
+    cmcPrimitive_d_wrapper(cfg , cuda_cfg , msh , var);   // xi, xiVar (mixfrac)
     dependentVariables(cfg , cuda_cfg , msh , var, mat_ns);
     // node-centered 壁 Dirichlet: IC の壁ノード速度を厳密 0 に初期化 (KE を roe から除去)。
     // この後 gasProperties が補正 roe から P/T を再計算する。cell/非 node では no-op。
@@ -876,6 +880,7 @@ cudaConfig initializeSimulation(
     applySstThermalWallFunction(cfg , cuda_cfg , msh , var);  // SST 熱的壁関数: 断熱壁 T_aw (§6.5(f))
     applySpeciesBoundaries(cfg , cuda_cfg , msh , var);
     applyCondensationBoundaries(cfg , cuda_cfg , msh , var);
+    applyCmcBoundaries(cfg , cuda_cfg , msh , var);
     calcGradient_d_wrapper(cfg , cuda_cfg , msh , var);
     // 初期 setup でも周期勾配 gather を適用 (assembleResidual と整合; res_0 出力と初期診断を正しい合併勾配にする)。
     periodicGradientGather_d_wrapper(cfg , cuda_cfg , msh , var);
@@ -883,6 +888,7 @@ cudaConfig initializeSimulation(
     updateVariablesOuter(cfg , cuda_cfg , msh , var , mat_ns);
     speciesUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);  // roY{s}N/M ベースライン
     condensationUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);  // 液相モーメント N/M ベースライン
+    cmcUpdateOuter_d_wrapper(cfg , cuda_cfg , msh , var);
     setDT_d_wrapper(cfg , cuda_cfg , msh , var);
 
     pprobes.init(cfg , cuda_cfg , msh);
@@ -946,6 +952,7 @@ void assembleResidual(StepContext& s, int stage_index)
     s.profiler.measureCuda(ProfileSection::DependentVariables, [&]() {
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // Y_s = ρY_s/ρ (混合則 thermo の前)
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // φ = ρφ/ρ (スカラ移流の上流値)
+        cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
     });
     s.profiler.measureWall(ProfileSection::DependentVariables, [&]() {
         dependentVariables(s.cfg , s.cuda_cfg , s.msh , s.var, s.mat_ns);
@@ -963,6 +970,7 @@ void assembleResidual(StepContext& s, int stage_index)
         applySstThermalWallFunction(s.cfg , s.cuda_cfg , s.msh , s.var);  // SST 熱的壁関数: 断熱壁 T_aw (§6.5(f))
         applySpeciesBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
         applyCondensationBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
+        applyCmcBoundaries(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::CalcGradient, [&]() {
         calcGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
@@ -1008,6 +1016,8 @@ void assembleResidual(StepContext& s, int stage_index)
     });
     s.profiler.measureCuda(ProfileSection::TurbulenceModel, [&]() {
         ransGradient_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+        cmcMixfrac_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, ∇xi, ∇xiVar
+        cmcVarianceTransport_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // 分散 ξ''² の移流+拡散+生成/散逸
         ransSource_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
     });
     s.profiler.measureCuda(ProfileSection::AxisymmetricSource, [&]() {
@@ -1197,8 +1207,11 @@ void implicitNonlinearUpdate(StepContext& s, int inner_index)
     // condensation==0 で no-op。
     s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
         condensationUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // ro*_N = ro*_M = ro*
+        cmcUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         condensationTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+        cmcVarianceTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);     // φ=ρφ/ρ (出力/次残差用に同期)
+        cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
     });
 }
 
@@ -1222,6 +1235,7 @@ void advanceExplicitRK(StepContext& s)
             updateVariablesInner(s.cfg , s.cuda_cfg , s.msh , s.var , s.mat_ns);
             speciesUpdateInner_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}M ステージ始点
             condensationUpdateInner_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // 液相モーメント M ステージ始点
+            cmcUpdateInner_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         });
 
         cout << "       " << iteration_label << " : " << iloop+1 << "\n";
@@ -1236,6 +1250,7 @@ void advanceExplicitRK(StepContext& s)
             speciesTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
             speciesRenormalize_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // ρY_s>=0, ΣρY_s=ρ
             condensationTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);  // 液相モーメント (Phase 1 ソース=0)
+            cmcVarianceTimeIntegration_d_wrapper(iloop, s.cfg , s.cuda_cfg , s.msh , s.var);
         });
         // 注: explicit 軸対称は軸 CV が step1 で発散するため (recipe 併用でも不変)、enforce は呼んでも
         // 検証できない。explicit の near-axis 安定化は別途要 (open issue)。暫定で無効。
@@ -1250,7 +1265,9 @@ void advanceExplicitRK(StepContext& s)
         speciesUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // roY{s}N/M 次ステップ用
         speciesPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 Y_s を最終 roY_s と同期
         condensationUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);  // 液相モーメント N/M 次ステップ用
+        cmcUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
         condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);    // 出力 φ を最終 ρφ と同期
+        cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
     });
     s.profiler.measureWall(ProfileSection::WriteOutputs, [&]() {
         writeStepOutputs(s.cfg , s.cuda_cfg , s.msh , s.var , s.pprobes , s.iStep+1);
@@ -1362,8 +1379,11 @@ void advanceImplicitDualTime(StepContext& s)
         // 液相モーメント (非平衡凝縮) を segregated point-implicit で更新。condensation==0 で no-op。
         s.profiler.measureWall(ProfileSection::UpdateInner, [&]() {
             condensationUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+            cmcUpdateOuter_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
             condensationTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
+            cmcVarianceTimeIntegration_d_wrapper(0, s.cfg , s.cuda_cfg , s.msh , s.var);
             condensationPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);
+            cmcPrimitive_d_wrapper(s.cfg , s.cuda_cfg , s.msh , s.var);   // xi, xiVar (mixfrac)
         });
     }
 

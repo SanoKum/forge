@@ -108,6 +108,43 @@ inline void loadMechanism(const std::string& path, const std::vector<std::string
     if (rt.nSpecies > THERMO_MAX_SPECIES) throw std::runtime_error("[chemistry] too many species");
     if (!root["reactions"]) throw std::runtime_error("[chemistry] no 'reactions' in " + path);
 
+    // 元素組成: species[].composition ({H: 2, O: 1, ...})。流れ側に無い種は無視、流れ側にあって機構に無い種は
+    // 元素不明 (atoms=0) のまま (混合分率診断で警告)。原子量は標準値 [kg/mol]。
+    {
+        static const struct { const char* n; double w; } EW[] = {
+            {"H", 1.00794e-3}, {"O", 15.9994e-3}, {"N", 14.0067e-3}, {"C", 12.0107e-3},
+            {"Ar", 39.948e-3}, {"He", 4.002602e-3}, {"S", 32.065e-3}, {"Cl", 35.453e-3}};
+        std::vector<std::string> elems;
+        auto elemIndex = [&](const std::string& e) -> int {
+            for (size_t i = 0; i < elems.size(); ++i) if (elems[i] == e) return (int)i;
+            if ((int)elems.size() >= CHEM_MAX_ELEM) throw std::runtime_error("[chemistry] too many elements (CHEM_MAX_ELEM)");
+            elems.push_back(e);
+            const int i = (int)elems.size() - 1;
+            rt.elemW[i] = -1.0;
+            for (const auto& ew : EW) if (e == ew.n) rt.elemW[i] = ew.w;
+            if (rt.elemW[i] < 0.0) throw std::runtime_error("[chemistry] unknown element '" + e + "' (add to EW table)");
+            return i;
+        };
+        if (root["species"]) {
+            for (const auto& spn : root["species"]) {
+                if (!spn["name"] || !spn["composition"]) continue;
+                const int s = findSpecies(names, spn["name"].as<std::string>());
+                if (s < 0) continue;
+                for (const auto& kv : spn["composition"]) {
+                    const int e = elemIndex(kv.first.as<std::string>());
+                    rt.atoms[s][e] = kv.second.as<double>();
+                }
+            }
+        }
+        rt.nElem = (int)elems.size();
+        rt.elemH = rt.elemO = rt.elemC = -1;
+        for (int i = 0; i < rt.nElem; ++i) {
+            if (elems[i] == "H") rt.elemH = i;
+            if (elems[i] == "O") rt.elemO = i;
+            if (elems[i] == "C") rt.elemC = i;
+        }
+    }
+
     int r = 0;
     for (const auto& rx : root["reactions"]) {
         if (r >= CHEM_MAX_REACTIONS) throw std::runtime_error("[chemistry] too many reactions (CHEM_MAX_REACTIONS)");

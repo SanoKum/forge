@@ -299,6 +299,9 @@ public:
     // 残差・point-implicit 対角を cellValNames / c / c_d へ追加する。allocVariables より前に
     // 1 度だけ呼ぶ。nCondSpecies <= 0 のときは何もしない (従来経路)。
     void registerCondensation(int nCondSpecies);
+    // 混合分率インフラ (cmc_d): xi (診断), roXiVar 系 (分散の保存量/原始量/N/M/残差/対角), 勾配, chi (診断)。
+    int  mixfracRegistered = 0;
+    void registerMixfrac();
 
     void allocVariables(const int &useGPU , mesh& msh);
 

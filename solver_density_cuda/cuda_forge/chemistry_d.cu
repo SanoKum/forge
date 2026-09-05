@@ -12,6 +12,7 @@
 
 static ReactionTable* g_rt_dev = nullptr;
 static ReactionTable  g_rt_host;
+static bool           g_table_loaded = false;   // 機構が読めていれば true (反応ソースの有効/無効とは独立)
 static bool g_chem_ready = false;
 // jacobianMode==2 用: 種ブロック Jacobian 残差行列 R [nCells × ns × ns] と反応熱のエネルギー対角 [nCells]
 static flow_float* g_jac_dev = nullptr;      // R_sk = J_total_sk + d_s δ_sk (d_s = max(0,−J_ss) は src_jac_Y に入れる)
@@ -143,7 +144,8 @@ void chemistryStrangHalfStep_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, 
 void chemistry_init(solverConfig& cfg)
 {
     g_chem_ready = false;
-    if (cfg.chemEnabled == 0) return;
+    // 混合分率インフラ (mixfrac) だけが ON のときも機構を読む (元素組成が要る)。反応ソースは chemEnabled のみ。
+    if (cfg.chemEnabled == 0 && cfg.chemMixfrac == 0) return;
     if (cfg.thermalMethod != 2 || cfg.nSpecies < 2) {
         std::cerr << "[chemistry] chemistry.enabled=1 requires thermalMethod=2 and >=2 species" << std::endl;
         std::exit(EXIT_FAILURE);
@@ -151,13 +153,14 @@ void chemistry_init(solverConfig& cfg)
     std::vector<std::string> eqs;
     try {
         chem_io::loadMechanism(cfg.chemMechanismFile, cfg.speciesNames, g_rt_host, &eqs);
+        g_table_loaded = true;
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl; std::exit(EXIT_FAILURE);
     }
     if (g_rt_dev) { cudaFree(g_rt_dev); g_rt_dev = nullptr; }
     gpuErrchk( cudaMalloc((void**)&g_rt_dev, sizeof(ReactionTable)) );
     gpuErrchk( cudaMemcpy(g_rt_dev, &g_rt_host, sizeof(ReactionTable), cudaMemcpyHostToDevice) );
-    g_chem_ready = true;
+    g_chem_ready = (cfg.chemEnabled != 0);   // mixfrac-only では反応ソースを動かさない
 
     std::cout << "[chemistry] mechanism '" << cfg.chemMechanismFile << "': " << g_rt_host.nReac
               << " reactions, " << g_rt_host.nSpecies << " species (flow order)."
@@ -179,7 +182,7 @@ void chemistry_init(solverConfig& cfg)
     }
 }
 
-const ReactionTable* chemistry_table_host() { return g_chem_ready ? &g_rt_host : nullptr; }
+const ReactionTable* chemistry_table_host() { return g_table_loaded ? &g_rt_host : nullptr; }
 
 // -----------------------------------------------------------------------------
 // セルごとに ω_s, Q̇, 対角 Jacobian を評価し残差へ加算する。

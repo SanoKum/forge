@@ -56,7 +56,7 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 
 | Phase | 内容 | 主要ファイル | 状態 |
 | --- | --- | --- | --- |
-| **A** 混合分率インフラ | 元素組成読込 (`composition`)、Bilger $\tilde\xi$ 診断カーネル、分散 `roXiVar` の登録・輸送・ソース、$\tilde\chi$、出力。Cabra 混合場で検証 | `chemistry_mech_io.hpp`, `chemistry_d.cuh`, `cuda_forge/cmc_d.{cuh,cu}` (新規), `variables.cpp`, `main.cpp`, `input/solverConfig.*` | in_progress |
+| **A** 混合分率インフラ | 元素組成読込 (`composition`)、Bilger $\tilde\xi$ 診断カーネル、分散 `roXiVar` の登録・輸送・ソース、$\tilde\chi$、出力。Cabra 混合場で検証 | `chemistry_mech_io.hpp`, `chemistry_d.cuh`, `cuda_forge/cmc_d.{cuh,cu}` (新規), `variables.cpp`, `main.cpp`, `input/solverConfig.*` | **実装済 (2026-09-05)**, 検証中 (§9) |
 | **B** 条件付きスカラー | `Q` ストレージ・$\eta$ 格子・初期化 (混合線)・物理空間輸送 (scalarTransport ループ)・$\eta$ 拡散陰解 (AMC)・各 $\eta$ 点の化学点陰解・境界条件 | `cmc_d.{cuh,cu}`, `scalarTransport_d`, `chemistry_d` | todo |
 | **C** ソース結合 | β-PDF 積分で $\bar{\dot\omega},\bar{\dot Q}$, 対角 Jacobian を置換 (`tci: 2`)、`cmc_dY` 診断、`jacobianInterval`/PDF 閾値スキップ | `chemistry_d.cu`, `speciesTransport_d.cu` | todo |
 | **D** 検証 | 凍結混合整合 → Cabra $H(T_c)$ 応答曲線 (5 点) → BK 着火位置 → 回帰 (`tci 0/1` ビット不変) | `case/48`, `case/47`, `tests/` | todo |
@@ -65,8 +65,8 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 
 | 優先 | 項目 | 状態・次アクション |
 | --- | --- | --- |
-| 1 | Phase A: 元素組成読込 + Bilger $\tilde\xi$ 診断 | in_progress (2026-09-05) |
-| 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場 (`run_0067`) で $\tilde\xi$–$Y_{H_2}$ 整合と分散の妥当性 | todo |
+| 1 | Phase A: 元素組成読込 + Bilger $\tilde\xi$ 診断 | **done 2026-09-05** (カーネルは numpy 再計算と 3e-8 一致; Y_H₂ 由来 ξ との差 ≤0.068 は差分拡散の物理) |
+| 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場で分散の妥当性 | 実装済・300 step smoke OK (実現可能性 1e-12, χ 10²–10³ 1/s)。発達場 `run_0080` (5000 step) で確認中 |
 | 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 (化学 OFF で $Q$ が線形) | todo |
 | 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | todo |
 | 5 | Phase C: ソース結合 (`tci: 2`)、`cmc_dY` | todo |
@@ -106,3 +106,13 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   (source coupling, Bilger 診断 + 分散輸送, AMC, β-PDF) に確定。根拠: 文献で Cabra $H(T_c)$ を再現した実績が最も強いのが
   transported PDF / CMC で、決定論的な CMC は定常 (擬似時間) ソルバと GPU の既存スカラー輸送・種ブロック陰解に乗る
   (stochastic fields は擬似時間定常と相性が悪い)。Phase A に着手。
+- `2026-09-05 (2)` — **Phase A 実装** (commit 本): `ReactionTable` に元素組成 (`nElem/elemW/atoms/elemH,O,C`)、`chemistry_mech_io` が `species[].composition` を読む
+  (`chemistry_init` は mixfrac のみでも機構を読み、反応ソースは `chemEnabled` のみ)、config `physProp.chemistry.mixfrac {enabled, cChi, fuelX, oxidizerX}`、
+  `variables::registerMixfrac` (`xi, chi, roXiVar/xiVar/N/M/res/res_m/src_jac_xiVar/transport_diag_xiVar, dXi*, dXiVar*`; リスタート復元)、
+  新規 `cuda_forge/cmc_d.{cuh,cu}` (Bilger カーネル、1 スカラ GG 勾配、分散ソース (生成/散逸=src_jac)、原始量+実現可能性クランプ、境界、N/M)、
+  `main.cpp` に凝縮モーメントと同じ 8 箇所の呼び出し (init/restart/assembleResidual/implicit inner/explicit RK/dual-time)。
+  **落とし穴**: (i) `cuda_forge/CMakeLists.txt` は明示リストなので新規 .cu の追加が要る、(ii) 変数名は `condMomentCellVarNames` の
+  「先頭 2 文字を落とす」規約で `XiVar` になるため明示登録した (不一致は `c_d[]` が空エントリを作り GPU 不正アクセス→ `.at()` に統一)。
+  **smoke `case/48 run_0079_mixfrac_smoke`** (run_0067 混合場, 化学 OFF, 300 step): NaN なし、`xi` は numpy 再計算と 3e-8 一致、
+  `|xi − Y_H2/Y_H2,fuel|` 最大 0.068 はノズル出口リップの層流層 (差分拡散、`|ξ_H2−ξ_N2|` 0.148) で物理、分散の実現可能性違反 9e-13、
+  χ̃ はせん断層で 10²–10³ 1/s、sqrt(var)/ξ ≈ 0.35–0.41 (文献 RMS/mean と同桁)。発達場は `run_0080` (5000 step)。

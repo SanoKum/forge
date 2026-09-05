@@ -149,6 +149,29 @@ void variables::registerCondensation(int nCondSpecies)
               << " -> registered " << nCondSpecies*4*8 << " cell variables\n";
 }
 
+void variables::registerMixfrac()
+{
+    this->mixfracRegistered = 1;
+    // 分散 roXiVar: 保存量/原始量/N/M/残差/対角 (原始量名は小文字始まりの xiVar に固定。cmc_d と一致させること)
+    for (const auto& name : {std::string("roXiVar"), std::string("xiVar"), std::string("roXiVarN"), std::string("roXiVarM"),
+                             std::string("res_roXiVar"), std::string("res_roXiVar_m"),
+                             std::string("src_jac_xiVar"), std::string("transport_diag_xiVar")}) {
+        this->cellValNames.push_back(name);
+        this->c.emplace(name, std::vector<flow_float>{});
+        this->c_d.emplace(name, nullptr);
+    }
+    for (const auto& name : {std::string("xi"), std::string("chi"),
+                             std::string("dXidx"), std::string("dXidy"), std::string("dXidz"),
+                             std::string("dXiVardx"), std::string("dXiVardy"), std::string("dXiVardz")}) {
+        this->cellValNames.push_back(name);
+        this->c.emplace(name, std::vector<flow_float>{});
+        this->c_d.emplace(name, nullptr);
+    }
+    for (const auto& name : {std::string("roXiVar"), std::string("xiVar"), std::string("xi"), std::string("chi")})
+        this->output_cellValNames.push_back(name);
+    std::cout << "registerMixfrac: xi / roXiVar (variance) / chi registered\n";
+}
+
 variables::~variables() {
     for (auto& cellValName : cellValNames)
     {
@@ -711,6 +734,14 @@ void variables::readValueHDF5(std::string fname , mesh& msh,
     // 原始量 φ=ρφ/ρ も同時に設定する。
     if (this->nCondSpeciesRegistered >= 1) {
         std::list<std::string> cond_names;
+        if (this->mixfracRegistered) {
+            const bool has = file.exist("/VALUE/roXiVar");
+            std::vector<flow_float> v_in;
+            if (has) file.getDataSet("/VALUE/roXiVar").read(v_in);
+            auto& dst = this->c["roXiVar"];
+            for (geom_int ic = 0; ic < msh.nCells; ++ic) dst[ic] = has ? v_in[ic] : static_cast<flow_float>(0.0);
+            std::cout << "readVariables: roXiVar " << (has ? "restored" : "initialized to 0 (not in file)") << "\n";
+        }
         for (const auto& consName : this->condMomentConsNames) {
             const std::string primName = consName.substr(2);
             std::vector<flow_float>& v_cons = this->c.at(consName);

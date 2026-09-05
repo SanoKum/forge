@@ -194,6 +194,20 @@ physProp: {thermalMethod: 2, species: [H2, O2, H, O, OH, H2O, HO2, H2O2, N2], sp
 | `jacobianInterval` | 1 | 定常陰解法 (`timeIntegration: 11`, jacobianMode 2) で化学 Jacobian (種ブロック・反応熱感度・対角) を n ステップごとに再評価し、間は凍結する (ω・Q̇ は毎ステップ)。流れブロックの frozen-coefficient と同じ発想で、化学ソース項カーネルの大半 (Jacobian 組立) を省く。**推奨 5** (BK で 59→29 ms/step, 残差 4–5 桁一致)。非定常/陽解法では無視 |
 | `strang` | 0 | 1: 非定常陽解法 (`unsteady: 1`, RK) で化学を Strang 分離 (dt/2 セル内 backward-Euler sub-cycle → RK → dt/2)。剛性な化学でも RK の `dt` を化学時間に縛られずに取れる。定常・dual-time では無視 |
 
+#### `physProp.chemistry.mixfrac` (混合分率インフラ, CMC の前提; methods/chemistry_cmc.md §4)
+
+```yaml
+chemistry: {enabled: 0|1, mechanismFile: "mech.yaml", ...,
+            mixfrac: {enabled: 1, cChi: 2.0, fuelX: {H2: 0.25, N2: 0.75}, oxidizerX: {O2: 0.1474, H2O: 0.0989, N2: 0.7537}}}
+```
+
+- `enabled: 1` で Bilger 混合分率 `xi` (平均組成から診断、機構 YAML の `species[].composition` が必要)、分散 `xiVar` (保存量 `roXiVar`) の
+  輸送 (生成 $2\mu_t/Sc_t|\nabla\tilde\xi|^2$・散逸 $\rho\tilde\chi$ を点陰解)、$\tilde\chi=$`cChi`$\cdot\beta^*\omega\,\widetilde{\xi''^2}$ (`chi`) を有効化。
+  `chemistry.enabled: 0` でも動く (機構は元素組成のためだけに読む)。既定 off で全経路ビット不変。
+- `fuelX` / `oxidizerX`: 燃料流・酸化剤流のモル分率 (種名 → X)。Bilger の $\beta_F,\beta_O$ に使う。両方必須。
+- 入口では分散 0 (node は境界ノードにピン)、他境界は zero-gradient。リスタートは `VALUE/roXiVar` があれば復元、無ければ 0。
+- 出力: `xi`, `xiVar`, `roXiVar`, `chi`。検証は `case/48.cabra_h2n2/check_mixfrac.py`。
+
 - **定常陰解法 (`timeIntegration: 11`) の反応流は `speciesImplicitCoupling: 2` + `jacobianMode: 2` が必須**。陽的な反応熱注入 (coupling 0/1 または jacobianMode ≤1) はスロート付近の再結合熱で数 step で発散する (case/46 run_0002–0007)。非定常陽解法 (RK, `dt` ≲ 化学時間) は jacobianMode 1 でよい。
 - **`thermoHrefTemp: 298.15` を必ず指定する** (反応熱は sensible datum の残差項 $\dot Q=-\sum_s h^{abs}_s(T_{ref})\dot\omega_s$ として入る。絶対 datum (0) でも動くが陰解法は不安定)。
 - 機構に現れる種は `species` に全て含めること (無ければ起動時エラー)。`species` にだけある種は不活性として扱う。
