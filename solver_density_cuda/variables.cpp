@@ -738,16 +738,18 @@ void variables::readValueHDF5(std::string fname , mesh& msh,
     // --- 非平衡凝縮 (Phase 1): 液相モーメント ρφ を読み込む ---
     // 入力 HDF5 に VALUE/<consName> があれば読む。無ければ 0 (dry リスタート)。
     // 原始量 φ=ρφ/ρ も同時に設定する。
+    // --- 混合分率分散 (CMC Phase A): VALUE/roXiVar があれば復元、無ければ 0 ---
+    if (this->mixfracRegistered) {
+        const bool has = file.exist("/VALUE/roXiVar");
+        std::vector<flow_float> v_in;
+        if (has) file.getDataSet("/VALUE/roXiVar").read(v_in);
+        auto& dst = this->c["roXiVar"];
+        for (geom_int ic = 0; ic < msh.nCells; ++ic) dst[ic] = has ? v_in[ic] : static_cast<flow_float>(0.0);
+        std::cout << "readVariables: roXiVar " << (has ? "restored" : "initialized to 0 (not in file)") << "\n";
+    }
+
     if (this->nCondSpeciesRegistered >= 1) {
         std::list<std::string> cond_names;
-        if (this->mixfracRegistered) {
-            const bool has = file.exist("/VALUE/roXiVar");
-            std::vector<flow_float> v_in;
-            if (has) file.getDataSet("/VALUE/roXiVar").read(v_in);
-            auto& dst = this->c["roXiVar"];
-            for (geom_int ic = 0; ic < msh.nCells; ++ic) dst[ic] = has ? v_in[ic] : static_cast<flow_float>(0.0);
-            std::cout << "readVariables: roXiVar " << (has ? "restored" : "initialized to 0 (not in file)") << "\n";
-        }
         for (const auto& consName : this->condMomentConsNames) {
             const std::string primName = consName.substr(2);
             std::vector<flow_float>& v_cons = this->c.at(consName);

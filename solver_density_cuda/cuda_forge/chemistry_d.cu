@@ -238,9 +238,8 @@ __global__ void chemistry_source_d(
     if (frozenJac && mode > 0) {
         // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
         if (cmcMode == 2 && cmcYpdf) {
-            const double tau = fmax((double)cmcTau[ic], 1.0e-12); const double hmean = thermo_h_mix(sp, nSpecies, Y, Tc);
-            for (int s = 0; s < nSpecies; ++s) omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau;
-            Qdot = rho * ((double)cmcHpdf[ic] - hmean) / tau;
+            const double tau = fmax((double)cmcTau[ic], 1.0e-12); Qdot = 0.0;
+            for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; Qdot -= (sp[s].h_datum / sp[s].MW) * omega[s]; }
         } else if (cmcOmega) { for (int s = 0; s < nSpecies; ++s) omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; Qdot = (double)cmcQdot[ic]; }
         else chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, 0, J, nullptr);
         const double V = (double)vol[ic];
@@ -257,9 +256,14 @@ __global__ void chemistry_source_d(
         // CMC 結合 2 (methods/chemistry_cmc.md §5): 平均組成・顕エンタルピーを PDF 積分値 Ỹ_pdf, h̃_pdf へ緩和させる
         //   ω_s = ρ(Ỹ_pdf,s − Y_s)/τ, Q̇ = ρ(h̃_pdf − h̃)/τ, ∂ω_s/∂(ρY_k) = −δ_sk/τ (点陰解で強い緩和も安定)。Σω_s = 0 (質量保存)。
         const double tau = fmax((double)cmcTau[ic], 1.0e-12);
-        const double hmean = thermo_h_mix(sp, nSpecies, Y, Tc);
-        for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; dOdT[s] = 0.0; }
-        Qdot = rho * ((double)cmcHpdf[ic] - hmean) / tau;
+        // 反応熱は標準規約 Q̇ = −Σ c_s ω_s (緩和した種変化に伴う生成エンタルピー) で与える。独立なエンタルピー緩和
+        // ρ(h̃_pdf−h̃)/τ は 案C 予測子の ∂Q̇/∂(ρY_k)=c_s/τ と整合せず、∂Q̇/∂(ρe)=0 で陽的な剛性項になり step 2 で NaN (run_0083 v2)。
+        Qdot = 0.0;
+        for (int s = 0; s < nSpecies; ++s) {
+            omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; dOdT[s] = 0.0;
+            Qdot -= (sp[s].h_datum / sp[s].MW) * omega[s];
+        }
+        (void)cmcHpdf;
         for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = 0.0;
         if (mode > 0) for (int s = 0; s < nSpecies; ++s) J[s*nSpecies + s] = -1.0 / tau;
     } else if (cmcOmega) {
@@ -380,6 +384,10 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
     flow_float** res = species_resroY_device_ptr();
     flow_float** sj  = species_srcjac_device_ptr();
     if (roY == nullptr || res == nullptr || sj == nullptr) return;
+    if (cmc_coupling_mode() == 3) {
+        // couple 3: 平均場の化学種・温度は CMC の PDF 積分値で上書きされる (cmcQUpdate)。平均方程式に反応ソースは入れない。
+        ++g_stepCounter; return;
+    }
     // Jacobian 凍結: 定常陰解法 (timeIntegration 11, dualTime 0) で jacobianInterval>1 のとき、間のステップは ω/Q̇ のみ評価。
     // 非定常・陽解法では毎ステップ評価 (凍結しない)。g_diag_dev が無い (mode<2) 場合も凍結しない (対角は src_jac に直接入るため)。
     const bool steadyImplicit = (cfg.timeIntegration == 11 && cfg.dualTime == 0);

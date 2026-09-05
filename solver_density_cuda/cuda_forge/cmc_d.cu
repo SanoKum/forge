@@ -543,6 +543,29 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     for (int i = 0; i < ns * ns; ++i) jacBar[(size_t)ic * ns * ns + i] = (flow_float)jbar[i];
 }
 
+// couple 3: 平均場の化学種・温度を PDF 積分値で上書き (文献 RANS-CMC の標準: 平均スカラーは CMC から診断)。
+//   roY_s = ρ̄ Ỹ_pdf,s (正規化), T̃ = T(h̃_pdf, Ỹ_pdf), roe = ρ̄ (e_int(T̃,Ỹ) + |u|²/2), e_int = h − R_mix T (sensible datum)。
+__global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* hpdf,
+                                     const flow_float* ro, const flow_float* Ux, const flow_float* Uy, const flow_float* Uz, const flow_float* Tcur,
+                                     flow_float* const* roY_dev, flow_float* roe, flow_float* Tout, double Tmax)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int ns = g_cmc.nSpecies;
+    double Y[THERMO_MAX_SPECIES]; double ysum = 0.0;
+    for (int s = 0; s < ns; ++s) { double y = (double)ypdf[(size_t)s * nCells + ic]; if (y < 0.0) y = 0.0; Y[s] = y; ysum += y; }
+    if (!(ysum > 0.0)) return;
+    for (int s = 0; s < ns; ++s) Y[s] /= ysum;
+    const double h = (double)hpdf[ic];
+    const double T = thermo_T_from_h(sp, ns, Y, h, fmin(fmax((double)Tcur[ic], 200.0), Tmax), 200.0, Tmax);
+    const double rho = (double)ro[ic];
+    const double eint = thermo_h_mix(sp, ns, Y, T) - thermo_R_mix(sp, ns, Y) * T;
+    const double ke = 0.5 * ((double)Ux[ic]*Ux[ic] + (double)Uy[ic]*Uy[ic] + (double)Uz[ic]*Uz[ic]);
+    for (int s = 0; s < ns; ++s) roY_dev[s][ic] = (flow_float)(rho * Y[s]);
+    roe[ic] = (flow_float)(rho * (eint + ke));
+    Tout[ic] = (flow_float)T;
+}
+
 ScalarTransportDesc sliceDesc(int s, const solverConfig& cfg)
 {
     const size_t off = (size_t)s * g_nCellsAll;
@@ -686,6 +709,12 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
             var.c_d.at("dt_local"), species_roY_device_ptr(),
             g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
             g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1);
+        if (g_cmc_host.couple == 3) {
+            cmc_overwrite_mean_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+                g_nCells, thermo_species_device_ptr(), g_ypdf, g_hpdf,
+                var.c_d.at("ro"), var.c_d.at("Ux"), var.c_d.at("Uy"), var.c_d.at("Uz"), var.c_d.at("T"),
+                species_roY_device_ptr(), var.c_d.at("roe"), var.c_d.at("T"), g_cmc_host.Tmax);
+        }
     }
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
 }
