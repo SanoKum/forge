@@ -68,7 +68,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | P1-5 | BK 早着火の条件整理 (機構 A/B・入口乱流・壁温・3D blockage) と end-to-end 収支 (質量・元素・全エンタルピー・圧損・出口一様性) の必須出力化 | todo (Cabra A/B は済、BK 機構 A/B は未) |
 | P1-6 | Cabra 入口感度 (管内長 ~50d・リップ熱条件・入口 k/ω・格子) | todo |
 | P1-7 | **ドキュメント同期** | **methods/index.md・methods/chemistry.md (状態行・falloff・precond 配線=済をコード確認・検証節・TCI 節)・plans/README.md は 2026-09-05 同期済**。残: case/47・48 run 表の grouped 行 (破棄予定の診断 run 群) の 1 run = 1 行化は run 群の削除と併せてユーザ判断; OH 閾値は新規解析を 2e-4 に統一済 (旧 README 数値は 1e-4 のまま注記なし) |
-| P1-8 | 回帰整備: case/28・case/44 の `chemistry.enabled: 0` ビット不変検証のエビデンス化、0-D テストの自動テスト登録 | todo |
+| P1-8 | 回帰整備 | **0-D 自動テスト登録 done 2026-09-05**: `tests/unit/test_chemistry_0d.py` (Jachimowski / Li 2004 が Cantera と ≤1 % で PASS, golden `goldens/chem0d.json`)。残: case/28・case/44 の `chemistry.enabled: 0` ビット不変検証のエビデンス化 (GPU 短時間 run) |
 | P2-9 | `chemistry_source_d` 占有率最適化 (3 KB スタック/126 レジスタ)、`inlet_Pressure_dir` 組成対応 | todo |
 
 ## 6. 検証
@@ -279,3 +279,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   (逆流時の組成/エントロピーは内部外挿で、外部既知状態を与える BC ではない — codex 2 の指摘どおり)。内部 (z/d 9/26) は
   末尾 ΔT 10–13 K まで静まり残差も falling だったので、境界を暴れさせた分だけ内部のリミットサイクルが崩れた可能性はある。
   次: ③ `run_0075` (precond 0, cfl_pseudo 0.5, 外周 slip) で前処理起因かを判定 → ② 領域拡張 (半径 2 倍・長さ延長, cross-mesh restart) → ④ dual-time。
+- `2026-09-05 (9)` — **P1-8 (一部)**: 0-D 化学ホストテストを `tests/unit/test_chemistry_0d.py` として自動化 (ビルド→Cantera golden 照合→exit 0/1;
+  Jachimowski 0.6 %・Li 1.0 % PASS)。**切り分け ② の準備**: 拡張メッシュ `case/48 mesh/cabra_ext.msh` (Lx 0.40 m, R 0.20 m, 110k ノード,
+  `make_cabra_mesh.py --Lx 0.40 --R 0.20 --nx 480 --ny_co2 85`; msh は未 commit・再生成可) を `setup_cabra_case.py --mesh` で `run_0076` に変換、
+  run_0073 から `interp_field.py` で補間済み (投入は run_0075 完了後)。品質ツール `check_mesh_quality.py` は node 変換 h5 を読めないので
+  cell 変換で PASS (AR 104, skew 0) を確認。

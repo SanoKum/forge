@@ -6,7 +6,7 @@ import argparse, pathlib, shutil, subprocess, os, h5py, numpy as np, yaml, cante
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--chem", type=int, default=0); ap.add_argument("--jac", type=int, default=2); ap.add_argument("--ji", type=int, default=5)
 ap.add_argument("--tci", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--cfl", type=float, default=1.0); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--relax", type=float, default=0.7)
 ap.add_argument("--nstep", type=int, default=20000); ap.add_argument("--out", type=int, default=0); ap.add_argument("--restart", default=None); ap.add_argument("--kfac", type=float, default=1.0)
-ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--sfr", type=int, default=0); a = ap.parse_args()
+ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--mesh", default="mesh/cabra.msh"); ap.add_argument("--sfr", type=int, default=0); a = ap.parse_args()
 HERE = pathlib.Path(__file__).parent; d = pathlib.Path(a.run_dir); d.mkdir(exist_ok=True)
 names = ["H2", "O2", "H", "O", "OH", "H2O", "HO2", "H2O2", "N2"]
 g = ct.Solution(str(HERE / "mech.yaml")); assert g.species_names == names
@@ -56,7 +56,7 @@ turbulence: {{model: "sst", wallTreatmentSST: 1, nodeOmegaWfDirichlet: 1, scalar
 initial: "uniform_p101325_u10"
 """)
 for f in ("species_db.yaml", "mech.yaml", "probe.yaml"): shutil.copy(HERE / f, d / f)
-shutil.copy(HERE / "mesh/cabra.msh", d / "cabra.msh")
+shutil.copy(HERE / a.mesh, d / "cabra.msh")   # --mesh で拡張領域メッシュ等に差し替え可
 # 入口プロファイル (ジェット管入口 x=-Ltube, r∈[0, 2.285 mm]): 1/7 乗則
 rj = 0.002285; r = np.concatenate([np.linspace(0, rj*0.9, 30), np.linspace(rj*0.9, rj, 30)[1:]]); u = Uc*np.clip(1 - r/rj, 0, 1)**(1/7)
 np.savetxt(d / "inlet_profile_1.csv", np.c_[r, u, 0*u, 0*u], header="y Ux Uy Uz", comments="", fmt="%.7e")

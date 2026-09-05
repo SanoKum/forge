@@ -11,7 +11,7 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 
 - `mesh/make_cabra_mesh.py`: 軸対称平面構造 quad (node)。ジェット管を上流 20 mm 延長 (管内 no-slip、入口は 1/7 乗則プロファイル)、
   リップ 0.89 mm、外周 R=100 mm slip、x=0–250 mm。60k ノード、品質 PASS (AR max 70, skew 0)。
-- `setup_cabra_case.py run_dir [--chem 0|1] [--ji 5] [--tci 0|1] [--cfl] [--conv] [--relax] [--nstep] [--restart]`: Cantera で入口状態、
+- `setup_cabra_case.py run_dir [--chem 0|1] [--ji 5] [--tci 0|1] [--cfl] [--conv] [--relax] [--nstep] [--restart] [--mesh mesh/cabra_ext.msh]`: Cantera で入口状態、
   BC (`inlet_uniformVelocity`×2 + profile, `outlet_statPress`, `wall`, `slip`, `axis`)、config (node 軸対称, `nodeInletCornerWall: 1`,
   `lowMachPrecond: 2`, implicit, SST, TP 9 種, chemistry `jacobianInterval 5`)、IC (coflow 一様 + ジェット柱)。
   切り分け用オプション: `--single 1` (N₂ 単一種), `--jetcof 1` (ジェット組成=coflow), `--jetn2 1` (純 N₂ ジェット), `--iccol 0` (ジェット柱 IC なし=ピストン起動),
@@ -52,6 +52,7 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0073_react_li_cont` | run_0072 `res_30000` (付着済) から Li 機構のまま +30000 step 継続。目的: 付着後の統計定常確認 | `ignx` 0・T_max 1569 K・出口 Y_H2O は STEADY だが、**出口質量流束は 0.028–0.044 kg/s (平均 0.036 = 理論値 0.037) を周期 15–20k step で振動し DRIFTING** (環状逆流は step 5000 以降消失)。z/d=9 の T は snapshot 間 ≤34 K で定常、**z/d=26 は最大 183 K 変動**で実験比較に使えない。全残差プラトー = 擬似時間リミットサイクル。`check_convergence` NOT CONVERGED | ref (付着後の準定常性の記録) |
 | `run_0074_react_li_faropen` | run_0073 `res_30000` から、**外周 (physID 5) を slip → `outlet_statPress`** (Ps=Pt=101325, Tt 1045; codex レビュー 2 の切り分け順序 ①), Li, +30000 step | **改善せず・不採用**: 外周で Uy −18〜+9 m/s の出入りが暴れ (coflow 3.5 m/s に対し非物理)、出口正味流束 −0.004〜0.072 kg/s (末尾 35 ノード逆流) で DRIFTING。静圧固定の側面境界は低マッハでは数十 Pa の圧力差で大流速を作り物理的 farfield にならない。内部は z/d 9/26 とも末尾 ΔT 10–13 K まで静まり残差 falling。`ignx` 0・T_max 1564 K STEADY | ref (外周圧力境界は不採用) |
 | `run_0075_react_li_precond0` | run_0073 `res_30000` から **`lowMachPrecond: 0`・cfl_pseudo 0.5** (外周 slip; 切り分け順序 ③ リミットサイクルが前処理起因かを見る), Li, +30000 step | (実行中) | active |
+| `run_0076_react_li_extdomain` | **領域拡張** (`mesh/cabra_ext.msh`: Lx 0.25→0.40 m, R 0.10→0.20 m, nx 480, ny_co2 85, 110k ノード; `setup_cabra_case.py --mesh`), run_0073 `res_30000` から `interp_field.py` で cross-mesh 補間 (拡張域は最近傍 = coflow 値), 外周 slip, precond 2, Li, 30000 step (切り分け順序 ②) | 品質: `check_mesh_quality` は node 変換 h5 を読めない (CONNE 形式) ため cell 変換で判定 → **PASS** (AR max 104, skew 0)。投入待ち (GPU は run_0075) | 準備済 |
 
 ## 機構着火遅れ比較 (2026-09-05, plan §5.1 P0-3)
 

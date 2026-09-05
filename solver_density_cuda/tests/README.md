@@ -78,3 +78,13 @@ node-centered は壁・near-axis の既知課題が残っており、失敗理�
 
 - GPU 必須のため自動 CI 未対応 (self-hosted GPU runner または build-only CI は backlog)。
 - 回帰指標は残差履歴のみ。壁面分布や line profile の回帰比較は未対応 (backlog)。
+
+## unit (GPU 不要のホストテスト)
+
+`tests/unit/` はビルド済み forge を要しない単体テスト。現状は各ファイルを個別にビルド・実行する。
+
+- `test_chemistry_0d.py` — 0-D 化学 (有限速度反応) の回帰: `tools/test_chemistry.cpp` をビルドし、量論 H₂-air 1200 K 1 atm
+  定積反応器の着火遅れを Cantera 参照 (`goldens/chem0d.json`, 機構ごとの `tau_ign_s`/`T_end`) と照合する。
+  判定: 着火遅れ相対差 ≤2 %・終端温度差 <10 K・Jacobian 有限差分 PASS・Σω≈0。BDF1 の刻みは `TCHEM_*` で締めて実行する
+  (既定刻みは着火遅れを 5–15 % 短く出す)。`python3 tests/unit/test_chemistry_0d.py` (exit 0/1)。機構を足したら `MECHS` に
+  追加して `--update` (Cantera は `.venv-chem`)。2026-09-05 時点: Jachimowski 9sp20r 0.6 %, Li 2004 (Troe) 1.0 % で PASS。
