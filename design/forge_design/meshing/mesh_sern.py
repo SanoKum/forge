@@ -25,7 +25,7 @@ import numpy as np
 from .mesh2d import _radial_fracs
 
 PHYS_SERN = {"inlet_nozzle": 1, "inlet_ext": 2, "outlet": 3, "ramp": 4, "cowl_in": 5,
-             "cowl_out": 6, "bottom": 7, "top_out": 8, "fluid": 9}
+             "cowl_out": 6, "bottom": 7, "top_out": 8, "fluid": 9, "vehicle": 10}
 
 
 @dataclass
@@ -46,6 +46,16 @@ class SernMeshParams:
     scale: float = 1.0
     x_cluster_w: float = 0.15
     x_cluster_a: float = 3.0
+    # --- ランプ側外部流ブロック (plan §4.11) ---
+    ext_top: bool = False                # 機体上面・base・後流 + 自由流バンドを付ける
+    top_depth: float = 2.0               # 機体上面線から上境界までの高さ / H
+    nj_ext_top: int = 41
+    nj_wake: int = 9                     # base 高さ分の後流ブロックの j 点数
+    vehicle_clearance: float = 0.02      # 機体上面 = max(ランプ y) + これ (/H)
+    first_top_frac: float = 0.02         # top バンドの第一セル / H (slip 壁なので粗くてよい)
+    vehicle_taper: float = 0.0           # >0: 機体を後縁手前この長さ (/H) で厚さ 0 に絞り TE を共有 (base 無し)。
+                                         # 0: 鉛直 base + wake ブロック。node では base の 90° 二重 slip 角で step 5 発散
+                                         # (run_0034) したのでテーパ (カウルと同じ構造) を使う
 
 
 def _cluster_stations(x0, x1, n, ends=(True, True), w=0.15, a=3.0):
@@ -60,6 +70,21 @@ def _cluster_stations(x0, x1, n, ends=(True, True), w=0.15, a=3.0):
     cum = np.concatenate([[0.0], np.cumsum(0.5 * (dens[1:] + dens[:-1]) * np.diff(xi))])
     cum /= cum[-1]
     return x0 + L * np.interp(np.linspace(0.0, 1.0, n), cum, xi)
+
+
+def _geom_start(n, first):
+    """[0,1] を n 点、始端の第一間隔が first (比) になる幾何級数で切る (first ≥ 1/(n−1) なら一様)。"""
+    if first >= 1.0 / (n - 1):
+        return np.linspace(0.0, 1.0, n)
+    lo, hi = 1.0, 3.0
+    for _ in range(100):                       # first·(r^(n−1) − 1)/(r − 1) = 1 の r を二分法で
+        r = 0.5 * (lo + hi)
+        tot = first * (r ** (n - 1) - 1.0) / (r - 1.0)
+        lo, hi = (r, hi) if tot < 1.0 else (lo, r)
+    r = 0.5 * (lo + hi)
+    s = np.concatenate([[0.0], np.cumsum(first * r ** np.arange(n - 1))])
+    s /= s[-1]
+    return s
 
 
 def _tanh_two_sided(n, first):
@@ -160,7 +185,10 @@ def generate_sern_mesh(design, prm: SernMeshParams):
     for i in range(ni - 1):
         bedges["bottom"].append((low(i, 0), low(i + 1, 0)))
         xm = 0.5 * (xs[i] + xs[i + 1])
-        (bedges["ramp"] if xm <= L_ramp else bedges["top_out"]).append((up(i, njt - 1), up(i + 1, njt - 1)))
+        if xm <= L_ramp:
+            bedges["ramp"].append((up(i, njt - 1), up(i + 1, njt - 1)))
+        elif not prm.ext_top:                     # ext_top ではプルーム上線は wake/top との内部線
+            bedges["top_out"].append((up(i, njt - 1), up(i + 1, njt - 1)))
         if i + 1 <= i_te:
             bedges["cowl_in"].append((up(i, 0), up(i + 1, 0)))
             bedges["cowl_out"].append((low(i, njb - 1), low(i + 1, njb - 1)))
@@ -170,11 +198,92 @@ def generate_sern_mesh(design, prm: SernMeshParams):
     for j in range(njt - 1):
         bedges["inlet_nozzle"].append((up(0, j), up(0, j + 1)))
         bedges["outlet"].append((up(ni - 1, j), up(ni - 1, j + 1)))
+    ext = {"ext_top": bool(prm.ext_top)}
+    if prm.ext_top:
+        coords, quads = _add_ext_top(coords, quads, bedges, xs, yt, k, L_ramp, y_e, up, njt, prm, ext)
     coords *= prm.scale
     info = {"ni": ni, "nj_top": njt, "nj_bot": njb, "cells": int(quads.shape[0]), "nodes": int(coords.shape[0]),
             "x_out": x_out, "y_bot": y_bot, "i_te": i_te, "L_cowl": L_cowl, "L_ramp": L_ramp,
-            "cowl_thickness": t_c, "dup_stations": [int(i) for i in np.where(dup)[0]]}
-    return coords, quads, bedges, info, y_mid
+            "cowl_thickness": t_c, "dup_stations": [int(i) for i in np.where(dup)[0]], **ext}
+    return coords, quads, bedges, info, y_mid, y_top
+
+
+def _add_ext_top(coords, quads, bedges, xs, yt, k, L_ramp, y_e, up, njt, prm, ext):
+    """ランプ側外部流ブロック (top バンド + wake ブロック) を既存ノード・セルの後ろに足す (plan §4.11)。
+    k = ランプ後縁の station。yt = noz バンド上境界 (ランプ/プルーム上線)。"""
+    ni = len(xs); njT, njW = int(prm.nj_ext_top), int(prm.nj_wake)
+    y_veh = float(yt[:k + 1].max()) + float(prm.vehicle_clearance)
+    ii = np.arange(ni)
+    if prm.vehicle_taper > 0.0:
+        # 機体厚 t_v(x) = (y_veh − ランプ y) × 係数。係数は x ≤ L_ramp − taper で 1、TE で 0 (線形)。
+        # → 上面は x ≤ L_ramp − taper で水平 y_veh、以降ランプ形に沿って絞られ TE でランプと一致 (共有ノード)。
+        fac = np.clip((L_ramp - xs) / prm.vehicle_taper, 0.0, 1.0)
+        y3_veh = yt + (y_veh - yt) * fac
+        y3_veh[k] = y_e
+        h_base = 0.0
+    else:
+        y3_veh = np.full(ni, y_veh)
+        h_base = y_veh - y_e
+    has_wake = h_base > 1e-9
+    if has_wake and njW < 3:
+        raise ValueError("nj_wake は 3 以上")
+    y3 = np.where(ii <= k, y3_veh, (y_e + h_base) + (xs - L_ramp) * np.tan(prm.top_ext_angle))   # top の下線 (TE で連続)
+    N0 = coords.shape[0]
+    top0_own = list(range(ni)) if has_wake else list(range(k))     # j=0 を自前ノードで持つ station
+    top0_idx = {i: n for n, i in enumerate(top0_own)}
+    N_top0, N_topj = len(top0_own), ni * (njT - 1)
+
+    def top(i, j):
+        if j == 0:
+            return N0 + top0_idx[i] if i in top0_idx else up(i, njt - 1)
+        return N0 + N_top0 + i * (njT - 1) + (j - 1)
+    N1 = N0 + N_top0 + N_topj
+
+    def wake(i, j):
+        if j == 0:
+            return up(i, njt - 1)
+        if j == njW - 1:
+            return top(i, 0)
+        return N1 + (i - k) * (njW - 2) + (j - 1)
+    N2 = N1 + ((ni - k) * (njW - 2) if has_wake else 0)
+    coords = np.vstack([coords, np.zeros((N2 - N0, 3))])
+    s_t = _geom_start(njT, min(prm.first_top_frac / prm.top_depth, 0.5))
+    s_w = _geom_start(njW, min(prm.first_wall_frac / h_base, 0.5)) if has_wake else None
+    for i in range(ni):
+        yy = y3[i] + s_t * prm.top_depth
+        if i in top0_idx:
+            coords[top(i, 0)] = (xs[i], y3[i], 0.0)
+        coords[top(i, 1):top(i, njT - 1) + 1, 0] = xs[i]
+        coords[top(i, 1):top(i, njT - 1) + 1, 1] = yy[1:]
+        if has_wake and i >= k:
+            yw = yt[i] + s_w * h_base
+            for j in range(1, njW - 1):
+                coords[wake(i, j)] = (xs[i], yw[j], 0.0)
+    extra = []
+    for i in range(ni - 1):
+        for j in range(njT - 1):
+            extra.append((top(i, j), top(i + 1, j), top(i + 1, j + 1), top(i, j + 1)))
+    if has_wake:
+        for i in range(k, ni - 1):
+            for j in range(njW - 1):
+                extra.append((wake(i, j), wake(i + 1, j), wake(i + 1, j + 1), wake(i, j + 1)))
+    quads = np.vstack([quads, np.asarray(extra, dtype=np.int64)])
+    for i in range(k):                                    # 機体上面 (x ≤ L_ramp)
+        bedges["vehicle"].append((top(i, 0), top(i + 1, 0)))
+    if has_wake:                                          # base (後縁の鉛直面)
+        for j in range(njW - 1):
+            bedges["vehicle"].append((wake(k, j), wake(k, j + 1)))
+    for i in range(ni - 1):
+        bedges["top_out"].append((top(i, njT - 1), top(i + 1, njT - 1)))
+    for j in range(njT - 1):
+        bedges["inlet_ext"].append((top(0, j), top(0, j + 1)))
+        bedges["outlet"].append((top(ni - 1, j), top(ni - 1, j + 1)))
+    if has_wake:
+        for j in range(njW - 1):
+            bedges["outlet"].append((wake(ni - 1, j), wake(ni - 1, j + 1)))
+    ext.update({"nj_ext_top": njT, "nj_wake": njW if has_wake else 0, "y_veh": y_veh, "h_base": h_base,
+                "has_wake": has_wake, "i_ramp_te": int(k), "vehicle_taper": float(prm.vehicle_taper)})
+    return coords, quads
 
 
 def write_msh41_named(path, coords, quads, bedges: dict, phys: dict) -> None:

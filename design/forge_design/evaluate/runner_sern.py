@@ -34,14 +34,26 @@ def _dv(p: Problem, name, default=None) -> float:
     return float(v["value"] if isinstance(v, dict) else v)
 
 
+def design_snapshot(p: Problem) -> dict:
+    """作動点で上書きされる**前**の設計点 (入口・外部流・ガス) を控える。逆設計はこれで固定する
+    (plan §4.10: 形状は設計点で 1 つに決まる。作動点は CFD の BC/IC だけを変える)。"""
+    return {"inflow": dict(p.spec["inflow"]), "external": dict(p.spec["external"]),
+            "gamma": float(p.gamma), "cp": float(p.cp)}
+
+
 def select_operating_point(p: Problem, op: str | None) -> dict:
-    """spec.operating_points[] から名前で 1 点を選び spec.external (と inflow の上書き) に反映する。
-    op=None で operating_points が無ければ spec.external をそのまま使う。戻り値 = 選んだ点 (重み込み)。"""
+    """spec.operating_points[] から名前で 1 点を選び spec.external / inflow / ガスに反映する。
+    op=None で operating_points が無ければ spec.external をそのまま使う。戻り値 = 選んだ点 (重み込み)。
+
+    作動点は飛行条件 (external) だけでなく**燃焼器出口 (inflow) とガス (gamma/cp) も動く** —
+    飛行 M が変わればインレット圧縮と燃焼加熱が変わり、powered と power-off では γ が 1.18 と 1.39 で違う
+    (plan §4.10、NASA TM X-71972 TABLE 1 + CEA2)。"""
     ops = p.spec.get("operating_points")
     if not ops:
         if op not in (None, "", "default"):
             raise ValueError("spec.operating_points が無いのに --op が指定された")
-        return {"name": "default", "weight": 1.0, "external": dict(p.spec["external"])}
+        return {"name": "default", "weight": 1.0, "external": dict(p.spec["external"]),
+                "inflow": dict(p.spec["inflow"]), "gas": {"gamma": p.gamma, "cp": p.cp}}
     names = [o["name"] for o in ops]
     if op in (None, "", "default"):
         op = names[0]
@@ -51,7 +63,16 @@ def select_operating_point(p: Problem, op: str | None) -> dict:
     p.spec["external"] = dict(o["external"])
     if "inflow" in o:
         p.spec["inflow"] = {**p.spec["inflow"], **o["inflow"]}
-    return {"name": op, "weight": float(o.get("weight", 1.0)), "external": dict(o["external"])}
+    if "gas" in o:                      # 作動点ごとの γ / cp (powered 1.18 vs power-off 1.39)
+        gas = {k: float(v) for k, v in o["gas"].items()}
+        unknown = set(gas) - {"gamma", "cp"}
+        if unknown:
+            raise ValueError(f"operating_points[{op}].gas の未知キー: {sorted(unknown)} (gamma | cp のみ)")
+        p.gamma = gas.get("gamma", p.gamma)
+        p.cp = gas.get("cp", p.cp)
+        p.raw.setdefault("gas", {}).update(gas)
+    return {"name": op, "weight": float(o.get("weight", 1.0)), "external": dict(p.spec["external"]),
+            "inflow": dict(p.spec["inflow"]), "gas": {"gamma": p.gamma, "cp": p.cp}}
 
 
 def gas_states(p: Problem) -> dict:
@@ -72,18 +93,18 @@ def gas_states(p: Problem) -> dict:
             "ext": st(ex["M_inf"], ex["p_inf"], ex["T_inf"]), "R": R}
 
 
-def design_from_problem(p: Problem, design_external: dict | None = None):
-    """逆設計は**設計点** (spec.external、または design_external) の外部圧で行う。作動点 (operating_points) は
+def design_from_problem(p: Problem, design: dict | None = None):
+    """逆設計は**設計点**で行う (`design` = 作動点適用前の `design_snapshot(p)`)。作動点 (operating_points) は
     CFD の境界条件・IC だけを変え、形状は変えない (2026-09-05 修正: それまで作動点ごとに p_ext が変わり kernel/形状が
-    作動点依存になっていた — run_0010/0017 は作動点間で形状が一致していない)。"""
+    作動点依存になっていた — run_0010/0017 は作動点間で形状が一致していない)。
+    2026-09-05 追補 (§4.10): 作動点が inflow / gas も動かすようになったので、入口状態と γ も設計点で固定する。"""
     geo = p.geometry
-    st = gas_states(p)
-    ext_d = design_external or p.spec["external"]
-    g = p.gamma; R = st["R"]
-    p_ext_ratio = float(ext_d["p_inf"]) / st["exhaust"]["P"]
-    spec = SernKernelSpec(M_in=float(p.spec["inflow"]["M_in"]),
+    d0 = design or design_snapshot(p)
+    fi_d, ext_d, g_d = d0["inflow"], d0["external"], float(d0["gamma"])
+    p_ext_ratio = float(ext_d["p_inf"]) / float(fi_d["p_in"])
+    spec = SernKernelSpec(M_in=float(fi_d["M_in"]),
                           theta_r0=np.deg2rad(_dv(p, "theta_r0_deg")), theta_c0=np.deg2rad(_dv(p, "theta_c0_deg")),
-                          L_cowl=_dv(p, "L_cowl"), gamma=p.gamma, p_ext_over_p_in=p_ext_ratio,
+                          L_cowl=_dv(p, "L_cowl"), gamma=g_d, p_ext_over_p_in=p_ext_ratio,
                           x_max=float(geo.get("x_max_kernel", 10.0)), nj=int(geo.get("nj_moc", 301)),
                           dx=float(geo.get("dx_moc", 2e-3)))
     if str(geo.get("mode", "keypoint")) == "straight":
@@ -93,7 +114,7 @@ def design_from_problem(p: Problem, design_external: dict | None = None):
         k = PlanarMOC(spec).march(stop_at=(_dv(p, "f"), _dv(p, "M_c")))   # c の少し先で打ち切る
         d = k.design_ramp(M_c=_dv(p, "M_c"), f=_dv(p, "f"))
     xr, yr = p.spec.get("moment_ref", [0.0, 0.0])
-    fr = wall_forces(d, spec.M_in, p.gamma, pa_over_pin=p_ext_ratio, x_ref=float(xr), y_ref=float(yr))
+    fr = wall_forces(d, spec.M_in, g_d, pa_over_pin=p_ext_ratio, x_ref=float(xr), y_ref=float(yr))
     theta_b = float(k.TH[-1, 0])   # 自由境界の終端角 (せん断層に格子線を沿わせる)
     return k, d, fr, theta_b
 
@@ -149,7 +170,10 @@ def _bcond_config(p: Problem, st: dict) -> str:
             + outlet("outlet", P["outlet"]) + wall("ramp", P["ramp"]) + wall("cowl_in", P["cowl_in"])
             + wall("cowl_out", P["cowl_out"]) + outlet("bottom", P["bottom"])
             + (outlet("top_out", P["top_out"]) if p.evaluate.get("top_out_kind", "outlet") == "outlet"
-               else f"top_out: {{physID: {P['top_out']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n"))
+               else f"top_out: {{physID: {P['top_out']}, kind: slip, outputHDFflg: 0, ints: , floats: }}\n")
+            # 機体上面 + base (§4.11): 機体の力なので帳簿外だが base 圧の診断のため壁出力する。Euler/SST とも slip
+            + (f"vehicle: {{physID: {P['vehicle']}, kind: slip, outputHDFflg: 1, ints: , floats: }}\n"
+               if int(p.mesh.get("ext_top", 0)) else ""))
 
 
 def apply_wall_offset(design, wall_offset: dict, H: float):
@@ -169,12 +193,13 @@ def apply_wall_offset(design, wall_offset: dict, H: float):
     return d
 
 
-def paste_region_ic(h5path, y_mid, scale: float, st: dict, gamma: float) -> None:
+def paste_region_ic(h5path, y_mid, y_top, scale: float, st: dict, gamma: float) -> None:
+    """領域別一様 IC: 中間線とランプ/プルーム上線の間 = 燃焼器出口状態、それ以外 (カウル下・ランプ側外部流) = 外部流。"""
     ex, en = st["exhaust"], st["ext"]
     with h5py.File(h5path, "r+") as f:
         cc = f["/CELLS/centCoords"][:].reshape(-1, 3)
         xn, yn = cc[:, 0] / scale, cc[:, 1] / scale
-        upper = yn > y_mid(xn)
+        upper = (yn > y_mid(xn)) & (yn < y_top(xn))
         ro = np.where(upper, ex["ro"], en["ro"]); u = np.where(upper, ex["u"], en["u"]); P = np.where(upper, ex["P"], en["P"])
         v = f["/VALUE"]
         v["ro"][:] = ro; v["roUx"][:] = ro * u; v["roUy"][:] = 0.0; v["roUz"][:] = 0.0
@@ -191,10 +216,10 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
         raise ValueError("runner_sern は sern_2d 専用")
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=False)
-    design_ext = dict(p.spec["external"])          # 設計点 = spec.external (作動点で上書きされる前に保存)
+    d0 = design_snapshot(p)                        # 設計点 (作動点で上書きされる前に保存)
     opinfo = select_operating_point(p, op)
     st = gas_states(p)
-    kern, design, fr_moc, theta_b = design_from_problem(p, design_external=design_ext)
+    kern, design, fr_moc, theta_b = design_from_problem(p, design=d0)
     H = float(p.spec["H_m"])
     m = p.mesh
     mp = SernMeshParams(ni_up=int(m.get("ni_up", 16)), ni_noz=int(m.get("ni_noz", 120)), ni_plume=int(m.get("ni_plume", 220)),
@@ -204,10 +229,14 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
                         cowl_thickness=float(m.get("cowl_thickness", 2e-3 if m.get("discretization", "cell") == "node" else 0.0)),
                         interface_angle=float(m.get("interface_angle_rad", theta_b)),
                         top_ext_angle=float(np.deg2rad(m.get("top_ext_angle_deg", np.rad2deg(design.info["theta_e"])))),
+                        ext_top=bool(int(m.get("ext_top", 0))), top_depth=float(m.get("top_depth", 2.0)),
+                        nj_ext_top=int(m.get("nj_ext_top", 41)), nj_wake=int(m.get("nj_wake", 9)),
+                        vehicle_clearance=float(m.get("vehicle_clearance", 0.02)), first_top_frac=float(m.get("first_top_frac", 0.02)),
+                        vehicle_taper=float(m.get("vehicle_taper", 0.0)),
                         scale=H)
     if wall_offset:
         design = apply_wall_offset(design, wall_offset, H)
-    coords, quads, bedges, minfo, y_mid = generate_sern_mesh(design, mp)
+    coords, quads, bedges, minfo, y_mid, y_top = generate_sern_mesh(design, mp)
     write_msh41_named(run_dir / "sern.msh", coords, quads, bedges, PHYS_SERN)
     np.savetxt(run_dir / "ramp_contour.csv", design.ramp_xy * H, delimiter=",", header="x_m,y_m", comments="")
     np.savetxt(run_dir / "cowl_contour.csv", design.cowl_xy * H, delimiter=",", header="x_m,y_m", comments="")
@@ -234,11 +263,11 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
     for f in run_dir.glob("sern_qc.xmf"):
         f.unlink()
     (run_dir / "solverConfig.yaml").write_text(cfg)
-    paste_region_ic(run_dir / MESH, y_mid, H, st, p.gamma)
+    paste_region_ic(run_dir / MESH, y_mid, y_top, H, st, p.gamma)
     ex = st["exhaust"]
     F_ideal_nd, M_e_id = ideal_gross_thrust(ex["M"], st["ext"]["P"] / ex["P"], p.gamma)
     info = {"problem": str(problem_path), "run_dir": str(run_dir), "nsteps": n, "H_m": H, "states": st,
-            "operating_point": opinfo, "wall_offset": bool(wall_offset), "design_external": design_ext,
+            "operating_point": opinfo, "wall_offset": bool(wall_offset), "design_point": d0,
             "design": {"key_point": list(design.key_point), "foot_a": list(design.foot_a), "lip_e": list(design.lip_e),
                        "L_ramp": design.L_ramp, "mass_fraction_check": design.mass_fraction_check,
                        "theta_e_deg": float(np.rad2deg(design.info["theta_e"])), "theta_b_deg": float(np.rad2deg(theta_b)),
@@ -318,7 +347,14 @@ def collect(problem_path, run_dir) -> dict:
                 out[k] = last[k]
         out["steadiness"] = {k: steadiness([h[k] for h in hist]) for k in ("C_T", "C_L", "C_M")}
         out["moc_forces"] = info["moc_forces"]
-        out["cfd_vs_moc"] = {k: (last[k] - info["moc_forces"][k]) for k in ("C_T", "C_L", "C_M")}
+        # MOC は**設計点**の値なので、作動点が設計点と一致するときだけ差を出す (2026-09-05, plan §4.10:
+        # 作動点は inflow/gas も動かすので、オフデザイン run で差を取ると意味の無い数になる)。
+        d0, o = info.get("design_point"), info.get("operating_point") or {}
+        on_design = bool(d0) and all(o.get(k) == d0.get(k) for k in ("inflow", "external")) \
+            and (o.get("gas", {}).get("gamma") == d0.get("gamma"))
+        out["on_design_point"] = on_design
+        if on_design:
+            out["cfd_vs_moc"] = {k: (last[k] - info["moc_forces"][k]) for k in ("C_T", "C_L", "C_M")}
     (run_dir / "metrics.json").write_text(json.dumps(out, indent=1))
     return out
 

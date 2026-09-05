@@ -115,7 +115,7 @@ $\tfrac12\rho_e w_e^2\sin2\theta_e=(p_e-p_a)\cot\mu_e$ が得られる。平面�
 
 ### 4.7 評価 (forge)
 
-- メッシュ: 3 ブロック (A 内部: ランプ–カウル間 / B カウル下の外部流: 入口 $x<0$ から / C 下流: ランプ–遠方)。
+- メッシュ: 2 バンド (noz: ランプ–カウル間+プルーム / bot: カウル下の外部流、`mesh_sern.py`) に、**ランプ側外部流 (top + wake、§4.11)** を足した 4 ブロック。
   TFI、壁クラスタリング ($y^+\approx30$–80 + `wallTreatmentSST=1`、AR ≤ 1000)、`check_mesh_quality.py` VERDICT。
   node config で変換 (RANS: no-slip 壁 bcond 必須)。
 - 境界: ノズル入口 = 超音速 Dirichlet (全量指定)、外部入口 = 自由流、出口 = `outlet_statPress` + 逆流 Pt/Tt、
@@ -193,6 +193,45 @@ $\gamma$ は CEA の平衡 GAMMAs。凍結 $\gamma$ にすると $M_3$ は 1〜3
 **検定条件 = TM の 6 行を再現できること** (全圧回復率・燃焼効率をチューニングパラメータにする)。
 アンカー無しのサイクル自作は相関の当否を確かめられないので、順序を逆にしないこと。
 
+### 4.11 ランプ側の外部流ブロック (2026-09-05 決定)
+
+**問題** (ユーザ指摘): 現行 2 バンドメッシュはランプ後縁の先 (`top_out`) を流れに平行な線で閉じ、そこを `outlet_statPress`
+(2D 既定) か slip にしている。どちらも**ランプ側に外気が存在しない**。過膨張 (m4_off, NPR 2.8) でランプ上の $p$ が
+$p_\infty$ を下回っても、後縁から境界層を通って上流へ伝わる外圧が無いので剥離 (RSS/FSS) が**起きようがない**。
+run_0032 の「剥離なし・滑らかな再圧縮」は領域の産物で物理ではない。カウル側は下バンド (`inlet_ext`) で外気を持つので非対称。
+
+**決定**: 機体を「ランプの上に載る有限厚の板」としてモデル化し、その上に自由流バンドを足す **4 ブロック構造** にする
+(`mesh.ext_top: 1`)。x station は既存 2 バンドと共有。
+
+| ブロック | 範囲 | 境界 |
+| --- | --- | --- |
+| bot (既存) | 遠方 → カウル外面/せん断層 | `inlet_ext` / `bottom` / `cowl_out` / `outlet` |
+| noz (既存) | カウル内面/せん断層 → ランプ/プルーム上線 | `inlet_nozzle` / `cowl_in` / `ramp` / `outlet`。**プルーム上線 ($x>L_{\rm ramp}$) は内部線になる** |
+| wake (新) | プルーム上線 → それに平行な高さ $h_{\rm base}$ の線、$x \ge L_{\rm ramp}$ | 左端 = **base** (鉛直、slip) / `outlet` |
+| top (新) | 機体上面線 $y_{\rm veh}$ ($x \le L_{\rm ramp}$) / wake 上線 ($x > L_{\rm ramp}$) → +`top_depth` | `inlet_ext` (自由流、下バンドと同じタグ) / **vehicle** 上面 (slip) / `top_out` (outlet か slip) / `outlet` |
+
+- $y_{\rm veh} = \max(\text{ランプ } y) + $ `vehicle_clearance`、$h_{\rm base} = y_{\rm veh} - y_e$。設計ランプは $\theta_e<0$ で
+  後縁が頂点より下がるので base は常に有限 ($h_{\rm base} \le 10^{-9}$ なら wake ブロックを省き top の $j=0$ をプルーム線に直結)。
+- **機体上面は水平・slip**: 上面の流れは自由流 $(M_\infty, p_\infty)$ をそのまま後縁に運ぶ。後縁の外圧を $p_\infty$ にする
+  **最も中立なモデル** (機体上面形状は未知なので圧縮も膨張もさせない)。後縁 (base 角) で外気は $\theta_e$ 方向へ角膨張して
+  プルーム境界に沿う。
+- **力の帳簿**: `vehicle` (上面 + base) は機体の力なので $C_T, C_L, C_M$ に**入れない** (NASA TM と同じく nozzle force =
+  ramp + cowl 内外面)。base 圧は診断として壁出力する。
+- ノード番号・セル順序は既存 2 バンドの**後ろに追加** (`sern_deltastar._structured_upper` 互換)。
+- 既定パラメータ: `top_depth` 2H, `nj_ext_top` 41, `nj_wake` 9, `vehicle_clearance` 0.02H, `first_top_frac` 0.02H。
+  `SernMeshParams.ext_top` の既定は False (既存 YAML・テスト不変)、cycle3op 生産構成で ON。
+- 期待される効き: m4_off で後縁からの再圧縮が上流へ入り、SST で `sep_frac_ramp > 0`。Euler は剥離しないが後縁圧が
+  $p_\infty$ に張り付く (run_0032 との差で外圧の到達を確認する)。3D (`mesh_sern3d`) は未対応 (§5.1)。
+- **base → テーパに変更 (2026-09-05, run_0034 の結果)**: 鉛直 base 版は node Euler で soft 段 step 5 に発散し、NaN は base 角
+  (x 11.07–11.9, y 2.68–2.85) に限局した (step 0 の低密度ノード分布は run_0032 と一致し、余分な 30 点が全て base 下流)。
+  原因は **node の 90° 二重 slip 角** (ランプ∩base、上面∩base): カウル TE の 2 壁は ~180° で問題ないが、直交 2 壁を 1 ノードが
+  持つ形は node の slip 射影と整合しない。→ `vehicle_taper` (既定 2H): 機体厚 $t_v(x) = (y_{\rm veh} - y_{\rm ramp})\times$
+  係数 (x ≤ L_ramp − taper で 1、TE で 0) で後縁を**厚さ 0 に絞り TE を共有** = カウルと同じ構造。base/wake ブロックは無くなり
+  3 ブロック。機体上面の流れは後端で緩い boat-tail (θ ≈ −1.7°) 膨張を受け、TE の外圧は $p_\infty$ よりわずかに低い
+  (base 圧 $< p_\infty$ の実機と同じ向き)。鉛直 base 版 (`vehicle_taper: 0`) はコードに残す (cell 用)。
+- **カウル TE の SST ω 発散 (run_0035)** は ext_top と無関係 (NaN は x 1.20, y −0.11 = カウル TE)。板厚 0 の node 双子ノード
+  問題 (`mesh_sern` docstring の 2e-3 推奨) の疑い → run_0037 (旧 2 バンド + 板厚 2e-3) で切り分け中。
+
 ## 5. 実装ステップ
 
 | Step | 内容 | 主要ファイル | 規模 |
@@ -216,8 +255,9 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
 
 | # | 項目 | 内容 |
 | --- | --- | --- |
-| 1 | **作動点のサイクル値化** | §4.10 の 6 点を `operating_points[]` に固定値で書く → `operating_points[].gas` 上書きを実装 (小) → **MOO をやり直す**。run_0019 の「低 NPR が支配的で前線が最短ランプ (L 3.8H) に退化」は非物理な作動点が駆動した結論なので破棄して再取得する |
-| 2 | **ランプ後縁側の外部流ブロック** | 今は後縁の先を静圧出口/slip で閉じているので RSS/FSS が信用できない = **剥離評価の前提**。`mesh_sern` に 3 バンド目を足す |
+| 1 | ~~作動点のサイクル値化~~ **実装・検証済 (2026-09-05, §10)**。残 = **MOO の再取得** | `problem_moo_sst_node_cycle3op.yaml` で回す。run_0019 の結論は非物理な作動点が駆動したので破棄。**ただし §4.11 (外部流ブロック) と 1b を先に** |
+| 1b | **`opt.cm_min` の再設定** | 作動点で $C_M$ が −8.2 (m6_on) 〜 +1.0 (m4_off) に振れ、旧設計 (L 3.8H) 前提の −2.5 では候補が全滅する。dv 箱の MOC $C_M$ 分布 (CFD と 0.7 % 一致) から張り直す |
+| 2 | **ランプ後縁側の外部流ブロック** (§4.11 で設計決定) | 今は後縁の先を静圧出口/slip で閉じているので RSS/FSS が信用できない = **剥離評価の前提**。`mesh_sern` に top + wake ブロック (`mesh.ext_top`) を足し、m4_off SST で剥離が出ることを確認する |
 | 3 | **3D SST の後縁 3 重点** | カウル後縁 ∩ 側壁後縁で $\omega \to \infty$ (run_0028)。候補 = 後縁に板厚 (2 本の剥離線を分離) / `FORGE_FREEZE_TURB=1` で soft 段を凍結乱流 / 局所 $\omega$ 上限。Euler は同格子で成立 (run_0027) |
 | 4 | **側壁長 $L_{\rm sw}$ を dv/仕様に** | 3D 効果 (推力 −4.5 %、揚力反転) の主因 |
 | 5 | 亜音速外部流のチャンバー構成 | 静止・地上試験用。case/23 方式。超音速外部流なら不要 |
@@ -341,3 +381,26 @@ S0→S1 は CFD 不要で先行できる。S2–S3 は S1 と並行可 (固定�
   **低 NPR 点の正体は燃料遮断** (power-off, $M_3 = 2.9$–5.2 で全て超音速) であり低速飛行ではない。
   実装は未着手 (`operating_points[].gas` 上書きが必要)。既存 MOO (run_0010/0017/0019) の結論は作動点が
   非物理なので破棄・再取得とする。
+- `2026-09-05` — **作動点サイクル値化を実装・検証** (§4.10)。`runner_sern.design_snapshot` で設計点 (入口・外部流・ガス) を
+  作動点適用前に控え、`design_from_problem(p, design=)` が**それで逆設計を固定**する (従来は `p.spec["inflow"]["M_in"]` を
+  読んでいたので、作動点が inflow を上書きした瞬間に形状が作動点依存になっていた)。`select_operating_point` が
+  `operating_points[].gas` (gamma/cp) を上書き。`collect` の `cfd_vs_moc` は設計点 run 限定 (`on_design_point`)。
+  `runner_sern3d` も同形。`driver_sern` は無変更で通る。導出スクリプト `case/46/cea/tmx_operating_points.py`。
+  検証: 単体テスト ALL PASS / run_0030 (prepare ×3) で 3 作動点の**輪郭 sha 一致** (L_ramp 11.36 H) / run_0031 (m6_on, node Euler)
+  **C_T 0.9059 = MOC 0.9073 (−0.15 %)**, C_L 0.3135 (0.3105), C_M −8.23 (−8.17), 力係数 STEADY, `check_quasisteady` ALL STEADY,
+  残差は 1.0–1.7 桁プラトーで NOT CONVERGED (run_0002 と同性格) / run_0032 (m4_off) C_T 0.974, C_M +0.96 / run_0033 (m10_on)
+  C_T 0.923, C_M −6.10。**dv 範囲を張り直した**: NPR 35.4・γ 1.183 では完全膨張 M_e 3.59 で key point は M_c ≲ 3.4 まで、
+  M_c 3.2 で既に L_ramp 16–20 H (旧 3.2–4.4 は不成立) → M_c 2.4–3.4, L_cowl 上限 2.5, ni_noz 160。
+  **`opt.cm_min: -2.5` は使えない** (§5.1-1b)。
+- `2026-09-05` — **ランプ側外部流ブロック (§4.11) を実装・Euler で検証**。`mesh_sern.py` に `ext_top` (top バンド + `vehicle` 壁、
+  `_add_ext_top`)、`vehicle_taper` (後端を厚さ 0 に絞り TE 共有; 鉛直 base + wake 版は node で step 5 発散 run_0034)、
+  `_geom_start`。`runner_sern`: `vehicle` bcond (slip, 壁出力)、`paste_region_ic` が `y_top` で燃焼器領域を閉じる、YAML キー
+  `mesh.ext_top/top_depth/nj_ext_top/nj_wake/vehicle_clearance/first_top_frac/vehicle_taper`。mesh テスト 27 項目 ALL PASS
+  (既存 9 + ext_top 12 + taper 6; 順序互換・閉境界・辺数・CCW)。**run_0036** (node Euler m4_off, ext_top テーパ): MESH PASS
+  (AR 443, skew 0.464, 60k cells)、C_T 0.9736 / C_M +0.973 (run_0032 と同値)、STEADY、残差 0.8 桁 still converging。
+  **後縁圧 p/p∞ 1.317 (run_0032, 領域の産物) → 0.932 (機体上面 boat-tail 膨張後の外気)** で外気の到達を確認。
+  ただし m4_off (NPR 2.8) ではランプ圧の主因は**カウル側**プルーム境界 (0.5–7H で 0.84 p∞ の軽い過膨張 → 7H 以降カウル側からの
+  圧縮で 1.3 p∞ へ) で、ランプ側外気は後縁 0.1H だけを変える。剥離が出るかは cowl TE 衝撃の強さ (= L_cowl 依存) の問題で、
+  L_cowl 1.2 の smoke 形状は m4_off で剥離しない可能性が高い (SST run_0038 で確認中)。
+  **node SST のカウル TE ω 発散** (run_0035, 板厚 0) は ext_top と無関係で、`cowl_thickness: 0.002` で解決 (run_0037 完走、
+  sep_frac 0) → 生産 YAML の既定に。

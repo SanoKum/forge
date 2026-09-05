@@ -79,8 +79,8 @@ def paste_region_ic3d(h5path, y_mid, scale, half_W_m, st, gamma, minfo=None):
 def prepare(problem_path, run_dir, nsteps=None, op=None) -> dict:
     p = load_problem(problem_path)
     run_dir = Path(run_dir); run_dir.mkdir(parents=True, exist_ok=False)
-    design_ext = dict(p.spec["external"]); opinfo = R2.select_operating_point(p, op); st = R2.gas_states(p)
-    kern, design, fr_moc, theta_b = R2.design_from_problem(p, design_external=design_ext)
+    d0 = R2.design_snapshot(p); opinfo = R2.select_operating_point(p, op); st = R2.gas_states(p)
+    kern, design, fr_moc, theta_b = R2.design_from_problem(p, design=d0)
     H = float(p.spec["H_m"]); m = p.raw.get("mesh3d", {}); m2 = p.mesh
     prm = SernMesh3DParams(ni_up=int(m.get("ni_up", 10)), ni_noz=int(m.get("ni_noz", 60)), ni_plume=int(m.get("ni_plume", 110)),
                            nj_top=int(m.get("nj_top", 49)), nj_bot=int(m.get("nj_bot", 31)), nz_in=int(m.get("nz_in", 25)), nz_out=int(m.get("nz_out", 17)),
@@ -114,7 +114,7 @@ def prepare(problem_path, run_dir, nsteps=None, op=None) -> dict:
     paste_region_ic3d(run_dir / MESH, y_mid, H, 0.5 * prm.W * H, st, p.gamma, minfo=minfo if disc == "node" else None)
     ex = st["exhaust"]; F_ideal_nd, M_e_id = ideal_gross_thrust(ex["M"], st["ext"]["P"] / ex["P"], p.gamma)
     info = {"problem": str(problem_path), "run_dir": str(run_dir), "nsteps": n, "H_m": H, "states": st, "operating_point": opinfo,
-            "design_external": design_ext, "design": {"key_point": list(design.key_point), "L_ramp": design.L_ramp, "theta_e_deg": float(np.rad2deg(design.info["theta_e"])),
+            "design_point": d0, "design": {"key_point": list(design.key_point), "L_ramp": design.L_ramp, "theta_e_deg": float(np.rad2deg(design.info["theta_e"])),
             "theta_b_deg": float(np.rad2deg(theta_b)), "warnings": design.info["warnings"]}, "moc_forces": fr_moc,
             "F_ideal_N_per_m": F_ideal_nd * ex["P"] * H, "mesh": minfo, "discretization": disc, "model": p.evaluate.get("model", "euler"), "dim": 3,
             "half_W_m": 0.5 * prm.W * H}

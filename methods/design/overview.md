@@ -781,6 +781,7 @@ $$\text{燃焼器出口 starting line} \rightarrow \text{平面最大推力理�
 
 - **形状**: 平面 2D、燃焼器出口高さ $H=1$。ランプ = 上壁 (角部で $\theta_{r0}$ 膨張)、カウル = 下壁
   ($\theta_{c0}$、長さ $L_{\rm cowl}$)。カウル後縁以降は等圧せん断層 ($p=p_{\rm ext}$)。
+- **作動点**: 飛行条件だけでなく燃焼器出口 $(M_{\rm in}, p_{\rm in}, T_{\rm in})$ とガス $(\gamma, c_p)$ も作動点で変わる (`operating_points[].inflow / .gas`)。逆設計は**設計点** (`spec.inflow/external/gas`) で固定し、作動点は CFD 条件だけを変える。 公知のアンカーは NASA TM X-71972 TABLE 1 (定動圧 1500 psf 経路の燃焼器出口) + CEA2 (plan §4.10)。低 NPR は低速飛行ではなく燃料遮断で作る。
 - **理論**: 制御面 = ランプ後縁から出る最終 C⁻。質量流量一定・長さ固定で推力を最大化する Lagrange
   問題 (Guderley–Hantsch 1955 / Rao 1958) の平面版。乗数関係 (Cain 2010 式 4.1–4.2 の $y$ 非依存形) と
   縁条件 $\tfrac12\rho_e w_e^2\sin2\theta_e=(p_e-p_a)\cot\mu_e$ で制御面上の状態が決まり、平面では
@@ -792,7 +793,7 @@ $$\text{燃焼器出口 starting line} \rightarrow \text{平面最大推力理�
   DOE では推力 ← $M_c,\theta_c$、揚力と長さ ← $M_c$ と質量流量比、と役割が分離する (Yu 2020)。
 - **dv** ($d=6$): $M_c$, $\theta_c$, $\dot m_c/\dot m$, $\theta_{r0}$, $\theta_{c0}$, $L_{\rm cowl}$。
   壁座標・壁圧は dv にしない。
-- **評価**: forge 2D 平面 RANS (SST, node) を 3 ブロック (内部 / カウル下外部流 / 下流) 構造メッシュで
+- **評価**: forge 2D 平面 RANS (SST, node) を 4 ブロック (ノズル+プルーム / カウル下外部流 / **ランプ側外部流 = 機体上面・base・後流**、`mesh.ext_top`; ランプ側に外気が無いと過膨張でも剥離が起きないため) 構造メッシュで
   作動点セット (設計 NPR + オフデザイン) について回し、ランプ・カウル内外面の $p,\tau_w$ 積分から
   $C_T, C_L, C_M$ (基準点指定) と剥離位置を取る。低 NPR の RSS/FSS は `OSCILLATING` 統計で報告。
 - **粘性**: NS 帰還ループは持たない。設計点の RANS 場から `metrics/deltastar.py` で $\delta^*(x)$ を
