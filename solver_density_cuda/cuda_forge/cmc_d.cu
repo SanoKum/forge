@@ -546,29 +546,35 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
 // couple 3: 平均場の化学種・温度を PDF 積分値で上書き (文献 RANS-CMC の標準: 平均スカラーは CMC から診断)。
 //   roY_s = ρ̄ Ỹ_pdf,s (正規化), T̃ = T(h̃_pdf, Ỹ_pdf), roe = ρ̄ (e_int(T̃,Ỹ) + |u|²/2), e_int = h − R_mix T (sensible datum)。
 __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* hpdf,
-                                     const flow_float* ro, const flow_float* Ux, const flow_float* Uy, const flow_float* Uz, const flow_float* Tcur,
-                                     flow_float* const* roY_dev, flow_float* roe, flow_float* Tout, double Tmax)
+                                     const flow_float* ro, const flow_float* roUx, const flow_float* roUy, const flow_float* roUz,
+                                     flow_float* const* roY_dev, flow_float* roe, double Tmax)
 {
+    // 注意: 流れ更新直後に呼ばれるので原始量 (T, Ux, ...) は更新前の値のまま。保存量 (ρ, ρu, ρe, ρY) だけから現在の状態を
+    // 再構成する (原始量を混ぜると α=0 の往復でも roe が壊れて発散した: run_0084_cmc_ab_a0)。
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
     const int ns = g_cmc.nSpecies;
     const double rho = (double)ro[ic], a = g_cmc.alpha;
-    // 現在の平均状態 (Y_cur, T_cur, h_cur) と PDF 積分状態を α でブレンド (毎ステップ全置換は密度ベース陰解法と整合せず NaN: run_0083 v4)
+    if (!(rho > 0.0)) return;
+    const double ux = (double)roUx[ic] / rho, uy = (double)roUy[ic] / rho, uz = (double)roUz[ic] / rho;
+    const double ke = 0.5 * (ux * ux + uy * uy + uz * uz);
+    const double eint_cur = (double)roe[ic] / rho - ke;
     double Yc[THERMO_MAX_SPECIES], Y[THERMO_MAX_SPECIES]; double ysum = 0.0, ycs = 0.0;
-    for (int s = 0; s < ns; ++s) { double y = (double)roY_dev[s][ic] / fmax(rho, 1.0e-30); if (y < 0.0) y = 0.0; Yc[s] = y; ycs += y; }
-    if (ycs > 0.0) for (int s = 0; s < ns; ++s) Yc[s] /= ycs;
+    for (int s = 0; s < ns; ++s) { double y = (double)roY_dev[s][ic] / rho; if (y < 0.0) y = 0.0; Yc[s] = y; ycs += y; }
+    if (!(ycs > 0.0)) return;
+    for (int s = 0; s < ns; ++s) Yc[s] /= ycs;
+    const double Tc = thermo_T_from_e(sp, ns, Yc, eint_cur, 1000.0, 200.0, Tmax);
+    if (!(Tc > 200.0) || !(Tc < Tmax)) return;   // 反転失敗なら触らない
     for (int s = 0; s < ns; ++s) { double y = (double)ypdf[(size_t)s * nCells + ic]; if (y < 0.0) y = 0.0; Y[s] = y; ysum += y; }
     if (!(ysum > 0.0)) return;
     for (int s = 0; s < ns; ++s) Y[s] = Yc[s] + a * (Y[s] / ysum - Yc[s]);
-    const double Tc = fmin(fmax((double)Tcur[ic], 200.0), Tmax);
     const double hc = thermo_h_mix(sp, ns, Yc, Tc);
-    const double h = hc + a * ((double)hpdf[ic] - hc);
-    const double T = thermo_T_from_h(sp, ns, Y, h, Tc, 200.0, Tmax);
+    const double h  = hc + a * ((double)hpdf[ic] - hc);
+    const double T  = thermo_T_from_h(sp, ns, Y, h, Tc, 200.0, Tmax);
+    if (!(T > 200.0) || !(T < Tmax)) return;
     const double eint = thermo_h_mix(sp, ns, Y, T) - thermo_R_mix(sp, ns, Y) * T;
-    const double ke = 0.5 * ((double)Ux[ic]*Ux[ic] + (double)Uy[ic]*Uy[ic] + (double)Uz[ic]*Uz[ic]);
     for (int s = 0; s < ns; ++s) roY_dev[s][ic] = (flow_float)(rho * Y[s]);
     roe[ic] = (flow_float)(rho * (eint + ke));
-    Tout[ic] = (flow_float)T;
 }
 
 ScalarTransportDesc sliceDesc(int s, const solverConfig& cfg)
@@ -717,8 +723,8 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         if (g_cmc_host.couple == 3) {
             cmc_overwrite_mean_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, g_hpdf,
-                var.c_d.at("ro"), var.c_d.at("Ux"), var.c_d.at("Uy"), var.c_d.at("Uz"), var.c_d.at("T"),
-                species_roY_device_ptr(), var.c_d.at("roe"), var.c_d.at("T"), g_cmc_host.Tmax);
+                var.c_d.at("ro"), var.c_d.at("roUx"), var.c_d.at("roUy"), var.c_d.at("roUz"),
+                species_roY_device_ptr(), var.c_d.at("roe"), g_cmc_host.Tmax);
         }
     }
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
