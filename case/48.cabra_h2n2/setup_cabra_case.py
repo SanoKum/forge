@@ -6,34 +6,35 @@ import argparse, pathlib, shutil, subprocess, os, h5py, numpy as np, yaml, cante
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--chem", type=int, default=0); ap.add_argument("--jac", type=int, default=2); ap.add_argument("--ji", type=int, default=5)
 ap.add_argument("--tci", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--cfl", type=float, default=1.0); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--relax", type=float, default=0.7)
 ap.add_argument("--nstep", type=int, default=20000); ap.add_argument("--out", type=int, default=0); ap.add_argument("--restart", default=None); ap.add_argument("--kfac", type=float, default=1.0)
-ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--mixfrac", type=int, default=0); ap.add_argument("--sdm", type=int, default=1); ap.add_argument("--cmc", type=int, default=0); ap.add_argument("--neta", type=int, default=41); ap.add_argument("--couple", type=int, default=1); ap.add_argument("--cmcchem", type=int, default=1); ap.add_argument("--cmcdt", type=float, default=1.0); ap.add_argument("--cchi", type=float, default=2.0); ap.add_argument("--mesh", default="mesh/cabra.msh"); ap.add_argument("--sfr", type=int, default=0); a = ap.parse_args()
+ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--mixfrac", type=int, default=0); ap.add_argument("--sdm", type=int, default=1); ap.add_argument("--cmc", type=int, default=0); ap.add_argument("--neta", type=int, default=41); ap.add_argument("--couple", type=int, default=1); ap.add_argument("--cmcchem", type=int, default=1); ap.add_argument("--cmcdt", type=float, default=1.0); ap.add_argument("--cchi", type=float, default=2.0); ap.add_argument("--mesh", default="mesh/cabra.msh"); ap.add_argument("--sfr", type=int, default=0); ap.add_argument("--tcof", type=float, default=1045.0); ap.add_argument("--cmcfp32", type=int, default=1); ap.add_argument("--cmcq", default=None); a = ap.parse_args()
+TC = a.tcof   # coflow 温度 [K] (T_c 応答曲線スイープ用; 実験 1045)
 HERE = pathlib.Path(__file__).parent; d = pathlib.Path(a.run_dir); d.mkdir(exist_ok=True)
 names = ["H2", "O2", "H", "O", "OH", "H2O", "HO2", "H2O2", "N2"]
 g = ct.Solution(str(HERE / "mech.yaml")); assert g.species_names == names
 g.TPX = 305.0, 101325.0, {"H2": 0.25, "N2": 0.75}; roJ = g.density; YJ = g.Y.copy(); Ub = 107.0; Uc = Ub/0.8167   # 1/7 乗則: mean/center = 49/60
 if a.nojet:
-    g.TPX = 1045.0, 101325.0, {"O2": 0.15, "H2O": 0.099, "N2": 0.751}; roJ = g.density; YJ = g.Y.copy(); Ub = 3.5; Uc = 3.5
-TJ = 1045.0 if a.nojet else 305.0
-g.TPX = 1045.0, 101325.0, {"O2": 0.15, "H2O": 0.099, "N2": 0.751}; roC = g.density; YC = g.Y.copy(); UC = 3.5
+    g.TPX = TC, 101325.0, {"O2": 0.15, "H2O": 0.099, "N2": 0.751}; roJ = g.density; YJ = g.Y.copy(); Ub = 3.5; Uc = 3.5
+TJ = TC if a.nojet else 305.0
+g.TPX = TC, 101325.0, {"O2": 0.15, "H2O": 0.099, "N2": 0.751}; roC = g.density; YC = g.Y.copy(); UC = 3.5
 if a.jetcof:  # ジェット組成 = coflow 組成 (組成ジャンプなし, 9 種輸送は有効)
     g.TPX = TJ, 101325.0, {"O2": 0.15, "H2O": 0.099, "N2": 0.751}; roJ = g.density; YJ = g.Y.copy()
 if a.jetn2:   # ジェットを純 N2 に (組成ジャンプはあるが R/cp コントラストは小)
     g.TPX = TJ, 101325.0, {"N2": 1.0}; roJ = g.density; YJ = g.Y.copy()
 if a.single:   # 単一種 N2 (組成結合なし): 温度・速度コントラストだけ残す
-    names = ["N2"]; g1 = ct.Solution(str(HERE / "mech.yaml")); g1.TPX = TJ, 101325.0, {"N2": 1.0}; roJ = g1.density; YJ = np.array([1.0]); g1.TPX = 1045.0, 101325.0, {"N2": 1.0}; roC = g1.density; YC = np.array([1.0])
+    names = ["N2"]; g1 = ct.Solution(str(HERE / "mech.yaml")); g1.TPX = TJ, 101325.0, {"N2": 1.0}; roJ = g1.density; YJ = np.array([1.0]); g1.TPX = TC, 101325.0, {"N2": 1.0}; roC = g1.density; YC = np.array([1.0])
 print(f"jet: rho={roJ:.4f} Uc={Uc:.1f}; coflow: rho={roC:.4f}; species={names}")
 kJ, omJ = a.kfac*1.5*(0.05*Ub)**2, 4.0e4; kC, omC = a.kfac*1.5*(0.05*UC)**2, 100.0
 def yf(Y): return ", ".join(f"Y{i}: {Y[i]:.6f}" for i in range(len(names)))
 (d / "bcondConfig.yaml").write_text(f"""# Cabra H2/N2 lifted flame (NASA/CR-2004-212887 Table 6.1)
 inlet_jet:    {{physID: 1, kind: inlet_uniformVelocity, outputHDFflg: 0, ints: {{inletProfile: {0 if a.nojet else 1}}}, floats: {{ro: {roJ:.6f}, Ux: {Ub:.2f}, Uy: 0.0, Uz: 0.0, Ps: 101325.0, k: {kJ:.2f}, omega: {omJ:.1f}, {yf(YJ)}}}}}
 inlet_coflow: {{physID: 2, kind: inlet_uniformVelocity, outputHDFflg: 0, ints: , floats: {{ro: {roC:.6f}, Ux: {UC:.2f}, Uy: 0.0, Uz: 0.0, Ps: 101325.0, k: {kC:.4f}, omega: {omC:.1f}, {yf(YC)}}}}}
-outlet:       {{physID: 3, kind: outlet_statPress, outputHDFflg: 1, ints: , floats: {{Ps: 101325.0, Pt: 101325.0, Tt: 1045.0}}}}
+outlet:       {{physID: 3, kind: outlet_statPress, outputHDFflg: 1, ints: , floats: {{Ps: 101325.0, Pt: 101325.0, Tt: {TC}}}}}
 wall:         {{physID: 4, kind: wall, outputHDFflg: 0, ints: , floats: {{Ux: 0.0, Uy: 0.0, Uz: 0.0}}}}
-farfield:     {{physID: 5, kind: {a.far}, outputHDFflg: 0, ints: , floats: {"{Ps: 101325.0, Pt: 101325.0, Tt: 1045.0}" if a.far.startswith("outlet") else ""}}}
+farfield:     {{physID: 5, kind: {a.far}, outputHDFflg: 0, ints: , floats: {f"{{Ps: 101325.0, Pt: 101325.0, Tt: {TC}}}" if a.far.startswith("outlet") else ""}}}
 axis:         {{physID: 6, kind: {"slip" if a.planar else "axis"}, outputHDFflg: 0, ints: , floats: }}
 """)
 mixfrac = f", mixfrac: {{enabled: 1, cChi: {a.cchi}, fuelX: {{H2: 0.25, N2: 0.75}}, oxidizerX: {{O2: 0.1474, H2O: 0.0989, N2: 0.7537}}}}" if a.mixfrac else ""
-cmc = f", cmc: {{enabled: 1, nEta: {a.neta}, couple: {a.couple}, chem: {a.cmcchem}, fuelT: 305.0, oxidizerT: 1045.0, pdfFloor: 1.0e-6, dtScale: {a.cmcdt}}}" if a.cmc else ""
+cmc = f", cmc: {{enabled: 1, nEta: {a.neta}, couple: {a.couple}, chem: {a.cmcchem}, fuelT: 305.0, oxidizerT: {TC}, pdfFloor: 1.0e-6, dtScale: {a.cmcdt}, fp32: {a.cmcfp32}{(", restartQ: " + a.cmcq) if a.cmcq else ""}}}}}" if a.cmc else ""
 chem = "" if a.single else f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, jacobianInterval: {a.ji}, tci: {a.tci}, tciCmix: {a.cmix}, tciTauChem: 1{mixfrac}{cmc}}}"
 if a.single: chem = ""
 value = a.restart if a.restart else "cabra.h5"
@@ -79,7 +80,7 @@ if not a.restart:
         xyz = f["MESH/COORD"][:].reshape(-1, 3); v = f["VALUE"]; N = v["ro"].shape[0]; x = xyz[:N, 0]; rr_ = xyz[:N, 1]
         jet = (rr_ < rj + 1e-9) & ((x < 0.0) | (a.iccol == 1))   # ジェット柱 (iccol=1: 管内+下流, 0: 管内のみ) を燃料状態に
         wall = v["wall_dist"][:] <= 0.0
-        ro = np.where(jet, roJ, roC); U = np.where(jet, Ub, UC); e = np.where(jet, e_mass(YJ, TJ), e_mass(YC, 1045.0))
+        ro = np.where(jet, roJ, roC); U = np.where(jet, Ub, UC); e = np.where(jet, e_mass(YJ, TJ), e_mass(YC, TC))
         U = np.where(wall, 0.0, U)
         v["ro"][:] = ro; v["roUx"][:] = ro*U; v["roUy"][:] = 0.0; v["roUz"][:] = 0.0; v["roe"][:] = ro*(e + 0.5*U**2)
         v["roK"][:] = ro*np.where(jet, kJ, kC); v["roOmega"][:] = ro*np.where(jet, omJ, omC)

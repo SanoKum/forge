@@ -63,6 +63,7 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0084_cmc_ab_a0` / `_p0` | couple 3 α=0 (往復のみ) と couple 0 (受動) の 60 step A/B | 修正前: α=0 でも step 40 NaN (更新前原始量と更新後 ρ の混用) → 修正後: 残差が受動と 3 桁一致 (2.611e-6 vs 2.609e-6) | ref (往復整合の証拠) |
 | `run_0085_cmc_diag` | couple 3 α=0.05 の 40 step 診断 (5 step 出力) | リップ直後 x=0.2 mm r=2.4–2.6 mm で T 884→510 K (ξ 0.34–0.46, T_Q 1045 = 未着火)、P max 124 kPa: **差分拡散の平均場が混合線から 130 K 以上ずれ、ブレンドと綱引き** | ref (差分拡散非整合の証拠) |
 | `run_0086_mix_sc0` | 混合場を **`speciesDiffusionMethod: 0` (定数 Sc)** で作り直し: run_0080 から化学 OFF・mixfrac ON, 3000 step | (実行中) | active |
+| `run_0099_cmc_c5_fp32_cont` | run_0098 の step 4000 (場 + `cmc_Q_4000.bin`) から fp32 化学 (`cmc.fp32: 1`, 最適化後バイナリ) で 16000 step 継続。Q(η) restart 経路の初使用と fp32 の長期 A/B | (実行中) | active |
 | `run_0087_cmc_sc0` | run_0086 から CMC couple 3 (α 0.05), sdm 0, Li, 6000 step | **step 322 NaN**: 未着火のままリップ (x 0.4 mm r 2.7 mm, ξ 0.31) の T が 1034→400 K, P 95 MPa。管壁伝導・Le≠1 で T は混合線 T(ξ) と一致しない → **h のブレンドは非物理 (couple 3 不採用)** | 破棄予定 (根拠) |
 | `run_0088_cmc_c4_diag` | **couple 4** (組成のみ α=0.05 ブレンド + その反応熱 −Σc_sΔρY_s をエネルギーへ), sdm 0, 400 step (100 毎出力) | NaN なし、P 100–102 kPa、rms_roe 横ばい (~1.2)、T_Q max 1356 K (条件付き空間で着火開始)。リップ付近で max|ΔT| 349 K (受動対照 run_0090 と比較) | ref (couple 4 診断) |
 | `run_0089_cmc_c4` | couple 4 本番 (旧バイナリ) | 偽発熱 (混合線に沿った H2O 変化の生成エンタルピー) + doChem 逆転バグで無効 → 停止 | 破棄予定 |
