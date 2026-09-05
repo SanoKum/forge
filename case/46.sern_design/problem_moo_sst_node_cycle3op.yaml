@@ -92,6 +92,8 @@ mesh:
   vehicle_clearance: 0.02
   first_top_frac: 0.02
   vehicle_taper: 2.0      # 後縁手前 2H で機体厚を 0 に絞り TE 共有 (鉛直 base は node で発散: run_0034)
+  ramp_fillet: 0.1        # ランプ膨張角部 (x=0) の丸め半径 /H。鋭角だと SST が θ_r0 ≳ 18° で roOmega 発散 (run_0055-0057)。
+                          # 曲率ジャンプ 1010 → 12.5、壁の持ち上げは最大 0.0019 H。NASA TM X-71972 も小半径で接続している
 evaluate:
   model: sst
   nStepOuter: 6000
@@ -103,5 +105,6 @@ opt:
   soft_cfl: 0.2            # soft 段 CFL。既定 0.5 では m10_on が入口面∩カウル外面の角で step 3 発散 (run_0041)
   warm_lam_steps: 2000     # soft 段の前に層流暖機 (turbulence none)。カウル後縁のせん断層で SST が発散するのを防ぐ
   warm_lam_cfl: 0.2        # (板厚では m4_off と m10_on で要求が逆転して解けなかった。run_0046-0048)
+  mid_steps: 2000          # soft と本段の間に 2 次 + soft CFL の段 (次数と CFL を同時に上げない)
   cm_min: -7.0             # 重み付き C_M (x_ref −20H) の下限。設計点 MOC C_M の dv 箱分布 (sweep_moc_dv_cycle3op.log: p10 −10.7 / med −6.9 /
                            # p90 −2.5) と重み付き比 ≈0.7 (m10_on/m4_off で緩む) から、最悪 ~15 % を落とす値。旧 −2.5 は L 3.8H 前提で候補が全滅する

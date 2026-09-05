@@ -53,6 +53,9 @@ class SernMeshParams:
     nj_wake: int = 9                     # base 高さ分の後流ブロックの j 点数
     vehicle_clearance: float = 0.02      # 機体上面 = max(ランプ y) + これ (/H)
     first_top_frac: float = 0.02         # top バンドの第一セル / H (slip 壁なので粗くてよい)
+    ramp_fillet: float = 0.0             # ランプ膨張角部 (x=0) の丸め半径 / H。0 = 鋭角 (従来)。
+                                         # 鋭角だと SST が θ_r0 ≳ 18° で `roOmega` 発散する (case/46 run_0055-0057)。
+                                         # NASA TM X-71972 も "linear segments joined by small radii" と記す
     vehicle_taper: float = 0.0           # >0: 機体を後縁手前この長さ (/H) で厚さ 0 に絞り TE を共有 (base 無し)。
                                          # 0: 鉛直 base + wake ブロック。node では base の 90° 二重 slip 角で step 5 発散
                                          # (run_0034) したのでテーパ (カウルと同じ構造) を使う
@@ -112,22 +115,50 @@ def generate_sern_mesh(design, prm: SernMeshParams):
     L_ramp = float(design.L_ramp)
     y_e = float(design.ramp_xy[-1, 1])
     x_out = L_ramp + prm.x_out_extra
-    xs = np.concatenate([
-        _cluster_stations(-prm.L_up, 0.0, prm.ni_up, (False, True), prm.x_cluster_w, prm.x_cluster_a),
-        _cluster_stations(0.0, L_cowl, prm.ni_noz, (True, True), prm.x_cluster_w, prm.x_cluster_a)[1:],
-        _cluster_stations(L_cowl, x_out, prm.ni_plume, (True, False), prm.x_cluster_w, prm.x_cluster_a)[1:],
-    ])
+    # 丸め区間 [xf1, xf2] は station を「追加」せず**ブロック境界**にする (追加すると既存点と 1e-9 まで接近して AR が飛ぶ)
+    Rf0 = float(prm.ramp_fillet)
+    if Rf0 > 0.0 and len(design.ramp_xy) > 1:
+        _th = float(np.arctan2(design.ramp_xy[1, 1] - design.ramp_xy[0, 1], design.ramp_xy[1, 0] - design.ramp_xy[0, 0]))
+        _t = Rf0 * np.tan(0.5 * _th)
+        f1, f2, nf = -_t, _t * np.cos(_th), 7
+        xs = np.concatenate([
+            _cluster_stations(-prm.L_up, f1, max(prm.ni_up - 6, 4), (False, True), prm.x_cluster_w, prm.x_cluster_a),
+            np.linspace(f1, 0.0, nf)[1:],
+            np.linspace(0.0, f2, nf)[1:],
+            _cluster_stations(f2, L_cowl, prm.ni_noz, (True, True), prm.x_cluster_w, prm.x_cluster_a)[1:],
+            _cluster_stations(L_cowl, x_out, prm.ni_plume, (True, False), prm.x_cluster_w, prm.x_cluster_a)[1:],
+        ])
+    else:
+        xs = np.concatenate([
+            _cluster_stations(-prm.L_up, 0.0, prm.ni_up, (False, True), prm.x_cluster_w, prm.x_cluster_a),
+            _cluster_stations(0.0, L_cowl, prm.ni_noz, (True, True), prm.x_cluster_w, prm.x_cluster_a)[1:],
+            _cluster_stations(L_cowl, x_out, prm.ni_plume, (True, False), prm.x_cluster_w, prm.x_cluster_a)[1:],
+        ])
     # ランプ後縁に station を置く (最寄りを置換)
     k = int(np.argmin(np.abs(xs - L_ramp)))
     xs[k] = L_ramp
     i_te = int(np.argmin(np.abs(xs - L_cowl)))
     assert abs(xs[i_te] - L_cowl) < 1e-12
     rx, ry = design.ramp_xy[:, 0], design.ramp_xy[:, 1]
+    # ランプ膨張角部 (x=0, y=1) の丸め: 直管 (勾配 0) と設計輪郭の初期勾配 tanθ を半径 R の円弧で接続する。
+    # 接点は x1 = −t (直管側), x2 = t cosθ (輪郭側), t = R tan(θ/2)、中心 (−t, 1+R)。壁は流体と反対側へ膨らむ。
+    R_f = float(prm.ramp_fillet)
+    if R_f > 0.0 and len(rx) > 1:
+        th_r0 = float(np.arctan2(ry[1] - ry[0], rx[1] - rx[0]))
+        t_f = R_f * np.tan(0.5 * th_r0)
+        xf1, xf2 = -t_f, t_f * np.cos(th_r0)
+    else:
+        R_f = 0.0; xf1 = xf2 = 0.0
 
     def y_top(x):
         x = np.asarray(x, dtype=float)
-        return np.where(x < 0.0, 1.0,
-                        np.where(x <= L_ramp, np.interp(x, rx, ry), y_e + (x - L_ramp) * np.tan(prm.top_ext_angle)))
+        y = np.where(x < 0.0, 1.0,
+                     np.where(x <= L_ramp, np.interp(x, rx, ry), y_e + (x - L_ramp) * np.tan(prm.top_ext_angle)))
+        if R_f > 0.0:
+            u = x + t_f
+            arc = 1.0 + R_f - np.sqrt(np.clip(R_f * R_f - u * u, 0.0, None))
+            y = np.where((x >= xf1) & (x <= xf2), np.maximum(y, arc), y)
+        return y
 
     def y_mid(x):
         x = np.asarray(x, dtype=float)
@@ -204,7 +235,8 @@ def generate_sern_mesh(design, prm: SernMeshParams):
     coords *= prm.scale
     info = {"ni": ni, "nj_top": njt, "nj_bot": njb, "cells": int(quads.shape[0]), "nodes": int(coords.shape[0]),
             "x_out": x_out, "y_bot": y_bot, "i_te": i_te, "L_cowl": L_cowl, "L_ramp": L_ramp,
-            "cowl_thickness": t_c, "dup_stations": [int(i) for i in np.where(dup)[0]], **ext}
+            "cowl_thickness": t_c, "ramp_fillet": float(prm.ramp_fillet),
+            "dup_stations": [int(i) for i in np.where(dup)[0]], **ext}
     return coords, quads, bedges, info, y_mid, y_top
 
 

@@ -232,7 +232,7 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
                         ext_top=bool(int(m.get("ext_top", 0))), top_depth=float(m.get("top_depth", 2.0)),
                         nj_ext_top=int(m.get("nj_ext_top", 41)), nj_wake=int(m.get("nj_wake", 9)),
                         vehicle_clearance=float(m.get("vehicle_clearance", 0.02)), first_top_frac=float(m.get("first_top_frac", 0.02)),
-                        vehicle_taper=float(m.get("vehicle_taper", 0.0)),
+                        vehicle_taper=float(m.get("vehicle_taper", 0.0)), ramp_fillet=float(m.get("ramp_fillet", 0.0)),
                         scale=H)
     if wall_offset:
         design = apply_wall_offset(design, wall_offset, H)
@@ -297,14 +297,17 @@ def run_forge(run_dir) -> int:
 
 
 def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000, soft_cfl: float = 0.5, soft_conv: int = 0,
-               warm_lam_steps: int = 0, warm_lam_cfl: float = 0.2) -> int:
+               warm_lam_steps: int = 0, warm_lam_cfl: float = 0.2, mid_steps: int = 0) -> int:
     """soft_cfl / soft_conv: soft 段の CFL と convMethod (既定 0.5 / 1 次)。3D SST の後縁 3 重点など、1 次でも
     立ち上がりが厳しいケースで下げる。
 
     warm_lam_steps > 0 (SST のみ): soft 段の**前に層流暖機段** (`turbulence: none` + 粘性あり、1 次、`warm_lam_cfl`) を
     入れる (plan §4.7)。カウル後縁のせん断層は排気と外部流の密度・温度比が大きく、平均場が立つ前に SST を回すと
     `roOmega` が発散する — 板厚では作動点ごとに要求が逆転して解けなかった (m4_off は 2e-3、m10_on は 5e-3 が必要)。
-    暖機で平均場を作ってから乱流方程式を入れると 3 作動点とも通り、力係数は暖機なしの成功例と一致する (case/46 run_0048)。"""
+    暖機で平均場を作ってから乱流方程式を入れると 3 作動点とも通り、力係数は暖機なしの成功例と一致する (case/46 run_0048)。
+
+    mid_steps > 0: soft と本段の間に **2 次 + soft CFL** の段を入れる。次数と CFL を同時に上げるとランプ膨張角部で
+    `roOmega` が発散する (case/46 run_0054 doe_000, θ_r0 18.3°)。`procedures/solver-settings.md` の段階戦略に沿う。"""
     run_dir = Path(run_dir)
     cfg_main = (run_dir / "solverConfig_main.yaml").read_text() if (run_dir / "solverConfig_main.yaml").exists() \
         else (run_dir / "solverConfig.yaml").read_text()
@@ -345,6 +348,18 @@ def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000, soft_cfl: 
     restart_by_index(res[-1], run_dir / MESH)
     for f in run_dir.glob("res_*"):
         f.unlink()
+    if mid_steps > 0:      # mid 段: 2 次に上げるが CFL は soft のまま (次数と CFL を同時に上げない)
+        mid = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", f"cfl: {soft_cfl}, cfl_pseudo: {soft_cfl}", cfg_main)
+        mid = re.sub(r"nStepOuter: \d+", f"nStepOuter: {mid_steps}", mid)
+        mid = re.sub(r"outStepInterval: \d+", f"outStepInterval: {mid_steps}", mid)
+        (run_dir / "solverConfig.yaml").write_text(mid)
+        rc = run_forge(run_dir)
+        res = sorted(run_dir.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+        if rc != 0 or not res:
+            raise RuntimeError("mid 段 (2 次 + soft CFL) が失敗 (res_nan_*.h5 / forge_run.log を見る)")
+        restart_by_index(res[-1], run_dir / MESH)
+        for f in run_dir.glob("res_*"):
+            f.unlink()
     (run_dir / "solverConfig.yaml").write_text(cfg_main)
     return run_forge(run_dir)
 

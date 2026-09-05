@@ -68,6 +68,7 @@ PYTHONPATH=. .venv-opt/bin/python -m forge_design.evaluate.runner_sern \
 | `run_0048_recipe_*` | 3 段レシピ (層流暖機 cfl 0.2 → SST soft cfl 0.2 → SST 本段 cfl 1.0) を 3 作動点で | **3 点とも完走・全て STEADY**。m6_on 0.9089 (0.9018) / m10_on 0.9246 (0.9175) / m4_off 0.9759 (0.9701)、sep 0 | active (ref) |
 | `run_0049_wired_m10on` | 同レシピを `run_staged` に組み込んだ版で m10_on | **本段 step 171 で発散**。run_0048 とメッシュ・config がバイト一致なのに結果が割れる = **本段 cfl 1.0 は限界的** | 破棄予定 |
 | `run_0050_cfl05_m10on_a` / `run_0051_cfl05_m10on_b` / `run_0052_cfl05_m6on` / `run_0053_cfl05_m4off` | 本段 cfl 0.5 / 6000 step に下げて再現性確認 (m10_on は 2 回) | **4 本とも完走・全て STEADY**。m10_on は 2 回とも C_T 0.9246 / 摩擦込み 0.9175 / C_M −6.216 で**完全一致**。m6_on 0.9089 (0.9018) / m4_off 0.9759 (0.9701)、cfl 1.0 の値と一致 → **確定レシピ** (plan §4.12) | active (ref) |
+| `run_0054_moo_cycle3op` | **S6 MOO 再取得の第 2 回**: 確定レシピ (plan §4.12) で `problem_moo_sst_node_cycle3op.yaml`。3 作動点 × node SST × ext_top テーパ × 板厚 5e-3 × 3 段起動、dv 5 変数、`cm_min` −7.0、剥離制約なし。DOE 40 + infill 8×2 = 56 評価、HV ref (−0.75, 20.5)。1 評価 ≈ 8 分 (1 run ≈ 156 s × 3) → 約 7.5 時間 | 実行中。`pareto.json` / `ledger.jsonl` | active |
 ### S4(b) NASA TM X-71972 傾向照合のまとめ (2026-09-04, run_0003–0007, 図 `nasa_trends.png`, 表 `nasa_trend_table.py`)
 
 - **内面 (ランプ + カウル内面) の力は forge Euler と MOC が全 5 形状で C_T +0.0006〜+0.0012、C_M 0.01〜0.05 以内で一致**。差の残りは

@@ -82,6 +82,41 @@ class SernCampaign:
             raise ValueError(f"L_ramp {d.L_ramp:.2f} > {Lmax}")
         return d
 
+    def _eval_op(self, prob, tag: str, op: str, row: dict):
+        """1 作動点を標準レシピで回し、落ちたら緩レシピ (step 倍・cfl 半分) で 1 回だけ再試行する (plan §4.13)。
+        戻り値 (run_dir, rc, metrics, degraded)。degraded = rc != 0 でも力係数が使えた場合に True。"""
+        oc = self.optcfg
+        ladder = [(dict(soft_steps=int(oc.get("soft_steps", 1500)), soft_cfl=float(oc.get("soft_cfl", 0.5)),
+                        warm_lam_steps=int(oc.get("warm_lam_steps", 0)), warm_lam_cfl=float(oc.get("warm_lam_cfl", 0.2)),
+                        mid_steps=int(oc.get("mid_steps", 0))), ""),
+                   (dict(soft_steps=2 * int(oc.get("soft_steps", 1500)), soft_cfl=0.5 * float(oc.get("soft_cfl", 0.5)),
+                         warm_lam_steps=2 * int(oc.get("warm_lam_steps", 0)), warm_lam_cfl=0.5 * float(oc.get("warm_lam_cfl", 0.2)),
+                         mid_steps=2 * int(oc.get("mid_steps", 0))), "_retry")]
+        last = None
+        for kw, suffix in ladder:
+            rd = self.dir / f"{tag}_{op}{suffix}"
+            if rd.exists():
+                continue
+            info = R.prepare(prob, rd, op=op)
+            if info["design"]["warnings"]:
+                raise ValueError("design warnings: " + "; ".join(info["design"]["warnings"]))
+            try:
+                rc = R.run_staged(rd, "full", **kw)
+            except RuntimeError as e:      # 起動段で落ちた: 壁出力が無いので次の梯子へ
+                last = (rd, 1, {}, True); print(f"   [{tag}/{op}{suffix}] {e}", flush=True)
+                continue
+            out = R.collect(prob, rd)
+            st = out.get("steadiness", {})
+            ok = all(st.get(k, {}).get("verdict") == "STEADY" for k in ("C_T", "C_L", "C_M"))
+            if rc == 0 and ok:
+                return rd, rc, out, False
+            last = (rd, rc, out, True)
+            if ok:                          # 発散はしたが力積分は収束済み → 再試行せず採用 (§4.13-3)
+                return last
+        if last is None:                    # 梯子の全段が既存ディレクトリでスキップされた (resume 時)
+            raise RuntimeError(f"{tag}/{op}: 梯子の全段が既存ディレクトリ。再開するなら該当 run を消すこと")
+        return last
+
     # -- 1 点評価 -----------------------------------------------------------------
     def evaluate(self, x, tag: str) -> dict:
         x = [float(v) for v in np.asarray(x, dtype=float)]
@@ -90,21 +125,17 @@ class SernCampaign:
         try:
             ct_w, L_ramp, cm_w, wsum = 0.0, None, 0.0, 0.0
             for o in self.ops:
-                rd = self.dir / f"{tag}_{o['name']}"
-                info = R.prepare(prob, rd, op=o["name"])
-                if info["design"]["warnings"]:
-                    raise ValueError("design warnings: " + "; ".join(info["design"]["warnings"]))
+                rd, rc, out, degraded = self._eval_op(prob, tag, o["name"], row)
+                info = json.loads((rd / "prepare_info.json").read_text())
                 L_ramp = info["design"]["L_ramp"]
-                rc = R.run_staged(rd, "full", soft_steps=int(self.optcfg.get("soft_steps", 1500)),
-                                  soft_cfl=float(self.optcfg.get("soft_cfl", 0.5)),
-                                  warm_lam_steps=int(self.optcfg.get("warm_lam_steps", 0)),
-                                  warm_lam_cfl=float(self.optcfg.get("warm_lam_cfl", 0.2)))
-                out = R.collect(prob, rd)
                 st = out.get("steadiness", {}); ct = out.get("C_T_with_shear", out.get("C_T"))   # RANS は摩擦込み
-                if rc != 0 or ct is None or not np.isfinite(ct) or "DIVERGED" in " ".join(out.get("convergence_verdict", [])):
+                if ct is None or not np.isfinite(ct):
                     row["fail_class"] = "DIVERGED"; raise RuntimeError(f"{o['name']}: forge rc={rc} / C_T={ct}")
-                if st.get("C_T", {}).get("verdict") != "STEADY":
+                # plan §4.13-3: 力係数が 4 点以上で 3 成分とも STEADY なら、rc != 0 でも degraded として採用する
+                if any(st.get(k, {}).get("verdict") != "STEADY" for k in ("C_T", "C_L", "C_M")):
                     row["fail_class"] = "UNSTEADY"; raise RuntimeError(f"{o['name']}: C_T {st.get('C_T')}")
+                if degraded:
+                    row.setdefault("degraded_ops", []).append(o["name"])
                 w = float(o.get("weight", 1.0)); wsum += w
                 ct_w += w * ct; cm_w += w * out["C_M"]
                 row["ops"][o["name"]] = {"C_T": ct, "C_T_p": out["C_T"], "C_L": out["C_L"], "C_M": out["C_M"], "step": out["step"], "run_dir": str(rd),
@@ -112,7 +143,8 @@ class SernCampaign:
                 for f_ in rd.glob("res_[0-9]*.h5"):   # 容量節約: 場は最終のみ残す
                     if f_ != sorted(rd.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]:
                         f_.unlink()
-            row.update({"status": "PASS", "C_T_w": ct_w / wsum, "C_M_w": cm_w / wsum, "L_ramp": float(L_ramp)})
+            row.update({"status": "PASS", "C_T_w": ct_w / wsum, "C_M_w": cm_w / wsum, "L_ramp": float(L_ramp),
+                        "degraded": bool(row.get("degraded_ops"))})
             lo, hi = self.optcfg.get("cm_min"), self.optcfg.get("cm_max")
             if (lo is not None and row["C_M_w"] < lo) or (hi is not None and row["C_M_w"] > hi):
                 row["status"] = "INFEASIBLE"; row["fail_class"] = "CM_WINDOW"
