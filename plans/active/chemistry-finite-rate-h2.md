@@ -63,7 +63,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | --- | --- | --- |
 | P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
 | P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量 (火炎基部位置・出口 massflux/エンタルピー流束/主要種流束・Tmax) を追加し、dual-time で統計定常を確認 | todo |
-| P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **done 2026-09-05** (§9): Jachimowski は Li 2004 比 15–35 % 短く、Burke 2012 比 1/2 (1045 K)〜1/6.6 (1015 K)。**次: Li または Burke での Cabra/BK 機構 A/B** |
+| P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **done 2026-09-05** (§9): 0-D で Jachimowski は Li 2004 比 15–35 % 短く Burke 2012 比 1/2〜1/6.6。**Cabra 機構 A/B (`run_0072`) 済: Li でも付着推移は同一 → 付着の支配因子は TCI 欠如と確定**。機構差は TCI 導入後の定量比較・BK 着火位置で再評価 (P1-5) |
 | P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
 | P1-5 | BK 早着火の条件整理 (機構 A/B 後に入口乱流・壁温・3D blockage) | P0-3 A/B 待ち |
 | P1-6 | Cabra 入口感度 (管内長 ~50d・リップ熱条件・入口 k/ω・格子) | todo |
@@ -245,3 +245,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   BK/Cabra の早着火の一因たり得る (支配因子は TCI 欠如)。Burke 2012 / Li 2004 の Cantera YAML を
   `tools/mechanisms/h2_burke2012_cantera.yaml` / `h2co_li2004_cantera.yaml` に追加 (forge 用 NASA-7 変換は未)。
   次: Li で Cabra 反応 ON A/B (`run_0072` 系) → 付着推移が変わるか確認。
+- `2026-09-05 (5)` — **Cabra 機構 A/B** (`case/48 run_0072_react_li`, run_0068/0069 と同一条件・同一 IC で機構のみ
+  Li 2004 に交換, tci 0, 30000 step)。着火 x/d は 20.8 (6k) → 7.2 (10k) → 0.0 (20k 以降付着) で
+  **Jachimowski とほぼ同一の付着推移** (Jach は累積 26k で付着)。0-D の Li +17 % 遅れ (1045 K) は付着を変えず、
+  **リップ付着の支配因子は TCI 欠如と確定** — 文献調査 (laminar-chemistry は構造的に早着火) の CFD 実証。
+  forge の Troe 2 パラメータ形 (T2 省略) の読込も本 run で実証。機構差の定量影響は TCI 導入後と BK (P1-5) で再評価。
