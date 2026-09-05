@@ -384,7 +384,7 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
     flow_float** res = species_resroY_device_ptr();
     flow_float** sj  = species_srcjac_device_ptr();
     if (roY == nullptr || res == nullptr || sj == nullptr) return;
-    if (cmc_coupling_mode() == 3) {
+    if (cmc_coupling_mode() == 3 || cmc_coupling_mode() == 4) {
         // couple 3: 平均場の化学種・温度は CMC の PDF 積分値で上書きされる (cmcQUpdate)。平均方程式に反応ソースは入れない。
         ++g_stepCounter; return;
     }

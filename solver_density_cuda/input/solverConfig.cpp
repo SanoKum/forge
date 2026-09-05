@@ -668,7 +668,7 @@ void solverConfig::read(std::string fname)
                     if (!this->chemMixfrac) throw std::runtime_error("'physProp.chemistry.cmc' requires 'physProp.chemistry.mixfrac'.");
                     if (this->chemCmcNEta < 5 || this->chemCmcNEta > 129) throw std::runtime_error("'physProp.chemistry.cmc.nEta' must be in [5,129].");
                     if (this->chemCmcCouple && !this->chemEnabled) throw std::runtime_error("'physProp.chemistry.cmc.couple' requires chemistry.enabled: 1.");
-                    if (this->chemCmcCouple < 0 || this->chemCmcCouple > 3) throw std::runtime_error("'physProp.chemistry.cmc.couple' must be 0 (passive), 1 (PDF-mean source), 2 (relaxation), or 3 (overwrite mean Y,T from PDF integrals; recommended).");
+                    if (this->chemCmcCouple < 0 || this->chemCmcCouple > 4) throw std::runtime_error("'physProp.chemistry.cmc.couple' must be 0 (passive), 1 (PDF-mean source), 2 (relaxation), 3 (blend Y,h), or 4 (blend Y + reaction heat of the blend; recommended).");
                     if (this->timeIntegration != 11) throw std::runtime_error("'physProp.chemistry.cmc' is implemented for timeIntegration 11 (implicit) only.");
                     std::cout << "[chemistry] CMC ON: nEta=" << this->chemCmcNEta << " couple=" << this->chemCmcCouple << " chem=" << this->chemCmcChem
                               << " fuelT=" << this->chemCmcTfuel << " oxidizerT=" << this->chemCmcTox << std::endl;

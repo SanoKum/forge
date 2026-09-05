@@ -577,6 +577,33 @@ __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, c
     roe[ic] = (flow_float)(rho * (eint + ke));
 }
 
+// couple 4: 組成だけを PDF 積分状態へ α ブレンドし、その組成変化に伴う反応熱 −Σ c_s Δ(ρY_s) をエネルギーに加える。
+//   エンタルピー自体はブレンドしない (管壁の熱伝導・Le≠1 で平均 T は混合線 T(ξ) と一致しないため、h のブレンドは
+//   リップで数百 K の非物理な冷却を作って発散した: run_0087)。平均エネルギー式が伝導・境界を担い、CMC は反応進行だけを渡す。
+__global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* ro,
+                                    flow_float* const* roY_dev, flow_float* roe, flow_float* chemQdot, const flow_float* dt_local)
+{
+    const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
+    if (ic >= nCells) return;
+    const int ns = g_cmc.nSpecies;
+    const double rho = (double)ro[ic], a = g_cmc.alpha;
+    if (!(rho > 0.0)) return;
+    double Yc[THERMO_MAX_SPECIES], Yp[THERMO_MAX_SPECIES]; double ycs = 0.0, yps = 0.0;
+    for (int s = 0; s < ns; ++s) { double y = (double)roY_dev[s][ic] / rho; if (y < 0.0) y = 0.0; Yc[s] = y; ycs += y; }
+    for (int s = 0; s < ns; ++s) { double y = (double)ypdf[(size_t)s * nCells + ic]; if (y < 0.0) y = 0.0; Yp[s] = y; yps += y; }
+    if (!(ycs > 0.0) || !(yps > 0.0)) return;
+    double dQ = 0.0;   // [J/m3]
+    for (int s = 0; s < ns; ++s) {
+        const double yn = Yc[s] / ycs + a * (Yp[s] / yps - Yc[s] / ycs);
+        const double dY = yn - Yc[s] / ycs;
+        dQ -= (sp[s].h_datum / sp[s].MW) * rho * dY;
+        roY_dev[s][ic] = (flow_float)(rho * yn);
+    }
+    roe[ic] += (flow_float)dQ;
+    const double dt = fmax((double)dt_local[ic], 1.0e-12);
+    chemQdot[ic] = (flow_float)(dQ / dt);   // 診断: 等価な反応熱 [W/m3]
+}
+
 ScalarTransportDesc sliceDesc(int s, const solverConfig& cfg)
 {
     const size_t off = (size_t)s * g_nCellsAll;
@@ -720,6 +747,11 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
             var.c_d.at("dt_local"), species_roY_device_ptr(),
             g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
             g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1);
+        if (g_cmc_host.couple == 4) {
+            cmc_blend_species_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
+                g_nCells, thermo_species_device_ptr(), g_ypdf, var.c_d.at("ro"), species_roY_device_ptr(), var.c_d.at("roe"),
+                var.c_d.at("chemQdot"), var.c_d.at("dt_local"));
+        }
         if (g_cmc_host.couple == 3) {
             cmc_overwrite_mean_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, g_hpdf,

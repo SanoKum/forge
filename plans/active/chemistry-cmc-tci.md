@@ -69,7 +69,7 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 | 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場で分散の妥当性 | 実装済・300 step smoke OK (実現可能性 1e-12, χ 10²–10³ 1/s)。発達場 `run_0080` (5000 step) で確認中 |
 | 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 | **done 2026-09-05**: `run_0081` で条件付き T が全 node 1045.00 K (混合線保存)、`cmc_dY` ≤0.017 (差分拡散分のみ) |
 | 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | 実装済 (凍結で η 拡散の線形不変を確認; 化学は `run_0082` で検証中) |
-| 5 | Phase C: 結合 | couple 1 (PDF 平均ソース) は平均場が燃えず、couple 2 (緩和ソース) は差分拡散差を反応熱に換算して NaN、couple 3 全置換は陰解法と非整合で NaN → **couple 3 + α ブレンド (α 0.05) を検証中 (`run_0083_cmc_react_couple3`)**。性能: 化学 ON 652 ms/step (単独) → 融合カーネル化は Phase D 後 |
+| 5 | Phase C: 結合 | couple 1 (PDF 平均ソース) は平均場が燃えず、couple 2 (緩和ソース) は差分拡散差を反応熱に換算して NaN、couple 3 全置換は陰解法と非整合で NaN → couple 3 (Y,h ブレンド) はリップの熱伝導/Le≠1 で非物理 → **couple 4 (Y ブレンド + ブレンドの反応熱) を検証中 (`run_0089_cmc_c4`)**。性能: 化学 ON 652 ms/step (単独) → 融合カーネル化は Phase D 後 |
 | 6 | Phase D: Cabra $T_c$ 1015/1030/1045/1060/1075 K の $H$ 応答曲線 (Y_OH>2e-4) vs 実験・文献、中心軸/半径 T ±30 K | todo |
 | 7 | Phase D: BK 着火位置、`tci 0/1` 回帰、性能 (PDF 閾値スキップ) | todo |
 | 8 | ドキュメント: `procedures/solver-settings.md` に `cmc` キー、`methods/index.md` | todo |
@@ -145,3 +145,8 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   平均 T が 884→510 K と引き下げられ P 124 kPa まで励起。**差分拡散 (`speciesDiffusionMethod: 1`) の平均場が Bilger ξ の混合線から
   130 K 以上ずれ**、ブレンドと平均場の差分拡散が綱引きになる。→ CMC 計算は `speciesDiffusionMethod: 0` を前提にする (methods §4)。
   混合場を定数 Sc で作り直し (`run_0086_mix_sc0`)、そこから CMC couple 3 (`run_0087_cmc_sc0`)。GPU は他 2 セッションと共有中。
+- `2026-09-05 (7)` — **等拡散でも couple 3 は step 322 で NaN** (`run_0087_cmc_sc0`): 未着火のまま、リップ (x 0.4 mm, r 2.7 mm, ξ 0.31) の
+  平均 T が 1034→400 K に引き下げられ P 95 MPa。ここは**管壁の熱伝導と Le≠1 で温度が混合線 T(ξ) から切り離される**場所で、
+  エンタルピーのブレンドが原理的に非物理。→ **couple 4: 組成だけを PDF 積分状態へ α ブレンドし、その組成変化の反応熱 −Σ c_s Δ(ρY_s) を
+  エネルギーに加える** (平均エネルギー式が伝導・境界を担い、CMC は反応進行だけを渡す)。400 step 診断 (`run_0088`) で NaN なし、
+  P 100–102 kPa、rms_roe 横ばい、条件付き空間で着火開始 (T_Q 1356 K)。本番 `run_0089_cmc_c4` (6000 step)、受動対照 `run_0090`。
