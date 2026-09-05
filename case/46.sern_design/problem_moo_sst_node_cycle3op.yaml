@@ -74,7 +74,8 @@ geometry:
   L_ramp_max: 20.0         # NASA 基準形 18.5 H と同スケール
 mesh:
   discretization: node
-  cowl_thickness: 0.002    # node SST は板厚 0 だとカウル TE で ω→inf (run_0035)。2e-3 で通る (run_0037)
+  cowl_thickness: 0.005    # カウル TE のせん断層で ω→inf を防ぐ数値措置。0 は m4_off でも落ち (run_0035)、2e-3 は m10_on で落ちる
+                           # (run_0042)。5e-3 で 3 作動点とも通る (run_0043)。1e-2 と力係数は 0.3 % 以内で同じ = 物理は動かない
   ni_up: 16
   ni_noz: 160              # L_ramp ~10 H に対する解像度補償 (旧 100 は L_ramp ~4 H 前提)
   ni_plume: 180
@@ -93,10 +94,14 @@ mesh:
   vehicle_taper: 2.0      # 後縁手前 2H で機体厚を 0 に絞り TE 共有 (鉛直 base は node で発散: run_0034)
 evaluate:
   model: sst
-  nStepOuter: 4000
-  cfl_main: 1.0
+  nStepOuter: 6000
+  cfl_main: 0.5            # 本段 CFL。1.0 は限界的で、同一メッシュ・同一 config でも run により m10_on が step 171 で発散した
+                           # (run_0048 成功 / run_0049 失敗)。0.5 で m10_on 2 回とも同一値、答えは 1.0 と一致 (run_0050-0053)
   outStepInterval: 500
 opt:
   soft_steps: 2000
+  soft_cfl: 0.2            # soft 段 CFL。既定 0.5 では m10_on が入口面∩カウル外面の角で step 3 発散 (run_0041)
+  warm_lam_steps: 2000     # soft 段の前に層流暖機 (turbulence none)。カウル後縁のせん断層で SST が発散するのを防ぐ
+  warm_lam_cfl: 0.2        # (板厚では m4_off と m10_on で要求が逆転して解けなかった。run_0046-0048)
   cm_min: -7.0             # 重み付き C_M (x_ref −20H) の下限。設計点 MOC C_M の dv 箱分布 (sweep_moc_dv_cycle3op.log: p10 −10.7 / med −6.9 /
                            # p90 −2.5) と重み付き比 ≈0.7 (m10_on/m4_off で緩む) から、最悪 ~15 % を落とす値。旧 −2.5 は L 3.8H 前提で候補が全滅する

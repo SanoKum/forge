@@ -95,7 +95,10 @@ class SernCampaign:
                 if info["design"]["warnings"]:
                     raise ValueError("design warnings: " + "; ".join(info["design"]["warnings"]))
                 L_ramp = info["design"]["L_ramp"]
-                rc = R.run_staged(rd, "full", soft_steps=int(self.optcfg.get("soft_steps", 1500)))
+                rc = R.run_staged(rd, "full", soft_steps=int(self.optcfg.get("soft_steps", 1500)),
+                                  soft_cfl=float(self.optcfg.get("soft_cfl", 0.5)),
+                                  warm_lam_steps=int(self.optcfg.get("warm_lam_steps", 0)),
+                                  warm_lam_cfl=float(self.optcfg.get("warm_lam_cfl", 0.2)))
                 out = R.collect(prob, rd)
                 st = out.get("steadiness", {}); ct = out.get("C_T_with_shear", out.get("C_T"))   # RANS は摩擦込み
                 if rc != 0 or ct is None or not np.isfinite(ct) or "DIVERGED" in " ".join(out.get("convergence_verdict", [])):

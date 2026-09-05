@@ -296,9 +296,15 @@ def run_forge(run_dir) -> int:
     return r.returncode
 
 
-def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000, soft_cfl: float = 0.5, soft_conv: int = 0) -> int:
+def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000, soft_cfl: float = 0.5, soft_conv: int = 0,
+               warm_lam_steps: int = 0, warm_lam_cfl: float = 0.2) -> int:
     """soft_cfl / soft_conv: soft 段の CFL と convMethod (既定 0.5 / 1 次)。3D SST の後縁 3 重点など、1 次でも
-    立ち上がりが厳しいケースで下げる。"""
+    立ち上がりが厳しいケースで下げる。
+
+    warm_lam_steps > 0 (SST のみ): soft 段の**前に層流暖機段** (`turbulence: none` + 粘性あり、1 次、`warm_lam_cfl`) を
+    入れる (plan §4.7)。カウル後縁のせん断層は排気と外部流の密度・温度比が大きく、平均場が立つ前に SST を回すと
+    `roOmega` が発散する — 板厚では作動点ごとに要求が逆転して解けなかった (m4_off は 2e-3、m10_on は 5e-3 が必要)。
+    暖機で平均場を作ってから乱流方程式を入れると 3 作動点とも通り、力係数は暖機なしの成功例と一致する (case/46 run_0048)。"""
     run_dir = Path(run_dir)
     cfg_main = (run_dir / "solverConfig_main.yaml").read_text() if (run_dir / "solverConfig_main.yaml").exists() \
         else (run_dir / "solverConfig.yaml").read_text()
@@ -311,6 +317,22 @@ def run_staged(run_dir, stages: str = "full", soft_steps: int = 3000, soft_cfl: 
         return run_forge(run_dir)
     if stages == "none":
         return run_forge(run_dir)
+    if warm_lam_steps > 0 and 'model: "sst"' in cfg_main:      # 層流暖機段 (SST を後から入れる)
+        lam = re.sub(r'turbulence: \{model: "sst"[^}]*\}', 'turbulence: {model: "none"}', cfg_main)
+        if 'model: "none"' not in lam:
+            raise RuntimeError("層流暖機: turbulence 行の置換に失敗 (solverConfig の書式が変わった)")
+        lam = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", f"cfl: {warm_lam_cfl}, cfl_pseudo: {warm_lam_cfl}", lam)
+        lam = lam.replace("convMethod: 1", "convMethod: 0")
+        lam = re.sub(r"nStepOuter: \d+", f"nStepOuter: {warm_lam_steps}", lam)
+        lam = re.sub(r"outStepInterval: \d+", f"outStepInterval: {warm_lam_steps}", lam)
+        (run_dir / "solverConfig.yaml").write_text(lam)
+        rc = run_forge(run_dir)
+        res = sorted(run_dir.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+        if rc != 0 or not res:
+            raise RuntimeError("層流暖機段が失敗 (res_nan_*.h5 / forge_run.log を見る)")
+        restart_by_index(res[-1], run_dir / MESH)
+        for f in run_dir.glob("res_*"):
+            f.unlink()
     soft = re.sub(r"cfl: [\d.]+, cfl_pseudo: [\d.]+", f"cfl: {soft_cfl}, cfl_pseudo: {soft_cfl}", cfg_main)
     soft = soft.replace("convMethod: 1", f"convMethod: {soft_conv}")
     soft = re.sub(r"nStepOuter: \d+", f"nStepOuter: {soft_steps}", soft)

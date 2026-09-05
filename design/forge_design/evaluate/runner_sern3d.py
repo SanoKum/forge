@@ -122,8 +122,10 @@ def prepare(problem_path, run_dir, nsteps=None, op=None) -> dict:
     return info
 
 
-def run_staged(run_dir, stages="full", soft_steps=2000, soft_cfl=0.5, soft_conv=0):
-    return R2.run_staged(run_dir, stages, soft_steps, soft_cfl=soft_cfl, soft_conv=soft_conv)
+def run_staged(run_dir, stages="full", soft_steps=2000, soft_cfl=0.5, soft_conv=0,
+               warm_lam_steps=0, warm_lam_cfl=0.2):
+    return R2.run_staged(run_dir, stages, soft_steps, soft_cfl=soft_cfl, soft_conv=soft_conv,
+                         warm_lam_steps=warm_lam_steps, warm_lam_cfl=warm_lam_cfl)
 
 
 def warm_from_same_mesh(run_dir, res_h5, keep_turb: bool = True) -> None:
