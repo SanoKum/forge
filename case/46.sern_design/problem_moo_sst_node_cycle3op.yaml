@@ -61,12 +61,15 @@ dv:
     min: 2.0
     max: 8.0
     value: 5.0
-  L_cowl:                  # ランプが 2 倍以上長くなったので上限を広げた (NASA 基準形は 3.12 H)
+  L_cowl:                  # 上限 4.5 H (2026-09-05 拡大)。旧 2.5 は **NASA 基準形 3.12 H を箱の外に置いており**、
+                           # C_T が上限で飽和せず最適化が張り付いていた (plan §8-8)。S4 の CFD は Lc 2.0/3.12/4.5 で
+                           # C_T 0.9605/0.9704/0.9720 と 4.5 でほぼ飽和。MOC スイープの C_M も Lc を伸ばすほど緩む
+                           # (中央値 −7.25 @0.6 → −2.02 @4.5) ので cm_min −7.0 は据え置き
     min: 0.6
-    max: 2.5
+    max: 4.5
     value: 1.2
 geometry:
-  x_max_kernel: 14.0       # L_ramp が伸びたので kernel の march 上限も広げる (打ち切りは key point で効く)
+  x_max_kernel: 20.0       # L_cowl 上限 4.5 に合わせて広げる (打ち切りは key point で効く)
   nj_moc: 301
   dx_moc: 0.002
   nj_moc_probe: 151

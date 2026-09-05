@@ -140,9 +140,12 @@ class SernCampaign:
                 ct_w += w * ct; cm_w += w * out["C_M"]
                 row["ops"][o["name"]] = {"C_T": ct, "C_T_p": out["C_T"], "C_L": out["C_L"], "C_M": out["C_M"], "step": out["step"], "run_dir": str(rd),
                                          "sep_frac_ramp": out.get("sep_frac_ramp"), "sep_x_min_ramp": out.get("sep_x_min_ramp")}
-                for f_ in rd.glob("res_[0-9]*.h5"):   # 容量節約: 場は最終のみ残す
-                    if f_ != sorted(rd.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))[-1]:
-                        f_.unlink()
+                # 容量節約: 場は最終ステップのみ残す。**.xmf も一緒に消す** (h5 だけ消すと XDMF が消えた
+                # h5 を指し続けて「中身の無い xmf」が残る — 2026-09-05 修正)
+                vol = sorted(rd.glob("res_[0-9]*.h5"), key=lambda f: int("".join(c for c in f.stem if c.isdigit())))
+                for f_ in vol[:-1]:
+                    f_.unlink()
+                    f_.with_suffix(".xmf").unlink(missing_ok=True)
             row.update({"status": "PASS", "C_T_w": ct_w / wsum, "C_M_w": cm_w / wsum, "L_ramp": float(L_ramp),
                         "degraded": bool(row.get("degraded_ops"))})
             lo, hi = self.optcfg.get("cm_min"), self.optcfg.get("cm_max")
