@@ -210,6 +210,18 @@ def paste_region_ic(h5path, y_mid, y_top, scale: float, st: dict, gamma: float) 
             v["roK"][:] = ro * np.where(upper, ex["k"], en["k"]); v["roOmega"][:] = ro * np.where(upper, ex["omega"], en["omega"])
 
 
+def convert_mesh(run_dir, msh: str, out: str) -> None:
+    """gmsh msh → forge h5。**exit code で判定しない**: 一部の環境 (AWS g5 / CUDA 13) で converter は
+    h5 を書き切ってから終了時に `GPUassert: invalid argument` を出して非零で抜ける (既知・無害)。
+    成否は出力ファイルの存在とサイズで見る。"""
+    r = subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), msh, out], cwd=run_dir, env=_ENV,
+                       capture_output=True, text=True)
+    f = Path(run_dir) / out
+    if not f.exists() or f.stat().st_size < 1024:
+        raise RuntimeError(f"convertGmshToForge が {out} を作れなかった (rc={r.returncode})\n"
+                           + (r.stdout or "")[-1500:] + (r.stderr or "")[-1500:])
+
+
 def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offset=None) -> dict:
     """op: 作動点名 (spec.operating_points)。wall_offset: {"ramp": (x_m, dn_m), "cowl": (x_m, dn_m)} の
     法線オフセット表 [m] (S5 δ* 一発補正。壁を流体と反対側へ dn だけ動かす)。"""
@@ -251,7 +263,7 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
     disc = p.mesh.get("discretization", "cell")
     # 品質ゲートは primal (cell) 変換で
     (run_dir / "solverConfig.yaml").write_text(cfg.replace(f'discretization: "{disc}"', 'discretization: "cell"').replace(", nodeWallDirichlet: 1", ""))
-    subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "sern.msh", "sern_qc.h5"], cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+    convert_mesh(run_dir, "sern.msh", "sern_qc.h5")
     q = subprocess.run([sys.executable, str(FORGE_TOOLS / "check_mesh_quality.py"), "sern_qc.h5", "--mode", "2d"], cwd=run_dir, env=_ENV, capture_output=True, text=True)
     (run_dir / "MESH_QUALITY.txt").write_text(q.stdout + q.stderr)
     if q.returncode != 0:
@@ -261,7 +273,7 @@ def prepare(problem_path, run_dir, nsteps=None, op: str | None = None, wall_offs
     else:
         (run_dir / "sern_qc.h5").unlink()
         (run_dir / "solverConfig.yaml").write_text(cfg)
-        subprocess.run([str(FORGE_BUILD / "convertGmshToForge"), "sern.msh", MESH], cwd=run_dir, env=_ENV, check=True, capture_output=True, text=True)
+        convert_mesh(run_dir, "sern.msh", MESH)
     for f in run_dir.glob("sern_qc.xmf"):
         f.unlink()
     (run_dir / "solverConfig.yaml").write_text(cfg)

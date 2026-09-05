@@ -98,7 +98,7 @@ def prepare(problem_path, run_dir, nsteps=None, op=None) -> dict:
     (run_dir / "bcondConfig.yaml").write_text(_bcond_config(p, st)); (run_dir / "probe.yaml").write_text("outStepInterval: 100\noutStepStart: 0\npoints:\nsurfaces:\n")
     disc = p.mesh.get("discretization", "node")
     (run_dir / "solverConfig.yaml").write_text(cfg.replace(f'discretization: "{disc}"', 'discretization: "cell"').replace(", nodeWallDirichlet: 1", ""))
-    subprocess.run([str(R2.FORGE_BUILD / "convertGmshToForge"), "sern.msh", "sern_qc.h5"], cwd=run_dir, env=R2._ENV, check=True, capture_output=True, text=True)
+    R2.convert_mesh(run_dir, "sern.msh", "sern_qc.h5")
     q = subprocess.run([sys.executable, str(R2.FORGE_TOOLS / "check_mesh_quality.py"), "sern_qc.h5", "--mode", "3d"], cwd=run_dir, env=R2._ENV, capture_output=True, text=True)
     (run_dir / "MESH_QUALITY.txt").write_text(q.stdout + q.stderr)
     if q.returncode != 0:
@@ -107,7 +107,7 @@ def prepare(problem_path, run_dir, nsteps=None, op=None) -> dict:
         (run_dir / "sern_qc.h5").rename(run_dir / MESH)
     else:
         (run_dir / "sern_qc.h5").unlink(); (run_dir / "solverConfig.yaml").write_text(cfg)
-        subprocess.run([str(R2.FORGE_BUILD / "convertGmshToForge"), "sern.msh", MESH], cwd=run_dir, env=R2._ENV, check=True, capture_output=True, text=True)
+        R2.convert_mesh(run_dir, "sern.msh", MESH)
     for f in run_dir.glob("sern_qc.xmf"):
         f.unlink()
     (run_dir / "solverConfig.yaml").write_text(cfg); (run_dir / "solverConfig_main.yaml").write_text(cfg)
