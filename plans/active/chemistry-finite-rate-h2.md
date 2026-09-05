@@ -61,10 +61,10 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 
 | 優先 | 項目 | 状態・次アクション |
 | --- | --- | --- |
-| P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
+| P0-1 | **設計 QoI と合格基準の確定** | **決定 2026-09-05 (ユーザ)**: 火炎位置 (着火位置・浮き上がり高さ) まで合わせに行く = TCI 必須。定常反復と dual-time で燃焼場は同一 (z/d 26 で ≤20 K) と確認したので探索は定常のまま、報告時のみ dual-time で位相の曖昧さを消す |
 | P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量を追加し、統計定常を確認 | **ツール done 2026-09-05** (`ignx,tmax,exit_massflux,exit_hflux,exit_y_/exit_yflux_/exit_yout_<種>`; 抽出失敗・末尾 NaN は偽 STEADY にしない; commit 967e49d4→1add8d63)。適用: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED。**Cabra 反応 ON 全 run で出口質量流束が 37–63 % 変動** (出口 y 54–78 mm の環状逆流) → 付着後 +30k (`run_0073`) でも ±20 % の擬似時間リミットサイクル (z/d 26 の T が 183 K 動く)。切り分け順 (codex 2): ①外周 slip→`outlet_statPress` (`run_0074`: **不採用**、外周 ±18 m/s の出入りで悪化) → ③precond 0 低 CFL (`run_0075`: 振幅 ±20→±11 % に減るが消えず = **前処理起因ではない**) → ②領域拡張 (`run_0078`: **周期 15000 step・±22 % の脈動が領域サイズによらず残る** = 閉じ込めではない) → ④dual-time (`run_0077` 実行中: dt 1e-5 s × 10000 = 0.1 s)。解釈: 速度入口+静圧出口の低速 coflow 柱のピストンモードが局所 dt の擬似時間反復で減衰しない (反応の熱膨張が励起)。**解決まで Cabra 下流比較を「一致」と呼ばない** |
 | P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **reopen** (codex 2): 初版は coflow 組成バグ (ΣX=1.1) → 修正・再計算済 (2026-09-05, §9 (7)): 1045 K で Jach 1.46 / Li 1.69 / Burke 3.49 ms、Jach は Li 比 14–43 % 早い (定性結論不変)。Cabra A/B (`run_0072`, Li) は付着推移同一 → **TCI 欠如が主因という仮説を強く支持** (確定ではない)。forge⇔Cantera 0-D 照合は済 (Li+CEA 熱力学で 1 % 以内、§9 (7)(e))。残: 実加熱器圧力での比較、0-D/CFD/実験の着火判定 (max dT/dt / Y_OH>2e-4 / OH 発光) の対応付け |
-| P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
+| P0-4 | **TCI の実装** | **決定 2026-09-05 (ユーザ: 「分布で考える TCI を入れて検証」)**: 1st-order CMC を別 plan [chemistry-cmc-tci.md](chemistry-cmc-tci.md) で実装。文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md) |
 | P1-5 | BK 早着火の条件整理 (機構 A/B・入口乱流・壁温・3D blockage) と end-to-end 収支 (質量・元素・全エンタルピー・圧損・出口一様性) の必須出力化 | todo (Cabra A/B は済、BK 機構 A/B は未) |
 | P1-6 | Cabra 入口感度 (管内長 ~50d・リップ熱条件・入口 k/ω・格子) | todo |
 | P1-7 | **ドキュメント同期** | **methods/index.md・methods/chemistry.md (状態行・falloff・precond 配線=済をコード確認・検証節・TCI 節)・plans/README.md は 2026-09-05 同期済**。残: case/47・48 run 表の grouped 行 (破棄予定の診断 run 群) の 1 run = 1 行化は run 群の削除と併せてユーザ判断; OH 閾値は新規解析を 2e-4 に統一済 (旧 README 数値は 1e-4 のまま注記なし) |
@@ -296,3 +296,8 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   ② 不変、を合わせると、速度入口 + 静圧出口 + slip の低速柱に対する**擬似時間反復のピストンモード** (局所 dt では減衰しない; 混合のみでは
   4 % 止まりで反応の熱膨張が励起) が最有力。判定は ④ `run_0077` (dual-time) で: 物理時間で減衰・定常化するなら擬似時間固有、しないなら
   物理/BC 由来。20 ms 時点の途中経過: 出口流束 0.032→0.039、z/d 26 ΔT 135→45 K (まだ動いている)。
+- `2026-09-05 (13)` — **方針決定 (ユーザ)**: 検証目標は火炎位置まで含める → TCI (1st-order CMC) を実装する。別 plan `chemistry-cmc-tci.md` を起票。
+  根拠: 定常反復と dual-time (`run_0077`, 70 ms) で燃焼場は同一 (中心軸 T 差 ≤15 K, z/d 26 半径 T 差 ≤20 K) だが、**実験には合っていない**:
+  半径 T が z/d 9/11/14 で平均 +222/+191/+153 K (最大 +616 K)、中心軸 T が z/d 20 で +200 K、Y_H2O が z/d 14–20 で +40–50 %、
+  z/d 30 でのみ一致 — リップ付着火炎がせん断層を早く加熱する構図で、数値ノイズ・境界・機構では直らない。
+  **訂正**: 以前の「z/d 26 の半径 T は実験と整合」は誤りで +94〜116 K のバイアスがある (実験読み取り ±30 K)。

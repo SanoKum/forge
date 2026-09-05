@@ -24,6 +24,7 @@ forge の理論的背景と実装解説の索引。運用方針は [README.md](R
 | 乱流モデル | [turbulence/theory.md](turbulence/theory.md) ・ [implementation.md](turbulence/implementation.md) | 整備済み (分割) |
 | 多成分熱物性 (TP gas) | [thermophysics.md](thermophysics.md) | M1-M4 + TP境界条件 完了 |
 | 有限速度化学 | [chemistry.md](chemistry.md) | Phase 0–2 実装・検証済 (ソース項・種ブロック陰解・falloff・Strang・PaSR)。Phase 3 燃焼器 RANS は BK/Cabra で TCI 欠如が支配 (2026-09-05) |
+| 乱流‐化学相互作用 (CMC) | [chemistry_cmc.md](chemistry_cmc.md) | 設計確定・Phase A (混合分率インフラ) 着手 (2026-09-05) |
 | 非平衡凝縮 (4 モーメント) | [condensation.md](condensation.md) | 整備中 (Phase 1 受動スカラー骨格) |
 | ノズル設計ツール | [design/overview.md](design/overview.md) | 整備中 (Phase 0/2 完了・①風洞 = axis-Mach チェーン A0–A5 完了) |
 

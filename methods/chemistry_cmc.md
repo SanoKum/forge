@@ -1,0 +1,132 @@
+# 乱流‐化学相互作用: 1st-order CMC (Conditional Moment Closure)
+
+有限速度化学 ([chemistry.md](chemistry.md)) に、セル平均でなく**混合分率に条件付けた組成分布**で反応を評価する
+TCI クロージャを加える。設計判断と進捗は [`plans/active/chemistry-cmc-tci.md`](../plans/active/chemistry-cmc-tci.md)、
+文献根拠は [`notes/investigations/cabra-liftoff-model-fidelity-survey.md`](../notes/investigations/cabra-liftoff-model-fidelity-survey.md)。
+
+**状態 (2026-09-05)**: 設計確定・実装着手 (Phase A 混合分率インフラから)。
+
+---
+
+## 理論
+
+### 1. なぜ平均場評価では足りないか
+
+RANS の平均反応率は状態 $\psi=(Y_1..Y_{n_s},T)$ の確率密度 $f(\psi)$ による積分
+$\bar{\dot\omega}=\int\dot\omega(\psi)f(\psi)d\psi$ であり、Arrhenius の強い非線形性のため
+$\dot\omega(\tilde\psi)$ (laminar chemistry) とは一致しない。自着火で安定化する火炎 (Cabra, BK, 加熱器) では
+着火は**最反応性混合分率 $\xi_{MR}$ (超希薄) かつ低スカラー散逸のポケット**で始まり、着火遅れは分布の裾で決まる。
+平均場評価は可着火な平均混合気をリップ直近から即着火させ、火炎が付着する (case/48 で実証、機構交換・PaSR では直らない)。
+
+### 2. 混合分率と条件付き平均
+
+2 流 (燃料流 $\xi=1$ / 酸化剤流 $\xi=0$) の非予混合場では、組成・温度のばらつきの主因は「どれだけ混ざったか」であり、
+同じ混合分率の流体塊同士の組成はほぼ等しい。そこで未知数を条件付き平均に取り替える:
+
+$$Q_\alpha(\eta;\mathbf x)=\langle Y_\alpha\,|\,\xi=\eta\rangle,\qquad Q_h(\eta;\mathbf x)=\langle h\,|\,\xi=\eta\rangle$$
+
+$h$ は forge の sensible datum の比エンタルピー (反応熱は $\dot Q=-\sum c_s\dot\omega_s$ として入る、chemistry.md §1)。
+無条件平均は混合分率 PDF $\tilde P(\eta)$ で戻す:
+
+$$\tilde Y_\alpha=\int_0^1 Q_\alpha(\eta)\tilde P(\eta)\,d\eta,\qquad
+\bar{\dot\omega}_\alpha=\int_0^1 \dot\omega_\alpha\big(Q(\eta),T_Q(\eta)\big)\tilde P(\eta)\,d\eta$$
+
+**1st-order closure**: 条件付き反応率を条件付き平均で評価する $\langle\dot\omega|\eta\rangle\approx\dot\omega(Q(\eta),T_Q(\eta))$。
+無条件平均での評価と違い、同じ $\eta$ に条件付けた後の残りのばらつきは小さいので良い近似になる (2nd-order は採らない)。
+
+### 3. 条件付きモーメント方程式
+
+密度重み無しの標準形 (Klimenko & Bilger 1999; RANS 実装は Patwardhan et al. 2009, Kim & Huh 等):
+
+$$\frac{\partial Q_\alpha}{\partial t}+\langle\mathbf u|\eta\rangle\cdot\nabla Q_\alpha
+=\nabla\cdot\big(D_t\nabla Q_\alpha\big)+\frac{\langle\chi|\eta\rangle}{2}\frac{\partial^2 Q_\alpha}{\partial\eta^2}
++\langle\dot\omega_\alpha|\eta\rangle/\bar\rho_\eta$$
+
+- 条件付き速度は平均速度で近似 $\langle\mathbf u|\eta\rangle\approx\tilde{\mathbf u}$ (1st-order; Gordon 2007 の PDF 計算とも整合)。
+- 物理空間の乱流拡散 $D_t=\nu_t/Sc_t$ (化学種と同じ $Sc_t$)。
+- $\eta$ 空間の拡散項 (右辺第 2 項) が CMC の心臓部: $\chi=2D|\nabla\xi|^2$ はスカラー散逸率で、大きいほど
+  $\eta$ 空間でプロファイルが均され、生まれかけたラジカルのピークが希釈されて着火が遅れる/消える。
+- $\eta=0$ で酸化剤流 (coflow) の状態、$\eta=1$ で燃料流の状態を Dirichlet 境界とする。
+- 条件付き密度 $\bar\rho_\eta=p/(R_{mix}(Q)T_Q)$。エネルギーは $Q_h$ を輸送し $T_Q$ を $h(T,Y)$ の反転で得る (thermo_d と同じ NASA-9)。
+
+$\tilde P(\eta)\to0$ の領域で方程式が退化する問題は、この形 (密度・PDF 重み無し) では起きない。
+密度重み形との差は $\nabla(\bar\rho\tilde P)$ に比例する項で、RANS 1st-order の精度では無視する (文献慣行)。
+
+### 4. 混合分率の統計量と $\chi$ のモデル
+
+- **平均混合分率** $\tilde\xi$ は輸送しない。全化学種の拡散係数を同一 ($Sc_t$ 共通、分子拡散は $Sc$ 一定) としているので
+  元素質量分率は保存スカラーであり、Bilger の定義
+  $$\xi=\frac{\beta-\beta_O}{\beta_F-\beta_O},\qquad \beta=\frac{2Z_H}{W_H}-\frac{Z_O}{W_O}$$
+  ($Z$: 元素質量分率、$F$/$O$ は燃料流/酸化剤流の値) を平均組成 $\tilde Y$ から**診断**する。C 系機構では
+  $\beta=2Z_C/W_C+Z_H/(2W_H)-Z_O/W_O$。元素組成は機構 YAML の `species[].composition` から読む。
+- **分散** $\widetilde{\xi''^2}$ は 1 本だけ輸送する (Jones–Launder 型):
+  $$\frac{\partial\bar\rho\widetilde{\xi''^2}}{\partial t}+\nabla\cdot(\bar\rho\tilde{\mathbf u}\widetilde{\xi''^2})
+  =\nabla\cdot\Big(\big(\mu+\tfrac{\mu_t}{Sc_t}\big)\nabla\widetilde{\xi''^2}\Big)
+  +2\frac{\mu_t}{Sc_t}|\nabla\tilde\xi|^2-\bar\rho\tilde\chi$$
+- **平均散逸率**: $\tilde\chi=C_\chi\,\beta^*\tilde\omega\,\widetilde{\xi''^2}$ ($\varepsilon/k=\beta^*\omega$, SST; $C_\chi=2$)。
+- **条件付き散逸率**: AMC (Amplitude Mapping Closure, O'Brien & Jiang 1991)
+  $$\langle\chi|\eta\rangle=\tilde\chi\frac{G(\eta)}{\int_0^1G(\eta)\tilde P(\eta)d\eta},\qquad G(\eta)=\exp\!\big(-2[\mathrm{erf}^{-1}(2\eta-1)]^2\big)$$
+- **混合分率 PDF**: $\beta$ 分布 $\tilde P(\eta)=\eta^{a-1}(1-\eta)^{b-1}/B(a,b)$、
+  $a=\tilde\xi\gamma,\ b=(1-\tilde\xi)\gamma,\ \gamma=\tilde\xi(1-\tilde\xi)/\widetilde{\xi''^2}-1$ ($\gamma$ は下限でクリップ)。
+  分散が微小なセルはデルタ関数扱い ($\tilde Y=Q(\tilde\xi)$)。
+
+### 5. 流れ側との結合 (source coupling)
+
+流れソルバは従来どおり $\tilde Y_\alpha$ と $\tilde h$ を輸送し、**反応ソースだけ**を条件付き平均から作る:
+
+$$\bar{\dot\omega}_\alpha=\sum_k w_k\tilde P(\eta_k)\,\dot\omega_\alpha(Q(\eta_k),T_Q(\eta_k)),\qquad
+\bar{\dot Q}=\sum_k w_k\tilde P(\eta_k)\,\dot Q(Q(\eta_k),T_Q(\eta_k))$$
+
+これは laminar chemistry の $\dot\omega(\tilde Y,\tilde T)$ を置き換えるだけなので、質量保存・既存の陰解法配管
+(種ブロック LU、案C 反応熱注入) をそのまま使える。剛性は CMC 側 ($\eta$ 各点の点陰解) で吸収し、平均方程式側の
+ソース Jacobian は「同じ $\eta$ 点での $\partial\dot\omega/\partial\rho Y$ の PDF 加重和」で対角近似する。
+$\tilde Y$ の PDF 積分値と輸送値のずれは、定常では両者が同じ $Q$ から作られるので小さい (診断で監視する: `cmc_dY`)。
+$\tilde Y$ を PDF 積分で上書きする「full coupling」は採らない (質量保存を流れ側に残すため)。
+
+### 6. $\eta$ 格子と離散化
+
+- $\eta_k$ は $N_\eta$ 点 (既定 41)、$\xi_{MR}$ (超希薄側) と $\xi_{st}$ に密に取る (tanh 伸長)。
+- $\eta$ 拡散は 2 次中心差分、陰的 (三重対角)。物理空間の移流は 1 次風上 (条件付き量は滑らか)、拡散は汎用 `scalarTransport_d`。
+- 化学は各 $\eta$ 点で `chem_source` を評価し、点陰解 (種ブロック LU, `jacobianMode 2` と同じ機構) を $\eta$ 点ごとに行う。
+  `jacobianInterval` の凍結も同様に使う。
+- 疑似時間: 流れと同じ局所 $\Delta\tau$。$\eta$ 方向は完全陰的なので $\chi$ の剛性は制約にならない。
+
+### 参考文献
+
+- Klimenko & Bilger, Prog. Energy Combust. Sci. 25 (1999) — CMC の定式。
+- Patwardhan, De, Lakshmisha, Raghunandan, Proc. Combust. Inst. 32 (2009) — Cabra H₂/N₂ の RANS 1st-order CMC。
+- Kim, Huh (Combust. Flame 2002) — RANS-CMC の数値実装 (AMC, β-PDF)。
+- O'Brien & Jiang, Phys. Fluids A 3 (1991) — AMC。
+- Mastorakos, Prog. Energy Combust. Sci. 35 (2009) — 自着火の物理と各クロージャの比較。
+
+---
+
+## 実装
+
+### 1. モジュール構成 (設計)
+
+| 処理 | ファイル | 内容 |
+| --- | --- | --- |
+| 元素組成 | `chemistry_mech_io.hpp` | `species[].composition` を読み、元素×種の行列 $a_{e,s}$ と Bilger 係数を `ReactionTable` に持つ |
+| 混合分率診断 | `cuda_forge/cmc_d.cu` (`cmc_mixfrac_d`) | $\tilde Y$ → $\tilde\xi$ (Bilger)。`xi` を出力変数に登録 |
+| 分散輸送 | `cuda_forge/cmc_d.cu` + `scalarTransport_d` | `roXiVar` (保存量), `xiVar`, `res_roXiVar`, `transport_diag_xiVar`, `src_jac_xiVar`。生成 $2\mu_t/Sc_t|\nabla\tilde\xi|^2$・散逸 $\bar\rho\tilde\chi$ を点陰解 (散逸は `src_jac`) |
+| 条件付きスカラー | `cuda_forge/cmc_d.{cuh,cu}` | `Q` を `[node][var][eta]` で保持 (double)。物理空間輸送は `scalarTransport_d` を $N_\eta\times(n_s+1)$ 回 (var/η ループ)、$\eta$ 拡散 + 化学は node 毎のカーネル (三重対角 + 種ブロック LU) |
+| β-PDF・積分 | `cmc_d.cuh` (`cmc_beta_pdf`, `cmc_integrate`) | Gauss–Jacobi でなく $\eta$ 格子上の台形則 + β-PDF の解析正規化 (端の特異性は不完全 β 関数で処理) |
+| ソース結合 | `chemistry_d.cu` (`chemistry_source_d` に `tci==2` 分岐) | $\bar{\dot\omega},\bar{\dot Q}$ と対角 Jacobian を PDF 積分で置換 |
+| 設定 | `physProp.chemistry.tci: 2`, `cmc: {nEta, cChi, scT, etaStretch, pdfFloor, updateInterval}` | [solver-settings.md](../procedures/solver-settings.md) |
+| 出力 | `xi`, `xiVar`, `chi`, 診断 `cmc_dY` (PDF 積分 $\tilde Y$ と輸送 $\tilde Y$ の差), 任意 η 断面の `Q_T` | `res_*.h5` |
+
+### 2. 境界条件
+
+- 混合分率分散: 入口 0、壁 zero-gradient、出口 zero-gradient (汎用スカラの既定)。
+- 条件付きスカラー: $\eta$ 端は Dirichlet (燃料流/酸化剤流の入口状態を `physProp.chemistry.cmc.fuel/oxidizer` または入口 bcond の組成・温度から自動取得)。
+  物理空間の入口は「その入口の $\xi$ に対応する混合線状態」、壁・出口は zero-gradient。
+
+### 3. 検証 (plan §6)
+
+1. **凍結混合の整合**: 化学 OFF で $Q_\alpha(\eta)$ が混合線 (線形) に一致し、PDF 積分 $\tilde Y$ が輸送 $\tilde Y$ と一致 (`cmc_dY` < 1 %)。
+2. **Cabra H₂/N₂** (case/48): $T_c$ = 1015/1030/1045/1060/1075 K の浮き上がり高さ $H(T_c)$ (Y_OH > 2e-4) を
+   実験 (Cabra 2002, Wu 2003) と PDF/CMC 文献値 (Gordon 2007, Patwardhan 2009) に重ね、応答曲線の傾きと
+   $T_c\pm30$ K 内での一致を判定。中心軸・半径 T の平均差 ±30 K (実験読み取り誤差) 以内を目標。
+3. **Burrows–Kurkov** (case/47): 着火位置 18–25 cm。
+4. **回帰**: `tci: 0/1` はビット不変。

@@ -107,7 +107,7 @@ Jacobian は $n_s\times n_s$ 密 (H₂ 系で $n_s\le13$)。有限差分は検�
 既定は **laminar finite-rate (No-TCI)**。`chemistry.tci: 1` で PaSR: $\dot\omega_s\to\kappa\,\dot\omega_s$ (Jacobian・$\dot Q$ も同じ κ),
 $\kappa=\tau_c/(\tau_c+\tau_{\rm mix})$, $\tau_c$ は `tciTauChem` で選択 (0: $1/\max_s|\partial\dot\omega_s/\partial\rho Y_s|$ = 最速ラジカル時間 ~1e-8 s で κ≈0.03 となり Burrows–Kurkov で消炎 [run_0018]; 1 [既定]: 燃料/酸化剤 H₂・O₂ の消費時間 $\max(\rho Y_s/|\dot\omega_s|)$),
 $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または $C_{\rm mix}k/\varepsilon$ (1), $\varepsilon=\beta^*k\omega$ (SST)。
-κ の状態微分は Jacobian に入れない。実装は `chemistry_source_d` (ソース項経路のみ。Strang 経路は κ=1)。$C_{\rm mix}$ は未較正。**Cabra (case/48) で PaSR は C_mix 1/4 とも付着推移を変えない** — 自着火安定化火炎は化学律速で、混合速度リミッタでは着火遅れ統計 (最反応性混合分率・低散逸ポケット) を表現できない。EDC・flamelet は採らない。次段の候補は 1st-order RANS-CMC / transported PDF (plan §5.1 P0-4, 文献根拠は上記調査メモ)。
+κ の状態微分は Jacobian に入れない。実装は `chemistry_source_d` (ソース項経路のみ。Strang 経路は κ=1)。$C_{\rm mix}$ は未較正。**Cabra (case/48) で PaSR は C_mix 1/4 とも付着推移を変えない** — 自着火安定化火炎は化学律速で、混合速度リミッタでは着火遅れ統計 (最反応性混合分率・低散逸ポケット) を表現できない。EDC・flamelet は採らない。次段として **1st-order CMC を導入する** (`tci: 2`, 設計は [chemistry_cmc.md](chemistry_cmc.md), 計画 `plans/active/chemistry-cmc-tci.md`)。
 
 ### 参考文献
 
