@@ -69,7 +69,7 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0090_cmc_passive_ctrl` | couple 0 (受動) 400 step: run_0088 との差でブレンドの影響を分離 | (実行中) | active |
 | (注) `run_0079_react_li_dualtime_cont` | 別セッションが作成した run (本セッションの `run_0079_mixfrac_smoke` と番号衝突)。表の管理は当該セッションに委ねる | — | 他セッション |
 | `run_0077_react_li_dualtime` | run_0073 `res_30000` から **dual-time** (`unsteady 1, dualTime 1`, dt 1e-5 s 固定 = ジェット部 CFL 6.5, nStepInner 5, cfl_pseudo 0.5, precond 2, 外周 slip), Li, 10000 step = 物理 0.1 s (coflow 通過時間 71 ms の 1.4 倍), 出力 10 ms 毎 (切り分け順序 ④) | **物理時間では定常化する**: z/d 9・26 の T は 30 ms 以降 10 ms あたり 0–4 K、最終場 (100 ms) と ≤3 K で一致 (擬似時間では同点が 183 K 動いた)。出口質量流束は 0.032→0.041→0.033→0.038 と周期 ~50 ms で減衰する緩やかな柱モード (±12→±7 %、平均 0.036 = 理論値 0.037)、逆流なし。`check_quasisteady`: ignx/tmax/exit_yout_H2O STEADY、exit_massflux DRIFTING (減衰途中)。**擬似時間反復では減衰しない柱の調整モードが物理時間では減衰** → Cabra の下流比較は dual-time 場で行う。`compare_cabra_10000.png`: 軸 T>600 K は z/d 13.3 (実験 ≈14)、OH は z/d 0 から (付着) | ref (**④ の結論: dual-time で定常化**) |
-| `run_0079_react_li_dualtime_cont` | run_0077 `res_10000` から dual-time をさらに +100 ms (同設定) — 出口流束の減衰を最後まで見て定常参照場を作る | (実行中) | active |
+| `run_0079_react_li_dualtime_cont` | run_0077 `res_10000` から dual-time をさらに +100 ms (同設定, 物理 100–200 ms) — 出口流束の減衰を最後まで見て定常参照場を作る | **内部場は完全に定常** (z/d 26 の T は 100 ms 間で最終場と ≤1 K)。出口質量流束は減衰が止まり **0.0367 ± 0.002 kg/s (±5.5 %) の小振幅物理振動** (周期 ~20 ms, 平均は理論値 0.037): `check_quasisteady` exit_massflux **OSCILLATING → 平均±振幅で報告**、ignx/tmax/exit_yout_H2O STEADY。**dual-time 参照場 = `res_10000` (t=200 ms)** | ref (**Cabra 反応 ON の定常参照場**) |
 
 ## 機構着火遅れ比較 (2026-09-05, plan §5.1 P0-3)
 
