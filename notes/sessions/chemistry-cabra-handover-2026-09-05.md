@@ -39,7 +39,7 @@ Claude CLI で続きを行うための引継ぎ文書。まず [`AGENTS.md`](../
 1. **node × `lowMachPrecond>=2` の境界ノード凍結** — `implicit_defect_correction_block_precond_d` (timeIntegration_d.cu) に node 用行処理
    (境界半割面の粘性対角スキップ・軸/壁行 decouple) を追加。これ以前の node precond run (case/39, 43) は境界が凍結していた可能性。
 2. **TP 亜音速 `outlet_statPress` の γ 混用** (boundaryCond_d.cu) — セル局所 γ_mix で特性構成を統一。低マッハ出口の一様逆流 (−65 m/s) の指紋。
-   BK は壁近傍の亜音速出口列が変わり残差 0.5 % 変化 (再現ノイズ 1e-5)。**BK の出口プロファイル比較 (`compare_exit.py`) の再確認は未了**。
+   BK は壁近傍の亜音速出口列が変わり残差 0.5 % 変化 (再現ノイズ 1e-5)。BK の出口プロファイル再確認は **`run_0028_exit_recheck` で完了 (2026-09-05, 結論維持)** — case/47 README の run 表を参照。
 3. **多成分 × 定常擬似時間 × precond の前線速度不整合** — `time.deltaT.speciesPrecondDt` (**既定 1** = 化学種は前処理拡大前 Δτ を使う。0 は旧挙動で A/B 用)。
    setDT が `dt_local_sp` を用意し化学種 DPLUR が読む。k/ω は同構造の潜在問題 (未対応)。
 
@@ -65,8 +65,8 @@ https://claude.ai/code/artifact/27dc951c-fd98-4185-a64e-96afe231bfbd
 
 ## 5. 未了・注意
 
-- BK 出口プロファイルの再確認 (上記 3-2)。`case/47 run_0026_regr_*`/`run_0027_*` は 300 step の A/B 記録のみ。
-- BK の早着火 (5–9 cm vs 18–25 cm) は未解決。
+- ~~BK 出口プロファイルの再確認 (上記 3-2)~~ → `run_0028_exit_recheck` で完了 (結論維持)。
+- BK の早着火 (5–9 cm vs 18–25 cm) は未解決 (run_0028 でも Y_OH>1e-4 位置が 4.36→3.93 cm と緩慢な上流ドリフト継続)。
 - `chemistry_source_d` の占有率最適化 (3 KB スタック/126 レジスタ) は未着手。
 - メイン `feature/median-dual-3d` に化学の初期 3 commit が混入している (ユーザ了承済み・そのまま)。force-push 禁止。
 - `pkill -f <run名>` は自分のシェルを殺す (パターンが自分のコマンド行に一致) — 使わない。
