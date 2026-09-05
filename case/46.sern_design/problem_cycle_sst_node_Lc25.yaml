@@ -1,4 +1,5 @@
-# ⑤ SERN S6 多作動点 MOO — 作動点を**サイクル値**で定義した生産構成 (plan §4.10、2026-09-05)。
+# ⑤ SERN 剥離感度の確認: 生産構成 (cycle3op) の L_cowl を dv 上限 2.5 にして m4_off (NPR 2.8) を SST で回す。
+# 長いカウルは内部膨張比が大きく cowl TE 圧が下がるので、カウル側衝撃が強くなりランプ剥離が出るはず (plan §4.11 の議論)。
 # アンカー = NASA TM X-71972 TABLE 1 (定動圧 1500 psf 経路の station 3 = 燃焼器出口) + CEA2 で γ/M_3 を補完。
 # 導出は case/46.sern_design/cea/tmx_operating_points.py (CEA 入出力は同 cea/)。
 #
@@ -7,7 +8,7 @@
 #   低 NPR 点は「低速飛行」ではなく**燃料遮断 (power-off)**。M_3 = 2.91 で超音速なので sonic_throat 不要。
 #
 # 目的 = −(摩擦込み C_T の重み付き平均), L_ramp/H。制約 C_M,w (x_ref −20H) ≥ −2.5。剥離割合を台帳に記録。
-name: sern_moo_sst_node_cycle3op
+name: sern_cycle_sst_m4off_Lc25
 type: sern_2d
 gas:                       # 設計点のガス = m6_on (H2-air 平衡, CEA GAMMAs / Mbar 24.43)
   gamma: 1.1828
@@ -64,7 +65,7 @@ dv:
   L_cowl:                  # ランプが 2 倍以上長くなったので上限を広げた (NASA 基準形は 3.12 H)
     min: 0.6
     max: 2.5
-    value: 1.2
+    value: 2.5
 geometry:
   x_max_kernel: 14.0       # L_ramp が伸びたので kernel の march 上限も広げる (打ち切りは key point で効く)
   nj_moc: 301
@@ -98,5 +99,4 @@ evaluate:
   outStepInterval: 500
 opt:
   soft_steps: 2000
-  cm_min: -7.0             # 重み付き C_M (x_ref −20H) の下限。設計点 MOC C_M の dv 箱分布 (sweep_moc_dv_cycle3op.log: p10 −10.7 / med −6.9 /
-                           # p90 −2.5) と重み付き比 ≈0.7 (m10_on/m4_off で緩む) から、最悪 ~15 % を落とす値。旧 −2.5 は L 3.8H 前提で候補が全滅する
+  cm_min: -2.5
