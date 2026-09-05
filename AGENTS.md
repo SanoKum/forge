@@ -151,6 +151,8 @@ forge の理論的背景と実装解説は `methods/` 配下に機能単位 (物
 構造の存在確認は `python3 solver_density_cuda/tools/check_plans.py [PATH ...]` で行う (残作業表・変更ログ・
 `plans/README.md` 記載の有無のみを見る機械的な lint)。`plans/active/*.md` を編集すると PostToolUse フック
 (`hook_plan_todo_gate.py`) が編集したファイルだけを検査して不足を知らせるので、**触った plan から順に直す**。
+フックの登録は `.claude/settings.json` (git 追跡対象。`.claude/` の他は追跡外)。これは Claude Code のみが読む
+仕組みなので、Copilot 側には本節の記述そのものが規範として効く。
 
 ## コミット・push 運用
 
