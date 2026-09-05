@@ -298,7 +298,7 @@ namespace {
 
 struct CmcParams {
     int nEta, nSpecies, chemOn, couple, kSt;
-    double pdfFloor, Tmax, Tfreeze, dtScale, relax, alpha;
+    double pdfFloor, Tmax, Tfreeze, dtScale, relax, alpha, dTmax;
     double eta[CMC_MAX_ETA];       // η 格子
     double w[CMC_MAX_ETA];         // 台形重み (Σ=1)
     double G[CMC_MAX_ETA];         // AMC 形状 exp(-2 erfinv(2η-1)^2) (端は 0)
@@ -315,7 +315,8 @@ static flow_float *g_gdum = nullptr;                       // 勾配ダミー (�
 static flow_float *g_omega = nullptr, *g_qdot = nullptr, *g_jac = nullptr;   // PDF 平均ソース
 static flow_float *g_ypdf = nullptr, *g_hpdf = nullptr, *g_tau = nullptr;   // couple 2: PDF 積分 Ỹ_s, h̃, 緩和時間 τ
 static flow_float *g_dpdf = nullptr, *g_dpdf_prev = nullptr;
-static flow_float *g_qrel = nullptr;   // couple 4: 条件付き点陰解で実際に進んだ反応の PDF 平均発熱 [J/kg] (この step)   // couple 4: PDF 積分の反応離脱 D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) と前ステップ値
+static flow_float *g_qrel = nullptr;
+static flow_float *g_qdebt = nullptr;   // couple 4: 1 step の ΔT 上限で出し切れなかった発熱の持ち越し [J/m3]   // couple 4: 条件付き点陰解で実際に進んだ反応の PDF 平均発熱 [J/kg] (この step)   // couple 4: PDF 積分の反応離脱 D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) と前ステップ値
 static int g_cmcStep = 0;
 
 __device__ __forceinline__ size_t sl(int var, int k) { return (size_t)(var * g_cmc.nEta + k); }
@@ -594,7 +595,7 @@ __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, c
 //   リップで数百 K の非物理な冷却を作って発散した: run_0087)。平均エネルギー式が伝導・境界を担い、CMC は反応進行だけを渡す。
 __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* ro,
                                     flow_float* const* roY_dev, flow_float* roe, flow_float* chemQdot, const flow_float* dt_local,
-                                    const flow_float* dpdf, flow_float* dpdf_prev, const flow_float* qrel)
+                                    const flow_float* dpdf, flow_float* dpdf_prev, const flow_float* qrel, flow_float* qdebt)
 {
     // couple 4: 組成を PDF 積分状態へ α ブレンド (熱を伴わない組成の同期)。反応熱は PDF 積分した反応離脱量
     //   D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) の**時間変化**にだけ対応させる: ΔQ = −Σ c_s ρ (D_pdf − D_pdf,prev)。
@@ -616,7 +617,15 @@ __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, co
         roY_dev[s][ic] = (flow_float)(rho * yn);
         const size_t i = (size_t)s * nCells + ic; dpdf_prev[i] = dpdf[i];
     }
-    const double dQ = rho * (double)qrel[ic];   // [J/m3]
+    // 1 step の発熱を ΔT ≤ dTmax に制限し、残りは持ち越す (総発熱は保存)。擬似時間では条件付き化学が数百 step で燃え切り、
+    // 流れが音響的に追従できない速さで熱が入って圧力が暴れる (run_0094: P 186 kPa → NaN) のを防ぐ。
+    const double cvEst = 1000.0;   // [J/kg/K] 目安 (上限の判定にだけ使う)
+    double dQtot = rho * (double)qrel[ic] + (double)qdebt[ic];   // [J/m3]
+    const double cap = rho * cvEst * g_cmc.dTmax;
+    double dQ = dQtot;
+    if (dQ >  cap) dQ =  cap;
+    if (dQ < -cap) dQ = -cap;
+    qdebt[ic] = (flow_float)(dQtot - dQ);
     roe[ic] += (flow_float)dQ;
     const double dt = fmax((double)dt_local[ic], 1.0e-12);
     chemQdot[ic] = (flow_float)(dQ / dt);   // 診断: 等価な反応熱 [W/m3]
@@ -673,7 +682,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     std::memset(&c, 0, sizeof(CmcParams));
     c.nEta = ne; c.nSpecies = ns; c.chemOn = cfg.chemCmcChem; c.couple = cfg.chemCmcCouple;
     c.pdfFloor = cfg.chemCmcPdfFloor; c.Tmax = cfg.chemTmaxReaction; c.Tfreeze = cfg.chemFreezeBelowT; c.dtScale = cfg.chemCmcDtScale;
-    c.relax = cfg.chemCmcRelax; c.alpha = cfg.chemCmcAlpha;
+    c.relax = cfg.chemCmcRelax; c.alpha = cfg.chemCmcAlpha; c.dTmax = cfg.chemCmcDTmax;
     for (int k = 0; k < ne; ++k) { const double s = (double)k / (double)(ne - 1); c.eta[k] = std::pow(s, cfg.chemCmcEtaPow); }
     c.eta[0] = 0.0; c.eta[ne - 1] = 1.0;
     { int kb = 0; double db = 1.0; for (int k = 0; k < ne; ++k) { const double dd = std::fabs(c.eta[k] - cfg.chemCmcXiSt); if (dd < db) { db = dd; kb = k; } } c.kSt = kb; }
@@ -720,6 +729,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     if (g_dpdf) cudaFree(g_dpdf); gpuErrchk( cudaMalloc((void**)&g_dpdf, (size_t)ns * msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_dpdf, 0, (size_t)ns * msh.nCells * sizeof(flow_float)) );
     if (g_dpdf_prev) cudaFree(g_dpdf_prev); gpuErrchk( cudaMalloc((void**)&g_dpdf_prev, (size_t)ns * msh.nCells * sizeof(flow_float)) );
     if (g_qrel) cudaFree(g_qrel); gpuErrchk( cudaMalloc((void**)&g_qrel, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qrel, 0, (size_t)msh.nCells * sizeof(flow_float)) );
+    if (g_qdebt) cudaFree(g_qdebt); gpuErrchk( cudaMalloc((void**)&g_qdebt, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qdebt, 0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_tau)  cudaFree(g_tau);  gpuErrchk( cudaMalloc((void**)&g_tau,  (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_tau,  0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_jac) cudaFree(g_jac); gpuErrchk( cudaMalloc((void**)&g_jac, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_jac, 0, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) );
 
@@ -794,7 +804,7 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
         if (g_cmc_host.couple == 4) {
             cmc_blend_species_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, var.c_d.at("ro"), species_roY_device_ptr(), var.c_d.at("roe"),
-                var.c_d.at("chemQdot"), var.c_d.at("dt_local"), g_dpdf, g_dpdf_prev, g_qrel);
+                var.c_d.at("chemQdot"), var.c_d.at("dt_local"), g_dpdf, g_dpdf_prev, g_qrel, g_qdebt);
         }
         if (g_cmc_host.couple == 3) {
             cmc_overwrite_mean_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(

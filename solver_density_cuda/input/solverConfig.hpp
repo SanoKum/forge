@@ -389,6 +389,7 @@ public:
     double chemCmcRelax = 1.0;      // couple 2: 緩和時間 τ = relax × Δτ_local
     double chemCmcXiSt = 0.47;      // 診断 cmc_TQst の η (量論混合分率)
     double chemCmcAlpha = 0.05;     // couple 3: 平均 Y,h を PDF 積分状態へブレンドする割合 /step
+    double chemCmcDTmax = 10.0;     // couple 4: 1 step あたりの発熱による温度上昇上限 [K] (残りは持ち越し)
     flow_float Sc = 0.7;                       // 定数 Schmidt 数 (speciesDiffusionMethod==0)
     flow_float Sc_t = 0.7;                     // 乱流 Schmidt 数 (D_t=mu_t/(ro*Sc_t))。
                                                // turbulence.turbulentSchmidt でも設定可 (physProp.Sc_t は後方互換、turbulence 優先)
