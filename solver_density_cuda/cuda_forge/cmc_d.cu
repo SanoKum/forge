@@ -665,6 +665,32 @@ static void cmcProbe(const char* tag)
     }
 }
 
+#include <fstream>
+// Q(η) の永続化: 生バイナリ (flow_float × nSlice × nCells_all) + ヘッダ。restart で条件付き場を引き継ぐ (無ければ混合線から)。
+void cmcQWrite(const std::string& path)
+{
+    if (!g_q_ready) return;
+    std::vector<flow_float> h((size_t)g_nSlice * g_nCellsAll);
+    gpuErrchk( cudaMemcpy(h.data(), g_Q, h.size() * sizeof(flow_float), cudaMemcpyDeviceToHost) );
+    std::ofstream f(path, std::ios::binary);
+    const int hdr[3] = { g_cmc_host.nEta, g_cmc_host.nSpecies, (int)g_nCellsAll };
+    f.write((const char*)hdr, sizeof(hdr)); f.write((const char*)h.data(), h.size() * sizeof(flow_float));
+}
+static bool cmcQRead(const std::string& path)
+{
+    std::ifstream f(path, std::ios::binary);
+    if (!f) { std::printf("cmcQRead: %s not found -> mixing-line init\n", path.c_str()); return false; }
+    int hdr[3]; f.read((char*)hdr, sizeof(hdr));
+    if (hdr[0] != g_cmc_host.nEta || hdr[1] != g_cmc_host.nSpecies || hdr[2] != (int)g_nCellsAll) {
+        std::printf("cmcQRead: header mismatch (nEta %d/%d, ns %d/%d, n %d/%d) -> mixing-line init\n", hdr[0], g_cmc_host.nEta, hdr[1], g_cmc_host.nSpecies, hdr[2], (int)g_nCellsAll); return false;
+    }
+    std::vector<flow_float> h((size_t)g_nSlice * g_nCellsAll);
+    f.read((char*)h.data(), h.size() * sizeof(flow_float));
+    gpuErrchk( cudaMemcpy(g_Q, h.data(), h.size() * sizeof(flow_float), cudaMemcpyHostToDevice) );
+    std::printf("cmcQRead: restored Q(eta) from %s\n", path.c_str());
+    return true;
+}
+
 bool cmc_coupling_active() { return g_q_ready && g_cmc_host.couple != 0; }
 int  cmc_coupling_mode()   { return g_q_ready ? g_cmc_host.couple : 0; }
 const flow_float* cmc_ypdf_device_ptr() { return g_ypdf; }
@@ -740,6 +766,13 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     cmc_q_init_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(msh.nCells_all, var.c_d.at("ro"), g_Q, g_roQ);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
     cmcProbe("after-init-kernel");
+    if (!cfg.chemCmcRestartQ.empty()) {
+        if (cmcQRead(cfg.chemCmcRestartQ)) {   // roQ を復元した Q から作り直す
+            const size_t n = (size_t)g_nCellsAll * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
+            cmc_q_resync_d<<<grid, blk>>>(g_nCellsAll, g_nSlice, var.c_d.at("ro"), g_Q, g_roQ);
+            gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+        }
+    }
     // PDF 積分値 (Ỹ_pdf, h̃_pdf, τ) を初期場で一度埋める (化学は走らせない)。これを怠ると初回の残差組み立てで
     // couple 2 の緩和ソースが Ỹ_pdf=0 に向かって全種を剥ぎ取り step 2 で NaN になる (run_0083 初版)。
     cmc_step_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
@@ -796,6 +829,7 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
     { const size_t n = (size_t)g_nCells * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_primitive_d<<<grid, blk>>>(g_nCells, g_nSlice, g_nCellsAll, var.c_d.at("ro"), g_roQ, g_Q); }
     cmcProbe("after-transport");
+    if (cfg.outStepInterval > 0 && ((g_cmcStep + 1) % cfg.outStepInterval) == 0) cmcQWrite("cmc_Q.bin");   // 最新の Q を上書き保存 (restart 用)
     // (2) η 拡散 + 化学 + PDF 平均 (interval 毎)
     ++g_cmcStep;
     if (cfg.chemCmcInterval <= 1 || (g_cmcStep % cfg.chemCmcInterval) == 0) {

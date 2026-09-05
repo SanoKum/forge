@@ -49,6 +49,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
 void cmcQTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);   // assembleResidual
 void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);      // 陰解法 inner
 void applyCmcQBoundaries(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var);
+void cmcQWrite(const std::string& path);   // Q(η) を生バイナリで保存 (run dir の cmc_Q.bin; restart は cmc.restartQ)
 bool cmc_coupling_active();
 const flow_float* cmc_omega_device_ptr();   // [ns][nCells] PDF 平均 ω̄_s [kg/m3/s]
 const flow_float* cmc_qdot_device_ptr();    // [nCells] Q̇̄ [W/m3]
