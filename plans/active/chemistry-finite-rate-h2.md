@@ -62,7 +62,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | 優先 | 項目 | 状態・次アクション |
 | --- | --- | --- |
 | P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
-| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量 (火炎基部位置・出口 massflux/エンタルピー流束/主要種流束・Tmax) を追加し、dual-time で統計定常を確認 | todo |
+| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量 (火炎基部位置・出口 massflux/エンタルピー流束/主要種流束・Tmax) を追加し、dual-time で統計定常を確認 | **ツール done 2026-09-05** (`--quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_<種>`, commit 967e49d4)。適用結果: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED、**Cabra は反応 ON 全 run で出口質量流束が 37–48 % 暴れ (出口 y 54–78 mm の環状逆流が出没)** → 付着後の継続 `run_0073` で頭打ちを確認中。頭打ちしなければ dual-time / 上面境界 (slip→圧力境界) の A/B |
 | P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **done 2026-09-05** (§9): 0-D で Jachimowski は Li 2004 比 15–35 % 短く Burke 2012 比 1/2〜1/6.6。**Cabra 機構 A/B (`run_0072`) 済: Li でも付着推移は同一 → 付着の支配因子は TCI 欠如と確定**。機構差は TCI 導入後の定量比較・BK 着火位置で再評価 (P1-5) |
 | P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
 | P1-5 | BK 早着火の条件整理 (機構 A/B 後に入口乱流・壁温・3D blockage) | P0-3 A/B 待ち |
@@ -250,3 +250,12 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   **Jachimowski とほぼ同一の付着推移** (Jach は累積 26k で付着)。0-D の Li +17 % 遅れ (1045 K) は付着を変えず、
   **リップ付着の支配因子は TCI 欠如と確定** — 文献調査 (laminar-chemistry は構造的に早着火) の CFD 実証。
   forge の Troe 2 パラメータ形 (T2 省略) の読込も本 run で実証。機構差の定量影響は TCI 導入後と BK (P1-5) で再評価。
+- `2026-09-05 (6)` — **P0-2: `check_quasisteady.py` に反応流量を追加** (`ignx` = Y_OH>2e-4 の最小 x [mm], `tmax`,
+  `exit_massflux` / `exit_hflux` / `exit_y_<種>` = 出口面の台形積分, 軸対称自動 2πr 重み; commit 967e49d4)。
+  適用: BK `run_0028` は出口量 STEADY (massflux drift 0.1 %) だが `ignx` 44.2 mm TRANSIENT-UNSETTLED (上流ドリフトを検出)。
+  **Cabra は反応 ON の全 run (`run_0069`–`run_0072`) で `exit_massflux` が OSCILLATING/DRIFTING (fluct 37–63 %)**:
+  出口面 (x=0.25 m) の y 54–78 mm に環状逆流 (Ux −10 m/s) が出没し、総質量流束 0.023–0.065 kg/s (期待 ≈0.040)。
+  混合のみ `run_0067` は 4 % ドリフトで穏やか → 反応 (熱膨張) が引き金。`run_0072` 末尾は 0.023→0.045 と回復傾向で
+  付着過渡の余波の可能性 → `run_0073` (run_0072 から +30000 step) で頭打ちを確認。頭打ちしなければ上面 slip の
+  閉じ込め (entrainment 不能) か低マッハ出口 BC の問題として、上面を圧力境界にする A/B または dual-time へ。
+  **これが解決するまで Cabra の下流 (z/d≥26) 比較を「一致」と呼ばない** (出口環状逆流が Tt=1045 K ガスを戻している)。

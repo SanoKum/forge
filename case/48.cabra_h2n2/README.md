@@ -49,6 +49,7 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0070_react_pasr` | 同条件で **PaSR (`tci 1`, tauChem 1, C_mix 1)**, run_0067 混合場から 30000 step | 着火は同じく x/d≈21 (5000)、火炎基部の上流伝播が遅くなるだけで 7.8 (10000) → 2.9 (20000) → 1.2 (30000) と**ほぼ付着**。軸 T は tci 0 と同様 (T>600 K が z/d 12.7, 実験 14)。`check_convergence` NOT CONVERGED。図 `compare_cabra_30000.png` | ref (PaSR C_mix 1) |
 | `run_0071_react_pasr_cmix4` | PaSR C_mix 4 (τ_mix 4 倍 → κ 小) の感度, 30000 step | 推移は C_mix 1 とほぼ同一 (21.2 → 7.9 → 4.4 → 1.9 → 1.4 → 1.2)。**PaSR の κ は基部の上流伝播を止めない** (近傍せん断層の平均場が既に可燃・高温)。NOT CONVERGED。図 `compare_cabra_30000.png` | ref (PaSR 感度の結論) |
 | `run_0072_react_li` | **機構 A/B (plan §5.1 P0-3)**: run_0068/0069 と同一条件・同一 IC (run_0067 `res_20000`)、機構だけ Li 2004 (`tools/mechanisms/h2co_li2004_cantera.yaml`) に交換, tci 0, 30000 step | **付着推移は Jachimowski とほぼ同一**: 着火 x/d (Y_OH>2e-4) 20.8 (6k) → 10.5 (8k) → 7.2 (10k) → 3.3 (16k) → **0.0 (20k 以降リップ付着で安定)** (Jach は累積 26k で付着)。**機構交換では付着は変わらない = 支配因子は TCI 欠如と確定**。NOT CONVERGED (過渡)、NaN なし | ref (**機構 A/B の結論**) |
+| `run_0073_react_li_cont` | run_0072 `res_30000` (付着済) から Li 機構のまま +30000 step 継続。目的: 付着後の統計定常確認 (`check_quasisteady --quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_H2O`)。run_0072 末尾は出口質量流束が 0.023→0.045 kg/s と回復途中 (環状逆流 y 54–78 mm) | (実行中) | active |
 
 ## 機構着火遅れ比較 (2026-09-05, plan §5.1 P0-3)
 
