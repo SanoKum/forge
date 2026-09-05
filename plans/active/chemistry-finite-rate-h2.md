@@ -3,7 +3,7 @@
 ## メタ
 
 - **area**: `thermophysics / chemistry`
-- **status**: `in_progress` (Phase 0–2 完了、Phase 3 Burrows–Kurkov 一次結果あり 2026-09-04)
+- **status**: `in_progress` (Phase 0–2 完了、Phase 3: BK 一次結果 2026-09-04、Cabra 反応 ON 2026-09-05 = 付着火炎・出口振動の課題あり)
 - **related_docs**:
   - `methods/chemistry.md` (現在仕様: 理論・実装方針)
   - `methods/thermophysics.md` (多成分 TP gas、sensible datum、種輸送・陰解法結合)
@@ -62,10 +62,10 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 | 優先 | 項目 | 状態・次アクション |
 | --- | --- | --- |
 | P0-1 | **設計 QoI と合格基準の確定** (出口全温・組成のみか、火炎位置・壁熱負荷・安定余裕まで要求するか。後者なら TCI 必須) | **ユーザ判断待ち** (P0-4 と連動) |
-| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量 (火炎基部位置・出口 massflux/エンタルピー流束/主要種流束・Tmax) を追加し、dual-time で統計定常を確認 | **ツール done 2026-09-05** (`--quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_<種>`, commit 967e49d4)。適用結果: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED、**Cabra は反応 ON 全 run で出口質量流束が 37–48 % 暴れ (出口 y 54–78 mm の環状逆流が出没)** → 付着後の継続 `run_0073` で頭打ちを確認中。頭打ちしなければ dual-time / 上面境界 (slip→圧力境界) の A/B |
-| P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **done 2026-09-05** (§9): 0-D で Jachimowski は Li 2004 比 15–35 % 短く Burke 2012 比 1/2〜1/6.6。**Cabra 機構 A/B (`run_0072`) 済: Li でも付着推移は同一 → 付着の支配因子は TCI 欠如と確定**。機構差は TCI 導入後の定量比較・BK 着火位置で再評価 (P1-5) |
+| P0-2 | **SST プラトー / 準定常性**: `check_quasisteady.py` に化学量を追加し、統計定常を確認 | **ツール done 2026-09-05** (`ignx,tmax,exit_massflux,exit_hflux,exit_y_/exit_yflux_/exit_yout_<種>`; 抽出失敗・末尾 NaN は偽 STEADY にしない; commit 967e49d4→1add8d63)。適用: BK 出口量 STEADY・着火位置 TRANSIENT-UNSETTLED。**Cabra 反応 ON 全 run で出口質量流束が 37–63 % 変動** (出口 y 54–78 mm の環状逆流) → 付着後 +30k (`run_0073`) でも ±20 % の擬似時間リミットサイクル (z/d 26 の T が 183 K 動く)。切り分け順 (codex 2): ①外周 slip→`outlet_statPress` (`run_0074` 実行中) ②領域延長/半径拡張 ③precond 0 低 CFL ④dual-time。**解決まで Cabra 下流比較を「一致」と呼ばない** |
+| P0-3 | **機構着火遅れ検証** (Jachimowski の 1000–1100 K 妥当性) | **reopen** (codex 2): 初版は coflow 組成バグ (ΣX=1.1) → 修正・再計算済 (2026-09-05, §9 (7)): 1045 K で Jach 1.46 / Li 1.69 / Burke 3.49 ms、Jach は Li 比 14–43 % 早い (定性結論不変)。Cabra A/B (`run_0072`, Li) は付着推移同一 → **TCI 欠如が主因という仮説を強く支持** (確定ではない)。残: forge⇔Cantera 0-D 照合 (Li+CEA 熱力学: ホスト BDF1 で −15 %、Jach でも −9 % → 積分誤差の切り分け中)、実加熱器圧力、閾値感度 |
 | P0-4 | **TCI の別 plan 化** (第一候補 1st-order RANS-CMC, radially-averaged から) | **ユーザ判断待ち** (文献根拠: [cabra-liftoff-model-fidelity-survey.md](../../notes/investigations/cabra-liftoff-model-fidelity-survey.md)) |
-| P1-5 | BK 早着火の条件整理 (機構 A/B 後に入口乱流・壁温・3D blockage) | P0-3 A/B 待ち |
+| P1-5 | BK 早着火の条件整理 (機構 A/B・入口乱流・壁温・3D blockage) と end-to-end 収支 (質量・元素・全エンタルピー・圧損・出口一様性) の必須出力化 | todo (Cabra A/B は済、BK 機構 A/B は未) |
 | P1-6 | Cabra 入口感度 (管内長 ~50d・リップ熱条件・入口 k/ω・格子) | todo |
 | P1-7 | **ドキュメント同期** | **methods/index.md・methods/chemistry.md (状態行・falloff・precond 配線=済をコード確認・検証節・TCI 節)・plans/README.md は 2026-09-05 同期済**。残: case/47・48 run 表の grouped 行 (破棄予定の診断 run 群) の 1 run = 1 行化は run 群の削除と併せてユーザ判断; OH 閾値は新規解析を 2e-4 に統一済 (旧 README 数値は 1e-4 のまま注記なし) |
 | P1-8 | 回帰整備: case/28・case/44 の `chemistry.enabled: 0` ビット不変検証のエビデンス化、0-D テストの自動テスト登録 | todo |
@@ -78,6 +78,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   1. Q1D ノズル再結合: 新設 `case/46.nozzle_h2o2_kinetics` (H₂/O₂ 平衡入口、軸対称 node)。参照は Cantera PFR (面積則)。
      frozen / equilibrium / finite-rate の $T$, $Y_{OH}$, 凍結位置。
   2. Burrows–Kurkov (M2.44 vitiated air + H₂ 壁噴射、NASA GRC 検証アーカイブ)。
+  2b. Cabra H₂/N₂ vitiated coflow (`case/48`): 浮き上がり高さ H/d≈10 と軸/半径 T・組成。合格基準は TCI plan (P0-4) で H(T_c) 応答曲線・OH 閾値・平均/RMS・収支として固定する (2026-09-05 追加)。
   3. 回帰: `case/28.cutler_coaxial_jet` (非反応多成分) と `case/44` (TP 単一擬似種) がビット不変 (`chemistry.enabled: 0`)。
 - **判定基準**: 0-D 着火遅れ $\pm2$ %、平衡温度 $\pm$ 数 K; Q1D ノズルの $T$ 差 $<1$ %、$Y_{OH}$ 凍結値 $\pm10$ %;
   反応 ON で `cfl_pseudo` 上限が非反応と同等 (剛性が陰化で吸収されていること); 全残差 `check_convergence.py` PASS。
@@ -248,7 +249,7 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
 - `2026-09-05 (5)` — **Cabra 機構 A/B** (`case/48 run_0072_react_li`, run_0068/0069 と同一条件・同一 IC で機構のみ
   Li 2004 に交換, tci 0, 30000 step)。着火 x/d は 20.8 (6k) → 7.2 (10k) → 0.0 (20k 以降付着) で
   **Jachimowski とほぼ同一の付着推移** (Jach は累積 26k で付着)。0-D の Li +17 % 遅れ (1045 K) は付着を変えず、
-  **リップ付着の支配因子は TCI 欠如と確定** — 文献調査 (laminar-chemistry は構造的に早着火) の CFD 実証。
+  ~~**リップ付着の支配因子は TCI 欠如と確定**~~ (→ (7)(b) で「仮説を強く支持」に撤回) — 文献調査 (laminar-chemistry は構造的に早着火) と整合。
   forge の Troe 2 パラメータ形 (T2 省略) の読込も本 run で実証。機構差の定量影響は TCI 導入後と BK (P1-5) で再評価。
 - `2026-09-05 (6)` — **P0-2: `check_quasisteady.py` に反応流量を追加** (`ignx` = Y_OH>2e-4 の最小 x [mm], `tmax`,
   `exit_massflux` / `exit_hflux` / `exit_y_<種>` = 出口面の台形積分, 軸対称自動 2πr 重み; commit 967e49d4)。
@@ -259,3 +260,14 @@ forge の多成分 TP gas に化学反応ソース項を加え、(B) ノズル�
   付着過渡の余波の可能性 → `run_0073` (run_0072 から +30000 step) で頭打ちを確認。頭打ちしなければ上面 slip の
   閉じ込め (entrainment 不能) か低マッハ出口 BC の問題として、上面を圧力境界にする A/B または dual-time へ。
   **これが解決するまで Cabra の下流 (z/d≥26) 比較を「一致」と呼ばない** (出口環状逆流が Tt=1045 K ガスを戻している)。
+- `2026-09-05 (7)` — **codex レビュー 2 対応** ([notes/sessions/codex-review-chemistry-2026-09-05-b.md](../../notes/sessions/codex-review-chemistry-2026-09-05-b.md))。
+  (a) 0-D 機構比較の coflow 組成バグ (ΣX=1.1) を修正して再計算: 1045 K で Jach 1.46 / Li 1.69 / Burke 3.49 / GRI 18.9 ms、
+  1015 K で 6.5 / 11.3 / 35.6 / 103.5 ms (旧値は `ign_delay_mech_compare_WRONGCOFLOW.csv`)。定性結論 (Jach 最速側) は不変。
+  (b) 「TCI 欠如と確定」→「仮説を強く支持」に修正 (機構 1 本・擬似時間非収束の A/B では確定できない)。
+  (c) `check_quasisteady.py` 強化: 抽出例外・末尾非有限は TRANSIENT-UNSETTLED、`exit_yflux_` (符号付き種質量流量)・`exit_yout_` (順流出組成) を追加、
+  `exit_y_` は逆流で分母が潰れるとエラー、solverConfig 読込失敗はエラー。
+  (d) `run_0073` (付着後 +30k): `ignx`/T_max/出口 Y_H2O は STEADY、出口質量流束は 0.028–0.044 kg/s の周期 15–20k step 振動 (逆流は消失、
+  平均は理論値 0.037 に一致) = 擬似時間リミットサイクル。z/d 9 は定常 (ΔT≤34 K)、z/d 26 は ΔT 183 K で比較不可。
+  → `run_0074` (外周 slip→`outlet_statPress`) を投入。
+  (e) Li の forge ホスト 0-D (CEA 熱力学, BDF1): τ 37.4 µs vs Cantera 43.9 µs (−15 %)、Jachimowski も同テストで 29.4 vs 32.2 µs (−9 %) →
+  BDF1 刻み誤差の寄与を切り分け中 (Jacobian FD 照合は 6e-8 PASS、Σω=0)。

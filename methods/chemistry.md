@@ -8,9 +8,9 @@
 
 **状態 (2026-09-05)**: Phase 0–2 (熱力学 DB ツール・機構ファイル・反応ソース項・解析 Jacobian・種ブロック point-implicit・
 反応熱の陰的注入・falloff (Troe)・Strang 分離・Jacobian 凍結・PaSR) を実装・検証済。0-D 着火 (case/35) と Q1D ノズル再結合
-(case/46) は Cantera と一致。Phase 3 (燃焼器 RANS) は Burrows–Kurkov (case/47) で出口組成が実験と一致する一方、着火位置は
-上流に過大 (5–9 cm vs 18–25 cm)、Cabra (case/48) は laminar-chemistry / PaSR ともリップ付着 (実験 H/d≈10)。両者とも
-**TCI 欠如が支配因子**で、機構交換 (Li 2004) でも変わらないことを確認済 (plan §9 2026-09-05)。TCI の方針は
+(case/46) は $Y_{OH}$/$Y_{NO}$ が Cantera PFR と一致 (T/M の絶対比較と `check_convergence` PASS は未達)。Phase 3 (燃焼器 RANS) は Burrows–Kurkov (case/47) で出口組成が実験と一致する一方、着火位置は
+上流に過大 (5–9 cm vs 18–25 cm)、Cabra (case/48) は laminar-chemistry / PaSR ともリップ付着 (実験 H/d≈10)。Cabra は
+機構交換 (Li 2004) でも付着が変わらず、**TCI 欠如が主因という仮説を強く支持** (plan §9 2026-09-05; BK の機構 A/B は未)。TCI の方針は
 [`notes/investigations/cabra-liftoff-model-fidelity-survey.md`](../notes/investigations/cabra-liftoff-model-fidelity-survey.md)。
 
 ---
@@ -144,7 +144,7 @@ $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または 
 | 処理 | ファイル | 内容 | 状態 |
 | --- | --- | --- | --- |
 | 反応表 + 生成率評価 (host/device 共通) | `cuda_forge/chemistry_d.cuh` (`ReactionTable`, `chem_source`) | 固定長 POD の反応表。`chem_source(sp, rt, ρ, T, Y, ω, Q̇, jacMode, J, ∂ω/∂T)` が Arrhenius・三体・$K_c$ 逆反応・反応熱・解析 Jacobian (`jacMode` 0/1 対角/2 全 $n_s\times n_s$) を double で評価 | 済 |
-| 機構ファイル読込 (host) | `cuda_forge/chemistry_mech_io.hpp` (`chem_io::loadMechanism`) | Cantera YAML サブセット → `ReactionTable`。単位換算 (cm³/mol/s, cal/mol → SI)、種名を `physProp.species` 順に対応付け。falloff (`high-P-rate-constant`/`low-P-rate-constant`/`Troe`, T2 省略可) も読む。Cantera `ck2yaml` 出力 (Li 2004, Burke 2012) をそのまま読めることを case/48 `run_0072` で確認 | 済 |
+| 機構ファイル読込 (host) | `cuda_forge/chemistry_mech_io.hpp` (`chem_io::loadMechanism`) | Cantera YAML サブセット → `ReactionTable`。単位換算 (cm³/mol/s, cal/mol → SI)、種名を `physProp.species` 順に対応付け。falloff (`high-P-rate-constant`/`low-P-rate-constant`/`Troe`, T2 省略可) も読む。Cantera `ck2yaml` 出力 (Li 2004, Troe 2 パラメータ形) をそのまま読めることを case/48 `run_0072` で確認 (Burke 2012 は未実行) | 済 |
 | device 側ソース項 | `cuda_forge/chemistry_d.cu` (`chemistry_init`, `chemistry_source_d`, `chemistrySource_d_wrapper`) | セル毎に `res_roY{s} += Vω_s`, `res_roe += VQ̇`, `src_jac_Y{s} += max(0,−∂ω_s/∂ρY_s)`, 診断 `chemQdot`/`chemTau`。周期 node では部分体積 `volumePartial_d` を使う (seam 二重計上防止) | 済 |
 | host インタフェース | `cuda_forge/chemistrySource_d.cuh` | `main.cpp`: `thermo_init_db` 直後に `chemistry_init`、`assembleResidual` の `speciesTransport_d_wrapper` 直後に `chemistrySource_d_wrapper` | 済 |
 | datum 保持 | `thermo_d.{cuh,cu}` (`SpeciesThermo::h_datum`) | sensible datum で除いた $h^{abs}_s(T_{ref})$ [J/mol] を保持し、$\dot Q$ と $K_c$ (絶対 $H$) に使う。**構造体が変わったので full rebuild 必須** | 済 |
@@ -179,5 +179,5 @@ $\tau_{\rm mix}=C_{\rm mix}\sqrt{\nu/\varepsilon}$ (`tciMixModel: 0`) または 
 3. **Burrows–Kurkov (一次結果)**: `case/47 run_0025` (メッシュ v2, 入口 BL δ 10 mm, 入口 k×3): 出口 $X_{H_2O}$ ピーク 0.505 @ 1.96 cm
    (実験 0.50 @ 2.0)、全温ピーク 1.08 vs 1.18、着火 4–6 cm (実験 18–25 cm, 未解決)。3 バグ修正後の再確認 `run_0028` で結論維持。
 4. **Cabra H₂/N₂ (一次結果)**: `case/48 run_0069`–`run_0073` — 自着火 x/d≈20 → 上流伝播 → リップ付着 (実験 H/d≈10)。PaSR C_mix・
-   機構 (Li 2004) とも非感応。文献どおり laminar-chemistry の構造的失敗であり、H/d 再現には transported PDF / CMC 級の TCI が要る。
+   機構 (Li 2004) とも非感応。文献どおり laminar-chemistry の構造的失敗であり、H/d 再現の実績が最も強いのは transported PDF / CMC (調査メモ参照)。
    準定常判定は `tools/check_quasisteady.py --quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_<種>` (2026-09-05 追加)。

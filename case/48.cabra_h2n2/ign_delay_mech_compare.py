@@ -26,7 +26,7 @@ MECHS = {
 P = ct.one_atm
 X_JET = "H2:0.25, N2:0.75"
 T_JET = 305.0
-X_COF = "O2:0.1474, H2O:0.0989, N2:0.8537"
+X_COF = "O2:0.1474, H2O:0.0989, N2:0.7537"   # balance N2 (2026-09-05 codex 指摘: 旧値 0.8537 は合計 1.1 で Cantera が正規化していた)
 TAU_MAX = 2.0  # [s] これ以上は「実質不着火」
 
 def mix_state(gas, xi, t_cof):

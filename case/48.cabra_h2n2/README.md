@@ -48,7 +48,7 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0069_react_cont` | run_0068 res_10000 から 20000 step 継続 (tci 0 = 層流化学) | 火炎基部が x/d 4.6 (4000) → 3.4 (12000) → **0 (16000 以降, リップ付着火炎)**。Tmax 1800–2020 K, 軸 T max 1593 K (z/d≈30)。`check_convergence` NOT CONVERGED (全列 plateau)。TCI なし RANS の典型 (平均温度で層流反応率を評価し着火過大) → PaSR へ。図 `compare_cabra_20000.png` | ref (tci 0 の結論) |
 | `run_0070_react_pasr` | 同条件で **PaSR (`tci 1`, tauChem 1, C_mix 1)**, run_0067 混合場から 30000 step | 着火は同じく x/d≈21 (5000)、火炎基部の上流伝播が遅くなるだけで 7.8 (10000) → 2.9 (20000) → 1.2 (30000) と**ほぼ付着**。軸 T は tci 0 と同様 (T>600 K が z/d 12.7, 実験 14)。`check_convergence` NOT CONVERGED。図 `compare_cabra_30000.png` | ref (PaSR C_mix 1) |
 | `run_0071_react_pasr_cmix4` | PaSR C_mix 4 (τ_mix 4 倍 → κ 小) の感度, 30000 step | 推移は C_mix 1 とほぼ同一 (21.2 → 7.9 → 4.4 → 1.9 → 1.4 → 1.2)。**PaSR の κ は基部の上流伝播を止めない** (近傍せん断層の平均場が既に可燃・高温)。NOT CONVERGED。図 `compare_cabra_30000.png` | ref (PaSR 感度の結論) |
-| `run_0072_react_li` | **機構 A/B (plan §5.1 P0-3)**: run_0068/0069 と同一条件・同一 IC (run_0067 `res_20000`)、機構だけ Li 2004 (`tools/mechanisms/h2co_li2004_cantera.yaml`) に交換, tci 0, 30000 step | **付着推移は Jachimowski とほぼ同一**: 着火 x/d (Y_OH>2e-4) 20.8 (6k) → 10.5 (8k) → 7.2 (10k) → 3.3 (16k) → **0.0 (20k 以降リップ付着で安定)** (Jach は累積 26k で付着)。**機構交換では付着は変わらない = 支配因子は TCI 欠如と確定**。NOT CONVERGED (過渡)、NaN なし | ref (**機構 A/B の結論**) |
+| `run_0072_react_li` | **機構 A/B (plan §5.1 P0-3)**: run_0068/0069 と同一条件・同一 IC (run_0067 `res_20000`)、機構だけ Li 2004 (`tools/mechanisms/h2co_li2004_cantera.yaml`) に交換, tci 0, 30000 step | **付着推移は Jachimowski とほぼ同一**: 着火 x/d (Y_OH>2e-4) 20.8 (6k) → 10.5 (8k) → 7.2 (10k) → 3.3 (16k) → **0.0 (20k 以降 `ignx` が閾値上 0 で維持)** (Jach は累積 26k で 0)。**Li への交換だけでは付着は解消せず、平均場反応率 (TCI 欠如) が主因という仮説を強く支持** (機構 1 本の A/B・擬似時間非収束なので「確定」ではない)。NOT CONVERGED、出口流束・Tmax は DRIFTING、NaN なし | ref (**機構 A/B の結論**) |
 | `run_0073_react_li_cont` | run_0072 `res_30000` (付着済) から Li 機構のまま +30000 step 継続。目的: 付着後の統計定常確認 (`check_quasisteady --quantity ignx,tmax,exit_massflux,exit_hflux,exit_y_H2O`)。run_0072 末尾は出口質量流束が 0.023→0.045 kg/s と回復途中 (環状逆流 y 54–78 mm) | (実行中) | active |
 
 ## 機構着火遅れ比較 (2026-09-05, plan §5.1 P0-3)
@@ -57,9 +57,11 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 
 | 機構 | τ_min @T_c 1015 K | @1045 K | @1075 K |
 | --- | --- | --- | --- |
-| Jachimowski 9sp20r (forge 現行) | 4.41 ms | **1.32 ms** | 0.70 ms |
-| Li 2004 | 6.82 ms | 1.54 ms | 0.83 ms |
-| Burke 2012 | 28.99 ms | 2.73 ms | 1.21 ms |
-| GRI3.0 H₂ subset (既知不良) | 94.0 ms | 14.0 ms | 2.44 ms |
+| Jachimowski 9sp20r (forge 現行) | 6.50 ms | **1.46 ms** | 0.73 ms |
+| Li 2004 | 11.32 ms | 1.69 ms | 0.85 ms |
+| Burke 2012 | 35.55 ms | 3.49 ms | 1.27 ms |
+| GRI3.0 H₂ subset (既知不良) | 103.5 ms | 18.9 ms | 3.04 ms |
 
-ξ_MR は 0.025–0.045 (文献 ≈0.05 と整合)。**Jachimowski は Cabra 検証実績のある Li 2004 より 15–35 % 早く、Burke 2012 の 1/2 (1045 K)〜1/6.6 (1015 K)** — 検証済み機構に対し系統的に早着火側で、リップ付着・BK 早着火を悪化させる向き (支配因子は TCI 欠如)。GRI subset の 10 倍遅れは Benim 2020 の「使用不可」報告と整合し、比較系の健全性確認になっている。Burke/Li の Cantera YAML は `solver_density_cuda/tools/mechanisms/h2_burke2012_cantera.yaml` / `h2co_li2004_cantera.yaml` (forge 用変換は未)。次: Li で反応 ON A/B。
+**2026-09-05 訂正**: 初版は coflow のモル分率が合計 1.1 (N₂ 0.8537, codex レビュー 2 で発覚) で Cantera が正規化していた (旧値は `ign_delay_mech_compare_WRONGCOFLOW.csv` に保存)。上表は N₂ 0.7537 (balance) の再計算値。
+
+ξ_MR は 0.025–0.045 (文献 ≈0.05 と整合)。**Jachimowski は Cabra 検証実績のある Li 2004 より 14–43 % 早く、Burke 2012 の 1/2.4 (1045 K)〜1/5.5 (1015 K)** — 検証済み機構に対し系統的に早着火側 (0-D 判定は max dT/dt、CFD の火炎基部は Y_OH>2e-4、実験は OH 発光で、定義の対応は未検証)。GRI subset の 10 倍以上の遅れは Benim 2020 の「使用不可」報告と整合。Burke/Li の Cantera YAML は `solver_density_cuda/tools/mechanisms/h2_burke2012_cantera.yaml` / `h2co_li2004_cantera.yaml` で、forge は Li をそのまま読める (`run_0072`)。Cantera 側は各機構付属の熱力学、forge は CEA `species_db.yaml` を使うため逆反応・反応熱は同一ではない (ホスト 0-D 照合は plan §9 (7))。
