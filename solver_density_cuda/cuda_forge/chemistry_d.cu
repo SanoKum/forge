@@ -208,7 +208,8 @@ __global__ void chemistry_source_d(
     int tci, double cmix, int mixModel, int tauChemModel,     // PaSR (RANS SST): tci==1 で κ スケール
     const flow_float* roK, const flow_float* roOmega, const flow_float* vis_lam, flow_float* chemKappa,
     int frozenJac, flow_float* chem_diag,                     // frozenJac==1: Jacobian を再評価せず前回の対角 (chem_diag) を src_jac に足す
-    const flow_float* cmcOmega, const flow_float* cmcQdot, const flow_float* cmcJac)   // CMC 結合 (非 null): PDF 平均 ω̄/Q̇̄/J̄ で置換
+    const flow_float* cmcOmega, const flow_float* cmcQdot, const flow_float* cmcJac,   // CMC 結合 1 (非 null): PDF 平均 ω̄/Q̇̄/J̄ で置換
+    int cmcMode, const flow_float* cmcYpdf, const flow_float* cmcHpdf, const flow_float* cmcTau)   // CMC 結合 2: PDF 積分状態へ緩和
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -236,7 +237,11 @@ __global__ void chemistry_source_d(
     int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
     if (frozenJac && mode > 0) {
         // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
-        if (cmcOmega) { for (int s = 0; s < nSpecies; ++s) omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; Qdot = (double)cmcQdot[ic]; }
+        if (cmcMode == 2 && cmcYpdf) {
+            const double tau = fmax((double)cmcTau[ic], 1.0e-12); const double hmean = thermo_h_mix(sp, nSpecies, Y, Tc);
+            for (int s = 0; s < nSpecies; ++s) omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau;
+            Qdot = rho * ((double)cmcHpdf[ic] - hmean) / tau;
+        } else if (cmcOmega) { for (int s = 0; s < nSpecies; ++s) omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; Qdot = (double)cmcQdot[ic]; }
         else chem_source(sp, rt, rho, Tc, Y, omega, &Qdot, 0, J, nullptr);
         const double V = (double)vol[ic];
         const double kappa = (double)chemKappa[ic];
@@ -248,8 +253,17 @@ __global__ void chemistry_source_d(
         chemQdot[ic] = (flow_float)(kappa * Qdot);
         return;
     }
-    if (cmcOmega) {
-        // CMC 結合: 平均状態の Arrhenius ではなく条件付き空間の PDF 平均 (cmc_step_d) を使う。温度結合 (∂ω/∂T) は条件付き空間で処理済みなので 0。
+    if (cmcMode == 2 && cmcYpdf) {
+        // CMC 結合 2 (methods/chemistry_cmc.md §5): 平均組成・顕エンタルピーを PDF 積分値 Ỹ_pdf, h̃_pdf へ緩和させる
+        //   ω_s = ρ(Ỹ_pdf,s − Y_s)/τ, Q̇ = ρ(h̃_pdf − h̃)/τ, ∂ω_s/∂(ρY_k) = −δ_sk/τ (点陰解で強い緩和も安定)。Σω_s = 0 (質量保存)。
+        const double tau = fmax((double)cmcTau[ic], 1.0e-12);
+        const double hmean = thermo_h_mix(sp, nSpecies, Y, Tc);
+        for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; dOdT[s] = 0.0; }
+        Qdot = rho * ((double)cmcHpdf[ic] - hmean) / tau;
+        for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = 0.0;
+        if (mode > 0) for (int s = 0; s < nSpecies; ++s) J[s*nSpecies + s] = -1.0 / tau;
+    } else if (cmcOmega) {
+        // CMC 結合 1: 平均状態の Arrhenius ではなく条件付き空間の PDF 平均 (cmc_step_d) を使う。温度結合 (∂ω/∂T) は条件付き空間で処理済みなので 0。
         for (int s = 0; s < nSpecies; ++s) { omega[s] = (double)cmcOmega[(size_t)s*nCells + ic]; dOdT[s] = 0.0; }
         Qdot = (double)cmcQdot[ic];
         for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = (mode > 0) ? (double)cmcJac[(size_t)ic*nSpecies*nSpecies + i] : 0.0;
@@ -385,7 +399,9 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         rans ? var.c_d["roK"] : nullptr, rans ? var.c_d["roOmega"] : nullptr, var.c_d["vis_lam"], var.c_d["chemKappa"],
         frozen ? 1 : 0, g_diag_dev,
         cmc_coupling_active() ? cmc_omega_device_ptr() : nullptr, cmc_coupling_active() ? cmc_qdot_device_ptr() : nullptr,
-        cmc_coupling_active() ? cmc_jac_device_ptr() : nullptr);
+        cmc_coupling_active() ? cmc_jac_device_ptr() : nullptr,
+        cmc_coupling_mode(), cmc_coupling_active() ? cmc_ypdf_device_ptr() : nullptr, cmc_coupling_active() ? cmc_hpdf_device_ptr() : nullptr,
+        cmc_coupling_active() ? cmc_tau_device_ptr() : nullptr);
     ++g_stepCounter;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

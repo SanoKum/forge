@@ -70,7 +70,22 @@ $\tilde P(\eta)\to0$ の領域で方程式が退化する問題は、この形 (
   $a=\tilde\xi\gamma,\ b=(1-\tilde\xi)\gamma,\ \gamma=\tilde\xi(1-\tilde\xi)/\widetilde{\xi''^2}-1$ ($\gamma$ は下限でクリップ)。
   分散が微小なセルはデルタ関数扱い ($\tilde Y=Q(\tilde\xi)$)。
 
-### 5. 流れ側との結合 (source coupling)
+### 5. 流れ側との結合
+
+**採用 (couple 2, 2026-09-05)**: 流れソルバは $\tilde Y_\alpha,\tilde h$ を輸送し続けるが、反応ソースは「PDF 積分状態への緩和」で与える:
+
+$$\bar{\dot\omega}_\alpha=\bar\rho\,\frac{\tilde Y^{pdf}_\alpha-\tilde Y_\alpha}{\tau},\qquad
+\bar{\dot Q}=\bar\rho\,\frac{\tilde h^{pdf}-\tilde h}{\tau},\qquad
+\tilde Y^{pdf}_\alpha=\sum_k\Omega_k Q_\alpha(\eta_k),\ \tilde h^{pdf}=\sum_k\Omega_k Q_h(\eta_k),\ \tau=c_r\Delta\tau_{local}$$
+
+Jacobian は $\partial\bar{\dot\omega}_\alpha/\partial(\rho Y_k)=-\delta_{\alpha k}/\tau$ で点陰解に入る。$\sum_\alpha\bar{\dot\omega}_\alpha=0$ なので質量保存を壊さず、
+定常では $\tilde Y\to\tilde Y^{pdf}$ となり、文献の RANS-CMC (平均スカラーは CMC から診断) と同じ状態に落ちる。
+
+**不採用 (couple 1, source coupling)**: $\bar{\dot\omega}_\alpha=\sum_k\Omega_k\dot\omega_\alpha(Q(\eta_k))$ で平均方程式のソースを置換する方式は、
+条件付き状態が燃え切ると $\dot\omega(Q)\to0$ となり、まだ燃えていない平均場に熱が渡らない (`run_0082`: 条件付き T 1615 K に対し平均 T_max
+1123 K、$\tilde Y^{pdf}-\tilde Y$ が 0.07 で定常化)。両者の時間履歴が一致する保証がないため、積分値の整合を保てない。診断用に残す。
+
+#### (旧) source coupling の記述
 
 流れソルバは従来どおり $\tilde Y_\alpha$ と $\tilde h$ を輸送し、**反応ソースだけ**を条件付き平均から作る:
 
@@ -112,9 +127,9 @@ $\tilde Y$ を PDF 積分で上書きする「full coupling」は採らない (�
 | 分散輸送 | `cuda_forge/cmc_d.cu` + `scalarTransport_d` | `roXiVar` (保存量), `xiVar`, `res_roXiVar`, `transport_diag_xiVar`, `src_jac_xiVar`。生成 $2\mu_t/Sc_t|\nabla\tilde\xi|^2$・散逸 $\bar\rho\tilde\chi$ を点陰解 (散逸は `src_jac`) |
 | 条件付きスカラー | `cuda_forge/cmc_d.{cuh,cu}` | `Q` を `[node][var][eta]` で保持 (double)。物理空間輸送は `scalarTransport_d` を $N_\eta\times(n_s+1)$ 回 (var/η ループ)、$\eta$ 拡散 + 化学は node 毎のカーネル (三重対角 + 種ブロック LU) |
 | β-PDF・積分 | `cmc_d.cuh` (`cmc_beta_pdf`, `cmc_integrate`) | Gauss–Jacobi でなく $\eta$ 格子上の台形則 + β-PDF の解析正規化 (端の特異性は不完全 β 関数で処理) |
-| ソース結合 | `chemistry_d.cu` (`chemistry_source_d` に `tci==2` 分岐) | $\bar{\dot\omega},\bar{\dot Q}$ と対角 Jacobian を PDF 積分で置換 |
-| 設定 | `physProp.chemistry.tci: 2`, `cmc: {nEta, cChi, scT, etaStretch, pdfFloor, updateInterval}` | [solver-settings.md](../procedures/solver-settings.md) |
-| 出力 | `xi`, `xiVar`, `chi`, 診断 `cmc_dY` (PDF 積分 $\tilde Y$ と輸送 $\tilde Y$ の差), 任意 η 断面の `Q_T` | `res_*.h5` |
+| ソース結合 | `chemistry_d.cu` (`chemistry_source_d` の `cmcMode` 分岐) | couple 2: $\bar\rho(\tilde Y^{pdf}-\tilde Y)/\tau$ 緩和 (既定候補), couple 1: PDF 平均 $\bar{\dot\omega}$ (不採用・診断) |
+| 設定 | `physProp.chemistry.cmc: {enabled, nEta, etaPow, pdfFloor, couple (1/2), chem, fuelT, oxidizerT, dtScale, interval, relax, xiSt}` | [solver-settings.md](../procedures/solver-settings.md) |
+| 出力 | `xi`, `xiVar`, `chi`, 診断 `cmc_dY` (PDF 積分 $\tilde Y$ と輸送 $\tilde Y$ の最大差), `cmc_TQmax` (η 上の最高 T), `cmc_TQst` ($\eta\approx\xi_{st}$ の T) | `res_*.h5` |
 
 ### 2. 境界条件
 

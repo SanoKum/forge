@@ -53,3 +53,7 @@ bool cmc_coupling_active();
 const flow_float* cmc_omega_device_ptr();   // [ns][nCells] PDF 平均 ω̄_s [kg/m3/s]
 const flow_float* cmc_qdot_device_ptr();    // [nCells] Q̇̄ [W/m3]
 const flow_float* cmc_jac_device_ptr();     // [nCells*ns*ns] PDF 平均 ∂ω_s/∂(ρY_k) [1/s]
+int  cmc_coupling_mode();                    // 0: なし, 1: PDF 平均ソース (ω̄), 2: PDF 積分状態への緩和 ρ̄(Ỹ_pdf−Ỹ)/τ
+const flow_float* cmc_ypdf_device_ptr();    // [ns][nCells] Ỹ_pdf = Σ Ω_k Q_s(η_k)
+const flow_float* cmc_hpdf_device_ptr();    // [nCells] h̃_pdf [J/kg]
+const flow_float* cmc_tau_device_ptr();     // [nCells] 緩和時間 τ = relax·Δτ_local [s]

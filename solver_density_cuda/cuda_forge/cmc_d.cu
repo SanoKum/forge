@@ -296,8 +296,8 @@ namespace {
 #define CMC_MAX_ETA 129
 
 struct CmcParams {
-    int nEta, nSpecies, chemOn, couple;
-    double pdfFloor, Tmax, Tfreeze, dtScale;
+    int nEta, nSpecies, chemOn, couple, kSt;
+    double pdfFloor, Tmax, Tfreeze, dtScale, relax;
     double eta[CMC_MAX_ETA];       // η 格子
     double w[CMC_MAX_ETA];         // 台形重み (Σ=1)
     double G[CMC_MAX_ETA];         // AMC 形状 exp(-2 erfinv(2η-1)^2) (端は 0)
@@ -312,6 +312,7 @@ static geom_int g_nCellsAll = 0, g_nCells = 0;
 static flow_float *g_Q = nullptr, *g_roQ = nullptr, *g_resQ = nullptr, *g_diagQ = nullptr, *g_sjQ = nullptr, *g_resmQ = nullptr;
 static flow_float *g_gdum = nullptr;                       // 勾配ダミー (拡散カーネルは 1 次で勾配を使わない)
 static flow_float *g_omega = nullptr, *g_qdot = nullptr, *g_jac = nullptr;   // PDF 平均ソース
+static flow_float *g_ypdf = nullptr, *g_hpdf = nullptr, *g_tau = nullptr;   // couple 2: PDF 積分 Ỹ_s, h̃, 緩和時間 τ
 static int g_cmcStep = 0;
 
 __device__ __forceinline__ size_t sl(int var, int k) { return (size_t)(var * g_cmc.nEta + k); }
@@ -456,7 +457,8 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
                            const flow_float* ro, const flow_float* P, const flow_float* xi, const flow_float* xiVar, const flow_float* chi,
                            const flow_float* dt_local, flow_float* const* roY_dev,
                            flow_float* Q, flow_float* roQ,
-                           flow_float* omegaBar, flow_float* qdotBar, flow_float* jacBar, flow_float* cmc_dY, flow_float* cmc_TQmax)
+                           flow_float* omegaBar, flow_float* qdotBar, flow_float* jacBar, flow_float* cmc_dY, flow_float* cmc_TQmax,
+                           flow_float* ypdfOut, flow_float* hpdfOut, flow_float* tauOut, flow_float* cmc_TQst)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -495,7 +497,7 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     double jbar[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES];
     for (int s = 0; s < ns; ++s) { obar[s] = 0.0; ypdf[s] = 0.0; }
     for (int i = 0; i < ns * ns; ++i) jbar[i] = 0.0;
-    double qbar = 0.0, TQmax = 0.0;
+    double qbar = 0.0, TQmax = 0.0, hpdf = 0.0, TQst = 0.0;
     double Y[THERMO_MAX_SPECIES], omega[THERMO_MAX_SPECIES], dOdT[THERMO_MAX_SPECIES], J[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES];
     double A[THERMO_MAX_SPECIES * THERMO_MAX_SPECIES], rhs[THERMO_MAX_SPECIES];
     for (int k = 0; k < ne; ++k) {
@@ -505,7 +507,9 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
         double h = (double)Q[sl(ns, k) * nCells_all + ic];
         double T = thermo_T_from_h(sp, ns, Y, h, fmin(fmax(300.0 + h / 1200.0, 200.0), 4000.0), 200.0, g_cmc.Tmax);
         if (T > TQmax) TQmax = T;
+        if (k == g_cmc.kSt) TQst = T;
         for (int s = 0; s < ns; ++s) ypdf[s] += Om[k] * Y[s];
+        hpdf += Om[k] * h;
         const bool interior = (k > 0 && k < ne - 1);
         if (!g_cmc.chemOn || !interior || Om[k] < g_cmc.pdfFloor || T < g_cmc.Tfreeze) continue;
         const double rhoEta = p / (thermo_R_mix(sp, ns, Y) * T);
@@ -530,7 +534,10 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     for (int s = 0; s <= ns; ++s) for (int k = 0; k < ne; ++k) { const size_t i = sl(s, k) * nCells_all + ic; roQ[i] = (flow_float)(rho * (double)Q[i]); }
     double dy = 0.0;
     for (int s = 0; s < ns; ++s) { const double ym = (double)roY_dev[s][ic] / fmax(rho, 1.0e-30); dy = fmax(dy, fabs(ypdf[s] - ym)); }
-    cmc_dY[ic] = (flow_float)dy; cmc_TQmax[ic] = (flow_float)TQmax;
+    cmc_dY[ic] = (flow_float)dy; cmc_TQmax[ic] = (flow_float)TQmax; cmc_TQst[ic] = (flow_float)TQst;
+    for (int s = 0; s < ns; ++s) ypdfOut[(size_t)s * nCells + ic] = (flow_float)ypdf[s];
+    hpdfOut[ic] = (flow_float)hpdf;
+    tauOut[ic]  = (flow_float)fmax((double)dt_local[ic] * g_cmc.relax, 1.0e-12);
     for (int s = 0; s < ns; ++s) omegaBar[(size_t)s * nCells + ic] = (flow_float)obar[s];
     qdotBar[ic] = (flow_float)qbar;
     for (int i = 0; i < ns * ns; ++i) jacBar[(size_t)ic * ns * ns + i] = (flow_float)jbar[i];
@@ -553,6 +560,10 @@ ScalarTransportDesc sliceDesc(int s, const solverConfig& cfg)
 } // namespace
 
 bool cmc_coupling_active() { return g_q_ready && g_cmc_host.couple != 0; }
+int  cmc_coupling_mode()   { return g_q_ready ? g_cmc_host.couple : 0; }
+const flow_float* cmc_ypdf_device_ptr() { return g_ypdf; }
+const flow_float* cmc_hpdf_device_ptr() { return g_hpdf; }
+const flow_float* cmc_tau_device_ptr()  { return g_tau; }
 const flow_float* cmc_omega_device_ptr() { return g_omega; }
 const flow_float* cmc_qdot_device_ptr()  { return g_qdot; }
 const flow_float* cmc_jac_device_ptr()   { return g_jac; }
@@ -567,8 +578,10 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     std::memset(&c, 0, sizeof(CmcParams));
     c.nEta = ne; c.nSpecies = ns; c.chemOn = cfg.chemCmcChem; c.couple = cfg.chemCmcCouple;
     c.pdfFloor = cfg.chemCmcPdfFloor; c.Tmax = cfg.chemTmaxReaction; c.Tfreeze = cfg.chemFreezeBelowT; c.dtScale = cfg.chemCmcDtScale;
+    c.relax = cfg.chemCmcRelax;
     for (int k = 0; k < ne; ++k) { const double s = (double)k / (double)(ne - 1); c.eta[k] = std::pow(s, cfg.chemCmcEtaPow); }
     c.eta[0] = 0.0; c.eta[ne - 1] = 1.0;
+    { int kb = 0; double db = 1.0; for (int k = 0; k < ne; ++k) { const double dd = std::fabs(c.eta[k] - cfg.chemCmcXiSt); if (dd < db) { db = dd; kb = k; } } c.kSt = kb; }
     for (int k = 0; k < ne; ++k) {
         const double lo = (k == 0) ? 0.0 : 0.5 * (c.eta[k] + c.eta[k-1]);
         const double hi = (k == ne - 1) ? 1.0 : 0.5 * (c.eta[k] + c.eta[k+1]);
@@ -607,6 +620,9 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     if (g_gdum) cudaFree(g_gdum); gpuErrchk( cudaMalloc((void**)&g_gdum, (size_t)g_nCellsAll * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_gdum, 0, (size_t)g_nCellsAll * sizeof(flow_float)) );
     if (g_omega) cudaFree(g_omega); gpuErrchk( cudaMalloc((void**)&g_omega, (size_t)ns * msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_omega, 0, (size_t)ns * msh.nCells * sizeof(flow_float)) );
     if (g_qdot) cudaFree(g_qdot); gpuErrchk( cudaMalloc((void**)&g_qdot, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_qdot, 0, (size_t)msh.nCells * sizeof(flow_float)) );
+    if (g_ypdf) cudaFree(g_ypdf); gpuErrchk( cudaMalloc((void**)&g_ypdf, (size_t)ns * msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_ypdf, 0, (size_t)ns * msh.nCells * sizeof(flow_float)) );
+    if (g_hpdf) cudaFree(g_hpdf); gpuErrchk( cudaMalloc((void**)&g_hpdf, (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_hpdf, 0, (size_t)msh.nCells * sizeof(flow_float)) );
+    if (g_tau)  cudaFree(g_tau);  gpuErrchk( cudaMalloc((void**)&g_tau,  (size_t)msh.nCells * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_tau,  0, (size_t)msh.nCells * sizeof(flow_float)) );
     if (g_jac) cudaFree(g_jac); gpuErrchk( cudaMalloc((void**)&g_jac, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) ); gpuErrchk( cudaMemset(g_jac, 0, (size_t)msh.nCells * ns * ns * sizeof(flow_float)) );
 
     cmc_q_init_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(msh.nCells_all, var.c_d.at("ro"), g_Q, g_roQ);
@@ -659,7 +675,8 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
             g_nCells, g_nCellsAll, thermo_species_device_ptr(), chemistry_table_device(),
             var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
             var.c_d.at("dt_local"), species_roY_device_ptr(),
-            g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"));
+            g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
+            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"));
     }
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
 }

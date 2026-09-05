@@ -69,7 +69,7 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 | 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場で分散の妥当性 | 実装済・300 step smoke OK (実現可能性 1e-12, χ 10²–10³ 1/s)。発達場 `run_0080` (5000 step) で確認中 |
 | 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 | **done 2026-09-05**: `run_0081` で条件付き T が全 node 1045.00 K (混合線保存)、`cmc_dY` ≤0.017 (差分拡散分のみ) |
 | 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | 実装済 (凍結で η 拡散の線形不変を確認; 化学は `run_0082` で検証中) |
-| 5 | Phase C: ソース結合 (`cmc.couple`)、`cmc_dY` | 実装済 (`run_0082` で検証中)。性能: CMC 化学 OFF でも 403 ms/step (混合分率のみ 61) → スライス毎 820 カーネル起動が主因、融合カーネル化は Phase D 後 |
+| 5 | Phase C: ソース結合 | couple 1 (source coupling) は `run_0082` で平均場が燃えず**不採用** → **couple 2 (PDF 積分状態への緩和) を実装、`run_0083` で検証中**。性能: 化学 ON で 652 ms/step (laminar 化学の ~8 倍) → 融合カーネル化は Phase D 後 |
 | 6 | Phase D: Cabra $T_c$ 1015/1030/1045/1060/1075 K の $H$ 応答曲線 (Y_OH>2e-4) vs 実験・文献、中心軸/半径 T ±30 K | todo |
 | 7 | Phase D: BK 着火位置、`tci 0/1` 回帰、性能 (PDF 閾値スキップ) | todo |
 | 8 | ドキュメント: `procedures/solver-settings.md` に `cmc` キー、`methods/index.md` | todo |
@@ -126,3 +126,8 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   原因は保存形輸送のドリフト (未収束の平均流では Σṁ_f≠0 で一様 Q でも −Q Σṁ_f が残り、流れ側の Δρ と点陰解の Δρ が一致しないため
   Q が (ρ+Δρ_s)/(ρ+Δρ_f) 倍ずつ動く)。`res_Q -= Q·res_ro` の非保存補正で **全 node 1045.00 K (厳密)** に。ρ̄Q の再同期も追加。
   `cmc_dY` ≤0.017 は出口リップの差分拡散分 (Phase A と同じ)。反応 ON・結合 ON は `run_0082` (run_0080 混合場から 6000 step)。
+- `2026-09-05 (4)` — **反応 ON 初回 `run_0082` (couple 1 = source coupling) は結合方式の欠陥を露呈**: 条件付き空間は着火 (T_Q max 1546→1615 K,
+  前線 x/d 18.8→6.4 と上流へ) するが、平均場は T_max 1045→1123 K しか上がらず (軸 z/d 26: 840 K, 実験 1410)、`cmc_dY` が 0.07 で定常化。
+  条件付き状態が燃え切ると ω(Q)→0 で、未燃の平均場に渡る ω̄ が消える (両者の時間履歴が違うので積分値が一致しない)。
+  → **couple 2 (PDF 積分状態への緩和) を実装**: ω̄_s = ρ̄(Ỹ_pdf,s − Ỹ_s)/τ, Q̇̄ = ρ̄(h̃_pdf − h̃)/τ, τ = relax·Δτ_local, J = −I/τ (点陰解)。
+  Σω̄=0 で質量保存、定常で Ỹ → Ỹ_pdf (文献 RANS-CMC と同じ)。診断 `cmc_TQst` (η≈ξ_st の条件付き T) を追加。検証 `run_0083`。

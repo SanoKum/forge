@@ -661,6 +661,8 @@ void solverConfig::read(std::string fname)
                 this->chemCmcTox      = getOptionalValidatedValue<double>(cm, "oxidizerT", 300.0, "physProp.chemistry.cmc");
                 this->chemCmcDtScale  = getOptionalValidatedValue<double>(cm, "dtScale", 1.0, "physProp.chemistry.cmc");
                 this->chemCmcInterval = getOptionalValidatedValue<int>(cm, "interval", 1, "physProp.chemistry.cmc");
+                this->chemCmcRelax    = getOptionalValidatedValue<double>(cm, "relax", 1.0, "physProp.chemistry.cmc");
+                this->chemCmcXiSt     = getOptionalValidatedValue<double>(cm, "xiSt", 0.47, "physProp.chemistry.cmc");
                 if (this->chemCmc) {
                     if (!this->chemMixfrac) throw std::runtime_error("'physProp.chemistry.cmc' requires 'physProp.chemistry.mixfrac'.");
                     if (this->chemCmcNEta < 5 || this->chemCmcNEta > 129) throw std::runtime_error("'physProp.chemistry.cmc.nEta' must be in [5,129].");
