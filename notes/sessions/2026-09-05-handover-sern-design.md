@@ -63,8 +63,12 @@ $PY ../case/46.sern_design/plot_sern3d.py <run_dir> <problem.yaml>         # 3D:
 
 ## 4. 未解決・次にやること (優先順)
 
-1. **作動点をサイクル値で定義し直す**: スクラムジェット・モードでは飛行 M 4〜10 で燃焼器出口 (M_in, p_in, T_in) が変わる。
-   今の低 NPR 点 (M∞1.5 で燃焼器出口 M2.5 のまま) は非物理。`operating_points[].inflow` の上書きで対応できる。
+> **正本は plan の §5.1 残作業表** ([`plans/active/tooling-nozzle-sern-chain.md`](../../plans/active/tooling-nozzle-sern-chain.md))。
+> 以下は 2026-09-05 時点の写しで、項目 1 は §4.10 で方針決着済み (実装未着手)。優先順が変わったら plan 側を直す。
+
+1. **作動点をサイクル値で定義し直す** — **方針決着済 (plan §4.10)**: アンカー = NASA TM X-71972 TABLE 1 + CEA2。
+   M∞6 巡航は M_in 1.67 / p_in 101 kPa / NPR 35.4 / γ 1.18 (初版 2.5 / 20 kPa / 20 / 1.4)。低 NPR の正体は燃料遮断。
+   残実装 = `operating_points[].gas` 上書き + YAML 差し替え + MOO 再取得。CEA 入出力は `case/46.sern_design/cea/`。
 2. **剥離評価にはランプ後縁側の外部流 (機体上面からの回り込み・ベース) が要る**: 今は後縁の先を静圧出口/slip で閉じている
    ので RSS/FSS は信用できない。2D にブロックを 1 つ足す (mesh_sern に 3 バンド目) のが次の作業。
 3. **3D SST の後縁 3 重点** (カウル後縁∩側壁後縁で ω → inf): 候補 = 後縁に板厚 (2 本の剥離線を分離)、
