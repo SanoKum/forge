@@ -208,6 +208,22 @@ chemistry: {enabled: 0|1, mechanismFile: "mech.yaml", ...,
 - 入口では分散 0 (node は境界ノードにピン)、他境界は zero-gradient。リスタートは `VALUE/roXiVar` があれば復元、無ければ 0。
 - 出力: `xi`, `xiVar`, `roXiVar`, `chi`。検証は `case/48.cabra_h2n2/check_mixfrac.py`。
 
+#### `physProp.chemistry.cmc` (1st-order CMC; methods/chemistry_cmc.md)
+
+```yaml
+chemistry: {enabled: 1, mechanismFile: "mech.yaml", jacobianMode: 2, ..., mixfrac: {...},
+            cmc: {enabled: 1, nEta: 41, etaPow: 1.5, pdfFloor: 1.0e-6, couple: 3, alpha: 0.05, chem: 1,
+                  fuelT: 305.0, oxidizerT: 1045.0, dtScale: 1.0, interval: 1, xiSt: 0.47}}
+```
+
+- `mixfrac` 必須、`timeIntegration: 11` (陰解法) のみ。η 格子 `nEta` 点 (`etaPow` で希薄側を密に)、端は燃料流 (`fuelT`, `mixfrac.fuelX`) /
+  酸化剤流 (`oxidizerT`, `oxidizerX`) の Dirichlet。条件付きスカラー (n_s 種 + h) は物理空間で移流+乱流拡散、η 空間で AMC 拡散 (陰解)、
+  各 η 点で化学 (点陰解; `chem: 0` で凍結)。`pdfFloor` 未満の β-PDF 重みの η 点は化学をスキップ。
+- `couple`: 0 受動 (診断のみ) / 1 PDF 平均ソース (不採用: 平均場が燃えない) / 2 緩和ソース (不採用: 差分拡散差を反応熱に換算して発散) /
+  **3 平均 Y,h を PDF 積分状態へ `alpha`/step でブレンド (推奨; 平均方程式の化学ソースは 0)**。
+- 出力: `cmc_dY` (PDF 積分 Ỹ と輸送 Ỹ の最大差), `cmc_TQmax` (η 上の最高 T), `cmc_TQst` (η≈`xiSt` の T)。コスト: Cabra 60k node で
+  ~650 ms/step (laminar 化学の ~8 倍)。解析は `case/48.cabra_h2n2/analyze_cmc.py`。
+
 - **定常陰解法 (`timeIntegration: 11`) の反応流は `speciesImplicitCoupling: 2` + `jacobianMode: 2` が必須**。陽的な反応熱注入 (coupling 0/1 または jacobianMode ≤1) はスロート付近の再結合熱で数 step で発散する (case/46 run_0002–0007)。非定常陽解法 (RK, `dt` ≲ 化学時間) は jacobianMode 1 でよい。
 - **`thermoHrefTemp: 298.15` を必ず指定する** (反応熱は sensible datum の残差項 $\dot Q=-\sum_s h^{abs}_s(T_{ref})\dot\omega_s$ として入る。絶対 datum (0) でも動くが陰解法は不安定)。
 - 機構に現れる種は `species` に全て含めること (無ければ起動時エラー)。`species` にだけある種は不活性として扱う。

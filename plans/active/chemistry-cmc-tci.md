@@ -69,7 +69,7 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
 | 2 | Phase A: 分散輸送 + $\tilde\chi$ + 出力、Cabra 混合場で分散の妥当性 | 実装済・300 step smoke OK (実現可能性 1e-12, χ 10²–10³ 1/s)。発達場 `run_0080` (5000 step) で確認中 |
 | 3 | Phase B: $Q$ ストレージ・$\eta$ 格子・混合線初期化・凍結整合 | **done 2026-09-05**: `run_0081` で条件付き T が全 node 1045.00 K (混合線保存)、`cmc_dY` ≤0.017 (差分拡散分のみ) |
 | 4 | Phase B: $\eta$ 拡散陰解 (AMC) + 化学点陰解、境界条件 | 実装済 (凍結で η 拡散の線形不変を確認; 化学は `run_0082` で検証中) |
-| 5 | Phase C: ソース結合 | couple 1 (source coupling) は `run_0082` で平均場が燃えず**不採用** → **couple 2 (PDF 積分状態への緩和) を実装、`run_0083` で検証中**。性能: 化学 ON で 652 ms/step (laminar 化学の ~8 倍) → 融合カーネル化は Phase D 後 |
+| 5 | Phase C: 結合 | couple 1 (PDF 平均ソース) は平均場が燃えず、couple 2 (緩和ソース) は差分拡散差を反応熱に換算して NaN、couple 3 全置換は陰解法と非整合で NaN → **couple 3 + α ブレンド (α 0.05) を検証中 (`run_0083_cmc_react_couple3`)**。性能: 化学 ON 652 ms/step (単独) → 融合カーネル化は Phase D 後 |
 | 6 | Phase D: Cabra $T_c$ 1015/1030/1045/1060/1075 K の $H$ 応答曲線 (Y_OH>2e-4) vs 実験・文献、中心軸/半径 T ±30 K | todo |
 | 7 | Phase D: BK 着火位置、`tci 0/1` 回帰、性能 (PDF 閾値スキップ) | todo |
 | 8 | ドキュメント: `procedures/solver-settings.md` に `cmc` キー、`methods/index.md` | todo |
@@ -131,3 +131,11 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   条件付き状態が燃え切ると ω(Q)→0 で、未燃の平均場に渡る ω̄ が消える (両者の時間履歴が違うので積分値が一致しない)。
   → **couple 2 (PDF 積分状態への緩和) を実装**: ω̄_s = ρ̄(Ỹ_pdf,s − Ỹ_s)/τ, Q̇̄ = ρ̄(h̃_pdf − h̃)/τ, τ = relax·Δτ_local, J = −I/τ (点陰解)。
   Σω̄=0 で質量保存、定常で Ỹ → Ỹ_pdf (文献 RANS-CMC と同じ)。診断 `cmc_TQst` (η≈ξ_st の条件付き T) を追加。検証 `run_0083`。
+- `2026-09-05 (5)` — **結合方式の試行 (run_0083 系)**: couple 2 (緩和ソース ρ̄(Ỹ_pdf−Ỹ)/τ) は (i) 初回残差時に Ỹ_pdf が未計算 (=0) で
+  全種剥離 → 初期化時に PDF 積分を実行、(ii) 独立なエンタルピー緩和 ρ̄(h̃_pdf−h̃)/τ が 案C 予測子の ∂Q̇/∂ρY と非整合 → 反応熱を標準規約
+  −Σc_sω̄_s に、(iii) それでも差分拡散由来の組成差 (リップ 0.017) を τ=Δτ で反応熱に換算し Q̇ ±1e11 W/m³ で step 2 NaN → **couple 2 は不採用**。
+  couple 3 (平均 Y,T を PDF 積分値で毎ステップ全置換) は密度ベース陰解法と整合せず step 14 で NaN (dt 1.5e-9)。
+  **couple 3 + α ブレンド (Y ← Y + α(Y_pdf−Y), h も同様, α=0.05/step, 平均方程式の化学ソースは 0)** で NaN なく進行 (`run_0083_cmc_react_couple3`)。
+  併せて **リスタートで `roXiVar` が復元されていなかった** (host に読むだけで H2D 転送なし + 凝縮分岐の内側に置いていた) を修正 —
+  run_0081/0082 は分散 0 (δ-PDF) から始まっていたので結果は再解釈が必要。別セッションが `run_0079_react_li_dualtime_cont` を作成しており
+  `run_0079_mixfrac_smoke` と番号衝突 (README に注記)。GPU 共有で 852 ms/step。

@@ -297,7 +297,7 @@ namespace {
 
 struct CmcParams {
     int nEta, nSpecies, chemOn, couple, kSt;
-    double pdfFloor, Tmax, Tfreeze, dtScale, relax;
+    double pdfFloor, Tmax, Tfreeze, dtScale, relax, alpha;
     double eta[CMC_MAX_ETA];       // η 格子
     double w[CMC_MAX_ETA];         // 台形重み (Σ=1)
     double G[CMC_MAX_ETA];         // AMC 形状 exp(-2 erfinv(2η-1)^2) (端は 0)
@@ -552,13 +552,18 @@ __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, c
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
     const int ns = g_cmc.nSpecies;
-    double Y[THERMO_MAX_SPECIES]; double ysum = 0.0;
+    const double rho = (double)ro[ic], a = g_cmc.alpha;
+    // 現在の平均状態 (Y_cur, T_cur, h_cur) と PDF 積分状態を α でブレンド (毎ステップ全置換は密度ベース陰解法と整合せず NaN: run_0083 v4)
+    double Yc[THERMO_MAX_SPECIES], Y[THERMO_MAX_SPECIES]; double ysum = 0.0, ycs = 0.0;
+    for (int s = 0; s < ns; ++s) { double y = (double)roY_dev[s][ic] / fmax(rho, 1.0e-30); if (y < 0.0) y = 0.0; Yc[s] = y; ycs += y; }
+    if (ycs > 0.0) for (int s = 0; s < ns; ++s) Yc[s] /= ycs;
     for (int s = 0; s < ns; ++s) { double y = (double)ypdf[(size_t)s * nCells + ic]; if (y < 0.0) y = 0.0; Y[s] = y; ysum += y; }
     if (!(ysum > 0.0)) return;
-    for (int s = 0; s < ns; ++s) Y[s] /= ysum;
-    const double h = (double)hpdf[ic];
-    const double T = thermo_T_from_h(sp, ns, Y, h, fmin(fmax((double)Tcur[ic], 200.0), Tmax), 200.0, Tmax);
-    const double rho = (double)ro[ic];
+    for (int s = 0; s < ns; ++s) Y[s] = Yc[s] + a * (Y[s] / ysum - Yc[s]);
+    const double Tc = fmin(fmax((double)Tcur[ic], 200.0), Tmax);
+    const double hc = thermo_h_mix(sp, ns, Yc, Tc);
+    const double h = hc + a * ((double)hpdf[ic] - hc);
+    const double T = thermo_T_from_h(sp, ns, Y, h, Tc, 200.0, Tmax);
     const double eint = thermo_h_mix(sp, ns, Y, T) - thermo_R_mix(sp, ns, Y) * T;
     const double ke = 0.5 * ((double)Ux[ic]*Ux[ic] + (double)Uy[ic]*Uy[ic] + (double)Uz[ic]*Uz[ic]);
     for (int s = 0; s < ns; ++s) roY_dev[s][ic] = (flow_float)(rho * Y[s]);
@@ -601,7 +606,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     std::memset(&c, 0, sizeof(CmcParams));
     c.nEta = ne; c.nSpecies = ns; c.chemOn = cfg.chemCmcChem; c.couple = cfg.chemCmcCouple;
     c.pdfFloor = cfg.chemCmcPdfFloor; c.Tmax = cfg.chemTmaxReaction; c.Tfreeze = cfg.chemFreezeBelowT; c.dtScale = cfg.chemCmcDtScale;
-    c.relax = cfg.chemCmcRelax;
+    c.relax = cfg.chemCmcRelax; c.alpha = cfg.chemCmcAlpha;
     for (int k = 0; k < ne; ++k) { const double s = (double)k / (double)(ne - 1); c.eta[k] = std::pow(s, cfg.chemCmcEtaPow); }
     c.eta[0] = 0.0; c.eta[ne - 1] = 1.0;
     { int kb = 0; double db = 1.0; for (int k = 0; k < ne; ++k) { const double dd = std::fabs(c.eta[k] - cfg.chemCmcXiSt); if (dd < db) { db = dd; kb = k; } } c.kSt = kb; }

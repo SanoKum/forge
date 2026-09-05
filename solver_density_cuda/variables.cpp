@@ -746,6 +746,7 @@ void variables::readValueHDF5(std::string fname , mesh& msh,
         auto& dst = this->c["roXiVar"];
         for (geom_int ic = 0; ic < msh.nCells; ++ic) dst[ic] = has ? v_in[ic] : static_cast<flow_float>(0.0);
         std::cout << "readVariables: roXiVar " << (has ? "restored" : "initialized to 0 (not in file)") << "\n";
+        this->copyVariables_cell_H2D({"roXiVar"});   // host に読んだだけでは device に届かない (凝縮モーメントと同じ扱い)
     }
 
     if (this->nCondSpeciesRegistered >= 1) {
