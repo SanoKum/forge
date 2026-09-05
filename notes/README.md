@@ -32,6 +32,7 @@
 | ノート | 概要 |
 | --- | --- |
 | [chemistry-cabra-handover-2026-09-05.md](sessions/chemistry-cabra-handover-2026-09-05.md) | 引継ぎ文書 (Claude CLI 向け): 有限速度化学 (H₂) の実装状況・2026-09-05 に直した低マッハ node の 3 バグ・Cabra (case/48) の現状と判断待ち事項・作業場所 (worktree forge-chem) |
+| [codex-review-chemistry-2026-09-05-b.md](sessions/codex-review-chemistry-2026-09-05-b.md) | codex 第三者レビュー (2, 午後の対応分): 0-D 機構比較の coflow 組成バグ (ΣX=1.1) 発見、「TCI 欠如と確定」は過大→「仮説を支持」、check_quasisteady の NaN 黙殺/exit_y 定義/cell 出口抽出の脆弱性、Cabra 逆流の切り分け順序 (外周 open BC → 領域 → precond 0 → dual-time)、文書の過大主張一覧 |
 | [codex-review-chemistry-2026-09-05.md](sessions/codex-review-chemistry-2026-09-05.md) | codex による第三者レビュー: 到達点評価 (実装検証は高水準・設計水準は未達)、TCI は 1st-order CMC 第一候補、P0=QoI 確定/SST プラトー/機構着火遅れ検証、ドキュメント不整合の指摘一覧 |
 | [condensation-nonequilibrium-session-prompt.md](sessions/condensation-nonequilibrium-session-prompt.md) | 次セッション用プロンプト: 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
 | [cutler-tp-multispecies-cfl-analysis-prompt.md](sessions/cutler-tp-multispecies-cfl-analysis-prompt.md) | 分析依頼プロンプト: 多成分 TP の陰解法 (block-DPLUR) で安定 CFL が ~1 に頭打ちする原因 |

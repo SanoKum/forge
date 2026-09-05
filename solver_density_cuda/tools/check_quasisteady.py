@@ -295,20 +295,24 @@ WALL = ['wall_model_tau']
 # exit_massflux  : 出口面 (x >= x_max - --exit-tol の DOF。node 方式なら出口境界ノードそのもの) を y でソートし
 #                  台形則で ∫ρu_x dA。軸対称 (solverConfig mesh.isAxisymmetric) は 2πr 重みを自動で掛ける。
 # exit_hflux     : 同じ面の全エンタルピー流束 ∫ρu_x h0 dA, h0=(roe+P)/ro。
-# exit_y_<NAME>  : 同じ面の質量流束重み平均化学種質量分率 (physProp.species の名前。例 exit_y_H2O)。
+# exit_y_<NAME>  : 同じ面の正味流束重み平均化学種質量分率 (physProp.species の名前。例 exit_y_H2O)。正味流量が
+#                  |∫|ρu|dA| の 5 % 未満 (強い逆流) ならエラー。
+# exit_yflux_<NAME>: 符号付き正味の種質量流量 ∫ρu_x Y dA [kg/s] (P0-2 の「主要種流束」はこちら)。
+# exit_yout_<NAME>: 順流出 (u_x>0) 部分だけの流束重み平均組成 (逆流があっても定義できる)。
+# exit_hflux は対流項のみ (伝導・拡散エンタルピー・粘性仕事は含まない) — 収支監査には使えない。
 # いずれも**定常性判定用の汎関数** (面積重みは台形近似) であり、保存則監査や絶対値の議論には使わない。
 # cell 方式では境界セル重心が面上に無いので --exit-tol を第一セル幅程度に広げる。
 CHEM = ['ignx', 'tmax', 'exit_massflux', 'exit_hflux']
-CHEM_PREFIX = 'exit_y_'
+CHEM_PREFIX = 'exit_y_'          # 正味流束重み平均組成 (逆流が強いとエラー)
+CHEM_FLUX_PREFIX = 'exit_yflux_' # 符号付き正味の種質量流量 ∫ρu_x Y dA [kg/s]
+CHEM_OUT_PREFIX = 'exit_yout_'   # 順流出部分 (u_x>0) だけの流束重み平均組成
 
 
 def read_solver_config(run_dir):
-    try:
-        import yaml
-        with open(os.path.join(run_dir, 'solverConfig.yaml')) as f:
-            return yaml.safe_load(f) or {}
-    except Exception:
-        return {}
+    """solverConfig.yaml を読む。読めなければ例外 (軸対称や種名を黙って取りこぼすと平面積分・別種で偽判定になる)。"""
+    import yaml
+    with open(os.path.join(run_dir, 'solverConfig.yaml')) as f:
+        return yaml.safe_load(f) or {}
 
 
 def make_q_chem(run_dir, mesh, want, oh_thr=2e-4, flame_species='OH', exit_tol=1e-6):
@@ -364,12 +368,30 @@ def make_q_chem(run_dir, mesh, want, oh_thr=2e-4, flame_species='OH', exit_tol=1
             ex[q] = lambda cc, V: exit_flux(V)
         elif q == 'exit_hflux':
             ex[q] = lambda cc, V: exit_flux(V, (V['roe'][:] + V['P'][:]) / V['ro'][:])
-        elif q.startswith(CHEM_PREFIX):
-            name = q[len(CHEM_PREFIX):]
+        elif q.startswith(CHEM_PREFIX) or q.startswith(CHEM_FLUX_PREFIX) or q.startswith(CHEM_OUT_PREFIX):
+            pref = CHEM_PREFIX if q.startswith(CHEM_PREFIX) else (CHEM_FLUX_PREFIX if q.startswith(CHEM_FLUX_PREFIX) else CHEM_OUT_PREFIX)
+            name = q[len(pref):]
             if name not in species:
                 bad.append(q); continue
             key = f'Y{species.index(name)}'
-            ex[q] = (lambda cc, V, key=key: exit_flux(V, V[key][:]) / exit_flux(V))
+            if pref == CHEM_FLUX_PREFIX:            # 符号付き正味の種質量流量 ∫ρu_x Y dA
+                ex[q] = (lambda cc, V, key=key: exit_flux(V, V[key][:]))
+            elif pref == CHEM_OUT_PREFIX:           # 順流出 (u_x>0) 部分だけの流束重み平均組成
+                def q_out(cc, V, key=key):
+                    coords(V); m, w = cache['exit']
+                    f = V['ro'][:][m] * V['Ux'][:][m] * w; pos = f > 0
+                    if not np.any(pos):
+                        raise RuntimeError('no positive outflow on exit plane')
+                    return float((f[pos] * V[key][:][m][pos]).sum() / f[pos].sum())
+                ex[q] = q_out
+            else:                                   # 正味流束重み平均 (逆流で分母が潰れるとエラー)
+                def q_mean(cc, V, key=key):
+                    den = exit_flux(V)
+                    ref = float(np.abs(V['ro'][:][cache['exit'][0]] * V['Ux'][:][cache['exit'][0]] * cache['exit'][1]).sum())
+                    if not (abs(den) > 0.05 * ref):
+                        raise RuntimeError('net exit mass flux ~0 (strong reverse flow); use exit_yout_/exit_yflux_')
+                    return exit_flux(V, V[key][:]) / den
+                ex[q] = q_mean
     return ex, bad, species
 
 
@@ -393,14 +415,14 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
     qa = make_q_asym(cc)
     if qa:
         extractors['asym'] = qa
-    chem_want = [q for q in want if q in CHEM or q.startswith(CHEM_PREFIX)]
+    chem_want = [q for q in want if q in CHEM or q.startswith((CHEM_PREFIX, CHEM_FLUX_PREFIX, CHEM_OUT_PREFIX))]
     chem_bad, chem_species = [], []
     if chem_want:
         qc, chem_bad, chem_species = make_q_chem(run_dir, mesh, chem_want, oh_thr, flame_species, exit_tol)
         extractors.update(qc)
     # 未知の量を黙って無視すると「評価していないのに ALL STEADY」になるので必ずエラーにする。
     # ただし判定は **固定集合** に対して行う (run 依存で適用不能な asym 等を unknown 扱いしない)。
-    known = set(BUILTIN) | set(FLATPLATE) | set(WALL) | set(CHEM) | {q for q in want if q.startswith(CHEM_PREFIX)}
+    known = set(BUILTIN) | set(FLATPLATE) | set(WALL) | set(CHEM) | {q for q in want if q.startswith((CHEM_PREFIX, CHEM_FLUX_PREFIX, CHEM_OUT_PREFIX))}
     unknown = [q for q in want if q not in known]
     if chem_bad:
         # 化学種名が solverConfig の physProp.species に無い (または OH が無い) → 黙って skip せずエラー
@@ -414,13 +436,14 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
     # 適用不能な量 (非対称メッシュの asym 等) は従来どおり skip する
     quantities = [q for q in want if q in extractors]
     series = {q: [] for q in quantities}
+    errors = {q: [] for q in quantities}
     for f in fs:
         V = h5py.File(f, 'r')['VALUE']
         for q in quantities:
             try:
                 series[q].append(extractors[q](cc, V))
-            except Exception:
-                series[q].append(float('nan'))
+            except Exception as e:      # 黙って nan にしない: 記録して後で判定に反映する
+                series[q].append(float('nan')); errors[q].append(f"{os.path.basename(f)}: {e}")
     worst = 0
     lines = []
     if 'wall_model_tau' in want:
@@ -499,6 +522,15 @@ def analyze(run_dir, want, tail_frac, drift_tol, osc_tol, min_snaps, mesh_arg, c
             lines.append(f"  {'wall_model_tau':14s}: {d:50s} {v}")
     for q in quantities:
         verdict, detail, _ = classify(steps, series[q], tail_frac, drift_tol, osc_tol, min_snaps)
+        vals = np.array(series[q], float)
+        if errors[q]:
+            # 抽出が失敗した snapshot がある → その系列は信用しない (偽 STEADY 防止)
+            verdict = 'TRANSIENT-UNSETTLED'
+            detail = f"{len(errors[q])} snapshot(s) failed: {errors[q][-1][:60]}"
+        elif len(vals) and not np.isfinite(vals[-1]):
+            # 末尾が非有限 (ignx なら火炎消失) → 過去の有限区間だけで STEADY を返さない
+            verdict = 'TRANSIENT-UNSETTLED'
+            detail = f"latest snapshot is non-finite (e.g. no flame for ignx); " + detail
         worst = max(worst, SEV[verdict])
         lines.append(f"  {q:9s}: {detail:55s} {verdict}")
     overall = [k for k, vv in SEV.items() if vv == worst][0]
