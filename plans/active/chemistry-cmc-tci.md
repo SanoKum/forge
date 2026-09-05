@@ -139,3 +139,9 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   併せて **リスタートで `roXiVar` が復元されていなかった** (host に読むだけで H2D 転送なし + 凝縮分岐の内側に置いていた) を修正 —
   run_0081/0082 は分散 0 (δ-PDF) から始まっていたので結果は再解釈が必要。別セッションが `run_0079_react_li_dualtime_cont` を作成しており
   `run_0079_mixfrac_smoke` と番号衝突 (README に注記)。GPU 共有で 852 ms/step。
+- `2026-09-05 (6)` — **couple 3 の往復バグと差分拡散の非整合**: (i) 上書きカーネルが流れ更新後の保存量 ρ と更新前の原始量 T, u を混ぜて
+  roe を組み直していた → α=0 の往復だけで発散 (`run_0084_cmc_ab_a0`)。保存量のみから T (thermo_T_from_e)・KE を再構成して受動 run と一致
+  (残差 3 桁一致)。(ii) それでも α=0.05 で rms_roe が 25 step で 300 倍成長: 診断 `run_0085` でノズルリップ直後 (x 0.2 mm, r 2.4–2.6 mm) の
+  平均 T が 884→510 K と引き下げられ P 124 kPa まで励起。**差分拡散 (`speciesDiffusionMethod: 1`) の平均場が Bilger ξ の混合線から
+  130 K 以上ずれ**、ブレンドと平均場の差分拡散が綱引きになる。→ CMC 計算は `speciesDiffusionMethod: 0` を前提にする (methods §4)。
+  混合場を定数 Sc で作り直し (`run_0086_mix_sc0`)、そこから CMC couple 3 (`run_0087_cmc_sc0`)。GPU は他 2 セッションと共有中。
