@@ -30,6 +30,7 @@
 
 | ノート | 概要 |
 | --- | --- |
+| [2026-09-05-handover-sern-design.md](sessions/2026-09-05-handover-sern-design.md) | ⑤ SERN 設計チェーンの引き継ぎ (branch feature/sern-design, case/46): 状態表・使い方・罠 8 件・未解決 9 件 |
 | [condensation-nonequilibrium-session-prompt.md](sessions/condensation-nonequilibrium-session-prompt.md) | 次セッション用プロンプト: 非平衡凝縮 (4 モーメント方程式) の forge 実装 |
 | [cutler-tp-multispecies-cfl-analysis-prompt.md](sessions/cutler-tp-multispecies-cfl-analysis-prompt.md) | 分析依頼プロンプト: 多成分 TP の陰解法 (block-DPLUR) で安定 CFL が ~1 に頭打ちする原因 |
 | [implicit-acceleration-session-prompt.md](sessions/implicit-acceleration-session-prompt.md) | 別セッション用プロンプト: 陰解法の安定 CFL 引き上げ |
