@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <map>
 #include <string>
 #include <stdexcept>
@@ -458,7 +459,8 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
                            const flow_float* dt_local, flow_float* const* roY_dev,
                            flow_float* Q, flow_float* roQ,
                            flow_float* omegaBar, flow_float* qdotBar, flow_float* jacBar, flow_float* cmc_dY, flow_float* cmc_TQmax,
-                           flow_float* ypdfOut, flow_float* hpdfOut, flow_float* tauOut, flow_float* cmc_TQst, int doChem)
+                           flow_float* ypdfOut, flow_float* hpdfOut, flow_float* tauOut, flow_float* cmc_TQst, int doChem,
+                           flow_float* cmc_xiOm, flow_float* cmc_xipdf)
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -475,8 +477,10 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     for (int k = 0; k < ne; ++k) chiEta[k] = (gnorm > 1.0e-30) ? chim * g_cmc.G[k] / gnorm : chim * g_cmc.G[k];
 
     // ---- η 拡散 (陰的三重対角, 端 Dirichlet) を各変数に ----
+    // doChem==0 (初期化時の PDF 積分埋め) では拡散もスキップ: 初期化時は dt_local 未設定で Δτ がゴミ値になり、
+    // 三重対角解が内点 Q を壊す (run_0092 プローブ: 端点だけ混合線・内点 0/NaN)。
     double a[CMC_MAX_ETA], bb[CMC_MAX_ETA], cc[CMC_MAX_ETA], d[CMC_MAX_ETA];
-    for (int var = 0; var <= ns; ++var) {
+    for (int var = 0; var <= ns && doChem; ++var) {
         for (int k = 1; k < ne - 1; ++k) {
             const double hm = g_cmc.eta[k] - g_cmc.eta[k-1], hp = g_cmc.eta[k+1] - g_cmc.eta[k], hc = 0.5 * (hm + hp);
             const double D = 0.5 * chiEta[k] * dtau;
@@ -506,6 +510,7 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
         if (ysum > 0.0) for (int s = 0; s < ns; ++s) Y[s] /= ysum;
         double h = (double)Q[sl(ns, k) * nCells_all + ic];
         double T = thermo_T_from_h(sp, ns, Y, h, fmin(fmax(300.0 + h / 1200.0, 200.0), 4000.0), 200.0, g_cmc.Tmax);
+        if (!(T == T)) { TQmax = nan(""); }          // 非有限は伝播させて診断で見える化 (fmax は NaN を無視する)
         if (T > TQmax) TQmax = T;
         if (k == g_cmc.kSt) TQst = T;
         for (int s = 0; s < ns; ++s) ypdf[s] += Om[k] * Y[s];
@@ -535,6 +540,9 @@ __global__ void cmc_step_d(geom_int nCells, geom_int nCells_all, const SpeciesTh
     double dy = 0.0;
     for (int s = 0; s < ns; ++s) { const double ym = (double)roY_dev[s][ic] / fmax(rho, 1.0e-30); dy = fmax(dy, fabs(ypdf[s] - ym)); }
     cmc_dY[ic] = (flow_float)dy; cmc_TQmax[ic] = (flow_float)TQmax; cmc_TQst[ic] = (flow_float)TQst;
+    { double xo = 0.0, bpdf = 0.0; for (int k = 0; k < ne; ++k) xo += Om[k] * g_cmc.eta[k];
+      for (int s = 0; s < ns; ++s) bpdf += g_bilger.c[s] * ypdf[s];
+      cmc_xiOm[ic] = (flow_float)xo; cmc_xipdf[ic] = (flow_float)fmin(fmax((bpdf - g_bilger.betaO) / (g_bilger.betaF - g_bilger.betaO), 0.0), 1.0); }
     for (int s = 0; s < ns; ++s) ypdfOut[(size_t)s * nCells + ic] = (flow_float)ypdf[s];
     hpdfOut[ic] = (flow_float)hpdf;
     tauOut[ic]  = (flow_float)fmax((double)dt_local[ic] * g_cmc.relax, 1.0e-9);   // 下限: 初期化直後 (dt_local 未設定) でも有限
@@ -592,12 +600,19 @@ __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, co
     for (int s = 0; s < ns; ++s) { double y = (double)roY_dev[s][ic] / rho; if (y < 0.0) y = 0.0; Yc[s] = y; ycs += y; }
     for (int s = 0; s < ns; ++s) { double y = (double)ypdf[(size_t)s * nCells + ic]; if (y < 0.0) y = 0.0; Yp[s] = y; yps += y; }
     if (!(ycs > 0.0) || !(yps > 0.0)) return;
+    // 反応熱は「混合線からの離脱分」の変化だけ: ΔY_react = (Y_new − line(ξ_new)) − (Y_old − line(ξ_old))。
+    // 混合線に沿った組成変化 (coflow の H2O が ξ と共に増減する分) は混合であって反応ではないので熱にしない
+    // (これを含めると混合線上を動くだけで H2O の生成エンタルピー分の偽発熱が出た: run_0088 リップ +300 K)。
+    double Yn[THERMO_MAX_SPECIES]; double bo = 0.0, bn = 0.0;
+    for (int s = 0; s < ns; ++s) { Yc[s] /= ycs; Yn[s] = Yc[s] + a * (Yp[s] / yps - Yc[s]); bo += g_bilger.c[s] * Yc[s]; bn += g_bilger.c[s] * Yn[s]; }
+    const double xo = fmin(fmax((bo - g_bilger.betaO) / (g_bilger.betaF - g_bilger.betaO), 0.0), 1.0);
+    const double xn = fmin(fmax((bn - g_bilger.betaO) / (g_bilger.betaF - g_bilger.betaO), 0.0), 1.0);
     double dQ = 0.0;   // [J/m3]
     for (int s = 0; s < ns; ++s) {
-        const double yn = Yc[s] / ycs + a * (Yp[s] / yps - Yc[s] / ycs);
-        const double dY = yn - Yc[s] / ycs;
-        dQ -= (sp[s].h_datum / sp[s].MW) * rho * dY;
-        roY_dev[s][ic] = (flow_float)(rho * yn);
+        const double lo = xo * g_cmc.YF[s] + (1.0 - xo) * g_cmc.YO[s], ln = xn * g_cmc.YF[s] + (1.0 - xn) * g_cmc.YO[s];
+        const double dYr = (Yn[s] - ln) - (Yc[s] - lo);
+        dQ -= (sp[s].h_datum / sp[s].MW) * rho * dYr;
+        roY_dev[s][ic] = (flow_float)(rho * Yn[s]);
     }
     roe[ic] += (flow_float)dQ;
     const double dt = fmax((double)dt_local[ic], 1.0e-12);
@@ -619,6 +634,22 @@ ScalarTransportDesc sliceDesc(int s, const solverConfig& cfg)
 }
 
 } // namespace
+
+// デバッグプローブ: 環境変数 CMC_PROBE_NODE=<node index> [CMC_PROBE_EVERY=<steps>] で、その node の Q(η) を stdout に出す
+static void cmcProbe(const char* tag)
+{
+    static int node = -2, every = 10, count = 0;
+    if (node == -2) { const char* e = std::getenv("CMC_PROBE_NODE"); node = e ? std::atoi(e) : -1; const char* v = std::getenv("CMC_PROBE_EVERY"); if (v) every = std::atoi(v); }
+    if (node < 0) return;
+    if ((count++ % every) != 0) return;
+    const int ns = g_cmc_host.nSpecies, ne = g_cmc_host.nEta;
+    std::vector<flow_float> q((size_t)g_nSlice);
+    for (int sl = 0; sl < g_nSlice; ++sl) gpuErrchk( cudaMemcpy(&q[sl], g_Q + (size_t)sl * g_nCellsAll + node, sizeof(flow_float), cudaMemcpyDeviceToHost) );
+    std::printf("[cmc probe %s node %d] k eta Y_H2 Y_O2 Y_H2O Y_N2 h\n", tag, node);
+    for (int k = 0; k < ne; k += 5) {
+        std::printf("   %2d %.4f %.5f %.5f %.5f %.5f %.1f\n", k, g_cmc_host.eta[k], q[(size_t)(0*ne+k)], q[(size_t)(1*ne+k)], q[(size_t)(5*ne+k)], q[(size_t)(8*ne+k)], q[(size_t)(ns*ne+k)]);
+    }
+}
 
 bool cmc_coupling_active() { return g_q_ready && g_cmc_host.couple != 0; }
 int  cmc_coupling_mode()   { return g_q_ready ? g_cmc_host.couple : 0; }
@@ -688,6 +719,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
 
     cmc_q_init_d<<<cuda_cfg.dimGrid_cell, cuda_cfg.dimBlock>>>(msh.nCells_all, var.c_d.at("ro"), g_Q, g_roQ);
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    cmcProbe("after-init-kernel");
     // PDF 積分値 (Ỹ_pdf, h̃_pdf, τ) を初期場で一度埋める (化学は走らせない)。これを怠ると初回の残差組み立てで
     // couple 2 の緩和ソースが Ỹ_pdf=0 に向かって全種を剥ぎ取り step 2 で NaN になる (run_0083 初版)。
     cmc_step_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
@@ -695,9 +727,10 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
         var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
         var.c_d.at("dt_local"), species_roY_device_ptr(),
         g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
-        g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 0);
+        g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 0, var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"));
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
     g_q_ready = true; g_cmcStep = 0;
+    cmcProbe("init");
     std::printf("cmcQInit_d: nEta=%d nSlice=%d (%.1f MB x6), hF=%.4g hO=%.4g J/kg, couple=%d chem=%d\n",
                 ne, g_nSlice, bytes / 1.0e6, c.hF, c.hO, c.couple, c.chemOn);
 }
@@ -708,6 +741,7 @@ void cmcQTransport_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh,
     const size_t bytes = (size_t)g_nSlice * g_nCellsAll * sizeof(flow_float);
     CHECK_CUDA_ERROR(cudaMemset(g_resQ, 0, bytes)); CHECK_CUDA_ERROR(cudaMemset(g_diagQ, 0, bytes)); CHECK_CUDA_ERROR(cudaMemset(g_sjQ, 0, bytes));
     for (int s = 0; s < g_nSlice; ++s) scalarTransportResidual_d(cfg, cuda_cfg, msh, var, sliceDesc(s, cfg));
+    cmcProbe("after-residual");
     { const size_t n = (size_t)g_nCells * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_nonconservative_fix_d<<<grid, blk>>>(g_nCells, g_nSlice, g_nCellsAll, var.c_d.at("res_ro"), g_Q, g_resQ); }
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
@@ -726,11 +760,13 @@ void applyCmcQBoundaries(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, var
                                          var.c_d.at("ro"), g_Q, g_roQ);
     }
     gpuErrchk( cudaPeekAtLastError() ); gpuErrchkKernelSync();
+    cmcProbe("after-boundary");
 }
 
 void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& var)
 {
     if (!g_q_ready) return;
+    cmcProbe("before-transport");
     // (0) roQ を現在の ρ̄ で作り直す (ρ̄ は直前の流れ更新で変わっている)
     { const size_t n = (size_t)g_nCellsAll * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_resync_d<<<grid, blk>>>(g_nCellsAll, g_nSlice, var.c_d.at("ro"), g_Q, g_roQ); }
@@ -738,6 +774,7 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
     for (int s = 0; s < g_nSlice; ++s) scalarTimeIntegration_d(0, cfg, cuda_cfg, msh, var, sliceDesc(s, cfg));
     { const size_t n = (size_t)g_nCells * g_nSlice; const int blk = 256; const unsigned grid = (unsigned)((n + blk - 1) / blk);
       cmc_q_primitive_d<<<grid, blk>>>(g_nCells, g_nSlice, g_nCellsAll, var.c_d.at("ro"), g_roQ, g_Q); }
+    cmcProbe("after-transport");
     // (2) η 拡散 + 化学 + PDF 平均 (interval 毎)
     ++g_cmcStep;
     if (cfg.chemCmcInterval <= 1 || (g_cmcStep % cfg.chemCmcInterval) == 0) {
@@ -746,7 +783,7 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
             var.c_d.at("ro"), var.c_d.at("P"), var.c_d.at("xi"), var.c_d.at("xiVar"), var.c_d.at("chi"),
             var.c_d.at("dt_local"), species_roY_device_ptr(),
             g_Q, g_roQ, g_omega, g_qdot, g_jac, var.c_d.at("cmc_dY"), var.c_d.at("cmc_TQmax"),
-            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1);
+            g_ypdf, g_hpdf, g_tau, var.c_d.at("cmc_TQst"), 1, var.c_d.at("cmc_xiOm"), var.c_d.at("cmc_xipdf"));
         if (g_cmc_host.couple == 4) {
             cmc_blend_species_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, var.c_d.at("ro"), species_roY_device_ptr(), var.c_d.at("roe"),
