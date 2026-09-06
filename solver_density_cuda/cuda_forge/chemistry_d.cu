@@ -225,7 +225,8 @@ __global__ void chemistry_source_d(
         if (chem_cq)  for (int k = 0; k < nSpecies; ++k) chem_cq[(size_t)ic*nSpecies + k] = 0.0;
         if (chem_diag) for (int k = 0; k < nSpecies; ++k) chem_diag[(size_t)ic*nSpecies + k] = 0.0;
     } else { chemQdot[ic] = 0.0; }
-    if (!(rho > 0.0) || !(Tc > 0.0) || Tc < Tfreeze) return;
+    if (!(rho > 0.0) || !(Tc > 0.0)) return;
+    if (Tc < Tfreeze && !(cmcMode == 7 && cmcYpdf)) return;   // couple 7 の緩和ソースは冷たい噴流コアにも要る (初期場の OH が凍結域に残る run_0107)
     if (Tc > Tmax) Tc = Tmax;
     if (Tc < 200.0) Tc = 200.0;
 
