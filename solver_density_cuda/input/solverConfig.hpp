@@ -389,6 +389,7 @@ public:
     double chemCmcRelax = 1.0;      // couple 2: 緩和時間 τ = relax × Δτ_local
     double chemCmcXiSt = 0.47;      // 診断 cmc_TQst の η (量論混合分率)
     double chemCmcAlpha = 0.05;     // couple 3: 平均 Y,h を PDF 積分状態へブレンドする割合 /step
+    double chemCmcDTgate = 100.0;   // couple 6: h_pdf−h_line(ξ_Ω) がこの温度差相当 (×1500 J/kg/K) で緩和ゲートが 1 になる [K]
     double chemCmcDTmax = 10.0;     // couple 4: 1 step あたりの発熱による温度上昇上限 [K] (残りは持ち越し)
     int chemCmcFp32 = 1;            // 1: 条件付き化学の速度定数・Jacobian を fp32 で評価 (chemistry_f32_d.cuh; 点陰解は double)。0: 全て double (参照用)
     std::string chemCmcRestartQ = "";  // 条件付き場 Q(η) の restart ファイル (run dir 相対, 例 ../run_0097/cmc_Q.bin)。空なら混合線から

@@ -220,7 +220,10 @@ chemistry: {enabled: 1, mechanismFile: "mech.yaml", jacobianMode: 2, ..., mixfra
   酸化剤流 (`oxidizerT`, `oxidizerX`) の Dirichlet。条件付きスカラー (n_s 種 + h) は物理空間で移流+乱流拡散、η 空間で AMC 拡散 (陰解)、
   各 η 点で化学 (点陰解; `chem: 0` で凍結)。`pdfFloor` 未満の β-PDF 重みの η 点は化学をスキップ。
 - `couple`: 0 受動 (診断のみ) / 1 PDF 平均ソース (不採用: 平均場が燃えない) / 2 緩和ソース (不採用: 差分拡散差を反応熱に換算して発散) /
-  **3 平均 Y,h を PDF 積分状態へ `alpha`/step でブレンド (推奨; 平均方程式の化学ソースは 0)**。
+  3 平均 Y,h を PDF 積分状態へ `alpha`/step でブレンド (不採用: リップで非物理) / 4 Y ブレンド + 条件付き反応熱を roe 直接加算 (不採用: 圧力暴走) /
+  **5 Y ブレンド + 条件付き反応熱 (`dTmax` K/step でキャップ, 残り持ち越し) を陰的化学ソース経路で注入 (安定; ただし平均 T が PDF 診断 T より −120〜−220 K 低い構造欠陥)** /
+  **6 Y ブレンド + 燃焼領域 (`dTgate`) だけ平均 h を h_pdf へ α 緩和 (couple 5 の欠陥対策, 検証中 run_0101)**。方式の経緯は methods/chemistry_cmc.md 理論 §5。
+- PDF 診断 T と平均 T の比較は `case/48.cabra_h2n2/cmc_pdf_mean.py run_dir cmc_Q.bin step`。
 - `fp32` (既定 1): 条件付き空間の速度定数・Jacobian・T 反転を float で評価 (`chemistry_f32_d.cuh`; 点陰解は double)。0 は全 double (参照用、~4 倍遅い)。
   平均場の化学は常に double。
 - 出力: `cmc_dY` (PDF 積分 Ỹ と輸送 Ỹ の最大差), `cmc_TQmax` (η 上の最高 T), `cmc_TQst` (η≈`xiSt` の T)。コスト: Cabra 60k node で

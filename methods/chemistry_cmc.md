@@ -76,7 +76,20 @@ $\tilde P(\eta)\to0$ の領域で方程式が退化する問題は、この形 (
 
 ### 5. 流れ側との結合
 
-**採用 (couple 2, 2026-09-05)**: 流れソルバは $\tilde Y_\alpha,\tilde h$ を輸送し続けるが、反応ソースは「PDF 積分状態への緩和」で与える:
+**現状 (2026-09-06)**: 生産候補は **couple 5** (Y ブレンド + 条件付き点陰解の反応熱を PDF 平均して陰的化学ソース経路へ; `run_0097`–`run_0100`) と、
+その構造欠陥を直す **couple 6** (検証中 `run_0101`)。判断の根拠は診断 `case/48.cabra_h2n2/cmc_pdf_mean.py` (Q(η) と β-PDF 重みから
+$T^{pdf}=\sum_k\Omega_k T(Q(\eta_k))$ を作り、輸送平均 $\tilde T$ と実験を並べる): `run_0099` (20000 step 相当) で **$T^{pdf}$ は実験と整合**
+(半径 z/d 11 で平均差 +5 K、軸 z/d 26 で 1328 K vs 実験 1410 K) なのに **輸送平均 $\tilde T$ は −120〜−220 K** 低い。
+つまり CMC (条件付き空間) の解は妥当で、欠けているのは平均場への熱の受け渡しである。
+
+- couple 5 の欠陥: 渡す熱は「その node の条件付き化学がその step で出した熱 $\sum_k\Omega_k q_k$」だけなので、上流の $\eta_{st}$ 付近で燃えて
+  $Q$ として下流に運ばれた熱は、下流 (そこでは $Q$ が既に燃え切っていて $q_k\approx0$) の平均場に届かない。
+- couple 6: 種は couple 5 と同じ α ブレンド、熱は $\tilde h\to\tilde h^{pdf}$ の緩和 $q=\alpha\,g\,(\tilde h^{pdf}-\tilde h)$ を同じ陰的経路
+  (dTmax キャップ + 持ち越し) で入れる。ゲート $g=\mathrm{clip}\big((\tilde h^{pdf}-h_{line}(\xi_\Omega))/(1500\,\Delta T_{gate}),0,1\big)$
+  ($\Delta T_{gate}$=`cmc.dTgate`, 既定 100 K) で燃焼領域だけに効かせ、未燃領域 (リップの壁伝熱・Le≠1 で $\tilde h$ が混合線から外れる場所)
+  は触らない (couple 3 の全域ブレンドがリップで非物理になった対策)。定常では燃焼領域で $\tilde T=T^{pdf}$ (文献 RANS-CMC の「平均スカラーは Q から診断」)。
+
+**旧記述 (couple 2, 2026-09-05; 不採用)**: 流れソルバは $\tilde Y_\alpha,\tilde h$ を輸送し続けるが、反応ソースは「PDF 積分状態への緩和」で与える:
 
 $$\bar{\dot\omega}_\alpha=\bar\rho\,\frac{\tilde Y^{pdf}_\alpha-\tilde Y_\alpha}{\tau},\qquad
 \bar{\dot Q}=\bar\rho\,\frac{\tilde h^{pdf}-\tilde h}{\tau},\qquad

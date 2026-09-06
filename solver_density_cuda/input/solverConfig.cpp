@@ -665,13 +665,14 @@ void solverConfig::read(std::string fname)
                 this->chemCmcXiSt     = getOptionalValidatedValue<double>(cm, "xiSt", 0.47, "physProp.chemistry.cmc");
                 this->chemCmcAlpha    = getOptionalValidatedValue<double>(cm, "alpha", 0.05, "physProp.chemistry.cmc");
                 this->chemCmcDTmax    = getOptionalValidatedValue<double>(cm, "dTmax", 10.0, "physProp.chemistry.cmc");
+                this->chemCmcDTgate   = getOptionalValidatedValue<double>(cm, "dTgate", 100.0, "physProp.chemistry.cmc");
                 this->chemCmcFp32     = getOptionalValidatedValue<int>(cm, "fp32", 1, "physProp.chemistry.cmc");
                 if (cm["restartQ"]) this->chemCmcRestartQ = cm["restartQ"].as<std::string>();
                 if (this->chemCmc) {
                     if (!this->chemMixfrac) throw std::runtime_error("'physProp.chemistry.cmc' requires 'physProp.chemistry.mixfrac'.");
                     if (this->chemCmcNEta < 5 || this->chemCmcNEta > 129) throw std::runtime_error("'physProp.chemistry.cmc.nEta' must be in [5,129].");
                     if (this->chemCmcCouple && !this->chemEnabled) throw std::runtime_error("'physProp.chemistry.cmc.couple' requires chemistry.enabled: 1.");
-                    if (this->chemCmcCouple < 0 || this->chemCmcCouple > 5) throw std::runtime_error("'physProp.chemistry.cmc.couple' must be 0 (passive), 1 (PDF-mean source), 2 (relaxation), 3 (blend Y,h), 4 (blend Y + conditional reaction heat added to roe), or 5 (same heat via the implicit chemistry source path).");
+                    if (this->chemCmcCouple < 0 || this->chemCmcCouple > 6) throw std::runtime_error("'physProp.chemistry.cmc.couple' must be 0 (passive), 1 (PDF-mean source), 2 (relaxation), 3 (blend Y,h), 4 (blend Y + conditional reaction heat added to roe), 5 (same heat via the implicit chemistry source path), or 6 (blend Y + relax mean h to h_pdf in the burning region via the implicit path).");
                     if (this->timeIntegration != 11) throw std::runtime_error("'physProp.chemistry.cmc' is implemented for timeIntegration 11 (implicit) only.");
                     std::cout << "[chemistry] CMC ON: nEta=" << this->chemCmcNEta << " couple=" << this->chemCmcCouple << " chem=" << this->chemCmcChem
                               << " fuelT=" << this->chemCmcTfuel << " oxidizerT=" << this->chemCmcTox << std::endl;

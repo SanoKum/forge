@@ -238,7 +238,7 @@ __global__ void chemistry_source_d(
     int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
     if (frozenJac && mode > 0) {
         // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
-        if (cmcMode == 5 && cmcQcap) { for (int s = 0; s < nSpecies; ++s) omega[s] = 0.0; Qdot = (double)cmcQcap[ic] / fmax((double)dt_local[ic], 1.0e-12); }
+        if (cmcMode >= 5 && cmcQcap) { for (int s = 0; s < nSpecies; ++s) omega[s] = 0.0; Qdot = (double)cmcQcap[ic] / fmax((double)dt_local[ic], 1.0e-12); }
         else if (cmcMode == 2 && cmcYpdf) {
             const double tau = fmax((double)cmcTau[ic], 1.0e-12); Qdot = 0.0;
             for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; Qdot -= (sp[s].h_datum / sp[s].MW) * omega[s]; }
@@ -254,7 +254,7 @@ __global__ void chemistry_source_d(
         chemQdot[ic] = (flow_float)(kappa * Qdot);
         return;
     }
-    if (cmcMode == 5 && cmcQcap) {
+    if (cmcMode >= 5 && cmcQcap) {
         // couple 5: 組成は CMC 側でブレンド済み (ソース 0)。発熱だけを陰的経路の Q̇ として入れる (DPLUR の線形化系の中で圧力応答が処理される)。
         for (int s = 0; s < nSpecies; ++s) { omega[s] = 0.0; dOdT[s] = 0.0; }
         for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = 0.0;

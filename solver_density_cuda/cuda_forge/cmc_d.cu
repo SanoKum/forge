@@ -303,7 +303,7 @@ namespace {
 
 struct CmcParams {
     int nEta, nSpecies, chemOn, couple, kSt;
-    double pdfFloor, Tmax, Tfreeze, dtScale, relax, alpha, dTmax;
+    double pdfFloor, Tmax, Tfreeze, dtScale, relax, alpha, dTmax, dTgate;
     double eta[CMC_MAX_ETA];       // η 格子
     double w[CMC_MAX_ETA];         // 台形重み (Σ=1)
     double G[CMC_MAX_ETA];         // AMC 形状 exp(-2 erfinv(2η-1)^2) (端は 0)
@@ -880,7 +880,9 @@ __global__ void cmc_overwrite_mean_d(geom_int nCells, const SpeciesThermo* sp, c
 //   リップで数百 K の非物理な冷却を作って発散した: run_0087)。平均エネルギー式が伝導・境界を担い、CMC は反応進行だけを渡す。
 __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, const flow_float* ypdf, const flow_float* ro,
                                     flow_float* const* roY_dev, flow_float* roe, flow_float* chemQdot, const flow_float* dt_local,
-                                    const flow_float* dpdf, flow_float* dpdf_prev, const flow_float* qrel, flow_float* qdebt, flow_float* qcap, int viaResidual)
+                                    const flow_float* dpdf, flow_float* dpdf_prev, const flow_float* qrel, flow_float* qdebt, flow_float* qcap, int viaResidual,
+                                    int mode, const flow_float* hpdf, const flow_float* xiOm, const flow_float* roUx, const flow_float* roUy, const flow_float* roUz,
+                                    const flow_float* P)
 {
     // couple 4: 組成を PDF 積分状態へ α ブレンド (熱を伴わない組成の同期)。反応熱は PDF 積分した反応離脱量
     //   D_pdf,s = Ỹ_pdf,s − line_s(ξ_Ω) の**時間変化**にだけ対応させる: ΔQ = −Σ c_s ρ (D_pdf − D_pdf,prev)。
@@ -905,7 +907,20 @@ __global__ void cmc_blend_species_d(geom_int nCells, const SpeciesThermo* sp, co
     // 1 step の発熱を ΔT ≤ dTmax に制限し、残りは持ち越す (総発熱は保存)。擬似時間では条件付き化学が数百 step で燃え切り、
     // 流れが音響的に追従できない速さで熱が入って圧力が暴れる (run_0094: P 186 kPa → NaN) のを防ぐ。
     const double cvEst = 1000.0;   // [J/kg/K] 目安 (上限の判定にだけ使う)
-    double dQtot = rho * (double)qrel[ic] + (double)qdebt[ic];   // [J/m3]
+    double qsrc = (double)qrel[ic];   // couple 4/5: 条件付き点陰解の反応熱の PDF 平均 [J/kg]
+    if (mode == 6) {
+        // couple 6: 平均 h̃ を PDF 積分 h̃_pdf へ α ブレンド (文献 RANS-CMC の「平均スカラーは Q から診断」に相当)。ただし燃焼領域だけに
+        //   ゲート g = clip((h_pdf − h_line(ξ_Ω)) / (1500·dTgate), 0, 1) を掛け、未燃領域 (リップの壁伝熱・Le≠1 で h̃ が混合線から
+        //   ずれる場所) は触らない。couple 5 の欠陥 = 熱は「条件付き化学が進んだ node の PDF 重み」でしか渡らず、上流の η_st で燃えて
+        //   下流へ運ばれた Q の熱が平均場に届かない (run_0099: PDF 診断 T は実験と一致、平均 T は −120〜−220 K)。
+        const double hp = (double)hpdf[ic], xo = fmin(fmax((double)xiOm[ic], 0.0), 1.0);
+        const double hline = xo * g_cmc.hF + (1.0 - xo) * g_cmc.hO;
+        const double g = fmin(fmax((hp - hline) / (1500.0 * g_cmc.dTgate), 0.0), 1.0);
+        const double ux = (double)roUx[ic] / rho, uy = (double)roUy[ic] / rho, uz = (double)roUz[ic] / rho;
+        const double hmean = (double)roe[ic] / rho - 0.5 * (ux * ux + uy * uy + uz * uz) + (double)P[ic] / rho;   // 顕エンタルピー [J/kg]
+        qsrc = a * g * (hp - hmean);
+    }
+    double dQtot = rho * qsrc + (double)qdebt[ic];   // [J/m3]
     const double cap = rho * cvEst * g_cmc.dTmax;
     double dQ = dQtot;
     if (dQ >  cap) dQ =  cap;
@@ -1069,7 +1084,7 @@ void cmcQInit_d(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, variables& v
     std::memset(&c, 0, sizeof(CmcParams));
     c.nEta = ne; c.nSpecies = ns; c.chemOn = cfg.chemCmcChem; c.couple = cfg.chemCmcCouple;
     c.pdfFloor = cfg.chemCmcPdfFloor; c.Tmax = cfg.chemTmaxReaction; c.Tfreeze = cfg.chemFreezeBelowT; c.dtScale = cfg.chemCmcDtScale;
-    c.relax = cfg.chemCmcRelax; c.alpha = cfg.chemCmcAlpha; c.dTmax = cfg.chemCmcDTmax;
+    c.relax = cfg.chemCmcRelax; c.alpha = cfg.chemCmcAlpha; c.dTmax = cfg.chemCmcDTmax; c.dTgate = cfg.chemCmcDTgate;
     for (int k = 0; k < ne; ++k) { const double s = (double)k / (double)(ne - 1); c.eta[k] = std::pow(s, cfg.chemCmcEtaPow); }
     c.eta[0] = 0.0; c.eta[ne - 1] = 1.0;
     { int kb = 0; double db = 1.0; for (int k = 0; k < ne; ++k) { const double dd = std::fabs(c.eta[k] - cfg.chemCmcXiSt); if (dd < db) { db = dd; kb = k; } } c.kSt = kb; }
@@ -1214,11 +1229,12 @@ void cmcQUpdate_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& msh, va
     if (cfg.chemCmcInterval <= 1 || (g_cmcStep % cfg.chemCmcInterval) == 0) {
         cmcStepLaunch(cuda_cfg, var, 1);
         g_timerU.mark(4);
-        if (g_cmc_host.couple == 4 || g_cmc_host.couple == 5) {
+        if (g_cmc_host.couple >= 4) {
             cmc_blend_species_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(
                 g_nCells, thermo_species_device_ptr(), g_ypdf, var.c_d.at("ro"), species_roY_device_ptr(), var.c_d.at("roe"),
                 var.c_d.at("chemQdot"), var.c_d.at("dt_local"), g_dpdf, g_dpdf_prev, g_qrel, g_qdebt, g_qcap,
-                (g_cmc_host.couple == 5) ? 1 : 0);
+                (g_cmc_host.couple >= 5) ? 1 : 0, g_cmc_host.couple, g_hpdf, var.c_d.at("cmc_xiOm"),
+                var.c_d.at("roUx"), var.c_d.at("roUy"), var.c_d.at("roUz"), var.c_d.at("P"));
         }
         if (g_cmc_host.couple == 3) {
             cmc_overwrite_mean_d<<<cuda_cfg.dimGrid_normalcell, cuda_cfg.dimBlock>>>(

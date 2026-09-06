@@ -176,4 +176,12 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   (`thrust::copy_if`) → T 反転のウォームスタート → **fp32 化学 `chemistry_f32_d.cuh` (`cmc.fp32: 1` 既定; 点陰解は double)** → η 拡散 float +
   時間積分の一括化。各段階で 40 step A/B (run_tmp_prof_* , 削除済) が double 参照と相対 1e-6〜1e-5 で一致 (OH の 4e-4 は Y~1e-13 のノイズ)。
   couple 1/2 の ω̄/J̄ 集計は double atomicAdd (順序非決定) だが生産の couple 5 は使わない。長期 run_0098 は旧バイナリで続行中。
+- `2026-09-06 (13)` — **長期 run と結合方式の再判断**: `run_0098` (couple 5, double, 20000 step) と `run_0099` (同 step 4000 から fp32 で継続,
+  Q restart 初使用) は同一 step で全量 ~1 K 一致 → **fp32 化学と `cmc.restartQ` を長期で検証**。結果: 火炎基部 (Y_OH>2e-4) は x/d 7.8〜14.5 を
+  coflow 柱モード (出口 ṁ ±97 %) と共に往復 (`check_quasisteady` DRIFTING)、平均 T_max ~1150 K、軸 z/d 26 は 1075 K (実験 1410)。
+  新診断 `cmc_pdf_mean.py` で **PDF 積分の条件付き T は実験と整合** (z/d 9/11/14 の半径分布はほぼ重なる、軸 z/d 26 1328 K) と判明し、
+  平均場の不足は couple 5 の構造欠陥 (熱は燃えた node の PDF 重みでしか渡らず、上流で燃えて運ばれた Q の熱が届かない) と特定。
+  → **couple 6** (Y ブレンド + 燃焼領域ゲート付き h̃→h̃_pdf 緩和を陰的経路で; `cmc.dTgate`) を実装、`run_0101` (run_0099 の 16000 step 状態から
+  8000 step) で couple 5 継続 `run_0100` と A/B 中。setup の `--cmcq` 文字列の波括弧バグ (yaml "illegal flow end") で両 run が一度起動失敗
+  → 修正済 (dry run は `yaml.safe_load` で検証すること)。
 

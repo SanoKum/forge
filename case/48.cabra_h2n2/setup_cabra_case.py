@@ -34,7 +34,7 @@ farfield:     {{physID: 5, kind: {a.far}, outputHDFflg: 0, ints: , floats: {f"{{
 axis:         {{physID: 6, kind: {"slip" if a.planar else "axis"}, outputHDFflg: 0, ints: , floats: }}
 """)
 mixfrac = f", mixfrac: {{enabled: 1, cChi: {a.cchi}, fuelX: {{H2: 0.25, N2: 0.75}}, oxidizerX: {{O2: 0.1474, H2O: 0.0989, N2: 0.7537}}}}" if a.mixfrac else ""
-cmc = f", cmc: {{enabled: 1, nEta: {a.neta}, couple: {a.couple}, chem: {a.cmcchem}, fuelT: 305.0, oxidizerT: {TC}, pdfFloor: 1.0e-6, dtScale: {a.cmcdt}, fp32: {a.cmcfp32}{(", restartQ: " + a.cmcq) if a.cmcq else ""}}}}}" if a.cmc else ""
+cmc = f", cmc: {{enabled: 1, nEta: {a.neta}, couple: {a.couple}, chem: {a.cmcchem}, fuelT: 305.0, oxidizerT: {TC}, pdfFloor: 1.0e-6, dtScale: {a.cmcdt}, fp32: {a.cmcfp32}{(", restartQ: " + a.cmcq) if a.cmcq else ""}}}" if a.cmc else ""
 chem = "" if a.single else f"chemistry: {{enabled: {a.chem}, mechanismFile: \"mech.yaml\", jacobianMode: {a.jac}, jacobianInterval: {a.ji}, tci: {a.tci}, tciCmix: {a.cmix}, tciTauChem: 1{mixfrac}{cmc}}}"
 if a.single: chem = ""
 value = a.restart if a.restart else "cabra.h5"
