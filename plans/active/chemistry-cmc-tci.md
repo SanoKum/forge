@@ -192,4 +192,12 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   擬似時間リミットサイクル (親 plan の「定常 vs dual-time は近傍場で ≤20 K」) は**下流の混合・巻き込みを壊す**ので、CMC 検証と T_c スイープは
   dual-time で行う。ξ_pdf と ξ の偏り (ブレンドによる ξ の漏れ) は <0.003 で無罪。setup に `--dualtime <dt>` を追加、`run_0102` (couple 6,
   dt 1e-5 s, 4000 step) を run_0101 の状態から投入。`run_0100` (couple 5 継続) は step 10000 で中断 (不要)。
+- `2026-09-06 (15)` — **dual-time で couple 6 は不可 → couple 7 を実装**: `run_0102` (couple 6, dual-time, run_0101 の状態から) は 10 ms で
+  条件付き場が消炎・平均 ξ が z/d 5 以降で 0 に崩落・ξ=0 の coflow が 770 K に過冷却。切り分け: 純混合 dual-time (`run_0103/0104`, sdm 0/1 はビット同一)
+  と CMC 受動 (`run_0105`, couple 0) は ξ フラックス保存 (1.51〜1.60 g/s) で無罪 → 原因は結合。`run_0106` (couple 6, run_0077 の燃焼場から) で
+  質量流量が 172〜233 g/s (真値 37)・出口逆流 −63 g/s・P 97〜110 kPa: **擬似反復ごとの α ブレンド (10 K/反復 × 5 反復/物理 step) は
+  物理時間で 5e6 K/s の加熱/冷却になり音響過渡で流れを壊す** (定常反復は音響を解かないので無害だった)。couple 6 の熱持ち越し qdebt も
+  目標到達後の過冷却を生むので廃止。→ **couple 7**: 物理緩和時間 τ_c (`cmc.tauRelax` 1e-4 s) の通常ソース ω_s=ρ(Ỹ_pdf−Y)/τ_c,
+  Q̇=ρ g (h_pdf−h)/τ_c (Jacobian 対角 −1/τ_c, ∂Q̇/∂ρe=−g c_p/(c_v τ_c)) を `chemistry_source_d` の通常経路に追加 (ゲート g は cmc 側で配列化)。
+  `run_0107` (run_0077 から 2000 step = 20 ms) で ξ フラックス保存と着火/火炎基部を確認中。
 

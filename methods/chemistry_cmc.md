@@ -89,6 +89,17 @@ $T^{pdf}=\sum_k\Omega_k T(Q(\eta_k))$ を作り、輸送平均 $\tilde T$ と実
   ($\Delta T_{gate}$=`cmc.dTgate`, 既定 100 K) で燃焼領域だけに効かせ、未燃領域 (リップの壁伝熱・Le≠1 で $\tilde h$ が混合線から外れる場所)
   は触らない (couple 3 の全域ブレンドがリップで非物理になった対策)。定常では燃焼領域で $\tilde T=T^{pdf}$ (文献 RANS-CMC の「平均スカラーは Q から診断」)。
 
+- **couple 7 (dual-time 用, 2026-09-06)**: couple 5/6 の「擬似反復ごとの α ブレンド + dTmax キャップ」は定常反復では無害だが、dual-time では
+  物理時間で $5\times10^6$ K/s 級の加熱・冷却になり音響過渡 (P ±5 %, 出口逆流, 質量流量 5 倍) で流れを壊す (`run_0102`, `run_0106`)。
+  そこで物理緩和時間 $\tau_c$ (`cmc.tauRelax`, 既定 $10^{-4}$ s) を持つ通常のソース項にする:
+  $$\bar{\dot\omega}_\alpha=\bar\rho\,\frac{\tilde Y^{pdf}_\alpha-\tilde Y_\alpha}{\tau_c},\qquad
+  \bar{\dot Q}=\bar\rho\,g\,\frac{\tilde h^{pdf}-\tilde h}{\tau_c},\qquad
+  \frac{\partial\bar{\dot\omega}_\alpha}{\partial(\rho Y_k)}=-\frac{\delta_{\alpha k}}{\tau_c},\quad
+  \frac{\partial\bar{\dot Q}}{\partial(\rho e)}=-\frac{g\,c_p}{c_v\,\tau_c}$$
+  ($g$ は couple 6 と同じ燃焼領域ゲート)。$\tau_c\gg\Delta\tau,\Delta t$ なので非剛性で、`chemistry_source_d` の通常経路 (種ブロック点陰解 + 案C 予測子)
+  に乗る。couple 2 との違いは (i) 熱を組成変化から換算せず $h$ の緩和で与える (差分拡散の偽発熱が無い)、(ii) $\tau$ が局所 $\Delta\tau$ でなく
+  物理時間 (couple 2 の step 2 NaN は $\tau=\Delta\tau$ の剛性)。検証 `run_0107`。
+
 **旧記述 (couple 2, 2026-09-05; 不採用)**: 流れソルバは $\tilde Y_\alpha,\tilde h$ を輸送し続けるが、反応ソースは「PDF 積分状態への緩和」で与える:
 
 $$\bar{\dot\omega}_\alpha=\bar\rho\,\frac{\tilde Y^{pdf}_\alpha-\tilde Y_\alpha}{\tau},\qquad

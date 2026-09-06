@@ -210,7 +210,8 @@ __global__ void chemistry_source_d(
     int frozenJac, flow_float* chem_diag,                     // frozenJac==1: Jacobian を再評価せず前回の対角 (chem_diag) を src_jac に足す
     const flow_float* cmcOmega, const flow_float* cmcQdot, const flow_float* cmcJac,   // CMC 結合 1 (非 null): PDF 平均 ω̄/Q̇̄/J̄ で置換
     int cmcMode, const flow_float* cmcYpdf, const flow_float* cmcHpdf, const flow_float* cmcTau,   // CMC 結合 2: PDF 積分状態へ緩和
-    const flow_float* cmcQcap, const flow_float* dt_local)   // CMC 結合 5: リミッタ後の発熱 [J/m3] を Q̇ = qcap/Δτ として res_roe へ
+    const flow_float* cmcQcap, const flow_float* dt_local,   // CMC 結合 5: リミッタ後の発熱 [J/m3] を Q̇ = qcap/Δτ として res_roe へ
+    const flow_float* cmcGate, double cmcTauRelax)           // CMC 結合 7: 物理緩和時間 τ_c のソース ω_s=ρ(Ỹ_pdf−Y)/τ_c, Q̇=ρ g (h̃_pdf−h̃)/τ_c
 {
     const geom_int ic = blockDim.x * blockIdx.x + threadIdx.x;
     if (ic >= nCells) return;
@@ -238,7 +239,12 @@ __global__ void chemistry_source_d(
     int mode = (jacMode >= 2 && chem_jac != nullptr) ? 2 : (jacMode >= 1 ? 1 : 0);
     if (frozenJac && mode > 0) {
         // 凍結ステップ: ω・Q̇ だけ評価 (Jacobian 配列は前回値のまま)。κ (PaSR) も前回値を流用。
-        if (cmcMode >= 5 && cmcQcap) { for (int s = 0; s < nSpecies; ++s) omega[s] = 0.0; Qdot = (double)cmcQcap[ic] / fmax((double)dt_local[ic], 1.0e-12); }
+        if (cmcMode == 7 && cmcYpdf) {
+            const double tau = fmax(cmcTauRelax, 1.0e-12); const double g = (double)cmcGate[ic];
+            for (int s = 0; s < nSpecies; ++s) omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau;
+            Qdot = rho * g * ((double)cmcHpdf[ic] - thermo_h_mix(sp, nSpecies, Y, (double)T[ic])) / tau;
+        }
+        else if (cmcMode >= 5 && cmcQcap) { for (int s = 0; s < nSpecies; ++s) omega[s] = 0.0; Qdot = (double)cmcQcap[ic] / fmax((double)dt_local[ic], 1.0e-12); }
         else if (cmcMode == 2 && cmcYpdf) {
             const double tau = fmax((double)cmcTau[ic], 1.0e-12); Qdot = 0.0;
             for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; Qdot -= (sp[s].h_datum / sp[s].MW) * omega[s]; }
@@ -254,7 +260,19 @@ __global__ void chemistry_source_d(
         chemQdot[ic] = (flow_float)(kappa * Qdot);
         return;
     }
-    if (cmcMode >= 5 && cmcQcap) {
+    double dQde7 = 0.0;   // couple 7 の ∂Q̇/∂(ρe) (負、安定化側)
+    if (cmcMode == 7 && cmcYpdf) {
+        // couple 7 (methods/chemistry_cmc.md 理論 §5): 物理時間の緩和ソース。擬似反復ごとの α ブレンド (couple 5/6) は dual-time では
+        //   5e6 K/s 級の加熱/冷却になり音響過渡で流れを壊す (run_0102/0106)。τ_c (cmc.tauRelax, 既定 1e-4 s) は Δτ, Δt より長く非剛性。
+        //   Σω_s = 0 (質量保存)、熱は燃焼領域ゲート g で未燃域 (壁伝熱・Le≠1) を除外。
+        const double tau = fmax(cmcTauRelax, 1.0e-12); const double g = (double)cmcGate[ic];
+        const double Traw = (double)T[ic];
+        for (int s = 0; s < nSpecies; ++s) { omega[s] = rho * ((double)cmcYpdf[(size_t)s*nCells + ic] - Y[s]) / tau; dOdT[s] = 0.0; }
+        Qdot = rho * g * ((double)cmcHpdf[ic] - thermo_h_mix(sp, nSpecies, Y, Traw)) / tau;
+        for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = 0.0;
+        if (mode > 0) for (int s = 0; s < nSpecies; ++s) J[s*nSpecies + s] = -1.0 / tau;
+        { const double cp = thermo_cp_mix(sp, nSpecies, Y, Traw), cv = fmax(cp - thermo_R_mix(sp, nSpecies, Y), 1.0e-3); dQde7 = -g * cp / (cv * tau); }   // ∂Q̇/∂(ρe) = −ρ g (∂h/∂T)/(τ ρ c_v)
+    } else if (cmcMode >= 5 && cmcQcap) {
         // couple 5: 組成は CMC 側でブレンド済み (ソース 0)。発熱だけを陰的経路の Q̇ として入れる (DPLUR の線形化系の中で圧力応答が処理される)。
         for (int s = 0; s < nSpecies; ++s) { omega[s] = 0.0; dOdT[s] = 0.0; }
         for (int i = 0; i < nSpecies*nSpecies; ++i) J[i] = 0.0;
@@ -357,7 +375,7 @@ __global__ void chemistry_source_d(
         // ∂Q̇/∂(ρe) = −Σ_s c_s ∂ω_s/∂T /(ρ c_v)。安定化側 (負) のみ対角へ (Patankar)。
         double dQdT = 0.0;
         for (int s = 0; s < nSpecies; ++s) dQdT -= (sp[s].h_datum / sp[s].MW) * dOdT[s];
-        const double dQde = dQdT * inv_rhocv;
+        const double dQde = dQdT * inv_rhocv + dQde7;
         chem_jacroe[ic] = (flow_float)((dQde < 0.0) ? -dQde : 0.0);
     }
 }
@@ -417,7 +435,8 @@ void chemistrySource_d_wrapper(solverConfig& cfg, cudaConfig& cuda_cfg, mesh& ms
         cmc_coupling_active() ? cmc_jac_device_ptr() : nullptr,
         cmc_coupling_mode(), cmc_coupling_active() ? cmc_ypdf_device_ptr() : nullptr, cmc_coupling_active() ? cmc_hpdf_device_ptr() : nullptr,
         cmc_coupling_active() ? cmc_tau_device_ptr() : nullptr,
-        cmc_coupling_active() ? cmc_qcap_device_ptr() : nullptr, var.c_d["dt_local"]);
+        cmc_coupling_active() ? cmc_qcap_device_ptr() : nullptr, var.c_d["dt_local"],
+        cmc_coupling_active() ? cmc_gate_device_ptr() : nullptr, cfg.chemCmcTauRelax);
     ++g_stepCounter;
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchkKernelSync();

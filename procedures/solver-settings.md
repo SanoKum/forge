@@ -222,7 +222,9 @@ chemistry: {enabled: 1, mechanismFile: "mech.yaml", jacobianMode: 2, ..., mixfra
 - `couple`: 0 受動 (診断のみ) / 1 PDF 平均ソース (不採用: 平均場が燃えない) / 2 緩和ソース (不採用: 差分拡散差を反応熱に換算して発散) /
   3 平均 Y,h を PDF 積分状態へ `alpha`/step でブレンド (不採用: リップで非物理) / 4 Y ブレンド + 条件付き反応熱を roe 直接加算 (不採用: 圧力暴走) /
   **5 Y ブレンド + 条件付き反応熱 (`dTmax` K/step でキャップ, 残り持ち越し) を陰的化学ソース経路で注入 (安定; ただし平均 T が PDF 診断 T より −120〜−220 K 低い構造欠陥)** /
-  **6 Y ブレンド + 燃焼領域 (`dTgate`) だけ平均 h を h_pdf へ α 緩和 (couple 5 の欠陥対策, 検証中 run_0101)**。方式の経緯は methods/chemistry_cmc.md 理論 §5。
+  **6 Y ブレンド + 燃焼領域 (`dTgate`) だけ平均 h を h_pdf へ α 緩和 (定常反復では成功 run_0101; dual-time では音響過渡で不可)** /
+  **7 物理緩和時間 `tauRelax` [s] (既定 1e-4) のソース ω_s=ρ(Ỹ_pdf−Y)/τ_c, Q̇=ρ g (h_pdf−h)/τ_c (dual-time 用, 検証中 run_0107)**。方式の経緯は methods/chemistry_cmc.md 理論 §5。
+- **Cabra 級の低マッハ開放噴流は dual-time (`--dualtime 1e-5`) で回す** (定常反復は柱モードで ξ フラックスが非保存になり下流が壊れる, `case/48.cabra_h2n2/xi_flux_check.py`)。
 - PDF 診断 T と平均 T の比較は `case/48.cabra_h2n2/cmc_pdf_mean.py run_dir cmc_Q.bin step`。
 - `fp32` (既定 1): 条件付き空間の速度定数・Jacobian・T 反転を float で評価 (`chemistry_f32_d.cuh`; 点陰解は double)。0 は全 double (参照用、~4 倍遅い)。
   平均場の化学は常に double。
