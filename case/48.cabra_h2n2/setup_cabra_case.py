@@ -48,7 +48,6 @@ physProp: {{isCompressible: 1, thermalMethod: 2, viscMethod: 2, ro: 0.32, visc: 
 time:
   unsteady: {1 if a.dualtime > 0 else 0}
   dualTime: {1 if a.dualtime > 0 else 0}
-  dualTime: 0
   last: {{control: 0, nStepOuter: {a.nstep}}}
   deltaT: {{control: {0 if a.dualtime > 0 else 1}, dt: {a.dualtime if a.dualtime > 0 else 1e-7}, cfl: 1.0, cfl_pseudo: {a.cfl}, dt_min: 1e-10, dt_max: 0.01, blockDPLUR: 1, implicitRelax: {a.relax}, lowMachPrecond: {a.precond}, precondEps: {a.eps}, detectNaN: 1, speciesImplicitCoupling: {a.coupling}}}
   outStepStart: 0
