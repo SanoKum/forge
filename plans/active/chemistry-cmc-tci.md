@@ -184,4 +184,12 @@ laminar chemistry (セル平均で Arrhenius を評価) では自着火安定化
   → **couple 6** (Y ブレンド + 燃焼領域ゲート付き h̃→h̃_pdf 緩和を陰的経路で; `cmc.dTgate`) を実装、`run_0101` (run_0099 の 16000 step 状態から
   8000 step) で couple 5 継続 `run_0100` と A/B 中。setup の `--cmcq` 文字列の波括弧バグ (yaml "illegal flow end") で両 run が一度起動失敗
   → 修正済 (dry run は `yaml.safe_load` で検証すること)。
+- `2026-09-06 (14)` — **couple 6 成功 + 定常反復の柱モードは無害でないと判明**: `run_0101` (couple 6, 8000 step) で平均 T が PDF 診断 T に数 K で一致し
+  (z/d 9/11/14 の半径分布は実験とほぼ重なる、火炎基部 x/d 9.4〜10.9 vs 実験 ≈10)、**couple 6 を採用**。一方、軸 ξ が z/d 20→30 で 0.51→0.02 に
+  崩落し z/d ≥ 26 で T が実験より −220 K。原因調査 (`xi_flux_check.py`, 全 H/O 元素の Bilger ξ の断面フラックス ∫ρuξdA): 定常反復の run
+  (`run_0067` 混合, `run_0099`, `run_0101`) では **ξ フラックスが z/d 5 で +60 %・z/d 30 で −70 %、全質量流量も +30〜45 %** と保存されず、
+  dual-time の `run_0077/0079` では ±8 % で保存され軸 ξ も実験に近い (z/d 20: 0.57 vs 0.62, z/d 30: 0.32 vs 0.41)。すなわち coflow 柱の
+  擬似時間リミットサイクル (親 plan の「定常 vs dual-time は近傍場で ≤20 K」) は**下流の混合・巻き込みを壊す**ので、CMC 検証と T_c スイープは
+  dual-time で行う。ξ_pdf と ξ の偏り (ブレンドによる ξ の漏れ) は <0.003 で無罪。setup に `--dualtime <dt>` を追加、`run_0102` (couple 6,
+  dt 1e-5 s, 4000 step) を run_0101 の状態から投入。`run_0100` (couple 5 継続) は step 10000 で中断 (不要)。
 

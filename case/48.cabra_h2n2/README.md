@@ -63,8 +63,9 @@ Cabra et al. (UC Berkeley; NASA/CR-2004-212887 Table 6.1, [`papers/combustion/`]
 | `run_0084_cmc_ab_a0` / `_p0` | couple 3 α=0 (往復のみ) と couple 0 (受動) の 60 step A/B | 修正前: α=0 でも step 40 NaN (更新前原始量と更新後 ρ の混用) → 修正後: 残差が受動と 3 桁一致 (2.611e-6 vs 2.609e-6) | ref (往復整合の証拠) |
 | `run_0085_cmc_diag` | couple 3 α=0.05 の 40 step 診断 (5 step 出力) | リップ直後 x=0.2 mm r=2.4–2.6 mm で T 884→510 K (ξ 0.34–0.46, T_Q 1045 = 未着火)、P max 124 kPa: **差分拡散の平均場が混合線から 130 K 以上ずれ、ブレンドと綱引き** | ref (差分拡散非整合の証拠) |
 | `run_0086_mix_sc0` | 混合場を **`speciesDiffusionMethod: 0` (定数 Sc)** で作り直し: run_0080 から化学 OFF・mixfrac ON, 3000 step | 完走。run_0098 の同一 step と全量 ~1 K 一致 → **fp32 化学と Q restart 経路を長期で検証** | ref |
-| `run_0100_cmc_c5_fp32_cont2` | run_0099 の続き (couple 5, さらに 16000 step): 平均場の加熱が飽和するかの確認 | (実行中) | active |
-| `run_0101_cmc_c6` | **couple 6** (Y ブレンド + 燃焼領域ゲート付きの h̃→h̃_pdf 緩和, 陰的経路) を run_0099 の 16000 step 状態から 8000 step。平均場 T が PDF 診断 T に追従するか | (実行中) | active |
+| `run_0100_cmc_c5_fp32_cont2` | run_0099 の続き (couple 5, さらに 16000 step): 平均場の加熱が飽和するかの確認 | step 10000 で中断 (couple 6 採用で不要)。軸 z/d 26 は 1153 K 止まり | 破棄予定 |
+| `run_0101_cmc_c6` | **couple 6** (Y ブレンド + 燃焼領域ゲート付きの h̃→h̃_pdf 緩和, 陰的経路) を run_0099 の 16000 step 状態から 8000 step。平均場 T が PDF 診断 T に追従するか | 完走。**平均 T = PDF 診断 T に数 K で一致** (z/d 9 半径 +2 K)、火炎基部 x/d 9.4〜10.9 (実験 ≈10)。ただし軸 ξ が z/d 20→30 で 0.51→0.02 に崩落 (実験 0.62→0.41): `xi_flux_check.py` で ∫ρuξdA が z/d 5 で +60 %・z/d 30 で −70 % と**非保存 = 定常反復の柱モードの過渡** (dual-time run_0077 は ±8 % 保存) | ref |
+| `run_0102_cmc_c6_dualtime` | run_0101 の状態 (場 + Q) から **dual-time (dt 1e-5 s, 4000 step = 40 ms)** で couple 6。柱モードを消して下流 (z/d ≥ 20) の ξ・T を実験と比較する本命 | (実行中) | active |
 | `run_0099_cmc_c5_fp32_cont` | run_0098 の step 4000 (場 + `cmc_Q_4000.bin`) から fp32 化学 (`cmc.fp32: 1`, 最適化後バイナリ) で 16000 step 継続。Q(η) restart 経路の初使用と fp32 の長期 A/B | (実行中) | active |
 | `run_0087_cmc_sc0` | run_0086 から CMC couple 3 (α 0.05), sdm 0, Li, 6000 step | **step 322 NaN**: 未着火のままリップ (x 0.4 mm r 2.7 mm, ξ 0.31) の T が 1034→400 K, P 95 MPa。管壁伝導・Le≠1 で T は混合線 T(ξ) と一致しない → **h のブレンドは非物理 (couple 3 不採用)** | 破棄予定 (根拠) |
 | `run_0088_cmc_c4_diag` | **couple 4** (組成のみ α=0.05 ブレンド + その反応熱 −Σc_sΔρY_s をエネルギーへ), sdm 0, 400 step (100 毎出力) | NaN なし、P 100–102 kPa、rms_roe 横ばい (~1.2)、T_Q max 1356 K (条件付き空間で着火開始)。リップ付近で max|ΔT| 349 K (受動対照 run_0090 と比較) | ref (couple 4 診断) |

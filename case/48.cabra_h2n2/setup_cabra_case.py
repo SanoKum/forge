@@ -6,7 +6,7 @@ import argparse, pathlib, shutil, subprocess, os, h5py, numpy as np, yaml, cante
 ap = argparse.ArgumentParser(); ap.add_argument("run_dir"); ap.add_argument("--chem", type=int, default=0); ap.add_argument("--jac", type=int, default=2); ap.add_argument("--ji", type=int, default=5)
 ap.add_argument("--tci", type=int, default=0); ap.add_argument("--cmix", type=float, default=1.0); ap.add_argument("--cfl", type=float, default=1.0); ap.add_argument("--conv", type=int, default=1); ap.add_argument("--relax", type=float, default=0.7)
 ap.add_argument("--nstep", type=int, default=20000); ap.add_argument("--out", type=int, default=0); ap.add_argument("--restart", default=None); ap.add_argument("--kfac", type=float, default=1.0)
-ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--mixfrac", type=int, default=0); ap.add_argument("--sdm", type=int, default=1); ap.add_argument("--cmc", type=int, default=0); ap.add_argument("--neta", type=int, default=41); ap.add_argument("--couple", type=int, default=1); ap.add_argument("--cmcchem", type=int, default=1); ap.add_argument("--cmcdt", type=float, default=1.0); ap.add_argument("--cchi", type=float, default=2.0); ap.add_argument("--mesh", default="mesh/cabra.msh"); ap.add_argument("--sfr", type=int, default=0); ap.add_argument("--tcof", type=float, default=1045.0); ap.add_argument("--cmcfp32", type=int, default=1); ap.add_argument("--cmcq", default=None); a = ap.parse_args()
+ap.add_argument("--eps", type=float, default=0.15); ap.add_argument("--precond", type=int, default=2); ap.add_argument("--axisdir", type=int, default=0); ap.add_argument("--nojet", type=int, default=0); ap.add_argument("--single", type=int, default=0); ap.add_argument("--coupling", type=int, default=2); ap.add_argument("--iccol", type=int, default=1); ap.add_argument("--planar", type=int, default=0); ap.add_argument("--jetn2", type=int, default=0); ap.add_argument("--jetcof", type=int, default=0); ap.add_argument("--far", default="slip"); ap.add_argument("--mixfrac", type=int, default=0); ap.add_argument("--sdm", type=int, default=1); ap.add_argument("--cmc", type=int, default=0); ap.add_argument("--neta", type=int, default=41); ap.add_argument("--couple", type=int, default=1); ap.add_argument("--cmcchem", type=int, default=1); ap.add_argument("--cmcdt", type=float, default=1.0); ap.add_argument("--cchi", type=float, default=2.0); ap.add_argument("--mesh", default="mesh/cabra.msh"); ap.add_argument("--sfr", type=int, default=0); ap.add_argument("--tcof", type=float, default=1045.0); ap.add_argument("--cmcfp32", type=int, default=1); ap.add_argument("--cmcq", default=None); ap.add_argument("--dualtime", type=float, default=0.0); a = ap.parse_args()
 TC = a.tcof   # coflow 温度 [K] (T_c 応答曲線スイープ用; 実験 1045)
 HERE = pathlib.Path(__file__).parent; d = pathlib.Path(a.run_dir); d.mkdir(exist_ok=True)
 names = ["H2", "O2", "H", "O", "OH", "H2O", "HO2", "H2O2", "N2"]
@@ -46,10 +46,11 @@ physProp: {{isCompressible: 1, thermalMethod: 2, viscMethod: 2, ro: 0.32, visc: 
            species: [{", ".join(names)}], speciesDBFile: "species_db.yaml", speciesDiffusionMethod: {a.sdm}, thermoHrefTemp: 298.15, speciesFaceReconstruction: {a.sfr},
            {chem}}}
 time:
-  unsteady: 0
+  unsteady: {1 if a.dualtime > 0 else 0}
+  dualTime: {1 if a.dualtime > 0 else 0}
   dualTime: 0
   last: {{control: 0, nStepOuter: {a.nstep}}}
-  deltaT: {{control: 1, dt: 1e-7, cfl: 1.0, cfl_pseudo: {a.cfl}, dt_min: 1e-10, dt_max: 0.01, blockDPLUR: 1, implicitRelax: {a.relax}, lowMachPrecond: {a.precond}, precondEps: {a.eps}, detectNaN: 1, speciesImplicitCoupling: {a.coupling}}}
+  deltaT: {{control: {0 if a.dualtime > 0 else 1}, dt: {a.dualtime if a.dualtime > 0 else 1e-7}, cfl: 1.0, cfl_pseudo: {a.cfl}, dt_min: 1e-10, dt_max: 0.01, blockDPLUR: 1, implicitRelax: {a.relax}, lowMachPrecond: {a.precond}, precondEps: {a.eps}, detectNaN: 1, speciesImplicitCoupling: {a.coupling}}}
   outStepStart: 0
   outStepInterval: {a.out if a.out > 0 else min(5000, a.nstep)}
   timeIntegration: 11
